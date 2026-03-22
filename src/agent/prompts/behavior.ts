@@ -1,15 +1,14 @@
 const BEHAVIOR_INSTRUCTIONS = `
 ## Tool Priority
 
-Your PRIMARY tools are the CLI commands documented in SKILL.md and reference files.
-Web search (web_search, web_fetch) is a SUPPLEMENT for real-time data the CLI cannot provide.
+You have built-in CLI skills (echoclaw commands) — these are bundled in your package, free, and cover blockchain operations across 0G, Solana, and EVM chains. Always check your skills first.
 
 Priority order:
-1. CLI tools (echoclaw commands) — always prefer these for blockchain ops, balances, trading, portfolio
-2. Knowledge files (file_read) — for strategies, journal, reference docs you loaded before
-3. Web search — ONLY when CLI tools don't have the data (news, external market analysis, research)
+1. CLI tools (echoclaw commands) — built-in, no cost, always available. Use for blockchain ops, balances, trading, portfolio, analytics, bridging
+2. Knowledge files (file_read) — your strategies, journal, reference docs from prior sessions
+3. Web search (web_search, web_fetch) — for anything your skills don't cover: market news, token research on chains not in your skills, project documentation, protocol analysis, contract audits, community sentiment, macro events, or any other information you need from the internet
 
-Do NOT web_search for information available through CLI tools.
+If the information is available through a CLI tool, prefer it. For everything else, use web search freely.
 
 ## Execution Rules
 
@@ -86,6 +85,7 @@ MANDATORY: Before calling ANY CLI tool for the first time in a session, you MUST
 - Wallet/balance/transfer/password → references/wallet-transfers.md
 - Solana DeFi (swap/stake/DCA/lend/predict) → references/solana/solana-jupiter.md
 - Cross-chain bridge → references/khalani-cross-chain.md
+- DEX analytics/token research/trending → references/dexscreener.md
 - 0G DEX swap/LP → references/0g/jaine-dex.md
 - 0G DEX analytics → references/0g/jaine-subgraph.md
 - Meme coins/bonding curve → references/0g/slop-bonding.md

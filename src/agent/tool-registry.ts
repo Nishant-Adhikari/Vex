@@ -43,9 +43,9 @@ const CLI_PARAMS: JsonSchema = {
 // ── Internal tools (structured params, handled by engine) ───────────
 
 const INTERNAL: ToolDef[] = [
-  { name: "web_search", kind: "internal", mutating: false, description: "Search the web via Tavily",
+  { name: "web_search", kind: "internal", mutating: false, description: "Search the internet for any information — token research, project docs, market news, chain analytics, protocol updates, contract audits, or any other data not available through CLI tools",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
-  { name: "web_fetch", kind: "internal", mutating: false, description: "Fetch a URL as markdown",
+  { name: "web_fetch", kind: "internal", mutating: false, description: "Fetch any URL and return its content as markdown — documentation pages, block explorers, analytics dashboards, project websites, API responses, or any other web resource",
     parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } },
   { name: "file_read", kind: "internal", mutating: false, description: "Load a knowledge/skill file into context",
     parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
@@ -160,6 +160,17 @@ const CLI: ToolDef[] = [
   cli("khalani_bridge", "Execute cross-chain bridge", true),
   cli("khalani_orders", "List bridge orders", false),
   cli("khalani_order", "Get bridge order details", false),
+
+  // ── DexScreener analytics (references/dexscreener.md)
+  cli("dexscreener_search", "Search DEX pairs across all chains", false),
+  cli("dexscreener_pairs", "Get pair details by chain and pair address", false),
+  cli("dexscreener_token", "Get token data by chain and address", false),
+  cli("dexscreener_token-pairs", "Get all pools for a token", false),
+  cli("dexscreener_profiles", "Latest trending token profiles", false),
+  cli("dexscreener_boosts", "Latest or top boosted tokens", false),
+  cli("dexscreener_orders", "Check paid orders for a token", false),
+  cli("dexscreener_trending", "Unified trending view (profiles + boosts)", false),
+  cli("dexscreener_stream", "Real-time WebSocket stream (profiles/boosts)", false),
 
   // ── Jaine DEX (references/0g/jaine-dex.md)
   cli("jaine_tokens_list", "List token aliases", false),

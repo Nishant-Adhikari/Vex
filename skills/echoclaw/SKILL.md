@@ -21,7 +21,7 @@ Use this skill whenever the user asks to perform actions through `echoclaw`, esp
 - **Solana DeFi (Jupiter)**: token swaps via Jupiter Ultra (aggregates all Solana DEXes), token browse/price, SOL/SPL transfers, staking, DCA, limit orders, lending, prediction markets, portfolio/holdings, token security (shield), token creation (Studio), send-invite, SPL burn/close-accounts.
 - **Cross-Chain Bridging (Khalani)**: cross-chain swaps and bridges across 15+ chains, multi-chain token discovery and balances with USD, quote/bridge/order tracking, EVM + Solana wallet flows.
 - **Trading & DeFi on 0G (Jaine/Slop)**: Jaine DEX swaps/LP with UniV3-style routing, w0G wrap/unwrap, bonding-curve meme-coin launches on Slop, creator and LP fees.
-- **Market Intelligence**: Jaine subgraph analytics (pools, volume, TVL, OHLCV), ChainScan explorer data (holder stats, whale radar, ABI/source lookup, calldata decoding).
+- **Market Intelligence**: DexScreener multi-chain DEX analytics (pair search, token data, trending profiles, boosted tokens, real-time WebSocket streaming), Jaine subgraph analytics (pools, volume, TVL, OHLCV), ChainScan explorer data (holder stats, whale radar, ABI/source lookup, calldata decoding).
 - **Social (EchoBook/Slop App)**: Reddit-style social graphs, submolts, threaded comments, points/leaderboards, trade proofs, agent verification, AI image generation (`slop-app image generate`) and IPFS upload, global chat.
 - **Automated Trading**: daemon-based MarketMaker with trigger rules (priceAbove/Below, bondingProgress, copy-trading onNewBuy/onNewSell), WebSocket token streams.
 - **0G Compute**: decentralized AI inference ledger — provider discovery, funding, API keys, balance monitor daemon.
@@ -100,6 +100,7 @@ Empty string and literal `"undefined"` are treated as missing.
 |---|---|---|
 | Wallet & Transfers | `references/wallet-transfers.md` | EVM + Solana wallet create/import (`--chain eip155\|solana`), wallet ensure (idempotent readiness), wallet address/balance/balances, backup/restore, export-key (manual only). Config: init, set-rpc, set-solana-rpc, set-solana-cluster, set-jupiter-key, show. 0G native transfers (2-step prepare→confirm). Solana SOL/SPL transfers (2-step prepare→confirm). Password setup and provider linking. Headless guardrails (`ECHO_ALLOW_WALLET_MUTATION`). Solana keystore specifics (AES-256-GCM, bs58 and JSON array import). |
 | Khalani Cross-Chain | `references/khalani-cross-chain.md` | Chain discovery (15+ chains incl. Solana), token search/autocomplete/top with USD prices, token balances, cross-chain quote (incl. NDJSON streaming via `--stream`), bridge execution (`CONTRACT_CALL` for EVM+Solana, `TRANSFER` for EVM), order tracking. Chain aliases: `eth`, `arb`, `base`, `op`, `sol`, `0g`, `poly`, `bsc`. `PERMIT2` blocked in v1. |
+| DexScreener | `references/dexscreener.md` | Multi-chain DEX analytics (does **NOT** cover 0G — use Jaine Subgraph for 0G): pair search across all chains (`search`), pair details by chain+address (`pairs`), token data with up to 30 addresses (`token`), all pools for a token (`token-pairs`), trending token profiles (`profiles`), boosted tokens latest/top (`boosts --top`), paid order verification (`orders`), unified trending view combining profiles+boosts (`trending --limit`), real-time WebSocket streaming for profiles/boosts/boosts-top (`stream`). No API key required. Rate limits: 60 req/min (profiles/boosts/orders), 300 req/min (search/pairs/tokens). Read-only, no wallet needed. |
 | Solana / Jupiter | `references/solana/solana-jupiter.md` | Full Solana DeFi via Jupiter API: Ultra swap (aggregates Raydium, Orca, Meteora — all Solana DEXes), token browse (trending/top-traded/top-organic/recent/lst/verified), price lookup (Jupiter Price V3), SOL/SPL transfers (2-step prepare→confirm), SOL staking (delegate/withdraw/claim-mev), DCA via Jupiter Recurring API (create/list/cancel), limit orders via Jupiter Trigger V1 (create/list/cancel), lending via Jupiter Lend Earn (rates/positions/deposit/withdraw), prediction markets (YES/NO binary contracts — list/search/market/buy/sell/claim/positions), portfolio and holdings (Ultra holdings API), token security shield (warnings per mint — severity info/warning/critical), token creation via Jupiter Studio (Dynamic Bonding Curves — requires Jupiter API key), send-invite (Jupiter Send — invite code creation, pending list, clawback), SPL token burn and empty account closure (recover rent). |
 | Jaine DEX | `references/0g/jaine-dex.md` | 0G-chain Uniswap V3 fork: token aliases (add/remove/list custom symbols), pool discovery and cache (`scan-core` from Goldsky subgraph or direct RPC, configurable fee tiers 100/500/3000/10000), pool find with BFS route quoting, `w0G` wrap/unwrap, ERC20 allowance show/revoke (spender: router or nft), swap sell and buy with `--dry-run`, `--slippage-bps`, `--deadline-sec`, `--max-hops` (1-4), `--approve-exact`, LP position lifecycle (add with tick range or `--range-pct`, increase liquidity, collect fees, remove with `--percent` and optional `--burn`, rebalance). |
 | Jaine Subgraph | `references/0g/jaine-subgraph.md` | Read-only 0G DEX analytics via Goldsky subgraph: subgraph meta/health, pools top/newest/for-token/for-pair, single pool info/days/hours OHLCV data, recent swaps per pool, LP events (mints/burns/collects), dex-stats aggregate (configurable `--days`), token leaderboard by TVL or volume (`--by tvl\|volume`). Rate limit: 5 req/sec, 15s timeout, 2 retries with backoff. |
@@ -122,6 +123,7 @@ Routing rules:
 - Solana SOL/SPL transfers → `references/wallet-transfers.md` (2-step section) + `references/solana/solana-jupiter.md`
 - Same-chain swaps on 0G (e.g. w0G/USDC) → `references/0g/jaine-dex.md`
 - Cross-chain bridges between different networks → `references/khalani-cross-chain.md`
+- Multi-chain DEX analytics, token research, trending (NOT 0G — use Jaine Subgraph for 0G) → `references/dexscreener.md`
 - All Solana-native DeFi operations → `references/solana/solana-jupiter.md`
 
 Intent-to-reference mapping:
@@ -140,6 +142,10 @@ Intent-to-reference mapping:
 - **"Burn tokens" / "close empty accounts"** → `references/solana/solana-jupiter.md`
 - **"Bridge ETH to Solana" / "cross-chain swap" / "move tokens between chains"** → `references/khalani-cross-chain.md`
 - **"Multi-chain balance" / "Khalani tokens"** → `references/khalani-cross-chain.md`
+- **"Token price on DEX" / "search token" / "DEX analytics" / "pair info" / "liquidity" / "volume" (NOT 0G)** → `references/dexscreener.md`
+- **"Pool TVL on 0G" / "0G DEX analytics" / "OHLCV on 0G"** → `references/0g/jaine-subgraph.md`
+- **"Trending tokens" / "boosted tokens" / "what's hot" / "token profile"** → `references/dexscreener.md`
+- **"Stream token updates" / "real-time DEX data"** → `references/dexscreener.md`
 - **"Swap on 0G" / "Jaine swap" / "w0G wrap"** → `references/0g/jaine-dex.md`
 - **"LP on 0G" / "add liquidity Jaine"** → `references/0g/jaine-dex.md`
 - **"Pool TVL" / "DEX analytics" / "OHLCV"** → `references/0g/jaine-subgraph.md`

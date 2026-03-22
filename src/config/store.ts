@@ -41,6 +41,7 @@ export interface EchoConfig {
     echoApiUrl: string;
     chainScanBaseUrl: string;
     khalaniApiUrl: string;
+    dexScreenerApiUrl: string;
     jaineSubgraphUrl: string;
     slopWsUrl: string;
     storageIndexerRpcUrl: string;
@@ -106,6 +107,7 @@ export function getDefaultConfig(): EchoConfig {
       echoApiUrl: "https://backend.echoclaw.ai/api",
       chainScanBaseUrl: "https://chainscan.0g.ai/open",
       khalaniApiUrl: "https://api.hyperstream.dev",
+      dexScreenerApiUrl: "https://api.dexscreener.com",
       jaineSubgraphUrl: "https://api.goldsky.com/api/public/project_cmgl0cagfjymu01wc2mojevm6/subgraphs/jaine-v3-goldsky/0.0.2/gn",
       slopWsUrl: "https://be.slop.money",
       storageIndexerRpcUrl: "https://indexer-storage-turbo.0g.ai",
