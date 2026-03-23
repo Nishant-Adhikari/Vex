@@ -1,6 +1,6 @@
 ---
 name: echoclaw
-description: CLI for 0G Network, Solana, and 18 EVM chains — wallet operations, native transfers, Jaine DEX, Slop.money, Jupiter (swap, lend, predict, DCA, stake), Khalani cross-chain bridge, KyberSwap (multi-chain EVM swap, limit orders, zap liquidity across 400+ DEXs), EchoBook and many more features.
+description: CLI for 0G Network, Solana, and 18 EVM chains — wallet operations, native transfers, Jaine DEX, Slop.money, Jupiter (swap, lend, predict, DCA, stake), Khalani cross-chain bridge, KyberSwap (multi-chain EVM swap, limit orders, zap liquidity across 400+ DEXs), Polymarket (EVM prediction markets on Polygon — browse, trade, track), EchoBook and many more features.
 user-invocable: true
 homepage: https://echoclaw.ai
 metadata: {"openclaw":{"emoji":"\ud83d\udcb0","requires":{"bins":["echoclaw"],"env":["ECHO_KEYSTORE_PASSWORD"]},"install":[{"id":"npm","kind":"node","package":"@echoclaw/echo","bins":["echoclaw"],"label":"Install EchoClaw CLI (npm)"}],"homepage":"https://echoclaw.ai"}}
@@ -19,6 +19,7 @@ Use this skill whenever the user asks to perform actions through `echoclaw`, esp
 - **Wallet & Configuration**: EVM and Solana wallet create/import, passwords, RPC config (0G + Solana), Jupiter API key, native balances, Khalani-backed multi-chain balances.
 - **On-chain Transfers (0G + Solana)**: all transfers use 2-step prepare → confirm intent flow with 10-minute expiry. 0G: `send prepare` → `send confirm`. Solana: `solana send prepare` → `solana send confirm`.
 - **Solana DeFi (Jupiter)**: token swaps via Jupiter Ultra (aggregates all Solana DEXes), token browse/price, SOL/SPL transfers, staking, DCA, limit orders, lending, prediction markets, portfolio/holdings, token security (shield), token creation (Studio), send-invite, SPL burn/close-accounts.
+- **Prediction Markets (Polymarket)**: EVM prediction markets on Polygon — browse events across politics/sports/crypto/culture, search, buy/sell YES/NO outcome shares, track any user's positions and PnL, leaderboard, auto-generate API key (one-click setup), bridge deposit/withdraw.
 - **Multi-chain EVM DeFi (KyberSwap)**: Token swaps across 18 EVM chains via DEX aggregator (400+ DEXs), token search with honeypot/FOT safety checks, gasless limit orders (off-chain signed, on-chain settlement), concentrated liquidity provisioning (Zap In/Out/Migrate) on UniswapV3/PancakeSwap/SushiSwap and 50+ DEXes, pool discovery via DexScreener integration.
 - **Cross-Chain Bridging (Khalani)**: cross-chain swaps and bridges across 15+ chains, multi-chain token discovery and balances with USD, quote/bridge/order tracking, EVM + Solana wallet flows.
 - **Trading & DeFi on 0G (Jaine/Slop)**: Jaine DEX swaps/LP with UniV3-style routing, w0G wrap/unwrap, bonding-curve meme-coin launches on Slop, creator and LP fees.
@@ -76,6 +77,7 @@ echoclaw skill install --provider openclaw|claude|codex|other --scope user|proje
   - `wallet ensure` can auto-create a missing Solana wallet when mutation is allowed
 - **Do not export secrets to stdout**: avoid `wallet export-key --stdout` in automation.
 - **Trust structured failures**: treat any `{"success": false, "error": ...}` response as authoritative.
+- **Polymarket auto-setup**: if any `polymarket` trading command fails with `POLYMARKET_NOT_CONFIGURED`, automatically run `echoclaw polymarket setup --yes --json` to generate API credentials (signs with EVM wallet, saves to .env). Then retry the original command. No user action needed — the agent has wallet access and can self-provision.
 - **0G Compute guardrail**: in headless mode prefer `echoclaw echo ... --json` or low-level `0g-compute` primitives. Monitor notifications depend on OpenClaw hook routing.
 
 ## Setup/system guardrails
@@ -100,6 +102,11 @@ Empty string and literal `"undefined"` are treated as missing.
 | Module | File | Contains |
 |---|---|---|
 | Wallet & Transfers | `references/wallet-transfers.md` | EVM + Solana wallet create/import (`--chain eip155\|solana`), wallet ensure (idempotent readiness), wallet address/balance/balances, backup/restore, export-key (manual only). Config: init, set-rpc, set-solana-rpc, set-solana-cluster, set-jupiter-key, show. 0G native transfers (2-step prepare→confirm). Solana SOL/SPL transfers (2-step prepare→confirm). Password setup and provider linking. Headless guardrails (`ECHO_ALLOW_WALLET_MUTATION`). Solana keystore specifics (AES-256-GCM, bs58 and JSON array import). |
+| Polymarket Prediction Markets | `references/polymarket/prediction-markets.md` | EVM prediction markets on Polygon via Polymarket: browse events/markets across politics/sports/crypto/culture, search, buy/sell YES/NO outcome shares, positions with PnL, auto-setup API key, one-click trading. |
+| Polymarket Market Data | `references/polymarket/market-data.md` | Polymarket orderbook, pricing (bid/ask/midpoint/spread), price history, tick sizes, fee rates. All read-only, no auth. |
+| Polymarket Trading | `references/polymarket/trading.md` | Polymarket CLOB trading: order placement (GTC/FOK/GTD), cancel (single/batch/all/market), heartbeat, order scoring, rewards. Requires API key (auto-generated via setup). |
+| Polymarket Analytics | `references/polymarket/analytics.md` | Track any Polymarket user: positions, closed positions, PnL, activity history, portfolio value. Leaderboard (PnL/volume), top holders, open interest, builder stats. All public, no auth. |
+| Polymarket Bridge | `references/polymarket/bridge.md` | Polymarket bridge: deposit from any chain (EVM/Solana/BTC), withdraw, quotes with fee breakdown, transaction tracking. |
 | KyberSwap EVM | `references/kyberswap-evm.md` | Multi-chain EVM DeFi via KyberSwap (18 chains, 400+ DEXs): token swap (sell/quote via aggregation across Ethereum, Arbitrum, Base, Polygon, BSC, Optimism, Avalanche, Linea, Mantle, Sonic, Berachain, Ronin, Unichain, HyperEVM, Plasma, Etherlink, Monad, MegaETH), token search/discovery, honeypot/FOT safety check, gasless limit orders (EIP-712, off-chain relay — create/list/cancel/hard-cancel), concentrated liquidity zap (LP add/remove/migrate across UniswapV3/PancakeSwapV3/SushiSwapV3/Aerodrome/Curve/Balancer and 50+ DEXes), pool discovery via DexScreener. Chain aliases: `eth`, `arb`, `base`, `op`, `poly`, `bsc`, `avax`, `linea`, `mantle`, `sonic`, `bera`, `ronin`. |
 | Khalani Cross-Chain | `references/khalani-cross-chain.md` | Chain discovery (15+ chains incl. Solana), token search/autocomplete/top with USD prices, token balances, cross-chain quote (incl. NDJSON streaming via `--stream`), bridge execution (`CONTRACT_CALL` for EVM+Solana, `TRANSFER` for EVM), order tracking. Chain aliases: `eth`, `arb`, `base`, `op`, `sol`, `0g`, `poly`, `bsc`. `PERMIT2` blocked in v1. |
 | DexScreener | `references/dexscreener.md` | Multi-chain DEX analytics (does **NOT** cover 0G — use Jaine Subgraph for 0G): pair search across all chains (`search`), pair details by chain+address (`pairs`), token data with up to 30 addresses (`token`), all pools for a token (`token-pairs`), trending token profiles (`profiles`), boosted tokens latest/top (`boosts --top`), paid order verification (`orders`), unified trending view combining profiles+boosts (`trending --limit`), real-time WebSocket streaming for profiles/boosts/boosts-top (`stream`). No API key required. Rate limits: 60 req/min (profiles/boosts/orders), 300 req/min (search/pairs/tokens). Read-only, no wallet needed. |
@@ -124,6 +131,11 @@ Routing rules:
 - Native 0G-to-0G transfers → `references/wallet-transfers.md`
 - Solana SOL/SPL transfers → `references/wallet-transfers.md` (2-step section) + `references/solana/solana-jupiter.md`
 - Same-chain swaps on 0G (e.g. w0G/USDC) → `references/0g/jaine-dex.md`
+- EVM prediction markets / Polymarket → `references/polymarket/prediction-markets.md`
+- Polymarket orderbook, prices, spread → `references/polymarket/market-data.md`
+- Polymarket trading (buy/sell/cancel/orders) → `references/polymarket/trading.md`
+- Track Polymarket user / positions / leaderboard → `references/polymarket/analytics.md`
+- Polymarket deposit/withdraw/bridge → `references/polymarket/bridge.md`
 - Same-chain EVM swaps (NOT 0G, NOT Solana — e.g. ETH→USDC on Ethereum/Arbitrum/Base) → `references/kyberswap-evm.md`
 - EVM limit orders (gasless) → `references/kyberswap-evm.md`
 - EVM liquidity provisioning (add/remove/migrate LP, NOT 0G) → `references/kyberswap-evm.md`
@@ -147,6 +159,11 @@ Intent-to-reference mapping:
 - **"Token security" / "is this token safe"** → `references/solana/solana-jupiter.md` (shield command)
 - **"Send invite" / "clawback"** → `references/solana/solana-jupiter.md`
 - **"Burn tokens" / "close empty accounts"** → `references/solana/solana-jupiter.md`
+- **"Predict election" / "bet on crypto" / "buy yes shares" / "Polymarket"** → `references/polymarket/prediction-markets.md`
+- **"Polymarket orderbook" / "prediction market prices"** → `references/polymarket/market-data.md`
+- **"Buy on Polymarket" / "sell shares" / "cancel Polymarket order"** → `references/polymarket/trading.md`
+- **"Track Polymarket trader" / "Polymarket leaderboard" / "who holds most"** → `references/polymarket/analytics.md`
+- **"Deposit to Polymarket" / "withdraw from Polymarket"** → `references/polymarket/bridge.md`
 - **"Swap on Ethereum" / "swap on Arbitrum" / "swap on Base" / "swap USDC for ETH on Polygon"** → `references/kyberswap-evm.md`
 - **"Limit order on Polygon" / "set buy order at price" / "gasless limit order"** → `references/kyberswap-evm.md`
 - **"Add liquidity on Arbitrum" / "zap in" / "provide liquidity on UniswapV3" / "LP on Base"** → `references/kyberswap-evm.md`

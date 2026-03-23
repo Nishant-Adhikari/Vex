@@ -13,6 +13,7 @@ import { createSetupCommand } from "./commands/setup.js";
 import { createChainScanCommand } from "./commands/chainscan/index.js";
 import { createKhalaniCommand } from "./commands/khalani/index.js";
 import { createKyberSwapCommand } from "./commands/kyberswap/index.js";
+import { createPolymarketCommand } from "./commands/polymarket/index.js";
 import { createDexScreenerCommand } from "./commands/dexscreener/index.js";
 import { createSlopStreamCommand } from "./commands/slop-stream.js";
 import { createBotCommand } from "./commands/marketmaker/index.js";
@@ -116,6 +117,7 @@ function addProgramCommands(program: Command): void {
   program.addCommand(createChainScanCommand());
   program.addCommand(createKhalaniCommand());
   program.addCommand(createKyberSwapCommand());
+  program.addCommand(createPolymarketCommand());
   program.addCommand(createDexScreenerCommand());
   program.addCommand(createSetupCommand());
   program.addCommand(createSlopStreamCommand());

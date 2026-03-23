@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetBalance = vi.fn();
-const mockConnection = vi.fn(() => ({
-  getBalance: mockGetBalance,
-}));
-const mockPublicKey = vi.fn((value: string) => ({ value }));
+const mockConnection = vi.fn(function MockConnection() {
+  return {
+    getBalance: mockGetBalance,
+  };
+});
+const mockPublicKey = vi.fn(function MockPublicKey(value: string) {
+  this.value = value;
+});
 
 vi.mock("@solana/web3.js", () => ({
   Connection: mockConnection,

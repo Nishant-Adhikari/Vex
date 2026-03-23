@@ -60,6 +60,11 @@ export interface EchoConfig {
     commitment: string;
     jupiterApiKey: string;
   };
+  polymarket?: {
+    clobBaseUrl?: string;
+    gammaBaseUrl?: string;
+    dataApiBaseUrl?: string;
+  };
   claude?: {
     provider: string;
     model: string;
@@ -209,6 +214,7 @@ export function loadConfig(): EchoConfig {
         ...defaults.services,
         ...((parsed.services as Record<string, unknown> | undefined) ?? {}),
       },
+      ...(parsed.polymarket && typeof parsed.polymarket === "object" && !Array.isArray(parsed.polymarket) ? { polymarket: parsed.polymarket as EchoConfig["polymarket"] } : {}),
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
     };
   } catch (err) {

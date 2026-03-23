@@ -4,6 +4,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const UPDATE_COMMAND_TEST_TIMEOUT_MS = 60_000;
+let mockedCheckForUpdates: ReturnType<typeof vi.fn> | null = null;
+
+vi.mock("../update/updater.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../update/updater.js")>();
+  return {
+    ...actual,
+    checkForUpdates: (...args: any[]) =>
+      mockedCheckForUpdates != null
+        ? mockedCheckForUpdates(...args)
+        : actual.checkForUpdates(...args),
+  };
+});
 
 function captureStdout(): { output: () => string; restore: () => void } {
   let output = "";
@@ -31,18 +43,8 @@ async function loadUpdateCommand(
 ) {
   process.env.XDG_CONFIG_HOME = join(root, "xdg");
   process.env.OPENCLAW_HOME = join(root, "openclaw");
+  mockedCheckForUpdates = options.mockCheckForUpdates ?? null;
   vi.resetModules();
-  vi.unmock("../update/updater.js");
-
-  if (options.mockCheckForUpdates) {
-    vi.doMock("../update/updater.js", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("../update/updater.js")>();
-      return {
-        ...actual,
-        checkForUpdates: (...args: any[]) => options.mockCheckForUpdates?.(...args),
-      };
-    });
-  }
 
   const output = await import("../utils/output.js");
   output.setJsonMode(true);
@@ -66,6 +68,7 @@ describe.sequential("update command", () => {
   const savedOpenclawHome = process.env.OPENCLAW_HOME;
 
   afterEach(() => {
+    mockedCheckForUpdates = null;
     if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = savedXdg;
 

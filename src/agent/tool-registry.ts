@@ -186,6 +186,25 @@ const CLI: ToolDef[] = [
   cli("kyberswap_zap_out", "Remove liquidity via KyberSwap ZaaS", true),
   cli("kyberswap_zap_migrate", "Migrate LP position via KyberSwap ZaaS", true),
 
+  // ── Polymarket prediction markets (references/polymarket/)
+  cli("polymarket_setup", "Auto-generate Polymarket CLOB API key", true),
+  cli("polymarket_events", "Browse Polymarket prediction events", false),
+  cli("polymarket_event", "Get Polymarket event details with markets", false),
+  cli("polymarket_search", "Search Polymarket markets/events/profiles", false),
+  cli("polymarket_market", "Get market details, orderbook, and prices", false),
+  cli("polymarket_orderbook", "Get full orderbook for a token", false),
+  cli("polymarket_history", "Get price history for a market", false),
+  cli("polymarket_buy", "Buy YES/NO shares on Polymarket", true),
+  cli("polymarket_sell", "Sell YES/NO shares on Polymarket", true),
+  cli("polymarket_positions", "View Polymarket positions and PnL", false),
+  cli("polymarket_orders", "List open Polymarket orders", false),
+  cli("polymarket_profile", "Public profile of a Polymarket trader", false),
+  cli("polymarket_cancel", "Cancel Polymarket order", true),
+  cli("polymarket_cancel-all", "Cancel all Polymarket orders", true),
+  cli("polymarket_cancel-market", "Cancel all orders in a market", true),
+  cli("polymarket_leaderboard", "Polymarket trader leaderboard", false),
+  cli("polymarket_activity", "Polymarket trade activity history", false),
+
   // ── DexScreener analytics (references/dexscreener.md)
   cli("dexscreener_search", "Search DEX pairs across all chains", false),
   cli("dexscreener_pairs", "Get pair details by chain and pair address", false),
@@ -353,6 +372,9 @@ const YES_SUPPORTED = new Set([
   "kyberswap_swap_sell",
   "kyberswap_limit-order_create", "kyberswap_limit-order_cancel", "kyberswap_limit-order_hard-cancel",
   "kyberswap_zap_in", "kyberswap_zap_out", "kyberswap_zap_migrate",
+  // Polymarket
+  "polymarket_setup", "polymarket_buy", "polymarket_sell",
+  "polymarket_cancel", "polymarket_cancel-all", "polymarket_cancel-market",
   // Jaine DEX
   "jaine_swap_sell", "jaine_swap_buy",
   // Slop bonding
