@@ -83,3 +83,15 @@ export async function fetchJson<T>(
   const response = await fetchWithTimeout(url, options);
   return parseJsonResponse<T>(response);
 }
+
+/**
+ * Safely read JSON from a response without throwing on parse failure.
+ * Used by API clients that need to read error bodies before mapping errors.
+ */
+export async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}

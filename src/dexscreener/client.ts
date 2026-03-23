@@ -7,7 +7,7 @@
 
 import { loadConfig } from "../config/store.js";
 import { EchoError } from "../errors.js";
-import { fetchWithTimeout } from "../utils/http.js";
+import { fetchWithTimeout, readJson } from "../utils/http.js";
 import { mapDexScreenerError, mapTransportError } from "./errors.js";
 import type {
   DexBoost,
@@ -28,14 +28,6 @@ import {
   validateTokensPairsResponse,
   validateTokensResponse,
 } from "./validation.js";
-
-async function readJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
 
 export class DexScreenerClient {
   constructor(private readonly baseUrl: string) {}

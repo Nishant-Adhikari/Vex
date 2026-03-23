@@ -12,6 +12,22 @@ export interface AgentStatus {
   usage: UsageState;
   loop: LoopState;
   pendingApprovals: number;
+  version?: string;
+}
+
+export interface RuntimeUpdateStatus {
+  currentPackageVersion: string;
+  targetPackageVersion: string | null;
+  runningAgentVersion: string | null;
+  desiredAgentImage: string | null;
+  desiredAgentTag: string | null;
+  agentManagedByPackage: boolean;
+  pullStatus: "idle" | "pulling" | "ready" | "failed";
+  preparedPackageVersion: string | null;
+  applyInProgress: boolean;
+  lastError: string | null;
+  updateAvailable: boolean;
+  readyToApply: boolean;
 }
 
 export interface UsageState {

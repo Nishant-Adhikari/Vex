@@ -11,16 +11,16 @@
  */
 
 import { Command } from "commander";
-import { existsSync, readFileSync, unlinkSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { respond } from "../../utils/respond.js";
 import { isHeadless } from "../../utils/output.js";
 import { isDaemonAlive } from "../../utils/daemon-spawn.js";
+import { readLauncherPid, stopLauncherProcess } from "../../launcher/process.js";
 import {
   LAUNCHER_PID_FILE,
   LAUNCHER_STOPPED_FILE,
   LAUNCHER_LOG_FILE,
-  LAUNCHER_DIR,
   LAUNCHER_DEFAULT_PORT,
 } from "../../config/paths.js";
 
@@ -111,44 +111,31 @@ export function createLauncherSubcommand(): Command {
         throw new EchoError(ErrorCodes.LAUNCHER_NOT_RUNNING, "Launcher is not running (no pidfile).");
       }
 
-      const pid = parseInt(readFileSync(LAUNCHER_PID_FILE, "utf-8").trim(), 10);
+      const pid = readLauncherPid();
+      if (pid == null) {
+        try { unlinkSync(LAUNCHER_PID_FILE); } catch { /* ignore */ }
+        throw new EchoError(ErrorCodes.LAUNCHER_NOT_RUNNING, "Launcher is not running (invalid pidfile).");
+      }
 
-      try {
-        process.kill(pid, 0);
-      } catch {
-        unlinkSync(LAUNCHER_PID_FILE);
+      const result = await stopLauncherProcess({ writeStoppedFile: true });
+      if (result.status === "stale_pid") {
         throw new EchoError(ErrorCodes.LAUNCHER_NOT_RUNNING, `Launcher not running (stale PID ${pid}).`);
       }
-
-      try { process.kill(pid, "SIGTERM"); } catch { /* ignore */ }
-
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 500));
-        try {
-          process.kill(pid, 0);
-        } catch {
-          try { if (existsSync(LAUNCHER_PID_FILE)) unlinkSync(LAUNCHER_PID_FILE); } catch { /* ignore */ }
-          if (!existsSync(LAUNCHER_DIR)) mkdirSync(LAUNCHER_DIR, { recursive: true });
-          writeFileSync(LAUNCHER_STOPPED_FILE, String(Date.now()), "utf-8");
-
-          respond({
-            data: { stopped: true, pid },
-            ui: { type: "success", title: "Launcher", body: `Stopped (PID ${pid})` },
-          });
-          return;
-        }
+      if (result.status === "not_running") {
+        throw new EchoError(ErrorCodes.LAUNCHER_NOT_RUNNING, "Launcher is not running.");
       }
 
-      // SIGKILL
-      try { process.kill(pid, "SIGKILL"); } catch { /* ignore */ }
-      try { if (existsSync(LAUNCHER_PID_FILE)) unlinkSync(LAUNCHER_PID_FILE); } catch { /* ignore */ }
-      if (!existsSync(LAUNCHER_DIR)) mkdirSync(LAUNCHER_DIR, { recursive: true });
-      writeFileSync(LAUNCHER_STOPPED_FILE, String(Date.now()), "utf-8");
-
       respond({
-        data: { stopped: true, pid, method: "SIGKILL" },
-        ui: { type: "warn", title: "Launcher", body: `Force-killed (PID ${pid})` },
+        data: {
+          stopped: true,
+          pid,
+          ...(result.status === "killed" ? { method: "SIGKILL" } : {}),
+        },
+        ui: {
+          type: result.status === "killed" ? "warn" : "success",
+          title: "Launcher",
+          body: result.status === "killed" ? `Force-killed (PID ${pid})` : `Stopped (PID ${pid})`,
+        },
       });
     });
 

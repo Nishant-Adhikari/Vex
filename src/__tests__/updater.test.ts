@@ -176,7 +176,7 @@ describe("checkForUpdates", () => {
     expect(mockSpawn).not.toHaveBeenCalled();
   });
 
-  it("auto-update spawns npm install when newer and auto-update is enabled", async () => {
+  it("auto-update spawns the detached worker when newer and auto-update is enabled", async () => {
     mockIsAutoUpdateEnabled.mockReturnValue(true);
     mockFetchJson.mockResolvedValue({ version: "2.0.0" });
     const mockChild = { pid: 12345, unref: vi.fn(), on: vi.fn() };
@@ -186,7 +186,8 @@ describe("checkForUpdates", () => {
 
     expect(result.action).toBe("auto-updated");
     expect(mockSpawn).toHaveBeenCalledTimes(1);
-    expect(mockSpawn.mock.calls[0][0]).toBe("npm");
+    expect(mockSpawn.mock.calls[0][0]).toBe(process.execPath);
+    expect(mockSpawn.mock.calls[0][1][0]).toContain("auto-update-worker.js");
     expect(mockChild.on).toHaveBeenCalledWith("error", expect.any(Function));
   });
 

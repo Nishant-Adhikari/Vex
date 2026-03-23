@@ -44,12 +44,15 @@ vi.mock("../config/paths.js", () => ({
   BOT_DIR: "/mock/bot",
   BOT_LOG_FILE: "/mock/bot/bot.log",
   BOT_PID_FILE: "/mock/bot/bot.pid",
+  LAUNCHER_DIR: "/mock/launcher",
+  LAUNCHER_LOG_FILE: "/mock/launcher/launcher.log",
+  LAUNCHER_PID_FILE: "/mock/launcher/launcher.pid",
 }));
 
 const mockKill = vi.fn();
 const origKill = process.kill;
 
-const { spawnMonitorFromState, spawnBotDaemon, spawnClaudeProxy } =
+const { spawnMonitorFromState, spawnBotDaemon, spawnClaudeProxy, spawnLauncher } =
   await import("../utils/daemon-spawn.js");
 
 function resetMocks(): void {
@@ -187,5 +190,35 @@ describe("spawnBotDaemon", () => {
 
     const spawnOpts = mockSpawn.mock.calls[0][2] as { env: Record<string, string> };
     expect(spawnOpts.env.ECHO_NO_RESURRECT).toBe("1");
+  });
+});
+
+describe("spawnLauncher", () => {
+  beforeEach(resetMocks);
+  afterEach(() => {
+    process.kill = origKill;
+  });
+
+  it("returns already_running when launcher is alive", () => {
+    setupAlive();
+    const result = spawnLauncher();
+    expect(result).toEqual({ status: "already_running" });
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it("spawns the launcher in detached mode", () => {
+    setupNoPidFile();
+    const child = setupMockChild(7890);
+
+    const result = spawnLauncher();
+
+    expect(result).toEqual({
+      status: "spawned",
+      pid: child.pid,
+      logFile: "/mock/launcher/launcher.log",
+    });
+
+    const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
+    expect(spawnArgs).toEqual(expect.arrayContaining(["echo", "launcher", "--daemon-child"]));
   });
 });

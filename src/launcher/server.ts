@@ -25,11 +25,13 @@ import { registerClaudeRoutes } from "./handlers/claude.js";
 import { registerBridgeRoutes } from "./handlers/bridge.js";
 import { registerOpenClawRoutes } from "./handlers/openclaw.js";
 import { registerTavilyRoutes } from "./handlers/tavily.js";
+import { registerRuntimeUpdateRoutes } from "./handlers/runtime-update.js";
 import {
   LAUNCHER_PID_FILE,
   LAUNCHER_DIR,
   LAUNCHER_DEFAULT_PORT,
 } from "../config/paths.js";
+import { startRuntimeUpdatePullInBackground } from "../update/runtime-update-service.js";
 import logger from "../utils/logger.js";
 
 // ── Static file serving ──────────────────────────────────────────
@@ -119,6 +121,7 @@ function registerAllRoutes(): void {
   registerOpenClawRoutes();
   registerAgentRoutes();
   registerTavilyRoutes();
+  registerRuntimeUpdateRoutes();
 }
 
 // ── Request handler ──────────────────────────────────────────────
@@ -180,6 +183,8 @@ export function startLauncherServer(port?: number, writePid = false): Promise<Se
         writeFileSync(LAUNCHER_PID_FILE, String(process.pid), "utf-8");
         logger.debug(`[launcher] PID file: ${LAUNCHER_PID_FILE}`);
       }
+
+      startRuntimeUpdatePullInBackground("startup");
 
       resolve(server);
     });

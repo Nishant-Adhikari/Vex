@@ -1,6 +1,6 @@
 import { loadConfig } from "../config/store.js";
 import { EchoError, ErrorCodes } from "../errors.js";
-import { fetchWithTimeout } from "../utils/http.js";
+import { fetchWithTimeout, readJson } from "../utils/http.js";
 import type {
   AutocompleteResponse,
   DepositBuildRequest,
@@ -35,14 +35,6 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PUT";
   query?: Record<string, string | undefined>;
   body?: unknown;
-}
-
-async function readJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
 }
 
 function mapTransportError(err: unknown): never {

@@ -11,9 +11,10 @@ import {
   HugeiconsIcon, MessageMultiple01Icon, Activity01Icon,
   Wallet01Icon, BrainIcon, Settings01Icon, TelegramIcon,
 } from "./components/icons";
-import { initAuth, getStatus, getRecentTrades } from "./api";
-import type { AgentStatus, TradeEntry, TradeSummary } from "./types";
+import { initAuth, getStatus, getRecentTrades, getRuntimeUpdateStatus as getLauncherRuntimeUpdateStatus, retryRuntimeUpdatePull, applyRuntimeUpdate } from "./api";
+import type { AgentStatus, RuntimeUpdateStatus, TradeEntry, TradeSummary } from "./types";
 import { cn } from "./utils";
+import { buildRuntimeUpdateBannerModel } from "./runtime-update";
 
 const STATUS_POLL_MS = 10_000;
 
@@ -29,12 +30,27 @@ export const App: FC = () => {
   const [tradeSummary, setTradeSummary] = useState<TradeSummary | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [runtimeUpdate, setRuntimeUpdate] = useState<RuntimeUpdateStatus | null>(null);
+  const [runtimeUpdateBusy, setRuntimeUpdateBusy] = useState<"apply" | "retry" | null>(null);
+  const [runtimeUpdateActionError, setRuntimeUpdateActionError] = useState<string | null>(null);
 
   useEffect(() => { initAuth().then(() => setAuthReady(true)).catch(() => setAuthReady(true)); }, []);
 
   const refreshStatus = useCallback(async () => {
     if (!authReady) return;
-    try { setStatus(await getStatus()); setIsOffline(false); } catch { setIsOffline(true); }
+    try {
+      setStatus(await getStatus());
+      setIsOffline(false);
+    } catch {
+      setIsOffline(true);
+    }
+
+    try {
+      setRuntimeUpdate(await getLauncherRuntimeUpdateStatus());
+    } catch {
+      setRuntimeUpdate(null);
+    }
+
     try {
       const res = await getRecentTrades(3);
       setRecentTrades(res.trades); setTradeSummary(res.summary);
@@ -51,6 +67,27 @@ export const App: FC = () => {
       return next;
     });
   };
+
+  const runtimeUpdateBanner = buildRuntimeUpdateBannerModel(runtimeUpdate, status);
+
+  const handleRuntimeUpdateAction = useCallback(async (action: "apply" | "retry") => {
+    setRuntimeUpdateActionError(null);
+    setRuntimeUpdateBusy(action);
+    try {
+      if (action === "apply") {
+        const result = await applyRuntimeUpdate();
+        setRuntimeUpdate(result.status);
+      } else {
+        const result = await retryRuntimeUpdatePull();
+        setRuntimeUpdate(result.status);
+      }
+      await refreshStatus();
+    } catch (err) {
+      setRuntimeUpdateActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRuntimeUpdateBusy(null);
+    }
+  }, [refreshStatus]);
 
   const navItems: Array<{ key: WidgetType | "chat"; label: string; icon: unknown }> = [
     { key: "chat", label: "Chat", icon: MessageMultiple01Icon },
@@ -153,6 +190,49 @@ export const App: FC = () => {
           <div className="flex items-center justify-center gap-2 px-4 py-2 bg-status-warn/10 border-b border-status-warn/20 text-status-warn text-xs font-medium shrink-0">
             <div className="h-2 w-2 rounded-full bg-status-warn animate-pulse" />
             Agent offline — retrying...
+          </div>
+        )}
+
+        {runtimeUpdateBanner && (
+          <div
+            className={cn(
+              "flex flex-col gap-3 border-b px-4 py-3 text-xs shrink-0 md:flex-row md:items-center md:justify-between",
+              runtimeUpdateBanner.tone === "error"
+                ? "border-rose-500/20 bg-rose-500/10 text-rose-100"
+                : "border-sky-500/20 bg-sky-500/10 text-sky-100",
+            )}
+          >
+            <div className="min-w-0">
+              <div className="font-semibold tracking-wide">{runtimeUpdateBanner.title}</div>
+              <div className={cn(
+                "mt-1 leading-relaxed",
+                runtimeUpdateBanner.tone === "error" ? "text-rose-100/80" : "text-sky-100/80",
+              )}>
+                {runtimeUpdateBanner.message}
+              </div>
+              {runtimeUpdateActionError && (
+                <div className="mt-2 text-rose-200/90">{runtimeUpdateActionError}</div>
+              )}
+            </div>
+
+            {runtimeUpdateBanner.action && runtimeUpdateBanner.actionLabel && (
+              <button
+                type="button"
+                onClick={() => handleRuntimeUpdateAction(runtimeUpdateBanner.action!)}
+                disabled={runtimeUpdateBusy !== null || runtimeUpdateBanner.disabled}
+                className={cn(
+                  "inline-flex shrink-0 items-center justify-center rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition",
+                  "disabled:cursor-not-allowed disabled:opacity-60",
+                  runtimeUpdateBanner.tone === "error"
+                    ? "bg-rose-100 text-rose-950 hover:bg-white"
+                    : "bg-sky-100 text-sky-950 hover:bg-white",
+                )}
+              >
+                {runtimeUpdateBusy === runtimeUpdateBanner.action
+                  ? runtimeUpdateBanner.action === "apply" ? "Restarting..." : "Retrying..."
+                  : runtimeUpdateBanner.actionLabel}
+              </button>
+            )}
           </div>
         )}
 

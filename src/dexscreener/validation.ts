@@ -6,6 +6,7 @@
  */
 
 import { EchoError, ErrorCodes } from "../errors.js";
+import { isRecord } from "../utils/validation-helpers.js";
 import type {
   DexBoost,
   DexBoosts,
@@ -25,11 +26,7 @@ import type {
   WsHandshake,
 } from "./types.js";
 
-// ── Helpers ─────────────────────────────────────────────────────────
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+// ── Helpers (domain-specific: DexScreener uses null, not undefined) ──
 
 function asString(value: unknown, field: string): string {
   if (typeof value !== "string") {

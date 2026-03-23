@@ -1,4 +1,5 @@
 import { EchoError, ErrorCodes } from "../errors.js";
+import { isRecord, createFieldValidators } from "../utils/validation-helpers.js";
 import type {
   Approval,
   AutocompleteResponse,
@@ -14,32 +15,9 @@ import type {
   TokenSearchResponse,
 } from "./types.js";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function asString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: missing ${field}`);
-  }
-  return value;
-}
-
-function asNumber(value: unknown, field: string): number {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: missing ${field}`);
-  }
-  return value;
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
+const { asString, asNumber, asOptionalString, asStringArray } = createFieldValidators(
+  ErrorCodes.KHALANI_API_ERROR, "Khalani",
+);
 
 function parseNativeCurrencyName(nativeCurrency: Record<string, unknown>): string {
   const name = asOptionalString(nativeCurrency.name);

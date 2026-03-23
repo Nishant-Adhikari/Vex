@@ -1,6 +1,6 @@
 /** Typed API wrappers for agent endpoints. */
 
-import type { AgentStatus, SessionListEntry, FileTreeEntry, ApprovalItem, TradeEntry, TradeSummary, ScheduledTask, PortfolioSnapshot, ChainBalance, BillingState, TelegramStatus } from "./types";
+import type { AgentStatus, SessionListEntry, FileTreeEntry, ApprovalItem, TradeEntry, TradeSummary, ScheduledTask, PortfolioSnapshot, ChainBalance, BillingState, TelegramStatus, RuntimeUpdateStatus } from "./types";
 
 /** Bootstrap auth — sets HttpOnly cookie via server. Call before any other API request. */
 export async function initAuth(): Promise<void> {
@@ -27,8 +27,46 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export function getLauncherOrigin(
+  location: Pick<Location, "protocol" | "hostname"> | null = typeof window === "undefined" ? null : window.location,
+): string {
+  if (!location) {
+    return "http://127.0.0.1:4200";
+  }
+
+  const protocol = location.protocol || "http:";
+  const hostname = location.hostname || "127.0.0.1";
+  return `${protocol}//${hostname}:4200`;
+}
+
+export async function fetchLauncherJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${getLauncherOrigin()}${path}`, {
+    ...init,
+    headers: authHeaders(init?.headers ?? { "Content-Type": "application/json" }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `Launcher HTTP ${res.status}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
 export async function getStatus(): Promise<AgentStatus> {
   return fetchJson("/api/agent/status");
+}
+
+export async function getRuntimeUpdateStatus(): Promise<RuntimeUpdateStatus> {
+  return fetchLauncherJson("/api/runtime-update");
+}
+
+export async function retryRuntimeUpdatePull(): Promise<{ retried: boolean; status: RuntimeUpdateStatus }> {
+  return fetchLauncherJson("/api/runtime-update/retry", { method: "POST" });
+}
+
+export async function applyRuntimeUpdate(): Promise<{ applied: boolean; healthy: boolean; status: RuntimeUpdateStatus }> {
+  return fetchLauncherJson("/api/runtime-update/apply", { method: "POST" });
 }
 
 export async function getUsage(): Promise<AgentStatus["usage"]> {

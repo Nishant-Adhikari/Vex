@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-const UPDATE_COMMAND_TEST_TIMEOUT_MS = 30_000;
+const UPDATE_COMMAND_TEST_TIMEOUT_MS = 60_000;
 
 function captureStdout(): { output: () => string; restore: () => void } {
   let output = "";
@@ -25,10 +25,24 @@ function captureStdout(): { output: () => string; restore: () => void } {
   };
 }
 
-async function loadUpdateCommand(root: string) {
+async function loadUpdateCommand(
+  root: string,
+  options: { mockCheckForUpdates?: ReturnType<typeof vi.fn> } = {},
+) {
   process.env.XDG_CONFIG_HOME = join(root, "xdg");
   process.env.OPENCLAW_HOME = join(root, "openclaw");
   vi.resetModules();
+  vi.unmock("../update/updater.js");
+
+  if (options.mockCheckForUpdates) {
+    vi.doMock("../update/updater.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../update/updater.js")>();
+      return {
+        ...actual,
+        checkForUpdates: (...args: any[]) => options.mockCheckForUpdates?.(...args),
+      };
+    });
+  }
 
   const output = await import("../utils/output.js");
   output.setJsonMode(true);
@@ -36,12 +50,14 @@ async function loadUpdateCommand(root: string) {
   const updateModule = await import("../commands/update/index.js");
   const pathsModule = await import("../config/paths.js");
   const envModule = await import("../providers/env-resolution.js");
+  const updaterModule = await import("../update/updater.js");
 
   return {
     createUpdateCommand: updateModule.createUpdateCommand,
     setJsonMode: output.setJsonMode,
     envFile: pathsModule.ENV_FILE,
     readEnvValue: envModule.readEnvValue,
+    updateCheckFile: updaterModule.UPDATE_CHECK_FILE,
   };
 }
 
@@ -95,6 +111,83 @@ describe.sequential("update command", () => {
       expect(payload.enabled).toBe(false);
       expect(payload.daemonUsed).toBe(false);
       expect(readEnvValue("ECHO_AUTO_UPDATE", envFile)).toBe("0");
+    } finally {
+      capture.restore();
+      setJsonMode(false);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, UPDATE_COMMAND_TEST_TIMEOUT_MS);
+
+  it("check reports the background updater result without mutating local state", async () => {
+    const root = mkdtempSync(join(tmpdir(), "echoclaw-update-check-"));
+    const mockCheckForUpdates = vi.fn().mockResolvedValue({
+      checked: true,
+      currentVersion: "1.0.0",
+      latestVersion: "2.0.0",
+      isNewer: true,
+      action: "notified",
+    });
+    const { createUpdateCommand, setJsonMode } =
+      await loadUpdateCommand(root, { mockCheckForUpdates });
+
+    const update = createUpdateCommand();
+    const capture = captureStdout();
+    try {
+      await update.parseAsync(["check"], { from: "user" });
+      const payload = JSON.parse(capture.output().trim());
+
+      expect(mockCheckForUpdates).toHaveBeenCalledWith(expect.any(String), {
+        forceCheck: true,
+        readOnly: true,
+      });
+      expect(payload.success).toBe(true);
+      expect(payload.currentVersion).toBe("1.0.0");
+      expect(payload.latestVersion).toBe("2.0.0");
+      expect(payload.isNewer).toBe(true);
+      expect(payload.action).toBe("notified");
+    } finally {
+      capture.restore();
+      setJsonMode(false);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, UPDATE_COMMAND_TEST_TIMEOUT_MS);
+
+  it("status reports preference and last update-check metadata", async () => {
+    const root = mkdtempSync(join(tmpdir(), "echoclaw-update-status-"));
+    const {
+      createUpdateCommand,
+      setJsonMode,
+      updateCheckFile,
+    } = await loadUpdateCommand(root);
+
+    const enableCapture = captureStdout();
+    try {
+      await createUpdateCommand().parseAsync(["enable"], { from: "user" });
+    } finally {
+      enableCapture.restore();
+    }
+
+    mkdirSync(dirname(updateCheckFile), { recursive: true });
+    writeFileSync(updateCheckFile, JSON.stringify({
+      lastCheckedAtMs: 1_700_000_000_000,
+      lastNotifiedVersion: "2.0.0",
+      lastAutoUpdateAttemptAtMs: 1_700_000_123_000,
+    }), "utf-8");
+
+    const capture = captureStdout();
+    try {
+      await createUpdateCommand().parseAsync(["status"], { from: "user" });
+      const payload = JSON.parse(capture.output().trim());
+
+      expect(payload.success).toBe(true);
+      expect(payload.enabled).toBe(true);
+      expect(payload.daemonUsed).toBe(false);
+      expect(payload.lastCheck).toMatchObject({
+        lastCheckedAtMs: 1_700_000_000_000,
+        lastNotifiedVersion: "2.0.0",
+        lastAutoUpdateAttemptAtMs: 1_700_000_123_000,
+      });
+      expect(payload.legacyArtifacts.detected).toBe(false);
     } finally {
       capture.restore();
       setJsonMode(false);

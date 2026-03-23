@@ -47,6 +47,11 @@ export interface EchoConfig {
     storageIndexerRpcUrl: string;
     storageEvmRpcUrl: string;
     storageFlowContract: string;
+    kyberswapAggregatorUrl: string;
+    kyberswapTokenApiUrl: string;
+    kyberswapLimitOrderUrl: string;
+    kyberswapZaasUrl: string;
+    kyberswapCommonServiceUrl: string;
   };
   solana: {
     cluster: "mainnet-beta" | "devnet" | "testnet" | "custom";
@@ -113,6 +118,11 @@ export function getDefaultConfig(): EchoConfig {
       storageIndexerRpcUrl: "https://indexer-storage-turbo.0g.ai",
       storageEvmRpcUrl: "https://evmrpc.0g.ai",
       storageFlowContract: "0x62d4144db0f0a6fbbaeb6296c785c71b3d57c526",
+      kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",
+      kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
+      kyberswapLimitOrderUrl: "https://limit-order.kyberswap.com",
+      kyberswapZaasUrl: "https://zap-api.kyberswap.com",
+      kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
     },
   };
 }

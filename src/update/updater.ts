@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { CONFIG_DIR } from "../config/paths.js";
 import { ensureConfigDir } from "../config/store.js";
 import { fetchJson } from "../utils/http.js";
@@ -31,7 +32,7 @@ export const UPDATE_CHECK_TIMEOUT_MS = 1500;
 export const AUTO_UPDATE_LOCK_STALE_MS = 10 * 60 * 1000;
 
 const NPM_REGISTRY_URL = "https://registry.npmjs.org/@echoclaw%2Fecho/latest";
-const NPM_PACKAGE_SPEC = "@echoclaw/echo@latest";
+const AUTO_UPDATE_WORKER_PATH = fileURLToPath(new URL("./auto-update-worker.js", import.meta.url));
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -156,28 +157,26 @@ export async function fetchLatestVersion(): Promise<string | null> {
   }
 }
 
-// ── npm install spawn ────────────────────────────────────────────────
+// ── background auto-update worker spawn ─────────────────────────────
 
-export function spawnNpmInstall(): number | null {
+export function spawnAutoUpdateWorker(): number | null {
   try {
     const child = spawn(
-      "npm",
-      ["install", "-g", NPM_PACKAGE_SPEC, "--no-fund", "--no-audit"],
+      process.execPath,
+      [AUTO_UPDATE_WORKER_PATH],
       {
         stdio: "ignore",
         windowsHide: true,
         detached: true,
-        shell: process.platform === "win32",
       },
     );
-    // Async spawn errors (e.g. ENOENT on Windows) come via event, not throw
     child.on("error", (err) => {
-      logger.warn(`Auto-update spawn failed (async): ${err.message}`);
+      logger.warn(`Auto-update worker spawn failed (async): ${err.message}`);
     });
     child.unref();
     return child.pid ?? null;
   } catch (err) {
-    logger.warn(`Auto-update spawn failed: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`Auto-update worker spawn failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -254,8 +253,8 @@ export async function checkForUpdates(
 
     saveUpdateCheckState({ lastCheckedAtMs: Date.now(), lastAutoUpdateAttemptAtMs: Date.now() });
 
-    logger.info(`Auto-updating echoclaw to ${latestVersion} (current ${currentVersion}) via npm...`);
-    const pid = spawnNpmInstall();
+    logger.info(`Auto-updating echoclaw to ${latestVersion} (current ${currentVersion}) via background worker...`);
+    const pid = spawnAutoUpdateWorker();
     if (pid == null) {
       releaseUpdateLock();
       return result;

@@ -171,6 +171,21 @@ const CLI: ToolDef[] = [
   cli("khalani_orders", "List bridge orders", false),
   cli("khalani_order", "Get bridge order details", false),
 
+  // ── KyberSwap multi-chain EVM DeFi (references/kyberswap-evm.md)
+  cli("kyberswap_chains", "List KyberSwap supported chains and features", false),
+  cli("kyberswap_tokens_search", "Search tokens by name/symbol on EVM chain", false),
+  cli("kyberswap_tokens_check", "Honeypot and fee-on-transfer safety check", false),
+  cli("kyberswap_swap_quote", "Quote KyberSwap swap route (read-only)", false),
+  cli("kyberswap_swap_sell", "Sell tokens via KyberSwap aggregator", true),
+  cli("kyberswap_limit-order_create", "Create gasless KyberSwap limit order", true),
+  cli("kyberswap_limit-order_list", "List KyberSwap limit orders", false),
+  cli("kyberswap_limit-order_cancel", "Cancel KyberSwap limit order (gasless)", true),
+  cli("kyberswap_limit-order_hard-cancel", "Cancel KyberSwap limit order (on-chain)", true),
+  cli("kyberswap_zap_search", "Find best pools for LP via DexScreener", false),
+  cli("kyberswap_zap_in", "Add liquidity via KyberSwap ZaaS", true),
+  cli("kyberswap_zap_out", "Remove liquidity via KyberSwap ZaaS", true),
+  cli("kyberswap_zap_migrate", "Migrate LP position via KyberSwap ZaaS", true),
+
   // ── DexScreener analytics (references/dexscreener.md)
   cli("dexscreener_search", "Search DEX pairs across all chains", false),
   cli("dexscreener_pairs", "Get pair details by chain and pair address", false),
@@ -334,6 +349,10 @@ const YES_SUPPORTED = new Set([
   "solana_send-invite", "solana_clawback",
   // Khalani bridge
   "khalani_bridge",
+  // KyberSwap
+  "kyberswap_swap_sell",
+  "kyberswap_limit-order_create", "kyberswap_limit-order_cancel", "kyberswap_limit-order_hard-cancel",
+  "kyberswap_zap_in", "kyberswap_zap_out", "kyberswap_zap_migrate",
   // Jaine DEX
   "jaine_swap_sell", "jaine_swap_buy",
   // Slop bonding
