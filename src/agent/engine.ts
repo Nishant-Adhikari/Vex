@@ -6,7 +6,7 @@
  * Tool results preserve tool_call_id for proper round-trip.
  */
 
-import type { Message, ToolCall, AgentEvent, RequestUsage, InternalToolCall, ConversationSession, InferenceConfig } from "./types.js";
+import type { Message, ToolCall, AgentEvent, RequestUsage, InternalToolCall, ConversationSession, InferenceConfig, ChatMode } from "./types.js";
 import { buildSystemPrompt } from "./tools.js";
 import { generateId } from "./id.js";
 import { SSE_TOOL_OUTPUT_LIMIT } from "./constants.js";
@@ -22,6 +22,7 @@ import * as messagesRepo from "./db/repos/messages.js";
 import * as usageRepo from "./db/repos/usage.js";
 import * as approvalsRepo from "./db/repos/approvals.js";
 import { buildCompactionPrompt, getCompactionSystemPrompt } from "./prompts/compaction.js";
+import { withSessionLock } from "./session-lock.js";
 import logger from "../utils/logger.js";
 
 // ── Session factory ──────────────────────────────────────────────────
@@ -56,7 +57,7 @@ export async function processMessage(
   session: ConversationSession,
   userMessage: string,
   emit: EventEmitter,
-  loopMode: "full" | "restricted" | "off" = "off",
+  loopMode: ChatMode = "off",
 ): Promise<void> {
   // Ensure session exists in DB
   await sessionsRepo.createSession(session.id);
@@ -72,7 +73,7 @@ export async function resumeAfterApproval(
   session: ConversationSession,
   approvedToolCall: ToolCall,
   emit: EventEmitter,
-  loopMode: "full" | "restricted" | "off",
+  loopMode: ChatMode,
   toolCallId?: string,
 ): Promise<void> {
   // Use provided toolCallId (from approval item) or generate one
@@ -96,7 +97,7 @@ export async function resumeAfterApproval(
 async function inferenceLoop(
   session: ConversationSession,
   emit: EventEmitter,
-  loopMode: "full" | "restricted" | "off",
+  loopMode: ChatMode,
   maxIterations = 100,
 ): Promise<void> {
   const config = session.inferenceConfig;
@@ -122,8 +123,8 @@ async function inferenceLoop(
 
     emit({ type: "status", data: { type: "thinking" } });
 
-    // Native OpenAI function calling — tools sent via API parameter
-    const tools = toOpenAITools();
+    // Native OpenAI function calling — filter proactive tools in manual mode
+    const tools = toOpenAITools(loopMode);
     let response;
 
     try {
@@ -258,7 +259,7 @@ async function inferenceLoop(
 
 async function executeToolCalls(
   toolCalls: ToolCall[], assistantMsg: Message, session: ConversationSession,
-  emit: EventEmitter, loopMode: "full" | "restricted" | "off",
+  emit: EventEmitter, loopMode: ChatMode,
 ): Promise<"ok" | "approval_pending"> {
   // In restricted mode: execute safe tools first, enqueue ALL mutating tools for approval
   const pendingApprovals: Array<{ id: string; toolCallId: string; call: ToolCall }> = [];
@@ -269,10 +270,10 @@ async function executeToolCalls(
 
     const toolCallId = assistantMsg.toolCalls?.[i]?.id ?? generateId("call");
 
-    if (call.confirm && loopMode === "restricted") {
+    if (call.confirm && (loopMode === "restricted" || loopMode === "off")) {
       // Queue for approval — don't stop, continue processing safe tools
       const approvalId = generateId("approval");
-      await approvalsRepo.enqueue(approvalId, call, "This operation modifies on-chain state or moves funds.", session.id, toolCallId);
+      await approvalsRepo.enqueue(approvalId, call, "This operation modifies on-chain state or moves funds.", session.id, toolCallId, loopMode);
       pendingApprovals.push({ id: approvalId, toolCallId, call });
       continue;
     }
@@ -316,23 +317,29 @@ async function compactSession(session: ConversationSession, emit: EventEmitter):
     const result = await inferNonStreaming(session.inferenceConfig, compactionMessages);
     const { summary, insights } = parseCompactionResult(result.content);
 
-    if (insights) {
+    // Skip insight extraction for trivial sessions (< 4 substantive messages)
+    const substantiveMessages = session.messages.filter(m => m.role !== "system").length;
+    if (insights && substantiveMessages >= 4) {
       await memoryRepo.appendMemory(insights, "compaction", "compaction");
       emit({ type: "file_update", data: { path: "memory.md", action: "compaction_insights" } });
     }
 
-    await sessionsRepo.compactSession(session.id, summary);
+    // Checkpoint: archive old messages, reset counters. Session ID stays the same.
+    // Session lock prevents concurrent requests from racing with archive+checkpoint.
+    await withSessionLock(session.id, async () => {
+      await sessionsRepo.archiveSessionMessages(session.id);
+      await sessionsRepo.checkpointSession(session.id, summary);
+    });
+    // DO NOT change session.id — session identity is stable across compaction
+    // DO NOT emit status:session — no session change visible to the client
 
-    // Start fresh session — emit new sessionId so client stays in sync
-    session.id = generateId("session");
-    await sessionsRepo.createSession(session.id);
-    emit({ type: "status", data: { type: "session", sessionId: session.id } });
     const today = new Date().toISOString().slice(0, 10);
-    // Clear loaded knowledge — new session starts clean.
-    // The continuation context in the summary lists which files to re-read.
+
+    // Clear loaded knowledge — compaction summary lists which files to re-read
     session.loadedKnowledge.clear();
 
-    session.messages = [{ role: "system", content: `[Session compacted — ${today}]
+    // Replace in-memory messages with compaction context
+    const contextMsg: Message = { role: "system", content: `[Session compacted — ${today}]
 
 Your previous session was summarized. Key insights saved to memory.
 Loaded knowledge files were cleared — re-read files listed in the continuation context below as needed.
@@ -343,13 +350,17 @@ To restore full working context:
 3. Resume where you left off — your entire knowledge base is intact
 
 Previous session summary:
-${summary}`, timestamp: new Date().toISOString() }];
+${summary}`, timestamp: new Date().toISOString() };
 
-    // Reset hybrid snapshot — new session starts with full heuristic
+    session.messages = [contextMsg];
+    // Persist the context message to DB (increments message_count from 0 to 1)
+    await messagesRepo.addMessage(session.id, contextMsg);
+
+    // Reset hybrid snapshot — fresh start with full heuristic
     session.lastPromptTokens = undefined;
     session.messageCountAtSnapshot = undefined;
 
-    logger.info("[agent] compaction complete — new session started");
+    logger.info("agent.session.compaction_checkpoint", { sessionId: session.id });
   } catch (err) {
     logger.error("agent.session.compaction_failed", {
       sessionId: session.id,

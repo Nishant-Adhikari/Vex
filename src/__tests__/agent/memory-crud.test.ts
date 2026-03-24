@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../agent/db/client.js", () => ({
   query: vi.fn(),
+  queryOne: vi.fn(),
   execute: vi.fn(),
 }));
 
-import { query, execute } from "../../agent/db/client.js";
+import { query, queryOne, execute } from "../../agent/db/client.js";
 import {
   appendMemory,
   listEntriesWithIds,
@@ -14,6 +15,7 @@ import {
 } from "../../agent/db/repos/memory.js";
 
 const mockQuery = query as ReturnType<typeof vi.fn>;
+const mockQueryOne = queryOne as ReturnType<typeof vi.fn>;
 const mockExecute = execute as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -51,16 +53,18 @@ describe("listEntriesWithIds", () => {
 
 describe("replaceEntry", () => {
   it("returns true when entry is found and replaced", async () => {
+    mockQueryOne.mockResolvedValueOnce(null); // no collision
     mockExecute.mockResolvedValueOnce(1);
     const result = await replaceEntry(5, "updated content");
     expect(result).toBe(true);
     expect(mockExecute).toHaveBeenCalledWith(
       expect.stringContaining("UPDATE"),
-      ["updated content", 5],
+      expect.arrayContaining(["updated content", 5]),
     );
   });
 
   it("returns false when entry not found", async () => {
+    mockQueryOne.mockResolvedValueOnce(null); // no collision
     mockExecute.mockResolvedValueOnce(0);
     const result = await replaceEntry(999, "content");
     expect(result).toBe(false);
@@ -126,13 +130,15 @@ describe("deleteEntry", () => {
 // ── appendMemory (existing, verify preserved) ───────────────────────
 
 describe("appendMemory", () => {
-  it("calls execute with INSERT", async () => {
+  it("calls execute with INSERT including content_hash", async () => {
     mockExecute.mockResolvedValueOnce(1);
     await appendMemory("test entry", "TRADE", "agent");
     expect(mockExecute).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO memory_entries"),
-      ["test entry", "TRADE", "agent"],
+      expect.arrayContaining(["test entry", "TRADE", "agent"]),
     );
+    // Should include a 4th param (content_hash)
+    expect(mockExecute.mock.calls[0][1]).toHaveLength(4);
   });
 
   it("uses default source 'agent'", async () => {
@@ -140,7 +146,7 @@ describe("appendMemory", () => {
     await appendMemory("test entry");
     expect(mockExecute).toHaveBeenCalledWith(
       expect.any(String),
-      ["test entry", null, "agent"],
+      expect.arrayContaining(["test entry", null, "agent"]),
     );
   });
 });

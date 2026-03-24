@@ -43,9 +43,9 @@ export default function SubagentPanel({ subagents, visible, onClose }: Props) {
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 scrollbar-thin">
           {subagents.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
-              <HugeiconsIcon icon={Robot01Icon as never} size={32} className="text-muted-foreground/20 mb-3" />
+              <img src="/purple.png" alt="Echo" className="w-10 h-10 object-contain opacity-20 mb-3" draggable={false} />
               <p className="text-[11px] text-muted-foreground/40">
-                No subagents yet. The agent will spawn them when needed.
+                No subagents yet. Echo will spawn them when needed.
               </p>
             </div>
           ) : (

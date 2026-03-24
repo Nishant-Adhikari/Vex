@@ -120,6 +120,15 @@ export interface UsageState {
 // ── Loop ─────────────────────────────────────────────────────────────
 
 export type LoopMode = "full" | "restricted";
+/** Chat/engine mode — extends LoopMode with "off" for manual/respond-only */
+export type ChatMode = LoopMode | "off";
+
+const VALID_CHAT_MODES = new Set<string>(["full", "restricted", "off"]);
+/** Runtime guard for ChatMode — validates values from DB or external input. */
+export function toChatMode(value: unknown): ChatMode {
+  if (typeof value === "string" && VALID_CHAT_MODES.has(value)) return value as ChatMode;
+  return "restricted";
+}
 
 export interface LoopState {
   active: boolean;
@@ -225,7 +234,7 @@ export interface TopupHistoryEntry {
 
 // ── Session scope ─────────────────────────────────────────────────────
 
-export type SessionScope = "chat" | "loop" | "telegram" | "subagent";
+export type SessionScope = "chat" | "loop" | "telegram" | "subagent" | "scheduler" | "papa";
 
 // ── Approval queue ───────────────────────────────────────────────────
 
@@ -252,6 +261,14 @@ export interface AgentStatus {
   knowledgeFileCount: number;
   sessionId: string | null;
   sessionMessageCount: number;
+  /** Last recorded prompt_tokens for session health widget. */
+  sessionTokenCount: number;
+  sessionStartedAt: string | null;
+  /** Current context limit (compaction fires when estimated tokens reach this). */
+  contextLimit: number;
+  compactionThreshold: number;
+  /** Total memory entries in DB (for memory panel). */
+  memoryEntryCount: number;
   usage: UsageState;
   loop: LoopState;
   pendingApprovals: number;

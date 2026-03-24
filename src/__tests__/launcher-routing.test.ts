@@ -1,15 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { EchoSnapshot } from "../commands/echo/snapshot.js";
-import type { ProviderName } from "../providers/types.js";
-
-/**
- * Tests the routing decision logic from src/launcher/handlers/snapshot.ts.
- *
- * The handler is not directly exported, so we replicate the pure decision
- * logic inline (same three-branch check) and verify it with mock snapshots.
- * We also test the underlying `buildConnectPayload` + `defaultScopeForRuntime`
- * functions that feed the routing decision.
- */
+import { isCoreComputeReady } from "../launcher/core-compute.js";
 
 vi.mock("../providers/registry.js", () => ({
   autoDetectProvider: () => ({ name: "openclaw" }),
@@ -32,54 +23,34 @@ vi.mock("../utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("../openclaw/config.js", () => ({
-  getOpenclawHome: () => "/mock/.openclaw",
-  loadOpenclawConfig: () => null,
-}));
-
-const { buildConnectPayload, defaultScopeForRuntime } = await import(
-  "../commands/echo/assessment.js"
-);
-
-// ── Routing decision logic (mirrors snapshot.ts handleRouting) ───────
+const { defaultScopeForRuntime } = await import("../commands/echo/assessment.js");
 
 interface RoutingDecision {
   mode: "wizard" | "dashboard";
   reason: string;
 }
 
-function computeRoutingDecision(
-  snapshot: EchoSnapshot,
-  runtime: ProviderName,
-): RoutingDecision {
-  const connectPayload = buildConnectPayload(
-    snapshot,
-    runtime,
-    defaultScopeForRuntime(runtime),
-  );
-
+function computeRoutingDecision(snapshot: EchoSnapshot): RoutingDecision {
   if (!snapshot.wallet.configuredAddress && !snapshot.wallet.keystorePresent) {
     return { mode: "wizard", reason: "no_wallet" };
   }
   if (!snapshot.configExists) {
     return { mode: "wizard", reason: "no_config" };
   }
-  if (connectPayload.status !== "ready") {
-    return { mode: "dashboard", reason: "setup_incomplete" };
-  }
-  return { mode: "dashboard", reason: "ready" };
+  return isCoreComputeReady(snapshot.compute.readiness?.checks)
+    ? { mode: "dashboard", reason: "ready" }
+    : { mode: "dashboard", reason: "setup_incomplete" };
 }
-
-// ── Snapshot factory ────────────────────────────────────────────────
 
 function makeSnapshot(overrides: {
   walletAddress?: string | null;
   keystorePresent?: boolean;
   configExists?: boolean;
-  skillLinked?: boolean;
-  computeReady?: boolean;
+  coreComputeReady?: boolean;
+  openclawConfigReady?: boolean;
 }): EchoSnapshot {
-  const allChecksOk = overrides.computeReady !== false;
+  const coreReady = overrides.coreComputeReady !== false;
+  const openclawConfigReady = overrides.openclawConfigReady !== false;
   const check = (ok: boolean) => ({ ok, detail: ok ? "ok" : "fail" });
 
   return {
@@ -97,43 +68,29 @@ function makeSnapshot(overrides: {
       decryptable: true,
     },
     runtimes: {
-      recommended: "openclaw" as ProviderName,
+      recommended: "openclaw",
       detected: {
         openclaw: { detected: true },
         "claude-code": { detected: false },
         codex: { detected: false },
         other: { detected: true },
       } as any,
-      skills: [
-        {
-          provider: "openclaw" as ProviderName,
-          sourcePath: "/mock",
-          userTarget: "/mock",
-          userLinked: overrides.skillLinked ?? false,
-          projectTarget: null,
-          projectLinked: false,
-          manualOnly: false,
-        },
-      ],
+      skills: [],
     },
     compute: {
-      state: allChecksOk
-        ? { activeProvider: "0xPROVIDER", model: "test", configuredAt: Date.now() }
-        : null,
-      readiness: allChecksOk
-        ? {
-            ready: true,
-            provider: "0xPROVIDER",
-            checks: {
-              wallet: check(true),
-              broker: check(true),
-              ledger: check(true),
-              subAccount: check(true),
-              ack: check(true),
-              openclawConfig: check(true),
-            },
-          }
-        : null,
+      state: { activeProvider: "0xPROVIDER", model: "test" },
+      readiness: {
+        ready: coreReady && openclawConfigReady,
+        provider: "0xPROVIDER",
+        checks: {
+          wallet: check(coreReady),
+          broker: check(coreReady),
+          ledger: check(coreReady),
+          subAccount: check(coreReady),
+          ack: check(coreReady),
+          openclawConfig: check(openclawConfigReady),
+        },
+      },
     },
     claude: {
       configured: false,
@@ -159,59 +116,79 @@ function makeSnapshot(overrides: {
   } as EchoSnapshot;
 }
 
-// ── Tests ───────────────────────────────────────────────────────────
-
 describe("launcher routing decision", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("no wallet, no keystore -> wizard / no_wallet", () => {
+  it("routes to wizard when no wallet is configured", () => {
     const snapshot = makeSnapshot({
       walletAddress: null,
       keystorePresent: false,
       configExists: true,
     });
-    const decision = computeRoutingDecision(snapshot, "openclaw");
-    expect(decision.mode).toBe("wizard");
-    expect(decision.reason).toBe("no_wallet");
+
+    expect(computeRoutingDecision(snapshot)).toEqual({
+      mode: "wizard",
+      reason: "no_wallet",
+    });
   });
 
-  it("wallet exists, no config -> wizard / no_config", () => {
+  it("routes to wizard when config is missing", () => {
     const snapshot = makeSnapshot({
       walletAddress: "0x1234",
       keystorePresent: true,
       configExists: false,
     });
-    const decision = computeRoutingDecision(snapshot, "openclaw");
-    expect(decision.mode).toBe("wizard");
-    expect(decision.reason).toBe("no_config");
+
+    expect(computeRoutingDecision(snapshot)).toEqual({
+      mode: "wizard",
+      reason: "no_config",
+    });
   });
 
-  it("wallet + config but connect not ready -> dashboard / setup_incomplete", () => {
+  it("routes to dashboard setup when a core compute step is missing", () => {
     const snapshot = makeSnapshot({
       walletAddress: "0x1234",
       keystorePresent: true,
       configExists: true,
-      skillLinked: false,
-      computeReady: false,
+      coreComputeReady: false,
     });
-    const decision = computeRoutingDecision(snapshot, "openclaw");
-    expect(decision.mode).toBe("dashboard");
-    expect(decision.reason).toBe("setup_incomplete");
+
+    expect(computeRoutingDecision(snapshot)).toEqual({
+      mode: "dashboard",
+      reason: "setup_incomplete",
+    });
   });
 
-  it("everything ready -> dashboard / ready", () => {
+  it("routes to dashboard ready when only runtime auth is missing", () => {
     const snapshot = makeSnapshot({
       walletAddress: "0x1234",
       keystorePresent: true,
       configExists: true,
-      skillLinked: true,
-      computeReady: true,
+      coreComputeReady: true,
+      openclawConfigReady: false,
     });
-    const decision = computeRoutingDecision(snapshot, "openclaw");
-    expect(decision.mode).toBe("dashboard");
-    expect(decision.reason).toBe("ready");
+
+    expect(computeRoutingDecision(snapshot)).toEqual({
+      mode: "dashboard",
+      reason: "ready",
+    });
+  });
+
+  it("routes to dashboard ready when core compute and runtime auth are both ready", () => {
+    const snapshot = makeSnapshot({
+      walletAddress: "0x1234",
+      keystorePresent: true,
+      configExists: true,
+      coreComputeReady: true,
+      openclawConfigReady: true,
+    });
+
+    expect(computeRoutingDecision(snapshot)).toEqual({
+      mode: "dashboard",
+      reason: "ready",
+    });
   });
 });
 

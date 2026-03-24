@@ -13,7 +13,10 @@ import * as loopRepo from "../db/repos/loop.js";
 import * as backupRepo from "../db/repos/backup.js";
 import { loadComputeState } from "../../0g-compute/readiness.js";
 import { getAgentPackageVersion } from "../compose.js";
+import { DEFAULT_CONTEXT_LIMIT, COMPACTION_THRESHOLD } from "../constants.js";
+import { runEchoPapaCycle } from "../echo-papa.js";
 import type { AgentStatus } from "../types.js";
+import logger from "../../utils/logger.js";
 
 export function registerStatusRoutes(): void {
   registerRoute("GET", "/api/agent/status", async (_req, res) => {
@@ -21,11 +24,13 @@ export function registerStatusRoutes(): void {
     const [usage, pendingApprovals, sessions, loop, lastBackup] = await Promise.all([
       usageRepo.getUsageStats(),
       approvalsRepo.getPendingCount(),
-      sessionsRepo.listSessions(1),
+      sessionsRepo.listSessionsByScope("chat", 1),
       loopRepo.getLoopState(),
       backupRepo.getLastBackup(),
     ]);
     const latestSession = sessions[0];
+
+    const memoryEntries = await memoryRepo.listEntriesWithIds();
 
     const status: AgentStatus = {
       running: true,
@@ -36,6 +41,11 @@ export function registerStatusRoutes(): void {
       knowledgeFileCount: await knowledgeRepo.fileCount(),
       sessionId: latestSession?.id ?? null,
       sessionMessageCount: latestSession?.message_count ?? 0,
+      sessionTokenCount: latestSession?.token_count ?? 0,
+      sessionStartedAt: latestSession?.started_at ?? null,
+      contextLimit: DEFAULT_CONTEXT_LIMIT,
+      compactionThreshold: COMPACTION_THRESHOLD,
+      memoryEntryCount: memoryEntries.length,
       usage: { ...usage, lastBackupAt: lastBackup?.createdAt ?? null },
       loop,
       pendingApprovals,
@@ -48,5 +58,17 @@ export function registerStatusRoutes(): void {
   registerRoute("GET", "/api/agent/usage", async (_req, res) => {
     const usage = await usageRepo.getUsageStats();
     jsonResponse(res, 200, usage);
+  });
+
+  /** Trigger a manual Echo Papa maintenance cycle. */
+  registerRoute("POST", "/api/agent/memory/cleanup", async (_req, res) => {
+    try {
+      const report = await runEchoPapaCycle();
+      jsonResponse(res, 200, report);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error("echo_papa.manual_cycle_failed", { error: msg });
+      jsonResponse(res, 500, { error: msg });
+    }
   });
 }

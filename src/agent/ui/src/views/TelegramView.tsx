@@ -27,7 +27,7 @@ export const TelegramView: FC<TelegramViewProps> = () => {
   const [botToken, setBotToken] = useState("");
   const [chatIdInput, setChatIdInput] = useState("");
   const [chatIds, setChatIds] = useState<number[]>([]);
-  const [loopMode, setLoopMode] = useState("restricted");
+  const [loopMode, setLoopMode] = useState("off");
   const [showToken, setShowToken] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -289,15 +289,15 @@ export const TelegramView: FC<TelegramViewProps> = () => {
             </div>
 
             <div>
-              <label className="block text-xs text-muted-foreground mb-1">Approval Mode</label>
+              <label className="block text-xs text-muted-foreground mb-1">Agent Mode</label>
               <select
                 value={loopMode}
                 onChange={e => setLoopMode(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-foreground text-xs focus:outline-none focus:border-accent/50"
+                className="w-full px-3 py-2 rounded-lg bg-[#1a1a1a] border border-white/10 text-foreground text-xs focus:outline-none focus:border-accent/50 [&>option]:bg-[#1a1a1a] [&>option]:text-foreground"
               >
-                <option value="restricted">Restricted (approve mutations)</option>
-                <option value="full">Full (auto-approve all)</option>
-                <option value="off">Off (read-only)</option>
+                <option value="off">Manual — Responds only when you message</option>
+                <option value="restricted">Autonomous (restricted) — Proactive, trades need approval</option>
+                <option value="full">Autonomous (full) — Full autonomy, all auto-approved</option>
               </select>
             </div>
 

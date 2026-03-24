@@ -158,6 +158,10 @@ export async function upsertSession(
   );
 }
 
+export async function updateLoopMode(loopMode: string): Promise<void> {
+  await execute("UPDATE telegram_config SET loop_mode = $1, updated_at = NOW() WHERE id = 1", [loopMode]);
+}
+
 export async function updateSessionId(chatId: number, newSessionId: string): Promise<void> {
   await execute(
     "UPDATE telegram_sessions SET session_id = $1, last_active_at = NOW() WHERE chat_id = $2",

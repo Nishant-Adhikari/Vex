@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import * as soulRepo from "./db/repos/soul.js";
 import * as memoryRepo from "./db/repos/memory.js";
 import * as skillsRepo from "./db/repos/skills.js";
+import type { ChatMode } from "./types.js";
 import { getBehaviorInstructions } from "./prompts/behavior.js";
 import { buildFirstConversationPrompt } from "./prompts/identity.js";
 import { buildCurrentDateSection, buildLoadedKnowledgeSection, getModeDescription } from "./prompts/system.js";
@@ -34,7 +35,7 @@ function loadInternalSkill(filename: string): string | null {
 
 export async function buildSystemPrompt(
   loadedKnowledgeFiles: Map<string, string> = new Map(),
-  loopMode: "off" | "restricted" | "full" = "off",
+  loopMode: ChatMode = "off",
 ): Promise<string> {
   const parts: string[] = [];
 
@@ -48,8 +49,9 @@ export async function buildSystemPrompt(
     parts.push(buildFirstConversationPrompt());
   }
 
-  // Memory (from DB)
-  const memory = await memoryRepo.getMemoryAsText();
+  // Memory (from DB) — cap to 50 entries in manual mode to reduce prompt size
+  const memoryLimit = loopMode === "off" ? 50 : undefined;
+  const memory = await memoryRepo.getMemoryAsText(memoryLimit);
   if (memory) {
     parts.push("# Memory\n\n" + memory);
   }
@@ -61,20 +63,24 @@ export async function buildSystemPrompt(
     parts.push(loadedKnowledgeSection);
   }
 
-  // Agent capabilities — full SKILL.md loaded from DB (seeded from package)
-  const skillMd = await skillsRepo.getSkillReference("SKILL.md");
-  if (skillMd) {
-    parts.push("# Agent Capabilities (echoclaw CLI)\n\n" + skillMd);
+  // Agent capabilities — skip full SKILL.md in manual mode (saves ~3-5k tokens)
+  if (loopMode !== "off") {
+    const skillMd = await skillsRepo.getSkillReference("SKILL.md");
+    if (skillMd) {
+      parts.push("# Agent Capabilities (echoclaw CLI)\n\n" + skillMd);
+    }
+
+    // EchoClaw-internal skills (not shared with external frameworks)
+    const subagentSkill = loadInternalSkill("subagents.md");
+    if (subagentSkill) {
+      parts.push(subagentSkill);
+    }
+  } else {
+    parts.push("# Agent Capabilities\n\nYou have CLI tools for blockchain operations across 0G, Solana, and EVM chains. Load reference docs (file_read) before first use of any CLI command domain.");
   }
 
-  // EchoClaw-internal skills (not shared with external frameworks)
-  const subagentSkill = loadInternalSkill("subagents.md");
-  if (subagentSkill) {
-    parts.push(subagentSkill);
-  }
-
-  // Behavior rules (no tool format instructions — tools go via native FC parameter)
-  parts.push(getBehaviorInstructions());
+  // Behavior rules — mode-aware (manual gets lighter prompt)
+  parts.push(getBehaviorInstructions(loopMode));
 
   return parts.join("\n\n---\n\n");
 }

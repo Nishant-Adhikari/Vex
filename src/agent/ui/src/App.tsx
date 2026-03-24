@@ -116,6 +116,19 @@ export const App: FC = () => {
     refreshStatus();
   };
 
+  // Mode indicator derived from loop state
+  const loopActive = status?.loop?.active ?? false;
+  const txsMode = status?.loop?.mode ?? "restricted";
+  const modeLabel = loopActive
+    ? (txsMode === "full" ? "Autonomous (full)" : "Autonomous (restricted)")
+    : "Manual";
+  const modeDescription = loopActive
+    ? (txsMode === "full" ? "Full autonomy. All auto-approved." : "Proactive. Trades need approval.")
+    : "Respond-only. No proactive actions.";
+  const modeColor = loopActive
+    ? (txsMode === "full" ? "text-status-ok" : "text-status-warn")
+    : "text-muted-foreground";
+
   const navItems: Array<{ key: WidgetType | "chat"; label: string; icon: unknown }> = [
     { key: "chat", label: "Chat", icon: MessageMultiple01Icon },
     { key: "trades", label: "Trades", icon: Activity01Icon },
@@ -223,7 +236,7 @@ export const App: FC = () => {
                   <select
                     value={status.loop.intervalMs}
                     onChange={handleIntervalChange}
-                    className="bg-card border border-border/50 text-[10px] text-foreground rounded-lg px-1.5 py-0.5 font-mono outline-none"
+                    className="bg-[#1a1a1a] border border-border/50 text-[10px] text-foreground rounded-lg px-1.5 py-0.5 font-mono outline-none [&>option]:bg-[#1a1a1a] [&>option]:text-foreground"
                   >
                     <option value={30000}>30s</option>
                     <option value={60000}>1m</option>
@@ -254,11 +267,15 @@ export const App: FC = () => {
         {/* Top bar */}
         <div className="flex items-center gap-3 px-4 py-2 shrink-0">
           {(liveSessionId || status?.sessionId) && (
-            <span className="text-2xs text-muted-foreground font-mono truncate">
+            <span className="text-2xs text-muted-foreground font-mono truncate max-w-[200px]">
               {liveSessionId || status?.sessionId}
             </span>
           )}
-          <span className="flex-1" />
+          <div className="flex-1 flex items-center justify-center gap-1.5 text-[11px]">
+            <span className={cn("font-semibold uppercase tracking-wider", modeColor)}>{modeLabel}</span>
+            <span className="text-muted-foreground/40">&mdash;</span>
+            <span className="text-muted-foreground/50">{modeDescription}</span>
+          </div>
         </div>
 
         {/* Offline banner */}

@@ -15,6 +15,7 @@ import { runMigrations } from "./db/migrate.js";
 import { closePool } from "./db/client.js";
 import { seedSkills } from "./db/repos/skills.js";
 import { initEngine, createSession, processMessage } from "./engine.js";
+import * as sessionsRepo from "./db/repos/sessions.js";
 import { registerChatRoutes } from "./handlers/chat.js";
 import { registerStatusRoutes } from "./handlers/status.js";
 import { registerMemoryRoutes } from "./handlers/memory.js";
@@ -148,12 +149,14 @@ export async function startAgentServer(port?: number, writePid = false): Promise
   setInferenceHandler(async (prompt: string, loopMode: string) => {
     const session = createSession();
     if (!session) return "Agent not ready";
+    await sessionsRepo.createSession(session.id);
+    await sessionsRepo.setScope(session.id, "scheduler");
     let result = "";
     await processMessage(session, prompt, (event) => {
       if (event.type === "text_delta" && typeof event.data.text === "string") {
         result += event.data.text;
       }
-    }, loopMode as "full" | "restricted" | "off");
+    }, (await import("./types.js")).toChatMode(loopMode));
     return result;
   });
   await initScheduler();

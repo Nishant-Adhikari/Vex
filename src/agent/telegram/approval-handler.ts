@@ -16,6 +16,7 @@ import { formatApprovalMessage, formatError, formatToolStart, formatTextForTeleg
 import { withSessionLock } from "./session-lock.js";
 import type { TelegramConfig } from "./types.js";
 import type { AgentEvent } from "../types.js";
+import { toChatMode } from "../types.js";
 import logger from "../../utils/logger.js";
 
 /** Send an approval request with InlineKeyboard to a Telegram chat. */
@@ -64,8 +65,7 @@ export function registerApprovalCallbacks(bot: Bot, config: TelegramConfig): voi
     try { await ctx.editMessageText(`\u2705 Approved: ${item.toolCall.command}`); } catch { /* */ }
 
     // Reconstruct session and execute the tool
-    const sessionId = (item as unknown as { sessionId?: string }).sessionId;
-    const session = (sessionId ? await hydrateSession(sessionId) : null) ?? createSession();
+    const session = (item.sessionId ? await hydrateSession(item.sessionId) : null) ?? createSession();
     if (!session) {
       await bot.api.sendMessage(chatId, formatError("Agent not ready \u2014 cannot execute approved tool."));
       return;
@@ -83,7 +83,7 @@ export function registerApprovalCallbacks(bot: Bot, config: TelegramConfig): voi
       };
 
       try {
-        await resumeAfterApproval(session, item.toolCall, emit, config.loopMode as "full" | "restricted" | "off", item.toolCallId);
+        await resumeAfterApproval(session, item.toolCall, emit, toChatMode(item.chatMode), item.toolCallId);
         // Flush remaining buffer with HTML formatting
         if (textBuffer.trim()) {
           const { html, plain } = formatTextForTelegram(textBuffer);

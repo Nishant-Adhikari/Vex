@@ -13,7 +13,7 @@
  *   Example: `0g-compute_ledger_deposit` → `echoclaw 0g-compute ledger deposit`
  */
 
-import type { JsonSchema } from "./types.js";
+import type { JsonSchema, ChatMode } from "./types.js";
 import { CLI_TOOLS } from "./cli-tool-defs.js";
 
 // ── Tool definition ─────────────────────────────────────────────────
@@ -24,6 +24,8 @@ export interface ToolDef {
   parameters: JsonSchema;
   kind: "internal" | "cli";
   mutating: boolean;
+  /** If true, tool is only available in restricted/full modes — filtered out in manual ("off") mode */
+  proactive?: boolean;
 }
 
 export interface OpenAITool {
@@ -153,8 +155,11 @@ export function supportsYes(name: string): boolean {
   return YES_SUPPORTED.has(name);
 }
 
-export function toOpenAITools(): OpenAITool[] {
-  return TOOLS.map(t => ({
+export function toOpenAITools(chatMode: ChatMode = "off"): OpenAITool[] {
+  const filtered = chatMode === "off"
+    ? TOOLS.filter(t => !t.proactive)
+    : TOOLS;
+  return filtered.map(t => ({
     type: "function" as const,
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));

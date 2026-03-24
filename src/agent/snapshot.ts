@@ -8,7 +8,21 @@
 import { execFile } from "node:child_process";
 import * as snapshotsRepo from "./db/repos/snapshots.js";
 import { query } from "./db/client.js";
+import { CHAIN_ALIASES } from "../khalani/chains.js";
 import logger from "../utils/logger.js";
+
+/** Reverse lookup: chainId -> chain alias name. */
+const CHAIN_ID_TO_NAME = new Map<number, string>();
+for (const [alias, chainId] of Object.entries(CHAIN_ALIASES)) {
+  // Prefer short aliases (skip long forms like "ethereum", keep "eth")
+  if (!CHAIN_ID_TO_NAME.has(chainId) || alias.length < (CHAIN_ID_TO_NAME.get(chainId)?.length ?? Infinity)) {
+    CHAIN_ID_TO_NAME.set(chainId, alias);
+  }
+}
+
+function resolveChainName(chainId: number): string {
+  return CHAIN_ID_TO_NAME.get(chainId) ?? `evm-${chainId}`;
+}
 
 interface Position {
   chain: string;
@@ -27,38 +41,56 @@ export async function takeSnapshot(source = "cron"): Promise<number> {
   const positions: Position[] = [];
 
   // EVM balances (0G + any chain agent traded on)
+  // CLI outputs: { success: true, address: "0x...", tokens: KhalaniToken[] }
+  // KhalaniToken has: address, chainId, symbol, decimals, extensions.balance, extensions.price.usd
   try {
     const evmResult = await runCli(["khalani", "tokens", "balances", "--wallet", "eip155", "--json"]);
     const evmData = JSON.parse(evmResult);
-    if (evmData.success && Array.isArray(evmData.balances)) {
-      for (const b of evmData.balances) {
+    if (evmData.success && Array.isArray(evmData.tokens)) {
+      for (const b of evmData.tokens) {
+        const balance = Number(b.extensions?.balance ?? 0);
+        const priceUsd = Number(b.extensions?.price?.usd ?? 0);
+        if (isNaN(balance) || isNaN(priceUsd)) {
+          logger.warn("snapshot.evm.invalid_token_data", { symbol: b.symbol, balance: b.extensions?.balance, price: b.extensions?.price?.usd });
+          continue;
+        }
         positions.push({
-          chain: b.chainAlias ?? b.chainId ?? "evm",
-          token: b.tokenAddress ?? "native",
+          chain: resolveChainName(b.chainId),
+          token: b.address ?? "native",
           symbol: b.symbol ?? "???",
-          amount: b.balance ?? "0",
-          usdValue: Number(b.usdValue ?? 0),
+          amount: String(balance),
+          usdValue: balance * priceUsd,
         });
       }
+    } else if (evmData.success) {
+      logger.warn("snapshot.evm.unexpected_shape", { keys: Object.keys(evmData) });
     }
   } catch (err) {
     logger.warn("snapshot.evm.failed", { error: err instanceof Error ? err.message : String(err) });
   }
 
-  // Solana balances
+  // Solana balances (same shape as EVM)
   try {
     const solResult = await runCli(["khalani", "tokens", "balances", "--wallet", "solana", "--json"]);
     const solData = JSON.parse(solResult);
-    if (solData.success && Array.isArray(solData.balances)) {
-      for (const b of solData.balances) {
+    if (solData.success && Array.isArray(solData.tokens)) {
+      for (const b of solData.tokens) {
+        const balance = Number(b.extensions?.balance ?? 0);
+        const priceUsd = Number(b.extensions?.price?.usd ?? 0);
+        if (isNaN(balance) || isNaN(priceUsd)) {
+          logger.warn("snapshot.solana.invalid_token_data", { symbol: b.symbol, balance: b.extensions?.balance, price: b.extensions?.price?.usd });
+          continue;
+        }
         positions.push({
           chain: "solana",
-          token: b.tokenAddress ?? b.mint ?? "native",
+          token: b.address ?? "native",
           symbol: b.symbol ?? "SOL",
-          amount: b.balance ?? "0",
-          usdValue: Number(b.usdValue ?? 0),
+          amount: String(balance),
+          usdValue: balance * priceUsd,
         });
       }
+    } else if (solData.success) {
+      logger.warn("snapshot.solana.unexpected_shape", { keys: Object.keys(solData) });
     }
   } catch (err) {
     logger.warn("snapshot.solana.failed", { error: err instanceof Error ? err.message : String(err) });

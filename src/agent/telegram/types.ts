@@ -2,11 +2,13 @@
  * Telegram integration types.
  */
 
+import type { ChatMode } from "../types.js";
+
 export interface TelegramConfig {
   enabled: boolean;
   botToken: string;
   authorizedChatIds: number[];
-  loopMode: "full" | "restricted" | "off";
+  loopMode: ChatMode;
 }
 
 export interface TelegramStatus {

@@ -4,6 +4,7 @@ import { WaveSpinner } from "../components/WaveSpinner";
 import { HugeiconsIcon, WalletIcon, CpuIcon, LinkIcon, ServerIcon, ActivityIcon, ShieldIcon, CheckmarkCircle02Icon, BotIcon } from "../components/Icons";
 import { getSnapshot, getDaemons, getAgentReadiness, startAgent, getTavilyStatus, setTavilyKey, setAgentPassword, type DaemonStatus, type AgentReadiness } from "../api";
 import { runtimeLabel } from "../utils/runtime-meta";
+import { isCoreComputeReady } from "../../../core-compute.js";
 
 interface Snapshot {
   version: string;
@@ -23,7 +24,7 @@ interface Snapshot {
   };
   compute: {
     state: { activeProvider?: string; model?: string } | null;
-    readiness: { overall: boolean; checks: Record<string, { ok: boolean }> } | null;
+    readiness: { ready: boolean; checks: Record<string, { ok: boolean }> } | null;
   };
   claude: {
     configured: boolean;
@@ -63,13 +64,19 @@ function computeStatus(s: Snapshot) {
   }
   const model = s.compute.state.model ?? "unknown";
   const checks = s.compute.readiness?.checks;
+  const coreReady = isCoreComputeReady(checks);
   if (checks) {
     if (!checks.ledger?.ok) return { status: "needed" as CardStatus, summary: "Deposit needed", detail: "Deposit 0G to compute ledger" };
     if (!checks.subAccount?.ok) return { status: "needed" as CardStatus, summary: "Funding needed", detail: "Fund your selected provider" };
     if (!checks.ack?.ok) return { status: "needed" as CardStatus, summary: "ACK needed", detail: "Acknowledge provider signer" };
-    if (!checks.openclawConfig?.ok) return { status: "needed" as CardStatus, summary: "API key needed", detail: "Create an API key" };
+    if (coreReady) {
+      const detail = !checks.openclawConfig?.ok
+        ? `${model} · runtime auth optional`
+        : model;
+      return { status: "done" as CardStatus, summary: "Provider active", detail };
+    }
   }
-  if (s.compute.readiness && !s.compute.readiness.overall) {
+  if (s.compute.readiness && !coreReady) {
     return { status: "needed" as CardStatus, summary: "Setup incomplete", detail: model };
   }
   return { status: "done" as CardStatus, summary: "Provider active", detail: model };

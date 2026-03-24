@@ -37,6 +37,11 @@ export function registerCommands(bot: Bot, config: TelegramConfig, botUsername: 
       "Session:\n" +
       "/session — New session (summarizes previous)\n" +
       "/summary — Current session report\n\n" +
+      "Mode:\n" +
+      "/mode — Show current mode\n" +
+      "/mode manual — Manual (respond-only)\n" +
+      "/mode restricted — Autonomous (trades need approval)\n" +
+      "/mode full — Full autonomy\n\n" +
       "Loop:\n" +
       "/loop on [30s|1m|2m|3m|5m] — Start Echo Loop\n" +
       "/loop off — Stop Echo Loop\n" +
@@ -135,6 +140,35 @@ export function registerCommands(bot: Bot, config: TelegramConfig, botUsername: 
     } else {
       const state = await loopRepo.getLoopState();
       await ctx.reply(`Current: ${state.mode === "full" ? "AUTO" : "MANUAL"}\nUsage: /txs auto | /txs manual`);
+    }
+  });
+
+  // ── /mode ────────────────────────────────────────────────────────────
+  bot.command("mode", async (ctx) => {
+    if (!isAuthorized(ctx.chat.id)) return;
+    const arg = (ctx.match ?? "").trim().toLowerCase();
+
+    const modeDescriptions: Record<string, { label: string; description: string }> = {
+      off: { label: "MANUAL", description: "Agent responds only when you message. No proactive actions." },
+      restricted: { label: "RESTRICTED", description: "Agent acts proactively. Trades and transfers need your approval." },
+      full: { label: "FULL AUTO", description: "Full autonomy. All actions auto-approved." },
+    };
+
+    if (arg === "manual" || arg === "off") {
+      await telegramRepo.updateLoopMode("off");
+      await ctx.reply("Mode changed: MANUAL\nAgent responds only when you message. No proactive actions.\nMutations require your approval.");
+    } else if (arg === "restricted") {
+      await telegramRepo.updateLoopMode("restricted");
+      await ctx.reply("Mode changed: RESTRICTED\nAgent acts proactively. Trades and transfers need your approval.");
+    } else if (arg === "full") {
+      await telegramRepo.updateLoopMode("full");
+      await ctx.reply("Mode changed: FULL AUTO\nFull autonomy. All actions auto-approved.");
+    } else {
+      const current = config.loopMode ?? "off";
+      const desc = modeDescriptions[current] ?? modeDescriptions.off;
+      await ctx.reply(
+        `Current mode: ${desc.label}\n${desc.description}\n\nUse /mode <manual|restricted|full> to change.`,
+      );
     }
   });
 

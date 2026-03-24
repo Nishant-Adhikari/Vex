@@ -54,12 +54,26 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
     }
   }, [status?.loop]);
 
-  // Derive backend loopMode from switches
-  const effectiveLoopMode = txsAuto ? "full" : "restricted";
+  // Derive modes from switches
+  // chatMode: sent with chat messages — "off" when loop isn't running (manual/respond-only)
+  const chatMode = loopOn ? (txsAuto ? "full" : "restricted") : "off";
+  // loopStartMode: used only for startLoop() — never "off"
+  const loopStartMode = txsAuto ? "full" : "restricted";
+
+  // Mode labels for user-facing display
+  const modeLabel = loopOn
+    ? (txsAuto ? "Autonomous (full)" : "Autonomous (restricted)")
+    : (txsAuto ? "Manual (auto-approve)" : "Manual");
+  const modeDescription = loopOn
+    ? (txsAuto ? "Full autonomy. All actions auto-approved." : "Agent acts proactively. Trades require your approval.")
+    : (txsAuto ? "Agent responds only when you ask. Mutations auto-approved." : "Agent responds only when you ask. No proactive actions.");
+  const modeColor = loopOn
+    ? (txsAuto ? "text-status-ok" : "text-status-warn")
+    : "text-muted-foreground";
 
   const handleSend = (text: string) => {
     if (activity !== "idle") return;
-    send(text, effectiveLoopMode);
+    send(text, chatMode);
   };
 
   const handleTxsToggle = async () => {
@@ -74,7 +88,7 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
     const newLoop = !loopOn;
     setLoopOn(newLoop);
     try {
-      if (newLoop) await startLoop(effectiveLoopMode);
+      if (newLoop) await startLoop(loopStartMode);
       else await stopLoop();
     } catch (err) { console.warn("[loop] toggle failed:", err); }
   };
@@ -144,7 +158,7 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
     <div className="flex flex-col h-full relative">
       {/* ── Messages ─────────────────────────────────────── */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 md:px-8 pb-4 relative z-10 w-full max-w-4xl mx-auto">
-        
+
         {/* Empty state */}
         {feedItems.length === 0 && !pendingAssistantTurn && (
           <div className="flex flex-col items-center justify-center h-[75vh] gap-6 animate-fade-in select-none">

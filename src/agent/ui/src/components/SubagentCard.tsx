@@ -1,23 +1,26 @@
 import { useState, useEffect } from "react";
 import { cn } from "../utils";
-import {
-  HugeiconsIcon,
-  Rocket01Icon,
-  CheckmarkCircle02Icon,
-  DangerIcon,
-  HourglassIcon,
-  StopCircleIcon,
-  Pulse02Icon,
-} from "./icons";
 import type { SubagentState, SubagentStatus } from "../types";
 
-const STATUS_CONFIG: Record<SubagentStatus, { color: string; bgColor: string; icon: unknown; label: string }> = {
-  running:     { color: "text-accent",      bgColor: "bg-accent/10",      icon: Pulse02Icon,          label: "Running" },
-  completed:   { color: "text-status-ok",   bgColor: "bg-status-ok/10",   icon: CheckmarkCircle02Icon, label: "Done" },
-  error:       { color: "text-status-error", bgColor: "bg-status-error/10", icon: DangerIcon,           label: "Error" },
-  timeout:     { color: "text-status-warn", bgColor: "bg-status-warn/10", icon: HourglassIcon,        label: "Timeout" },
-  interrupted: { color: "text-muted-foreground", bgColor: "bg-muted",     icon: StopCircleIcon,       label: "Interrupted" },
-  stopped:     { color: "text-muted-foreground", bgColor: "bg-muted",     icon: StopCircleIcon,       label: "Stopped" },
+// ── Pixel bat avatars — assigned by name hash ──────────────────────
+
+const BAT_AVATARS = ["/blue.png", "/lite.png", "/pink.png", "/purple.png", "/red.png"];
+
+function getBatAvatar(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  return BAT_AVATARS[Math.abs(hash) % BAT_AVATARS.length];
+}
+
+// ── Status config ──────────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<SubagentStatus, { color: string; label: string }> = {
+  running:     { color: "text-accent",           label: "Running" },
+  completed:   { color: "text-status-ok",        label: "Done" },
+  error:       { color: "text-status-error",     label: "Error" },
+  timeout:     { color: "text-status-warn",      label: "Timeout" },
+  interrupted: { color: "text-muted-foreground", label: "Interrupted" },
+  stopped:     { color: "text-muted-foreground", label: "Stopped" },
 };
 
 interface Props {
@@ -28,6 +31,7 @@ export default function SubagentCard({ agent }: Props) {
   const [elapsed, setElapsed] = useState("");
   const config = STATUS_CONFIG[agent.status] ?? STATUS_CONFIG.running;
   const isActive = agent.status === "running";
+  const isDead = agent.status === "error" || agent.status === "stopped" || agent.status === "interrupted";
 
   useEffect(() => {
     if (!isActive) {
@@ -55,13 +59,23 @@ export default function SubagentCard({ agent }: Props) {
       "rounded-xl border px-3 py-2.5 transition-all",
       isActive ? "border-accent/20 bg-accent/5" : "border-border/40 bg-card/30",
     )}>
-      {/* Header: name + status */}
+      {/* Header: bat avatar + name + status */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className={cn("w-5 h-5 rounded-full flex items-center justify-center relative", config.bgColor)}>
-            <HugeiconsIcon icon={config.icon as never} size={12} className={config.color} />
+          {/* Pixel bat avatar */}
+          <div className="relative shrink-0">
+            <img
+              src={getBatAvatar(agent.name)}
+              alt={agent.name}
+              className={cn(
+                "w-7 h-7 object-contain drop-shadow-md",
+                isActive && "animate-pulse",
+                isDead && "grayscale opacity-50",
+              )}
+              draggable={false}
+            />
             {isActive && (
-              <div className="absolute inset-[-2px] rounded-full border-t border-accent animate-spin" />
+              <div className="absolute inset-[-3px] rounded-full border-t-2 border-accent animate-spin" />
             )}
           </div>
           <span className="text-[13px] font-medium text-foreground truncate">{agent.name}</span>

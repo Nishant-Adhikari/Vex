@@ -14,6 +14,7 @@ import { buildSupportReport } from "../../commands/echo/support-report.js";
 import { buildVerifyPayload, normalizeRuntime } from "../../commands/echo/assessment.js";
 import { autoDetectProvider } from "../../providers/registry.js";
 import type { RoutingDecision } from "../types.js";
+import { isCoreComputeReady } from "../core-compute.js";
 
 // ── GET /api/snapshot ────────────────────────────────────────────
 
@@ -63,15 +64,8 @@ const handleRouting: RouteHandler = async (_req, res) => {
   } else if (!snapshot.configExists) {
     decision = { mode: "wizard", reason: "no_config" };
   } else {
-    // Core compute readiness: wallet + broker + ledger + sub-account + ACK.
-    // Runtime-specific checks (OpenClaw apiKey, Claude config) are not blocking —
-    // those are per-runtime concerns handled in Connect/Fund views.
-    const checks = snapshot.compute.readiness?.checks;
-    const coreComputeReady = checks
-      ? checks.wallet.ok && checks.broker.ok && checks.ledger.ok
-        && checks.subAccount.ok && checks.ack.ok
-      : false;
-
+    // Core compute readiness blocks launcher setup; runtime auth does not.
+    const coreComputeReady = isCoreComputeReady(snapshot.compute.readiness?.checks);
     decision = coreComputeReady
       ? { mode: "dashboard", reason: "ready" }
       : { mode: "dashboard", reason: "setup_incomplete" };

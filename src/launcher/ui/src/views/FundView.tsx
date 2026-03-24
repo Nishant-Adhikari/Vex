@@ -42,17 +42,15 @@ function deriveSteps(view: FundData, actions: {
   onSwitch: () => void;
   onFund: () => void;
   onAck: () => void;
-  onApiKey: () => void;
 }): FundStep[] {
   const hasLedger = view.ledgerTotalOg > 0;
   const hasProvider = !!view.provider;
   const lockedOk = view.currentLockedOg != null && view.currentLockedOg > 0
     && (view.recommendedMinLockedOg == null || view.currentLockedOg >= view.recommendedMinLockedOg);
   const acked = view.acknowledged === true;
-  const hasApiKey = !view.requiresApiKeyRotation;
 
   // Determine first incomplete step
-  const completedBits = [hasLedger, hasProvider, lockedOk, acked, hasApiKey];
+  const completedBits = [hasLedger, hasProvider, lockedOk, acked];
   const firstIncomplete = completedBits.indexOf(false);
 
   function status(idx: number): "done" | "active" | "pending" {
@@ -111,15 +109,6 @@ function deriveSteps(view: FundData, actions: {
       summary: acked ? "Confirmed" : (view.subAccountExists === false ? "Fund provider first" : "Acknowledge provider signer"),
       action: view.subAccountExists === false ? undefined : { label: "ACK", onClick: actions.onAck },
     },
-    {
-      num: 5,
-      title: "Create API Key",
-      status: status(4),
-      summary: hasApiKey
-        ? `${view.inputPricePerMTokens ?? "?"} / ${view.outputPricePerMTokens ?? "?"} per 1M tokens`
-        : "Create an API key to activate compute",
-      action: { label: hasApiKey ? "New Key" : "Create", onClick: actions.onApiKey },
-    },
   ];
 }
 
@@ -131,7 +120,6 @@ function getNextStepBanner(steps: FundStep[]): { message: string; stepNum: numbe
     2: "Select an AI model provider on the 0G network.",
     3: "Lock tokens for your selected provider.",
     4: "Acknowledge your provider's TEE signer.",
-    5: "Create an API key to activate your compute provider.",
   };
   return { message: messages[active.num] ?? "Complete this step to continue.", stepNum: active.num };
 }
@@ -200,10 +188,9 @@ export const FundView: FC<Props> = ({ onNavigate }) => {
       setAmount(def); setModal("fund");
     },
     onAck: () => setModal("ack"),
-    onApiKey: () => setModal("apikey"),
   }) : [];
 
-  const allDone = steps.length > 0 && steps.every(s => s.status === "done");
+  const coreReady = steps.length > 0 && steps.every(s => s.status === "done");
   const nextStep = getNextStepBanner(steps);
 
   return (
@@ -221,13 +208,31 @@ export const FundView: FC<Props> = ({ onNavigate }) => {
       {view && (
         <>
           {/* Next-step banner or success banner */}
-          {allDone ? (
+          {coreReady ? (
             <div className="mb-6 rounded-xl border border-status-ok/30 bg-status-ok/[0.06] px-5 py-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-status-ok">
-                <span className="text-base">{"\u2713"}</span>
-                Provider funded and ready!
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-status-ok">
+                    <span className="text-base">{"\u2713"}</span>
+                    Provider funded and ready for EchoClaw
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">Core compute is ready. Go to Connect to link a runtime.</p>
+                  {view.selectionWarning && (
+                    <p className="mt-2 text-xs text-zinc-300">
+                      {view.selectionWarning} Create a new API key only if you want to update OpenClaw or Claude Code for this provider.
+                    </p>
+                  )}
+                </div>
+                {view.selectionWarning && (
+                  <button
+                    type="button"
+                    onClick={() => setModal("apikey")}
+                    className="shrink-0 rounded-lg bg-neon-blue/15 px-4 py-2 text-xs font-medium text-neon-blue hover:bg-neon-blue/25 transition"
+                  >
+                    Create API Key
+                  </button>
+                )}
               </div>
-              <p className="mt-1 text-xs text-zinc-400">Your compute provider is fully configured. Go to Connect to link a runtime.</p>
             </div>
           ) : nextStep ? (
             <div className="mb-6 rounded-xl border border-neon-blue/20 bg-neon-blue/[0.04] px-5 py-4">

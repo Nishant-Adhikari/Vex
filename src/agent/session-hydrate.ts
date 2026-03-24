@@ -38,7 +38,8 @@ export async function hydrateSession(sessionId?: string): Promise<ConversationSe
   if (existing.compacted) return null;
 
   session.id = sessionId;
-  session.messages = await messagesRepo.getSessionMessages(sessionId);
+  // Use live messages only (not archived) for hydration — archived belong to pre-checkpoint state
+  session.messages = await messagesRepo.getLiveSessionMessages(sessionId);
 
   // Seed hybrid compaction snapshot from DB (same as approve.ts:29)
   if (existing.token_count > 0) {

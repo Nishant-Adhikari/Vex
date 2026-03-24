@@ -25,6 +25,7 @@ import {
   SUBAGENT_MAX_ITERATIONS,
   SUBAGENT_TIMEOUT_MS,
   SUBAGENT_RESULT_MAX_TOKENS,
+  SUBAGENT_CONTEXT_LIMIT,
 } from "./constants.js";
 import { withTimeout } from "./resilience.js";
 import type { SubagentState, SubagentStatus, AgentEvent, LoopMode } from "./types.js";
@@ -77,6 +78,9 @@ export async function spawnSubagent(opts: SpawnOptions): Promise<{ id: string; n
   if (!session) {
     return { id: "", name: opts.name, error: "Cannot create session — agent not ready" };
   }
+
+  // Override context limit for subagents (40k default vs 65k main agent)
+  session.inferenceConfig = { ...session.inferenceConfig, contextLimit: SUBAGENT_CONTEXT_LIMIT };
 
   const id = generateId("subagent");
   const maxIter = opts.maxIterations ?? SUBAGENT_MAX_ITERATIONS;

@@ -12,6 +12,7 @@ import { execFile } from "node:child_process";
 import * as tasksRepo from "./db/repos/tasks.js";
 import { buildScheduledAlertPrompt } from "./prompts/loop-phases.js";
 import { takeSnapshot } from "./snapshot.js";
+import { runEchoPapaCycle } from "./echo-papa.js";
 import { isMutatingCommand } from "./executor.js";
 import { supportsYes } from "./tool-registry.js";
 import logger from "../utils/logger.js";
@@ -65,19 +66,27 @@ export async function initScheduler(): Promise<void> {
     logger.info("scheduler.task.created", { taskId: "builtin-auto-backup", taskName: "Auto Backup", schedule: "hourly at :30" });
   }
 
-  // Ensure default knowledge audit task
-  const hasAuditTask = tasks.some(t => t.id === "builtin-knowledge-audit");
-  if (!hasAuditTask) {
+  // Ensure Echo Papa task (replaces previous knowledge-audit and memory-steward)
+  const hasPapa = tasks.some(t => t.id === "builtin-echo-papa");
+  if (!hasPapa) {
+    // Remove old tasks if they exist (superseded by Echo Papa)
+    for (const oldId of ["builtin-knowledge-audit", "builtin-memory-steward"]) {
+      if (tasks.some(t => t.id === oldId)) {
+        await tasksRepo.deleteTask(oldId);
+        logger.info("scheduler.task.removed", { taskId: oldId, reason: "superseded by echo-papa" });
+      }
+    }
+
     await tasksRepo.createTask({
-      id: "builtin-knowledge-audit",
-      name: "Knowledge Audit",
-      description: "Daily check of knowledge base size and health",
-      cronExpression: "0 6 * * *",
-      taskType: "inference",
-      payload: { prompt: "Run a knowledge audit: file_list all your folders, check how many files you have total, use memory_manage action=list to review memory entries. If any folder has more than 5 files, consolidate older ones. If memory has stale or outdated entries, prune them. Report a brief summary of what you found and did." },
+      id: "builtin-echo-papa",
+      name: "Echo Papa",
+      description: "LLM-powered knowledge steward — consolidates memory and knowledge every 30 min",
+      cronExpression: "*/30 * * * *",
+      taskType: "echo_papa",
+      payload: {},
       loopMode: "restricted",
     });
-    logger.info("scheduler.task.created", { taskId: "builtin-knowledge-audit", taskName: "Knowledge Audit", schedule: "daily at 06:00" });
+    logger.info("scheduler.task.created", { taskId: "builtin-echo-papa", taskName: "Echo Papa", schedule: "every 30 minutes" });
   }
 
   // Load and register all enabled tasks
@@ -149,6 +158,8 @@ async function executeTask(task: tasksRepo.ScheduledTask): Promise<Record<string
       return executeSnapshotTask();
     case "backup":
       return executeBackupTask();
+    case "echo_papa":
+      return executeEchoPapaTask();
     default:
       return { error: `Unknown task type: ${task.taskType}` };
   }
@@ -243,6 +254,11 @@ async function executeBackupTask(): Promise<Record<string, unknown>> {
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+async function executeEchoPapaTask(): Promise<Record<string, unknown>> {
+  const report = await runEchoPapaCycle();
+  return { success: report.success, toolCalls: report.toolCalls, tokensUsed: report.tokensUsed, result: report.result.slice(0, 500) };
 }
 
 // ── Public API for dynamic task management ───────────────────────────

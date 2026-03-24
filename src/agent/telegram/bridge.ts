@@ -13,6 +13,7 @@ import type { Bot } from "grammy";
 import { processMessage, createSession } from "../engine.js";
 import { hydrateSession } from "../session-hydrate.js";
 import * as telegramRepo from "../db/repos/telegram.js";
+import * as sessionsRepo from "../db/repos/sessions.js";
 import {
   formatTextForTelegram, formatToolStart,
   formatError, chunkMessage,
@@ -38,6 +39,7 @@ export async function handleIncomingMessage(
   // 1. Look up or create session
   const existing = await telegramRepo.getSessionForChat(chatId);
   let session = existing ? await hydrateSession(existing.sessionId) : null;
+  let isNewSession = false;
 
   if (!session) {
     session = createSession();
@@ -45,10 +47,16 @@ export async function handleIncomingMessage(
       await bot.api.sendMessage(chatId, formatError("Agent not ready \u2014 compute not configured."));
       return;
     }
+    isNewSession = true;
   }
 
-  // 2. Update session mapping
+  // 2. Update session mapping and scope
   await telegramRepo.upsertSession(chatId, session.id, username, firstName);
+  if (isNewSession) {
+    // Ensure DB row exists before setScope (processMessage also creates it, but setScope needs it first)
+    await sessionsRepo.createSession(session.id);
+    await sessionsRepo.setScope(session.id, "telegram");
+  }
 
   // 3. Execute with session lock (serializes concurrent messages)
   await withSessionLock(session.id, async () => {
@@ -197,6 +205,8 @@ async function handleEvent(
 export async function resetSession(chatId: number): Promise<string | null> {
   const session = createSession();
   if (!session) return null;
+  await sessionsRepo.createSession(session.id);
   await telegramRepo.upsertSession(chatId, session.id);
+  await sessionsRepo.setScope(session.id, "telegram");
   return session.id;
 }

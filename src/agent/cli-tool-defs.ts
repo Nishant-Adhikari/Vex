@@ -20,8 +20,8 @@ const CLI_PARAMS: JsonSchema = {
   required: ["args"],
 };
 
-const cli = (name: string, description: string, mutating: boolean): ToolDef =>
-  ({ name, description, kind: "cli", mutating, parameters: CLI_PARAMS });
+const cli = (name: string, description: string, mutating: boolean, proactive?: boolean): ToolDef =>
+  ({ name, description, kind: "cli", mutating, parameters: CLI_PARAMS, ...(proactive ? { proactive } : {}) });
 
 export const CLI_TOOLS: ToolDef[] = [
   // ── Wallet & config (references/wallet-transfers.md)
@@ -46,7 +46,7 @@ export const CLI_TOOLS: ToolDef[] = [
   // ── Solana DeFi — Jupiter (references/solana/solana-jupiter.md)
   cli("solana_swap_quote", "Quote a Jupiter swap", false),
   cli("solana_swap_execute", "Execute a Jupiter swap", true),
-  cli("solana_browse", "Browse trending/top Solana tokens", false),
+  cli("solana_browse", "Browse trending/top Solana tokens", false, true),
   cli("solana_price", "Get token prices", false),
   cli("solana_portfolio", "Solana portfolio holdings", false),
   cli("solana_holdings", "Solana token holdings", false),
@@ -146,11 +146,11 @@ export const CLI_TOOLS: ToolDef[] = [
   cli("dexscreener_pairs", "Get pair details by chain and pair address", false),
   cli("dexscreener_token", "Get token data by chain and address", false),
   cli("dexscreener_token-pairs", "Get all pools for a token", false),
-  cli("dexscreener_profiles", "Latest trending token profiles", false),
-  cli("dexscreener_boosts", "Latest or top boosted tokens", false),
+  cli("dexscreener_profiles", "Latest trending token profiles", false, true),
+  cli("dexscreener_boosts", "Latest or top boosted tokens", false, true),
   cli("dexscreener_orders", "Check paid orders for a token", false),
-  cli("dexscreener_trending", "Unified trending view (profiles + boosts)", false),
-  cli("dexscreener_stream", "Real-time WebSocket stream (profiles/boosts)", false),
+  cli("dexscreener_trending", "Unified trending view (profiles + boosts)", false, true),
+  cli("dexscreener_stream", "Real-time WebSocket stream (profiles/boosts)", false, true),
 
   // ── Jaine DEX (references/0g/jaine-dex.md)
   cli("jaine_tokens_list", "List token aliases", false),
@@ -247,8 +247,8 @@ export const CLI_TOOLS: ToolDef[] = [
   cli("slop-app_image_upload", "Upload image", true),
   cli("slop-app_chat_post", "Post to chat", true),
   cli("slop-app_chat_read", "Read chat messages", false),
-  cli("slop-app_agents_trending", "Trending tokens", false),
-  cli("slop-app_agents_newest", "Newest tokens", false),
+  cli("slop-app_agents_trending", "Trending tokens", false, true),
+  cli("slop-app_agents_newest", "Newest tokens", false, true),
   cli("slop-app_agents_search", "Search tokens", false),
   cli("slop-app_agents_query", "Structured token query", false),
 

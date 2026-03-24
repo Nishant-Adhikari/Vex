@@ -7,6 +7,12 @@ export async function getFile(path: string): Promise<string | null> {
   return row?.content ?? null;
 }
 
+export async function getFileWithMeta(path: string): Promise<{ content: string; updatedAt: string; sizeBytes: number } | null> {
+  const row = await queryOne<KnowledgeRow>("SELECT content, updated_at, size_bytes FROM knowledge_files WHERE path = $1", [path]);
+  if (!row) return null;
+  return { content: row.content, updatedAt: row.updated_at, sizeBytes: row.size_bytes };
+}
+
 export async function upsertFile(path: string, content: string): Promise<void> {
   const sizeBytes = Buffer.byteLength(content, "utf-8");
   await execute(

@@ -13,6 +13,7 @@ import { checkDockerAsync, getDockerInstallUrl, type DockerStatus } from "../../
 import { AGENT_DEFAULT_PORT } from "../../agent/constants.js";
 import { AGENT_COMPOSE_FILE, getAgentComposeFailureInfo, getAgentUrl, runAgentCompose, waitForAgentHealth } from "../../agent/compose.js";
 import { EchoError } from "../../errors.js";
+import { isCoreComputeReady, listCoreComputeFailures } from "../core-compute.js";
 import logger from "../../utils/logger.js";
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -109,10 +110,10 @@ const handleReadiness: RouteHandler = async (_req, res) => {
             setTimeout(() => reject(new Error("compute readiness check timeout")), COMPUTE_CHECK_TIMEOUT_MS),
           );
           const readiness = await Promise.race([checkComputeReadiness(), timeoutSignal]);
-          computeOk = readiness.ready;
-          computeDetail = readiness.ready
+          computeOk = isCoreComputeReady(readiness.checks);
+          computeDetail = computeOk
             ? state.model ?? null
-            : Object.entries(readiness.checks).filter(([, v]) => !v.ok).map(([k]) => k).join(", ");
+            : listCoreComputeFailures(readiness.checks).join(", ");
         } catch (err) {
           computeOk = false;
           computeDetail = err instanceof Error ? err.message : "compute readiness check failed";

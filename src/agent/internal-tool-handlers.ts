@@ -5,7 +5,7 @@
  * schedules, and subagents. Called by inferenceLoop in engine.ts.
  */
 
-import type { Message, InternalToolCall, ConversationSession, AgentEvent, TradeEntry } from "./types.js";
+import type { Message, InternalToolCall, ConversationSession, AgentEvent, TradeEntry, ChatMode } from "./types.js";
 import type { EventEmitter } from "./engine.js";
 import { generateId } from "./id.js";
 import { SSE_TOOL_OUTPUT_LIMIT } from "./constants.js";
@@ -39,7 +39,7 @@ function str(params: Record<string, unknown>, key: string): string {
 
 // ── Dispatch ─────────────────────────────────────────────────────────
 
-export async function processInternalTools(tools: InternalToolCall[], session: ConversationSession, emit: EventEmitter, loopMode: "full" | "restricted" | "off" = "off"): Promise<void> {
+export async function processInternalTools(tools: InternalToolCall[], session: ConversationSession, emit: EventEmitter, loopMode: ChatMode = "off"): Promise<void> {
   for (const tool of tools) {
     const toolCallId = generateId("call");
     const startTime = Date.now();
@@ -295,7 +295,7 @@ async function handleScheduleRemove(tool: InternalToolCall, emit: EventEmitter):
 
 // ── Subagent handlers ────────────────────────────────────────────────
 
-async function handleSubagentSpawn(tool: InternalToolCall, session: ConversationSession, loopMode: "full" | "restricted" | "off"): Promise<InternalToolResult> {
+async function handleSubagentSpawn(tool: InternalToolCall, session: ConversationSession, loopMode: ChatMode): Promise<InternalToolResult> {
   const name = str(tool.params, "name");
   const task = str(tool.params, "task");
   if (!name || !task) return { output: "Missing name or task", success: false };

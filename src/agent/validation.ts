@@ -17,19 +17,20 @@ export class RequestValidationError extends Error {
 
 // ── Chat ─────────────────────────────────────────────────────────────
 
-const LOOP_MODES = ["full", "restricted", "off"] as const;
-type LoopMode = (typeof LOOP_MODES)[number];
+import type { ChatMode } from "./types.js";
+
+const CHAT_MODES = ["full", "restricted", "off"] as const;
 
 export function parseChatRequest(
   body: Record<string, unknown> | null,
-): { message: string; loopMode: LoopMode; sessionId?: string } {
+): { message: string; loopMode: ChatMode; sessionId?: string } {
   const message = body?.message;
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     throw new RequestValidationError("message", "message is required (non-empty string)");
   }
 
   const rawLoopMode = body?.loopMode ?? "off";
-  if (typeof rawLoopMode !== "string" || !LOOP_MODES.includes(rawLoopMode as LoopMode)) {
+  if (typeof rawLoopMode !== "string" || !(CHAT_MODES as readonly string[]).includes(rawLoopMode)) {
     throw new RequestValidationError("loopMode", "loopMode must be: full, restricted, or off");
   }
 
@@ -40,7 +41,7 @@ export function parseChatRequest(
 
   return {
     message: message.trim(),
-    loopMode: rawLoopMode as LoopMode,
+    loopMode: rawLoopMode as ChatMode,
     ...(sessionId ? { sessionId } : {}),
   };
 }

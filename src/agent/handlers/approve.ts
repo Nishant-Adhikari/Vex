@@ -11,6 +11,7 @@ import { resumeAfterApproval, createSession } from "../engine.js";
 import { hydrateSession } from "../session-hydrate.js";
 import { parseApproveRequest, RequestValidationError } from "../validation.js";
 import type { AgentEvent } from "../types.js";
+import { toChatMode } from "../types.js";
 import logger from "../../utils/logger.js";
 
 export function registerApproveRoutes(): void {
@@ -44,8 +45,7 @@ export function registerApproveRoutes(): void {
     if (!item) { errorResponse(res, 404, "NOT_FOUND", `No pending approval: ${id}`); return; }
 
     // Reconstruct session from DB (works after restart)
-    const sessionId = (item as unknown as { sessionId?: string }).sessionId;
-    const session = (sessionId ? await hydrateSession(sessionId) : null) ?? createSession();
+    const session = (item.sessionId ? await hydrateSession(item.sessionId) : null) ?? createSession();
 
     if (!session) {
       errorResponse(res, 503, "NOT_READY", "Agent not initialized");
@@ -65,7 +65,7 @@ export function registerApproveRoutes(): void {
     };
 
     try {
-      await resumeAfterApproval(session, item.toolCall, emit, "restricted", item.toolCallId);
+      await resumeAfterApproval(session, item.toolCall, emit, toChatMode(item.chatMode), item.toolCallId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error(`[agent] resume error: ${msg}`);
