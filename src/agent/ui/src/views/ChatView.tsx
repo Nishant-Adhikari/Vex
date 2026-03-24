@@ -4,7 +4,6 @@ import { ToolCallsSection } from "../components/ToolCallsSection";
 import { ChatInput } from "../components/ChatInput";
 import { EchoLoader } from "../components/EchoLoader";
 import { BurnIndicator } from "../components/BurnIndicator";
-import { AgentSticker } from "../components/AgentSticker";
 import { useAgentStream } from "../hooks/useAgentStream";
 import { startLoop, stopLoop } from "../api";
 import type { AgentStatus, AssistantTurn, ChatFeedItem, ChatMessage } from "../types";
@@ -161,15 +160,13 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
 
         {/* Empty state */}
         {feedItems.length === 0 && !pendingAssistantTurn && (
-          <div className="flex flex-col items-center justify-center h-[75vh] gap-6 animate-fade-in select-none">
-            <AgentSticker
-              size={104}
-              bare
+          <div className="flex flex-col items-center justify-center h-[75vh] animate-fade-in select-none">
+            <img
+              src="/landing.png"
+              alt="EchoClaw"
               className="drop-shadow-[0_18px_48px_rgba(82,138,255,0.18)]"
+              style={{ height: 180 }}
             />
-            <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight opacity-90">
-              EchoClaw
-            </h1>
           </div>
         )}
 

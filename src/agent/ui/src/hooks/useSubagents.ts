@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import type { SubagentState } from "../types";
 
 /** Tracks subagent state from SSE events + periodic polling. */
-export function useSubagents() {
+export function useSubagents(enabled = true) {
   const [subagents, setSubagents] = useState<SubagentState[]>([]);
 
   // Poll every 10s for full state
   useEffect(() => {
+    if (!enabled) return;
     const poll = async () => {
       try {
         const res = await fetch("/api/agent/subagents", { credentials: "same-origin" });
@@ -21,7 +22,7 @@ export function useSubagents() {
     poll();
     const id = setInterval(poll, 10_000);
     return () => clearInterval(id);
-  }, []);
+  }, [enabled]);
 
   const handleSubagentSpawned = useCallback((data: Record<string, unknown>) => {
     const agent: SubagentState = {

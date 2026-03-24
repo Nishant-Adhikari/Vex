@@ -1,7 +1,6 @@
 import { type FC, useState, useEffect, useCallback } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FloatingWidget } from "./components/FloatingWidget";
-import { AgentSticker } from "./components/AgentSticker";
 import SubagentPanel from "./components/SubagentPanel";
 import LoopStatusBar from "./components/LoopStatusBar";
 import { ChatView } from "./views/ChatView";
@@ -39,7 +38,7 @@ export const App: FC = () => {
   const [runtimeUpdateBusy, setRuntimeUpdateBusy] = useState<"apply" | "retry" | null>(null);
   const [runtimeUpdateActionError, setRuntimeUpdateActionError] = useState<string | null>(null);
   const [subagentPanelOpen, setSubagentPanelOpen] = useState(false);
-  const { subagents, hasActive: hasActiveSubagents } = useSubagents();
+  const { subagents, hasActive: hasActiveSubagents } = useSubagents(authReady);
 
   useEffect(() => { initAuth().then(() => setAuthReady(true)).catch(() => setAuthReady(true)); }, []);
 
@@ -155,16 +154,14 @@ export const App: FC = () => {
       >
         {/* Agent avatar / Logo area */}
         <div className="flex items-center gap-3 px-4 py-6 border-b border-white/5 shrink-0">
-          <AgentSticker
-            size={sidebarOpen ? 36 : 30}
-            bare
+          <img
+            src="/landing.png"
+            alt="EchoClaw"
             className="shrink-0 drop-shadow-[0_10px_24px_rgba(82,138,255,0.14)]"
+            style={{ height: sidebarOpen ? 36 : 30 }}
           />
           {sidebarOpen && (
             <div className="animate-fade-in min-w-0">
-              <div className="text-[15px] font-medium text-foreground tracking-tight truncate">
-                EchoClaw
-              </div>
               <div className="text-[11px] text-muted-foreground/60 font-mono truncate tracking-wide uppercase mt-0.5">{status?.model ?? "Connecting..."}</div>
             </div>
           )}
