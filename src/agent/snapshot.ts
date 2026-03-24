@@ -35,7 +35,9 @@ export async function takeSnapshot(source = "cron"): Promise<number> {
     const evmData = JSON.parse(evmResult);
     if (evmData.success && Array.isArray(evmData.tokens)) {
       for (const b of evmData.tokens) {
-        const balance = Number(b.extensions?.balance ?? 0);
+        const rawBalance = Number(b.extensions?.balance ?? 0);
+        const decimals = Number(b.decimals ?? 0);
+        const balance = decimals > 0 ? rawBalance / (10 ** decimals) : rawBalance;
         const priceUsd = Number(b.extensions?.price?.usd ?? 0);
         if (isNaN(balance) || isNaN(priceUsd)) {
           logger.warn("snapshot.evm.invalid_token_data", { symbol: b.symbol, balance: b.extensions?.balance, price: b.extensions?.price?.usd });
@@ -62,7 +64,9 @@ export async function takeSnapshot(source = "cron"): Promise<number> {
     const solData = JSON.parse(solResult);
     if (solData.success && Array.isArray(solData.tokens)) {
       for (const b of solData.tokens) {
-        const balance = Number(b.extensions?.balance ?? 0);
+        const rawBalance = Number(b.extensions?.balance ?? 0);
+        const decimals = Number(b.decimals ?? 0);
+        const balance = decimals > 0 ? rawBalance / (10 ** decimals) : rawBalance;
         const priceUsd = Number(b.extensions?.price?.usd ?? 0);
         if (isNaN(balance) || isNaN(priceUsd)) {
           logger.warn("snapshot.solana.invalid_token_data", { symbol: b.symbol, balance: b.extensions?.balance, price: b.extensions?.price?.usd });

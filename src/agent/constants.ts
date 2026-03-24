@@ -52,7 +52,7 @@ export const TOPUP_MAX_CONSECUTIVE_ALERTS = 3;
 // ── Tool execution ───────────────────────────────────────────────────
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
-export const ONCHAIN_TOOL_TIMEOUT_MS = 120_000;
+export const ONCHAIN_TOOL_TIMEOUT_MS = 90_000;
 
 /** Max chars for tool output in SSE events (UI display). Full output goes to DB. */
 export const SSE_TOOL_OUTPUT_LIMIT = 4000;

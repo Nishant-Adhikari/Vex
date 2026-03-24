@@ -13,7 +13,7 @@ export async function appendMemory(content: string, category?: string, source = 
   const result = await execute(
     `INSERT INTO memory_entries (content, category, source, content_hash)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (content_hash) DO NOTHING`,
+     ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING`,
     [normalized, category ?? null, source, hash],
   );
   return result === 1;
