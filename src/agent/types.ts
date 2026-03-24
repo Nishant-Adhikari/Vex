@@ -28,7 +28,8 @@ export type InternalToolType =
   | "web_search" | "web_fetch"
   | "file_read" | "file_write" | "file_list" | "file_delete"
   | "memory_update" | "memory_manage" | "trade_log"
-  | "schedule_create" | "schedule_remove";
+  | "schedule_create" | "schedule_remove"
+  | "subagent_spawn" | "subagent_status" | "subagent_stop";
 
 export interface InternalToolCall {
   type: InternalToolType;
@@ -85,7 +86,12 @@ export type AgentEventType =
   | "usage"
   | "balance_low"
   | "error"
-  | "done";
+  | "done"
+  | "loop_phase"
+  | "subagent_spawned"
+  | "subagent_progress"
+  | "subagent_completed"
+  | "topup_event";
 
 export interface AgentEvent {
   type: AgentEventType;
@@ -122,7 +128,104 @@ export interface LoopState {
   startedAt: string | null;
   lastCycleAt: string | null;
   cycleCount: number;
+  currentPhase: LoopPhase;
+  phaseStartedAt: string | null;
+  loopSessionId: string | null;
 }
+
+// ── Echo Loop ─────────────────────────────────────────────────────────
+
+export type LoopPhase =
+  | "idle"
+  | "sense"
+  | "assess"
+  | "decide"
+  | "execute"
+  | "verify"
+  | "journal"
+  | "sleep";
+
+export interface LoopCycleRecord {
+  id: number;
+  cycleNumber: number;
+  startedAt: string;
+  endedAt: string | null;
+  phasesCompleted: LoopPhase[];
+  outcome: "completed" | "skipped" | "error" | "timeout";
+  decisions: Record<string, unknown>;
+  tokenCostOg: number;
+  errorMessage: string | null;
+}
+
+// ── Subagents ─────────────────────────────────────────────────────────
+
+export type SubagentStatus = "running" | "completed" | "error" | "timeout" | "interrupted" | "stopped";
+
+export interface SubagentState {
+  id: string;
+  name: string;
+  task: string;
+  status: SubagentStatus;
+  allowTrades: boolean;
+  parentSessionId: string | null;
+  sessionId: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  result: string | null;
+  error: string | null;
+  tokenCostOg: number;
+  iterations: number;
+  maxIterations: number;
+}
+
+// ── Autonomy Inbox ────────────────────────────────────────────────────
+
+export type AutonomyEventType =
+  | "compute_balance_low"
+  | "subagent_completed"
+  | "external_alert";
+
+export interface AutonomyInboxEvent {
+  id: number;
+  eventType: AutonomyEventType;
+  payload: Record<string, unknown>;
+  consumed: boolean;
+  createdAt: string;
+}
+
+// ── Funding Baseline ──────────────────────────────────────────────────
+
+export interface FundingBaseline {
+  baselineLockedOg: number;
+  baselineTotalOg: number;
+  lastTopupAt: string | null;
+  lastTopupAmountOg: number | null;
+  updatedAt: string;
+}
+
+export type TopupEventType =
+  | "balance_check"
+  | "topup_started"
+  | "topup_succeeded"
+  | "topup_failed"
+  | "critical_alert";
+
+export interface TopupHistoryEntry {
+  id: number;
+  eventType: TopupEventType;
+  action: string | null;
+  amountOg: number | null;
+  balanceBeforeOg: number | null;
+  balanceAfterOg: number | null;
+  source: "auto" | "manual";
+  error: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+// ── Session scope ─────────────────────────────────────────────────────
+
+export type SessionScope = "chat" | "loop" | "telegram" | "subagent";
 
 // ── Approval queue ───────────────────────────────────────────────────
 

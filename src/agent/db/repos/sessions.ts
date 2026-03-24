@@ -21,3 +21,10 @@ export async function updateSessionTokenCount(id: string, tokenCount: number): P
 export async function compactSession(id: string, summary: string): Promise<void> {
   await execute("UPDATE sessions SET compacted = TRUE, summary = $2, ended_at = NOW() WHERE id = $1", [id, summary]);
 }
+
+export async function setScope(id: string, scope: string, parentSessionId?: string | null): Promise<void> {
+  await execute(
+    "UPDATE sessions SET scope = $1, parent_session_id = COALESCE($2, parent_session_id) WHERE id = $3",
+    [scope, parentSessionId ?? null, id],
+  );
+}

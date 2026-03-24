@@ -16,6 +16,8 @@ import * as telegramRepo from "../db/repos/telegram.js";
 import {
   formatTextForTelegram, formatToolStart,
   formatError, chunkMessage,
+  formatSubagentSpawned, formatSubagentCompleted,
+  formatLoopPhase, formatTopupEvent,
 } from "./formatter.js";
 import { sendApprovalRequest } from "./approval-handler.js";
 import { withSessionLock } from "./session-lock.js";
@@ -154,6 +156,32 @@ async function handleEvent(
 
     case "error":
       await bot.api.sendMessage(chatId, formatError(String(event.data.message ?? "Unknown error")));
+      return undefined;
+
+    case "subagent_spawned":
+      await bot.api.sendMessage(chatId, formatSubagentSpawned(
+        String(event.data.name ?? ""),
+        String(event.data.task ?? ""),
+      ));
+      return undefined;
+
+    case "subagent_completed":
+      await bot.api.sendMessage(chatId, formatSubagentCompleted(
+        String(event.data.name ?? ""),
+        String(event.data.status ?? "completed"),
+        typeof event.data.durationMs === "number" ? event.data.durationMs : undefined,
+      ));
+      return undefined;
+
+    case "loop_phase":
+      await bot.api.sendMessage(chatId, formatLoopPhase(
+        String(event.data.phase ?? ""),
+        Number(event.data.cycleNumber ?? 0),
+      ));
+      return undefined;
+
+    case "topup_event":
+      await bot.api.sendMessage(chatId, formatTopupEvent(event.data));
       return undefined;
 
     case "done":

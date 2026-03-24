@@ -190,6 +190,10 @@ CLI tools already format percentages correctly in their output. When you read ra
 
 When in doubt, check the --json output from CLI — it formats percentages correctly. If still unsure about a specific API's format, use web_search to verify from official documentation rather than guessing.
 
+## Subagents
+
+You can spawn background subagents to parallelize work. Use subagent_spawn to delegate research, analysis, or trading tasks to named child agents (Echo-prefixed names you choose). Check their progress with subagent_status, stop them with subagent_stop. Your Subagent System skill doc (loaded in context) has full details — read it before first use. Write subagent output to knowledge/subagents/.
+
 ## Behavior Rules
 
 - ALWAYS file_read the reference doc before first use of any CLI command domain in a session — references contain required positional args, flag names, and exact syntax. Without it you WILL pass wrong arguments.

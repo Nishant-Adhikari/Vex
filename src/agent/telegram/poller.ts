@@ -9,6 +9,7 @@ import { Bot } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { handleIncomingMessage, resetSession } from "./bridge.js";
 import { registerApprovalCallbacks } from "./approval-handler.js";
+import { registerCommands } from "./commands.js";
 import type { TelegramConfig } from "./types.js";
 import logger from "../../utils/logger.js";
 
@@ -38,7 +39,6 @@ export async function startPoller(config: TelegramConfig): Promise<void> {
     const chatId = ctx.chat.id;
 
     if (!config.authorizedChatIds.includes(chatId)) {
-      // Rate limit unauthorized rejections
       const lastReject = unauthorizedCooldown.get(chatId) ?? 0;
       if (Date.now() - lastReject < UNAUTHORIZED_COOLDOWN_MS) return;
       unauthorizedCooldown.set(chatId, Date.now());
@@ -64,10 +64,10 @@ export async function startPoller(config: TelegramConfig): Promise<void> {
 
   // ── Commands ──────────────────────────────────────────────────────
 
+  // Legacy commands (kept for backward compatibility)
   bot.command("new", async (ctx) => {
     const chatId = ctx.chat.id;
     if (!config.authorizedChatIds.includes(chatId)) return;
-
     const sessionId = await resetSession(chatId);
     if (sessionId) {
       await ctx.reply("Fresh session started. Previous conversation context cleared.");
@@ -79,14 +79,16 @@ export async function startPoller(config: TelegramConfig): Promise<void> {
   bot.command("status", async (ctx) => {
     const chatId = ctx.chat.id;
     if (!config.authorizedChatIds.includes(chatId)) return;
-
     await ctx.reply(
       "EchoClaw Agent is running.\n" +
       `Mode: ${config.loopMode}\n` +
       `Bot: @${botUsername ?? "unknown"}\n` +
-      "Use /new to start a fresh conversation.",
+      "Use /help for all commands.",
     );
   });
+
+  // New commands (Echo Loop, subagents, session management, etc.)
+  registerCommands(bot, config, botUsername);
 
   // ── Approval callbacks ────────────────────────────────────────────
 
@@ -100,11 +102,6 @@ export async function startPoller(config: TelegramConfig): Promise<void> {
 
   // ── Start long polling ────────────────────────────────────────────
 
-  // drop_pending_updates: true — messages received during downtime/restart are
-  // discarded. This prevents processing stale commands (e.g. old approval clicks,
-  // outdated queries) after restart. Trade-off: user messages during brief
-  // downtime will be silently lost. Acceptable for a localhost agent where
-  // downtime = intentional restart.
   bot.start({
     drop_pending_updates: true,
     onStart: (botInfo) => {

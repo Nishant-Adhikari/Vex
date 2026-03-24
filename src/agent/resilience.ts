@@ -49,6 +49,22 @@ export async function retryWithBackoff<T>(
  * Classify an error as retryable (transport/server) vs non-retryable (client/logic).
  * Used by inference retry to avoid retrying 4xx errors or deliberate cancellations.
  */
+/**
+ * Race a promise against a timeout. Cleans up the timer on completion.
+ * Throws with a descriptive message on timeout.
+ */
+export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+}
+
 export function isRetryableError(err: Error): boolean {
   if (err.name === "AbortError") return false;
 

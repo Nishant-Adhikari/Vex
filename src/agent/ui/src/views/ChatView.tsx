@@ -201,29 +201,6 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
       {/* ── Input area ───────────────────────────────────── */}
       <div className="px-4 pb-6 pt-2 w-full max-w-4xl mx-auto relative z-20">
         
-        {/* Mode switches: Txs + Loop - Subtle Tags above input */}
-        <div className="flex items-center justify-center gap-4 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Txs</span>
-            <button onClick={handleTxsToggle}
-              className={cn("px-3 py-1 text-[11px] rounded-full transition-all font-medium border",
-                txsAuto ? "bg-status-warn/10 text-status-warn border-status-warn/20" : "bg-card border-border/50 text-muted-foreground hover:text-foreground",
-              )}>
-              {txsAuto ? "Auto" : "Manual"}
-            </button>
-          </div>
-          <div className="w-px h-3 bg-border/50" />
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Loop</span>
-            <button onClick={handleLoopToggle}
-              className={cn("px-3 py-1 text-[11px] rounded-full transition-all font-medium border",
-                loopOn ? "bg-status-ok/10 text-status-ok border-status-ok/20" : "bg-card border-border/50 text-muted-foreground hover:text-foreground",
-              )}>
-              {loopOn ? "On" : "Off"}
-            </button>
-          </div>
-        </div>
-
         <ChatInput
           onSend={handleSend}
           disabled={activity !== "idle"}

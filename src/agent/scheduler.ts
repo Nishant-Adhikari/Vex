@@ -10,7 +10,7 @@
 import cron from "node-cron";
 import { execFile } from "node:child_process";
 import * as tasksRepo from "./db/repos/tasks.js";
-import { buildScheduledAlertPrompt, getAutonomousLoopPrompt } from "./prompts/scheduler.js";
+import { buildScheduledAlertPrompt } from "./prompts/loop-phases.js";
 import { takeSnapshot } from "./snapshot.js";
 import { isMutatingCommand } from "./executor.js";
 import { supportsYes } from "./tool-registry.js";
@@ -88,15 +88,25 @@ export async function initScheduler(): Promise<void> {
 
   logger.info("scheduler.initialized", { activeTasks: enabled.length });
 
-  // Resume autonomous loop if it was active before restart
+  // Resume Echo Loop if it was active before restart
   try {
     const { getLoopState } = await import("./db/repos/loop.js");
+    const { startEchoLoop } = await import("./echo-loop.js");
+    const { recoverOrphanedSubagents } = await import("./subagent.js");
+    const { startMonitor } = await import("./topup-monitor.js");
+
+    // Recover orphaned subagents from previous run
+    await recoverOrphanedSubagents();
+
+    // Start top-up monitor
+    startMonitor();
+
     const loop = await getLoopState();
     if (loop.active) {
-      startLoopEngine(loop.mode as "full" | "restricted", loop.intervalMs);
-      logger.info("scheduler.loop.resumed", { mode: loop.mode, intervalMs: loop.intervalMs });
+      await startEchoLoop(loop.mode as "full" | "restricted", loop.intervalMs);
+      logger.info("scheduler.echo-loop.resumed", { mode: loop.mode, intervalMs: loop.intervalMs });
     }
-  } catch (err) { logger.warn("scheduler.loop.resume_failed", { error: err instanceof Error ? err.message : String(err) }); }
+  } catch (err) { logger.warn("scheduler.echo-loop.resume_failed", { error: err instanceof Error ? err.message : String(err) }); }
 }
 
 /** Register a cron job for a task. */
@@ -263,9 +273,9 @@ export async function toggleTask(id: string, enabled: boolean): Promise<boolean>
   return true;
 }
 
-/** Stop all cron jobs (graceful shutdown). */
-export function stopAll(): void {
-  stopLoopEngine();
+/** Stop all cron jobs + echo loop (graceful shutdown). */
+export async function stopAll(): Promise<void> {
+  await stopLoopEngine();
   for (const [, job] of activeJobs) {
     job.stop();
   }
@@ -273,70 +283,19 @@ export function stopAll(): void {
   logger.info("scheduler.stopped");
 }
 
-// ── Autonomous loop engine ───────────────────────────────────────────
-
-let loopTimer: ReturnType<typeof setInterval> | null = null;
-let loopCycleInFlight = false;
-
-const LOOP_CYCLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+// ── Echo Loop engine (delegated to echo-loop.ts) ────────────────────
 
 /**
- * Start the autonomous loop engine.
- * Runs inference at intervalMs intervals with a meta-prompt.
- * Each cycle: agent checks portfolio, evaluates positions, takes action.
- * Uses inFlight guard to prevent overlapping cycles.
- * Cycle timeout prevents permanent hangs.
+ * Start the Echo Loop — phased autonomous loop.
+ * Delegates to echo-loop.ts which manages the full lifecycle.
  */
-export function startLoopEngine(mode: "full" | "restricted", intervalMs: number): void {
-  stopLoopEngine(); // Clear existing if any
-
-  logger.info("scheduler.loop.started", { mode, intervalMs });
-
-  loopTimer = setInterval(async () => {
-    if (!inferenceHandler) {
-      logger.warn("scheduler.loop.skipped", { reason: "no inference handler" });
-      return;
-    }
-
-    if (loopCycleInFlight) {
-      logger.warn("scheduler.loop.skipped", { reason: "previous cycle still running" });
-      return;
-    }
-
-    loopCycleInFlight = true;
-    logger.info("scheduler.loop.cycle_start");
-    try {
-      // Race cycle against timeout to prevent permanent hangs
-      const cyclePromise = inferenceHandler(getAutonomousLoopPrompt(), mode);
-      let timeoutId: ReturnType<typeof setTimeout>;
-      const timeoutPromise = new Promise<string>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(`Loop cycle timed out after ${LOOP_CYCLE_TIMEOUT_MS / 1000}s`)), LOOP_CYCLE_TIMEOUT_MS);
-      });
-      try {
-        await Promise.race([cyclePromise, timeoutPromise]);
-      } finally {
-        clearTimeout(timeoutId!);
-      }
-
-      // Record cycle in DB
-      const { recordCycle } = await import("./db/repos/loop.js");
-      await recordCycle();
-
-      logger.info("scheduler.loop.cycle_completed");
-    } catch (err) {
-      logger.error("scheduler.loop.cycle_failed", { error: err instanceof Error ? err.message : String(err) });
-    } finally {
-      loopCycleInFlight = false;
-    }
-  }, intervalMs);
+export async function startLoopEngine(mode: "full" | "restricted", intervalMs: number): Promise<void> {
+  const { startEchoLoop } = await import("./echo-loop.js");
+  await startEchoLoop(mode, intervalMs);
 }
 
-/** Stop the autonomous loop engine. */
-export function stopLoopEngine(): void {
-  if (loopTimer) {
-    clearInterval(loopTimer);
-    loopTimer = null;
-    loopCycleInFlight = false;
-    logger.info("scheduler.loop.stopped");
-  }
+/** Stop the Echo Loop. */
+export async function stopLoopEngine(): Promise<void> {
+  const { stopEchoLoop } = await import("./echo-loop.js");
+  await stopEchoLoop();
 }

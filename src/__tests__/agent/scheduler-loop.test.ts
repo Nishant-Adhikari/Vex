@@ -8,15 +8,15 @@ vi.mock("../../agent/db/repos/tasks.js", () => ({
   recordRun: vi.fn(),
 }));
 vi.mock("../../agent/db/repos/loop.js", () => ({
-  getLoopState: vi.fn(async () => ({ active: false, mode: "restricted", intervalMs: 300000 })),
+  getLoopState: vi.fn(async () => ({ active: false, mode: "restricted", intervalMs: 300000, currentPhase: "idle", phaseStartedAt: null, loopSessionId: null })),
   recordCycle: vi.fn(),
 }));
 vi.mock("../../utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock("../../agent/prompts/scheduler.js", () => ({
+vi.mock("../../agent/prompts/loop-phases.js", () => ({
   buildScheduledAlertPrompt: vi.fn((msg: string) => `Alert: ${msg}`),
-  getAutonomousLoopPrompt: vi.fn(() => "autonomous loop prompt"),
+  buildPhasePrompt: vi.fn(() => "phase prompt"),
 }));
 vi.mock("../../agent/snapshot.js", () => ({
   takeSnapshot: vi.fn(async () => "snap-123"),
@@ -28,65 +28,43 @@ vi.mock("../../agent/tool-registry.js", () => ({
   supportsYes: vi.fn(() => false),
 }));
 
+// Mock echo-loop — startLoopEngine and stopLoopEngine now delegate here
+const mockStartEchoLoop = vi.fn(async () => {});
+const mockStopEchoLoop = vi.fn(async () => {});
+vi.mock("../../agent/echo-loop.js", () => ({
+  startEchoLoop: (...a: unknown[]) => mockStartEchoLoop(...a),
+  stopEchoLoop: () => mockStopEchoLoop(),
+}));
+vi.mock("../../agent/subagent.js", () => ({
+  recoverOrphanedSubagents: vi.fn(async () => {}),
+}));
+vi.mock("../../agent/topup-monitor.js", () => ({
+  startMonitor: vi.fn(),
+}));
+
 import { startLoopEngine, stopLoopEngine, setInferenceHandler } from "../../agent/scheduler.js";
 
-describe("loop engine", () => {
+describe("loop engine (delegated to echo-loop)", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    stopLoopEngine();
-    vi.useRealTimers();
     setInferenceHandler(null);
   });
 
-  it("starts and fires cycle at interval", async () => {
-    const handler = vi.fn(async () => "done");
-    setInferenceHandler(handler);
-
-    startLoopEngine("restricted", 5000);
-
-    // Advance past first interval
-    await vi.advanceTimersByTimeAsync(5100);
-
-    expect(handler).toHaveBeenCalledTimes(1);
+  it("delegates start to echo-loop with mode and interval", async () => {
+    await startLoopEngine("restricted", 5000);
+    expect(mockStartEchoLoop).toHaveBeenCalledWith("restricted", 5000);
   });
 
-  it("stops firing after stopLoopEngine", async () => {
-    const handler = vi.fn(async () => "done");
-    setInferenceHandler(handler);
-
-    startLoopEngine("restricted", 5000);
-    await vi.advanceTimersByTimeAsync(5100);
-    expect(handler).toHaveBeenCalledTimes(1);
-
-    stopLoopEngine();
-    await vi.advanceTimersByTimeAsync(10000);
-    expect(handler).toHaveBeenCalledTimes(1); // no additional calls
+  it("delegates stop to echo-loop", async () => {
+    await stopLoopEngine();
+    expect(mockStopEchoLoop).toHaveBeenCalled();
   });
 
-  it("skips cycle when no inference handler", async () => {
-    setInferenceHandler(null);
-    startLoopEngine("restricted", 5000);
-    await vi.advanceTimersByTimeAsync(5100);
-    // Should not throw, just skip
-  });
-
-  it("handles cycle error without stopping loop", async () => {
-    const handler = vi.fn()
-      .mockRejectedValueOnce(new Error("inference failed"))
-      .mockResolvedValueOnce("ok");
-    setInferenceHandler(handler);
-
-    startLoopEngine("restricted", 5000);
-
-    // First cycle — fails
-    await vi.advanceTimersByTimeAsync(5100);
-    expect(handler).toHaveBeenCalledTimes(1);
-
-    // Second cycle — succeeds (loop didn't stop)
-    await vi.advanceTimersByTimeAsync(5100);
-    expect(handler).toHaveBeenCalledTimes(2);
+  it("startLoopEngine is async (returns Promise)", () => {
+    const result = startLoopEngine("full", 30000);
+    expect(result).toBeInstanceOf(Promise);
   });
 });

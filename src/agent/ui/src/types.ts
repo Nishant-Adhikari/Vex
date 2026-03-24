@@ -40,6 +40,8 @@ export interface UsageState {
   lastBackupAt: string | null;
 }
 
+export type LoopPhase = "idle" | "sense" | "assess" | "decide" | "execute" | "verify" | "journal" | "sleep";
+
 export interface LoopState {
   active: boolean;
   mode: "full" | "restricted";
@@ -47,6 +49,9 @@ export interface LoopState {
   startedAt: string | null;
   lastCycleAt: string | null;
   cycleCount: number;
+  currentPhase: LoopPhase;
+  phaseStartedAt: string | null;
+  loopSessionId: string | null;
 }
 
 export interface ApprovalItem {
@@ -219,9 +224,24 @@ export interface TelegramStatus {
 }
 
 /** SSE event from agent chat endpoint */
+export type SubagentStatus = "running" | "completed" | "error" | "timeout" | "interrupted" | "stopped";
+
+export interface SubagentState {
+  id: string;
+  name: string;
+  task: string;
+  status: SubagentStatus;
+  startedAt: string;
+  endedAt: string | null;
+  iterations: number;
+  maxIterations: number;
+  tokenCostOg: number;
+}
+
 export type AgentEventType =
   | "status" | "text_delta" | "tool_start" | "tool_result"
-  | "approval_required" | "file_update" | "usage" | "balance_low" | "error" | "done";
+  | "approval_required" | "file_update" | "usage" | "balance_low" | "error" | "done"
+  | "loop_phase" | "subagent_spawned" | "subagent_progress" | "subagent_completed" | "topup_event";
 
 export interface ChatMessage {
   id: string;

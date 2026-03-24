@@ -1,6 +1,8 @@
 import { type FC, useState, useEffect, useCallback } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FloatingWidget } from "./components/FloatingWidget";
+import SubagentPanel from "./components/SubagentPanel";
+import LoopStatusBar from "./components/LoopStatusBar";
 import { ChatView } from "./views/ChatView";
 import { TradesView } from "./views/TradesView";
 import { PortfolioView } from "./views/PortfolioView";
@@ -9,9 +11,10 @@ import { OpsWidget } from "./views/OpsWidget";
 import { TelegramView } from "./views/TelegramView";
 import {
   HugeiconsIcon, MessageMultiple01Icon, Activity01Icon,
-  Wallet01Icon, BrainIcon, Settings01Icon, TelegramIcon,
+  Wallet01Icon, BrainIcon, Settings01Icon, TelegramIcon, Robot01Icon,
 } from "./components/icons";
-import { initAuth, getStatus, getRecentTrades, getRuntimeUpdateStatus as getLauncherRuntimeUpdateStatus, retryRuntimeUpdatePull, applyRuntimeUpdate } from "./api";
+import { initAuth, getStatus, getRecentTrades, getRuntimeUpdateStatus as getLauncherRuntimeUpdateStatus, retryRuntimeUpdatePull, applyRuntimeUpdate, startLoop, stopLoop } from "./api";
+import { useSubagents } from "./hooks/useSubagents";
 import type { AgentStatus, RuntimeUpdateStatus, TradeEntry, TradeSummary } from "./types";
 import { cn } from "./utils";
 import { buildRuntimeUpdateBannerModel } from "./runtime-update";
@@ -33,6 +36,8 @@ export const App: FC = () => {
   const [runtimeUpdate, setRuntimeUpdate] = useState<RuntimeUpdateStatus | null>(null);
   const [runtimeUpdateBusy, setRuntimeUpdateBusy] = useState<"apply" | "retry" | null>(null);
   const [runtimeUpdateActionError, setRuntimeUpdateActionError] = useState<string | null>(null);
+  const [subagentPanelOpen, setSubagentPanelOpen] = useState(false);
+  const { subagents, hasActive: hasActiveSubagents } = useSubagents();
 
   useEffect(() => { initAuth().then(() => setAuthReady(true)).catch(() => setAuthReady(true)); }, []);
 
@@ -89,11 +94,34 @@ export const App: FC = () => {
     }
   }, [refreshStatus]);
 
+  // ── Loop / Txs control handlers ──────────────────────────────────
+  const handleTxsToggle = async () => {
+    if (!status?.loop) return;
+    const newMode = status.loop.mode === "full" ? "restricted" : "full";
+    try { await startLoop(newMode as "full" | "restricted", status.loop.intervalMs); } catch { /* ignore */ }
+    refreshStatus();
+  };
+  const handleLoopToggle = async () => {
+    if (!status?.loop) return;
+    try {
+      if (status.loop.active) await stopLoop();
+      else await startLoop(status.loop.mode as "full" | "restricted");
+    } catch { /* ignore */ }
+    refreshStatus();
+  };
+  const handleIntervalChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const ms = Number(e.target.value);
+    if (!status?.loop || !ms) return;
+    try { await startLoop(status.loop.mode as "full" | "restricted", ms); } catch { /* ignore */ }
+    refreshStatus();
+  };
+
   const navItems: Array<{ key: WidgetType | "chat"; label: string; icon: unknown }> = [
     { key: "chat", label: "Chat", icon: MessageMultiple01Icon },
     { key: "trades", label: "Trades", icon: Activity01Icon },
     { key: "portfolio", label: "Portfolio", icon: Wallet01Icon },
     { key: "memory", label: "Memory", icon: BrainIcon },
+    { key: "agents", label: "Agents", icon: Robot01Icon },
     { key: "ops", label: "Ops", icon: Settings01Icon },
     { key: "telegram", label: "Telegram", icon: TelegramIcon },
   ];
@@ -129,13 +157,18 @@ export const App: FC = () => {
         <nav className="flex-1 py-4 px-2 space-y-1">
           {navItems.map(item => {
             const isChat = item.key === "chat";
-            const isActive = isChat || openWidgets.has(item.key as WidgetType);
+            const isAgents = item.key === "agents";
+            const isActive = isChat || (isAgents ? subagentPanelOpen : openWidgets.has(item.key as WidgetType));
             return (
               <button
                 key={item.key}
-                onClick={() => !isChat && toggleWidget(item.key as WidgetType)}
+                onClick={() => {
+                  if (isChat) return;
+                  if (isAgents) { setSubagentPanelOpen((v) => !v); return; }
+                  toggleWidget(item.key as WidgetType);
+                }}
                 className={cn(
-                  "flex items-center gap-3.5 w-full px-3 py-2.5 rounded-xl transition-all group",
+                  "flex items-center gap-3.5 w-full px-3 py-2.5 rounded-xl transition-all group relative",
                   isActive 
                     ? "bg-white/10 text-white shadow-sm" 
                     : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
@@ -153,21 +186,64 @@ export const App: FC = () => {
                   />
                 </div>
                 {sidebarOpen && <span className="animate-fade-in truncate text-[13px] font-medium tracking-wide">{item.label}</span>}
+                {isAgents && hasActiveSubagents && !sidebarOpen && (
+                  <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent animate-pulse" />
+                )}
               </button>
             );
           })}
         </nav>
 
-        {/* Bottom info */}
+        {/* Bottom: controls + stats */}
         {sidebarOpen && status && (
-          <div className="px-5 py-4 border-t border-white/5 text-[10px] text-muted-foreground/50 animate-fade-in space-y-1.5 font-mono">
-            <div className="flex items-center justify-between">
-              <span>Lifetime</span>
-              <span className="text-foreground/70">{(status.usage.lifetimeTokens / 1000).toFixed(0)}k</span>
+          <div className="px-4 py-3 border-t border-white/5 animate-fade-in space-y-3">
+            {/* Txs / Loop / Interval controls */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-2xs uppercase tracking-wider text-muted-foreground/60 font-semibold" title="All trades require approval (Manual) or execute automatically (Auto)">Txs</span>
+                <button onClick={handleTxsToggle}
+                  className={cn("px-2.5 py-0.5 text-[10px] rounded-full transition-all font-medium border",
+                    status.loop.mode === "full" ? "bg-status-warn/10 text-status-warn border-status-warn/20" : "bg-card border-border/50 text-muted-foreground hover:text-foreground",
+                  )}>
+                  {status.loop.mode === "full" ? "Auto" : "Manual"}
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-2xs uppercase tracking-wider text-muted-foreground/60 font-semibold" title="Agent runs autonomously at chosen interval">Loop</span>
+                <button onClick={handleLoopToggle}
+                  className={cn("px-2.5 py-0.5 text-[10px] rounded-full transition-all font-medium border",
+                    status.loop.active ? "bg-status-ok/10 text-status-ok border-status-ok/20" : "bg-card border-border/50 text-muted-foreground hover:text-foreground",
+                  )}>
+                  {status.loop.active ? "On" : "Off"}
+                </button>
+              </div>
+              {status.loop.active && (
+                <div className="flex items-center justify-between">
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground/60 font-semibold">Interval</span>
+                  <select
+                    value={status.loop.intervalMs}
+                    onChange={handleIntervalChange}
+                    className="bg-card border border-border/50 text-[10px] text-foreground rounded-lg px-1.5 py-0.5 font-mono outline-none"
+                  >
+                    <option value={30000}>30s</option>
+                    <option value={60000}>1m</option>
+                    <option value={120000}>2m</option>
+                    <option value={180000}>3m</option>
+                    <option value={300000}>5m</option>
+                  </select>
+                </div>
+              )}
             </div>
-            <div className="flex items-center justify-between">
-              <span>Knowledge</span>
-              <span className="text-foreground/70">{status.knowledgeFileCount} files</span>
+            {/* Stats */}
+            <div className="text-[10px] text-muted-foreground/50 font-mono space-y-1">
+              <div className="flex items-center justify-between">
+                <span>Lifetime</span>
+                <span className="text-foreground/70">{(status.usage.lifetimeTokens / 1000).toFixed(0)}k</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Knowledge</span>
+                <span className="text-foreground/70">{status.knowledgeFileCount} files</span>
+              </div>
             </div>
           </div>
         )}
@@ -236,6 +312,9 @@ export const App: FC = () => {
           </div>
         )}
 
+        {/* Loop status bar */}
+        {status?.loop && <LoopStatusBar loop={status.loop} />}
+
         {/* Chat — always visible (wait for auth before rendering to avoid 401) */}
         {authReady && (
           <ErrorBoundary>
@@ -243,6 +322,13 @@ export const App: FC = () => {
           </ErrorBoundary>
         )}
       </main>
+
+      {/* ── Subagent panel (right side) ─────────────────── */}
+      <SubagentPanel
+        subagents={subagents}
+        visible={subagentPanelOpen || hasActiveSubagents}
+        onClose={() => setSubagentPanelOpen(false)}
+      />
 
       {/* ── Floating widgets (each wrapped in ErrorBoundary) ── */}
       {openWidgets.has("trades") && (

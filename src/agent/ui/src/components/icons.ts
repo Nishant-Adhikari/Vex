@@ -68,4 +68,20 @@ export {
   AlertCircleIcon,         // Warning
   DangerIcon,              // Error
   InformationCircleIcon,   // Info
+
+  // Subagents & Echo Loop
+  Robot01Icon,             // Subagent panel header
+  NeuralNetworkIcon,       // Subagent network / spawn
+  WorkflowCircle06Icon,    // Workflow / loop phases
+  Radar02Icon,             // Sense phase (scanning)
+  Pulse02Icon,             // Assess phase (evaluating)
+  FlashIcon,               // Decide/Execute phase (lightning)
+  PlayCircleIcon,          // Execute phase (play)
+  StopCircleIcon,          // Stop subagent
+  PauseCircleIcon,         // Paused state
+  RepeatIcon,              // Loop / cycle
+  Timer02Icon,             // Timer / interval
+  Rocket01Icon,            // Launch / spawn
+  UserMultipleIcon,        // Multiple agents
+  HourglassIcon,           // Waiting / timeout
 } from "@hugeicons/core-free-icons";

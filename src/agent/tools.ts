@@ -8,12 +8,27 @@
  * `tools` parameter in inference.ts via tool-registry.ts.
  */
 
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as soulRepo from "./db/repos/soul.js";
 import * as memoryRepo from "./db/repos/memory.js";
 import * as skillsRepo from "./db/repos/skills.js";
 import { getBehaviorInstructions } from "./prompts/behavior.js";
 import { buildFirstConversationPrompt } from "./prompts/identity.js";
 import { buildCurrentDateSection, buildLoadedKnowledgeSection, getModeDescription } from "./prompts/system.js";
+import { getActiveCount } from "./subagent.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Load EchoClaw-internal skill doc (not shared with external frameworks). */
+function loadInternalSkill(filename: string): string | null {
+  try {
+    return readFileSync(join(__dirname, "skills", filename), "utf-8");
+  } catch {
+    return null;
+  }
+}
 
 // ── System prompt builder ────────────────────────────────────────────
 
@@ -50,6 +65,12 @@ export async function buildSystemPrompt(
   const skillMd = await skillsRepo.getSkillReference("SKILL.md");
   if (skillMd) {
     parts.push("# Agent Capabilities (echoclaw CLI)\n\n" + skillMd);
+  }
+
+  // EchoClaw-internal skills (not shared with external frameworks)
+  const subagentSkill = loadInternalSkill("subagents.md");
+  if (subagentSkill) {
+    parts.push(subagentSkill);
   }
 
   // Behavior rules (no tool format instructions — tools go via native FC parameter)

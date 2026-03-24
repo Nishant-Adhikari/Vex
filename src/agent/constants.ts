@@ -24,11 +24,30 @@ export const AGENT_DEFAULT_PORT = 4201;
 // ── Context limits ───────────────────────────────────────────────────
 
 export const COMPACTION_THRESHOLD = 0.75;
-export const DEFAULT_CONTEXT_LIMIT = Number(process.env.AGENT_CONTEXT_LIMIT) || 66_000;
+export const DEFAULT_CONTEXT_LIMIT = Number(process.env.AGENT_CONTEXT_LIMIT) || 70_000;
+export const SUBAGENT_CONTEXT_LIMIT = 40_000;
+export const SUBAGENT_RESULT_MAX_TOKENS = 1500;
 
-// ── Loop ─────────────────────────────────────────────────────────────
+// ── Echo Loop ───────────────────────────────────────────────────────
 
 export const DEFAULT_LOOP_INTERVAL_MS = 5 * 60 * 1000;
+export const MIN_LOOP_INTERVAL_MS = 30_000;
+export const MAX_LOOP_INTERVAL_MS = 5 * 60 * 1000;
+export const LOOP_PHASE_TIMEOUT_MS = 2 * 60 * 1000;
+export const LOOP_CIRCUIT_BREAKER_THRESHOLD = 5;
+
+// ── Subagents ───────────────────────────────────────────────────────
+
+export const MAX_CONCURRENT_SUBAGENTS = 3;
+export const SUBAGENT_MAX_ITERATIONS = 25;
+export const SUBAGENT_TIMEOUT_MS = 5 * 60 * 1000;
+
+// ── Top-up monitor ──────────────────────────────────────────────────
+
+export const TOPUP_MONITOR_INTERVAL_MS = 60_000;
+export const TOPUP_COOLDOWN_MS = 5 * 60 * 1000;
+export const TOPUP_BASELINE_MULTIPLIER = 0.15;
+export const TOPUP_MAX_CONSECUTIVE_ALERTS = 3;
 
 // ── Tool execution ───────────────────────────────────────────────────
 

@@ -23,3 +23,8 @@ coverage/
 TEAM/
 agents_dm/
 docs/
+.cursor/plans/
+.cursor/agent-transcripts/
+agent-transcripts/
+terminals/
+*.plan.md

@@ -1,9 +1,10 @@
 /**
- * Loop control handlers — wired to real scheduler lifecycle.
+ * Echo Loop control handlers.
  *
- * POST /api/agent/loop/start — persist state + start autonomous loop in scheduler
- * POST /api/agent/loop/stop — persist state + stop loop
- * GET  /api/agent/loop/status — read from DB
+ * POST /api/agent/loop/start — start echo loop with mode + interval
+ * POST /api/agent/loop/stop — stop echo loop
+ * GET  /api/agent/loop/status — read from DB (includes phase, timing)
+ * GET  /api/agent/loop/cycles — recent cycle history
  */
 
 import { registerRoute, jsonResponse, errorResponse } from "../routes.js";
@@ -15,6 +16,11 @@ export function registerLoopRoutes(): void {
   registerRoute("GET", "/api/agent/loop/status", async (_req, res) => {
     const state = await loopRepo.getLoopState();
     jsonResponse(res, 200, state);
+  });
+
+  registerRoute("GET", "/api/agent/loop/cycles", async (_req, res) => {
+    const cycles = await loopRepo.getRecentCycles(20);
+    jsonResponse(res, 200, { cycles });
   });
 
   registerRoute("POST", "/api/agent/loop/start", async (_req, res, params) => {
@@ -31,16 +37,14 @@ export function registerLoopRoutes(): void {
 
     const { mode, intervalMs } = parsed;
 
-    // Persist + start real loop engine
-    await loopRepo.startLoop(mode, intervalMs);
-    startLoopEngine(mode, intervalMs);
+    // Start echo loop (persists state + starts phased runtime)
+    await startLoopEngine(mode, intervalMs);
 
     jsonResponse(res, 200, { active: true, mode, intervalMs });
   });
 
   registerRoute("POST", "/api/agent/loop/stop", async (_req, res) => {
-    await loopRepo.stopLoop();
-    stopLoopEngine();
+    await stopLoopEngine();
     jsonResponse(res, 200, { active: false });
   });
 }

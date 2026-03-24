@@ -162,6 +162,41 @@ export function formatError(message: string): string {
   return `\u274C Error: ${message}`;
 }
 
+/** Format subagent spawned notification. */
+export function formatSubagentSpawned(name: string, task: string): string {
+  const shortTask = task.length > 60 ? task.slice(0, 57) + "..." : task;
+  return `\uD83E\uDD16 ${name} spawned \u2014 ${shortTask}`;
+}
+
+/** Format subagent completed notification. */
+export function formatSubagentCompleted(name: string, status: string, durationMs?: number): string {
+  const dur = durationMs ? ` (${formatDur(durationMs)})` : "";
+  const emoji = status === "completed" ? "\u2705" : status === "stopped" ? "\u23F9\uFE0F" : "\u274C";
+  const label = status === "completed" ? "done" : status;
+  return `${emoji} ${name} ${label}${dur}`;
+}
+
+/** Format loop phase change. */
+export function formatLoopPhase(phase: string, cycleNumber: number): string {
+  return `\uD83D\uDD04 Echo Loop: ${phase.charAt(0).toUpperCase() + phase.slice(1)} \u2192 Cycle #${cycleNumber}`;
+}
+
+/** Format topup event. */
+export function formatTopupEvent(data: Record<string, unknown>): string {
+  const type = String(data.type ?? data.eventType ?? "");
+  if (type.includes("succeeded")) return `\u26A1 Compute top-up: ${Number(data.amount ?? 0).toFixed(4)} 0G funded`;
+  if (type.includes("failed")) return `\u274C Compute top-up failed: ${data.error ?? "unknown"}`;
+  if (type.includes("critical")) return `\uD83D\uDEA8 CRITICAL: Inference balance depleted \u2014 agent cannot top up`;
+  return `\u26A1 Compute: ${type}`;
+}
+
+function formatDur(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  return `${min}m ${sec % 60}s`;
+}
+
 /**
  * Split a long message into chunks that fit Telegram's 4096 char limit.
  * Splits on paragraph boundaries when possible.

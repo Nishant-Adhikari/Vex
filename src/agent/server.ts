@@ -24,6 +24,7 @@ import { registerPortfolioRoutes } from "./handlers/portfolio.js";
 import { registerTasksRoutes } from "./handlers/tasks.js";
 import { registerBillingRoutes } from "./handlers/billing.js";
 import { registerLoopRoutes } from "./handlers/loop.js";
+import { registerSubagentRoutes } from "./handlers/subagents.js";
 import { registerBackupRoutes } from "./handlers/backup.js";
 import { registerConfigRoutes } from "./handlers/config.js";
 import { registerTelegramRoutes } from "./handlers/telegram.js";
@@ -170,6 +171,7 @@ export async function startAgentServer(port?: number, writePid = false): Promise
   registerBackupRoutes();
   registerConfigRoutes();
   registerTelegramRoutes();
+  registerSubagentRoutes();
 
   // Health: no auth required — includes version for monitoring
   const agentVersion = (() => {
