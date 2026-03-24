@@ -22,6 +22,7 @@ import { registerMemoryRoutes } from "./handlers/memory.js";
 import { registerApproveRoutes } from "./handlers/approve.js";
 import { registerTradesRoutes } from "./handlers/trades.js";
 import { registerPortfolioRoutes } from "./handlers/portfolio.js";
+import { registerPredictionsRoutes } from "./handlers/predictions.js";
 import { registerTasksRoutes } from "./handlers/tasks.js";
 import { registerBillingRoutes } from "./handlers/billing.js";
 import { registerLoopRoutes } from "./handlers/loop.js";
@@ -33,6 +34,7 @@ import { startTelegram, stopTelegram } from "./telegram/index.js";
 import * as telegramRepo from "./db/repos/telegram.js";
 import { registerRoute, dispatchRoute } from "./routes.js";
 import { initScheduler, setInferenceHandler, stopAll as stopScheduler } from "./scheduler.js";
+import { startPolymarketLiveTracker } from "./polymarket-live.js";
 import { checkRateLimit, getClientIp } from "./rate-limit.js";
 import logger from "../utils/logger.js";
 
@@ -160,6 +162,7 @@ export async function startAgentServer(port?: number, writePid = false): Promise
     return result;
   });
   await initScheduler();
+  startPolymarketLiveTracker();
 
   // 4. Register API routes
   registerChatRoutes();
@@ -168,6 +171,7 @@ export async function startAgentServer(port?: number, writePid = false): Promise
   registerApproveRoutes();
   registerTradesRoutes();
   registerPortfolioRoutes();
+  registerPredictionsRoutes();
   registerTasksRoutes();
   registerBillingRoutes();
   registerLoopRoutes();

@@ -1,14 +1,14 @@
 import { type FC } from "react";
 import Markdown from "markdown-to-jsx";
 import { cn } from "../utils";
-import { AgentAvatar } from "./AgentAvatar";
+import { AgentSticker } from "./AgentSticker";
 
 interface MessageBubbleProps {
   content: string;
   variant: "sent" | "received";
   grouped?: "first" | "middle" | "last" | "single";
   timestamp?: string;
-  seed?: string;
+  playAgentSticker?: boolean;
 }
 
 /** Markdown overrides using CSS-variable colours so they work in both themes. */
@@ -38,7 +38,7 @@ export const MessageBubble: FC<MessageBubbleProps> = ({
   content,
   variant,
   timestamp,
-  seed,
+  playAgentSticker = false,
 }) => {
   const isSent = variant === "sent";
 
@@ -59,13 +59,13 @@ export const MessageBubble: FC<MessageBubbleProps> = ({
     );
   }
 
-  // Received (Agent) - Flat layout like Grok/Claude
+  // Received (Agent) - flat layout with sticker playback on fresh replies
   return (
     <div className="flex justify-start mb-8 group w-full">
       <div className="w-full flex gap-4 max-w-full">
-        {/* Agent avatar */}
+        {/* Agent sticker */}
         <div className="flex-shrink-0 mt-0.5">
-          <AgentAvatar seed={seed ?? "echo"} size={28} animated={false} />
+          <AgentSticker size={28} playOnMount={playAgentSticker} />
         </div>
         
         <div className="flex-1 min-w-0">

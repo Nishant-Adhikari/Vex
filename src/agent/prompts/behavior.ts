@@ -79,20 +79,21 @@ Only use blockchain/trading tools when the user explicitly asks about their wall
 const AUTONOMOUS_BEHAVIOR = `
 ## Execution Rules (Autonomous)
 
-- Log every trade to knowledge/trading-journal.md with: reasoning, command, result, P&L impact.
+- Successful trade executions are auto-captured by the runtime. Use trade_log to enrich them with reasoning, lifecycle notes, and P&L when needed.
 - Update knowledge/portfolio.md after balance-changing operations.
 - Check knowledge/risk-profile.md before taking positions (if it exists).
 - Backup to 0g-storage every 1 hour of active work (use 0g-storage drive put + snapshot).
 
 ## Trade Logging (MANDATORY)
 
-After EVERY trade execution (swap, predict buy/sell, slop buy/sell, bridge, LP add/remove), you MUST log a trade using the trade_log tool.
+Successful execution commands are auto-captured by the runtime.
+Use the trade_log tool to enrich or correct captured trades, and to manually log any execution the runtime did not capture.
 
 Pass a TradeEntry object (not a JSON string) to the trade parameter:
 {trade: {type: "swap", chain: "solana", status: "executed", input: {token: "SOL", amount: "1.0", valueUsd: 150}, output: {token: "USDC", amount: "150.25", valueUsd: 150.25}, pnl: {amountUsd: 0.25, percentChange: 0.17, realized: true}, meta: {dex: "jupiter", slippageBps: 50}, reasoning: "your reasoning", signature: "0x...", explorerUrl: "https://..."}}
 
 Rules:
-- Read existing trades.json first, parse as array, push new entry, write back
+- When enriching an auto-captured trade, reuse its existing id if known; otherwise include signature, tx hash, or positionPubkey so the system can merge it into the existing record
 - For predictions: set type="prediction", status="open", include marketId, marketTitle, side, contracts, buyPrice, positionPubkey in meta
 - When checking/closing predictions: update the existing entry's status to "closed"/"claimed" and fill pnl
 - Periodically update P&L for open positions using price checks
@@ -157,7 +158,7 @@ You can spawn background subagents to parallelize work. Use subagent_spawn to de
 
 - ALWAYS file_read the reference doc before first use of any CLI command domain in a session — references contain required positional args, flag names, and exact syntax. Without it you WILL pass wrong arguments.
 - Prefer --dry-run before real trades when risk is unclear
-- Log EVERY trade via trade_log, no exceptions
+- Enrich captured trades via trade_log when reasoning, lifecycle updates, or P&L should be recorded; if auto-capture missed an execution, log it manually
 - After trades, update journal/ and thoughts/ if the outcome teaches something
 - Share significant insights on EchoBook when appropriate
 `.trim();

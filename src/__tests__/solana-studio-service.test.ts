@@ -10,12 +10,11 @@ vi.mock("../config/store.js", () => ({
 }));
 
 const { ErrorCodes } = await import("../errors.js");
+const { studioCreateToken, studioGetFees } = await import("../chains/solana/studio-service.js");
 
 describe("studio service", () => {
   it("studioGetFees throws when no API key is set", async () => {
     mockLoadConfig.mockReturnValue({ solana: { jupiterApiKey: "" } });
-
-    const { studioGetFees } = await import("../chains/solana/studio-service.js");
 
     await expect(studioGetFees("some-mint")).rejects.toMatchObject({
       code: ErrorCodes.SOLANA_STUDIO_CLAIM_FAILED,
@@ -24,8 +23,6 @@ describe("studio service", () => {
 
   it("studioCreateToken throws when no API key is set", async () => {
     mockLoadConfig.mockReturnValue({ solana: { jupiterApiKey: "" } });
-
-    const { studioCreateToken } = await import("../chains/solana/studio-service.js");
 
     await expect(
       studioCreateToken(new Uint8Array(64), {

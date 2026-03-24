@@ -8,6 +8,7 @@ import type { Address } from "viem";
 
 export const GAMMA_BASE_URL = "https://gamma-api.polymarket.com";
 export const CLOB_BASE_URL = "https://clob.polymarket.com";
+export const CLOB_WS_USER_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/user";
 export const DATA_API_BASE_URL = "https://data-api.polymarket.com";
 export const BRIDGE_BASE_URL = "https://bridge.polymarket.com";
 export const RELAYER_BASE_URL = "https://relayer-v2.polymarket.com";

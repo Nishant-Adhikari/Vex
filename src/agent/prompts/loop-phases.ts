@@ -66,7 +66,7 @@ Be brief — just confirm success or flag issues.`,
   journal: `[ECHO LOOP — JOURNAL PHASE]
 
 Record this cycle's activity:
-1. Log any trades to the trading journal (use trade_log tool)
+1. Review any captured trades and enrich them if needed (use trade_log tool)
 2. Save any important insights to memory (use memory_manage action=append)
 3. Update any knowledge files if needed
 

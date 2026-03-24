@@ -3,6 +3,7 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { getDefaultTrackedChains } from "../../portfolio-chains.js";
 
 export interface PortfolioSnapshot {
   id: number;
@@ -51,7 +52,7 @@ export async function getActiveChains(): Promise<string[]> {
   const row = await queryOne<{ chains: string[] }>(
     "SELECT active_chains AS chains FROM portfolio_snapshots ORDER BY timestamp DESC LIMIT 1",
   );
-  return row?.chains ?? ["0g", "solana"];
+  return row?.chains ?? getDefaultTrackedChains();
 }
 
 function rowToSnapshot(r: Record<string, unknown>): PortfolioSnapshot {

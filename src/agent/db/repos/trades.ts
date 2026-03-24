@@ -7,7 +7,23 @@ export async function addTrade(trade: TradeEntry): Promise<void> {
        output_token, output_amount, output_value_usd, pnl_amount_usd, pnl_percent, pnl_realized,
        meta, reasoning, signature, explorer_url, created_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-     ON CONFLICT (id) DO UPDATE SET status=$4, pnl_amount_usd=$11, pnl_percent=$12, pnl_realized=$13, meta=$14`,
+     ON CONFLICT (id) DO UPDATE SET
+       type = EXCLUDED.type,
+       chain = EXCLUDED.chain,
+       status = EXCLUDED.status,
+       input_token = EXCLUDED.input_token,
+       input_amount = EXCLUDED.input_amount,
+       input_value_usd = COALESCE(EXCLUDED.input_value_usd, trades.input_value_usd),
+       output_token = EXCLUDED.output_token,
+       output_amount = EXCLUDED.output_amount,
+       output_value_usd = COALESCE(EXCLUDED.output_value_usd, trades.output_value_usd),
+       pnl_amount_usd = COALESCE(EXCLUDED.pnl_amount_usd, trades.pnl_amount_usd),
+       pnl_percent = COALESCE(EXCLUDED.pnl_percent, trades.pnl_percent),
+       pnl_realized = COALESCE(EXCLUDED.pnl_realized, trades.pnl_realized),
+       meta = trades.meta || EXCLUDED.meta,
+       reasoning = COALESCE(EXCLUDED.reasoning, trades.reasoning),
+       signature = COALESCE(EXCLUDED.signature, trades.signature),
+       explorer_url = COALESCE(EXCLUDED.explorer_url, trades.explorer_url)`,
     [trade.id, trade.type, trade.chain, trade.status,
      trade.input.token, trade.input.amount, trade.input.valueUsd ?? null,
      trade.output.token, trade.output.amount, trade.output.valueUsd ?? null,
@@ -15,6 +31,11 @@ export async function addTrade(trade: TradeEntry): Promise<void> {
      JSON.stringify(trade.meta), trade.reasoning ?? null, trade.signature ?? null, trade.explorerUrl ?? null,
      trade.timestamp],
   );
+}
+
+export async function getTradeById(id: string): Promise<TradeEntry | null> {
+  const row = await queryOne<Record<string, unknown>>("SELECT * FROM trades WHERE id = $1", [id]);
+  return row ? rowToTrade(row) : null;
 }
 
 export async function getTrades(type?: string, limit = 50, offset = 0): Promise<{ trades: TradeEntry[]; total: number }> {

@@ -116,13 +116,13 @@ export function executeTool(call: ToolCall, confirmed: boolean): Promise<ToolRes
           : stderr.trim() || stdout.trim() || error.message;
 
         logger.warn("agent.tool.failed", { command: call.command, durationMs, error: errorOutput.slice(0, 200) });
-        resolve({ id, command: call.command, success: false, output: errorOutput, durationMs });
+        resolve({ id, command: call.command, success: false, output: errorOutput, argv: args, durationMs });
         return;
       }
 
       const output = stdout.trim();
       logger.debug("agent.tool.ok", { command: call.command, durationMs, output: output.slice(0, 100) });
-      resolve({ id, command: call.command, success: true, output, durationMs });
+      resolve({ id, command: call.command, success: true, output, argv: args, durationMs });
     });
   });
 }

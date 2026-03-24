@@ -83,7 +83,7 @@ export function createSetupCommand(): Command {
     .option("--provider <name>", "Provider: openclaw, claude, claude-code, codex, other")
     .option("--scope <scope>", "Install scope: user (default) or project", "user")
     .option("--force", "Overwrite existing skill installation")
-    .action(handleSkillInstall);
+    .action((opts: { provider?: string; scope?: string; force?: boolean }) => handleSkillInstall(opts));
 
   // echoclaw setup password
   setup

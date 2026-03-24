@@ -1,32 +1,20 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-function captureStdout(): { output: () => string; restore: () => void } {
-  let output = "";
-  const original = process.stdout.write;
-  process.stdout.write = ((chunk: any, encoding?: any, cb?: any) => {
-    output += typeof chunk === "string" ? chunk : chunk.toString(encoding);
-    if (typeof encoding === "function") {
-      encoding();
-    } else if (typeof cb === "function") {
-      cb();
-    }
-    return true;
-  }) as any;
-  return {
-    output: () => output,
-    restore: () => {
-      process.stdout.write = original;
-    },
-  };
-}
+const mockWriteJsonSuccess = vi.fn();
+const mockHandleSkillInstall = vi.fn(async () => {});
 
 async function loadSetupCommand(root: string) {
   process.env.XDG_CONFIG_HOME = join(root, "xdg");
   process.env.OPENCLAW_HOME = join(root, "openclaw");
   vi.resetModules();
+  vi.doMock("inquirer", () => ({
+    default: {
+      prompt: vi.fn(async () => ({ pw: "unused-password", pwConfirm: "unused-password" })),
+    },
+  }));
   vi.doMock("../utils/legacy-cleanup.js", () => ({
     runLegacyCleanupWithLog: vi.fn(),
   }));
@@ -59,48 +47,41 @@ async function loadSetupCommand(root: string) {
       warnings: [],
     })),
   }));
-  vi.doMock("../openclaw/config.js", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../openclaw/config.js")>();
-    return {
-      ...actual,
-      patchOpenclawSkillEnv: vi.fn(() => ({
-        status: "updated",
-        path: join(root, "openclaw", "openclaw.json"),
-        keysSet: ["ECHO_KEYSTORE_PASSWORD"],
-        keysSkipped: [],
-      })),
-      patchOpenclawConfig: vi.fn(() => ({ changed: false })),
-      getSkillHooksEnv: vi.fn(() => ({})),
-      loadOpenclawConfig: vi.fn(() => ({})),
-      removeOpenclawConfigKey: vi.fn(() => ({ changed: false })),
-    };
-  });
-  vi.doMock("../openclaw/hooks-client.js", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../openclaw/hooks-client.js")>();
-    return {
-      ...actual,
-      validateHooksTokenSync: vi.fn(),
-      buildMonitorAlertPayload: vi.fn(() => ({})),
-      buildMarketMakerPayload: vi.fn(() => ({})),
-      sendTestWebhook: vi.fn(async () => ({ ok: true })),
-    };
-  });
-  vi.doMock("../setup/openclaw-link.js", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../setup/openclaw-link.js")>();
-    return {
-      ...actual,
-      linkOpenclawSkill: vi.fn(() => ({
-        source: join(root, "src-skill"),
-        target: join(root, "dst-skill"),
-        linkType: "copy",
-        workspaceTarget: undefined,
-        workspaceLinked: false,
-      })),
-    };
-  });
-
-  const output = await import("../utils/output.js");
-  output.setJsonMode(true);
+  vi.doMock("../openclaw/config.js", () => ({
+    patchOpenclawSkillEnv: vi.fn(() => ({
+      status: "updated",
+      path: join(root, "openclaw", "openclaw.json"),
+      keysSet: ["ECHO_KEYSTORE_PASSWORD"],
+      keysSkipped: [],
+    })),
+    patchOpenclawConfig: vi.fn(() => ({ changed: false })),
+    getSkillHooksEnv: vi.fn(() => ({})),
+    loadOpenclawConfig: vi.fn(() => ({})),
+    removeOpenclawConfigKey: vi.fn(() => ({ changed: false })),
+  }));
+  vi.doMock("../openclaw/hooks-client.js", () => ({
+    validateHooksTokenSync: vi.fn(),
+    buildMonitorAlertPayload: vi.fn(() => ({})),
+    buildMarketMakerPayload: vi.fn(() => ({})),
+    sendTestWebhook: vi.fn(async () => ({ ok: true })),
+  }));
+  vi.doMock("../setup/openclaw-link.js", () => ({
+    linkOpenclawSkill: vi.fn(() => ({
+      source: join(root, "src-skill"),
+      target: join(root, "dst-skill"),
+      linkType: "copy",
+      workspaceTarget: undefined,
+      workspaceLinked: false,
+    })),
+  }));
+  vi.doMock("../utils/output.js", () => ({
+    isHeadless: vi.fn(() => true),
+    setJsonMode: vi.fn(),
+    writeJsonSuccess: (...args: unknown[]) => mockWriteJsonSuccess(...args),
+  }));
+  vi.doMock("../commands/skill.js", () => ({
+    handleSkillInstall: (...args: unknown[]) => mockHandleSkillInstall(...args),
+  }));
 
   const setupModule = await import("../commands/setup.js");
   const pathsModule = await import("../config/paths.js");
@@ -108,7 +89,6 @@ async function loadSetupCommand(root: string) {
 
   return {
     createSetupCommand: setupModule.createSetupCommand,
-    setJsonMode: output.setJsonMode,
     envFile: pathsModule.ENV_FILE,
     readEnvValue: envModule.readEnvValue,
   };
@@ -117,6 +97,10 @@ async function loadSetupCommand(root: string) {
 describe("setup password + provider", () => {
   const savedXdg = process.env.XDG_CONFIG_HOME;
   const savedOpenclawHome = process.env.OPENCLAW_HOME;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   afterEach(() => {
     if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME;
@@ -128,75 +112,70 @@ describe("setup password + provider", () => {
 
   it("setup password writes to app env", async () => {
     const root = mkdtempSync(join(tmpdir(), "echoclaw-setup-password-"));
-    const { createSetupCommand, setJsonMode, envFile, readEnvValue } = await loadSetupCommand(root);
+    const { createSetupCommand, envFile, readEnvValue } = await loadSetupCommand(root);
 
     const setup = createSetupCommand();
     const passwordCmd = setup.commands.find((cmd) => cmd.name() === "password");
     expect(passwordCmd).toBeDefined();
 
-    const capture = captureStdout();
     try {
       await passwordCmd!.parseAsync(["--password", "super-secret-pass", "--force"], { from: "user" });
-      const payload = JSON.parse(capture.output().trim());
+      expect(mockWriteJsonSuccess).toHaveBeenCalledWith({
+        status: "updated",
+        path: envFile,
+        keysSet: ["ECHO_KEYSTORE_PASSWORD"],
+        keysSkipped: [],
+        restartRequired: true,
+        warnings: [],
+      });
 
-      expect(payload.success).toBe(true);
-      expect(payload.status).toBe("updated");
-      expect(payload.path).toBe(envFile);
       expect(readEnvValue("ECHO_KEYSTORE_PASSWORD", envFile)).toBe("super-secret-pass");
       expect(readFileSync(envFile, "utf-8")).toContain("ECHO_KEYSTORE_PASSWORD");
     } finally {
-      capture.restore();
-      setJsonMode(false);
       rmSync(root, { recursive: true, force: true });
     }
-  }, 60000);
+  });
 
   it("setup password --auto-update writes auto-update preference to env file", async () => {
     const root = mkdtempSync(join(tmpdir(), "echoclaw-setup-password-autoupdate-"));
-    const { createSetupCommand, setJsonMode, envFile, readEnvValue } = await loadSetupCommand(root);
+    const { createSetupCommand, envFile, readEnvValue } = await loadSetupCommand(root);
 
     const setup = createSetupCommand();
     const passwordCmd = setup.commands.find((cmd) => cmd.name() === "password");
     expect(passwordCmd).toBeDefined();
 
-    const capture = captureStdout();
     try {
       await passwordCmd!.parseAsync(
         ["--password", "super-secret-pass", "--force", "--auto-update"],
         { from: "user" },
       );
-      const payload = JSON.parse(capture.output().trim());
+      expect(mockWriteJsonSuccess).toHaveBeenCalledWith(expect.objectContaining({
+        status: "updated",
+        keysSet: ["ECHO_KEYSTORE_PASSWORD", "ECHO_AUTO_UPDATE"],
+        restartRequired: true,
+      }));
 
-      expect(payload.success).toBe(true);
-      expect(payload.status).toBe("updated");
       expect(readEnvValue("ECHO_AUTO_UPDATE", envFile)).toBe("1");
     } finally {
-      capture.restore();
-      setJsonMode(false);
       rmSync(root, { recursive: true, force: true });
     }
-  }, 60000);
+  });
 
   it("setup provider delegates to skill installer flow", async () => {
     const root = mkdtempSync(join(tmpdir(), "echoclaw-setup-provider-"));
-    const { createSetupCommand, setJsonMode } = await loadSetupCommand(root);
+    const { createSetupCommand } = await loadSetupCommand(root);
 
     const setup = createSetupCommand();
     const providerCmd = setup.commands.find((cmd) => cmd.name() === "provider");
     expect(providerCmd).toBeDefined();
 
-    const capture = captureStdout();
     try {
       await providerCmd!.parseAsync(["--provider", "other", "--scope", "project"], { from: "user" });
-      const payload = JSON.parse(capture.output().trim());
-
-      expect(payload.success).toBe(true);
-      expect(payload.status).toBe("manual_required");
-      expect(payload.provider).toBe("other");
-      expect(payload.sourcePath).toContain("skills/echoclaw");
+      expect(mockHandleSkillInstall).toHaveBeenCalledWith({
+        provider: "other",
+        scope: "project",
+      });
     } finally {
-      capture.restore();
-      setJsonMode(false);
       rmSync(root, { recursive: true, force: true });
     }
   });

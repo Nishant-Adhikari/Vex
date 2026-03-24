@@ -19,6 +19,8 @@ import * as messagesRepo from "./db/repos/messages.js";
 import * as knowledgeRepo from "./db/repos/knowledge.js";
 import * as skillsRepo from "./db/repos/skills.js";
 import * as tradesRepo from "./db/repos/trades.js";
+import { deriveTradeIdFromTrade } from "./trade-capture.js";
+import { normalizePortfolioChain } from "./portfolio-chains.js";
 import logger from "../utils/logger.js";
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -232,9 +234,15 @@ async function handleTradeLog(tool: InternalToolCall, emit: EventEmitter): Promi
     return { output: "Incomplete trade entry", success: false };
   }
   const entry: TradeEntry = {
-    id: trade.id ?? generateId("trade"),
+    id: trade.id ?? deriveTradeIdFromTrade({
+      type: trade.type,
+      chain: normalizePortfolioChain(trade.chain),
+      signature: trade.signature,
+      explorerUrl: trade.explorerUrl,
+      meta: trade.meta,
+    }) ?? generateId("trade"),
     timestamp: trade.timestamp ?? new Date().toISOString(),
-    type: trade.type, chain: trade.chain, status: trade.status,
+    type: trade.type, chain: normalizePortfolioChain(trade.chain), status: trade.status,
     input: trade.input, output: trade.output,
     pnl: trade.pnl, meta: trade.meta ?? {},
     reasoning: trade.reasoning, signature: trade.signature, explorerUrl: trade.explorerUrl,

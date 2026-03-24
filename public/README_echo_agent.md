@@ -814,7 +814,7 @@ The current app shell is `src/agent/ui/src/App.tsx` and is organized as:
 
 Sidebar contents:
 
-- `AgentAvatar` identity panel
+- `AgentSticker` reply sticker panel
 - Nav toggles for Chat / Trades / Portfolio / Memory / Ops
 - Recent trade cards and lightweight lifetime stats
 - `ThemeToggler` for light/dark theme switching
@@ -833,7 +833,7 @@ Sidebar contents:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| AgentAvatar | `components/AgentAvatar.tsx` | Deterministic avatar renderer with optional image mode |
+| AgentSticker | `components/AgentSticker.tsx` | Video sticker shown for fresh assistant replies; playback pauses after 3 seconds |
 | MessageBubble | `components/MessageBubble.tsx` | Grouped iMessage-style chat bubble with markdown rendering for agent replies |
 | ToolCallsSection | `components/ToolCallsSection.tsx` | Collapsible list of active and completed tool calls |
 | ChatInput | `components/ChatInput.tsx` | Chat composer |
@@ -1093,7 +1093,7 @@ Important CLI caveats:
 | `src/agent/ui/src/views/MemoryView.tsx` | Soul/memory/knowledge/session browser |
 | `src/agent/ui/src/views/PortfolioView.tsx` | Portfolio totals, history sparkline, chain breakdown, scheduled task controls |
 | `src/agent/ui/src/views/OpsWidget.tsx` | Backup / restore / billing / soul editing panel |
-| `src/agent/ui/src/components/AgentAvatar.tsx` | Deterministic avatar renderer with optional image mode |
+| `src/agent/ui/src/components/AgentSticker.tsx` | Video sticker shown for fresh assistant replies; playback pauses after 3 seconds |
 | `src/agent/ui/src/components/MessageBubble.tsx` | Grouped iMessage-style chat bubble with markdown rendering for agent replies |
 | `src/agent/ui/src/components/ToolCallsSection.tsx` | Collapsible list of active and completed tool calls |
 | `src/agent/ui/src/components/ChatInput.tsx` | Chat composer |

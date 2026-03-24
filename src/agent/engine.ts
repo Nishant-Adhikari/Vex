@@ -16,6 +16,7 @@ import { executeTool } from "./executor.js";
 import { getLedgerState, isLowBalance, recordBillingSnapshot } from "./billing.js";
 import { calculateBudget, calculateHybridBudget, parseCompactionResult } from "./context.js";
 import { processInternalTools } from "./internal-tool-handlers.js";
+import { captureTradeFromResult } from "./trade-capture.js";
 import * as memoryRepo from "./db/repos/memory.js";
 import * as sessionsRepo from "./db/repos/sessions.js";
 import * as messagesRepo from "./db/repos/messages.js";
@@ -84,6 +85,18 @@ export async function resumeAfterApproval(
     id: resolvedId, command: result.command, success: result.success,
     output: result.output.slice(0, SSE_TOOL_OUTPUT_LIMIT), durationMs: result.durationMs,
   }});
+
+  if (result.success) {
+    try {
+      await captureTradeFromResult(approvedToolCall.command, result.argv, result.output);
+    } catch (err) {
+      logger.warn("trade.capture.failed", {
+        command: approvedToolCall.command,
+        phase: "approval_resume",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   const toolMsg: Message = { role: "tool", content: result.output, toolCallId: resolvedId, timestamp: new Date().toISOString() };
   session.messages.push(toolMsg);
@@ -285,6 +298,18 @@ async function executeToolCalls(
     const result = await executeTool(call, confirmed);
 
     emit({ type: "tool_result", data: { id: toolCallId, command: result.command, success: result.success, output: result.output.slice(0, SSE_TOOL_OUTPUT_LIMIT), durationMs: result.durationMs } });
+
+    if (result.success) {
+      try {
+        await captureTradeFromResult(call.command, result.argv, result.output);
+      } catch (err) {
+        logger.warn("trade.capture.failed", {
+          command: call.command,
+          phase: "execute_tool_calls",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     const toolMsg: Message = { role: "tool", content: result.output, toolCallId, timestamp: new Date().toISOString() };
     session.messages.push(toolMsg);

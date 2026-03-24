@@ -15,6 +15,7 @@ import { takeSnapshot } from "./snapshot.js";
 import { runEchoPapaCycle } from "./echo-papa.js";
 import { isMutatingCommand } from "./executor.js";
 import { supportsYes } from "./tool-registry.js";
+import { captureTradeFromResult, detectCapturedTradeCommand } from "./trade-capture.js";
 import logger from "../utils/logger.js";
 
 type TaskHandler = (task: tasksRepo.ScheduledTask) => Promise<Record<string, unknown>>;
@@ -42,13 +43,27 @@ export async function initScheduler(): Promise<void> {
     await tasksRepo.createTask({
       id: "builtin-portfolio-snapshot",
       name: "Portfolio Snapshot",
-      description: "Auto-capture balances every hour",
-      cronExpression: "0 * * * *",
+      description: "Auto-capture balances every 30 minutes",
+      cronExpression: "*/30 * * * *",
       taskType: "snapshot",
       payload: {},
       loopMode: "restricted",
     });
-    logger.info("scheduler.task.created", { taskId: "builtin-portfolio-snapshot", taskName: "Portfolio Snapshot", schedule: "hourly" });
+    logger.info("scheduler.task.created", { taskId: "builtin-portfolio-snapshot", taskName: "Portfolio Snapshot", schedule: "every 30 minutes" });
+  } else {
+    const snapshotTask = tasks.find(t => t.id === "builtin-portfolio-snapshot");
+    if (snapshotTask?.cronExpression === "0 * * * *") {
+      await tasksRepo.updateTaskSchedule(
+        "builtin-portfolio-snapshot",
+        "*/30 * * * *",
+        "Auto-capture balances every 30 minutes",
+      );
+      logger.info("scheduler.task.updated", {
+        taskId: "builtin-portfolio-snapshot",
+        taskName: "Portfolio Snapshot",
+        schedule: "every 30 minutes",
+      });
+    }
   }
 
   // Ensure default auto-backup task
@@ -191,14 +206,27 @@ async function executeCliTask(task: tasksRepo.ScheduledTask): Promise<Record<str
   if (task.loopMode === "full" && supportsYes(commandSnakeForYes) && !cliArgs.includes("--yes")) cliArgs.push("--yes");
 
   return new Promise((resolve) => {
-    execFile("echoclaw", cliArgs, { timeout: 120_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+    execFile("echoclaw", cliArgs, { timeout: 120_000, maxBuffer: 1024 * 1024 }, async (err, stdout) => {
       if (err) {
         resolve({ success: false, error: err.message, command });
       } else {
+        const output = stdout.trim();
+        const captureCommand = detectCapturedTradeCommand(cliArgs);
+        if (captureCommand) {
+          try {
+            await captureTradeFromResult(captureCommand, cliArgs, output);
+          } catch (captureErr) {
+            logger.warn("trade.capture.failed", {
+              command: captureCommand,
+              phase: "scheduler",
+              error: captureErr instanceof Error ? captureErr.message : String(captureErr),
+            });
+          }
+        }
         try {
-          resolve({ success: true, command, output: JSON.parse(stdout.trim()) });
+          resolve({ success: true, command, output: JSON.parse(output) });
         } catch {
-          resolve({ success: true, command, output: stdout.trim().slice(0, 500) });
+          resolve({ success: true, command, output: output.slice(0, 500) });
         }
       }
     });

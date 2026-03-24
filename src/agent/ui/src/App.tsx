@@ -6,12 +6,13 @@ import LoopStatusBar from "./components/LoopStatusBar";
 import { ChatView } from "./views/ChatView";
 import { TradesView } from "./views/TradesView";
 import { PortfolioView } from "./views/PortfolioView";
+import { PredictionsView } from "./views/PredictionsView";
 import { MemoryView } from "./views/MemoryView";
 import { OpsWidget } from "./views/OpsWidget";
 import { TelegramView } from "./views/TelegramView";
 import {
   HugeiconsIcon, MessageMultiple01Icon, Activity01Icon,
-  Wallet01Icon, BrainIcon, Settings01Icon, TelegramIcon, Robot01Icon,
+  Wallet01Icon, BrainIcon, Settings01Icon, TelegramIcon, Robot01Icon, ChartLineData01Icon,
 } from "./components/icons";
 import { initAuth, getStatus, getRecentTrades, getRuntimeUpdateStatus as getLauncherRuntimeUpdateStatus, retryRuntimeUpdatePull, applyRuntimeUpdate, startLoop, stopLoop } from "./api";
 import { useSubagents } from "./hooks/useSubagents";
@@ -21,7 +22,7 @@ import { buildRuntimeUpdateBannerModel } from "./runtime-update";
 
 const STATUS_POLL_MS = 10_000;
 
-type WidgetType = "trades" | "portfolio" | "memory" | "ops" | "telegram";
+type WidgetType = "trades" | "portfolio" | "predictions" | "memory" | "ops" | "telegram";
 
 export const App: FC = () => {
   const [status, setStatus] = useState<AgentStatus | null>(null);
@@ -133,6 +134,7 @@ export const App: FC = () => {
     { key: "chat", label: "Chat", icon: MessageMultiple01Icon },
     { key: "trades", label: "Trades", icon: Activity01Icon },
     { key: "portfolio", label: "Portfolio", icon: Wallet01Icon },
+    { key: "predictions", label: "Predictions", icon: ChartLineData01Icon },
     { key: "memory", label: "Memory", icon: BrainIcon },
     { key: "agents", label: "Agents", icon: Robot01Icon },
     { key: "ops", label: "Ops", icon: Settings01Icon },
@@ -153,8 +155,10 @@ export const App: FC = () => {
         {/* Agent avatar / Logo area */}
         <div className="flex items-center gap-3 px-4 py-6 border-b border-white/5 shrink-0">
           <div className="relative shrink-0 flex items-center justify-center w-9 h-9">
-            <div className="absolute inset-0 bg-accent/20 blur-md rounded-full" />
-            <img src="/new_echo_solo.png" alt="Echo" className="w-8 h-8 object-contain relative z-10 drop-shadow-lg" draggable={false} />
+            <div className="absolute inset-0 rounded-2xl bg-accent/18 blur-md" />
+            <div className="relative z-10 h-8 w-8 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(255,255,255,0.03))] shadow-[0_8px_22px_rgba(0,0,0,0.28)]">
+              <div className="absolute inset-1.5 rounded-xl border border-white/8 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.18),rgba(255,255,255,0.02)_68%)]" />
+            </div>
           </div>
           {sidebarOpen && (
             <div className="animate-fade-in min-w-0">
@@ -369,6 +373,18 @@ export const App: FC = () => {
             defaultWidth={480} defaultHeight={460}
           >
             <PortfolioView onBack={() => toggleWidget("portfolio")} />
+          </FloatingWidget>
+        </ErrorBoundary>
+      )}
+      {openWidgets.has("predictions") && (
+        <ErrorBoundary>
+          <FloatingWidget
+            title="Predictions"
+            icon={<HugeiconsIcon icon={ChartLineData01Icon} size={14} className="text-accent" />}
+            onClose={() => toggleWidget("predictions")}
+            defaultWidth={520} defaultHeight={520}
+          >
+            <PredictionsView onBack={() => toggleWidget("predictions")} />
           </FloatingWidget>
         </ErrorBoundary>
       )}

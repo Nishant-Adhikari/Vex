@@ -95,7 +95,7 @@ describe("takeSnapshot EVM token parsing", () => {
     expect(call.positions[0].usdValue).toBe(10500);
   });
 
-  it("resolves chainId to chain name via CHAIN_ALIASES", async () => {
+  it("resolves chainId to canonical portfolio chain names", async () => {
     mockCliResponse({
       "khalani tokens balances --wallet eip155": JSON.stringify({
         success: true, tokens: [
@@ -111,7 +111,7 @@ describe("takeSnapshot EVM token parsing", () => {
 
     const positions = mockInsertSnapshot.mock.calls[0][0].positions;
     expect(positions[0].chain).toBe("0g");
-    expect(positions[1].chain).toBe("arb");
+    expect(positions[1].chain).toBe("arbitrum");
   });
 
   it("skips tokens with NaN balance and logs warning", async () => {
@@ -211,6 +211,30 @@ describe("takeSnapshot EVM token parsing", () => {
 
     const positions = mockInsertSnapshot.mock.calls[0][0].positions;
     expect(positions[0].chain).toBe("evm-999999");
+  });
+
+  it("tracks all KyberSwap-supported chains by default", async () => {
+    mockCliResponse({
+      "khalani tokens balances --wallet eip155": JSON.stringify({ success: true, tokens: [] }),
+      "khalani tokens balances --wallet solana": JSON.stringify({ success: true, tokens: [] }),
+      "wallet balance": JSON.stringify({ success: false }),
+    });
+
+    await takeSnapshot("test");
+
+    const activeChains = mockInsertSnapshot.mock.calls[0][0].activeChains;
+    expect(activeChains).toEqual(expect.arrayContaining([
+      "0g",
+      "solana",
+      "ethereum",
+      "arbitrum",
+      "base",
+      "polygon",
+      "ronin",
+      "megaeth",
+    ]));
+    expect(activeChains).not.toContain("eth");
+    expect(activeChains).not.toContain("arb");
   });
 });
 

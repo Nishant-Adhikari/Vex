@@ -5,6 +5,8 @@ vi.mock("../../agent/db/repos/tasks.js", () => ({
   listTasks: vi.fn(async () => []),
   getEnabledTasks: vi.fn(async () => []),
   createTask: vi.fn(),
+  updateTaskSchedule: vi.fn(),
+  deleteTask: vi.fn(),
   recordRun: vi.fn(),
 }));
 vi.mock("../../agent/db/repos/loop.js", () => ({
@@ -27,6 +29,10 @@ vi.mock("../../agent/executor.js", () => ({
 vi.mock("../../agent/tool-registry.js", () => ({
   supportsYes: vi.fn(() => false),
 }));
+vi.mock("../../agent/trade-capture.js", () => ({
+  captureTradeFromResult: vi.fn(async () => []),
+  detectCapturedTradeCommand: vi.fn(() => null),
+}));
 
 // Mock echo-loop — startLoopEngine and stopLoopEngine now delegate here
 const mockStartEchoLoop = vi.fn(async () => {});
@@ -40,6 +46,9 @@ vi.mock("../../agent/subagent.js", () => ({
 }));
 vi.mock("../../agent/topup-monitor.js", () => ({
   startMonitor: vi.fn(),
+}));
+vi.mock("../../agent/echo-papa.js", () => ({
+  runEchoPapaCycle: vi.fn(async () => ({ success: true })),
 }));
 
 import { startLoopEngine, stopLoopEngine, setInferenceHandler } from "../../agent/scheduler.js";

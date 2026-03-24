@@ -9,6 +9,7 @@
 import { registerRoute, jsonResponse } from "../routes.js";
 import * as snapshotsRepo from "../db/repos/snapshots.js";
 import { query } from "../db/client.js";
+import { getDefaultTrackedChains } from "../portfolio-chains.js";
 import { takeSnapshot } from "../snapshot.js";
 
 export function registerPortfolioRoutes(): void {
@@ -19,7 +20,7 @@ export function registerPortfolioRoutes(): void {
       // Take first snapshot on-demand
       await takeSnapshot("manual");
       const fresh = await snapshotsRepo.getLatest();
-      jsonResponse(res, 200, fresh ?? { totalUsd: 0, positions: [], activeChains: ["0g", "solana"] });
+      jsonResponse(res, 200, fresh ?? { totalUsd: 0, positions: [], activeChains: getDefaultTrackedChains() });
       return;
     }
     jsonResponse(res, 200, latest);

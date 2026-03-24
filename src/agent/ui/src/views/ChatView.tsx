@@ -110,7 +110,6 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
         variant={msg.role === "user" ? "sent" : "received"}
         grouped="single"
         timestamp={msg.timestamp.slice(11, 16)}
-        seed={status?.model ?? "echo"}
       />
     );
   };
@@ -134,7 +133,7 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
             variant="received"
             grouped="single"
             timestamp={turn.timestamp.slice(11, 16)}
-            seed={status?.model ?? "echo"}
+            playAgentSticker={!isPending}
           />
         )}
 
@@ -162,9 +161,11 @@ export const ChatView: FC<ChatViewProps> = ({ status, onRefreshStatus, onBurnSta
         {/* Empty state */}
         {feedItems.length === 0 && !pendingAssistantTurn && (
           <div className="flex flex-col items-center justify-center h-[75vh] gap-6 animate-fade-in select-none">
-            <div className="relative">
-              <div className="absolute inset-0 bg-accent/20 blur-[60px] rounded-full" />
-              <img src="/new_echo_solo.png" alt="Echo" className="w-20 h-20 md:w-24 md:h-24 object-contain opacity-90 drop-shadow-2xl relative z-10" draggable={false} />
+            <div className="relative flex items-center justify-center">
+              <div className="absolute h-28 w-28 rounded-full bg-accent/18 blur-[56px]" />
+              <div className="relative h-20 w-20 rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,255,255,0.02))] shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
+                <div className="absolute inset-3 rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.22),rgba(255,255,255,0.02)_62%)]" />
+              </div>
             </div>
             <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight opacity-90">
               EchoClaw

@@ -60,7 +60,7 @@ const INTERNAL: ToolDef[] = [
     }, required: ["action"] } },
   { name: "memory_update", kind: "internal", mutating: false, description: "Append to persistent memory (deprecated — use memory_manage action=append)",
     parameters: { type: "object", properties: { append: { type: "string" } }, required: ["append"] } },
-  { name: "trade_log", kind: "internal", mutating: false, description: "Log a trade entry",
+  { name: "trade_log", kind: "internal", mutating: false, description: "Log or enrich a trade entry",
     parameters: { type: "object", properties: { trade: { type: "object", description: "TradeEntry object with type, chain, status, input, output, pnl, meta, reasoning" } }, required: ["trade"] } },
   { name: "schedule_create", kind: "internal", mutating: false, description: "Create a recurring cron task",
     parameters: { type: "object", properties: {

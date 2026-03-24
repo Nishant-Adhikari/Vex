@@ -153,7 +153,7 @@ export function createSkillCommand(): Command {
     .addOption(new Option("--provider <name>", "Provider: openclaw, claude, claude-code, codex, other").choices([...ALLOWED_PROVIDERS]))
     .addOption(new Option("--scope <scope>", "Install scope: user (default) or project").choices([...ALLOWED_SCOPES]).default("user"))
     .option("--force", "Overwrite existing skill installation")
-    .action(handleSkillInstall);
+    .action((opts: { provider?: string; scope?: string; force?: boolean }) => handleSkillInstall(opts));
 
   root.command("path")
     .description("Show the path to echoclaw skill source directory")
@@ -175,5 +175,5 @@ export function createInstallAlias(): Command {
     .addOption(new Option("--provider <name>", "Provider: openclaw, claude, claude-code, codex, other").choices([...ALLOWED_PROVIDERS]))
     .addOption(new Option("--scope <scope>", "Install scope: user (default) or project").choices([...ALLOWED_SCOPES]).default("user"))
     .option("--force", "Overwrite existing skill installation")
-    .action(handleSkillInstall);
+    .action((opts: { provider?: string; scope?: string; force?: boolean }) => handleSkillInstall(opts));
 }

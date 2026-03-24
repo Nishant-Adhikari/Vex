@@ -46,6 +46,14 @@ export async function toggleTask(id: string, enabled: boolean): Promise<boolean>
   return n > 0;
 }
 
+export async function updateTaskSchedule(id: string, cronExpression: string, description?: string): Promise<boolean> {
+  const n = await execute(
+    "UPDATE scheduled_tasks SET cron_expression = $2, description = COALESCE($3, description) WHERE id = $1",
+    [id, cronExpression, description ?? null],
+  );
+  return n > 0;
+}
+
 export async function deleteTask(id: string): Promise<boolean> {
   const n = await execute("DELETE FROM scheduled_tasks WHERE id = $1", [id]);
   return n > 0;

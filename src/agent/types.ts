@@ -19,6 +19,7 @@ export interface ToolResult {
   command: string;
   success: boolean;
   output: string;
+  argv: string[];
   durationMs: number;
 }
 
@@ -291,6 +292,7 @@ export interface TradeEntry {
   pnl?: { amountUsd: number; percentChange: number; realized: boolean };
   meta: {
     dex?: string;
+    action?: string;
     slippageBps?: number;
     priceImpact?: string;
     marketId?: string;
@@ -305,8 +307,10 @@ export interface TradeEntry {
     sourceChain?: string;
     destChain?: string;
     routeId?: string;
+    orderId?: string;
     poolId?: string;
     tickRange?: string;
+    stakeAccount?: string;
   };
   reasoning?: string;
   signature?: string;
@@ -320,6 +324,74 @@ export interface TradeSummary {
   totalTrades: number;
   winRate: number;
   byType: Record<string, number>;
+}
+
+// ── Predictions ─────────────────────────────────────────────────────
+
+export type PredictionSource = "jupiter" | "polymarket";
+export type PredictionLiveStatus = "disabled" | "connecting" | "live" | "reconnecting" | "offline";
+
+export interface PredictionPosition {
+  id: string;
+  source: PredictionSource;
+  marketId: string;
+  title: string;
+  outcome: string;
+  size: number;
+  avgPrice: number;
+  currentPrice: number;
+  costUsd: number;
+  valueUsd: number;
+  pnlUsd: number;
+  pnlPct: number | null;
+  flags: {
+    claimable?: boolean;
+    redeemable?: boolean;
+    mergeable?: boolean;
+  };
+  meta: Record<string, unknown>;
+}
+
+export interface PredictionOrder {
+  id: string;
+  source: "polymarket";
+  marketId: string;
+  outcome: string;
+  side: "BUY" | "SELL";
+  price: number;
+  size: number;
+  matchedSize: number;
+  status: string;
+  orderType: string;
+  createdAt: string | null;
+}
+
+export interface PredictionSummary {
+  totalValueUsd: number;
+  totalPnlUsd: number;
+  totalPnlPct: number | null;
+  positionCount: number;
+  orderCount: number;
+  claimableCount: number;
+  redeemableCount: number;
+  mergeableCount: number;
+}
+
+export interface PredictionPanelState {
+  source: PredictionSource;
+  available: boolean;
+  summary: PredictionSummary;
+  positions: PredictionPosition[];
+  orders: PredictionOrder[];
+  liveStatus: {
+    available: boolean;
+    status: PredictionLiveStatus;
+    lastEventAt: string | null;
+    lastSyncAt: string | null;
+    reason: string | null;
+  };
+  asOf: string;
+  warnings: string[];
 }
 
 // ── OpenAI function calling ──────────────────────────────────────────

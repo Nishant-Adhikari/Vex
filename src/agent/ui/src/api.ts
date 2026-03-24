@@ -1,6 +1,6 @@
 /** Typed API wrappers for agent endpoints. */
 
-import type { AgentStatus, SessionListEntry, FileTreeEntry, ApprovalItem, TradeEntry, TradeSummary, ScheduledTask, PortfolioSnapshot, ChainBalance, BillingState, TelegramStatus, RuntimeUpdateStatus } from "./types";
+import type { AgentStatus, SessionListEntry, FileTreeEntry, ApprovalItem, TradeEntry, TradeSummary, ScheduledTask, PortfolioSnapshot, ChainBalance, PredictionPanelState, PredictionSource, BillingState, TelegramStatus, RuntimeUpdateStatus } from "./types";
 
 /** Bootstrap auth — sets HttpOnly cookie via server. Call before any other API request. */
 export async function initAuth(): Promise<void> {
@@ -128,6 +128,41 @@ export async function getPortfolioHistory(range = "24h"): Promise<{ snapshots: P
 
 export async function getPortfolioChains(): Promise<{ chains: ChainBalance[] }> {
   return fetchJson("/api/agent/portfolio/chains");
+}
+
+// ── Predictions ─────────────────────────────────────────────────────
+
+export async function getPredictions(source: PredictionSource): Promise<PredictionPanelState> {
+  return fetchJson(`/api/agent/predictions?source=${source}`);
+}
+
+export function streamPredictions(
+  source: Extract<PredictionSource, "polymarket">,
+  onEvent: (type: string, data: Record<string, unknown>) => void,
+  onClose?: () => void,
+): AbortController {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const res = await fetch(`/api/agent/predictions/stream?source=${source}`, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: authHeaders(),
+        signal: controller.signal,
+      });
+
+      await parseSSEStream(res, onEvent, controller.signal);
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        onEvent("error", { message: err instanceof Error ? err.message : "Network error" });
+      }
+    } finally {
+      if (!controller.signal.aborted) onClose?.();
+    }
+  })();
+
+  return controller;
 }
 
 // ── Scheduled tasks ──────────────────────────────────────────────────

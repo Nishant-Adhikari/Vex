@@ -8,21 +8,8 @@
 import { execFile } from "node:child_process";
 import * as snapshotsRepo from "./db/repos/snapshots.js";
 import { query } from "./db/client.js";
-import { CHAIN_ALIASES } from "../khalani/chains.js";
+import { getDefaultTrackedChains, normalizePortfolioChain, resolvePortfolioChainName } from "./portfolio-chains.js";
 import logger from "../utils/logger.js";
-
-/** Reverse lookup: chainId -> chain alias name. */
-const CHAIN_ID_TO_NAME = new Map<number, string>();
-for (const [alias, chainId] of Object.entries(CHAIN_ALIASES)) {
-  // Prefer short aliases (skip long forms like "ethereum", keep "eth")
-  if (!CHAIN_ID_TO_NAME.has(chainId) || alias.length < (CHAIN_ID_TO_NAME.get(chainId)?.length ?? Infinity)) {
-    CHAIN_ID_TO_NAME.set(chainId, alias);
-  }
-}
-
-function resolveChainName(chainId: number): string {
-  return CHAIN_ID_TO_NAME.get(chainId) ?? `evm-${chainId}`;
-}
 
 interface Position {
   chain: string;
@@ -55,7 +42,7 @@ export async function takeSnapshot(source = "cron"): Promise<number> {
           continue;
         }
         positions.push({
-          chain: resolveChainName(b.chainId),
+          chain: resolvePortfolioChainName(b.chainId),
           token: b.address ?? "native",
           symbol: b.symbol ?? "???",
           amount: String(balance),
@@ -133,10 +120,10 @@ export async function takeSnapshot(source = "cron"): Promise<number> {
 
 /** Get active chains from trades + defaults. */
 async function getActiveChains(): Promise<string[]> {
-  const defaults = new Set(["0g", "solana"]);
+  const defaults = new Set(getDefaultTrackedChains());
   try {
     const rows = await query<{ chain: string }>("SELECT DISTINCT chain FROM trades");
-    for (const r of rows) defaults.add(r.chain);
+    for (const r of rows) defaults.add(normalizePortfolioChain(r.chain));
   } catch { /* expected: no trades table or rows yet */ }
   return [...defaults];
 }
