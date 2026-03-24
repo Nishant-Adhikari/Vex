@@ -61,7 +61,7 @@ describe("takeSnapshot EVM token parsing", () => {
         success: true,
         address: "0x123",
         tokens: [
-          { address: "0xToken", chainId: 16661, symbol: "TEST", decimals: 18, extensions: { balance: "100.5", price: { usd: "2.0" } } },
+          { address: "0xToken", chainId: 16661, symbol: "TEST", decimals: 18, extensions: { balance: "100500000000000000000", price: { usd: "2.0" } } },
         ],
       }),
       "khalani tokens balances --wallet solana": JSON.stringify({ success: true, tokens: [] }),
@@ -81,7 +81,7 @@ describe("takeSnapshot EVM token parsing", () => {
     mockCliResponse({
       "khalani tokens balances --wallet eip155": JSON.stringify({
         success: true, tokens: [
-          { address: "0x1", chainId: 1, symbol: "ETH", decimals: 18, extensions: { balance: "3.5", price: { usd: "3000" } } },
+          { address: "0x1", chainId: 1, symbol: "ETH", decimals: 18, extensions: { balance: "3500000000000000000", price: { usd: "3000" } } },
         ],
       }),
       "khalani tokens balances --wallet solana": JSON.stringify({ success: true, tokens: [] }),
@@ -244,7 +244,7 @@ describe("takeSnapshot Solana token parsing", () => {
       "khalani tokens balances --wallet eip155": JSON.stringify({ success: true, tokens: [] }),
       "khalani tokens balances --wallet solana": JSON.stringify({
         success: true, tokens: [
-          { address: "SoLAddr", chainId: 20011000000, symbol: "SOL", decimals: 9, extensions: { balance: "5.25", price: { usd: "150" } } },
+          { address: "SoLAddr", chainId: 20011000000, symbol: "SOL", decimals: 9, extensions: { balance: "5250000000", price: { usd: "150" } } },
         ],
       }),
       "wallet balance": JSON.stringify({ success: false }),
@@ -265,7 +265,7 @@ describe("takeSnapshot P&L calculation", () => {
     mockCliResponse({
       "khalani tokens balances --wallet eip155": JSON.stringify({
         success: true, tokens: [
-          { address: "0x1", chainId: 1, symbol: "T", decimals: 18, extensions: { balance: "150", price: { usd: "1" } } },
+          { address: "0x1", chainId: 1, symbol: "T", decimals: 18, extensions: { balance: "150000000000000000000", price: { usd: "1" } } },
         ],
       }),
       "khalani tokens balances --wallet solana": JSON.stringify({ success: true, tokens: [] }),

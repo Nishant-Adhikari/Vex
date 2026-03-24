@@ -31,7 +31,7 @@ describe("appendMemory with hash dedup", () => {
     appendMemory("test entry", "agent", "agent");
 
     expect(mockExecute).toHaveBeenCalledWith(
-      expect.stringContaining("ON CONFLICT (content_hash) DO NOTHING"),
+      expect.stringContaining("ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING"),
       expect.arrayContaining(["test entry", "agent", "agent", md5("test entry")]),
     );
   });
