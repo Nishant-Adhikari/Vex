@@ -4,7 +4,7 @@ import {
   SOL_DECIMALS,
   getWellKnownBySymbol,
   getWellKnownByMint,
-} from "../chains/solana/constants.js";
+} from "../tools/chains/solana/constants.js";
 
 describe("solana constants", () => {
   it("SOL_MINT is the wrapped SOL address", () => {

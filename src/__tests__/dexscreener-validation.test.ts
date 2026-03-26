@@ -10,7 +10,7 @@ import {
   validateWsHandshake,
   validateWsProfile,
   validateWsBoost,
-} from "../dexscreener/validation.js";
+} from "../tools/dexscreener/validation.js";
 
 // ── Fixtures ────────────────────────────────────────────────────────
 

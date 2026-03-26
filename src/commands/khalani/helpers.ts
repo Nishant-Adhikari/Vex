@@ -1,9 +1,9 @@
 import { getAddress, isAddress } from "viem";
 import { loadConfig } from "../../config/store.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { resolveChainId } from "../../khalani/chains.js";
-import { isSolanaAddressLike } from "../../khalani/validation.js";
-import type { ChainFamily, KhalaniChain } from "../../khalani/types.js";
+import { resolveChainId } from "../../tools/khalani/chains.js";
+import { isSolanaAddressLike } from "../../tools/khalani/validation.js";
+import type { ChainFamily, KhalaniChain } from "../../tools/khalani/types.js";
 
 export function formatChainFamily(family: ChainFamily): string {
   return family === "solana" ? "Solana" : "EVM";

@@ -1,19 +1,19 @@
 import { Command } from "commander";
 import { isAddress, getAddress, formatUnits } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { getPublicClient } from "../../wallet/client.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
-import { getSigningClient } from "../../wallet/signingClient.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
+import { getSigningClient } from "../../tools/wallet/signingClient.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe, validateSlippage } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import { SLOP_TOKEN_ABI } from "../../slop/abi/token.js";
+import { SLOP_TOKEN_ABI } from "../../tools/slop/abi/token.js";
 import {
   calculateOgOut,
   calculatePartialFill,
   applySlippage,
-} from "../../slop/quote.js";
+} from "../../tools/slop/quote.js";
 import {
   parseUnitsSafe,
   validateOfficialToken,

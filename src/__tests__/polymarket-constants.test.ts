@@ -5,7 +5,7 @@ import {
   POLY_KNOWN_SPENDERS,
   GAMMA_TIMEOUT_MS, CLOB_TIMEOUT_MS, DATA_API_TIMEOUT_MS, BRIDGE_TIMEOUT_MS, RELAYER_TIMEOUT_MS,
   POLYGON_CHAIN_ID,
-} from "../polymarket/constants.js";
+} from "../tools/polymarket/constants.js";
 
 const HEX_ADDR = /^0x[0-9a-fA-F]{40}$/;
 

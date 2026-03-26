@@ -9,7 +9,7 @@ import {
   setCachedDynamicChains,
   getCachedDynamicChains,
   clearDynamicChainsCache,
-} from "../kyberswap/chains.js";
+} from "../tools/kyberswap/chains.js";
 import { EchoError } from "../errors.js";
 
 describe("resolveChainSlug", () => {

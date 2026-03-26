@@ -8,7 +8,7 @@ vi.mock("../config/store.js", () => ({
   loadConfig: () => ({ solana: { jupiterApiKey: "" } }),
 }));
 
-const { listEvents, getPositions } = await import("../chains/solana/prediction-service.js");
+const { listEvents, getPositions } = await import("../tools/chains/solana/prediction-service.js");
 
 describe("prediction service", () => {
   it("listEvents unwraps { data: [...] } and normalizes fields", async () => {

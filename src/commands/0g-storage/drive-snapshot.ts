@@ -6,9 +6,9 @@ import { EchoError, ErrorCodes } from "../../errors.js";
 import { respond } from "../../utils/respond.js";
 import { spinner, colors } from "../../utils/ui.js";
 import { isHeadless } from "../../utils/output.js";
-import { getStorageClientConfig } from "../../0g-storage/client.js";
-import { uploadFile, downloadFile } from "../../0g-storage/files.js";
-import { formatCostDisplay } from "../../0g-storage/cost.js";
+import { getStorageClientConfig } from "../../tools/0g-storage/client.js";
+import { uploadFile, downloadFile } from "../../tools/0g-storage/files.js";
+import { formatCostDisplay } from "../../tools/0g-storage/cost.js";
 import { requireWallet } from "./shared.js";
 import {
   loadDriveIndex,
@@ -16,7 +16,7 @@ import {
   addSnapshot,
   serializeIndex,
   deserializeIndex,
-} from "../../0g-storage/drive-index.js";
+} from "../../tools/0g-storage/drive-index.js";
 
 export function addDriveSnapshotCommands(drive: Command): void {
   const snapshot = new Command("snapshot")

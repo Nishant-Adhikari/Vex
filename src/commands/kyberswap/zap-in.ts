@@ -5,12 +5,12 @@
 import { Command } from "commander";
 import type { Hex, Address } from "viem";
 import { parseUnits } from "viem";
-import { getKyberZaasClient } from "../../kyberswap/zaas/client.js";
-import { KS_ZAP_ROUTER_POSITION, NATIVE_TOKEN_ADDRESS } from "../../kyberswap/constants.js";
-import { getKyberEvmClients, ensureKyberAllowance, verifyRouterAddress, sendKyberTransaction } from "../../kyberswap/evm-utils.js";
+import { getKyberZaasClient } from "../../tools/kyberswap/zaas/client.js";
+import { KS_ZAP_ROUTER_POSITION, NATIVE_TOKEN_ADDRESS } from "../../tools/kyberswap/constants.js";
+import { getKyberEvmClients, ensureKyberAllowance, verifyRouterAddress, sendKyberTransaction } from "../../tools/kyberswap/evm-utils.js";
 import { resolveChain, resolveTokenAddress, requireFeature, formatUsd } from "./helpers.js";
-import { slugToChainId } from "../../kyberswap/chains.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { slugToChainId } from "../../tools/kyberswap/chains.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe, validateSlippage } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";

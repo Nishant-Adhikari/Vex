@@ -4,10 +4,10 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
-import { burnSplToken, closeEmptyAccounts } from "../../chains/solana/account-service.js";
-import { resolveToken } from "../../chains/solana/token-registry.js";
-import { parseSplAmount, shortenSolanaAddress } from "../../chains/solana/validation.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
+import { burnSplToken, closeEmptyAccounts } from "../../tools/chains/solana/account-service.js";
+import { resolveToken } from "../../tools/chains/solana/token-registry.js";
+import { parseSplAmount, shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, spinner, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

@@ -1,7 +1,7 @@
 import { Command } from "commander";
-import { getChain } from "../../khalani/chains.js";
-import { getKhalaniClient } from "../../khalani/client.js";
-import type { QuoteRoute, QuoteStreamRoute } from "../../khalani/types.js";
+import { getChain } from "../../tools/khalani/chains.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
+import type { QuoteRoute, QuoteStreamRoute } from "../../tools/khalani/types.js";
 import { writeJsonSuccess, writeStdout, isHeadless } from "../../utils/output.js";
 import { colors, infoBox, printTable, spinner } from "../../utils/ui.js";
 import { formatChainFamily, resolveRouteBestIndex } from "./helpers.js";

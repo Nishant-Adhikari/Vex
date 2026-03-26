@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { encryptPrivateKey, decryptPrivateKey, type KeystoreV1 } from "../wallet/keystore.js";
+import { encryptPrivateKey, decryptPrivateKey, type KeystoreV1 } from "../tools/wallet/keystore.js";
 
 describe("keystore", () => {
   const testPrivateKey = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

@@ -5,7 +5,7 @@ import {
   validatePaginatedTrades, validatePriceHistoryResponse,
   validatePriceResponse, validateMidpointResponse, validateSpreadResponse,
   validateLastTradePriceResponse, validateTickSizeResponse, validateFeeRateResponse,
-} from "../polymarket/clob/validation.js";
+} from "../tools/polymarket/clob/validation.js";
 
 describe("validateOrderBookResponse", () => {
   it("parses valid orderbook", () => {

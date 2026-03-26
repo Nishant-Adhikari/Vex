@@ -3,7 +3,7 @@ import type { Address } from "viem";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { respond } from "../../utils/respond.js";
-import { requireAddress, requirePositiveNumber } from "../../0g-compute/helpers.js";
+import { requireAddress, requirePositiveNumber } from "../../tools/0g-compute/helpers.js";
 import { requireYes } from "./helpers.js";
 import logger from "../../utils/logger.js";
 
@@ -36,7 +36,7 @@ export function createMonitorSubcommand(): Command {
       }) => {
         // Remove stopped marker on explicit start
         const { existsSync: fsE2, unlinkSync: fsU2 } = await import("node:fs");
-        const { ZG_MONITOR_STOPPED_FILE } = await import("../../0g-compute/constants.js");
+        const { ZG_MONITOR_STOPPED_FILE } = await import("../../tools/0g-compute/constants.js");
         try { if (fsE2(ZG_MONITOR_STOPPED_FILE)) fsU2(ZG_MONITOR_STOPPED_FILE); } catch { /* ignore */ }
 
         let providersRaw = options.providers;
@@ -49,7 +49,7 @@ export function createMonitorSubcommand(): Command {
         // --from-state: load saved monitor state as defaults
         if (options.fromState) {
           const { existsSync: fsE, readFileSync: fsR } = await import("node:fs");
-          const { ZG_MONITOR_STATE_FILE } = await import("../../0g-compute/constants.js");
+          const { ZG_MONITOR_STATE_FILE } = await import("../../tools/0g-compute/constants.js");
 
           if (!fsE(ZG_MONITOR_STATE_FILE)) {
             throw new EchoError(
@@ -121,7 +121,7 @@ export function createMonitorSubcommand(): Command {
           const { spawn } = await import("node:child_process");
           const { existsSync: fsExists, openSync, mkdirSync, closeSync } = await import("node:fs");
           const { fileURLToPath } = await import("node:url");
-          const { ZG_COMPUTE_DIR, ZG_MONITOR_LOG_FILE } = await import("../../0g-compute/constants.js");
+          const { ZG_COMPUTE_DIR, ZG_MONITOR_LOG_FILE } = await import("../../tools/0g-compute/constants.js");
           const { getSkillHooksEnv } = await import("../../openclaw/config.js");
 
           // Ensure log directory exists
@@ -165,7 +165,7 @@ export function createMonitorSubcommand(): Command {
           return;
         }
 
-        const { BalanceMonitor } = await import("../../0g-compute/monitor.js");
+        const { BalanceMonitor } = await import("../../tools/0g-compute/monitor.js");
         const monitorInstance = new BalanceMonitor({
           providers,
           mode,
@@ -187,7 +187,7 @@ export function createMonitorSubcommand(): Command {
     .option("--json", "JSON output")
     .action(async () => {
       const { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } = await import("node:fs");
-      const { ZG_MONITOR_PID_FILE, ZG_MONITOR_SHUTDOWN_FILE, ZG_MONITOR_STOPPED_FILE: STOPPED_FILE, ZG_COMPUTE_DIR } = await import("../../0g-compute/constants.js");
+      const { ZG_MONITOR_PID_FILE, ZG_MONITOR_SHUTDOWN_FILE, ZG_MONITOR_STOPPED_FILE: STOPPED_FILE, ZG_COMPUTE_DIR } = await import("../../tools/0g-compute/constants.js");
 
       if (!existsSync(ZG_MONITOR_PID_FILE)) {
         throw new EchoError(ErrorCodes.ZG_MONITOR_NOT_RUNNING, "Balance monitor is not running (no pidfile)");
@@ -268,7 +268,7 @@ export function createMonitorSubcommand(): Command {
     .option("--json", "JSON output")
     .action(async () => {
       const { existsSync, readFileSync } = await import("node:fs");
-      const { ZG_MONITOR_PID_FILE, ZG_MONITOR_STATE_FILE, ZG_MONITOR_LOG_FILE } = await import("../../0g-compute/constants.js");
+      const { ZG_MONITOR_PID_FILE, ZG_MONITOR_STATE_FILE, ZG_MONITOR_LOG_FILE } = await import("../../tools/0g-compute/constants.js");
 
       let running = false;
       let pid: number | undefined;

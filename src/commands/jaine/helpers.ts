@@ -1,9 +1,9 @@
 import type { Address } from "viem";
-import { getPublicClient } from "../../wallet/client.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { ERC20_EXTENDED_ABI } from "../../jaine/abi/erc20.js";
-import { FEE_TIERS, type FeeTier } from "../../jaine/abi/factory.js";
-import { getTokenSymbol } from "../../jaine/coreTokens.js";
+import { ERC20_EXTENDED_ABI } from "../../tools/jaine/abi/erc20.js";
+import { FEE_TIERS, type FeeTier } from "../../tools/jaine/abi/factory.js";
+import { getTokenSymbol } from "../../tools/jaine/coreTokens.js";
 
 export function validateFeeTier(fee: number): FeeTier {
   if (!FEE_TIERS.includes(fee as FeeTier)) {

@@ -45,13 +45,13 @@ vi.mock("../utils/ui.js", () => ({
 
 // ── Mock domain modules ─────────────────────────────────────────────
 
-vi.mock("../0g-storage/files.js", () => ({
+vi.mock("../tools/0g-storage/files.js", () => ({
   uploadFile: (...args: unknown[]) => mockUploadFile(...args),
   downloadFile: (...args: unknown[]) => mockDownloadFile(...args),
   getFileInfo: vi.fn(),
 }));
 
-vi.mock("../0g-storage/client.js", () => ({
+vi.mock("../tools/0g-storage/client.js", () => ({
   getStorageClientConfig: vi.fn(() => ({
     endpoints: { evmRpcUrl: "http://rpc", indexerRpcUrl: "http://idx", flowContract: "0xflow" },
     privateKey: "0xkey",
@@ -64,12 +64,12 @@ vi.mock("../0g-storage/client.js", () => ({
   })),
 }));
 
-vi.mock("../0g-storage/cost.js", () => ({
+vi.mock("../tools/0g-storage/cost.js", () => ({
   formatCost: vi.fn(() => ({ totalWei: "0", total0G: "0.000000" })),
   formatCostDisplay: vi.fn(() => "0.000000 0G"),
 }));
 
-vi.mock("../0g-storage/drive-index.js", () => ({
+vi.mock("../tools/0g-storage/drive-index.js", () => ({
   loadDriveIndex: (...args: unknown[]) => mockLoadDriveIndex(...args),
   saveDriveIndex: (...args: unknown[]) => mockSaveDriveIndex(...args),
   drivePut: vi.fn(),
@@ -101,7 +101,7 @@ vi.mock("../config/store.js", () => ({
   })),
 }));
 
-vi.mock("../wallet/auth.js", () => ({
+vi.mock("../tools/wallet/auth.js", () => ({
   requireWalletAndKeystore: vi.fn(() => ({ address: "0xtest", privateKey: "0xkey" })),
 }));
 
@@ -188,7 +188,7 @@ describe("file upload command", () => {
 
 describe("note list command", () => {
   it("returns noteId, name, size, uploadedAt", async () => {
-    const { driveLs } = await import("../0g-storage/drive-index.js");
+    const { driveLs } = await import("../tools/0g-storage/drive-index.js");
     (driveLs as ReturnType<typeof vi.fn>).mockReturnValueOnce([
       { name: "1234-abcd.md", type: "file", size: 100 },
     ]);
@@ -227,7 +227,7 @@ describe("note list command", () => {
   });
 
   it("returns empty list", async () => {
-    const { driveLs } = await import("../0g-storage/drive-index.js");
+    const { driveLs } = await import("../tools/0g-storage/drive-index.js");
     (driveLs as ReturnType<typeof vi.fn>).mockReturnValueOnce([]);
 
     mockLoadDriveIndex.mockReturnValue({

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSupportedChainsResponse } from "../kyberswap/common/validation.js";
+import { validateSupportedChainsResponse } from "../tools/kyberswap/common/validation.js";
 
 describe("validateSupportedChainsResponse", () => {
   it("rejects non-object", () => {

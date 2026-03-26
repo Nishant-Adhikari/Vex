@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { normalizePrivateKey, encryptPrivateKey } from "../wallet/keystore.js";
+import { normalizePrivateKey, encryptPrivateKey } from "../tools/wallet/keystore.js";
 
 const TEST_PK = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const TEST_PK_NO_PREFIX = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

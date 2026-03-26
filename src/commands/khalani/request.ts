@@ -1,6 +1,6 @@
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { getCachedKhalaniChains, getChainFamily, resolveChainId } from "../../khalani/chains.js";
-import type { QuoteRequest, TradeType } from "../../khalani/types.js";
+import { getCachedKhalaniChains, getChainFamily, resolveChainId } from "../../tools/khalani/chains.js";
+import type { QuoteRequest, TradeType } from "../../tools/khalani/types.js";
 import { formatChainFamily, normalizeAddressForFamily, resolveConfiguredAddress } from "./helpers.js";
 
 export interface QuoteRequestInput {

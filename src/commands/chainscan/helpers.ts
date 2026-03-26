@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 import { loadConfig } from "../../config/store.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { validateAddress } from "../../chainscan/validation.js";
+import { validateAddress } from "../../tools/chainscan/validation.js";
 
 export function resolveAddress(input?: string): Address {
   if (input) return validateAddress(input);

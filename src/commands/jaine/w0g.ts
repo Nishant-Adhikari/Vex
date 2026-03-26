@@ -1,13 +1,13 @@
 import { Command } from "commander";
 import { parseUnits, formatUnits } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { getPublicClient } from "../../wallet/client.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
-import { getSigningClient } from "../../wallet/signingClient.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
+import { getSigningClient } from "../../tools/wallet/signingClient.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors, formatBalance } from "../../utils/ui.js";
-import { W0G_ABI } from "../../jaine/abi/w0g.js";
+import { W0G_ABI } from "../../tools/jaine/abi/w0g.js";
 
 export function createW0gSubcommand(): Command {
   const w0g = new Command("w0g")

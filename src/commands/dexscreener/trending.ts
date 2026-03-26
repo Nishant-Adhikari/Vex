@@ -1,9 +1,9 @@
 import { Command } from "commander";
-import { getDexScreenerClient } from "../../dexscreener/client.js";
+import { getDexScreenerClient } from "../../tools/dexscreener/client.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { printTable, colors } from "../../utils/ui.js";
 import type { TableColumn } from "../../utils/ui.js";
-import type { DexTrendingItem } from "../../dexscreener/types.js";
+import type { DexTrendingItem } from "../../tools/dexscreener/types.js";
 
 const TRENDING_COLUMNS: TableColumn[] = [
   { header: "Chain", width: 12 },

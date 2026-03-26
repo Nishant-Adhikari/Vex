@@ -5,17 +5,17 @@ import { EchoError, ErrorCodes } from "../../errors.js";
 import { respond } from "../../utils/respond.js";
 import { spinner, colors } from "../../utils/ui.js";
 import { BACKUPS_DIR } from "../../config/paths.js";
-import { getStorageClientConfig } from "../../0g-storage/client.js";
-import { uploadFile } from "../../0g-storage/files.js";
-import { formatCostDisplay } from "../../0g-storage/cost.js";
+import { getStorageClientConfig } from "../../tools/0g-storage/client.js";
+import { uploadFile } from "../../tools/0g-storage/files.js";
+import { formatCostDisplay } from "../../tools/0g-storage/cost.js";
 import { requireWallet } from "./shared.js";
 import {
   loadDriveIndex,
   saveDriveIndex,
   drivePut,
   driveMkdir,
-} from "../../0g-storage/drive-index.js";
-import type { CostInfo } from "../../0g-storage/types.js";
+} from "../../tools/0g-storage/drive-index.js";
+import type { CostInfo } from "../../tools/0g-storage/types.js";
 
 export function createStorageBackupCommand(): Command {
   const backup = new Command("backup")
@@ -188,7 +188,7 @@ async function pushWalletLatest(wallet: string): Promise<void> {
   saveDriveIndex(index);
   s.succeed("Wallet backup uploaded");
 
-  const { formatCost } = await import("../../0g-storage/cost.js");
+  const { formatCost } = await import("../../tools/0g-storage/cost.js");
   const totalCost = formatCost(totalCostWei);
 
   respond({

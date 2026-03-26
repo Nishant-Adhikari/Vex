@@ -13,11 +13,11 @@ vi.mock("../config/store.js", () => ({
   loadConfig: mockLoadConfig,
 }));
 
-vi.mock("../khalani/chains.js", () => ({
+vi.mock("../tools/khalani/chains.js", () => ({
   getCachedKhalaniChains: mockGetCachedKhalaniChains,
 }));
 
-vi.mock("../wallet/native-balances.js", () => ({
+vi.mock("../tools/wallet/native-balances.js", () => ({
   collectNativeBalances: mockCollectNativeBalances,
 }));
 

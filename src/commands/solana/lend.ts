@@ -3,10 +3,10 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
-import { getLendRates, getLendPositions, lendDeposit, lendWithdraw } from "../../chains/solana/lend-service.js";
-import { resolveToken } from "../../chains/solana/token-registry.js";
-import { uiToTokenAmount } from "../../chains/solana/validation.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
+import { getLendRates, getLendPositions, lendDeposit, lendWithdraw } from "../../tools/chains/solana/lend-service.js";
+import { resolveToken } from "../../tools/chains/solana/token-registry.js";
+import { uiToTokenAmount } from "../../tools/chains/solana/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

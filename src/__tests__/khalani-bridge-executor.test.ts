@@ -7,7 +7,7 @@ import type {
   KhalaniChain,
   Permit2DepositPlan,
   TransferDepositPlan,
-} from "../khalani/types.js";
+} from "../tools/khalani/types.js";
 
 const ETH_CHAIN: KhalaniChain = {
   type: "eip155",
@@ -31,7 +31,7 @@ const CHAINS: KhalaniChain[] = [ETH_CHAIN, SOL_CHAIN];
 // We test parseBigintish directly (already imported at top-level).
 // For executeDepositPlan and friends, we mock the heavy dependencies.
 
-vi.mock("../wallet/multi-auth.js", () => ({
+vi.mock("../tools/wallet/multi-auth.js", () => ({
   requireEvmWallet: vi.fn(() => ({
     family: "eip155" as const,
     address: "0x9f7cF98a82462575a3b25C664BfBE5dCeCF3dec2",
@@ -52,7 +52,7 @@ const mockSubmitDeposit = vi.fn(async () => ({
   txHash: "0xdeadbeef",
 }));
 
-vi.mock("../khalani/evm-client.js", () => ({
+vi.mock("../tools/khalani/evm-client.js", () => ({
   createDynamicWalletClient: vi.fn(() => ({
     sendTransaction: mockSendTransaction,
     writeContract: mockWriteContract,
@@ -62,17 +62,17 @@ vi.mock("../khalani/evm-client.js", () => ({
   })),
 }));
 
-vi.mock("../khalani/solana-signer.js", () => ({
+vi.mock("../tools/khalani/solana-signer.js", () => ({
   signAndSendSolanaTransaction: vi.fn(async () => "5xFakeSignature123456789"),
 }));
 
-vi.mock("../khalani/client.js", () => ({
+vi.mock("../tools/khalani/client.js", () => ({
   getKhalaniClient: vi.fn(() => ({
     submitDeposit: mockSubmitDeposit,
   })),
 }));
 
-vi.mock("../khalani/chains.js", () => ({
+vi.mock("../tools/khalani/chains.js", () => ({
   getChainRpcUrl: vi.fn(() => "https://eth.example"),
 }));
 

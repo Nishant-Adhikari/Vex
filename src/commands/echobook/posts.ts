@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import * as postsApi from "../../echobook/posts.js";
+import * as postsApi from "../../tools/echobook/posts.js";
 import { formatTimeAgo, requireWalletAddress, renderPostList } from "./helpers.js";
 
 export function createPostsSubcommand(): Command {

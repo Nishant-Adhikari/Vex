@@ -9,7 +9,7 @@ vi.mock("../config/store.js", () => ({
   loadConfig: () => ({ solana: { jupiterApiKey: "" } }),
 }));
 
-const { getPendingInvites } = await import("../chains/solana/send-service.js");
+const { getPendingInvites } = await import("../tools/chains/solana/send-service.js");
 
 describe("send service", () => {
   it("getPendingInvites unwraps { invites: [...], hasMoreData }", async () => {

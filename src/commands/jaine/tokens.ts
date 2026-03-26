@@ -3,7 +3,7 @@ import { isAddress, getAddress } from "viem";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess, writeStderr } from "../../utils/output.js";
 import { successBox, colors, createTable } from "../../utils/ui.js";
-import { loadUserTokens, addUserAlias, removeUserAlias, getMergedTokens } from "../../jaine/userTokens.js";
+import { loadUserTokens, addUserAlias, removeUserAlias, getMergedTokens } from "../../tools/jaine/userTokens.js";
 
 export function createTokensSubcommand(): Command {
   const tokens = new Command("tokens")

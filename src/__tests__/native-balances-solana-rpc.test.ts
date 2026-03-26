@@ -15,11 +15,11 @@ vi.mock("@solana/web3.js", () => ({
   PublicKey: mockPublicKey,
 }));
 
-vi.mock("../khalani/evm-client.js", () => ({
+vi.mock("../tools/khalani/evm-client.js", () => ({
   createDynamicPublicClient: vi.fn(),
 }));
 
-const { collectNativeBalances } = await import("../wallet/native-balances.js");
+const { collectNativeBalances } = await import("../tools/wallet/native-balances.js");
 
 describe("collectNativeBalances", () => {
   beforeEach(() => {

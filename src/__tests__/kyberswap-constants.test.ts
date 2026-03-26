@@ -20,7 +20,7 @@ import {
   LIMIT_ORDER_TIMEOUT_MS,
   ZAAS_TIMEOUT_MS,
   COMMON_SERVICE_TIMEOUT_MS,
-} from "../kyberswap/constants.js";
+} from "../tools/kyberswap/constants.js";
 
 const HEX_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 

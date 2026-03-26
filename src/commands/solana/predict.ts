@@ -4,7 +4,7 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
 import {
   listEvents,
   searchEvents,
@@ -13,7 +13,7 @@ import {
   getPositions,
   claimPosition,
   closePosition,
-} from "../../chains/solana/prediction-service.js";
+} from "../../tools/chains/solana/prediction-service.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

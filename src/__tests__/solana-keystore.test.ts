@@ -7,7 +7,7 @@ import {
   encodeSolanaSecretKey,
   encryptSolanaSecretKey,
   normalizeSolanaSecretKey,
-} from "../wallet/solana-keystore.js";
+} from "../tools/wallet/solana-keystore.js";
 
 describe("solana keystore helpers", () => {
   it("normalizes base58 and JSON byte-array secret keys", () => {

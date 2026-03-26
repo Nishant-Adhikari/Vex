@@ -3,10 +3,10 @@
  */
 
 import { Command } from "commander";
-import { getKyberLimitOrderClient } from "../../kyberswap/limit-order/client.js";
+import { getKyberLimitOrderClient } from "../../tools/kyberswap/limit-order/client.js";
 import { resolveChain, requireFeature } from "./helpers.js";
-import { slugToChainId } from "../../kyberswap/chains.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { slugToChainId } from "../../tools/kyberswap/chains.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, infoBox, colors } from "../../utils/ui.js";
 

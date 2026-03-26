@@ -5,13 +5,13 @@
 
 import { Command } from "commander";
 import type { Hex, Address } from "viem";
-import { getKyberLimitOrderClient } from "../../kyberswap/limit-order/client.js";
-import { signEip712Message } from "../../kyberswap/limit-order/signing.js";
-import { DSLO_PROTOCOL } from "../../kyberswap/constants.js";
-import { getKyberEvmClients, sendKyberTransaction } from "../../kyberswap/evm-utils.js";
+import { getKyberLimitOrderClient } from "../../tools/kyberswap/limit-order/client.js";
+import { signEip712Message } from "../../tools/kyberswap/limit-order/signing.js";
+import { DSLO_PROTOCOL } from "../../tools/kyberswap/constants.js";
+import { getKyberEvmClients, sendKyberTransaction } from "../../tools/kyberswap/evm-utils.js";
 import { resolveChain, requireFeature } from "./helpers.js";
-import { slugToChainId } from "../../kyberswap/chains.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { slugToChainId } from "../../tools/kyberswap/chains.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";

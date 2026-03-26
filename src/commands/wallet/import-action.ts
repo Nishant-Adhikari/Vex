@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
-import { normalizePrivateKey } from "../../wallet/keystore.js";
-import { importWallet } from "../../wallet/import.js";
-import { importSolanaWallet } from "../../wallet/solana-import.js";
-import { normalizeSolanaSecretKey } from "../../wallet/solana-keystore.js";
-import { normalizeWalletChain } from "../../wallet/family.js";
+import { normalizePrivateKey } from "../../tools/wallet/keystore.js";
+import { importWallet } from "../../tools/wallet/import.js";
+import { importSolanaWallet } from "../../tools/wallet/solana-import.js";
+import { normalizeSolanaSecretKey } from "../../tools/wallet/solana-keystore.js";
+import { normalizeWalletChain } from "../../tools/wallet/family.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { assertWalletMutationAllowed } from "../../guardrails/wallet-mutation.js";
 import {

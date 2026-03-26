@@ -5,8 +5,8 @@
  * a single chain vocabulary.
  */
 
-import { CHAIN_ALIASES } from "../khalani/chains.js";
-import { getKyberChains, resolveChainSlug } from "../kyberswap/chains.js";
+import { CHAIN_ALIASES } from "../tools/khalani/chains.js";
+import { getKyberChains, resolveChainSlug } from "../tools/kyberswap/chains.js";
 
 const CHAIN_ID_TO_NAME = new Map<number, string>();
 

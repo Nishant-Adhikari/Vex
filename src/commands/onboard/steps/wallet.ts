@@ -1,7 +1,7 @@
 import inquirer from "inquirer";
-import { keystoreExists, normalizePrivateKey, loadKeystore, decryptPrivateKey } from "../../../wallet/keystore.js";
-import { createWallet } from "../../../wallet/create.js";
-import { importWallet } from "../../../wallet/import.js";
+import { keystoreExists, normalizePrivateKey, loadKeystore, decryptPrivateKey } from "../../../tools/wallet/keystore.js";
+import { createWallet } from "../../../tools/wallet/create.js";
+import { importWallet } from "../../../tools/wallet/import.js";
 import { loadConfig } from "../../../config/store.js";
 import { getKeystorePassword } from "../../../utils/env.js";
 import { spinner, colors } from "../../../utils/ui.js";

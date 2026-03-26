@@ -3,14 +3,14 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
 import {
   getStakeAccounts,
   createAndDelegateStake,
   withdrawStake,
   claimMev,
-} from "../../chains/solana/stake-service.js";
-import { validateSolanaAddress, shortenSolanaAddress } from "../../chains/solana/validation.js";
+} from "../../tools/chains/solana/stake-service.js";
+import { validateSolanaAddress, shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

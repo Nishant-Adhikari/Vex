@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { solanaExplorerUrl } from "../chains/solana/validation.js";
+import { solanaExplorerUrl } from "../tools/chains/solana/validation.js";
 import logger from "../utils/logger.js";
 import * as tradesRepo from "./db/repos/trades.js";
 import { normalizePortfolioChain } from "./portfolio-chains.js";

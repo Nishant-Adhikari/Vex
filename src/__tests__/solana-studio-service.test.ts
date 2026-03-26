@@ -10,7 +10,7 @@ vi.mock("../config/store.js", () => ({
 }));
 
 const { ErrorCodes } = await import("../errors.js");
-const { studioCreateToken, studioGetFees } = await import("../chains/solana/studio-service.js");
+const { studioCreateToken, studioGetFees } = await import("../tools/chains/solana/studio-service.js");
 
 describe("studio service", () => {
   it("studioGetFees throws when no API key is set", async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSupportedAssetsResponse, validateDepositResponse, validateQuoteResponse, validateTransactionsResponse } from "../polymarket/bridge/validation.js";
+import { validateSupportedAssetsResponse, validateDepositResponse, validateQuoteResponse, validateTransactionsResponse } from "../tools/polymarket/bridge/validation.js";
 
 describe("validateSupportedAssetsResponse", () => {
   it("parses assets", () => {

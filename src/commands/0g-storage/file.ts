@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { respond } from "../../utils/respond.js";
 import { spinner, colors } from "../../utils/ui.js";
-import { getStorageClientConfig } from "../../0g-storage/client.js";
-import { uploadFile, downloadFile, getFileInfo } from "../../0g-storage/files.js";
-import { formatCostDisplay } from "../../0g-storage/cost.js";
+import { getStorageClientConfig } from "../../tools/0g-storage/client.js";
+import { uploadFile, downloadFile, getFileInfo } from "../../tools/0g-storage/files.js";
+import { formatCostDisplay } from "../../tools/0g-storage/cost.js";
 
 export function createFileCommand(): Command {
   const file = new Command("file")

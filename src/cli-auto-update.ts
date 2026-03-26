@@ -8,7 +8,7 @@ import { runAutoUpdateBootstrap } from "./update/cli-bootstrap.js";
 import { retireLegacyUpdateDaemon } from "./update/legacy-runtime.js";
 import { maybeResurrectDaemons } from "./utils/daemon-resurrect.js";
 import { spawnMonitorFromState, spawnBotDaemon } from "./utils/daemon-spawn.js";
-import { ZG_MONITOR_PID_FILE, ZG_MONITOR_STATE_FILE, ZG_MONITOR_STOPPED_FILE } from "./0g-compute/constants.js";
+import { ZG_MONITOR_PID_FILE, ZG_MONITOR_STATE_FILE, ZG_MONITOR_STOPPED_FILE } from "./tools/0g-compute/constants.js";
 import { BOT_PID_FILE, BOT_ORDERS_FILE, BOT_STOPPED_FILE } from "./config/paths.js";
 
 let updateCheckStarted = false;

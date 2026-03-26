@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { isAddress, getAddress, formatUnits } from "viem";
-import { getPublicClient } from "../../wallet/client.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { infoBox, colors } from "../../utils/ui.js";
-import { SLOP_TOKEN_ABI } from "../../slop/abi/token.js";
-import { calculateGraduationProgress } from "../../slop/quote.js";
+import { SLOP_TOKEN_ABI } from "../../tools/slop/abi/token.js";
+import { calculateGraduationProgress } from "../../tools/slop/quote.js";
 import { validateOfficialToken, getTokenState } from "./helpers.js";
 
 export function createPriceSubcommand(): Command {

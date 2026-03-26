@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
 import {
   createDcaOrder,
   listDcaOrders,
@@ -12,11 +12,11 @@ import {
   listLimitOrders,
   cancelLimitOrder,
   type TriggerOrder,
-} from "../../chains/solana/order-service.js";
+} from "../../tools/chains/solana/order-service.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { shortenSolanaAddress } from "../../chains/solana/validation.js";
+import { shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
 
 export function createOrdersSubcommand(): Command {
   const orders = new Command("dca")

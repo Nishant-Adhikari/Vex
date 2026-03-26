@@ -9,7 +9,7 @@ import {
   validateOrderResponse,
   parseKhalaniErrorBody,
   isSolanaAddressLike,
-} from "../khalani/validation.js";
+} from "../tools/khalani/validation.js";
 
 describe("khalani validation", () => {
   describe("validateChainsResponse", () => {

@@ -5,17 +5,17 @@
 
 import { Command } from "commander";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
-import { sendSol, sendSplToken } from "../../chains/solana/transfer-service.js";
-import { resolveToken } from "../../chains/solana/token-registry.js";
-import { getSolanaConnection } from "../../chains/solana/connection.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
+import { sendSol, sendSplToken } from "../../tools/chains/solana/transfer-service.js";
+import { resolveToken } from "../../tools/chains/solana/token-registry.js";
+import { getSolanaConnection } from "../../tools/chains/solana/connection.js";
 import {
   validateSolanaAddress,
   parseSolAmount,
   parseSplAmount,
   shortenSolanaAddress,
   lamportsToSol,
-} from "../../chains/solana/validation.js";
+} from "../../tools/chains/solana/validation.js";
 import { loadConfig } from "../../config/store.js";
 import { createIntent, saveIntent, loadIntent, deleteIntent, isIntentExpired } from "../../intents/store.js";
 import type { SolanaTransferIntent, SolanaSplTransferIntent, TransferIntent } from "../../intents/types.js";

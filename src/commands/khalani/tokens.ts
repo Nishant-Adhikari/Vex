@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { getCachedKhalaniChains } from "../../khalani/chains.js";
-import { getKhalaniClient } from "../../khalani/client.js";
+import { getCachedKhalaniChains } from "../../tools/khalani/chains.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { writeJsonSuccess, isHeadless } from "../../utils/output.js";
 import { printTable, formatAddress, colors } from "../../utils/ui.js";

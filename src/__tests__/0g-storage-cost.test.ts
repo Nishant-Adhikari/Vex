@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { formatCost } from "../0g-storage/cost.js";
-import { formatCostDisplay } from "../0g-storage/cost.js";
+import { formatCost } from "../tools/0g-storage/cost.js";
+import { formatCostDisplay } from "../tools/0g-storage/cost.js";
 
 describe("formatCost", () => {
   it("formats a positive bigint", () => {

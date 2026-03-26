@@ -8,19 +8,19 @@ import {
   type Hex,
 } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { getPublicClient } from "../../wallet/client.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
-import { getSigningClient } from "../../wallet/signingClient.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
+import { getSigningClient } from "../../tools/wallet/signingClient.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe, validateSlippage } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess, writeStderr } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors, createTable } from "../../utils/ui.js";
-import { resolveToken, getTokenSymbol } from "../../jaine/coreTokens.js";
-import { loadUserTokens } from "../../jaine/userTokens.js";
-import { NFT_MANAGER_ABI } from "../../jaine/abi/nftManager.js";
-import { POOL_ABI } from "../../jaine/abi/pool.js";
-import { type FeeTier } from "../../jaine/abi/factory.js";
-import { ensureAllowance } from "../../jaine/allowance.js";
+import { resolveToken, getTokenSymbol } from "../../tools/jaine/coreTokens.js";
+import { loadUserTokens } from "../../tools/jaine/userTokens.js";
+import { NFT_MANAGER_ABI } from "../../tools/jaine/abi/nftManager.js";
+import { POOL_ABI } from "../../tools/jaine/abi/pool.js";
+import { type FeeTier } from "../../tools/jaine/abi/factory.js";
+import { ensureAllowance } from "../../tools/jaine/allowance.js";
 import { validateFeeTier, getTokenDecimals } from "./helpers.js";
 
 export function createLpSubcommand(): Command {

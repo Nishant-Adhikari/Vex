@@ -7,7 +7,7 @@ import {
   validatePagination,
   validateStatsPagination,
   validateTag,
-} from "../chainscan/validation.js";
+} from "../tools/chainscan/validation.js";
 import { EchoError } from "../errors.js";
 
 describe("chainscan validation", () => {

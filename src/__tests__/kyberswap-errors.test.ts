@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapKyberTransportError } from "../kyberswap/errors.js";
+import { mapKyberTransportError } from "../tools/kyberswap/errors.js";
 import { EchoError, ErrorCodes } from "../errors.js";
 
 describe("mapKyberTransportError", () => {

@@ -16,8 +16,8 @@ vi.mock("../../agent/db/repos/snapshots.js", () => ({
 vi.mock("../../utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock("../../khalani/chains.js", () => ({ CHAIN_ALIASES: {} }));
-vi.mock("../../kyberswap/chains.js", () => ({
+vi.mock("../../tools/khalani/chains.js", () => ({ CHAIN_ALIASES: {} }));
+vi.mock("../../tools/kyberswap/chains.js", () => ({
   getKyberChains: () => [{ chainId: 1, slug: "ethereum" }],
   resolveChainSlug: (s: string) => s,
 }));

@@ -20,7 +20,7 @@ import {
   ZG_COMPUTE_DIR,
   ZG_MONITOR_LOG_FILE,
   ZG_MONITOR_PID_FILE,
-} from "../0g-compute/constants.js";
+} from "../tools/0g-compute/constants.js";
 import {
   CLAUDE_PROXY_DIR,
   CLAUDE_PROXY_LOG_FILE,

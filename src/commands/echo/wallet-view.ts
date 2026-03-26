@@ -1,8 +1,8 @@
 import { loadConfig } from "../../config/store.js";
-import { getCachedKhalaniChains } from "../../khalani/chains.js";
-import type { KhalaniChain } from "../../khalani/types.js";
+import { getCachedKhalaniChains } from "../../tools/khalani/chains.js";
+import type { KhalaniChain } from "../../tools/khalani/types.js";
 import { buildEchoSnapshot } from "./snapshot.js";
-import { collectNativeBalances } from "../../wallet/native-balances.js";
+import { collectNativeBalances } from "../../tools/wallet/native-balances.js";
 
 export interface WalletNativeBalanceView {
   address: string | null;

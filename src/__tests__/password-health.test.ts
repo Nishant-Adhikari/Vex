@@ -21,7 +21,7 @@ vi.mock("../utils/env.js", () => ({
   getKeystorePassword: (...args: []) => mockGetKeystorePassword(...args),
 }));
 
-vi.mock("../wallet/keystore.js", () => ({
+vi.mock("../tools/wallet/keystore.js", () => ({
   keystoreExists: (...args: []) => mockKeystoreExists(...args),
   loadKeystore: (...args: []) => mockLoadKeystore(...args),
   decryptPrivateKey: (...args: unknown[]) => mockDecryptPrivateKey(...args),

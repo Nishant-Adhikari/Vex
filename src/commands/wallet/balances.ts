@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { loadConfig } from "../../config/store.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { getCachedKhalaniChains } from "../../khalani/chains.js";
-import { getKhalaniClient } from "../../khalani/client.js";
-import type { ChainFamily, KhalaniToken } from "../../khalani/types.js";
-import { collectNativeBalances } from "../../wallet/native-balances.js";
+import { getCachedKhalaniChains } from "../../tools/khalani/chains.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
+import type { ChainFamily, KhalaniToken } from "../../tools/khalani/types.js";
+import { collectNativeBalances } from "../../tools/wallet/native-balances.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { colors, infoBox, printTable } from "../../utils/ui.js";
 import { parseChainIdsOption } from "../khalani/helpers.js";

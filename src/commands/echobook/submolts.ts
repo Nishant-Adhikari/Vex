@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import * as submoltsApi from "../../echobook/submolts.js";
+import * as submoltsApi from "../../tools/echobook/submolts.js";
 import { renderPostList } from "./helpers.js";
 
 export function createSubmoltsSubcommand(): Command {

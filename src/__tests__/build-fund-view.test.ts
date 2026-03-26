@@ -21,12 +21,12 @@ const mockResolvePreferredComputeSelection = vi.fn();
 
 // ── Mocks ───────────────────────────────────────────────────────────
 
-vi.mock("../0g-compute/broker-factory.js", () => ({
+vi.mock("../tools/0g-compute/broker-factory.js", () => ({
   getAuthenticatedBroker: mockGetAuthenticatedBroker,
   resetAuthenticatedBroker: mockResetAuthenticatedBroker,
 }));
 
-vi.mock("../0g-compute/operations.js", () => ({
+vi.mock("../tools/0g-compute/operations.js", () => ({
   getSubAccountBalance: mockGetSubAccountBalance,
   isProviderAcked: mockIsProviderAcked,
   listChatServices: mockListChatServices,
@@ -37,23 +37,23 @@ vi.mock("../0g-compute/operations.js", () => ({
   ackWithReadback: vi.fn(),
 }));
 
-vi.mock("../0g-compute/monitor-lifecycle.js", () => ({
+vi.mock("../tools/0g-compute/monitor-lifecycle.js", () => ({
   getMonitorPid: mockGetMonitorPid,
   isMonitorTrackingProvider: mockIsMonitorTrackingProvider,
   stopMonitorDaemon: vi.fn(),
 }));
 
-vi.mock("../0g-compute/pricing.js", () => ({
+vi.mock("../tools/0g-compute/pricing.js", () => ({
   calculateProviderPricing: mockCalculateProviderPricing,
   formatPricePerMTokens: mockFormatPricePerMTokens,
 }));
 
-vi.mock("../0g-compute/readiness.js", () => ({
+vi.mock("../tools/0g-compute/readiness.js", () => ({
   loadComputeState: mockLoadComputeState,
   saveComputeState: vi.fn(),
 }));
 
-vi.mock("../wallet/client.js", () => ({
+vi.mock("../tools/wallet/client.js", () => ({
   getPublicClient: mockGetPublicClient,
 }));
 
@@ -115,7 +115,7 @@ vi.mock("../commands/echo/compute-selection.js", () => ({
   resolvePreferredComputeSelection: mockResolvePreferredComputeSelection,
 }));
 
-vi.mock("../0g-compute/constants.js", () => ({
+vi.mock("../tools/0g-compute/constants.js", () => ({
   ZG_COMPUTE_DIR: "/tmp/zg-test",
   ZG_MONITOR_LOG_FILE: "/tmp/zg-test/monitor.log",
 }));

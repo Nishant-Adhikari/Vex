@@ -5,8 +5,8 @@ import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe, validateSlippage } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess, writeStderr } from "../../utils/output.js";
 import { spinner, infoBox, colors, createTable } from "../../utils/ui.js";
-import { resolveToken, getTokenSymbol } from "../../jaine/coreTokens.js";
-import { loadUserTokens } from "../../jaine/userTokens.js";
+import { resolveToken, getTokenSymbol } from "../../tools/jaine/coreTokens.js";
+import { loadUserTokens } from "../../tools/jaine/userTokens.js";
 import {
   loadPoolsCache,
   savePoolsCache,
@@ -15,10 +15,10 @@ import {
   findPoolsForToken,
   findPoolsBetweenTokens,
   type PoolsCache,
-} from "../../jaine/poolCache.js";
-import { POOLS_CACHE_FILE } from "../../jaine/paths.js";
-import { FEE_TIERS, type FeeTier } from "../../jaine/abi/factory.js";
-import { findBestRouteExactInput, formatRoute } from "../../jaine/routing.js";
+} from "../../tools/jaine/poolCache.js";
+import { POOLS_CACHE_FILE } from "../../tools/jaine/paths.js";
+import { FEE_TIERS, type FeeTier } from "../../tools/jaine/abi/factory.js";
+import { findBestRouteExactInput, formatRoute } from "../../tools/jaine/routing.js";
 import { validateFeeTier, getTokenDecimals } from "./helpers.js";
 
 export function createPoolsSubcommand(): Command {

@@ -21,7 +21,7 @@ vi.mock("../utils/logger.js", () => ({
 }));
 
 // Import client once (after mocks are set up)
-import { chainscanClient } from "../chainscan/client.js";
+import { chainscanClient } from "../tools/chainscan/client.js";
 
 // Save original fetch
 const originalFetch = globalThis.fetch;

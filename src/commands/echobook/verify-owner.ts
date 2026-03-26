@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, colors } from "../../utils/ui.js";
-import { requestOwnershipCode } from "../../echobook/verifyOwner.js";
-import { requireAuth } from "../../echobook/auth.js";
+import { requestOwnershipCode } from "../../tools/echobook/verifyOwner.js";
+import { requireAuth } from "../../tools/echobook/auth.js";
 
 export function createVerifyOwnerSubcommand(): Command {
   const verifyOwner = new Command("verify-owner")

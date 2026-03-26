@@ -24,9 +24,9 @@ import { monitorStep } from "../../commands/onboard/steps/monitor.js";
 import { gatewayStep } from "../../commands/onboard/steps/gateway.js";
 import { patchOpenclawConfig, patchOpenclawSkillEnv } from "../../openclaw/config.js";
 import { writeAppEnvValue } from "../../providers/env-resolution.js";
-import { createWallet } from "../../wallet/create.js";
-import { keystoreExists } from "../../wallet/keystore.js";
-import { solanaKeystoreExists } from "../../wallet/solana-keystore.js";
+import { createWallet } from "../../tools/wallet/create.js";
+import { keystoreExists } from "../../tools/wallet/keystore.js";
+import { solanaKeystoreExists } from "../../tools/wallet/solana-keystore.js";
 import { spawnMonitorFromState } from "../../utils/daemon-spawn.js";
 import logger from "../../utils/logger.js";
 
@@ -177,7 +177,7 @@ const handleWallet: RouteHandler = async (_req, res, params) => {
     }
 
     if (chain === "solana") {
-      const { createSolanaWallet } = await import("../../wallet/solana-create.js");
+      const { createSolanaWallet } = await import("../../tools/wallet/solana-create.js");
       const result = await createSolanaWallet({ force });
       logger.info(`[launcher] openclaw solana wallet created: ${result.address}`);
       jsonResponse(res, 200, {
@@ -212,9 +212,9 @@ const handleCompute: RouteHandler = async (_req, res, params) => {
     return;
   }
 
-  const { getAuthenticatedBroker } = await import("../../0g-compute/broker-factory.js");
-  const { depositToLedger, fundProvider: fundProviderOp, ackWithReadback, createApiKey, listChatServices } = await import("../../0g-compute/operations.js");
-  const { configureOpenclawProvider } = await import("../../0g-compute/operations.js");
+  const { getAuthenticatedBroker } = await import("../../tools/0g-compute/broker-factory.js");
+  const { depositToLedger, fundProvider: fundProviderOp, ackWithReadback, createApiKey, listChatServices } = await import("../../tools/0g-compute/operations.js");
+  const { configureOpenclawProvider } = await import("../../tools/0g-compute/operations.js");
 
   try {
     const broker = await getAuthenticatedBroker();

@@ -11,8 +11,8 @@
 import inquirer from "inquirer";
 import { formatUnits } from "viem";
 import type { Address } from "viem";
-import { getAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
-import { checkComputeReadiness } from "../../0g-compute/readiness.js";
+import { getAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
+import { checkComputeReadiness } from "../../tools/0g-compute/readiness.js";
 import {
   listChatServices,
   depositToLedger,
@@ -23,10 +23,10 @@ import {
   createApiKey,
   getServiceMetadata,
   type ServiceDetail,
-} from "../../0g-compute/operations.js";
-import { calculateProviderPricing, formatPricePerMTokens } from "../../0g-compute/pricing.js";
-import { redactToken } from "../../0g-compute/helpers.js";
-import { getPublicClient } from "../../wallet/client.js";
+} from "../../tools/0g-compute/operations.js";
+import { calculateProviderPricing, formatPricePerMTokens } from "../../tools/0g-compute/pricing.js";
+import { redactToken } from "../../tools/0g-compute/helpers.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
 import { renderBatBanner } from "../../utils/banner.js";
 import { spinner, colors, infoBox, successBox, warnBox } from "../../utils/ui.js";
 import { writeStderr, isHeadless } from "../../utils/output.js";

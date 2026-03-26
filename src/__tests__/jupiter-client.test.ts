@@ -20,13 +20,13 @@ describe("jupiter client", () => {
   describe("getJupiterBaseUrl", () => {
     it("returns api.jup.ag when API key is set", async () => {
       mockLoadConfig.mockReturnValue({ solana: { jupiterApiKey: "test-key" } });
-      const { getJupiterBaseUrl } = await import("../chains/solana/jupiter-client.js");
+      const { getJupiterBaseUrl } = await import("../tools/chains/solana/jupiter-client.js");
       expect(getJupiterBaseUrl()).toBe("https://api.jup.ag");
     });
 
     it("returns lite-api.jup.ag when no API key", async () => {
       mockLoadConfig.mockReturnValue({ solana: { jupiterApiKey: "" } });
-      const { getJupiterBaseUrl } = await import("../chains/solana/jupiter-client.js");
+      const { getJupiterBaseUrl } = await import("../tools/chains/solana/jupiter-client.js");
       expect(getJupiterBaseUrl()).toBe("https://lite-api.jup.ag");
     });
   });
@@ -34,13 +34,13 @@ describe("jupiter client", () => {
   describe("getJupiterHeaders", () => {
     it("includes x-api-key when key is set", async () => {
       mockLoadConfig.mockReturnValue({ solana: { jupiterApiKey: "my-key" } });
-      const { getJupiterHeaders } = await import("../chains/solana/jupiter-client.js");
+      const { getJupiterHeaders } = await import("../tools/chains/solana/jupiter-client.js");
       expect(getJupiterHeaders()).toEqual({ "x-api-key": "my-key" });
     });
 
     it("returns empty object when no key", async () => {
       mockLoadConfig.mockReturnValue({ solana: { jupiterApiKey: "" } });
-      const { getJupiterHeaders } = await import("../chains/solana/jupiter-client.js");
+      const { getJupiterHeaders } = await import("../tools/chains/solana/jupiter-client.js");
       expect(getJupiterHeaders()).toEqual({});
     });
   });
@@ -54,7 +54,7 @@ describe("jupiter client", () => {
         json: async () => [{ id: "mint1", symbol: "TEST", name: "Test", decimals: 6, icon: "https://img.test" }],
       });
 
-      const { jupiterSearchTokens } = await import("../chains/solana/jupiter-client.js");
+      const { jupiterSearchTokens } = await import("../tools/chains/solana/jupiter-client.js");
       const result = await jupiterSearchTokens("TEST");
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -75,7 +75,7 @@ describe("jupiter client", () => {
         json: async () => [{ id: "mint1", symbol: "A", name: "A", decimals: 6 }],
       });
 
-      const { jupiterGetTokensByMint } = await import("../chains/solana/jupiter-client.js");
+      const { jupiterGetTokensByMint } = await import("../tools/chains/solana/jupiter-client.js");
       await jupiterGetTokensByMint(["mint1", "mint2"]);
 
       const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
@@ -93,7 +93,7 @@ describe("jupiter client", () => {
         json: async () => ({ data: { mint1: { price: "150.25" } } }),
       });
 
-      const { jupiterGetPrices } = await import("../chains/solana/jupiter-client.js");
+      const { jupiterGetPrices } = await import("../tools/chains/solana/jupiter-client.js");
       const prices = await jupiterGetPrices(["mint1"]);
 
       expect(prices.get("mint1")).toBe(150.25);

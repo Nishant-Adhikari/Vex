@@ -9,7 +9,7 @@
  */
 
 import type { InferenceProvider } from "./types.js";
-import { loadComputeState } from "../../0g-compute/readiness.js";
+import { loadComputeState } from "../../tools/0g-compute/readiness.js";
 import logger from "../../utils/logger.js";
 
 // ── Lazy imports to avoid loading unused provider dependencies ────────

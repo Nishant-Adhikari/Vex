@@ -3,7 +3,7 @@
  */
 
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { hasPolyClobCredentials } from "../../polymarket/auth.js";
+import { hasPolyClobCredentials } from "../../tools/polymarket/auth.js";
 
 /** Ensure CLOB API is configured. Throws with setup hint if not. */
 export function requirePolyAuth(): void {

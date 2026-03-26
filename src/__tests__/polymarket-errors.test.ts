@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapPolyTransportError, mapPolyApiError } from "../polymarket/errors.js";
+import { mapPolyTransportError, mapPolyApiError } from "../tools/polymarket/errors.js";
 import { EchoError, ErrorCodes } from "../errors.js";
 
 describe("mapPolyTransportError", () => {

@@ -19,11 +19,11 @@ vi.mock("../bot/executor.js", () => ({
   requireWalletAndKeystore: vi.fn(),
 }));
 
-vi.mock("../0g-compute/broker-factory.js", () => ({
+vi.mock("../tools/0g-compute/broker-factory.js", () => ({
   getAuthenticatedBroker: vi.fn(),
 }));
 
-vi.mock("../0g-compute/bridge.js", () => ({
+vi.mock("../tools/0g-compute/bridge.js", () => ({
   withSuppressedConsole: vi.fn((fn: () => unknown) => fn()),
 }));
 
@@ -32,7 +32,7 @@ vi.mock("../openclaw/config.js", () => ({
   patchOpenclawConfig: vi.fn(() => ({ status: "created", path: "/test", keysSet: [], keysSkipped: [] })),
 }));
 
-vi.mock("../0g-compute/constants.js", () => ({
+vi.mock("../tools/0g-compute/constants.js", () => ({
   ZG_COMPUTE_DIR: "/tmp/test-echoclaw-0g-compute",
   ZG_COMPUTE_STATE_FILE: "/tmp/test-echoclaw-0g-compute/compute-state.json",
   ZG_MONITOR_STATE_FILE: "/tmp/test-echoclaw-0g-compute/monitor-state.json",
@@ -45,9 +45,9 @@ vi.mock("../utils/logger.js", () => ({
 
 // ── Imports (after mocks) ───────────────────────────────────────────
 
-import { checkComputeReadiness } from "../0g-compute/readiness.js";
+import { checkComputeReadiness } from "../tools/0g-compute/readiness.js";
 import { requireWalletAndKeystore } from "../bot/executor.js";
-import { getAuthenticatedBroker } from "../0g-compute/broker-factory.js";
+import { getAuthenticatedBroker } from "../tools/0g-compute/broker-factory.js";
 import { loadOpenclawConfig } from "../openclaw/config.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────

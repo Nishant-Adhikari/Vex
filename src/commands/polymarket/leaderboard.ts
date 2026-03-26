@@ -3,9 +3,9 @@
  */
 
 import { Command } from "commander";
-import { getPolyDataClient } from "../../polymarket/data/client.js";
+import { getPolyDataClient } from "../../tools/polymarket/data/client.js";
 import { formatUsd } from "./helpers.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, infoBox, colors } from "../../utils/ui.js";
 import { parseIntSafe } from "../../utils/validation.js";

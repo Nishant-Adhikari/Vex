@@ -15,7 +15,7 @@ const {
   tokenAmountToUi,
   solanaExplorerUrl,
   shortenSolanaAddress,
-} = await import("../chains/solana/validation.js");
+} = await import("../tools/chains/solana/validation.js");
 
 const { ErrorCodes } = await import("../errors.js");
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateZapRouteResponse, validateZapBuildResponse } from "../kyberswap/zaas/validation.js";
+import { validateZapRouteResponse, validateZapBuildResponse } from "../tools/kyberswap/zaas/validation.js";
 
 describe("validateZapRouteResponse", () => {
   it("rejects non-object", () => {

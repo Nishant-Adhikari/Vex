@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatPairRow, PAIR_COLUMNS } from "../commands/dexscreener/helpers.js";
-import type { DexPair } from "../dexscreener/types.js";
+import type { DexPair } from "../tools/dexscreener/types.js";
 
 const FULL_PAIR: DexPair = {
   chainId: "solana",

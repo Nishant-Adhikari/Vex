@@ -6,11 +6,11 @@
  * read the canonical selection from here.
  */
 
-import { loadComputeState, saveComputeState } from "../../0g-compute/readiness.js";
+import { loadComputeState, saveComputeState } from "../../tools/0g-compute/readiness.js";
 import { loadConfig, saveConfig } from "../../config/store.js";
 import { loadOpenclawConfig, patchOpenclawConfig, removeOpenclawConfigKey } from "../../openclaw/config.js";
 import { writeAppEnvValue } from "../../providers/env-resolution.js";
-import type { ServiceDetail } from "../../0g-compute/operations.js";
+import type { ServiceDetail } from "../../tools/0g-compute/operations.js";
 import logger from "../../utils/logger.js";
 
 // ── Types ────────────────────────────────────────────────────────

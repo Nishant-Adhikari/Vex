@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateTokenSearchResponse, validateHoneypotFotResponse } from "../kyberswap/token-api/validation.js";
+import { validateTokenSearchResponse, validateHoneypotFotResponse } from "../tools/kyberswap/token-api/validation.js";
 
 describe("validateTokenSearchResponse", () => {
   it("rejects non-object", () => {

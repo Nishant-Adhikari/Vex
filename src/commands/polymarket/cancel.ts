@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import { getPolyClobClient } from "../../polymarket/clob/client.js";
+import { getPolyClobClient } from "../../tools/polymarket/clob/client.js";
 import { requirePolyAuth } from "./helpers.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";

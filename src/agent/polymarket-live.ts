@@ -6,8 +6,8 @@
  */
 
 import logger from "../utils/logger.js";
-import { CLOB_WS_USER_URL } from "../polymarket/constants.js";
-import { hasPolyClobCredentials, requirePolyClobCredentials } from "../polymarket/auth.js";
+import { CLOB_WS_USER_URL } from "../tools/polymarket/constants.js";
+import { hasPolyClobCredentials, requirePolyClobCredentials } from "../tools/polymarket/auth.js";
 import { getPolymarketPredictionState } from "./predictions.js";
 import type { PredictionLiveStatus, PredictionPanelState } from "./types.js";
 

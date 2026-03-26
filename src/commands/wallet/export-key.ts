@@ -1,9 +1,9 @@
 import { writeFileSync } from "node:fs";
 import { platform } from "node:os";
 import { Command } from "commander";
-import { decryptPrivateKey, loadKeystore } from "../../wallet/keystore.js";
-import { encodeSolanaSecretKey, loadSolanaKeystore, decryptSolanaSecretKey } from "../../wallet/solana-keystore.js";
-import { normalizeWalletChain } from "../../wallet/family.js";
+import { decryptPrivateKey, loadKeystore } from "../../tools/wallet/keystore.js";
+import { encodeSolanaSecretKey, loadSolanaKeystore, decryptSolanaSecretKey } from "../../tools/wallet/solana-keystore.js";
+import { normalizeWalletChain } from "../../tools/wallet/family.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { requireKeystorePassword } from "../../utils/env.js";
 import {

@@ -60,8 +60,8 @@ vi.mock("../../agent/scheduler.js", () => ({
 vi.mock("../../agent/trade-capture.js", () => ({
   deriveTradeIdFromTrade: () => "trade_derived_123",
 }));
-vi.mock("../../khalani/chains.js", () => ({ CHAIN_ALIASES: {} }));
-vi.mock("../../kyberswap/chains.js", () => ({ getKyberChains: () => [], resolveChainSlug: (s: string) => s }));
+vi.mock("../../tools/khalani/chains.js", () => ({ CHAIN_ALIASES: {} }));
+vi.mock("../../tools/kyberswap/chains.js", () => ({ getKyberChains: () => [], resolveChainSlug: (s: string) => s }));
 vi.mock("../../utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));

@@ -7,12 +7,12 @@
 
 import { Command } from "commander";
 import { formatUnits, parseUnits, type Hex, type Address } from "viem";
-import { getKyberAggregatorClient } from "../../kyberswap/aggregator/client.js";
-import { META_AGGREGATION_ROUTER_V2, NATIVE_TOKEN_ADDRESS } from "../../kyberswap/constants.js";
-import { getKyberEvmClients, ensureKyberAllowance, verifyRouterAddress, sendKyberTransaction } from "../../kyberswap/evm-utils.js";
+import { getKyberAggregatorClient } from "../../tools/kyberswap/aggregator/client.js";
+import { META_AGGREGATION_ROUTER_V2, NATIVE_TOKEN_ADDRESS } from "../../tools/kyberswap/constants.js";
+import { getKyberEvmClients, ensureKyberAllowance, verifyRouterAddress, sendKyberTransaction } from "../../tools/kyberswap/evm-utils.js";
 import { resolveChain, resolveTokenAddress, formatUsd, formatGas, requireFeature } from "./helpers.js";
-import { slugToChainId } from "../../kyberswap/chains.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { slugToChainId } from "../../tools/kyberswap/chains.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe, validateSlippage } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";

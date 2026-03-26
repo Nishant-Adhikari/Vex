@@ -35,7 +35,7 @@ vi.mock("../config/store.js", () => ({
   ensureConfigDir: vi.fn(),
 }));
 
-vi.mock("../khalani/chains.js", () => ({
+vi.mock("../tools/khalani/chains.js", () => ({
   getCachedKhalaniChains: vi.fn(async () => [
     { type: "eip155", id: 1, name: "Ethereum", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
     { type: "solana", id: 20011000000, name: "Solana", nativeCurrency: { name: "Sol", symbol: "SOL", decimals: 9 } },
@@ -43,13 +43,13 @@ vi.mock("../khalani/chains.js", () => ({
   resolveChainId: vi.fn((v: string) => Number(v)),
 }));
 
-vi.mock("../khalani/client.js", () => ({
+vi.mock("../tools/khalani/client.js", () => ({
   getKhalaniClient: vi.fn(() => ({
     getTokenBalances: mockGetTokenBalances,
   })),
 }));
 
-vi.mock("../wallet/native-balances.js", () => ({
+vi.mock("../tools/wallet/native-balances.js", () => ({
   collectNativeBalances: mockCollectNativeBalances,
 }));
 

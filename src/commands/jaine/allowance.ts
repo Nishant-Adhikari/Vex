@@ -1,18 +1,18 @@
 import { Command } from "commander";
 import { maxUint256, formatUnits } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import { resolveToken } from "../../jaine/coreTokens.js";
-import { loadUserTokens } from "../../jaine/userTokens.js";
+import { resolveToken } from "../../tools/jaine/coreTokens.js";
+import { loadUserTokens } from "../../tools/jaine/userTokens.js";
 import {
   getAllAllowances,
   revokeApproval,
   getSpenderAddress,
   type SpenderType,
-} from "../../jaine/allowance.js";
+} from "../../tools/jaine/allowance.js";
 import { getTokenDecimals, getTokenSymbolOnChain } from "./helpers.js";
 
 export function createAllowanceSubcommand(): Command {

@@ -2,10 +2,10 @@ import { getAddress, type Address, type Hash, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { ERC20_ABI } from "../../constants/chain.js";
-import { getKhalaniClient } from "../../khalani/client.js";
-import { getChainRpcUrl } from "../../khalani/chains.js";
-import { createDynamicPublicClient, createDynamicWalletClient } from "../../khalani/evm-client.js";
-import { signAndSendSolanaTransaction } from "../../khalani/solana-signer.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
+import { getChainRpcUrl } from "../../tools/khalani/chains.js";
+import { createDynamicPublicClient, createDynamicWalletClient } from "../../tools/khalani/evm-client.js";
+import { signAndSendSolanaTransaction } from "../../tools/khalani/solana-signer.js";
 import type {
   Approval,
   ContractCallDepositPlan,
@@ -13,8 +13,8 @@ import type {
   EvmApproval,
   KhalaniChain,
   TransferDepositPlan,
-} from "../../khalani/types.js";
-import { requireEvmWallet, requireSolanaWallet } from "../../wallet/multi-auth.js";
+} from "../../tools/khalani/types.js";
+import { requireEvmWallet, requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
 
 interface Eip1193TransactionRequest {
   from?: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildClobOrder } from "../polymarket/clob/signing.js";
+import { buildClobOrder } from "../tools/polymarket/clob/signing.js";
 
 describe("buildClobOrder", () => {
   const BASE = { maker: "0x1234567890123456789012345678901234567890", signer: "0x1234567890123456789012345678901234567890", tokenId: "12345", makerAmount: "100000000", takerAmount: "50000000", side: "BUY" as const, feeRateBps: "30" };

@@ -13,7 +13,7 @@ import {
   encryptPrivateKey,
   saveKeystore,
   keystoreExists,
-} from "../wallet/keystore.js";
+} from "../tools/wallet/keystore.js";
 import {
   successBox,
   spinner,

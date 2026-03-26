@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import { login, getAuthStatus, logout } from "../../echobook/auth.js";
+import { login, getAuthStatus, logout } from "../../tools/echobook/auth.js";
 
 export function createAuthSubcommand(): Command {
   const auth = new Command("auth")

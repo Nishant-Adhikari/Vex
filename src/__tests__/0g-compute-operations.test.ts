@@ -3,19 +3,19 @@ import { parseUnits } from "viem";
 
 // ── Mock modules ────────────────────────────────────────────────────
 
-vi.mock("../0g-compute/bridge.js", () => ({
+vi.mock("../tools/0g-compute/bridge.js", () => ({
   withSuppressedConsole: vi.fn((fn: () => unknown) => fn()),
 }));
 
-vi.mock("../0g-compute/account.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../0g-compute/account.js")>();
+vi.mock("../tools/0g-compute/account.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../tools/0g-compute/account.js")>();
   return {
     ...actual,
     normalizeSubAccount: vi.fn(),
   };
 });
 
-vi.mock("../0g-compute/pricing.js", () => ({
+vi.mock("../tools/0g-compute/pricing.js", () => ({
   calculateProviderPricing: vi.fn(),
   formatPricePerMTokens: vi.fn(),
 }));
@@ -24,7 +24,7 @@ vi.mock("../openclaw/config.js", () => ({
   patchOpenclawConfig: vi.fn(() => ({ status: "created", path: "/test", keysSet: [], keysSkipped: [] })),
 }));
 
-vi.mock("../0g-compute/readiness.js", () => ({
+vi.mock("../tools/0g-compute/readiness.js", () => ({
   saveComputeState: vi.fn(),
 }));
 
@@ -34,8 +34,8 @@ vi.mock("../utils/logger.js", () => ({
 
 // ── Imports (after mocks) ───────────────────────────────────────────
 
-import { fundProvider, ackWithReadback, depositToLedger, getLedgerBalance } from "../0g-compute/operations.js";
-import { normalizeLedger, normalizeLedgerDetail } from "../0g-compute/account.js";
+import { fundProvider, ackWithReadback, depositToLedger, getLedgerBalance } from "../tools/0g-compute/operations.js";
+import { normalizeLedger, normalizeLedgerDetail } from "../tools/0g-compute/account.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

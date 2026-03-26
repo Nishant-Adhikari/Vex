@@ -3,10 +3,10 @@ import { parseUnits } from "viem";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { respond } from "../../utils/respond.js";
-import { getAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
-import { withSuppressedConsole } from "../../0g-compute/bridge.js";
-import { normalizeSubAccount, normalizeInferTuple, normalizeLedger, normalizeLedgerDetail, serializeSubAccount } from "../../0g-compute/account.js";
-import { requireAddress, requirePositiveNumber, serializeBigInts } from "../../0g-compute/helpers.js";
+import { getAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
+import { withSuppressedConsole } from "../../tools/0g-compute/bridge.js";
+import { normalizeSubAccount, normalizeInferTuple, normalizeLedger, normalizeLedgerDetail, serializeSubAccount } from "../../tools/0g-compute/account.js";
+import { requireAddress, requirePositiveNumber, serializeBigInts } from "../../tools/0g-compute/helpers.js";
 import { requireYes } from "./helpers.js";
 import logger from "../../utils/logger.js";
 
@@ -21,7 +21,7 @@ export function createLedgerSubcommand(): Command {
       const broker = await getAuthenticatedBroker();
 
       // Try getLedgerWithDetail (returns sub-accounts without extra RPC)
-      let normalized: import("../../0g-compute/account.js").NormalizedLedger;
+      let normalized: import("../../tools/0g-compute/account.js").NormalizedLedger;
       let subAccounts: ReturnType<typeof normalizeInferTuple>[] = [];
 
       try {

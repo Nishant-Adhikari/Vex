@@ -4,12 +4,12 @@
  */
 
 import { Command } from "commander";
-import { jupiterGetPrices } from "../../chains/solana/jupiter-client.js";
-import { resolveTokens } from "../../chains/solana/token-registry.js";
+import { jupiterGetPrices } from "../../tools/chains/solana/jupiter-client.js";
+import { resolveTokens } from "../../tools/chains/solana/token-registry.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { shortenSolanaAddress } from "../../chains/solana/validation.js";
+import { shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
 
 function formatPrice(price: number): string {
   if (price < 0.0001) return `$${price.toFixed(10)}`;

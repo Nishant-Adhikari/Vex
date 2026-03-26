@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapDexScreenerError, mapTransportError } from "../dexscreener/errors.js";
+import { mapDexScreenerError, mapTransportError } from "../tools/dexscreener/errors.js";
 import { EchoError, ErrorCodes } from "../errors.js";
 
 describe("mapDexScreenerError", () => {

@@ -3,9 +3,9 @@ import type { Address } from "viem";
 import { privateKeyToAddress } from "viem/accounts";
 import inquirer from "inquirer";
 import { loadConfig, saveConfig } from "../../config/store.js";
-import { decryptPrivateKey, loadKeystore, keystoreExists } from "../../wallet/keystore.js";
-import { decryptSolanaSecretKey, deriveSolanaAddress, loadSolanaKeystore, solanaKeystoreExists } from "../../wallet/solana-keystore.js";
-import { createSolanaWallet } from "../../wallet/solana-create.js";
+import { decryptPrivateKey, loadKeystore, keystoreExists } from "../../tools/wallet/keystore.js";
+import { decryptSolanaSecretKey, deriveSolanaAddress, loadSolanaKeystore, solanaKeystoreExists } from "../../tools/wallet/solana-keystore.js";
+import { createSolanaWallet } from "../../tools/wallet/solana-create.js";
 import { getKeystorePassword } from "../../utils/env.js";
 import { isWalletMutationAllowed } from "../../guardrails/wallet-mutation.js";
 import {

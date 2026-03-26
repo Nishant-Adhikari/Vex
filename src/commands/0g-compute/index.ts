@@ -18,7 +18,7 @@ export function create0gComputeCommand(): Command {
     .description("Readiness check (read-only, no transactions)")
     .option("--json", "JSON output")
     .action(async () => {
-      const { checkComputeReadiness } = await import("../../0g-compute/readiness.js");
+      const { checkComputeReadiness } = await import("../../tools/0g-compute/readiness.js");
 
       const result = await checkComputeReadiness();
       const { checks } = result;

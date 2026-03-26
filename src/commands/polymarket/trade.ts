@@ -4,13 +4,13 @@
 
 import { Command } from "commander";
 import type { Hex } from "viem";
-import { getPolyGammaClient } from "../../polymarket/gamma/client.js";
-import { getPolyClobClient } from "../../polymarket/clob/client.js";
-import { buildClobOrder, signClobOrder } from "../../polymarket/clob/signing.js";
-import { requirePolyClobCredentials } from "../../polymarket/auth.js";
-import { USDC_E_DECIMALS } from "../../polymarket/constants.js";
+import { getPolyGammaClient } from "../../tools/polymarket/gamma/client.js";
+import { getPolyClobClient } from "../../tools/polymarket/clob/client.js";
+import { buildClobOrder, signClobOrder } from "../../tools/polymarket/clob/signing.js";
+import { requirePolyClobCredentials } from "../../tools/polymarket/auth.js";
+import { USDC_E_DECIMALS } from "../../tools/polymarket/constants.js";
 import { requirePolyAuth, parseClobTokenIds, formatUsd, formatProbability } from "./helpers.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";

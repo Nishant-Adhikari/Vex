@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { getCachedKhalaniChains, resolveChainId } from "../../khalani/chains.js";
-import { getKhalaniClient } from "../../khalani/client.js";
-import type { KhalaniOrder } from "../../khalani/types.js";
+import { getCachedKhalaniChains, resolveChainId } from "../../tools/khalani/chains.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
+import type { KhalaniOrder } from "../../tools/khalani/types.js";
 import { infoBox, printTable, colors, spinner } from "../../utils/ui.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { normalizeAddressForFamily, resolveConfiguredAddress } from "./helpers.js";

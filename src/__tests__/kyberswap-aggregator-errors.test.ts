@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapAggregatorError } from "../kyberswap/aggregator/errors.js";
+import { mapAggregatorError } from "../tools/kyberswap/aggregator/errors.js";
 import { ErrorCodes } from "../errors.js";
 
 describe("mapAggregatorError", () => {

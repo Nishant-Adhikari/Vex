@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { loadConfig } from "../../config/store.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
 import { fetchJson } from "../../utils/http.js";
-import { requireSlopAuth } from "../../slop/auth.js";
+import { requireSlopAuth } from "../../tools/slop/auth.js";
 import type { ApiResponse, ProfileResponse } from "./index.js";
 
 export function createProfileSubcommand(): Command {

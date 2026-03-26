@@ -8,7 +8,7 @@ vi.mock("../config/store.js", () => ({
   loadConfig: () => ({ solana: { jupiterApiKey: "" } }),
 }));
 
-const { getLendRates, getLendPositions } = await import("../chains/solana/lend-service.js");
+const { getLendRates, getLendPositions } = await import("../tools/chains/solana/lend-service.js");
 
 describe("lend service", () => {
   describe("getLendRates", () => {

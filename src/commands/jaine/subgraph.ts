@@ -3,7 +3,7 @@ import { isAddress, getAddress } from "viem";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess, writeStderr } from "../../utils/output.js";
 import { spinner, infoBox, colors, createTable } from "../../utils/ui.js";
-import { subgraphClient } from "../../jaine/subgraph/client.js";
+import { subgraphClient } from "../../tools/jaine/subgraph/client.js";
 
 // --- Validation helpers ---
 

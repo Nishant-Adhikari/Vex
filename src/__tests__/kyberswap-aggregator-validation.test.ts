@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSwapRouteResponse, validateSwapBuildResponse } from "../kyberswap/aggregator/validation.js";
+import { validateSwapRouteResponse, validateSwapBuildResponse } from "../tools/kyberswap/aggregator/validation.js";
 
 const VALID_ROUTE_RESPONSE = {
   code: 0,

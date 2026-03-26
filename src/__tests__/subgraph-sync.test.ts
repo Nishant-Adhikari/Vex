@@ -20,19 +20,19 @@ vi.mock("../utils/logger.js", () => ({
   },
 }));
 
-vi.mock("../wallet/client.js", () => ({
+vi.mock("../tools/wallet/client.js", () => ({
   getPublicClient: vi.fn(),
 }));
 
 // Mock the subgraph client
-vi.mock("../jaine/subgraph/client.js", () => ({
+vi.mock("../tools/jaine/subgraph/client.js", () => ({
   subgraphClient: {
     getTopPools: vi.fn(),
   },
 }));
 
-import { syncPoolsFromSubgraph } from "../jaine/poolCache.js";
-import { subgraphClient } from "../jaine/subgraph/client.js";
+import { syncPoolsFromSubgraph } from "../tools/jaine/poolCache.js";
+import { subgraphClient } from "../tools/jaine/subgraph/client.js";
 
 describe("syncPoolsFromSubgraph", () => {
   beforeEach(() => {

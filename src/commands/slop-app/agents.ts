@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { loadConfig } from "../../config/store.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner } from "../../utils/ui.js";
 import { fetchWithTimeout } from "../../utils/http.js";
-import { requireSlopAuth } from "../../slop/auth.js";
+import { requireSlopAuth } from "../../tools/slop/auth.js";
 
 // --- Types ---
 

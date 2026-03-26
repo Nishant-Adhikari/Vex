@@ -9,7 +9,7 @@ import {
   calculateGraduationProgress,
   PRECISION,
   GRADUATION_THRESHOLD_BPS,
-} from "../slop/quote.js";
+} from "../tools/slop/quote.js";
 
 describe("slop/quote", () => {
   describe("ceilDiv", () => {

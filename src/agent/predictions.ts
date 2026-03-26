@@ -5,12 +5,12 @@
  * keeping them separate from wallet portfolio snapshots.
  */
 
-import { getMarket as getJupiterMarket, getPositions as getJupiterPositions } from "../chains/solana/prediction-service.js";
-import { getPolyClobClient } from "../polymarket/clob/client.js";
-import { getPolyDataClient } from "../polymarket/data/client.js";
-import { hasPolyClobCredentials } from "../polymarket/auth.js";
+import { getMarket as getJupiterMarket, getPositions as getJupiterPositions } from "../tools/chains/solana/prediction-service.js";
+import { getPolyClobClient } from "../tools/polymarket/clob/client.js";
+import { getPolyDataClient } from "../tools/polymarket/data/client.js";
+import { hasPolyClobCredentials } from "../tools/polymarket/auth.js";
 import logger from "../utils/logger.js";
-import { requireEvmWallet, requireSolanaWallet } from "../wallet/multi-auth.js";
+import { requireEvmWallet, requireSolanaWallet } from "../tools/wallet/multi-auth.js";
 import type {
   PredictionOrder,
   PredictionPanelState,

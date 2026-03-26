@@ -2,10 +2,10 @@ import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import * as commentsApi from "../../echobook/comments.js";
-import * as votesApi from "../../echobook/votes.js";
-import * as followsApi from "../../echobook/follows.js";
-import * as repostsApi from "../../echobook/reposts.js";
+import * as commentsApi from "../../tools/echobook/comments.js";
+import * as votesApi from "../../tools/echobook/votes.js";
+import * as followsApi from "../../tools/echobook/follows.js";
+import * as repostsApi from "../../tools/echobook/reposts.js";
 import { formatTimeAgo, truncateAddress, parseVoteArg } from "./helpers.js";
 
 export function createCommentsSubcommand(): Command {

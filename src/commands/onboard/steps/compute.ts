@@ -1,16 +1,16 @@
 import inquirer from "inquirer";
 import { parseUnits, formatUnits } from "viem";
 import type { Address } from "viem";
-import { getAuthenticatedBroker } from "../../../0g-compute/broker-factory.js";
-import { withSuppressedConsole } from "../../../0g-compute/bridge.js";
-import { normalizeSubAccount, normalizeLedger } from "../../../0g-compute/account.js";
-import { calculateProviderPricing, formatPricePerMTokens } from "../../../0g-compute/pricing.js";
-import { checkComputeReadiness, saveComputeState } from "../../../0g-compute/readiness.js";
-import { redactToken } from "../../../0g-compute/helpers.js";
+import { getAuthenticatedBroker } from "../../../tools/0g-compute/broker-factory.js";
+import { withSuppressedConsole } from "../../../tools/0g-compute/bridge.js";
+import { normalizeSubAccount, normalizeLedger } from "../../../tools/0g-compute/account.js";
+import { calculateProviderPricing, formatPricePerMTokens } from "../../../tools/0g-compute/pricing.js";
+import { checkComputeReadiness, saveComputeState } from "../../../tools/0g-compute/readiness.js";
+import { redactToken } from "../../../tools/0g-compute/helpers.js";
 import { patchOpenclawConfig } from "../../../openclaw/config.js";
 import { spinner, colors, infoBox } from "../../../utils/ui.js";
 import { writeStderr } from "../../../utils/output.js";
-import { getPublicClient } from "../../../wallet/client.js";
+import { getPublicClient } from "../../../tools/wallet/client.js";
 import logger from "../../../utils/logger.js";
 import type { OnboardState, OnboardStep, StepStatus, StepResult } from "../types.js";
 

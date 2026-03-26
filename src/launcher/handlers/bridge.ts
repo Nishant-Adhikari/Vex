@@ -6,8 +6,8 @@
 
 import type { RouteHandler } from "../types.js";
 import { jsonResponse, errorResponse, registerRoute } from "../routes.js";
-import { getKhalaniClient } from "../../khalani/client.js";
-import { getCachedKhalaniChains } from "../../khalani/chains.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
+import { getCachedKhalaniChains } from "../../tools/khalani/chains.js";
 import { prepareQuoteRequest } from "../../commands/khalani/request.js";
 import { resolveRouteBestIndex } from "../../commands/khalani/helpers.js";
 import logger from "../../utils/logger.js";

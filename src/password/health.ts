@@ -1,7 +1,7 @@
 import { ENV_FILE } from "../config/paths.js";
 import { readEnvValue } from "../providers/env-resolution.js";
 import { getKeystorePassword } from "../utils/env.js";
-import { decryptPrivateKey, keystoreExists, loadKeystore } from "../wallet/keystore.js";
+import { decryptPrivateKey, keystoreExists, loadKeystore } from "../tools/wallet/keystore.js";
 
 export type PasswordHealthStatus = "ready" | "missing" | "drift" | "invalid";
 export type PasswordHealthSource = "env" | "app-env" | "none";

@@ -7,8 +7,8 @@ import { Command } from "commander";
 import {
   jupiterGetTrendingTokens,
   type JupiterTokenListEntry,
-} from "../../chains/solana/jupiter-client.js";
-import { cacheTokens } from "../../chains/solana/token-cache.js";
+} from "../../tools/chains/solana/jupiter-client.js";
+import { cacheTokens } from "../../tools/chains/solana/token-cache.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

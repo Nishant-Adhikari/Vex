@@ -3,13 +3,13 @@ import {
   normalizeSubAccount,
   normalizeInferTuple,
   serializeSubAccount,
-} from "../0g-compute/account.js";
+} from "../tools/0g-compute/account.js";
 import {
   calculateProviderPricing,
   formatPricePerMTokens,
   DEFAULT_TOKEN_BUDGET,
   DEFAULT_ALERT_RATIO,
-} from "../0g-compute/pricing.js";
+} from "../tools/0g-compute/pricing.js";
 
 // ── normalizeSubAccount ──────────────────────────────────────────────
 

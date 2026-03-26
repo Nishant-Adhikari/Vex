@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { io, Socket } from "socket.io-client";
 import { loadConfig } from "../../config/store.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import { requireSlopAuth } from "../../slop/auth.js";
+import { requireSlopAuth } from "../../tools/slop/auth.js";
 
 export function createChatSubcommand(): Command {
   const chat = new Command("chat")

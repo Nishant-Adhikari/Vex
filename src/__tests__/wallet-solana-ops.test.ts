@@ -43,7 +43,7 @@ vi.mock("../utils/logger.js", () => ({
 }));
 
 const { loadConfig, saveConfig, getDefaultConfig } = await import("../config/store.js");
-const { encodeSolanaSecretKey } = await import("../wallet/solana-keystore.js");
+const { encodeSolanaSecretKey } = await import("../tools/wallet/solana-keystore.js");
 
 describe("Solana wallet operations", () => {
   beforeEach(() => {
@@ -62,7 +62,7 @@ describe("Solana wallet operations", () => {
 
   describe("createSolanaWallet", () => {
     it("creates a new Solana wallet and saves to config", async () => {
-      const { createSolanaWallet } = await import("../wallet/solana-create.js");
+      const { createSolanaWallet } = await import("../tools/wallet/solana-create.js");
       const result = await createSolanaWallet();
 
       expect(result.address).toBeTruthy();
@@ -74,7 +74,7 @@ describe("Solana wallet operations", () => {
     });
 
     it("throws KEYSTORE_ALREADY_EXISTS when keystore exists and force is false", async () => {
-      const { createSolanaWallet } = await import("../wallet/solana-create.js");
+      const { createSolanaWallet } = await import("../tools/wallet/solana-create.js");
 
       await createSolanaWallet();
 
@@ -84,7 +84,7 @@ describe("Solana wallet operations", () => {
     });
 
     it("overwrites existing keystore when force is true", async () => {
-      const { createSolanaWallet } = await import("../wallet/solana-create.js");
+      const { createSolanaWallet } = await import("../tools/wallet/solana-create.js");
 
       await createSolanaWallet();
       const second = await createSolanaWallet({ force: true });
@@ -96,7 +96,7 @@ describe("Solana wallet operations", () => {
 
   describe("importSolanaWallet", () => {
     it("imports a base58 secret key", async () => {
-      const { importSolanaWallet } = await import("../wallet/solana-import.js");
+      const { importSolanaWallet } = await import("../tools/wallet/solana-import.js");
       const keypair = Keypair.generate();
       const base58Key = encodeSolanaSecretKey(keypair.secretKey);
 
@@ -110,7 +110,7 @@ describe("Solana wallet operations", () => {
     });
 
     it("imports a JSON byte array secret key", async () => {
-      const { importSolanaWallet } = await import("../wallet/solana-import.js");
+      const { importSolanaWallet } = await import("../tools/wallet/solana-import.js");
       const keypair = Keypair.generate();
       const jsonKey = JSON.stringify(Array.from(keypair.secretKey));
 
@@ -121,7 +121,7 @@ describe("Solana wallet operations", () => {
     });
 
     it("throws KEYSTORE_ALREADY_EXISTS when keystore exists and force is false", async () => {
-      const { importSolanaWallet } = await import("../wallet/solana-import.js");
+      const { importSolanaWallet } = await import("../tools/wallet/solana-import.js");
       const keypair1 = Keypair.generate();
       const keypair2 = Keypair.generate();
 
@@ -135,7 +135,7 @@ describe("Solana wallet operations", () => {
     });
 
     it("overwrites existing keystore when force is true", async () => {
-      const { importSolanaWallet } = await import("../wallet/solana-import.js");
+      const { importSolanaWallet } = await import("../tools/wallet/solana-import.js");
       const keypair1 = Keypair.generate();
       const keypair2 = Keypair.generate();
 
@@ -147,7 +147,7 @@ describe("Solana wallet operations", () => {
     });
 
     it("throws INVALID_PRIVATE_KEY for invalid base58 input", async () => {
-      const { importSolanaWallet } = await import("../wallet/solana-import.js");
+      const { importSolanaWallet } = await import("../tools/wallet/solana-import.js");
 
       await expect(
         importSolanaWallet("not-a-valid-key!!!"),
@@ -157,7 +157,7 @@ describe("Solana wallet operations", () => {
     });
 
     it("throws INVALID_PRIVATE_KEY for empty input", async () => {
-      const { importSolanaWallet } = await import("../wallet/solana-import.js");
+      const { importSolanaWallet } = await import("../tools/wallet/solana-import.js");
 
       await expect(
         importSolanaWallet(""),

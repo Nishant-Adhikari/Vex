@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import type { Address } from "viem";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
-import { getAuthenticatedBroker, resetAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
-import { withSuppressedConsole } from "../../0g-compute/bridge.js";
-import { normalizeSubAccount, serializeSubAccount } from "../../0g-compute/account.js";
-import { calculateProviderPricing, formatPricePerMTokens } from "../../0g-compute/pricing.js";
-import { serializeBigInts } from "../../0g-compute/helpers.js";
+import { getAuthenticatedBroker, resetAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
+import { withSuppressedConsole } from "../../tools/0g-compute/bridge.js";
+import { normalizeSubAccount, serializeSubAccount } from "../../tools/0g-compute/account.js";
+import { calculateProviderPricing, formatPricePerMTokens } from "../../tools/0g-compute/pricing.js";
+import { serializeBigInts } from "../../tools/0g-compute/helpers.js";
 
 export function createProvidersSubcommand(): Command {
   return new Command("providers")

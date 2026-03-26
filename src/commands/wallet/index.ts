@@ -1,13 +1,13 @@
 import { Command } from "commander";
 import type { Address } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { createWallet } from "../../wallet/create.js";
-import { createSolanaWallet } from "../../wallet/solana-create.js";
+import { createWallet } from "../../tools/wallet/create.js";
+import { createSolanaWallet } from "../../tools/wallet/solana-create.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { successBox, spinner, colors } from "../../utils/ui.js";
 import { writeStdout, isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { assertWalletMutationAllowed } from "../../guardrails/wallet-mutation.js";
-import { formatWalletChain, normalizeWalletChain } from "../../wallet/family.js";
+import { formatWalletChain, normalizeWalletChain } from "../../tools/wallet/family.js";
 
 // Re-exports consumed by cli.ts, wallet/import.ts, wallet/create.ts
 export { importPrivateKeyAction } from "./import-action.js";

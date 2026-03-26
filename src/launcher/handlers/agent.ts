@@ -81,7 +81,7 @@ const handleReadiness: RouteHandler = async (_req, res) => {
 
     let walletOk = false;
     try {
-      const { keystoreExists } = await import("../../wallet/keystore.js");
+      const { keystoreExists } = await import("../../tools/wallet/keystore.js");
       walletOk = keystoreExists();
     } catch { /* wallet module unavailable */ }
 
@@ -102,7 +102,7 @@ const handleReadiness: RouteHandler = async (_req, res) => {
     let computeOk = false;
     let computeDetail: string | null = null;
     try {
-      const { loadComputeState, checkComputeReadiness } = await import("../../0g-compute/readiness.js");
+      const { loadComputeState, checkComputeReadiness } = await import("../../tools/0g-compute/readiness.js");
       const state = loadComputeState();
       if (state?.activeProvider) {
         try {
@@ -219,7 +219,7 @@ const handleSetPassword: RouteHandler = async (_req, res, params) => {
     // Verify decryption works if keystore exists
     let verified = false;
     try {
-      const { keystoreExists, loadKeystore, decryptPrivateKey } = await import("../../wallet/keystore.js");
+      const { keystoreExists, loadKeystore, decryptPrivateKey } = await import("../../tools/wallet/keystore.js");
       if (keystoreExists()) {
         const ks = loadKeystore();
         if (ks) {

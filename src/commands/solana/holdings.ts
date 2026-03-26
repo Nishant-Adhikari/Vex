@@ -3,10 +3,10 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
-import { jupiterHoldings, jupiterShield } from "../../chains/solana/jupiter-client.js";
-import { resolveTokens } from "../../chains/solana/token-registry.js";
-import { lamportsToSol, shortenSolanaAddress } from "../../chains/solana/validation.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
+import { jupiterHoldings, jupiterShield } from "../../tools/chains/solana/jupiter-client.js";
+import { resolveTokens } from "../../tools/chains/solana/token-registry.js";
+import { lamportsToSol, shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, printTable, infoBox, colors } from "../../utils/ui.js";
 

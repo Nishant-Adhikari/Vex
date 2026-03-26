@@ -2,9 +2,9 @@ import { existsSync, readFileSync, openSync, mkdirSync, closeSync } from "node:f
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import inquirer from "inquirer";
-import { ZG_COMPUTE_DIR, ZG_MONITOR_LOG_FILE, ZG_MONITOR_STATE_FILE } from "../../../0g-compute/constants.js";
-import { stopMonitorDaemon, isMonitorTrackingProvider, getMonitorPid } from "../../../0g-compute/monitor-lifecycle.js";
-import { loadComputeState } from "../../../0g-compute/readiness.js";
+import { ZG_COMPUTE_DIR, ZG_MONITOR_LOG_FILE, ZG_MONITOR_STATE_FILE } from "../../../tools/0g-compute/constants.js";
+import { stopMonitorDaemon, isMonitorTrackingProvider, getMonitorPid } from "../../../tools/0g-compute/monitor-lifecycle.js";
+import { loadComputeState } from "../../../tools/0g-compute/readiness.js";
 import { getSkillHooksEnv } from "../../../openclaw/config.js";
 import { writeStderr } from "../../../utils/output.js";
 import { colors } from "../../../utils/ui.js";

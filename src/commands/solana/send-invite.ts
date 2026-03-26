@@ -3,8 +3,8 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
-import { craftSend, craftClawback, getPendingInvites } from "../../chains/solana/send-service.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
+import { craftSend, craftClawback, getPendingInvites } from "../../tools/chains/solana/send-service.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

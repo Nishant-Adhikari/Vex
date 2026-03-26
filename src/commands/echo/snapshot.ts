@@ -1,15 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadComputeState, type ReadinessResult, checkComputeReadiness } from "../../0g-compute/readiness.js";
-import { getMonitorPid } from "../../0g-compute/monitor-lifecycle.js";
+import { loadComputeState, type ReadinessResult, checkComputeReadiness } from "../../tools/0g-compute/readiness.js";
+import { getMonitorPid } from "../../tools/0g-compute/monitor-lifecycle.js";
 import { loadConfig, configExists } from "../../config/store.js";
 import { autoDetectProvider, detectProviders, resolveProvider } from "../../providers/registry.js";
 import { getSkillSourcePath } from "../../providers/link-utils.js";
 import type { DetectionResult, ProviderName } from "../../providers/types.js";
-import { keystoreExists } from "../../wallet/keystore.js";
-import { solanaKeystoreExists } from "../../wallet/solana-keystore.js";
-import { resetAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
+import { keystoreExists } from "../../tools/wallet/keystore.js";
+import { solanaKeystoreExists } from "../../tools/wallet/solana-keystore.js";
+import { resetAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
 import { getClaudeProxyHealth, type ClaudeProxyHealth } from "./claude-health.js";
 import { getPasswordHealth, type PasswordHealth } from "./password-health.js";
 

@@ -11,7 +11,7 @@ import { type Hex, type Address } from "viem";
 import { loadConfig } from "../config/store.js";
 import logger from "../utils/logger.js";
 import type { BotNotification } from "./types.js";
-import { requireSlopAuth } from "../slop/auth.js";
+import { requireSlopAuth } from "../tools/slop/auth.js";
 
 /**
  * Post a bot notification to slop.money global chat.

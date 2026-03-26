@@ -14,20 +14,20 @@ vi.mock("../config/store.js", () => ({
   saveConfig: vi.fn(),
 }));
 
-vi.mock("../wallet/keystore.js", () => ({
+vi.mock("../tools/wallet/keystore.js", () => ({
   keystoreExists: vi.fn(() => true),
   loadKeystore: vi.fn(() => ({ version: 1 })),
   decryptPrivateKey: vi.fn(() => "0x59c6995e998f97a5a0044966f0945382d7d63c4c91c9f86cbb87c2d2f6f1c7fd"),
 }));
 
-vi.mock("../wallet/solana-keystore.js", () => ({
+vi.mock("../tools/wallet/solana-keystore.js", () => ({
   solanaKeystoreExists: vi.fn(() => false),
   loadSolanaKeystore: vi.fn(() => null),
   decryptSolanaSecretKey: vi.fn(),
   deriveSolanaAddress: vi.fn(() => "So11111111111111111111111111111111111111112"),
 }));
 
-vi.mock("../wallet/solana-create.js", () => ({
+vi.mock("../tools/wallet/solana-create.js", () => ({
   createSolanaWallet: mockCreateSolanaWallet,
 }));
 

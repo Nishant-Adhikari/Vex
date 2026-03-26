@@ -4,8 +4,8 @@
  */
 
 import { Command } from "commander";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
-import { getSwapQuote, executeSwap } from "../../chains/solana/swap-service.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
+import { getSwapQuote, executeSwap } from "../../tools/chains/solana/swap-service.js";
 import { loadConfig } from "../../config/store.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, colors, warnBox } from "../../utils/ui.js";

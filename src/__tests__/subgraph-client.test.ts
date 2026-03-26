@@ -19,7 +19,7 @@ vi.mock("../utils/logger.js", () => ({
   },
 }));
 
-import { subgraphClient } from "../jaine/subgraph/client.js";
+import { subgraphClient } from "../tools/jaine/subgraph/client.js";
 
 const originalFetch = globalThis.fetch;
 

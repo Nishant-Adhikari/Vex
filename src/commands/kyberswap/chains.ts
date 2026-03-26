@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import { getKyberChains } from "../../kyberswap/chains.js";
+import { getKyberChains } from "../../tools/kyberswap/chains.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { colors, infoBox } from "../../utils/ui.js";
 

@@ -7,11 +7,11 @@
 import { Command } from "commander";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { CLOB_BASE_URL, ENV_POLYMARKET_API_KEY, ENV_POLYMARKET_API_SECRET, ENV_POLYMARKET_PASSPHRASE } from "../../polymarket/constants.js";
-import { hasPolyClobCredentials } from "../../polymarket/auth.js";
+import { CLOB_BASE_URL, ENV_POLYMARKET_API_KEY, ENV_POLYMARKET_API_SECRET, ENV_POLYMARKET_PASSPHRASE } from "../../tools/polymarket/constants.js";
+import { hasPolyClobCredentials } from "../../tools/polymarket/auth.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
 import { CONFIG_DIR } from "../../config/paths.js";

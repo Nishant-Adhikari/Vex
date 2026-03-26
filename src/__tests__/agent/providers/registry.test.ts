@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockLoadComputeState = vi.fn();
 
-vi.mock("../../../0g-compute/readiness.js", () => ({
+vi.mock("../../../tools/0g-compute/readiness.js", () => ({
   loadComputeState: () => mockLoadComputeState(),
 }));
 vi.mock("../../../utils/logger.js", () => ({

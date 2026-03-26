@@ -4,8 +4,8 @@
 
 import { Command } from "commander";
 import { existsSync } from "node:fs";
-import { requireSolanaWallet } from "../../wallet/multi-auth.js";
-import { studioCreateToken, studioGetFees, studioClaimFees } from "../../chains/solana/studio-service.js";
+import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
+import { studioCreateToken, studioGetFees, studioClaimFees } from "../../tools/chains/solana/studio-service.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

@@ -13,8 +13,8 @@ import type { Command } from "commander";
 import inquirer from "inquirer";
 import { formatUnits } from "viem";
 import type { Address } from "viem";
-import { getAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
-import { checkComputeReadiness, type ReadinessResult } from "../../0g-compute/readiness.js";
+import { getAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
+import { checkComputeReadiness, type ReadinessResult } from "../../tools/0g-compute/readiness.js";
 import {
   listChatServices,
   depositToLedger,
@@ -26,15 +26,15 @@ import {
   createApiKey,
   configureOpenclawProvider,
   type ServiceDetail,
-} from "../../0g-compute/operations.js";
-import { calculateProviderPricing, formatPricePerMTokens } from "../../0g-compute/pricing.js";
-import { redactToken } from "../../0g-compute/helpers.js";
+} from "../../tools/0g-compute/operations.js";
+import { calculateProviderPricing, formatPricePerMTokens } from "../../tools/0g-compute/pricing.js";
+import { redactToken } from "../../tools/0g-compute/helpers.js";
 import {
   getMonitorPid,
   isMonitorTrackingProvider,
   stopMonitorDaemon,
-} from "../../0g-compute/monitor-lifecycle.js";
-import { getPublicClient } from "../../wallet/client.js";
+} from "../../tools/0g-compute/monitor-lifecycle.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
 import { renderBatBanner } from "../../utils/banner.js";
 import { spinner, colors, infoBox, successBox, warnBox } from "../../utils/ui.js";
 import { writeStderr, isHeadless } from "../../utils/output.js";
@@ -441,7 +441,7 @@ export function register0gComputeWizard(parent: Command): void {
           const { existsSync: fsExists, openSync, mkdirSync, closeSync } = await import("node:fs");
           const { fileURLToPath } = await import("node:url");
           const { spawn } = await import("node:child_process");
-          const { ZG_COMPUTE_DIR, ZG_MONITOR_LOG_FILE } = await import("../../0g-compute/constants.js");
+          const { ZG_COMPUTE_DIR, ZG_MONITOR_LOG_FILE } = await import("../../tools/0g-compute/constants.js");
 
           if (!fsExists(ZG_COMPUTE_DIR)) {
             mkdirSync(ZG_COMPUTE_DIR, { recursive: true });

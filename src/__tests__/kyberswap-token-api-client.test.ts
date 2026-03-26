@@ -6,7 +6,7 @@ vi.mock("../../config/store.js", () => ({
 vi.mock("../../utils/logger.js", () => ({ default: { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { KyberTokenApiClient } from "../kyberswap/token-api/client.js";
+import { KyberTokenApiClient } from "../tools/kyberswap/token-api/client.js";
 import { ErrorCodes } from "../errors.js";
 
 const originalFetch = globalThis.fetch;

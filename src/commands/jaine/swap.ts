@@ -1,17 +1,17 @@
 import { Command } from "commander";
 import { isAddress, getAddress, parseUnits, formatUnits } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
-import { getSigningClient } from "../../wallet/signingClient.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
+import { getSigningClient } from "../../tools/wallet/signingClient.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe, validateSlippage } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import { resolveToken, getTokenSymbol } from "../../jaine/coreTokens.js";
-import { loadUserTokens } from "../../jaine/userTokens.js";
-import { findBestRouteExactInput, findBestRouteExactOutput, formatRoute } from "../../jaine/routing.js";
-import { ensureAllowance } from "../../jaine/allowance.js";
-import { ROUTER_ABI } from "../../jaine/abi/router.js";
+import { resolveToken, getTokenSymbol } from "../../tools/jaine/coreTokens.js";
+import { loadUserTokens } from "../../tools/jaine/userTokens.js";
+import { findBestRouteExactInput, findBestRouteExactOutput, formatRoute } from "../../tools/jaine/routing.js";
+import { ensureAllowance } from "../../tools/jaine/allowance.js";
+import { ROUTER_ABI } from "../../tools/jaine/abi/router.js";
 import { getTokenDecimals } from "./helpers.js";
 
 export function createSwapSubcommand(): Command {

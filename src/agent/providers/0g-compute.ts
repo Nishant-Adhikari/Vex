@@ -10,10 +10,10 @@
 
 import type { InferenceConfig } from "../types.js";
 import type { InferenceProvider, ProviderBalance } from "./types.js";
-import { getAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
-import { getServiceMetadata, listChatServices, getLedgerBalance, getSubAccountBalance } from "../../0g-compute/operations.js";
-import { loadComputeState } from "../../0g-compute/readiness.js";
-import { calculateProviderPricing, formatPricePerMTokens } from "../../0g-compute/pricing.js";
+import { getAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
+import { getServiceMetadata, listChatServices, getLedgerBalance, getSubAccountBalance } from "../../tools/0g-compute/operations.js";
+import { loadComputeState } from "../../tools/0g-compute/readiness.js";
+import { calculateProviderPricing, formatPricePerMTokens } from "../../tools/0g-compute/pricing.js";
 import { retryWithBackoff } from "../resilience.js";
 import { DEFAULT_CONTEXT_LIMIT } from "../constants.js";
 import logger from "../../utils/logger.js";

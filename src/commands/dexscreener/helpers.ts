@@ -4,7 +4,7 @@
 
 import type { TableColumn } from "../../utils/ui.js";
 import { colors } from "../../utils/ui.js";
-import type { DexPair } from "../../dexscreener/types.js";
+import type { DexPair } from "../../tools/dexscreener/types.js";
 
 export const PAIR_COLUMNS: TableColumn[] = [
   { header: "Pair", width: 22 },

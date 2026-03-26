@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapZaasError } from "../kyberswap/zaas/errors.js";
+import { mapZaasError } from "../tools/kyberswap/zaas/errors.js";
 import { ErrorCodes } from "../errors.js";
 
 describe("mapZaasError", () => {

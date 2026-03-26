@@ -17,7 +17,7 @@ const mockGetAuthenticatedBroker = vi.fn();
 
 // ── Mocks ───────────────────────────────────────────────────────────
 
-vi.mock("../0g-compute/readiness.js", () => ({
+vi.mock("../tools/0g-compute/readiness.js", () => ({
   loadComputeState: (...args: any[]) => mockLoadComputeState(...args),
   saveComputeState: (...args: any[]) => mockSaveComputeState(...args),
 }));
@@ -41,13 +41,13 @@ vi.mock("../providers/env-resolution.js", () => ({
   writeAppEnvValue: (...args: any[]) => mockWriteAppEnvValue(...args),
 }));
 
-vi.mock("../0g-compute/operations.js", () => ({
+vi.mock("../tools/0g-compute/operations.js", () => ({
   createApiKey: (...args: any[]) => mockCreateApiKey(...args),
   configureOpenclawProvider: (...args: any[]) => mockConfigureOpenclawProvider(...args),
   listChatServices: (...args: any[]) => mockListChatServices(...args),
 }));
 
-vi.mock("../0g-compute/broker-factory.js", () => ({
+vi.mock("../tools/0g-compute/broker-factory.js", () => ({
   getAuthenticatedBroker: (...args: any[]) => mockGetAuthenticatedBroker(...args),
 }));
 

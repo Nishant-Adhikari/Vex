@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KhalaniClient } from "../khalani/client.js";
+import { KhalaniClient } from "../tools/khalani/client.js";
 import { EchoError, ErrorCodes } from "../errors.js";
 
 const originalFetch = globalThis.fetch;

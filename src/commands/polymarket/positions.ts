@@ -3,11 +3,11 @@
  */
 
 import { Command } from "commander";
-import { getPolyDataClient } from "../../polymarket/data/client.js";
-import { getPolyClobClient } from "../../polymarket/clob/client.js";
-import { getPolyGammaClient } from "../../polymarket/gamma/client.js";
+import { getPolyDataClient } from "../../tools/polymarket/data/client.js";
+import { getPolyClobClient } from "../../tools/polymarket/clob/client.js";
+import { getPolyGammaClient } from "../../tools/polymarket/gamma/client.js";
 import { requirePolyAuth, formatUsd, formatProbability } from "./helpers.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, infoBox, colors } from "../../utils/ui.js";
 import { parseIntSafe } from "../../utils/validation.js";

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { chainscanClient } from "../../chainscan/client.js";
+import { chainscanClient } from "../../tools/chainscan/client.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { respond } from "../../utils/respond.js";
 import { spinner, printTable } from "../../utils/ui.js";

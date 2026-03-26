@@ -5,10 +5,10 @@
  */
 
 import { Command } from "commander";
-import { getDexScreenerClient } from "../../dexscreener/client.js";
-import type { DexPair } from "../../dexscreener/types.js";
+import { getDexScreenerClient } from "../../tools/dexscreener/client.js";
+import type { DexPair } from "../../tools/dexscreener/types.js";
 import { resolveChain, resolveTokenAddress, requireFeature, formatUsd } from "./helpers.js";
-import { slugToChainId } from "../../kyberswap/chains.js";
+import { slugToChainId } from "../../tools/kyberswap/chains.js";
 import { parseIntSafe } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, infoBox, colors } from "../../utils/ui.js";

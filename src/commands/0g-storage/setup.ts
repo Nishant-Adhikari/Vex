@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { respond } from "../../utils/respond.js";
-import { getStorageEndpoints } from "../../0g-storage/client.js";
-import { storageCheckConnectivity } from "../../0g-storage/sdk-bridge.cjs";
-import { withSuppressedConsole } from "../../0g-compute/bridge.js";
+import { getStorageEndpoints } from "../../tools/0g-storage/client.js";
+import { storageCheckConnectivity } from "../../tools/0g-storage/sdk-bridge.cjs";
+import { withSuppressedConsole } from "../../tools/0g-compute/bridge.js";
 import { loadConfig } from "../../config/store.js";
 
 export function createStorageSetupCommand(): Command {

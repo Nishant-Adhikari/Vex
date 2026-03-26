@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { respond } from "../../utils/respond.js";
-import { getAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
-import { withSuppressedConsole } from "../../0g-compute/bridge.js";
-import { requireAddress, requireTokenId, redactToken } from "../../0g-compute/helpers.js";
+import { getAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
+import { withSuppressedConsole } from "../../tools/0g-compute/bridge.js";
+import { requireAddress, requireTokenId, redactToken } from "../../tools/0g-compute/helpers.js";
 import { requireYes } from "./helpers.js";
 
 export function createApiKeySubcommand(): Command {

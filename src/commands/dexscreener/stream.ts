@@ -6,10 +6,10 @@
  */
 
 import { Command } from "commander";
-import { DexScreenerStream } from "../../dexscreener/ws-client.js";
+import { DexScreenerStream } from "../../tools/dexscreener/ws-client.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeStdout } from "../../utils/output.js";
-import type { DexStreamChannel } from "../../dexscreener/types.js";
+import type { DexStreamChannel } from "../../tools/dexscreener/types.js";
 
 const VALID_CHANNELS = new Set<DexStreamChannel>(["profiles", "boosts", "boosts-top"]);
 

@@ -6,15 +6,15 @@ const mockDecryptPrivateKey = vi.fn();
 const mockLoadConfig = vi.fn();
 const mockGetKeystorePassword = vi.fn<() => string | null>();
 
-vi.mock("../wallet/keystore.js", () => ({
+vi.mock("../tools/wallet/keystore.js", () => ({
   keystoreExists: () => mockKeystoreExists(),
   loadKeystore: () => mockLoadKeystore(),
   decryptPrivateKey: (...args: any[]) => mockDecryptPrivateKey(...args),
   normalizePrivateKey: vi.fn(),
 }));
 
-vi.mock("../wallet/create.js", () => ({ createWallet: vi.fn() }));
-vi.mock("../wallet/import.js", () => ({ importWallet: vi.fn() }));
+vi.mock("../tools/wallet/create.js", () => ({ createWallet: vi.fn() }));
+vi.mock("../tools/wallet/import.js", () => ({ importWallet: vi.fn() }));
 vi.mock("../config/store.js", () => ({ loadConfig: () => mockLoadConfig() }));
 vi.mock("../utils/env.js", () => ({ getKeystorePassword: () => mockGetKeystorePassword() }));
 vi.mock("../utils/ui.js", () => ({ spinner: vi.fn(), colors: { address: (s: string) => s, muted: (s: string) => s } }));

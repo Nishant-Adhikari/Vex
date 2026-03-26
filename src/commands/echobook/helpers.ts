@@ -1,7 +1,7 @@
 import { loadConfig } from "../../config/store.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { colors } from "../../utils/ui.js";
-import type { PostData } from "../../echobook/posts.js";
+import type { PostData } from "../../tools/echobook/posts.js";
 
 export function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;

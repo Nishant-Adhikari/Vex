@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { signClobRequest, buildClobHeaders, requirePolyClobCredentials, hasPolyClobCredentials } from "../polymarket/auth.js";
+import { signClobRequest, buildClobHeaders, requirePolyClobCredentials, hasPolyClobCredentials } from "../tools/polymarket/auth.js";
 import { EchoError, ErrorCodes } from "../errors.js";
 
 describe("signClobRequest", () => {

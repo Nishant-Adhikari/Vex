@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSubmitResponse, validateTransactionsResponse, validateNonceResponse, validateDeployedResponse, validateApiKeysResponse } from "../polymarket/relayer/validation.js";
+import { validateSubmitResponse, validateTransactionsResponse, validateNonceResponse, validateDeployedResponse, validateApiKeysResponse } from "../tools/polymarket/relayer/validation.js";
 
 describe("validateSubmitResponse", () => {
   it("parses response", () => {

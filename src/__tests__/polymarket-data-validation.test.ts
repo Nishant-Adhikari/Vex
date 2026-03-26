@@ -5,7 +5,7 @@ import {
   validateHoldersResponse, validateLeaderboardResponse,
   validateValueResponse, validateTradedResponse,
   validateOpenInterestResponse, validateMarketPositionsResponse,
-} from "../polymarket/data/validation.js";
+} from "../tools/polymarket/data/validation.js";
 
 describe("validatePositionsResponse", () => {
   it("parses positions", () => {

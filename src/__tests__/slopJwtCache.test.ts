@@ -27,7 +27,7 @@ const {
   saveCachedSlopJwt,
   clearCachedSlopJwt,
   isAccessValid,
-} = await import("../slop/jwtCache.js");
+} = await import("../tools/slop/jwtCache.js");
 
 /** Build a fake JWT with given payload */
 function fakeJwt(payload: Record<string, any>): string {

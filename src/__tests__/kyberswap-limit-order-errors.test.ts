@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapLimitOrderError } from "../kyberswap/limit-order/errors.js";
+import { mapLimitOrderError } from "../tools/kyberswap/limit-order/errors.js";
 import { ErrorCodes } from "../errors.js";
 
 describe("mapLimitOrderError", () => {

@@ -13,7 +13,7 @@ const mockWriteAppEnvValue = vi.fn();
 
 // ── Mocks ───────────────────────────────────────────────────────────
 
-vi.mock("../0g-compute/readiness.js", () => ({
+vi.mock("../tools/0g-compute/readiness.js", () => ({
   loadComputeState: mockLoadComputeState,
   saveComputeState: mockSaveComputeState,
 }));

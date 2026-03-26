@@ -6,8 +6,8 @@ vi.mock("../../config/store.js", () => ({
 vi.mock("../../utils/logger.js", () => ({ default: { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { KyberCommonClient } from "../kyberswap/common/client.js";
-import { clearDynamicChainsCache } from "../kyberswap/chains.js";
+import { KyberCommonClient } from "../tools/kyberswap/common/client.js";
+import { clearDynamicChainsCache } from "../tools/kyberswap/chains.js";
 
 const originalFetch = globalThis.fetch;
 

@@ -11,12 +11,12 @@ vi.mock("../../utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 // portfolio-chains has side-effect imports — mock to isolate
-vi.mock("../../khalani/chains.js", () => ({ CHAIN_ALIASES: {} }));
-vi.mock("../../kyberswap/chains.js", () => ({
+vi.mock("../../tools/khalani/chains.js", () => ({ CHAIN_ALIASES: {} }));
+vi.mock("../../tools/kyberswap/chains.js", () => ({
   getKyberChains: () => [],
   resolveChainSlug: (s: string) => s,
 }));
-vi.mock("../../chains/solana/validation.js", () => ({
+vi.mock("../../tools/chains/solana/validation.js", () => ({
   solanaExplorerUrl: (sig: string) => `https://solscan.io/tx/${sig}`,
 }));
 

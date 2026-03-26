@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveRouteBestIndex } from "../commands/khalani/helpers.js";
 import { parseTradeType, parseReferrerFeeBps, parseAmountInSmallestUnits } from "../commands/khalani/request.js";
 import { parseBigintish } from "../commands/khalani/bridge-executor.js";
-import { mapKhalaniError } from "../khalani/errors.js";
+import { mapKhalaniError } from "../tools/khalani/errors.js";
 import { ErrorCodes } from "../errors.js";
 
 describe("resolveRouteBestIndex", () => {

@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { isAddress, getAddress, type Address } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { getPublicClient } from "../../wallet/client.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess, writeStderr } from "../../utils/output.js";
 import { spinner, infoBox, colors, createTable } from "../../utils/ui.js";
-import { SLOP_REGISTRY_ABI } from "../../slop/abi/registry.js";
+import { SLOP_REGISTRY_ABI } from "../../tools/slop/abi/registry.js";
 
 export function createTokensSubcommand(): Command {
   const tokens = new Command("tokens")

@@ -2,10 +2,10 @@ import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { respond } from "../../utils/respond.js";
-import { getAuthenticatedBroker, resetAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
-import { withSuppressedConsole } from "../../0g-compute/bridge.js";
-import { normalizeSubAccount, serializeSubAccount } from "../../0g-compute/account.js";
-import { requireAddress, serializeBigInts } from "../../0g-compute/helpers.js";
+import { getAuthenticatedBroker, resetAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
+import { withSuppressedConsole } from "../../tools/0g-compute/bridge.js";
+import { normalizeSubAccount, serializeSubAccount } from "../../tools/0g-compute/account.js";
+import { requireAddress, serializeBigInts } from "../../tools/0g-compute/helpers.js";
 import { requireYes } from "./helpers.js";
 
 export function createProviderSubcommand(): Command {

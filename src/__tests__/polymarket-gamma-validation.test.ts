@@ -4,7 +4,7 @@ import {
   validateSearchResponse, validateProfileResponse, validateTagsResponse,
   validateSeriesResponse, validateCommentsResponse, validateSportsMetadataResponse,
   validateTeamsResponse,
-} from "../polymarket/gamma/validation.js";
+} from "../tools/polymarket/gamma/validation.js";
 
 const EVENT = { id: "1", slug: "test", title: "Test Event", active: true, closed: false, markets: [], tags: [] };
 const MARKET = { id: "1", conditionId: "0xabc", question: "Will X?", marketMakerAddress: "0x123" };

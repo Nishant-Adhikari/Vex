@@ -12,8 +12,8 @@ import {
   listChatServices,
   type ApiKeyInfo,
   type ServiceDetail,
-} from "../../0g-compute/operations.js";
-import { getAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
+} from "../../tools/0g-compute/operations.js";
+import { getAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
 import { loadConfig, saveConfig } from "../../config/store.js";
 import { CLAUDE_PROXY_DEFAULT_PORT } from "../../claude/constants.js";
 import { writeAppEnvValue } from "../../providers/env-resolution.js";

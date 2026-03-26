@@ -2,8 +2,8 @@ import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import * as profileApi from "../../echobook/profile.js";
-import * as postsApi from "../../echobook/posts.js";
+import * as profileApi from "../../tools/echobook/profile.js";
+import * as postsApi from "../../tools/echobook/posts.js";
 import { truncateAddress, requireWalletAddress, renderPostList } from "./helpers.js";
 
 export function createProfileSubcommand(): Command {

@@ -1,9 +1,9 @@
 import { parseUnits, type Address, type Hex } from "viem";
-import { getPublicClient } from "../../wallet/client.js";
+import { getPublicClient } from "../../tools/wallet/client.js";
 import { loadConfig } from "../../config/store.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { SLOP_TOKEN_ABI } from "../../slop/abi/token.js";
-import { SLOP_REGISTRY_ABI } from "../../slop/abi/registry.js";
+import { SLOP_TOKEN_ABI } from "../../tools/slop/abi/token.js";
+import { SLOP_REGISTRY_ABI } from "../../tools/slop/abi/registry.js";
 
 export function parseUnitsSafe(value: string, decimals: number, name: string): bigint {
   try {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DexScreenerClient } from "../dexscreener/client.js";
+import { DexScreenerClient } from "../tools/dexscreener/client.js";
 import { ErrorCodes } from "../errors.js";
 
 vi.mock("../config/store.js", () => ({

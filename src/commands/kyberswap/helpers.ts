@@ -4,10 +4,10 @@
 
 import { isAddress, getAddress, type Address } from "viem";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { resolveChainSlug, slugToChainId, getChainFeatures } from "../../kyberswap/chains.js";
-import { NATIVE_TOKEN_ADDRESS } from "../../kyberswap/constants.js";
-import { getKyberTokenApiClient } from "../../kyberswap/token-api/client.js";
-import type { KyberChainSlug } from "../../kyberswap/types.js";
+import { resolveChainSlug, slugToChainId, getChainFeatures } from "../../tools/kyberswap/chains.js";
+import { NATIVE_TOKEN_ADDRESS } from "../../tools/kyberswap/constants.js";
+import { getKyberTokenApiClient } from "../../tools/kyberswap/token-api/client.js";
+import type { KyberChainSlug } from "../../tools/kyberswap/types.js";
 
 /** Resolve --chain option to validated KyberChainSlug. */
 export function resolveChain(chainInput: string): KyberChainSlug {

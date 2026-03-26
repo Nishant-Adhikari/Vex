@@ -6,7 +6,7 @@ import {
   validateActiveMakingAmount,
   validateOperatorSignature,
   validateEncodedCalldata,
-} from "../kyberswap/limit-order/validation.js";
+} from "../tools/kyberswap/limit-order/validation.js";
 
 describe("validateEip712Message", () => {
   const VALID = {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getChain, getChainExplorerUrl, getChainFamily, getChainRpcUrl, resolveChainId, clearKhalaniChainsCache } from "../khalani/chains.js";
+import { getChain, getChainExplorerUrl, getChainFamily, getChainRpcUrl, resolveChainId, clearKhalaniChainsCache } from "../tools/khalani/chains.js";
 import { ErrorCodes } from "../errors.js";
-import type { KhalaniChain } from "../khalani/types.js";
+import type { KhalaniChain } from "../tools/khalani/types.js";
 
 const CHAINS: KhalaniChain[] = [
   {

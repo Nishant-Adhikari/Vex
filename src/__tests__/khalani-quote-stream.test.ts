@@ -22,14 +22,14 @@ vi.mock("../commands/khalani/request.js", () => ({
   })),
 }));
 
-vi.mock("../khalani/chains.js", () => ({
+vi.mock("../tools/khalani/chains.js", () => ({
   getChain: vi.fn((chainId: number) =>
     chainId === 1
       ? { type: "eip155", id: 1, name: "Ethereum" }
       : { type: "eip155", id: 8453, name: "Base" }),
 }));
 
-vi.mock("../khalani/client.js", () => ({
+vi.mock("../tools/khalani/client.js", () => ({
   getKhalaniClient: vi.fn(() => ({
     async *streamQuotes() {
       yield {

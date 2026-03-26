@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("../../khalani/chains.js", () => ({
+vi.mock("../../tools/khalani/chains.js", () => ({
   CHAIN_ALIASES: {
     ethereum: 1,
     polygon: 137,
@@ -9,7 +9,7 @@ vi.mock("../../khalani/chains.js", () => ({
     zerogravity: 888888,
   },
 }));
-vi.mock("../../kyberswap/chains.js", () => ({
+vi.mock("../../tools/kyberswap/chains.js", () => ({
   getKyberChains: () => [
     { chainId: 1, slug: "ethereum" },
     { chainId: 137, slug: "polygon" },

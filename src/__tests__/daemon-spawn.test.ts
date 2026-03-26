@@ -27,7 +27,7 @@ vi.mock("node:child_process", () => ({
   spawn: (...args: any[]) => mockSpawn(...args),
 }));
 
-vi.mock("../0g-compute/constants.js", () => ({
+vi.mock("../tools/0g-compute/constants.js", () => ({
   ZG_COMPUTE_DIR: "/mock/0g-compute",
   ZG_MONITOR_LOG_FILE: "/mock/0g-compute/monitor.log",
   ZG_MONITOR_PID_FILE: "/mock/0g-compute/monitor.pid",

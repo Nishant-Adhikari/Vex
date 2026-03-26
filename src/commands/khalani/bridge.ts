@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { getKhalaniClient } from "../../khalani/client.js";
-import { getChain, getChainExplorerUrl } from "../../khalani/chains.js";
-import type { DepositMethod, QuoteRoute } from "../../khalani/types.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
+import { getChain, getChainExplorerUrl } from "../../tools/khalani/chains.js";
+import type { DepositMethod, QuoteRoute } from "../../tools/khalani/types.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { colors, successBox, infoBox, spinner } from "../../utils/ui.js";
 import { prepareQuoteRequest } from "./request.js";

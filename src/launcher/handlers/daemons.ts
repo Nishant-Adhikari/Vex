@@ -10,7 +10,7 @@ import type { RouteHandler, DaemonStatus, DaemonsResponse } from "../types.js";
 import { jsonResponse, errorResponse, registerRoute } from "../routes.js";
 import { isDaemonAlive, spawnMonitorFromState, spawnBotDaemon, spawnClaudeProxy } from "../../utils/daemon-spawn.js";
 import { CLAUDE_PROXY_PID_FILE, CLAUDE_PROXY_DIR, CLAUDE_PROXY_STOPPED_FILE } from "../../claude/constants.js";
-import { ZG_MONITOR_PID_FILE, ZG_COMPUTE_DIR } from "../../0g-compute/constants.js";
+import { ZG_MONITOR_PID_FILE, ZG_COMPUTE_DIR } from "../../tools/0g-compute/constants.js";
 import { BOT_PID_FILE, BOT_DIR, BOT_STOPPED_FILE } from "../../config/paths.js";
 import logger from "../../utils/logger.js";
 

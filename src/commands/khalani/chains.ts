@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { writeJsonSuccess, isHeadless } from "../../utils/output.js";
 import { printTable, colors } from "../../utils/ui.js";
-import { clearKhalaniChainsCache, getCachedKhalaniChains } from "../../khalani/chains.js";
+import { clearKhalaniChainsCache, getCachedKhalaniChains } from "../../tools/khalani/chains.js";
 import { formatChainFamily } from "./helpers.js";
 
 export function createChainsSubcommand(): Command {

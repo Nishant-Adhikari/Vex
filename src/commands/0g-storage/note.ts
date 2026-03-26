@@ -6,9 +6,9 @@ import { randomBytes } from "node:crypto";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { respond } from "../../utils/respond.js";
 import { spinner, colors } from "../../utils/ui.js";
-import { getStorageClientConfig } from "../../0g-storage/client.js";
-import { uploadFile, downloadFile } from "../../0g-storage/files.js";
-import { formatCostDisplay } from "../../0g-storage/cost.js";
+import { getStorageClientConfig } from "../../tools/0g-storage/client.js";
+import { uploadFile, downloadFile } from "../../tools/0g-storage/files.js";
+import { formatCostDisplay } from "../../tools/0g-storage/cost.js";
 import { requireWallet } from "./shared.js";
 import {
   loadDriveIndex,
@@ -17,7 +17,7 @@ import {
   driveGet,
   driveLs,
   driveMkdir,
-} from "../../0g-storage/drive-index.js";
+} from "../../tools/0g-storage/drive-index.js";
 
 export function createNoteCommand(): Command {
   const note = new Command("note")

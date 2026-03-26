@@ -16,21 +16,21 @@ vi.mock("../openclaw/hooks-client.js", () => ({
 }));
 
 // Mock 0g-compute transitive deps that rollup cannot parse
-vi.mock("../0g-compute/broker-factory.js", () => ({
+vi.mock("../tools/0g-compute/broker-factory.js", () => ({
   getAuthenticatedBroker: vi.fn(),
 }));
-vi.mock("../0g-compute/bridge.js", () => ({
+vi.mock("../tools/0g-compute/bridge.js", () => ({
   withSuppressedConsole: vi.fn(),
 }));
-vi.mock("../0g-compute/account.js", () => ({
+vi.mock("../tools/0g-compute/account.js", () => ({
   normalizeSubAccount: vi.fn(),
 }));
-vi.mock("../0g-compute/pricing.js", () => ({
+vi.mock("../tools/0g-compute/pricing.js", () => ({
   calculateProviderPricing: vi.fn(),
 }));
 
 import logger from "../utils/logger.js";
-import { BalanceMonitor } from "../0g-compute/monitor.js";
+import { BalanceMonitor } from "../tools/0g-compute/monitor.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

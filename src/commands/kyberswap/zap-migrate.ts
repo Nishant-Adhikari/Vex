@@ -4,12 +4,12 @@
 
 import { Command } from "commander";
 import type { Hex } from "viem";
-import { getKyberZaasClient } from "../../kyberswap/zaas/client.js";
-import { KS_ZAP_ROUTER_POSITION } from "../../kyberswap/constants.js";
-import { getKyberEvmClients, verifyRouterAddress, sendKyberTransaction } from "../../kyberswap/evm-utils.js";
+import { getKyberZaasClient } from "../../tools/kyberswap/zaas/client.js";
+import { KS_ZAP_ROUTER_POSITION } from "../../tools/kyberswap/constants.js";
+import { getKyberEvmClients, verifyRouterAddress, sendKyberTransaction } from "../../tools/kyberswap/evm-utils.js";
 import { resolveChain, requireFeature } from "./helpers.js";
-import { slugToChainId } from "../../kyberswap/chains.js";
-import { requireWalletAndKeystore } from "../../wallet/auth.js";
+import { slugToChainId } from "../../tools/kyberswap/chains.js";
+import { requireWalletAndKeystore } from "../../tools/wallet/auth.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { parseIntSafe, validateSlippage } from "../../utils/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";

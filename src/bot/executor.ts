@@ -12,22 +12,22 @@ import {
   formatUnits,
 } from "viem";
 import { loadConfig } from "../config/store.js";
-import { getPublicClient } from "../wallet/client.js";
-import { getSigningClient } from "../wallet/signingClient.js";
+import { getPublicClient } from "../tools/wallet/client.js";
+import { getSigningClient } from "../tools/wallet/signingClient.js";
 import { EchoError, ErrorCodes } from "../errors.js";
-import { SLOP_TOKEN_ABI } from "../slop/abi/token.js";
-import { SLOP_REGISTRY_ABI } from "../slop/abi/registry.js";
+import { SLOP_TOKEN_ABI } from "../tools/slop/abi/token.js";
+import { SLOP_REGISTRY_ABI } from "../tools/slop/abi/registry.js";
 import {
   calculateTokensOut,
   calculateOgOut,
   calculatePartialFill,
   applySlippage,
-} from "../slop/quote.js";
+} from "../tools/slop/quote.js";
 import logger from "../utils/logger.js";
 
 // ── Wallet helpers (re-export from shared module) ──────────────
 
-export { requireWalletAndKeystore } from "../wallet/auth.js";
+export { requireWalletAndKeystore } from "../tools/wallet/auth.js";
 
 
 // ── Token state / validation ───────────────────────────────────

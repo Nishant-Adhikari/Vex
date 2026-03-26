@@ -27,7 +27,7 @@ vi.mock("node:fs", () => ({
   writeFileSync: (...args: any[]) => mockWriteFileSync(...args),
 }));
 
-vi.mock("../0g-compute/constants.js", () => ({
+vi.mock("../tools/0g-compute/constants.js", () => ({
   ZG_MONITOR_PID_FILE: "/mock/monitor.pid",
   ZG_MONITOR_STATE_FILE: "/mock/monitor-state.json",
   ZG_MONITOR_SHUTDOWN_FILE: "/mock/monitor.shutdown",
@@ -39,7 +39,7 @@ const origKill = process.kill;
 // ── Imports (after mocks) ───────────────────────────────────────────
 
 const { getMonitorPid, isMonitorTrackingProvider, stopMonitorDaemon } =
-  await import("../0g-compute/monitor-lifecycle.js");
+  await import("../tools/0g-compute/monitor-lifecycle.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

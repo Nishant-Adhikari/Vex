@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { validateKyberSpender, verifyRouterAddress } from "../kyberswap/evm-utils.js";
+import { validateKyberSpender, verifyRouterAddress } from "../tools/kyberswap/evm-utils.js";
 import {
   META_AGGREGATION_ROUTER_V2,
   DSLO_PROTOCOL,
   KS_ZAP_ROUTER_POSITION,
   KS_ZAP_ROUTER_PERMIT,
-} from "../kyberswap/constants.js";
+} from "../tools/kyberswap/constants.js";
 import { EchoError, ErrorCodes } from "../errors.js";
 
 describe("validateKyberSpender", () => {

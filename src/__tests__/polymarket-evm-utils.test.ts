@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { validatePolySpender } from "../polymarket/evm-utils.js";
-import { CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE } from "../polymarket/constants.js";
+import { validatePolySpender } from "../tools/polymarket/evm-utils.js";
+import { CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE } from "../tools/polymarket/constants.js";
 import { EchoError } from "../errors.js";
 
 describe("validatePolySpender", () => {

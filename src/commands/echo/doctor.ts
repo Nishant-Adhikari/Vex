@@ -1,4 +1,4 @@
-import { getCachedKhalaniChains } from "../../khalani/chains.js";
+import { getCachedKhalaniChains } from "../../tools/khalani/chains.js";
 import { colors } from "../../utils/ui.js";
 import type { EchoSnapshot } from "./snapshot.js";
 

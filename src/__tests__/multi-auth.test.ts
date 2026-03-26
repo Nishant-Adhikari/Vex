@@ -40,9 +40,9 @@ vi.mock("../utils/logger.js", () => ({
 }));
 
 const { loadConfig, saveConfig, getDefaultConfig } = await import("../config/store.js");
-const { encryptPrivateKey, saveKeystore } = await import("../wallet/keystore.js");
-const { encryptSolanaSecretKey, saveSolanaKeystore, deriveSolanaAddress } = await import("../wallet/solana-keystore.js");
-const { requireEvmWallet, requireSolanaWallet, requireWalletForChain } = await import("../wallet/multi-auth.js");
+const { encryptPrivateKey, saveKeystore } = await import("../tools/wallet/keystore.js");
+const { encryptSolanaSecretKey, saveSolanaKeystore, deriveSolanaAddress } = await import("../tools/wallet/solana-keystore.js");
+const { requireEvmWallet, requireSolanaWallet, requireWalletForChain } = await import("../tools/wallet/multi-auth.js");
 
 const TEST_EVM_PRIVATE_KEY = "0x" + "ab".repeat(32);
 const TEST_EVM_ADDRESS = privateKeyToAddress(TEST_EVM_PRIVATE_KEY as `0x${string}`);

@@ -14,8 +14,8 @@ import {
   addSnapshot,
   serializeIndex,
   deserializeIndex,
-} from "../0g-storage/drive-index.js";
-import type { DriveIndex, DriveFileEntry } from "../0g-storage/types.js";
+} from "../tools/0g-storage/drive-index.js";
+import type { DriveIndex, DriveFileEntry } from "../tools/0g-storage/types.js";
 
 function emptyIndex(): DriveIndex {
   return { version: 1, wallet: "0xtest", entries: {}, snapshots: [] };

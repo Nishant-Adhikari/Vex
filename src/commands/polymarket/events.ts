@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import { getPolyGammaClient } from "../../polymarket/gamma/client.js";
+import { getPolyGammaClient } from "../../tools/polymarket/gamma/client.js";
 import { parseOutcomePrices, formatUsd, formatProbability } from "./helpers.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, infoBox, colors } from "../../utils/ui.js";

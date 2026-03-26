@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import { getKyberTokenApiClient } from "../../kyberswap/token-api/client.js";
+import { getKyberTokenApiClient } from "../../tools/kyberswap/token-api/client.js";
 import { resolveChainWithId } from "./helpers.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, infoBox, successBox, colors } from "../../utils/ui.js";

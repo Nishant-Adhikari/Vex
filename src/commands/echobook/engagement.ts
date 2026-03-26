@@ -2,9 +2,9 @@ import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, successBox, infoBox, colors } from "../../utils/ui.js";
-import * as pointsApi from "../../echobook/points.js";
-import * as tradeProofApi from "../../echobook/tradeProof.js";
-import * as notificationsApi from "../../echobook/notifications.js";
+import * as pointsApi from "../../tools/echobook/points.js";
+import * as tradeProofApi from "../../tools/echobook/tradeProof.js";
+import * as notificationsApi from "../../tools/echobook/notifications.js";
 import { formatTimeAgo, truncateAddress, requireWalletAddress } from "./helpers.js";
 
 export function createPointsSubcommand(): Command {

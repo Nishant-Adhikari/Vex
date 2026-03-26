@@ -15,7 +15,7 @@ const mockSaveCachedSlopJwt = vi.fn();
 const mockClearCachedSlopJwt = vi.fn();
 const mockIsAccessValid = vi.fn();
 
-vi.mock("../slop/jwtCache.js", () => ({
+vi.mock("../tools/slop/jwtCache.js", () => ({
   loadCachedSlopJwt: () => mockLoadCachedSlopJwt(),
   saveCachedSlopJwt: (...args: any[]) => mockSaveCachedSlopJwt(...args),
   clearCachedSlopJwt: () => mockClearCachedSlopJwt(),
@@ -28,7 +28,7 @@ vi.mock("viem/accounts", () => ({
   }),
 }));
 
-const { requireSlopAuth, slopRefresh } = await import("../slop/auth.js");
+const { requireSlopAuth, slopRefresh } = await import("../tools/slop/auth.js");
 
 const PRIVATE_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const WALLET = "0xabcdef1234567890abcdef1234567890abcdef12";

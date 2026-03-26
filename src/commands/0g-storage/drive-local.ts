@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { respond } from "../../utils/respond.js";
 import { colors } from "../../utils/ui.js";
-import { formatCostDisplay } from "../../0g-storage/cost.js";
+import { formatCostDisplay } from "../../tools/0g-storage/cost.js";
 import { requireWallet } from "./shared.js";
 import {
   loadDriveIndex,
@@ -16,7 +16,7 @@ import {
   driveFind,
   driveDu,
   drivePut,
-} from "../../0g-storage/drive-index.js";
+} from "../../tools/0g-storage/drive-index.js";
 
 export function addDriveLocalCommands(drive: Command): void {
   // ── drive ls ──────────────────────────────────────────────

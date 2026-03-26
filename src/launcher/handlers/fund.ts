@@ -14,9 +14,9 @@ import {
   depositToLedger,
   fundProvider,
   ackWithReadback,
-} from "../../0g-compute/operations.js";
-import { calculateProviderPricing, formatPricePerMTokens } from "../../0g-compute/pricing.js";
-import { getAuthenticatedBroker, resetAuthenticatedBroker } from "../../0g-compute/broker-factory.js";
+} from "../../tools/0g-compute/operations.js";
+import { calculateProviderPricing, formatPricePerMTokens } from "../../tools/0g-compute/pricing.js";
+import { getAuthenticatedBroker, resetAuthenticatedBroker } from "../../tools/0g-compute/broker-factory.js";
 import { autoDetectProvider } from "../../providers/registry.js";
 import { normalizeRuntime } from "../../commands/echo/assessment.js";
 import { resolvePreferredComputeSelection } from "../../commands/echo/compute-selection.js";

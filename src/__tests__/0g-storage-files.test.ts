@@ -8,11 +8,11 @@ const { mockUpload, mockDownload, mockGetFileInfo } = vi.hoisted(() => ({
   mockGetFileInfo: vi.fn(),
 }));
 
-vi.mock("../0g-compute/bridge.js", () => ({
+vi.mock("../tools/0g-compute/bridge.js", () => ({
   withSuppressedConsole: vi.fn((fn: () => unknown) => fn()),
 }));
 
-vi.mock("../0g-storage/sdk-bridge.cjs", () => ({
+vi.mock("../tools/0g-storage/sdk-bridge.cjs", () => ({
   storageUpload: mockUpload,
   storageDownload: mockDownload,
   storageGetFileInfo: mockGetFileInfo,
@@ -29,8 +29,8 @@ vi.mock("node:fs", async (importOriginal) => {
 
 // ── Imports (after mocks) ───────────────────────────────────────────
 
-import { uploadFile, downloadFile, getFileInfo } from "../0g-storage/files.js";
-import type { StorageClientConfig } from "../0g-storage/client.js";
+import { uploadFile, downloadFile, getFileInfo } from "../tools/0g-storage/files.js";
+import type { StorageClientConfig } from "../tools/0g-storage/client.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

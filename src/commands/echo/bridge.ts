@@ -1,9 +1,9 @@
 import inquirer from "inquirer";
 import { parseUnits } from "viem";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { getKhalaniClient } from "../../khalani/client.js";
-import { getCachedKhalaniChains } from "../../khalani/chains.js";
-import type { KhalaniChain, KhalaniToken } from "../../khalani/types.js";
+import { getKhalaniClient } from "../../tools/khalani/client.js";
+import { getCachedKhalaniChains } from "../../tools/khalani/chains.js";
+import type { KhalaniChain, KhalaniToken } from "../../tools/khalani/types.js";
 import { colors, infoBox, warnBox } from "../../utils/ui.js";
 import { createBridgeSubcommand } from "../khalani/bridge.js";
 import { prepareQuoteRequest } from "../khalani/request.js";
