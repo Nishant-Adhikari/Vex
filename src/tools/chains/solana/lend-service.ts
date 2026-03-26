@@ -106,6 +106,23 @@ export async function getLendPositions(address: string): Promise<LendPosition[]>
   }));
 }
 
+export interface LendEarning {
+  address: string;
+  ownerAddress: string;
+  earnings: number;
+  slot: number;
+}
+
+export async function getLendEarnings(address: string, positionAddresses: string[]): Promise<LendEarning[]> {
+  if (positionAddresses.length === 0) return [];
+  const base = getJupiterBaseUrl();
+  const headers = getJupiterHeaders();
+  return fetchJson<LendEarning[]>(
+    `${base}${LEND_BASE}/earnings?user=${address}&positions=${positionAddresses.join(",")}`,
+    { headers },
+  );
+}
+
 export async function lendDeposit(
   secretKey: Uint8Array,
   asset: string,

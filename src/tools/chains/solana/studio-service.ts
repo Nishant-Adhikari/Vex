@@ -146,10 +146,25 @@ export async function studioCreateToken(
   };
 }
 
-export async function studioGetFees(mint: string): Promise<StudioFeeInfo> {
+export async function studioGetPoolAddress(mint: string): Promise<string> {
   if (!loadConfig().solana.jupiterApiKey) {
     throw new EchoError(ErrorCodes.SOLANA_STUDIO_CLAIM_FAILED, "Jupiter API key required for Studio.", "Run: echoclaw config set-jupiter-key <key>");
   }
+  const base = getJupiterBaseUrl();
+  const headers = getJupiterHeaders();
+
+  const result = await fetchJson<{ dbcPoolAddress: string }>(
+    `${base}/studio/v1/dbc-pool/addresses/${mint}`,
+    { headers },
+  );
+  if (!result.dbcPoolAddress) {
+    throw new EchoError(ErrorCodes.SOLANA_LP_POOL_NOT_FOUND, `No DBC pool found for mint: ${mint}`);
+  }
+  return result.dbcPoolAddress;
+}
+
+export async function studioGetFees(mint: string): Promise<StudioFeeInfo> {
+  const poolAddress = await studioGetPoolAddress(mint);
   const base = getJupiterBaseUrl();
   const headers = { ...getJupiterHeaders(), "Content-Type": "application/json" };
 
@@ -157,7 +172,7 @@ export async function studioGetFees(mint: string): Promise<StudioFeeInfo> {
     `${base}/studio/v1/dbc/fee`,
     {
       method: "POST", headers,
-      body: JSON.stringify({ mint }),
+      body: JSON.stringify({ poolAddress }),
     },
   );
 }

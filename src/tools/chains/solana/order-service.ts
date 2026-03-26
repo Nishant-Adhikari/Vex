@@ -69,6 +69,8 @@ export async function createDcaOrder(
   if (!outputToken) throw new EchoError(ErrorCodes.SOLANA_TOKEN_NOT_FOUND, `Token not found: ${outputSymbol}`);
 
   const atomicPerCycle = uiToTokenAmount(amountPerCycle, inputToken.decimals);
+  // Jupiter inAmount is TOTAL deposit, not per-cycle. Per-cycle = inAmount / numberOfOrders.
+  const atomicTotal = Number(atomicPerCycle) * numberOfOrders;
   const keypair = Keypair.fromSecretKey(secretKey);
   const base = getJupiterBaseUrl();
   const headers = { ...getJupiterHeaders(), "Content-Type": "application/json" };
@@ -84,7 +86,7 @@ export async function createDcaOrder(
         outputMint: outputToken.address,
         params: {
           time: {
-            inAmount: Number(atomicPerCycle),
+            inAmount: atomicTotal,
             numberOfOrders,
             interval: INTERVAL_SECONDS[interval],
           },
@@ -123,15 +125,22 @@ export async function createDcaOrder(
 export async function listDcaOrders(walletAddress: string): Promise<DcaOrder[]> {
   const base = getJupiterBaseUrl();
   const headers = getJupiterHeaders();
+  const allOrders: DcaOrder[] = [];
+  const MAX_PAGES = 10;
 
   try {
-    const result = await fetchJson<{ time?: DcaOrder[] }>(
-      `${base}/recurring/v1/getRecurringOrders?user=${walletAddress}&recurringType=time&orderStatus=active&page=1&includeFailedTx=false`,
-      { headers },
-    );
-    return result.time ?? [];
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const result = await fetchJson<{ time?: DcaOrder[]; hasMoreData?: boolean }>(
+        `${base}/recurring/v1/getRecurringOrders?user=${walletAddress}&recurringType=time&orderStatus=active&page=${page}`,
+        { headers },
+      );
+      const orders = result.time ?? [];
+      allOrders.push(...orders);
+      if (!result.hasMoreData || orders.length === 0) break;
+    }
+    return allOrders;
   } catch {
-    return [];
+    return allOrders;
   }
 }
 
@@ -247,16 +256,22 @@ export async function createLimitOrder(
 export async function listLimitOrders(walletAddress: string): Promise<TriggerOrder[]> {
   const base = getJupiterBaseUrl();
   const headers = getJupiterHeaders();
+  const allOrders: TriggerOrder[] = [];
+  const MAX_PAGES = 10;
 
   try {
-    // Response is { orders: [...], user, totalPages, page }, NOT a raw array
-    const result = await fetchJson<{ orders: TriggerOrder[] }>(
-      `${base}/trigger/v1/getTriggerOrders?user=${walletAddress}&orderStatus=active&page=1&includeFailedTx=false`,
-      { headers },
-    );
-    return result.orders ?? [];
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const result = await fetchJson<{ orders: TriggerOrder[]; hasMoreData?: boolean }>(
+        `${base}/trigger/v1/getTriggerOrders?user=${walletAddress}&orderStatus=active&page=${page}`,
+        { headers },
+      );
+      const orders = result.orders ?? [];
+      allOrders.push(...orders);
+      if (!result.hasMoreData || orders.length === 0) break;
+    }
+    return allOrders;
   } catch {
-    return [];
+    return allOrders;
   }
 }
 

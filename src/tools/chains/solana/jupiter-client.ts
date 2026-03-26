@@ -11,6 +11,7 @@ import { EchoError, ErrorCodes } from "../../../errors.js";
 
 export function getJupiterBaseUrl(): string {
   const key = loadConfig().solana.jupiterApiKey;
+  // Matches official Jupiter CLI: api.jup.ag with key, lite-api.jup.ag without.
   return key ? "https://api.jup.ag" : "https://lite-api.jup.ag";
 }
 
@@ -19,7 +20,7 @@ export function getJupiterHeaders(): Record<string, string> {
   return key ? { "x-api-key": key } : {};
 }
 
-// --- Ultra Swap API ---
+// --- Ultra Swap API (matches official Jupiter CLI — /ultra/v1 prefix) ---
 
 export interface UltraOrderRequest {
   inputMint: string;
@@ -133,22 +134,6 @@ export interface JupiterTokenInfo {
   tags?: string[];
 }
 
-export interface JupiterQuoteResponse {
-  inputMint: string;
-  outputMint: string;
-  inAmount: string;
-  outAmount: string;
-  otherAmountThreshold: string;
-  swapMode: string;
-  slippageBps: number;
-  priceImpactPct: string;
-  routePlan: Array<{ swapInfo: { label: string; ammKey: string } }>;
-}
-
-export interface JupiterSwapResponse {
-  swapTransaction: string; // base64 encoded VersionedTransaction
-}
-
 export interface JupiterTokenListEntry {
   id: string;          // mint address
   symbol: string;
@@ -205,51 +190,44 @@ export async function jupiterGetPrices(mints: string[]): Promise<Map<string, num
   return prices;
 }
 
-// --- Swap API ---
+// --- Spot Trade History (Datapi) ---
 
-export interface JupiterQuoteRequest {
-  inputMint: string;
-  outputMint: string;
-  amount: string;
-  slippageBps?: number;
+export interface SpotTrade {
+  type: "buy" | "sell";
+  usdVolume: number;
+  profit: number;
+  cost: number;
+  txHash: string;
+  assetId: string;
+  blockTime: string;
+  amount: number;
+  price: number;
 }
 
-export async function jupiterGetSwapQuote(
-  params: JupiterQuoteRequest,
-): Promise<JupiterQuoteResponse> {
+export async function jupiterGetSpotHistory(params: {
+  address: string;
+  assetId?: string;
+  after?: string;
+  before?: string;
+  limit?: number;
+  offset?: string;
+}): Promise<{ userTrades: SpotTrade[]; next: string | null }> {
   const base = getJupiterBaseUrl();
   const headers = getJupiterHeaders();
-  const qs = new URLSearchParams({
-    inputMint: params.inputMint,
-    outputMint: params.outputMint,
-    amount: params.amount,
-    slippageBps: String(params.slippageBps ?? 50),
-  });
-  return fetchJson<JupiterQuoteResponse>(
-    `${base}/swap/v1/quote?${qs.toString()}`,
+  const qs = new URLSearchParams({ addresses: params.address, includeCapitalSide: "true" });
+  if (params.assetId) qs.set("assetId", params.assetId);
+  if (params.after) qs.set("fromTs", params.after);
+  if (params.before) qs.set("toTs", params.before);
+  if (params.limit) qs.set("limit", String(Math.min(params.limit * 2, 60)));
+  if (params.offset) qs.set("offset", params.offset);
+
+  return fetchJson<{ userTrades: SpotTrade[]; next: string | null }>(
+    `${base}/_datapi/v1/txs/users?${qs.toString()}`,
     { headers },
   );
 }
 
-export async function jupiterGetSwapTx(
-  quoteResponse: JupiterQuoteResponse,
-  userPublicKey: string,
-): Promise<string> {
-  const base = getJupiterBaseUrl();
-  const headers = { ...getJupiterHeaders(), "Content-Type": "application/json" };
-  const body = JSON.stringify({
-    quoteResponse,
-    userPublicKey,
-    wrapAndUnwrapSol: true,
-    dynamicComputeUnitLimit: true,
-    prioritizationFeeLamports: "auto",
-  });
-  const result = await fetchJson<JupiterSwapResponse>(
-    `${base}/swap/v1/swap`,
-    { method: "POST", headers, body },
-  );
-  return result.swapTransaction;
-}
+// --- Trending Tokens ---
 
 type TrendingCategory = "toptrending" | "toptraded" | "toporganicscore" | "recent" | "lst" | "verified";
 type TrendingInterval = "5m" | "1h" | "6h" | "24h";

@@ -3,11 +3,13 @@
  * Recipients claim via Jupiter Mobile. Self-custodial recovery via clawback.
  */
 
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { fetchJson } from "../../../utils/http.js";
 import { getJupiterBaseUrl, getJupiterHeaders } from "./jupiter-client.js";
+import { resolveToken } from "./token-registry.js";
 import { signAndSendVersionedTx } from "./tx.js";
-import { solanaExplorerUrl } from "./validation.js";
+import { solanaExplorerUrl, uiToTokenAmount } from "./validation.js";
+import { SOL_MINT, SOL_DECIMALS } from "./constants.js";
 import { EchoError, ErrorCodes } from "../../../errors.js";
 import type { TransferResult } from "../types.js";
 import { createHash } from "node:crypto";
@@ -44,24 +46,34 @@ export async function craftSend(
   const inviteCode = generateInviteCode();
   const inviteKeypair = deriveKeypairFromCode(inviteCode);
 
+  // Convert UI amount to atomic units (Jupiter Send expects atomic)
+  const decimals = mint ? (await resolveToken(mint))?.decimals ?? 9 : SOL_DECIMALS;
+  const atomicAmount = String(uiToTokenAmount(amount, decimals));
+
   const base = getJupiterBaseUrl();
   const headers = { ...getJupiterHeaders(), "Content-Type": "application/json" };
 
-  const resp = await fetchJson<{ transaction: string }>(
+  const resp = await fetchJson<{ tx?: string; transaction?: string }>(
     `${base}/send/v1/craft-send`,
     {
       method: "POST", headers,
       body: JSON.stringify({
         inviteSigner: inviteKeypair.publicKey.toBase58(),
         sender: walletKeypair.publicKey.toBase58(),
-        amount,
+        amount: atomicAmount,
         ...(mint ? { mint } : {}),
       }),
     },
   );
 
+  // API may return either `tx` (per docs) or `transaction` (per live testing)
+  const txBase64 = resp.tx ?? resp.transaction;
+  if (!txBase64) {
+    throw new EchoError(ErrorCodes.SOLANA_SEND_INVITE_FAILED, "No transaction returned from Send API");
+  }
+
   // Sign with BOTH sender and invite keypair
-  const signature = await signAndSendVersionedTx(resp.transaction, [walletKeypair, inviteKeypair]);
+  const signature = await signAndSendVersionedTx(txBase64, [walletKeypair, inviteKeypair]);
 
   return {
     inviteCode,
@@ -86,7 +98,7 @@ export async function craftClawback(
   const base = getJupiterBaseUrl();
   const headers = { ...getJupiterHeaders(), "Content-Type": "application/json" };
 
-  const resp = await fetchJson<{ transaction: string }>(
+  const resp = await fetchJson<{ tx?: string; transaction?: string }>(
     `${base}/send/v1/craft-clawback`,
     {
       method: "POST", headers,
@@ -97,7 +109,12 @@ export async function craftClawback(
     },
   );
 
-  const signature = await signAndSendVersionedTx(resp.transaction, [walletKeypair]);
+  const txBase64 = resp.tx ?? resp.transaction;
+  if (!txBase64) {
+    throw new EchoError(ErrorCodes.SOLANA_SEND_CLAWBACK_FAILED, "No transaction returned from Send API");
+  }
+
+  const signature = await signAndSendVersionedTx(txBase64, [walletKeypair]);
   return { signature, explorerUrl: solanaExplorerUrl(signature) };
 }
 

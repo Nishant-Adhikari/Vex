@@ -1,6 +1,6 @@
 # JUPITER
 
-https://dev.jup.ag/get-started
+https://dev.jup.ag/llms.txt
 
 # Khalani
 

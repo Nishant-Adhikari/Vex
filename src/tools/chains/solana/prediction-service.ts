@@ -8,7 +8,7 @@
 import { Keypair } from "@solana/web3.js";
 import { fetchJson } from "../../../utils/http.js";
 import { getJupiterBaseUrl, getJupiterHeaders } from "./jupiter-client.js";
-import { signAndSendVersionedTx } from "./tx.js";
+import { deserializeVersionedTx, signVersionedTx } from "./tx.js";
 import { solanaExplorerUrl } from "./validation.js";
 import { EchoError, ErrorCodes } from "../../../errors.js";
 import type { TransferResult } from "../types.js";
@@ -140,6 +140,29 @@ export async function getMarket(marketId: string): Promise<PredictMarket> {
   return normalizeMarket(raw);
 }
 
+// --- Managed execute helper (matches Jupiter CLI PredictionsClient) ---
+
+async function predictSignAndExecute(
+  secretKey: Uint8Array,
+  transaction: string,
+): Promise<string> {
+  const keypair = Keypair.fromSecretKey(secretKey);
+  const base = getJupiterBaseUrl();
+  const headers = { ...getJupiterHeaders(), "Content-Type": "application/json" };
+
+  const tx = deserializeVersionedTx(transaction);
+  signVersionedTx(tx, [keypair]);
+  const signedBase64 = Buffer.from(tx.serialize()).toString("base64");
+
+  const result = await fetchJson<{ signature: string }>(
+    `${base}${PREDICT_BASE}/orders/execute`,
+    { method: "POST", headers, body: JSON.stringify({ signedTransaction: signedBase64 }) },
+  );
+  return result.signature;
+}
+
+// --- Write operations ---
+
 export async function createPredictOrder(
   secretKey: Uint8Array,
   marketId: string,
@@ -170,7 +193,7 @@ export async function createPredictOrder(
     },
   );
 
-  const signature = await signAndSendVersionedTx(resp.transaction, [keypair]);
+  const signature = await predictSignAndExecute(secretKey, resp.transaction);
   return { signature, positionPubkey: resp.order.positionPubkey };
 }
 
@@ -179,7 +202,6 @@ export async function getPositions(address: string): Promise<PredictPosition[]> 
   const headers = getJupiterHeaders();
 
   try {
-    // Response: { data: [...], pagination: {...} } — NOT a raw array
     const result = await fetchJson<{ data: PredictPosition[] }>(
       `${base}${PREDICT_BASE}/positions?ownerPubkey=${address}`,
       { headers },
@@ -188,6 +210,22 @@ export async function getPositions(address: string): Promise<PredictPosition[]> 
   } catch {
     return [];
   }
+}
+
+export async function getPosition(positionPubkey: string): Promise<PredictPosition> {
+  const base = getJupiterBaseUrl();
+  const headers = getJupiterHeaders();
+  return fetchJson<PredictPosition>(`${base}${PREDICT_BASE}/positions/${positionPubkey}`, { headers });
+}
+
+export async function getEvent(eventId: string): Promise<PredictEvent> {
+  const base = getJupiterBaseUrl();
+  const headers = getJupiterHeaders();
+  const raw = await fetchJson<ApiEvent>(
+    `${base}${PREDICT_BASE}/events/${eventId}?includeMarkets=true`,
+    { headers },
+  );
+  return normalizeEvent(raw);
 }
 
 export async function claimPosition(
@@ -206,7 +244,7 @@ export async function claimPosition(
     },
   );
 
-  const signature = await signAndSendVersionedTx(resp.transaction, [keypair]);
+  const signature = await predictSignAndExecute(secretKey, resp.transaction);
   return { signature, explorerUrl: solanaExplorerUrl(signature) };
 }
 
@@ -226,6 +264,83 @@ export async function closePosition(
     },
   );
 
-  const signature = await signAndSendVersionedTx(resp.transaction, [keypair]);
+  const signature = await predictSignAndExecute(secretKey, resp.transaction);
   return { signature, explorerUrl: solanaExplorerUrl(signature) };
+}
+
+export async function closeAllPositions(
+  secretKey: Uint8Array,
+): Promise<TransferResult[]> {
+  const keypair = Keypair.fromSecretKey(secretKey);
+  const base = getJupiterBaseUrl();
+  const headers = { ...getJupiterHeaders(), "Content-Type": "application/json" };
+
+  const resp = await fetchJson<{ data: Array<{ transaction: string }> }>(
+    `${base}${PREDICT_BASE}/positions`,
+    {
+      method: "DELETE", headers,
+      body: JSON.stringify({ ownerPubkey: keypair.publicKey.toBase58(), minSellPriceSlippageBps: 200 }),
+    },
+  );
+
+  const results: TransferResult[] = [];
+  for (const item of resp.data ?? []) {
+    const signature = await predictSignAndExecute(secretKey, item.transaction);
+    results.push({ signature, explorerUrl: solanaExplorerUrl(signature) });
+  }
+  return results;
+}
+
+export interface PredictHistoryEntry {
+  time: string;
+  eventType: string;
+  side: string;
+  action: string;
+  contracts: number;
+  avgPriceUsd: number;
+  pnlUsd: number | null;
+  positionPubkey: string;
+  signature: string;
+}
+
+export async function getPredictHistory(
+  address: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<{ history: PredictHistoryEntry[]; hasNext: boolean }> {
+  const base = getJupiterBaseUrl();
+  const headers = getJupiterHeaders();
+  const start = opts?.offset ?? 0;
+  const end = start + (opts?.limit ?? 10);
+
+  const result = await fetchJson<{
+    data: Array<{
+      timestamp: number;
+      eventType: string;
+      isYes: boolean;
+      isBuy: boolean;
+      filledContracts: string;
+      avgFillPriceUsd: string;
+      realizedPnl: string | null;
+      positionPubkey: string;
+      signature: string;
+    }>;
+    pagination: { hasNext: boolean };
+  }>(
+    `${base}${PREDICT_BASE}/history?ownerPubkey=${address}&start=${start}&end=${end}`,
+    { headers },
+  );
+
+  const history = (result.data ?? []).map((h) => ({
+    time: new Date(h.timestamp * 1000).toISOString(),
+    eventType: h.eventType,
+    side: h.isYes ? "yes" : "no",
+    action: h.isBuy ? "buy" : "sell",
+    contracts: Number(h.filledContracts),
+    avgPriceUsd: Number(h.avgFillPriceUsd),
+    pnlUsd: h.realizedPnl ? Number(h.realizedPnl) : null,
+    positionPubkey: h.positionPubkey,
+    signature: h.signature,
+  }));
+
+  return { history, hasNext: result.pagination?.hasNext ?? false };
 }

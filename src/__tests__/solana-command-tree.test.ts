@@ -26,6 +26,8 @@ describe("solana command tree", () => {
       "studio",
       "holdings",
       "shield",
+      "perps",
+      "history",
     ]));
   });
 

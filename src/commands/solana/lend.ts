@@ -4,7 +4,7 @@
 
 import { Command } from "commander";
 import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
-import { getLendRates, getLendPositions, lendDeposit, lendWithdraw } from "../../tools/chains/solana/lend-service.js";
+import { getLendRates, getLendPositions, getLendEarnings, lendDeposit, lendWithdraw } from "../../tools/chains/solana/lend-service.js";
 import { resolveToken } from "../../tools/chains/solana/token-registry.js";
 import { uiToTokenAmount } from "../../tools/chains/solana/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
@@ -71,10 +71,23 @@ export function createLendSubcommand(): Command {
 
       try {
         const positions = await getLendPositions(wallet.address);
+
+        // Fetch earnings for positions that have token addresses
+        const posAddresses = positions.map((p) => p.tokenAddress).filter(Boolean);
+        const earnings = posAddresses.length > 0
+          ? await getLendEarnings(wallet.address, posAddresses)
+          : [];
+        const earningsMap = new Map(earnings.map((e) => [e.address, e.earnings]));
+
         spin.succeed(`${positions.length} position(s)`);
 
         if (isHeadless()) {
-          writeJsonSuccess({ positions });
+          writeJsonSuccess({
+            positions: positions.map((p) => ({
+              ...p,
+              earnings: earningsMap.get(p.tokenAddress) ?? 0,
+            })),
+          });
           return;
         }
 
@@ -88,13 +101,13 @@ export function createLendSubcommand(): Command {
             { header: "Token", width: 10 },
             { header: "Shares", width: 16 },
             { header: "Assets", width: 16 },
-            { header: "Balance", width: 16 },
+            { header: "Earnings", width: 16 },
           ],
           positions.map((p) => [
             p.tokenSymbol,
             p.shares,
             p.underlyingAssets,
-            p.underlyingBalance,
+            String(earningsMap.get(p.tokenAddress) ?? 0),
           ]),
         );
       } catch (err) { spin.fail("Failed"); throw err; }

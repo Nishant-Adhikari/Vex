@@ -9,10 +9,13 @@ import {
   listEvents,
   searchEvents,
   getMarket,
+  getEvent,
   createPredictOrder,
   getPositions,
   claimPosition,
   closePosition,
+  closeAllPositions,
+  getPredictHistory,
 } from "../../tools/chains/solana/prediction-service.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
@@ -189,6 +192,113 @@ export function createPredictSubcommand(): Command {
         if (isHeadless()) { writeJsonSuccess({ action: "predict-sell", ...result }); }
         else { successBox("Position Closed", `Signature: ${colors.muted(result.signature)}\nExplorer: ${colors.muted(result.explorerUrl)}`); }
       } catch (err) { spin.fail("Sell failed"); throw err; }
+    });
+
+  predict
+    .command("close-all")
+    .description("Close all open prediction positions")
+    .option("--yes", "Skip confirmation")
+    .action(async (options: { yes?: boolean }) => {
+      const wallet = requireSolanaWallet();
+      if (!options.yes && !isHeadless()) {
+        process.stderr.write(`\n  Close ALL prediction positions\n  Use ${colors.muted("--yes")} to execute.\n\n`);
+        throw new EchoError(ErrorCodes.CONFIRMATION_REQUIRED, "Add --yes to proceed.");
+      }
+
+      const spin = spinner("Closing all positions...");
+      spin.start();
+
+      try {
+        const results = await closeAllPositions(wallet.secretKey);
+        spin.succeed(`Closed ${results.length} position(s)`);
+        if (isHeadless()) {
+          writeJsonSuccess({ action: "predict-close-all", results });
+        } else {
+          successBox("All Positions Closed", results.map((r) => `Signature: ${colors.muted(r.signature)}`).join("\n") || "No positions to close.");
+        }
+      } catch (err) { spin.fail("Failed"); throw err; }
+    });
+
+  predict
+    .command("history")
+    .description("View prediction trading history")
+    .option("--limit <n>", "Max results", "10")
+    .option("--offset <n>", "Pagination offset", "0")
+    .action(async (options: { limit: string; offset: string }) => {
+      const wallet = requireSolanaWallet();
+      const spin = spinner("Loading history...");
+      spin.start();
+
+      const { history, hasNext } = await getPredictHistory(wallet.address, {
+        limit: Number(options.limit),
+        offset: Number(options.offset),
+      });
+      spin.succeed(`${history.length} event(s)`);
+
+      if (isHeadless()) {
+        writeJsonSuccess({ history, hasNext });
+        return;
+      }
+
+      if (history.length === 0) {
+        infoBox("History", "No prediction history.");
+        return;
+      }
+
+      printTable(
+        [
+          { header: "Time", width: 12 },
+          { header: "Type", width: 14 },
+          { header: "Side", width: 6 },
+          { header: "Contracts", width: 10 },
+          { header: "Price", width: 10 },
+          { header: "PnL", width: 12 },
+          { header: "Tx", width: 14 },
+        ],
+        history.map((h) => [
+          new Date(h.time).toLocaleDateString(),
+          h.eventType,
+          h.side,
+          String(h.contracts),
+          `$${h.avgPriceUsd.toFixed(2)}`,
+          h.pnlUsd != null ? `$${h.pnlUsd.toFixed(2)}` : colors.muted("-"),
+          `${h.signature.slice(0, 4)}...${h.signature.slice(-4)}`,
+        ]),
+      );
+
+      if (hasNext) {
+        process.stderr.write(`\n  Next: --offset ${Number(options.offset) + Number(options.limit)}\n`);
+      }
+    });
+
+  predict
+    .command("event <eventId>")
+    .description("Look up a single event by ID")
+    .action(async (eventId: string) => {
+      const spin = spinner("Loading event...");
+      spin.start();
+
+      const event = await getEvent(eventId);
+      spin.succeed("Event loaded");
+
+      if (isHeadless()) { writeJsonSuccess({ event }); return; }
+
+      infoBox("Prediction Event",
+        `${colors.bold(event.title)}\n` +
+        `Category: ${event.category} | Status: ${event.status}`);
+
+      if (event.markets && event.markets.length > 0) {
+        printTable(
+          [{ header: "Market", width: 14 }, { header: "Title", width: 30 }, { header: "YES", width: 10 }, { header: "NO", width: 10 }, { header: "Volume", width: 14 }],
+          event.markets.map((m) => [
+            m.marketId,
+            m.title.slice(0, 28),
+            `$${m.buyYesPriceUsd.toFixed(2)}`,
+            `$${m.buyNoPriceUsd.toFixed(2)}`,
+            `$${m.volume.toLocaleString()}`,
+          ]),
+        );
+      }
     });
 
   return predict;

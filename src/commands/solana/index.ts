@@ -12,10 +12,12 @@ import { createSendInviteSubcommand, createInvitesSubcommand, createClawbackSubc
 import { createPredictSubcommand } from "./predict.js";
 import { createStudioSubcommand } from "./studio.js";
 import { createHoldingsSubcommand, createShieldSubcommand } from "./holdings.js";
+import { createPerpsSubcommand } from "./perps.js";
+import { createHistorySubcommand } from "./history.js";
 
 export function createSolanaCommand(): Command {
   const solana = new Command("solana")
-    .description("Solana DeFi via Jupiter (swap, browse, price, send, stake, lend, predict, dca, limit, studio, holdings, shield)")
+    .description("Solana DeFi via Jupiter (swap, perps, browse, price, send, stake, lend, predict, dca, limit, studio, holdings, shield, history)")
     .exitOverride();
 
   solana.addCommand(createBrowseSubcommand());
@@ -37,6 +39,8 @@ export function createSolanaCommand(): Command {
   solana.addCommand(createStudioSubcommand());
   solana.addCommand(createHoldingsSubcommand());
   solana.addCommand(createShieldSubcommand());
+  solana.addCommand(createPerpsSubcommand());
+  solana.addCommand(createHistorySubcommand());
 
   return solana;
 }
