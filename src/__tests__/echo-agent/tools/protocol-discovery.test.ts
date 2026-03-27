@@ -116,8 +116,7 @@ describe("protocol discovery", () => {
     const result = discoverProtocolCapabilities({});
     const declaredWarning = result.warnings.find(w => w.includes("Declared-only"));
     expect(declaredWarning).toBeDefined();
-    // polymarket, 0g-compute etc. are declared but have no active tools yet
-    expect(declaredWarning).toContain("polymarket");
+    // 0g-compute, 0g-storage etc. are declared but have no active tools yet
     // kyberswap, solana, dexscreener are now active — should NOT appear in declared-only warning
     expect(declaredWarning).not.toContain("kyberswap");
     expect(declaredWarning).not.toContain("solana");
@@ -126,6 +125,7 @@ describe("protocol discovery", () => {
     expect(declaredWarning).not.toContain("jaine");
     expect(declaredWarning).not.toContain("slop");
     expect(declaredWarning).not.toContain("echobook");
+    expect(declaredWarning).not.toContain("polymarket");
   });
 
   it("returns dexscreener tools when filtering by dexscreener namespace", () => {

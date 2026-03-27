@@ -1,0 +1,209 @@
+import type { ProtocolToolManifest } from "../../types.js";
+
+export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
+  // ── User Data ─────────────────────────────────────────────────
+
+  {
+    toolId: "polymarket.data.positions",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get open prediction market positions — size, avgPrice, PnL, redeemable/mergeable status.",
+    mutating: false,
+    params: [
+      { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
+      { key: "market", type: "string", description: "Filter by market condition ID." },
+      { key: "eventId", type: "number", description: "Filter by event ID." },
+      { key: "sizeThreshold", type: "number", description: "Min position size filter." },
+      { key: "redeemable", type: "boolean", description: "Filter redeemable only." },
+      { key: "mergeable", type: "boolean", description: "Filter mergeable only." },
+      { key: "limit", type: "number", description: "Max results." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+      { key: "sortBy", type: "string", description: "Sort: CURRENT, INITIAL, TOKENS, CASHPNL, PERCENTPNL, TITLE, RESOLVING, PRICE, AVGPRICE." },
+      { key: "sortDirection", type: "string", description: "ASC or DESC." },
+      { key: "title", type: "string", description: "Filter by title substring." },
+    ],
+    exampleParams: { user: "0x1234..." },
+  },
+  {
+    toolId: "polymarket.data.closedPositions",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get closed prediction market positions with realized PnL.",
+    mutating: false,
+    params: [
+      { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
+      { key: "limit", type: "number", description: "Max results." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+      { key: "sortBy", type: "string", description: "Sort field." },
+      { key: "sortDirection", type: "string", description: "ASC or DESC." },
+      { key: "title", type: "string", description: "Filter by title." },
+    ],
+    exampleParams: { user: "0x1234..." },
+  },
+  {
+    toolId: "polymarket.data.activity",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get user activity history — trades, splits, merges, redeems, rewards, conversions, maker rebates.",
+    mutating: false,
+    params: [
+      { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
+      { key: "limit", type: "number", description: "Max results." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+      { key: "type", type: "string", description: "Filter: TRADE, SPLIT, MERGE, REDEEM, REWARD, CONVERSION, MAKER_REBATE." },
+      { key: "side", type: "string", description: "Filter: BUY or SELL." },
+      { key: "market", type: "string", description: "Filter by market condition ID." },
+    ],
+    exampleParams: { user: "0x1234...", type: "TRADE", limit: 50 },
+  },
+  {
+    toolId: "polymarket.data.trades",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get trades with tx hashes, prices, sizes — by user or market.",
+    mutating: false,
+    params: [
+      { key: "user", type: "string", description: "Filter by user address." },
+      { key: "market", type: "string", description: "Filter by market condition ID." },
+      { key: "side", type: "string", description: "Filter: BUY or SELL." },
+      { key: "limit", type: "number", description: "Max results." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+    ],
+    exampleParams: { user: "0x1234...", limit: 20 },
+  },
+  {
+    toolId: "polymarket.data.value",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get total portfolio value in USD for a user.",
+    mutating: false,
+    params: [
+      { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
+      { key: "market", type: "string", description: "Filter by specific market." },
+    ],
+    exampleParams: { user: "0x1234..." },
+  },
+  {
+    toolId: "polymarket.data.traded",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get total number of markets a user has traded in.",
+    mutating: false,
+    params: [
+      { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
+    ],
+    exampleParams: { user: "0x1234..." },
+  },
+
+  // ── Market Data ───────────────────────────────────────────────
+
+  {
+    toolId: "polymarket.data.holders",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get top holders per outcome token for a market — amounts, pseudonyms, profile images.",
+    mutating: false,
+    params: [
+      { key: "market", type: "string", required: true, description: "Market condition ID." },
+      { key: "limit", type: "number", description: "Max holders per token." },
+      { key: "minBalance", type: "number", description: "Min balance filter." },
+    ],
+    exampleParams: { market: "0xabc..." },
+  },
+  {
+    toolId: "polymarket.data.openInterest",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get open interest (total value locked) per market. Omit market for all.",
+    mutating: false,
+    params: [
+      { key: "market", type: "string", description: "Market condition ID (optional — omit for all)." },
+    ],
+    exampleParams: { market: "0xabc..." },
+  },
+  {
+    toolId: "polymarket.data.liveVolume",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get live trading volume for an event — total and per-market breakdown.",
+    mutating: false,
+    params: [
+      { key: "eventId", type: "number", required: true, description: "Event ID." },
+    ],
+    exampleParams: { eventId: 12345 },
+  },
+  {
+    toolId: "polymarket.data.marketPositions",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get all positions in a specific market — per-user size, PnL, avgPrice.",
+    mutating: false,
+    params: [
+      { key: "market", type: "string", required: true, description: "Market condition ID." },
+      { key: "user", type: "string", description: "Filter by user." },
+      { key: "status", type: "string", description: "Filter by status." },
+      { key: "sortBy", type: "string", description: "Sort field." },
+      { key: "sortDirection", type: "string", description: "ASC or DESC." },
+      { key: "limit", type: "number", description: "Max results." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+    ],
+    exampleParams: { market: "0xabc..." },
+  },
+
+  // ── Leaderboard ───────────────────────────────────────────────
+
+  {
+    toolId: "polymarket.data.leaderboard",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get trader leaderboard ranked by PnL or volume — categories: OVERALL, POLITICS, SPORTS, CRYPTO, CULTURE.",
+    mutating: false,
+    params: [
+      { key: "category", type: "string", description: "Category: OVERALL, POLITICS, SPORTS, CRYPTO, CULTURE, ECONOMICS, TECH, WEATHER." },
+      { key: "timePeriod", type: "string", description: "Period: DAY, WEEK, MONTH, ALL." },
+      { key: "orderBy", type: "string", description: "Rank by: PNL or VOLUME." },
+      { key: "limit", type: "number", description: "Max entries." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+      { key: "user", type: "string", description: "Get specific user's rank." },
+    ],
+    exampleParams: { category: "OVERALL", timePeriod: "WEEK", limit: 20 },
+  },
+  {
+    toolId: "polymarket.data.builderLeaderboard",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get builder (API integrator) leaderboard by volume and active users.",
+    mutating: false,
+    params: [
+      { key: "timePeriod", type: "string", description: "Period: DAY, WEEK, MONTH, ALL." },
+      { key: "limit", type: "number", description: "Max entries." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+    ],
+    exampleParams: { timePeriod: "WEEK" },
+  },
+  {
+    toolId: "polymarket.data.builderVolume",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get builder volume time-series — daily volume and active users per builder.",
+    mutating: false,
+    params: [
+      { key: "timePeriod", type: "string", description: "Period: DAY, WEEK, MONTH, ALL." },
+    ],
+    exampleParams: { timePeriod: "WEEK" },
+  },
+
+  // ── Accounting ────────────────────────────────────────────────
+
+  {
+    toolId: "polymarket.data.accountingSnapshot",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get URL for downloading full accounting snapshot (CSV) for a user.",
+    mutating: false,
+    params: [
+      { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
+    ],
+    exampleParams: { user: "0x1234..." },
+  },
+];

@@ -22,6 +22,8 @@ import { SLOP_TOOLS } from "./0g/slop/manifest.js";
 import { SLOP_HANDLERS } from "./0g/slop/handlers.js";
 import { ECHOBOOK_TOOLS } from "./echobook/manifest.js";
 import { ECHOBOOK_HANDLERS } from "./echobook/handlers.js";
+import { POLYMARKET_TOOLS } from "./polymarket/manifest.js";
+import { POLYMARKET_HANDLERS } from "./polymarket/handlers.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -50,7 +52,7 @@ export const PROTOCOL_TOOLS: readonly ProtocolToolManifest[] = [
   ...JAINE_TOOLS,
   ...SLOP_TOOLS,
   ...ECHOBOOK_TOOLS,
-  // ...POLYMARKET_TOOLS,
+  ...POLYMARKET_TOOLS,
 ];
 
 // ── Handler registry ─────────────────────────────────────────────
@@ -64,7 +66,7 @@ const HANDLER_MAP: Record<string, ProtocolHandler> = {
   ...JAINE_HANDLERS,
   ...SLOP_HANDLERS,
   ...ECHOBOOK_HANDLERS,
-  // ...POLYMARKET_HANDLERS,
+  ...POLYMARKET_HANDLERS,
 };
 
 /** Get the handler function for a protocol tool by toolId */
