@@ -8,6 +8,8 @@
 import type { ProtocolNamespace, ProtocolToolManifest, ProtocolHandler } from "./types.js";
 import { KHALANI_TOOLS } from "./khalani/manifest.js";
 import { KHALANI_HANDLERS } from "./khalani/handlers.js";
+import { SOLANA_JUPITER_TOOLS } from "./solana-jupiter/manifest.js";
+import { SOLANA_JUPITER_HANDLERS } from "./solana-jupiter/handlers.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -29,9 +31,8 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
 
 export const PROTOCOL_TOOLS: readonly ProtocolToolManifest[] = [
   ...KHALANI_TOOLS,
-  // Add more protocols here as they are implemented:
+  ...SOLANA_JUPITER_TOOLS,
   // ...KYBERSWAP_TOOLS,
-  // ...SOLANA_TOOLS,
   // ...POLYMARKET_TOOLS,
 ];
 
@@ -39,9 +40,8 @@ export const PROTOCOL_TOOLS: readonly ProtocolToolManifest[] = [
 
 const HANDLER_MAP: Record<string, ProtocolHandler> = {
   ...KHALANI_HANDLERS,
-  // Add more protocol handlers here:
+  ...SOLANA_JUPITER_HANDLERS,
   // ...KYBERSWAP_HANDLERS,
-  // ...SOLANA_HANDLERS,
   // ...POLYMARKET_HANDLERS,
 };
 

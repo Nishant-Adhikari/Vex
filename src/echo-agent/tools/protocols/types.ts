@@ -53,6 +53,8 @@ export interface ProtocolToolManifest {
   params: ProtocolParamDef[];
   /** Example params for LLM guidance */
   exampleParams: Record<string, unknown>;
+  /** ENV var required for this tool. If set and ENV is empty, tool is hidden from discovery and blocked in execute. */
+  requiresEnv?: string;
 }
 
 // ── Protocol handler (what executes the tool) ────────────────────

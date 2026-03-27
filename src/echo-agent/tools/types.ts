@@ -21,6 +21,8 @@ export interface ToolDef {
   mutating: boolean;
   /** If true, tool is only available in restricted/full modes */
   proactive?: boolean;
+  /** ENV var required for this tool. If set and ENV is empty, tool is hidden. */
+  requiresEnv?: string;
 }
 
 export interface JsonSchema {

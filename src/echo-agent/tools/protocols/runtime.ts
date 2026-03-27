@@ -32,6 +32,7 @@ export function discoverProtocolCapabilities(
     : DEFAULT_DISCOVERY_LIMIT;
 
   const tools = PROTOCOL_TOOLS
+    .filter(m => !m.requiresEnv || Boolean(process.env[m.requiresEnv]?.trim()))
     .filter(m => request.namespace ? m.namespace === request.namespace : true)
     .filter(m => request.includeMutating ? true : !m.mutating)
     .filter(m => request.includeDeclared ? true : m.lifecycle === "active")
@@ -84,6 +85,13 @@ export async function executeProtocolTool(
     return {
       success: false,
       output: `Protocol tool "${request.toolId}" is declared but not yet executable.`,
+    };
+  }
+
+  if (manifest.requiresEnv && !process.env[manifest.requiresEnv]?.trim()) {
+    return {
+      success: false,
+      output: `${request.toolId} requires ${manifest.requiresEnv} to be set in .env`,
     };
   }
 

@@ -1,0 +1,127 @@
+import type { ProtocolToolManifest } from "../../types.js";
+
+export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "solana.predict.events",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "List prediction market events — crypto, sports, politics, culture, economics, tech.",
+    mutating: false,
+    params: [
+      { key: "category", type: "string", description: "Category filter." },
+      { key: "filter", type: "string", description: "Filter: trending, live, new." },
+    ],
+    exampleParams: { category: "crypto", filter: "trending" },
+  },
+  {
+    toolId: "solana.predict.search",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Search prediction events by keyword.",
+    mutating: false,
+    params: [
+      { key: "query", type: "string", required: true, description: "Search query." },
+    ],
+    exampleParams: { query: "bitcoin" },
+  },
+  {
+    toolId: "solana.predict.market",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Get prediction market details — YES/NO prices, volume, status.",
+    mutating: false,
+    params: [
+      { key: "marketId", type: "string", required: true, description: "Market ID." },
+    ],
+    exampleParams: { marketId: "abc123" },
+  },
+  {
+    toolId: "solana.predict.positions",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Get open prediction positions with PnL for a wallet.",
+    mutating: false,
+    params: [
+      { key: "address", type: "string", required: true, description: "Wallet address." },
+    ],
+    exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+  },
+  {
+    toolId: "solana.predict.history",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Get prediction trade history — buys, sells, claims, realized PnL.",
+    mutating: false,
+    params: [
+      { key: "address", type: "string", required: true, description: "Wallet address." },
+      { key: "limit", type: "number", description: "Max results." },
+    ],
+    exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+  },
+  {
+    toolId: "solana.predict.buy",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Buy YES or NO shares in a prediction market.",
+    mutating: true,
+    params: [
+      { key: "marketId", type: "string", required: true, description: "Market ID." },
+      { key: "side", type: "string", required: true, description: "Side: yes or no." },
+      { key: "amountUsdc", type: "number", required: true, description: "Amount in USDC." },
+    ],
+    exampleParams: { marketId: "abc123", side: "yes", amountUsdc: 10 },
+  },
+  {
+    toolId: "solana.predict.sell",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Sell (close) a prediction position.",
+    mutating: true,
+    params: [
+      { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
+    ],
+    exampleParams: { positionPubkey: "Abc123..." },
+  },
+  {
+    toolId: "solana.predict.claim",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Claim winnings from a resolved prediction position.",
+    mutating: true,
+    params: [
+      { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
+    ],
+    exampleParams: { positionPubkey: "Abc123..." },
+  },
+  {
+    toolId: "solana.predict.closeAll",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Close (sell) all open prediction positions.",
+    mutating: true,
+    params: [],
+    exampleParams: {},
+  },
+  {
+    toolId: "solana.predict.event",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Get a single prediction event by ID with all its markets.",
+    mutating: false,
+    params: [
+      { key: "eventId", type: "string", required: true, description: "Event ID." },
+    ],
+    exampleParams: { eventId: "abc123" },
+  },
+  {
+    toolId: "solana.predict.position",
+    namespace: "solana",
+    lifecycle: "active",
+    description: "Get a single prediction position detail by pubkey.",
+    mutating: false,
+    params: [
+      { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
+    ],
+    exampleParams: { positionPubkey: "Abc123..." },
+  },
+];

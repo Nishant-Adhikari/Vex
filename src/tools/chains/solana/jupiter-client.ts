@@ -9,14 +9,19 @@ import { EchoError, ErrorCodes } from "../../../errors.js";
 
 // --- URL / Auth helpers ---
 
+/** Resolve Jupiter API key: ENV (echo-agent) → config store (CLI) → null */
+function resolveJupiterApiKey(): string {
+  return process.env.JUPITER_API_KEY?.trim() || loadConfig().solana.jupiterApiKey || "";
+}
+
 export function getJupiterBaseUrl(): string {
-  const key = loadConfig().solana.jupiterApiKey;
+  const key = resolveJupiterApiKey();
   // Matches official Jupiter CLI: api.jup.ag with key, lite-api.jup.ag without.
   return key ? "https://api.jup.ag" : "https://lite-api.jup.ag";
 }
 
 export function getJupiterHeaders(): Record<string, string> {
-  const key = loadConfig().solana.jupiterApiKey;
+  const key = resolveJupiterApiKey();
   return key ? { "x-api-key": key } : {};
 }
 

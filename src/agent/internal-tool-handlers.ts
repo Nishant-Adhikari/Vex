@@ -491,3 +491,120 @@ async function handleSubagentStop(tool: InternalToolCall): Promise<InternalToolR
   const result = await stopSubagent(id);
   return { output: result.error ?? `Subagent ${id} stopped`, success: result.success };
 }
+
+// ── Discover/Execute stubs (migrated to echo-agent) ──────────────
+
+async function handleDiscoverTools(tool: InternalToolCall, session: ConversationSession): Promise<InternalToolResult> {
+  const { discoverProtocolCapabilities } = await import("./echo-tools/runtime.js");
+  const result = discoverProtocolCapabilities({
+    query: str(tool.params, "query") || undefined,
+    namespace: str(tool.params, "namespace") as any || undefined,
+    includeMutating: tool.params.includeMutating === true,
+    includeDeclared: tool.params.includeDeclared === true,
+    limit: typeof tool.params.limit === "number" ? tool.params.limit : undefined,
+  });
+  const content = JSON.stringify(result, null, 2);
+  await appendToolMessage(session, content);
+  return { output: `${result.count} tools found`, success: true };
+}
+
+async function handleExecuteTool(tool: InternalToolCall, session: ConversationSession, emit: EventEmitter, loopMode: ChatMode, approved: boolean): Promise<InternalToolResult> {
+  const { prepareProtocolExecution } = await import("./echo-tools/runtime.js");
+  const toolId = str(tool.params, "toolId");
+  const params = typeof tool.params.params === "object" && tool.params.params !== null
+    ? tool.params.params as Record<string, unknown>
+    : {};
+
+  if (!toolId) return { output: "Missing required parameter: toolId", success: false };
+
+  const prepared = prepareProtocolExecution({ toolId, params });
+  if (!prepared.ok) {
+    return { output: prepared.message, success: false };
+  }
+
+  const call = prepared.prepared.toolCall;
+  if (prepared.prepared.manifest.mutating && (loopMode === "restricted" || loopMode === "off") && !approved) {
+    return queueInternalApproval(tool, session, emit, loopMode, `Protocol tool ${toolId} requires approval.`);
+  }
+
+  return executeCliBackedTool(session, call, approved || loopMode === "full");
+}
+
+// ── Wallet stubs (migrated to echo-agent) ────────────────────────
+
+async function handleWalletRead(tool: InternalToolCall, session: ConversationSession): Promise<InternalToolResult> {
+  const action = str(tool.params, "action");
+  if (!action) return { output: "Missing action parameter", success: false };
+
+  const cliMap: Record<string, string> = {
+    ensure: "wallet ensure",
+    address: "wallet address",
+    balance: "wallet balance",
+    balances: "khalani tokens balances",
+  };
+  const command = cliMap[action];
+  if (!command) return { output: `Unknown wallet action: ${action}`, success: false };
+
+  const args: string[] = [];
+  const chain = str(tool.params, "chain");
+  const wallet = str(tool.params, "wallet");
+  if (chain) args.push("--chain", chain);
+  if (wallet) args.push("--wallet", wallet);
+  const chainIds = str(tool.params, "chainIds");
+  if (chainIds) args.push("--chain-ids", chainIds);
+
+  return executeCliBackedTool(session, buildCliToolCall(command, joinCliArgs(args)), true);
+}
+
+async function handleWalletSendPrepare(tool: InternalToolCall, session: ConversationSession): Promise<InternalToolResult> {
+  const network = str(tool.params, "network");
+  const to = str(tool.params, "to");
+  const amount = str(tool.params, "amount");
+  if (!network || !to || !amount) return { output: "Missing required: network, to, amount", success: false };
+
+  const token = str(tool.params, "token");
+  const note = str(tool.params, "note");
+  const intentId = `intent-${Date.now()}`;
+
+  await appendToolMessage(session, JSON.stringify({
+    intentId, network, to, amount, token: token || "native", note: note || null,
+    status: "prepared", message: "Use wallet_send_confirm to broadcast.",
+  }));
+
+  return { output: `Transfer intent prepared: ${intentId}`, success: true };
+}
+
+async function handleWalletSendConfirm(tool: InternalToolCall, session: ConversationSession, emit: EventEmitter, loopMode: ChatMode, approved: boolean): Promise<InternalToolResult> {
+  const network = str(tool.params, "network");
+  const intentId = str(tool.params, "intentId");
+  if (!network || !intentId) return { output: "Missing required: network, intentId", success: false };
+
+  if ((loopMode === "restricted" || loopMode === "off") && !approved) {
+    return queueInternalApproval(tool, session, emit, loopMode, "Transfer confirmation requires approval.");
+  }
+
+  const command = network === "solana" ? "solana send-token confirm" : "send confirm";
+  return executeCliBackedTool(session, buildCliToolCall(command, joinCliArgs([intentId])), true);
+}
+
+async function handleWalletBackup(tool: InternalToolCall, session: ConversationSession, emit: EventEmitter, loopMode: ChatMode, approved: boolean): Promise<InternalToolResult> {
+  const action = str(tool.params, "action");
+  if (!action) return { output: "Missing action parameter", success: false };
+
+  if (action === "list") {
+    return executeCliBackedTool(session, buildCliToolCall("wallet backup list"), true);
+  }
+  if (action === "create") {
+    return executeCliBackedTool(session, buildCliToolCall("wallet backup create"), true);
+  }
+  if (action === "restore") {
+    if ((loopMode === "restricted" || loopMode === "off") && !approved) {
+      return queueInternalApproval(tool, session, emit, loopMode, "Wallet restore requires approval.");
+    }
+    const backupDir = str(tool.params, "backupDir");
+    if (!backupDir) return { output: "Missing backupDir for restore", success: false };
+    return executeCliBackedTool(session, buildCliToolCall("wallet backup restore", backupDir), true);
+  }
+
+  return { output: `Unknown backup action: ${action}`, success: false };
+}

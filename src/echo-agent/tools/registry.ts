@@ -45,14 +45,14 @@ const TOOLS: readonly ToolDef[] = [
 
   // Web
   {
-    name: "web_search", kind: "internal", mutating: false,
+    name: "web_search", kind: "internal", mutating: false, requiresEnv: "TAVILY_API_KEY",
     description: "Search the internet — token research, market news, protocol docs, chain analytics, contract audits.",
     parameters: { type: "object", properties: {
       query: { type: "string", description: "Search query" },
     }, required: ["query"] },
   },
   {
-    name: "web_fetch", kind: "internal", mutating: false,
+    name: "web_fetch", kind: "internal", mutating: false, requiresEnv: "TAVILY_API_KEY",
     description: "Fetch any URL as markdown — docs, block explorers, dashboards, API responses.",
     parameters: { type: "object", properties: {
       url: { type: "string", description: "URL to fetch" },
@@ -200,10 +200,10 @@ export function getAllTools(): readonly ToolDef[] {
   return TOOLS;
 }
 
-/** Get tools as OpenAI format, optionally filtering by mode */
+/** Get tools as OpenAI format, filtering by mode and ENV availability */
 export function getOpenAITools(chatMode: "full" | "restricted" | "off" = "off"): OpenAITool[] {
-  const filtered = chatMode === "off"
-    ? TOOLS.filter(t => !t.proactive)
-    : TOOLS;
+  const filtered = TOOLS
+    .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
+    .filter(t => chatMode === "off" ? !t.proactive : true);
   return toOpenAITools(filtered);
 }
