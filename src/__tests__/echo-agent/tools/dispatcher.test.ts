@@ -143,14 +143,15 @@ describe("dispatcher", () => {
     expect(result.output).toContain("[STUB]");
   });
 
-  it("routes wallet_read to internal stub", async () => {
+  it("routes wallet_read to live handler (not stub)", async () => {
+    // wallet_read action=address will fail without configured wallet, but NOT return [STUB]
     const result = await dispatchTool(
       { name: "wallet_read", args: { action: "address" }, toolCallId: "call_12" },
       baseContext,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("[STUB]");
+    // May succeed or fail (depends on wallet config) but should never be a stub
+    expect(result.output).not.toContain("[STUB]");
   });
 
   // ── Unknown tool ─────────────────────────────────────────────────

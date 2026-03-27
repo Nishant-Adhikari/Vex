@@ -152,12 +152,12 @@ const TOOLS: readonly ToolDef[] = [
   // Wallet
   {
     name: "wallet_read", kind: "internal", mutating: false,
-    description: "Read wallet state — address, balance, or multi-chain token balances via Khalani.",
+    description: "Read wallet state. action=address: get wallet address. action=balances: get all token balances with USD prices across chains via Khalani.",
     parameters: { type: "object", properties: {
-      action: { type: "string", enum: ["address", "balance", "balances"], description: "Read operation" },
-      chain: { type: "string", enum: ["eip155", "solana"], description: "Chain family for address" },
-      wallet: { type: "string", enum: ["eip155", "solana", "all"], description: "Wallet scope for balances" },
-      chainIds: { type: "string", description: "Chain filter for balances (comma-separated)" },
+      action: { type: "string", enum: ["address", "balances"], description: "address: get wallet address. balances: all tokens with USD prices." },
+      chain: { type: "string", enum: ["eip155", "solana"], description: "Chain family (for address action)." },
+      wallet: { type: "string", enum: ["eip155", "solana", "all"], description: "Wallet scope for balances (default: all)." },
+      chainIds: { type: "string", description: "Chain ID filter for balances (comma-separated IDs or aliases)." },
     }, required: ["action"] },
   },
   {

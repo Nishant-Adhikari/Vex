@@ -138,10 +138,18 @@ async function routeInternalTool(
       return stubResult(call.name, "Subagent handlers not yet migrated");
 
     // Wallet
-    case "wallet_read":
-    case "wallet_send_prepare":
-    case "wallet_send_confirm":
-      return stubResult(call.name, "Wallet handlers not yet migrated");
+    case "wallet_read": {
+      const { handleWalletRead } = await import("./internal/wallet.js");
+      return handleWalletRead(call.args, context);
+    }
+    case "wallet_send_prepare": {
+      const { handleWalletSendPrepare } = await import("./internal/wallet.js");
+      return handleWalletSendPrepare(call.args, context);
+    }
+    case "wallet_send_confirm": {
+      const { handleWalletSendConfirm } = await import("./internal/wallet.js");
+      return handleWalletSendConfirm(call.args, context);
+    }
 
     default:
       return { success: false, output: `Unknown internal tool: ${call.name}` };
