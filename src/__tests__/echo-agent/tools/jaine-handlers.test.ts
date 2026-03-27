@@ -19,8 +19,17 @@ describe("jaine handlers", () => {
     expect(extra).toEqual([]);
   });
 
-  it("handler count matches manifest count (23)", () => {
-    expect(Object.keys(JAINE_HANDLERS)).toHaveLength(23);
+  it("handler count matches manifest count (24)", () => {
+    expect(Object.keys(JAINE_HANDLERS)).toHaveLength(24);
+  });
+
+  it("jaine.token.info fails with invalid address", async () => {
+    const result = await JAINE_HANDLERS["jaine.token.info"]!(
+      { address: "USDC" },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Invalid address");
   });
 
   it("every handler is a function", () => {
@@ -52,11 +61,20 @@ describe("jaine handlers", () => {
 
   it("jaine.pools.forPair fails with only tokenA", async () => {
     const result = await JAINE_HANDLERS["jaine.pools.forPair"]!(
-      { tokenA: "0x1234" },
+      { tokenA: "0x1234567890abcdef1234567890abcdef12345678" },
       { loopMode: "off", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenB");
+  });
+
+  it("jaine.pools.forPair fails with invalid address", async () => {
+    const result = await JAINE_HANDLERS["jaine.pools.forPair"]!(
+      { tokenA: "not-an-address", tokenB: "0x1234567890abcdef1234567890abcdef12345678" },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Invalid address");
   });
 
   // Pool
@@ -145,6 +163,15 @@ describe("jaine handlers", () => {
 
   it("jaine.swap.sell fails without required params", async () => {
     const result = await JAINE_HANDLERS["jaine.swap.sell"]!(
+      { tokenIn: "USDC", tokenOut: "w0G" },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Missing required");
+  });
+
+  it("jaine.swap.buy fails without required params", async () => {
+    const result = await JAINE_HANDLERS["jaine.swap.buy"]!(
       { tokenIn: "USDC", tokenOut: "w0G" },
       { loopMode: "off", approved: false },
     );

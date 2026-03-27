@@ -4,8 +4,8 @@ import { JAINE_TOOLS } from "../../../echo-agent/tools/protocols/0g/jaine/manife
 describe("jaine manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
 
-  it("has 23 tools total", () => {
-    expect(JAINE_TOOLS).toHaveLength(23);
+  it("has 24 tools total", () => {
+    expect(JAINE_TOOLS).toHaveLength(24);
   });
 
   const EXPECTED_TOOL_IDS = [
@@ -32,6 +32,7 @@ describe("jaine manifest", () => {
     // Swap (2)
     "jaine.swap.quote",
     "jaine.swap.sell",
+    "jaine.swap.buy",
     // Allowance (3)
     "jaine.allowance.check",
     "jaine.allowance.approve",
@@ -42,7 +43,7 @@ describe("jaine manifest", () => {
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(23);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(24);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -82,13 +83,14 @@ describe("jaine manifest", () => {
 
   const EXPECTED_MUTATING = [
     "jaine.swap.sell",
+    "jaine.swap.buy",
     "jaine.allowance.approve",
     "jaine.allowance.revoke",
     "jaine.w0g.wrap",
     "jaine.w0g.unwrap",
   ];
 
-  it("has correct number of mutating tools (5)", () => {
+  it("has correct number of mutating tools (6)", () => {
     const mutating = JAINE_TOOLS.filter(t => t.mutating);
     expect(mutating).toHaveLength(EXPECTED_MUTATING.length);
   });
@@ -159,6 +161,14 @@ describe("jaine manifest", () => {
     expect(required).toContain("tokenIn");
     expect(required).toContain("tokenOut");
     expect(required).toContain("amountIn");
+  });
+
+  it("jaine.swap.buy requires tokenIn, tokenOut, amountOut", () => {
+    const tool = JAINE_TOOLS.find(t => t.toolId === "jaine.swap.buy")!;
+    const required = tool.params.filter(p => p.required).map(p => p.key);
+    expect(required).toContain("tokenIn");
+    expect(required).toContain("tokenOut");
+    expect(required).toContain("amountOut");
   });
 
   it("jaine.allowance.check requires token", () => {

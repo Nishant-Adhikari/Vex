@@ -19,6 +19,7 @@ export const POOLS_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       { key: "limit", type: "number", description: "Max pools to return (default: 20, max 1000)." },
       { key: "skip", type: "number", description: "Number of pools to skip for pagination." },
+      { key: "minTvl", type: "number", description: "Minimum TVL in USD — filter out low-liquidity pools." },
     ],
     exampleParams: { limit: 20 },
   },

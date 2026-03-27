@@ -9,7 +9,7 @@
 import { subgraphClient } from "@tools/jaine/subgraph/client.js";
 import { CORE_TOKENS, resolveToken, getTokenSymbol } from "@tools/jaine/coreTokens.js";
 import { loadUserTokens } from "@tools/jaine/userTokens.js";
-import { findBestRouteExactInput, formatRoute } from "@tools/jaine/routing.js";
+import { findBestRouteExactInput, findBestRouteExactOutput, formatRoute } from "@tools/jaine/routing.js";
 import { getAllAllowances, safeApprove, revokeApproval, getSpenderAddress, ensureAllowance } from "@tools/jaine/allowance.js";
 import { W0G_ABI } from "@tools/jaine/abi/w0g.js";
 import { ROUTER_ABI } from "@tools/jaine/abi/router.js";
@@ -17,7 +17,7 @@ import { requireEvmWallet } from "@tools/wallet/multi-auth.js";
 import { getPublicClient } from "@tools/wallet/client.js";
 import { getSigningClient } from "@tools/wallet/signingClient.js";
 import { loadConfig } from "@config/store.js";
-import { parseUnits, formatUnits, maxUint256, type Address, type Hex } from "viem";
+import { isAddress, parseUnits, formatUnits, maxUint256, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler } from "../../types.js";
 
@@ -34,6 +34,11 @@ function ok(data: unknown): ToolResult {
 }
 function fail(msg: string): ToolResult {
   return { success: false, output: msg };
+}
+function validateAddr(value: string, field: string): ToolResult | null {
+  if (!value) return fail(`Missing required: ${field}`);
+  if (!isAddress(value)) return fail(`Invalid address for ${field}: ${value}`);
+  return null;
 }
 
 async function getTokenDecimals(token: Address): Promise<number> {
@@ -64,13 +69,18 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
   "jaine.pools.top": async (p) => {
     const limit = num(p, "limit") ?? 20;
     const skip = num(p, "skip") ?? 0;
-    const pools = await subgraphClient.getTopPools(limit, skip);
+    let pools = await subgraphClient.getTopPools(limit, skip);
+    const minTvl = num(p, "minTvl");
+    if (minTvl != null) {
+      pools = pools.filter(pool => parseFloat(pool.totalValueLockedUSD) >= minTvl);
+    }
     return ok({ count: pools.length, pools });
   },
 
   "jaine.pools.forToken": async (p) => {
     const token = str(p, "token");
-    if (!token) return fail("Missing required: token");
+    const addrErr = validateAddr(token, "token");
+    if (addrErr) return addrErr;
     const pools = await subgraphClient.getPoolsForToken(token, {
       limit: num(p, "limit"),
       skip: num(p, "skip"),
@@ -80,7 +90,10 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
 
   "jaine.pools.forPair": async (p) => {
     const tokenA = str(p, "tokenA"), tokenB = str(p, "tokenB");
-    if (!tokenA || !tokenB) return fail("Missing required: tokenA, tokenB");
+    const errA = validateAddr(tokenA, "tokenA");
+    if (errA) return errA;
+    const errB = validateAddr(tokenB, "tokenB");
+    if (errB) return errB;
     const pools = await subgraphClient.getPoolsForPair(tokenA, tokenB, {
       limit: num(p, "limit"),
       skip: num(p, "skip"),
@@ -98,7 +111,8 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
 
   "jaine.pool.info": async (p) => {
     const poolId = str(p, "poolId");
-    if (!poolId) return fail("Missing required: poolId");
+    const poolErr = validateAddr(poolId, "poolId");
+    if (poolErr) return poolErr;
     const pool = await subgraphClient.getPool(poolId);
     if (!pool) return fail(`Pool not found: ${poolId}`);
     return ok(pool);
@@ -168,7 +182,8 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
 
   "jaine.token.info": async (p) => {
     const address = str(p, "address");
-    if (!address) return fail("Missing required: address");
+    const tokenErr = validateAddr(address, "address");
+    if (tokenErr) return tokenErr;
     const token = await subgraphClient.getToken(address);
     if (!token) return fail(`Token not found: ${address}`);
     return ok(token);
@@ -274,12 +289,17 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
     const wallet = requireEvmWallet();
     const cfg = loadConfig();
 
+    // Resolve recipient
+    const recipientRaw = str(p, "recipient");
+    const recipient = recipientRaw && isAddress(recipientRaw) ? recipientRaw as Address : wallet.address as Address;
+
     // Ensure allowance
-    await ensureAllowance(tokenIn, cfg.protocol.jaineRouter, amountIn, wallet.privateKey as Hex);
+    await ensureAllowance(tokenIn, cfg.protocol.jaineRouter, amountIn, wallet.privateKey as Hex, p.approveExact === true);
 
     // Execute swap
     const walletClient = getSigningClient(wallet.privateKey as Hex);
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 90);
+    const deadlineSec = num(p, "deadlineSec") ?? 90;
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineSec);
 
     const txHash = await walletClient.writeContract({
       address: cfg.protocol.jaineRouter,
@@ -287,7 +307,7 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
       functionName: "exactInput",
       args: [{
         path: route.encodedPath,
-        recipient: wallet.address as Address,
+        recipient,
         deadline,
         amountIn,
         amountOutMinimum,
@@ -315,6 +335,97 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
           outputAmount: route.amountOut.toString(),
           signature: txHash,
           meta: { dex: "jaine", hops: route.tokens.length - 1 },
+        },
+      },
+    };
+  },
+
+  "jaine.swap.buy": async (p) => {
+    const tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountOutRaw = str(p, "amountOut");
+    if (!tokenInRaw || !tokenOutRaw || !amountOutRaw) return fail("Missing required: tokenIn, tokenOut, amountOut");
+
+    const userTokens = loadUserTokens();
+    const tokenIn = resolveToken(tokenInRaw, userTokens.aliases);
+    const tokenOut = resolveToken(tokenOutRaw, userTokens.aliases);
+    const decimalsIn = await getTokenDecimals(tokenIn);
+    const decimalsOut = await getTokenDecimals(tokenOut);
+    const amountOut = parseUnits(amountOutRaw, decimalsOut);
+    const slippageBps = num(p, "slippageBps") ?? 50;
+
+    const route = await findBestRouteExactOutput(tokenIn, tokenOut, amountOut, {
+      maxHops: num(p, "maxHops"),
+    });
+
+    if (!route) return fail("No route found for this swap");
+
+    const amountInMaximum = (route.amountIn * BigInt(10000 + slippageBps)) / 10000n;
+    const routeStr = formatRoute(route, userTokens.aliases);
+
+    if (p.dryRun === true) {
+      return ok({
+        dryRun: true,
+        tokenIn: tokenIn,
+        tokenOut: tokenOut,
+        amountOut: amountOut.toString(),
+        amountIn: route.amountIn.toString(),
+        amountInMaximum: amountInMaximum.toString(),
+        route: routeStr,
+        hops: route.tokens.length - 1,
+        slippageBps,
+        formatted: {
+          amountOut: amountOutRaw,
+          amountIn: formatUnits(route.amountIn, decimalsIn),
+          amountInMaximum: formatUnits(amountInMaximum, decimalsIn),
+        },
+      });
+    }
+
+    const wallet = requireEvmWallet();
+    const cfg = loadConfig();
+
+    const recipientRaw = str(p, "recipient");
+    const recipient = recipientRaw && isAddress(recipientRaw) ? recipientRaw as Address : wallet.address as Address;
+
+    await ensureAllowance(tokenIn, cfg.protocol.jaineRouter, amountInMaximum, wallet.privateKey as Hex, p.approveExact === true);
+
+    const walletClient = getSigningClient(wallet.privateKey as Hex);
+    const deadlineSec = num(p, "deadlineSec") ?? 90;
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineSec);
+
+    const txHash = await walletClient.writeContract({
+      address: cfg.protocol.jaineRouter,
+      abi: ROUTER_ABI,
+      functionName: "exactOutput",
+      args: [{
+        path: route.encodedPath,
+        recipient,
+        deadline,
+        amountOut,
+        amountInMaximum,
+      }],
+    });
+
+    return {
+      success: true,
+      output: JSON.stringify({
+        txHash, route: routeStr,
+        tokenIn: getTokenSymbol(tokenIn, userTokens.aliases),
+        tokenOut: getTokenSymbol(tokenOut, userTokens.aliases),
+        amountOut: amountOutRaw,
+        amountInExpected: formatUnits(route.amountIn, decimalsIn),
+      }, null, 2),
+      data: {
+        txHash,
+        _tradeCapture: {
+          type: "swap",
+          chain: "0g",
+          status: "executed",
+          inputToken: getTokenSymbol(tokenIn, userTokens.aliases),
+          outputToken: getTokenSymbol(tokenOut, userTokens.aliases),
+          inputAmount: route.amountIn.toString(),
+          outputAmount: amountOut.toString(),
+          signature: txHash,
+          meta: { dex: "jaine", direction: "exactOutput", hops: route.tokens.length - 1 },
         },
       },
     };
