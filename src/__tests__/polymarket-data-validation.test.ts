@@ -3,6 +3,7 @@ import {
   validatePositionsResponse, validateClosedPositionsResponse,
   validateActivityResponse, validateTradesResponse,
   validateHoldersResponse, validateLeaderboardResponse,
+  validateBuilderVolumeResponse,
   validateValueResponse, validateTradedResponse,
   validateOpenInterestResponse, validateMarketPositionsResponse,
 } from "../tools/polymarket/data/validation.js";
@@ -94,5 +95,28 @@ describe("validateMarketPositionsResponse", () => {
       positions: [{ proxyWallet: "0x1", size: 500, cashPnl: 100, totalPnl: 150, outcome: "YES", outcomeIndex: 0 }],
     }]);
     expect(r[0].positions[0].totalPnl).toBe(150);
+  });
+});
+
+describe("validateBuilderVolumeResponse", () => {
+  it("parses array of builder volume entries", () => {
+    const r = validateBuilderVolumeResponse([
+      { dt: "2025-01-01T00:00:00Z", builder: "builder1", builderLogo: "https://logo.png", verified: true, volume: 50000, activeUsers: 100, rank: "1" },
+    ]);
+    expect(r).toHaveLength(1);
+    expect(r[0].builder).toBe("builder1");
+    expect(r[0].volume).toBe(50000);
+    expect(r[0].verified).toBe(true);
+  });
+
+  it("returns empty for non-array", () => {
+    expect(validateBuilderVolumeResponse(null)).toEqual([]);
+  });
+
+  it("handles missing optional fields", () => {
+    const r = validateBuilderVolumeResponse([{ dt: "2025-01-01", builder: "b" }]);
+    expect(r[0].builderLogo).toBeNull();
+    expect(r[0].verified).toBe(false);
+    expect(r[0].volume).toBe(0);
   });
 });

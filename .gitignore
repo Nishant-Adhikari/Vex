@@ -29,3 +29,4 @@ agent-transcripts/
 terminals/
 *.plan.md
 typescript-sdk-main
+polymarket-cli-main

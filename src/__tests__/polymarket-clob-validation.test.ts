@@ -5,6 +5,9 @@ import {
   validatePaginatedTrades, validatePriceHistoryResponse,
   validatePriceResponse, validateMidpointResponse, validateSpreadResponse,
   validateLastTradePriceResponse, validateTickSizeResponse, validateFeeRateResponse,
+  validateBatchOrderBooksResponse, validateBatchPricesResponse,
+  validateBatchMidpointsResponse, validateBatchSpreadsResponse,
+  validateBatchLastTradesPricesResponse, validateOrderScoringResponse,
 } from "../tools/polymarket/clob/validation.js";
 
 describe("validateOrderBookResponse", () => {
@@ -107,4 +110,83 @@ describe("price validators", () => {
   });
   it("validateTickSizeResponse", () => { expect(validateTickSizeResponse({ minimum_tick_size: 0.01 }).minimum_tick_size).toBe(0.01); });
   it("validateFeeRateResponse", () => { expect(validateFeeRateResponse({ base_fee: 30 }).base_fee).toBe(30); });
+});
+
+// ── Batch validators ────────────────────────────────────────────────
+
+describe("validateBatchOrderBooksResponse", () => {
+  it("parses array of orderbooks", () => {
+    const result = validateBatchOrderBooksResponse([
+      { market: "0xabc", asset_id: "t1", timestamp: "1", hash: "h", bids: [], asks: [], min_order_size: "1", tick_size: "0.01", neg_risk: false, last_trade_price: "0.5" },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].market).toBe("0xabc");
+  });
+  it("throws for non-array", () => { expect(() => validateBatchOrderBooksResponse(null)).toThrow(); });
+});
+
+describe("validateBatchPricesResponse", () => {
+  it("parses token→side→price map", () => {
+    const result = validateBatchPricesResponse({ "token1": { "BUY": 0.45 }, "token2": { "SELL": 0.52 } });
+    expect(result["token1"]["BUY"]).toBe(0.45);
+    expect(result["token2"]["SELL"]).toBe(0.52);
+  });
+  it("returns empty for non-object", () => {
+    expect(validateBatchPricesResponse(null)).toEqual({});
+  });
+  it("ignores non-numeric prices", () => {
+    const result = validateBatchPricesResponse({ "t": { "BUY": "bad" } });
+    expect(result["t"]).toEqual({});
+  });
+});
+
+describe("validateBatchMidpointsResponse", () => {
+  it("parses token→midpoint map", () => {
+    const result = validateBatchMidpointsResponse({ "token1": "0.50", "token2": "0.65" });
+    expect(result["token1"]).toBe("0.50");
+  });
+  it("returns empty for non-object", () => {
+    expect(validateBatchMidpointsResponse(null)).toEqual({});
+  });
+});
+
+describe("validateBatchSpreadsResponse", () => {
+  it("parses token→spread map", () => {
+    const result = validateBatchSpreadsResponse({ "token1": "0.02", "token2": "0.03" });
+    expect(result["token1"]).toBe("0.02");
+  });
+  it("returns empty for non-object", () => {
+    expect(validateBatchSpreadsResponse("bad")).toEqual({});
+  });
+});
+
+describe("validateBatchLastTradesPricesResponse", () => {
+  it("parses array of last trade prices", () => {
+    const result = validateBatchLastTradesPricesResponse([
+      { token_id: "t1", price: "0.45", side: "BUY" },
+      { token_id: "t2", price: "0.52", side: "SELL" },
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[0].token_id).toBe("t1");
+    expect(result[1].side).toBe("SELL");
+  });
+  it("returns empty for non-array", () => {
+    expect(validateBatchLastTradesPricesResponse(null)).toEqual([]);
+  });
+  it("filters non-object entries", () => {
+    const result = validateBatchLastTradesPricesResponse(["bad", { token_id: "t1", price: "0.5", side: "BUY" }]);
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("validateOrderScoringResponse", () => {
+  it("parses scoring=true", () => {
+    expect(validateOrderScoringResponse({ scoring: true }).scoring).toBe(true);
+  });
+  it("parses scoring=false", () => {
+    expect(validateOrderScoringResponse({ scoring: false }).scoring).toBe(false);
+  });
+  it("defaults to false for non-object", () => {
+    expect(validateOrderScoringResponse(null).scoring).toBe(false);
+  });
 });
