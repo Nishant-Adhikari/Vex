@@ -1,0 +1,147 @@
+/**
+ * Khalani protocol tool manifests — 9 tools (8 read + 1 mutating).
+ *
+ * Each manifest declares what the tool does, what params it takes,
+ * and whether it mutates state. The runtime uses this for discovery
+ * and parameter validation before calling handlers.
+ */
+
+import type { ProtocolToolManifest } from "../types.js";
+
+export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "khalani.chains.list",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "List all Khalani-supported chains with metadata (40+ chains, EVM + Solana).",
+    mutating: false,
+    params: [
+      { key: "refresh", type: "boolean", description: "Force refresh chain cache." },
+    ],
+    exampleParams: {},
+  },
+  {
+    toolId: "khalani.tokens.top",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "List top Khalani tokens, optionally filtered by chain IDs.",
+    mutating: false,
+    params: [
+      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases (e.g. '1,solana')." },
+    ],
+    exampleParams: { chainIds: "1,solana" },
+  },
+  {
+    toolId: "khalani.tokens.search",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "Search Khalani tokens by symbol, name, or address.",
+    mutating: false,
+    params: [
+      { key: "query", type: "string", required: true, description: "Search phrase or token address." },
+      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
+    ],
+    exampleParams: { query: "USDC", chainIds: "1,8453" },
+  },
+  {
+    toolId: "khalani.tokens.autocomplete",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "Semantic token autocomplete — understands '100 usdc on ethereum'.",
+    mutating: false,
+    params: [
+      { key: "keyword", type: "string", required: true, description: "Autocomplete keyword." },
+      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
+      { key: "limit", type: "number", description: "Max results." },
+    ],
+    exampleParams: { keyword: "eth", limit: 5 },
+  },
+  {
+    toolId: "khalani.tokens.balances",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "Get token balances with USD prices for a wallet address across chains.",
+    mutating: false,
+    params: [
+      { key: "address", type: "string", description: "Wallet address (optional — uses configured wallet)." },
+      { key: "wallet", type: "string", description: "Wallet family: eip155 or solana (used if address not provided)." },
+      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
+    ],
+    exampleParams: { wallet: "eip155", chainIds: "1,8453" },
+  },
+  {
+    toolId: "khalani.quote.get",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "Get cross-chain bridge quote with routes, pricing, and ETA.",
+    mutating: false,
+    params: [
+      { key: "fromChain", type: "string", required: true, description: "Source chain ID or alias." },
+      { key: "fromToken", type: "string", required: true, description: "Source token address." },
+      { key: "toChain", type: "string", required: true, description: "Destination chain ID or alias." },
+      { key: "toToken", type: "string", required: true, description: "Destination token address." },
+      { key: "amount", type: "string", required: true, description: "Amount in smallest units." },
+      { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
+      { key: "fromAddress", type: "string", description: "Source wallet address override." },
+      { key: "recipient", type: "string", description: "Destination recipient override." },
+    ],
+    exampleParams: {
+      fromChain: "ethereum",
+      fromToken: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      toChain: "solana",
+      toToken: "EPjFWdd5AufqSSqeM2qT6fP2J4wR1KjqP7q3QK5r6i7",
+      amount: "1000000",
+    },
+  },
+  {
+    toolId: "khalani.orders.list",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "List Khalani bridge orders for an address with pagination and filters.",
+    mutating: false,
+    params: [
+      { key: "address", type: "string", description: "Wallet address (optional — uses configured wallet)." },
+      { key: "wallet", type: "string", description: "Wallet family: eip155 or solana." },
+      { key: "limit", type: "number", description: "Max results." },
+      { key: "fromChain", type: "string", description: "Source chain filter." },
+      { key: "toChain", type: "string", description: "Destination chain filter." },
+    ],
+    exampleParams: { wallet: "solana", limit: 20 },
+  },
+  {
+    toolId: "khalani.orders.get",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "Get a single Khalani bridge order by ID with full lifecycle details.",
+    mutating: false,
+    params: [
+      { key: "orderId", type: "string", required: true, description: "Khalani order ID." },
+    ],
+    exampleParams: { orderId: "order_abc123" },
+  },
+  {
+    toolId: "khalani.bridge",
+    namespace: "khalani",
+    lifecycle: "active",
+    description: "Execute a cross-chain bridge: quote → build deposit → sign → broadcast → submit. Requires wallet access.",
+    mutating: true,
+    params: [
+      { key: "fromChain", type: "string", required: true, description: "Source chain ID or alias." },
+      { key: "fromToken", type: "string", required: true, description: "Source token address." },
+      { key: "toChain", type: "string", required: true, description: "Destination chain ID or alias." },
+      { key: "toToken", type: "string", required: true, description: "Destination token address." },
+      { key: "amount", type: "string", required: true, description: "Amount in smallest units." },
+      { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT." },
+      { key: "routeId", type: "string", description: "Specific route ID (default: best route)." },
+      { key: "depositMethod", type: "string", description: "CONTRACT_CALL, PERMIT2, or TRANSFER." },
+      { key: "dryRun", type: "boolean", description: "If true, build deposit plan without executing." },
+    ],
+    exampleParams: {
+      fromChain: "ethereum",
+      fromToken: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      toChain: "base",
+      toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      amount: "100000000",
+    },
+  },
+];

@@ -1,0 +1,71 @@
+# Inference Module — Echo Agent
+
+Provider-agnostic inference layer. Two providers (OpenRouter SDK + 0G Compute raw fetch) behind a shared `InferenceProvider` interface.
+
+## Files
+
+| File | Role |
+|------|------|
+| `types.ts` | Shared contract: `InferenceProvider`, `InferenceConfig`, `InferenceResponse`, `InferenceUsage`, `ParsedToolCall`, `StreamChunk`, `ProviderBalance`, `RequestCost`, `ProviderMessage`, `ToolDefinition` |
+| `config.ts` | ENV validation at startup + internal constants (timeouts, retry, thresholds). `loadEnvConfig()` fails fast on bad values |
+| `resilience.ts` | `retryWithBackoff()`, `withTimeout()`, `isRetryableError()` — shared retry/timeout for both providers |
+| `registry.ts` | `resolveProvider()` → singleton. Priority: `AGENT_PROVIDER` env → `OPENROUTER_API_KEY` → `compute-state.json` → null |
+| `openrouter.ts` | `OpenRouterProvider` — `@openrouter/sdk`. Native streaming (`EventStream` → `AsyncGenerator<StreamChunk>`), tool calling (non-streaming + streaming delta accumulation), balance (credits API + key metadata fallback), cost with cache/reasoning breakdown |
+| `0g-compute.ts` | `ZeroGComputeProvider` — raw HTTP fetch, OpenAI-compatible. HMAC auth via broker. No streaming (fallback: non-streaming → yield). Balance from on-chain ledger (30s cache) |
+
+## Provider interface
+
+```typescript
+interface InferenceProvider {
+  loadConfig(): Promise<InferenceConfig | null>;
+  chatCompletion(messages, tools, config): Promise<InferenceResponse>;
+  chatCompletionSimple(messages, config): Promise<{ content, usage }>;
+  chatCompletionStream(messages, tools, config): AsyncGenerator<StreamChunk>;
+  getBalance(): Promise<ProviderBalance | null>;
+  calculateCost(usage, config): RequestCost;
+}
+```
+
+Every consumer (engine, Echo Papa, subagents, scheduler) imports from this module — zero dependencies on DB, engine, or transport.
+
+## ENV — required variables
+
+```bash
+# ── Provider selection (optional — auto-detected if missing) ─────
+AGENT_PROVIDER=openrouter          # "openrouter" | "0g-compute"
+
+# ── Shared ────────────────────────────────────────────────────────
+AGENT_CONTEXT_LIMIT=128000         # context window tokens (provider-dependent: 128K OR, 64K 0G)
+AGENT_MAX_OUTPUT_TOKENS=16384      # max output tokens per response (optional, default 16384)
+
+# ── OpenRouter ────────────────────────────────────────────────────
+OPENROUTER_API_KEY=sk-or-...       # required if provider=openrouter
+AGENT_MODEL=anthropic/claude-sonnet-4  # required — model ID from OpenRouter
+AGENT_TEMPERATURE=0.7              # optional, 0.0-2.0 (OpenRouter only — 0G ignores)
+
+# ── 0G Compute ────────────────────────────────────────────────────
+# No additional ENV — config loaded from compute-state.json
+# (created by `echoclaw echo connect`)
+```
+
+## Provider differences
+
+| Aspect | OpenRouter | 0G Compute |
+|--------|-----------|------------|
+| Transport | SDK (`@openrouter/sdk`) | Raw HTTP fetch |
+| Auth | Bearer token | HMAC broker signing |
+| Streaming | Native `EventStream` | None — non-streaming fallback |
+| Temperature | From ENV | Not supported |
+| Tool calling | SDK-typed `ChatMessageToolCall` | OpenAI-compatible JSON |
+| Balance | Credits API / key metadata (USD) | On-chain ledger (0G tokens) |
+| Pricing source | Per-token string from `models.list()` × 1M | Per-M from service metadata |
+| Cache pricing | Yes (`inputCacheRead`) | No |
+| Reasoning pricing | Yes (`internalReasoning`) | No |
+
+## Tests
+
+```bash
+npx vitest run src/__tests__/echo-agent/inference/
+```
+
+5 files, 67 tests: config validation, resilience (retry/timeout/error classification), registry (resolution/cache), types (structural integrity), cost calculation (both providers with full breakdown).

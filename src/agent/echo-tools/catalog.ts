@@ -11,7 +11,8 @@
  * - Full discovery/validation/execution mapping will be added in follow-up.
  */
 
-import type { ProtocolNamespace, ProtocolToolManifest } from "./types.js";
+import type { ProtocolNamespace } from "./types.js";
+import { ECHO_TOOLS_PROTOCOLS } from "./tools/index.js";
 
 /**
  * Declared protocol scope for echoTools (phase 1 catalog scope).
@@ -29,7 +30,6 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "kyberswap",
   "polymarket",
   "slop",
-  "wallet",
 ] as const;
 
 /**
@@ -43,11 +43,11 @@ export const PROTOCOL_ACTIVE_MINIMUM: readonly ProtocolNamespace[] = [
 ] as const;
 
 /**
- * wallet is declared for groundwork but should not execute in phase 1.
+ * wallet is intentionally outside protocol catalog and lives in internal tools.
  * marketmaker is intentionally out of this phase.
  */
 export const PHASE1_POLICY = {
-  walletExecuteEnabled: false,
+  walletIsInternalOnly: true,
   marketmakerIncluded: false,
 } as const;
 
@@ -58,5 +58,4 @@ export const PHASE1_POLICY = {
  * - Add CLI command path mapping and schema metadata.
  * - Add lifecycle enforcement and allowlist-vs-cli-runtime validation.
  */
-export const PROTOCOL_TOOLS: readonly ProtocolToolManifest[] = [];
-
+export const PROTOCOL_TOOLS = ECHO_TOOLS_PROTOCOLS;

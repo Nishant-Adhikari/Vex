@@ -11,8 +11,7 @@ export type ProtocolNamespace =
   | "khalani"
   | "kyberswap"
   | "polymarket"
-  | "slop"
-  | "wallet";
+  | "slop";
 
 export type ToolLifecycle = "declared" | "active";
 export type ExecuteMode = "execute" | "preview";
@@ -112,4 +111,3 @@ export const EXECUTE_TOOL_PARAMS_SCHEMA: JsonSchema = {
   },
   required: ["toolId", "params"],
 };
-
