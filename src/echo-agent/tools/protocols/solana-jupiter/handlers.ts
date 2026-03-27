@@ -162,7 +162,7 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const asset = str(p, "asset"), side = str(p, "side");
     const amountUsd = num(p, "amountUsd");
     if (!asset || !side || amountUsd == null) return fail("Missing required: asset, side, amountUsd");
-    const result = await openPerpsPosition(walletSecret(), { asset, side, amountUsd, inputToken: str(p, "inputToken") || undefined, leverage: num(p, "leverage"), tp: num(p, "tp"), sl: num(p, "sl"), limitPrice: num(p, "limitPrice"), slippageBps: num(p, "slippageBps") });
+    const result = await openPerpsPosition(walletSecret(), { asset, side, amountUsd, inputToken: str(p, "inputToken") || undefined, leverage: num(p, "leverage"), sizeUsd: num(p, "sizeUsd"), tp: num(p, "tp"), sl: num(p, "sl"), limitPrice: num(p, "limitPrice"), slippageBps: num(p, "slippageBps") });
     return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "perps", chain: "solana", status: "executed", meta: { asset, side, amountUsd } } } };
   },
   "solana.perps.close": async (p) => {
@@ -231,7 +231,7 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     return ok(await getMarket(id));
   },
   "solana.predict.positions": async (p) => ok(await getPredictPositions(walletAddress(p))),
-  "solana.predict.history": async (p) => ok(await getPredictHistory(walletAddress(p), { limit: num(p, "limit") })),
+  "solana.predict.history": async (p) => ok(await getPredictHistory(walletAddress(p), { limit: num(p, "limit"), offset: num(p, "offset") })),
   "solana.predict.buy": async (p) => {
     const marketId = str(p, "marketId"), side = str(p, "side");
     const amount = num(p, "amountUsdc");
@@ -364,7 +364,7 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const name = str(p, "tokenName"), symbol = str(p, "tokenSymbol"), image = str(p, "imagePath");
     const initMcap = num(p, "initialMarketCap"), migMcap = num(p, "migrationMarketCap");
     if (!name || !symbol || !image || initMcap == null || migMcap == null) return fail("Missing required: tokenName, tokenSymbol, imagePath, initialMarketCap, migrationMarketCap");
-    const result = await studioCreateToken(walletSecret(), { tokenName: name, tokenSymbol: symbol, imagePath: image, initialMarketCap: initMcap, migrationMarketCap: migMcap, description: str(p, "description") || undefined, feeBps: num(p, "feeBps") });
+    const result = await studioCreateToken(walletSecret(), { tokenName: name, tokenSymbol: symbol, imagePath: image, initialMarketCap: initMcap, migrationMarketCap: migMcap, description: str(p, "description") || undefined, website: str(p, "website") || undefined, twitter: str(p, "twitter") || undefined, telegram: str(p, "telegram") || undefined, feeBps: num(p, "feeBps"), isLpLocked: typeof p.isLpLocked === "boolean" ? p.isLpLocked : undefined });
     return ok(result);
   },
   "solana.studio.claimFees": async (p) => {
@@ -386,6 +386,6 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
   // History
   "solana.history.spot": async (p) => {
     const addr = walletAddress(p);
-    return ok(await jupiterGetSpotHistory({ address: addr, assetId: str(p, "assetId") || undefined, limit: num(p, "limit") }));
+    return ok(await jupiterGetSpotHistory({ address: addr, assetId: str(p, "assetId") || undefined, limit: num(p, "limit"), after: str(p, "after") || undefined, before: str(p, "before") || undefined, offset: str(p, "offset") || undefined }));
   },
 };

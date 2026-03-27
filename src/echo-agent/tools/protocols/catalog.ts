@@ -16,6 +16,8 @@ import { DEXSCREENER_TOOLS } from "./dexscreener/manifest.js";
 import { DEXSCREENER_HANDLERS } from "./dexscreener/handlers.js";
 import { CHAINSCAN_TOOLS } from "./0g/chainscan/manifest.js";
 import { CHAINSCAN_HANDLERS } from "./0g/chainscan/handlers.js";
+import { JAINE_TOOLS } from "./0g/jaine/manifest.js";
+import { JAINE_HANDLERS } from "./0g/jaine/handlers.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -41,6 +43,7 @@ export const PROTOCOL_TOOLS: readonly ProtocolToolManifest[] = [
   ...KYBERSWAP_TOOLS,
   ...DEXSCREENER_TOOLS,
   ...CHAINSCAN_TOOLS,
+  ...JAINE_TOOLS,
   // ...POLYMARKET_TOOLS,
 ];
 
@@ -52,6 +55,7 @@ const HANDLER_MAP: Record<string, ProtocolHandler> = {
   ...KYBERSWAP_HANDLERS,
   ...DEXSCREENER_HANDLERS,
   ...CHAINSCAN_HANDLERS,
+  ...JAINE_HANDLERS,
   // ...POLYMARKET_HANDLERS,
 };
 

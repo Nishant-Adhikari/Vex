@@ -55,6 +55,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       { key: "address", type: "string", required: true, description: "Wallet address." },
       { key: "limit", type: "number", description: "Max results." },
+      { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
   },

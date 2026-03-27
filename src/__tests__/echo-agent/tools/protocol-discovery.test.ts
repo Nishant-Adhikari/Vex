@@ -115,6 +115,7 @@ describe("protocol discovery", () => {
     expect(declaredWarning).not.toContain("solana");
     expect(declaredWarning).not.toContain("dexscreener");
     expect(declaredWarning).not.toContain("chainscan");
+    expect(declaredWarning).not.toContain("jaine");
   });
 
   it("returns dexscreener tools when filtering by dexscreener namespace", () => {

@@ -46,6 +46,7 @@ export const PERPS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "side", type: "string", required: true, description: "Side: long or short." },
       { key: "amountUsd", type: "number", required: true, description: "Collateral in USD." },
       { key: "leverage", type: "number", description: "Leverage multiplier." },
+      { key: "sizeUsd", type: "number", description: "Position size in USD (alternative to leverage — mutually exclusive)." },
       { key: "inputToken", type: "string", description: "Collateral token (default: SOL)." },
       { key: "tp", type: "number", description: "Take-profit price (USD)." },
       { key: "sl", type: "number", description: "Stop-loss price (USD)." },

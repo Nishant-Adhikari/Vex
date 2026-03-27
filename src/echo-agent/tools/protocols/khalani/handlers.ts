@@ -18,6 +18,7 @@ import {
 import { requireWalletForChain } from "@tools/wallet/multi-auth.js";
 import { requireEvmWallet, requireSolanaWallet } from "@tools/wallet/multi-auth.js";
 import { resolveRouteBestIndex } from "@commands/khalani/helpers.js";
+import { prepareQuoteRequest } from "@commands/khalani/request.js";
 import { executeDepositPlan } from "@commands/khalani/bridge-executor.js";
 import type { DepositMethod, QuoteRoute, TradeType } from "@tools/khalani/types.js";
 import type { ToolResult } from "../../types.js";
@@ -31,9 +32,12 @@ function str(params: Record<string, unknown>, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
-function parseChainIds(raw: string | undefined): number[] | undefined {
+async function parseChainIds(raw: string | undefined): Promise<number[] | undefined> {
   if (!raw) return undefined;
-  return raw.split(",").map(s => s.trim()).filter(Boolean).map(Number).filter(n => Number.isFinite(n) && n > 0);
+  const chains = await getCachedKhalaniChains();
+  const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return undefined;
+  return parts.map(s => resolveChainId(s, chains));
 }
 
 function resolveWalletAddress(params: Record<string, unknown>): string {
@@ -72,7 +76,7 @@ async function handleChainsList(params: Record<string, unknown>): Promise<ToolRe
 }
 
 async function handleTokensTop(params: Record<string, unknown>): Promise<ToolResult> {
-  const chainIds = parseChainIds(str(params, "chainIds"));
+  const chainIds = await parseChainIds(str(params, "chainIds"));
   const tokens = await getKhalaniClient().getTopTokens(chainIds);
   return {
     success: true,
@@ -85,7 +89,7 @@ async function handleTokensSearch(params: Record<string, unknown>): Promise<Tool
   const query = str(params, "query");
   if (!query) return { success: false, output: "Missing required parameter: query" };
 
-  const chainIds = parseChainIds(str(params, "chainIds"));
+  const chainIds = await parseChainIds(str(params, "chainIds"));
   const result = await getKhalaniClient().searchTokens(query, chainIds);
   return {
     success: true,
@@ -98,7 +102,7 @@ async function handleTokensAutocomplete(params: Record<string, unknown>): Promis
   const keyword = str(params, "keyword");
   if (!keyword) return { success: false, output: "Missing required parameter: keyword" };
 
-  const chainIds = parseChainIds(str(params, "chainIds"));
+  const chainIds = await parseChainIds(str(params, "chainIds"));
   const limit = typeof params.limit === "number" ? params.limit : undefined;
   const result = await getKhalaniClient().autocompleteToken(keyword, { chainIds, limit });
   return {
@@ -110,7 +114,7 @@ async function handleTokensAutocomplete(params: Record<string, unknown>): Promis
 
 async function handleTokensBalances(params: Record<string, unknown>): Promise<ToolResult> {
   const address = resolveWalletAddress(params);
-  const chainIds = parseChainIds(str(params, "chainIds"));
+  const chainIds = await parseChainIds(str(params, "chainIds"));
   const tokens = await getKhalaniClient().getTokenBalances(address, chainIds);
   return {
     success: true,
@@ -120,30 +124,32 @@ async function handleTokensBalances(params: Record<string, unknown>): Promise<To
 }
 
 async function handleQuoteGet(params: Record<string, unknown>): Promise<ToolResult> {
-  const chains = await getCachedKhalaniChains();
-  const fromChainId = resolveChainId(str(params, "fromChain"), chains);
-  const toChainId = resolveChainId(str(params, "toChain"), chains);
+  const fromChain = str(params, "fromChain");
+  const toChain = str(params, "toChain");
   const fromToken = str(params, "fromToken");
   const toToken = str(params, "toToken");
   const amount = str(params, "amount");
 
-  if (!fromToken || !toToken || !amount) {
-    return { success: false, output: "Missing required parameters: fromToken, toToken, amount" };
+  if (!fromChain || !toChain || !fromToken || !toToken || !amount) {
+    return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
   }
 
-  const wallet = requireWalletForChain(getChainFamily(fromChainId, chains));
-  const tradeType = (str(params, "tradeType") || "EXACT_INPUT") as TradeType;
-
-  const quoteResponse = await getKhalaniClient().getQuotes({
-    tradeType,
-    fromChainId,
+  const prepared = await prepareQuoteRequest({
+    fromChain,
     fromToken,
-    toChainId,
+    toChain,
     toToken,
     amount,
-    fromAddress: wallet.address,
+    tradeType: str(params, "tradeType") || undefined,
+    fromAddress: str(params, "fromAddress") || undefined,
     recipient: str(params, "recipient") || undefined,
+    refundTo: str(params, "refundTo") || undefined,
+    referrer: str(params, "referrer") || undefined,
+    referrerFeeBps: str(params, "referrerFeeBps") || undefined,
+    filler: str(params, "filler") || undefined,
   });
+
+  const quoteResponse = await getKhalaniClient().getQuotes(prepared.request);
 
   return {
     success: true,
@@ -167,14 +173,19 @@ async function handleOrdersList(params: Record<string, unknown>): Promise<ToolRe
   const address = resolveWalletAddress(params);
   const chains = await getCachedKhalaniChains();
   const limit = typeof params.limit === "number" ? params.limit : undefined;
+  const cursor = typeof params.cursor === "number" ? params.cursor : undefined;
   const fromChainId = str(params, "fromChain") ? resolveChainId(str(params, "fromChain"), chains) : undefined;
   const toChainId = str(params, "toChain") ? resolveChainId(str(params, "toChain"), chains) : undefined;
+  const orderIds = str(params, "orderIds") || undefined;
+  const txHashSearch = str(params, "txHashSearch") || undefined;
 
-  const result = await getKhalaniClient().getOrders(address, { limit, fromChainId, toChainId });
+  const result = await getKhalaniClient().getOrders(address, {
+    limit, cursor, fromChainId, toChainId, orderIds, txHashSearch,
+  });
   return {
     success: true,
-    output: JSON.stringify({ count: result.data.length, orders: result.data }, null, 2),
-    data: { orders: result.data },
+    output: JSON.stringify({ count: result.data.length, cursor: result.cursor, orders: result.data }, null, 2),
+    data: { orders: result.data, cursor: result.cursor },
   };
 }
 
@@ -197,57 +208,73 @@ async function handleBridge(
   context: ProtocolExecutionContext,
 ): Promise<ToolResult> {
   const client = getKhalaniClient();
-  const chains = await getCachedKhalaniChains();
 
-  // 1. Resolve chains
-  const fromChainId = resolveChainId(str(params, "fromChain"), chains);
-  const toChainId = resolveChainId(str(params, "toChain"), chains);
-  const sourceChain = getChain(fromChainId, chains);
+  const fromChain = str(params, "fromChain");
+  const toChain = str(params, "toChain");
   const fromToken = str(params, "fromToken");
   const toToken = str(params, "toToken");
   const amount = str(params, "amount");
 
-  if (!fromToken || !toToken || !amount) {
-    return { success: false, output: "Missing required parameters: fromToken, toToken, amount" };
+  if (!fromChain || !toChain || !fromToken || !toToken || !amount) {
+    return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
   }
 
-  // 2. Get wallet for source chain
-  const wallet = requireWalletForChain(sourceChain.type);
-  const tradeType = (str(params, "tradeType") || "EXACT_INPUT") as TradeType;
-
-  // 3. Quote
-  const quoteResponse = await client.getQuotes({
-    tradeType,
-    fromChainId,
+  // 1. Prepare quote request (resolves aliases, normalizes addresses, parses hex amounts)
+  const prepared = await prepareQuoteRequest({
+    fromChain,
     fromToken,
-    toChainId,
+    toChain,
     toToken,
     amount,
-    fromAddress: wallet.address,
+    tradeType: str(params, "tradeType") || undefined,
+    fromAddress: str(params, "fromAddress") || undefined,
+    recipient: str(params, "recipient") || undefined,
+    refundTo: str(params, "refundTo") || undefined,
+    referrer: str(params, "referrer") || undefined,
+    referrerFeeBps: str(params, "referrerFeeBps") || undefined,
+    filler: str(params, "filler") || undefined,
   });
+
+  const { chains, fromChainId, toChainId, request } = prepared;
+  const sourceChain = getChain(fromChainId, chains);
+
+  // 2. Quote
+  const routeIdParam = str(params, "routeId");
+  const quoteResponse = await client.getQuotes(
+    request,
+    routeIdParam ? { routes: [routeIdParam] } : undefined,
+  );
 
   if (quoteResponse.routes.length === 0) {
     return { success: false, output: "No routes available for this bridge." };
   }
 
-  // 4. Select route
-  const routeId = str(params, "routeId");
+  // 3. Select route
   let selectedRoute: QuoteRoute;
-  if (routeId) {
-    const found = quoteResponse.routes.find(r => r.routeId === routeId);
-    if (!found) return { success: false, output: `Route ${routeId} not found in quote.` };
+  if (routeIdParam) {
+    const found = quoteResponse.routes.find(r => r.routeId === routeIdParam);
+    if (!found) return { success: false, output: `Route ${routeIdParam} not found in quote.` };
     selectedRoute = found;
   } else {
     selectedRoute = quoteResponse.routes[resolveRouteBestIndex(quoteResponse.routes)];
   }
 
-  // 5. Check freshness
+  // 4. Check freshness
   const expiresAt = selectedRoute.quote.quoteExpiresAt ?? selectedRoute.quote.validBefore;
   if (expiresAt > 0 && Date.now() >= expiresAt * 1000) {
     return { success: false, output: "Quote has expired. Re-request a fresh quote." };
   }
 
-  // 6. Dry run — return quote without executing
+  // 5. Build deposit plan (needed for BOTH dryRun and execute)
+  const depositMethod = str(params, "depositMethod") as DepositMethod | "";
+  const plan = await client.buildDeposit({
+    from: request.fromAddress,
+    quoteId: quoteResponse.quoteId,
+    routeId: selectedRoute.routeId,
+    ...(depositMethod ? { depositMethod } : {}),
+  });
+
+  // 6. Dry run — return quote + deposit plan without executing
   if (params.dryRun === true) {
     return {
       success: true,
@@ -261,20 +288,14 @@ async function handleBridge(
           amountOut: selectedRoute.quote.amountOut,
           etaSeconds: selectedRoute.quote.expectedDurationSeconds,
         },
+        depositPlan: plan,
+        sourceChain,
+        destinationChain: getChain(toChainId, chains),
       }, null, 2),
     };
   }
 
-  // 7. Build deposit plan
-  const depositMethod = str(params, "depositMethod") as DepositMethod | "";
-  const plan = await client.buildDeposit({
-    from: wallet.address,
-    quoteId: quoteResponse.quoteId,
-    routeId: selectedRoute.routeId,
-    ...(depositMethod ? { depositMethod } : {}),
-  });
-
-  // 8. Execute deposit
+  // 7. Execute deposit
   logger.info("khalani.bridge.executing", {
     fromChain: fromChainId,
     toChain: toChainId,

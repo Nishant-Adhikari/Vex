@@ -37,7 +37,7 @@ export async function studioCreateToken(
   params: StudioCreateParams,
 ): Promise<{ mint: string; signature: string | null; explorerUrl: string | null }> {
   // Studio requires API key — endpoints 404 on lite-api
-  if (!loadConfig().solana.jupiterApiKey) {
+  if (!process.env.JUPITER_API_KEY?.trim() && !loadConfig().solana.jupiterApiKey) {
     throw new EchoError(
       ErrorCodes.SOLANA_STUDIO_CREATE_FAILED,
       "Jupiter API key required for Studio.",
@@ -147,7 +147,7 @@ export async function studioCreateToken(
 }
 
 export async function studioGetPoolAddress(mint: string): Promise<string> {
-  if (!loadConfig().solana.jupiterApiKey) {
+  if (!process.env.JUPITER_API_KEY?.trim() && !loadConfig().solana.jupiterApiKey) {
     throw new EchoError(ErrorCodes.SOLANA_STUDIO_CLAIM_FAILED, "Jupiter API key required for Studio.", "Run: echoclaw config set-jupiter-key <key>");
   }
   const base = getJupiterBaseUrl();
@@ -182,7 +182,7 @@ export async function studioClaimFees(
   poolAddress: string,
   maxAmount?: string,
 ): Promise<TransferResult> {
-  if (!loadConfig().solana.jupiterApiKey) {
+  if (!process.env.JUPITER_API_KEY?.trim() && !loadConfig().solana.jupiterApiKey) {
     throw new EchoError(ErrorCodes.SOLANA_STUDIO_CLAIM_FAILED, "Jupiter API key required for Studio.", "Run: echoclaw config set-jupiter-key <key>");
   }
   const keypair = Keypair.fromSecretKey(secretKey);

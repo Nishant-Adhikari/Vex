@@ -426,6 +426,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     }
 
     if (!routeResp.data.route || !routeResp.data.routerAddress) return fail("No zap route returned");
+    verifyRouterAddress(routeResp.data.routerAddress, KS_ZAP_ROUTER_POSITION);
     const buildResp = await getKyberZaasClient().buildZapOut(slug, { sender: wallet.address, recipient: wallet.address, route: routeResp.data.route });
     const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
     const txHash = await sendKyberTransaction(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
@@ -460,6 +461,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     }
 
     if (!routeResp.data.route || !routeResp.data.routerAddress) return fail("No zap route returned");
+    verifyRouterAddress(routeResp.data.routerAddress, KS_ZAP_ROUTER_POSITION);
     const buildResp = await getKyberZaasClient().buildZapMigrate(slug, { sender: wallet.address, recipient: wallet.address, route: routeResp.data.route });
     const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
     const txHash = await sendKyberTransaction(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
