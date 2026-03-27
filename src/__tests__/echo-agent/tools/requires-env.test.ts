@@ -119,7 +119,11 @@ describe("requiresEnv filtering", () => {
       const without = discoverProtocolCapabilities({ includeMutating: true, limit: 200 });
       process.env.JUPITER_API_KEY = "test-key";
       const withKey = discoverProtocolCapabilities({ includeMutating: true, limit: 200 });
-      expect(withKey.count).toBe(without.count + 3);
+      expect(without.count).toBe(200);
+      expect(withKey.count).toBe(200);
+      expect(without.hasMore).toBe(true);
+      expect(withKey.hasMore).toBe(true);
+      expect(withKey.totalCount).toBe(without.totalCount + 3);
     });
   });
 

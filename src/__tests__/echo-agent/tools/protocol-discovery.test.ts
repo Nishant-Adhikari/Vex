@@ -8,6 +8,8 @@ describe("protocol discovery", () => {
     const result = discoverProtocolCapabilities({});
     expect(result.success).toBe(true);
     expect(result.count).toBeGreaterThan(0);
+    expect(result.totalCount).toBeGreaterThanOrEqual(result.count);
+    expect(result.hasMore).toBe(result.totalCount > result.count);
   });
 
   it("returns tools with toolId, description, params", () => {
@@ -93,6 +95,8 @@ describe("protocol discovery", () => {
   it("respects limit", () => {
     const result = discoverProtocolCapabilities({ namespace: "khalani", limit: 3 });
     expect(result.count).toBeLessThanOrEqual(3);
+    expect(result.tools).toHaveLength(result.count);
+    expect(result.totalCount).toBeGreaterThanOrEqual(result.count);
   });
 
   it("returns all when limit exceeds count", () => {

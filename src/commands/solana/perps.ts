@@ -17,6 +17,9 @@ import {
   setPerpsTPSL,
   cancelPerpsTPSL,
 } from "../../tools/chains/solana/perps-service.js";
+import { perpsUpdateTpsl, perpsExecute } from "../../tools/chains/solana/perps-client.js";
+import { deserializeVersionedTx, signVersionedTx } from "../../tools/chains/solana/tx.js";
+import { Keypair } from "@solana/web3.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
@@ -349,9 +352,10 @@ export function createPerpsSubcommand(): Command {
   // --- set (TP/SL or limit order update) ---
   perps
     .command("set")
-    .description("Set/update TP/SL on a position or update a limit order trigger")
-    .option("--position <pubkey>", "Position pubkey (for TP/SL)")
+    .description("Set/update TP/SL on a position, update a limit order trigger, or update existing TP/SL trigger price")
+    .option("--position <pubkey>", "Position pubkey (for setting NEW TP/SL)")
     .option("--order <pubkey>", "Limit order pubkey (for trigger price update)")
+    .option("--tpsl <pubkey>", "Existing TP/SL request pubkey (for updating trigger price)")
     .option("--tp <price>", "Take-profit USD price")
     .option("--sl <price>", "Stop-loss USD price")
     .option("--limit <price>", "New limit order trigger price")
@@ -359,12 +363,13 @@ export function createPerpsSubcommand(): Command {
     .action(async (options) => {
       const wallet = requireSolanaWallet();
 
-      if (options.position && options.order) {
-        throw new EchoError(ErrorCodes.SOLANA_ORDER_FAILED, "Only one of --position or --order can be provided.");
+      const targets = [options.position, options.order, options.tpsl].filter(Boolean);
+      if (targets.length > 1) {
+        throw new EchoError(ErrorCodes.SOLANA_ORDER_FAILED, "Only one of --position, --order, or --tpsl can be provided.");
       }
 
       if (!options.yes && !isHeadless()) {
-        process.stderr.write(`\n  Update: ${colors.muted(options.position ?? options.order)}\n  Use ${colors.muted("--yes")} to execute.\n\n`);
+        process.stderr.write(`\n  Update: ${colors.muted(options.position ?? options.order ?? options.tpsl)}\n  Use ${colors.muted("--yes")} to execute.\n\n`);
         throw new EchoError(ErrorCodes.CONFIRMATION_REQUIRED, "Add --yes to proceed.");
       }
 
@@ -380,6 +385,21 @@ export function createPerpsSubcommand(): Command {
           } else {
             successBox("Limit Order Updated", `Trigger: $${options.limit}\nSignature: ${colors.muted(sig)}`);
           }
+        } else if (options.tpsl && (options.tp || options.sl)) {
+          // Update an existing TP/SL trigger price (single request at a time)
+          const triggerPrice = options.tp ? Number(options.tp) : Number(options.sl);
+          const resp = await perpsUpdateTpsl({ positionRequestPubkey: options.tpsl, triggerPrice: String(triggerPrice) });
+          const keypair = Keypair.fromSecretKey(wallet.secretKey);
+          const tx = deserializeVersionedTx(resp.serializedTxBase64);
+          signVersionedTx(tx, [keypair]);
+          const signedBase64 = Buffer.from(tx.serialize()).toString("base64");
+          const execResult = await perpsExecute({ action: "update-tpsl", serializedTxBase64: signedBase64 });
+          spin.succeed("TP/SL updated");
+          if (isHeadless()) {
+            writeJsonSuccess({ action: "update-tpsl", triggerPriceUsd: triggerPrice, signature: execResult.txid });
+          } else {
+            successBox("TP/SL Updated", `Trigger: $${triggerPrice}\nSignature: ${colors.muted(execResult.txid)}`);
+          }
         } else if (options.position && (options.tp || options.sl)) {
           const result = await setPerpsTPSL(wallet.secretKey, options.position, {
             tp: options.tp ? Number(options.tp) : undefined,
@@ -393,7 +413,7 @@ export function createPerpsSubcommand(): Command {
           }
         } else {
           spin.fail("Invalid options");
-          throw new EchoError(ErrorCodes.SOLANA_ORDER_FAILED, "Use --position with --tp/--sl, or --order with --limit.");
+          throw new EchoError(ErrorCodes.SOLANA_ORDER_FAILED, "Use --position with --tp/--sl, --order with --limit, or --tpsl with --tp/--sl.");
         }
       } catch (err) { spin.fail("Failed"); throw err; }
     });

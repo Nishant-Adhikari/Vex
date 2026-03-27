@@ -11,6 +11,7 @@ import {
   getMarket,
   getEvent,
   createPredictOrder,
+  getPosition,
   getPositions,
   claimPosition,
   closePosition,
@@ -299,6 +300,28 @@ export function createPredictSubcommand(): Command {
           ]),
         );
       }
+    });
+
+  predict
+    .command("position <positionPubkey>")
+    .description("Look up a single prediction position by pubkey")
+    .action(async (positionPubkey: string) => {
+      const spin = spinner("Loading position...");
+      spin.start();
+
+      const position = await getPosition(positionPubkey);
+      spin.succeed("Position loaded");
+
+      if (isHeadless()) { writeJsonSuccess({ position }); return; }
+
+      infoBox("Prediction Position",
+        `Position: ${colors.muted(position.pubkey)}\n` +
+        `Market: ${position.marketId}\n` +
+        `Side: ${colors.info(position.isYes ? "YES" : "NO")}\n` +
+        `Contracts: ${position.contracts}\n` +
+        `Cost: $${position.totalCostUsd.toFixed(2)} | Value: $${position.valueUsd.toFixed(2)}\n` +
+        `P&L: ${position.pnlUsd >= 0 ? "+" : ""}$${position.pnlUsd.toFixed(2)} (${position.pnlUsdPercent.toFixed(1)}%)\n` +
+        `Claimable: ${position.claimable ? colors.info("YES") : "no"}`);
     });
 
   return predict;

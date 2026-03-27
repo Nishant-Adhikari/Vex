@@ -51,11 +51,12 @@ echoclaw solana perps close --position <pubkey> [--size 5] [--receive USDC] --ye
 echoclaw solana perps close --position all --yes --json
 echoclaw solana perps set --position <pubkey> --tp 100 --sl 70 --yes --json
 echoclaw solana perps set --order <pubkey> --limit 64000 --yes --json
+echoclaw solana perps set --tpsl <pubkey> --tp 105 --yes --json
 echoclaw solana perps cancel --order <pubkey> --yes --json
 echoclaw solana perps cancel --tpsl <pubkey> --yes --json
 ```
 
-Three markets: **SOL**, **BTC**, **ETH**. Collateral: SOL, BTC, ETH, USDC. Min $10. Two sizing modes: `--leverage` (size = amount × leverage) or `--size` (explicit USD size). `--side` accepts `long`/`short`/`buy`/`sell`. `--limit` for limit orders (cannot combine with `--tp`/`--sl`). Uses `perps-api.jup.ag/v2`.
+Three markets: **SOL**, **BTC**, **ETH**. Collateral: SOL, BTC, ETH, USDC. Min $10. Two sizing modes: `--leverage` (size = amount × leverage) or `--size` (explicit USD size). `--side` accepts `long`/`short`/`buy`/`sell`. `--limit` for limit orders (cannot combine with `--tp`/`--sl`). `set --tpsl` updates an existing TP/SL trigger price in-place (vs `set --position` which creates new TP/SL). Uses `perps-api.jup.ag/v2`.
 
 ### Browse & Price
 
@@ -140,6 +141,7 @@ echoclaw solana predict list [category] [--filter trending|live|new] --json
 echoclaw solana predict search <query> --json
 echoclaw solana predict event <eventId> --json
 echoclaw solana predict market <marketId> --json
+echoclaw solana predict position <positionPubkey> --json
 echoclaw solana predict buy <marketId> --side yes|no --amount <USDC> --yes --json
 echoclaw solana predict sell <positionPubkey> --yes --json
 echoclaw solana predict claim <positionPubkey> --yes --json
@@ -189,7 +191,7 @@ Shows swap trade history with input/output tokens and USD values. Groups double-
 ### Account Management
 
 ```bash
-echoclaw solana burn <token> [amount] [--all] --yes --json
+echoclaw solana burn <token> [amount] --yes --json
 echoclaw solana close-accounts --yes --json
 ```
 
@@ -296,7 +298,4 @@ Use Solana commands for Solana-native operations (swap, stake, lend, predict). U
 - `SOLANA_STUDIO_CREATE_FAILED` (requires Jupiter API key)
 - `SOLANA_STUDIO_CLAIM_FAILED` (requires Jupiter API key)
 - `SOLANA_LP_POOL_NOT_FOUND`
-- `SOLANA_LP_DEPOSIT_FAILED`
-- `SOLANA_LP_WITHDRAW_FAILED`
-- `SOLANA_LP_CLAIM_FAILED`
 - `CONFIRMATION_REQUIRED` (add `--yes` to execute)

@@ -31,7 +31,7 @@ export function discoverProtocolCapabilities(
     ? Math.max(1, Math.floor(request.limit))
     : DEFAULT_DISCOVERY_LIMIT;
 
-  const tools = PROTOCOL_TOOLS
+  const matchingTools = PROTOCOL_TOOLS
     .filter(m => !m.requiresEnv || Boolean(process.env[m.requiresEnv]?.trim()))
     .filter(m => request.namespace ? m.namespace === request.namespace : true)
     .filter(m => request.includeMutating ? true : !m.mutating)
@@ -41,7 +41,9 @@ export function discoverProtocolCapabilities(
       const q = normalizeText(request.query);
       return [m.toolId, m.namespace, m.description]
         .some(v => normalizeText(v).includes(q));
-    })
+    });
+
+  const tools = matchingTools
     .slice(0, limit)
     .map(m => ({
       toolId: m.toolId,
@@ -52,10 +54,15 @@ export function discoverProtocolCapabilities(
       params: m.params,
       exampleParams: m.exampleParams,
     }));
+  const totalCount = matchingTools.length;
+  const hasMore = totalCount > tools.length;
 
   const warnings: string[] = [];
   if (tools.length === 0) {
     warnings.push("No protocol capabilities matched the query/filter.");
+  }
+  if (hasMore) {
+    warnings.push(`Showing first ${tools.length} of ${totalCount} matching capabilities. Increase limit to see more.`);
   }
 
   const activeNamespaces = new Set(PROTOCOL_TOOLS.map(t => t.namespace));
@@ -64,7 +71,7 @@ export function discoverProtocolCapabilities(
     warnings.push(`Declared-only namespaces (coming soon): ${declaredOnly.join(", ")}`);
   }
 
-  return { success: true, count: tools.length, tools, warnings };
+  return { success: true, count: tools.length, totalCount, hasMore, tools, warnings };
 }
 
 // ── Execution ────────────────────────────────────────────────────

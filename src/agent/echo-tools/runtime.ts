@@ -76,11 +76,13 @@ export function discoverProtocolCapabilities(
     ? Math.max(1, Math.floor(request.limit))
     : DEFAULT_DISCOVERY_LIMIT;
 
-  const tools = PROTOCOL_TOOLS
+  const matchingTools = PROTOCOL_TOOLS
     .filter((manifest) => request.namespace ? manifest.namespace === request.namespace : true)
     .filter((manifest) => request.includeMutating ? true : !manifest.mutating)
     .filter((manifest) => request.includeDeclared ? true : manifest.lifecycle === "active")
-    .filter((manifest) => matchesQuery(manifest, request.query))
+    .filter((manifest) => matchesQuery(manifest, request.query));
+
+  const tools = matchingTools
     .slice(0, limit)
     .map((manifest) => ({
       toolId: manifest.toolId,
@@ -91,10 +93,15 @@ export function discoverProtocolCapabilities(
       exampleParams: manifest.exampleParams,
       docRefs: manifest.docRefs,
     }));
+  const totalCount = matchingTools.length;
+  const hasMore = totalCount > tools.length;
 
   const warnings: string[] = [];
   if (tools.length === 0) {
     warnings.push("No protocol capabilities matched the current query/filter.");
+  }
+  if (hasMore) {
+    warnings.push(`Showing first ${tools.length} of ${totalCount} matching capabilities. Increase limit to see more.`);
   }
   const activeNamespaces = new Set(PROTOCOL_TOOLS.map((tool) => tool.namespace));
   const declaredOnly = PROTOCOL_NAMESPACE_ALLOWLIST.filter((namespace) => !activeNamespaces.has(namespace));
@@ -105,6 +112,8 @@ export function discoverProtocolCapabilities(
   return {
     success: true,
     count: tools.length,
+    totalCount,
+    hasMore,
     tools,
     warnings,
   };

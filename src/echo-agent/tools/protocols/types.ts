@@ -91,7 +91,12 @@ export interface ProtocolDiscoveryItem {
 
 export interface ProtocolDiscoveryResult {
   success: boolean;
+  /** Number of tools returned in this response (after limit is applied). */
   count: number;
+  /** Total number of matching tools before pagination/limit is applied. */
+  totalCount: number;
+  /** True when additional matching tools exist beyond this response. */
+  hasMore: boolean;
   tools: ProtocolDiscoveryItem[];
   warnings: string[];
 }

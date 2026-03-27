@@ -505,7 +505,10 @@ async function handleDiscoverTools(tool: InternalToolCall, session: Conversation
   });
   const content = JSON.stringify(result, null, 2);
   await appendToolMessage(session, content);
-  return { output: `${result.count} tools found`, success: true };
+  const summary = result.hasMore
+    ? `${result.count} tools returned (${result.totalCount} total matches)`
+    : `${result.totalCount} tools found`;
+  return { output: summary, success: true };
 }
 
 async function handleExecuteTool(tool: InternalToolCall, session: ConversationSession, emit: EventEmitter, loopMode: ChatMode, approved: boolean): Promise<InternalToolResult> {
