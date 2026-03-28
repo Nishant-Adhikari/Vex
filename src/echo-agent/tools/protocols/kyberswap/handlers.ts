@@ -43,6 +43,58 @@ function fail(msg: string): ToolResult {
   return { success: false, output: msg };
 }
 
+// ── Shared swap execution (sell + buy use same routing, differ in trade_side) ──
+
+async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"): Promise<ToolResult> {
+  const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
+  if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
+
+  const slug = resolveChainSlug(chain);
+  requireFeature(slug, "aggregator");
+  const chainId = slugToChainId(slug);
+  const wallet = requireEvmWallet();
+  const tokenIn = await resolveTokenMetadata(tokenInRaw, chainId);
+  const tokenOut = await resolveTokenMetadata(tokenOutRaw, chainId);
+  const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+
+  const routeResp = await getKyberAggregatorClient().getRoute(slug, {
+    tokenIn: tokenIn.address,
+    tokenOut: tokenOut.address,
+    amountIn: amountIn.toString(),
+  });
+  const { routeSummary, routerAddress } = routeResp.data;
+  verifyRouterAddress(routerAddress, META_AGGREGATION_ROUTER_V2);
+
+  if (p.dryRun === true) {
+    return ok({ dryRun: true, side, chain: slug, routeSummary, routerAddress });
+  }
+
+  const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
+  if (tokenIn.address.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
+    await ensureKyberAllowance(publicClient, walletClient, tokenIn.address, routerAddress, amountIn, p.approveExact === true);
+  }
+
+  const slippage = num(p, "slippageBps") ?? 50;
+  const buildResp = await getKyberAggregatorClient().buildRoute(slug, {
+    routeSummary,
+    sender: wallet.address,
+    recipient: (str(p, "recipient") || wallet.address) as Address,
+    slippageTolerance: slippage,
+  });
+
+  const txHash = await sendKyberTransaction(publicClient, walletClient, {
+    to: getAddress(buildResp.data.routerAddress),
+    data: buildResp.data.data as Hex,
+    value: BigInt(buildResp.data.transactionValue),
+  });
+
+  return {
+    success: true,
+    output: JSON.stringify({ txHash, side, chain: slug, tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol, amountIn: buildResp.data.amountIn, amountOut: buildResp.data.amountOut, amountInUsd: buildResp.data.amountInUsd, amountOutUsd: buildResp.data.amountOutUsd }, null, 2),
+    data: { txHash, _tradeCapture: { type: "swap", chain: slug, status: "executed", inputToken: tokenIn.symbol, outputToken: tokenOut.symbol, inputAmount: buildResp.data.amountIn, outputAmount: buildResp.data.amountOut, signature: txHash, meta: { dex: "kyberswap", side } } },
+  };
+}
+
 // ── Handler map ──────────────────────────────────────────────────
 
 export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
@@ -97,60 +149,8 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     });
   },
 
-  "kyberswap.swap.sell": async (p) => {
-    const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
-    if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
-
-    const slug = resolveChainSlug(chain);
-    requireFeature(slug, "aggregator");
-    const chainId = slugToChainId(slug);
-    const wallet = requireEvmWallet();
-    const tokenIn = await resolveTokenMetadata(tokenInRaw, chainId);
-    const tokenOut = await resolveTokenMetadata(tokenOutRaw, chainId);
-    const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
-
-    // 1. Get route
-    const routeResp = await getKyberAggregatorClient().getRoute(slug, {
-      tokenIn: tokenIn.address,
-      tokenOut: tokenOut.address,
-      amountIn: amountIn.toString(),
-    });
-    const { routeSummary, routerAddress } = routeResp.data;
-    verifyRouterAddress(routerAddress, META_AGGREGATION_ROUTER_V2);
-
-    // Dry run
-    if (p.dryRun === true) {
-      return ok({ dryRun: true, chain: slug, routeSummary, routerAddress });
-    }
-
-    // 2. Approve if needed (skip native)
-    const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
-    if (tokenIn.address.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
-      await ensureKyberAllowance(publicClient, walletClient, tokenIn.address, routerAddress, amountIn, p.approveExact === true);
-    }
-
-    // 3. Build tx
-    const slippage = num(p, "slippageBps") ?? 50;
-    const buildResp = await getKyberAggregatorClient().buildRoute(slug, {
-      routeSummary,
-      sender: wallet.address,
-      recipient: (str(p, "recipient") || wallet.address) as Address,
-      slippageTolerance: slippage,
-    });
-
-    // 4. Execute
-    const txHash = await sendKyberTransaction(publicClient, walletClient, {
-      to: getAddress(buildResp.data.routerAddress),
-      data: buildResp.data.data as Hex,
-      value: BigInt(buildResp.data.transactionValue),
-    });
-
-    return {
-      success: true,
-      output: JSON.stringify({ txHash, chain: slug, tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol, amountIn: buildResp.data.amountIn, amountOut: buildResp.data.amountOut, amountInUsd: buildResp.data.amountInUsd, amountOutUsd: buildResp.data.amountOutUsd }, null, 2),
-      data: { txHash, _tradeCapture: { type: "swap", chain: slug, status: "executed", inputToken: tokenIn.symbol, outputToken: tokenOut.symbol, inputAmount: buildResp.data.amountIn, outputAmount: buildResp.data.amountOut, signature: txHash, meta: { dex: "kyberswap" } } },
-    };
-  },
+  "kyberswap.swap.sell": (p) => executeKyberSwap(p, "sell"),
+  "kyberswap.swap.buy": (p) => executeKyberSwap(p, "buy"),
 
   // ── Limit Orders (Maker) ─────────────────────────────────────────
   "kyberswap.limitOrder.list": async (p) => {

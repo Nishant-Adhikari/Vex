@@ -19,8 +19,8 @@ describe("kyberswap handlers", () => {
     expect(extra).toEqual([]);
   });
 
-  it("handler count matches manifest count (19)", () => {
-    expect(Object.keys(KYBERSWAP_HANDLERS)).toHaveLength(19);
+  it("handler count matches manifest count (20)", () => {
+    expect(Object.keys(KYBERSWAP_HANDLERS)).toHaveLength(20);
   });
 
   it("every handler is a function", () => {
@@ -61,6 +61,15 @@ describe("kyberswap handlers", () => {
   it("kyberswap.swap.sell fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.swap.sell"]!(
       { chain: "ethereum", tokenIn: "ETH" },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Missing required");
+  });
+
+  it("kyberswap.swap.buy fails without required params", async () => {
+    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.buy"]!(
+      { chain: "ethereum", tokenIn: "USDC" },
       { loopMode: "off", approved: false },
     );
     expect(result.success).toBe(false);

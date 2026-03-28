@@ -59,7 +59,7 @@ describe("requiresEnv filtering", () => {
     it("non-ENV tools always present regardless of ENV state", () => {
       const tools = getOpenAITools("off");
       const hasDiscover = tools.some(t => t.function.name === "discover_tools");
-      const hasFileRead = tools.some(t => t.function.name === "file_read");
+      const hasFileRead = tools.some(t => t.function.name === "document_read");
       const hasMemory = tools.some(t => t.function.name === "memory_manage");
       expect(hasDiscover).toBe(true);
       expect(hasFileRead).toBe(true);

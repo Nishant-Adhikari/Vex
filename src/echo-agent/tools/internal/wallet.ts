@@ -192,7 +192,17 @@ export async function handleWalletSendConfirm(
     return fail(`Network mismatch: intent is ${intent.network}, got ${network}`);
   }
 
-  // Remove intent (one-time use)
+  // Approval gate — mutating tool, requires approval in restricted/off mode
+  if (!context.approved && context.loopMode !== "full") {
+    // DON'T delete intent — must survive until approval retry
+    return {
+      success: false,
+      output: `Transfer requires approval in ${context.loopMode} mode. Use the approval flow to confirm.`,
+      pendingApproval: true,
+    };
+  }
+
+  // Remove intent (one-time use) — only after approval check passes
   pendingIntents.delete(intentId);
 
   if (network === "solana") {

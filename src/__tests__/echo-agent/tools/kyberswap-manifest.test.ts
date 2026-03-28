@@ -4,8 +4,8 @@ import { KYBERSWAP_TOOLS } from "../../../echo-agent/tools/protocols/kyberswap/m
 describe("kyberswap manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
 
-  it("has 19 tools total", () => {
-    expect(KYBERSWAP_TOOLS).toHaveLength(19);
+  it("has 20 tools total", () => {
+    expect(KYBERSWAP_TOOLS).toHaveLength(20);
   });
 
   const EXPECTED_TOOL_IDS = [
@@ -15,9 +15,10 @@ describe("kyberswap manifest", () => {
     // Tokens (2)
     "kyberswap.tokens.search",
     "kyberswap.tokens.check",
-    // Swap (2)
+    // Swap (3)
     "kyberswap.swap.quote",
     "kyberswap.swap.sell",
+    "kyberswap.swap.buy",
     // Limit Order — Maker (5)
     "kyberswap.limitOrder.list",
     "kyberswap.limitOrder.activeMakingAmount",
@@ -38,7 +39,7 @@ describe("kyberswap manifest", () => {
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(19);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(20);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -78,6 +79,7 @@ describe("kyberswap manifest", () => {
 
   const EXPECTED_MUTATING = [
     "kyberswap.swap.sell",
+    "kyberswap.swap.buy",
     "kyberswap.limitOrder.create",
     "kyberswap.limitOrder.cancel",
     "kyberswap.limitOrder.hardCancel",

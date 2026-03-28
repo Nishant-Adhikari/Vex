@@ -68,6 +68,8 @@ export type ProtocolHandler = (
 export interface ProtocolExecutionContext {
   loopMode: "full" | "restricted" | "off";
   approved: boolean;
+  /** Session ID — passed to execution capture for audit trail */
+  sessionId?: string;
 }
 
 // ── Discovery request/result ─────────────────────────────────────

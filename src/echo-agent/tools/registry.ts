@@ -59,36 +59,44 @@ const TOOLS: readonly ToolDef[] = [
     }, required: ["url"] },
   },
 
-  // Files
+  // Documents (DB-first, replaces file_*)
   {
-    name: "file_read", kind: "internal", mutating: false,
-    description: "Load a knowledge file into context. Use preview=true to see first 1000 chars without full context load.",
+    name: "document_read", kind: "internal", mutating: false,
+    description: "Read a document from knowledge or notes. Use preview=true for first 1000 chars without context load.",
     parameters: { type: "object", properties: {
-      path: { type: "string", description: "File path" },
+      space: { type: "string", enum: ["knowledge", "notes"], description: "Document space (default: knowledge)" },
+      slug: { type: "string", description: "Document slug" },
+      folder: { type: "string", description: "Folder slug (optional, default: root)" },
       preview: { type: "boolean", description: "Preview mode (first 1000 chars, no context load)" },
-    }, required: ["path"] },
+    }, required: ["slug"] },
   },
   {
-    name: "file_write", kind: "internal", mutating: false,
-    description: "Create or update a knowledge file.",
+    name: "document_write", kind: "internal", mutating: false,
+    description: "Create or update a document in knowledge or notes.",
     parameters: { type: "object", properties: {
-      path: { type: "string", description: "File path" },
-      content: { type: "string", description: "File content" },
-    }, required: ["path", "content"] },
+      space: { type: "string", enum: ["knowledge", "notes"], description: "Document space (default: knowledge)" },
+      folder: { type: "string", description: "Folder slug (optional)" },
+      title: { type: "string", description: "Document title" },
+      slug: { type: "string", description: "URL-safe identifier (auto-generated from title if omitted)" },
+      content: { type: "string", description: "Markdown content" },
+    }, required: ["title", "content"] },
   },
   {
-    name: "file_list", kind: "internal", mutating: false,
-    description: "List files in a knowledge directory.",
+    name: "document_list", kind: "internal", mutating: false,
+    description: "List documents in a space, optionally filtered by folder.",
     parameters: { type: "object", properties: {
-      path: { type: "string", description: "Directory path" },
+      space: { type: "string", enum: ["knowledge", "notes"], description: "Document space (default: knowledge)" },
+      folder: { type: "string", description: "Folder slug filter" },
     } },
   },
   {
-    name: "file_delete", kind: "internal", mutating: false,
-    description: "Delete a knowledge file.",
+    name: "document_delete", kind: "internal", mutating: false,
+    description: "Archive (soft-delete) a document.",
     parameters: { type: "object", properties: {
-      path: { type: "string", description: "File path" },
-    }, required: ["path"] },
+      space: { type: "string", enum: ["knowledge", "notes"], description: "Document space" },
+      slug: { type: "string", description: "Document slug" },
+      folder: { type: "string", description: "Folder slug" },
+    }, required: ["slug"] },
   },
 
   // Memory
@@ -110,7 +118,7 @@ const TOOLS: readonly ToolDef[] = [
     parameters: { type: "object", properties: {
       name: { type: "string", description: "Task name" },
       cron: { type: "string", description: "Cron expression" },
-      type: { type: "string", enum: ["cli_execute", "inference", "alert", "snapshot", "backup"], description: "Task type" },
+      type: { type: "string", enum: ["tool_call", "wake_agent", "reminder", "monitor", "snapshot", "backup"], description: "Task type" },
       description: { type: "string", description: "Task description" },
       payload: { type: "object", description: "Task payload" },
     }, required: ["name", "cron", "type"] },

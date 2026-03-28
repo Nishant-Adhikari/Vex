@@ -46,6 +46,29 @@ AGENT_TEMPERATURE=0.7              # optional, 0.0-2.0 (OpenRouter only — 0G i
 # ── 0G Compute ────────────────────────────────────────────────────
 # No additional ENV — config loaded from compute-state.json
 # (created by `echoclaw echo connect`)
+
+# ── Subagent overrides (all optional — inherit from AGENT_* if unset) ──
+SUBAGENT_MAX_CONCURRENT=5          # max parallel subagents (default: 5, range: 1-20)
+SUBAGENT_CONTEXT_LIMIT=16384       # subagent context window (default: 16384)
+SUBAGENT_MAX_OUTPUT_TOKENS=        # inherits AGENT_MAX_OUTPUT_TOKENS if unset
+SUBAGENT_TEMPERATURE=              # inherits AGENT_TEMPERATURE if unset
+SUBAGENT_MAX_ITERATIONS=25         # max tool call iterations per subagent (default: 25)
+SUBAGENT_TIMEOUT_MS=300000         # subagent execution timeout (default: 5 min)
+```
+
+## Subagent config
+
+`loadSubagentConfig(agentConfig)` returns a `SubagentConfig` object with ENV overrides + fallbacks from the agent's own config. Subagents share the agent's provider and model, but can have independent context limits, output caps, temperature, iteration budget, and timeout.
+
+```typescript
+interface SubagentConfig {
+  maxConcurrent: number;      // how many can run in parallel
+  contextLimit: number;       // smaller window than main agent
+  maxOutputTokens: number;    // inherits from agent if unset
+  temperature: number | null; // inherits from agent if unset
+  maxIterations: number;      // tool call budget per subagent
+  timeoutMs: number;          // hard timeout for entire execution
+}
 ```
 
 ## Provider differences

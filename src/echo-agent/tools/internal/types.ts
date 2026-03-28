@@ -6,7 +6,7 @@
  * sessions, SSE events, or the inference loop — they are pure
  * param-in → result-out functions.
  *
- * Session context (loadedKnowledge, messages) is passed explicitly
+ * Session context (loadedDocuments, messages) is passed explicitly
  * where needed — not as a god-object dependency.
  */
 
@@ -19,13 +19,15 @@ export type InternalToolResult = ToolResult;
 export interface InternalToolContext {
   /** Session ID — for DB operations */
   sessionId: string;
-  /** Loaded knowledge files — for file_read context tracking */
-  loadedKnowledge: Map<string, string>;
+  /** Loaded documents — for document_read context tracking */
+  loadedDocuments: Map<string, string>;
   /** Current agent mode */
   loopMode: "full" | "restricted" | "off";
   /** Whether this call was pre-approved */
   approved: boolean;
 }
+
+// ── Param accessors ─────────────────────────────────────────────
 
 /** Safe string accessor for tool params */
 export function str(params: Record<string, unknown>, key: string): string {
@@ -42,4 +44,16 @@ export function num(params: Record<string, unknown>, key: string): number | unde
 /** Safe boolean accessor for tool params */
 export function bool(params: Record<string, unknown>, key: string): boolean {
   return params[key] === true;
+}
+
+// ── Result helpers ──────────────────────────────────────────────
+
+/** Success result with JSON-serialized data. */
+export function ok(data: unknown): ToolResult {
+  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
+}
+
+/** Failure result with message. */
+export function fail(msg: string): ToolResult {
+  return { success: false, output: msg };
 }

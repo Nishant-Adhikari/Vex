@@ -112,6 +112,51 @@ export function loadEnvConfig(): EnvConfig {
   };
 }
 
+// ── Subagent config (ENV with fallbacks from AGENT_*) ───────────
+
+export interface SubagentConfig {
+  maxConcurrent: number;
+  contextLimit: number;
+  maxOutputTokens: number;
+  temperature: number | null;
+  maxIterations: number;
+  timeoutMs: number;
+}
+
+const SUBAGENT_DEFAULTS = {
+  maxConcurrent: 5,
+  contextLimit: 16_384,
+  maxIterations: 25,
+  timeoutMs: 300_000,
+} as const;
+
+export function loadSubagentConfig(agentConfig: EnvConfig): SubagentConfig {
+  return {
+    maxConcurrent: parseIntEnv("SUBAGENT_MAX_CONCURRENT", SUBAGENT_DEFAULTS.maxConcurrent, 1, 20),
+    contextLimit: parseIntEnv("SUBAGENT_CONTEXT_LIMIT", SUBAGENT_DEFAULTS.contextLimit, 1000, 2_000_000),
+    maxOutputTokens: parseIntEnv("SUBAGENT_MAX_OUTPUT_TOKENS", agentConfig.maxOutputTokens, 256, 128_000),
+    temperature: parseFloatEnv("SUBAGENT_TEMPERATURE", agentConfig.temperature, 0, 2),
+    maxIterations: parseIntEnv("SUBAGENT_MAX_ITERATIONS", SUBAGENT_DEFAULTS.maxIterations, 1, 200),
+    timeoutMs: parseIntEnv("SUBAGENT_TIMEOUT_MS", SUBAGENT_DEFAULTS.timeoutMs, 10_000, 1_800_000),
+  };
+}
+
+function parseIntEnv(key: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return fallback;
+  return Math.floor(parsed);
+}
+
+function parseFloatEnv(key: string, fallback: number | null, min: number, max: number): number | null {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return fallback;
+  return parsed;
+}
+
 // ── Internal constants (not from ENV — technical invariants) ─────
 
 /** Streaming inference timeout (5 min) */

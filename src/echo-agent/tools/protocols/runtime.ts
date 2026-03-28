@@ -125,7 +125,17 @@ export async function executeProtocolTool(
     };
   }
 
-  // Execute
+  // Approval gate — mutating tools require approval in restricted/off mode
+  if (manifest.mutating && !context.approved && context.loopMode !== "full") {
+    logger.info("protocol.execute.approval_required", { toolId: request.toolId, loopMode: context.loopMode });
+    return {
+      success: false,
+      output: `${request.toolId} requires approval — mutating tool in ${context.loopMode} mode.`,
+      pendingApproval: true,
+    };
+  }
+
+  // Execute + capture
   const startTime = Date.now();
   try {
     const result = await handler(params, context);
@@ -136,6 +146,16 @@ export async function executeProtocolTool(
       success: result.success,
       durationMs,
     });
+
+    // Capture all mutating executions (success AND failure) to protocol_executions
+    if (manifest.mutating) {
+      captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs).catch(err => {
+        logger.warn("protocol.execute.capture_failed", {
+          toolId: request.toolId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
 
     return result;
   } catch (err) {
@@ -149,5 +169,62 @@ export async function executeProtocolTool(
     });
 
     return { success: false, output: `${request.toolId} failed: ${message}` };
+  }
+}
+
+// ── Execution capture ───────────────────────────────────────────
+
+/**
+ * Extract external_refs from handler result data for correlation/lookup.
+ * Maps known fields per namespace to canonical keys.
+ */
+function extractExternalRefs(data: Record<string, unknown> | undefined): Record<string, string> {
+  if (!data) return {};
+  const refs: Record<string, string> = {};
+  const candidates = ["txHash", "orderId", "positionPubkey", "orderKey", "positionId", "conditionId", "signature"];
+  for (const key of candidates) {
+    const value = data[key];
+    if (typeof value === "string" && value) refs[key] = value;
+  }
+  // Also check nested _tradeCapture.signature
+  const capture = data._tradeCapture as Record<string, unknown> | undefined;
+  if (capture?.signature && typeof capture.signature === "string" && !refs.signature) {
+    refs.signature = capture.signature;
+  }
+  return refs;
+}
+
+async function captureExecution(
+  toolId: string,
+  namespace: string,
+  sessionId: string | null,
+  params: Record<string, unknown>,
+  result: ToolResult,
+  durationMs: number,
+): Promise<void> {
+  const { recordExecution } = await import("@echo-agent/db/repos/executions.js");
+  const tradeCapture = (result.data?._tradeCapture as Record<string, unknown>) ?? null;
+  const externalRefs = extractExternalRefs(result.data);
+
+  const executionId = await recordExecution(
+    toolId, namespace, sessionId, params,
+    result.data ?? {}, result.success,
+    tradeCapture, externalRefs, durationMs,
+  );
+
+  // Enqueue sync runs for this namespace (only on success — failed mutations don't need projection refresh)
+  if (result.success && executionId > 0) {
+    try {
+      const { getJobsForNamespace, enqueueRun } = await import("@echo-agent/db/repos/sync.js");
+      const jobs = await getJobsForNamespace(namespace);
+      for (const job of jobs) {
+        await enqueueRun(job.id, executionId);
+      }
+    } catch (err) {
+      logger.warn("protocol.execute.sync_enqueue_failed", {
+        toolId, namespace, executionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }

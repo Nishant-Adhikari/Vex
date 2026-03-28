@@ -87,7 +87,7 @@ async function routeToolCall(
 
     return executeProtocolTool(
       { toolId, params },
-      { loopMode: context.loopMode, approved: context.approved },
+      { loopMode: context.loopMode, approved: context.approved, sessionId: context.sessionId },
     );
   }
 
@@ -100,10 +100,7 @@ async function routeToolCall(
 }
 
 // ── Internal tool routing ────────────────────────────────────────
-// Stub implementations — each returns a placeholder until the
-// corresponding handler module is fully implemented.
-// This lets the system compile and tests pass while we build
-// handlers incrementally.
+// All handlers lazy-imported to avoid loading dependencies at startup.
 
 async function routeInternalTool(
   call: ToolCallRequest,
@@ -111,31 +108,62 @@ async function routeInternalTool(
 ): Promise<ToolResult> {
   switch (call.name) {
     // Web
-    case "web_search":
-    case "web_fetch":
-      return stubResult(call.name, "Web handlers not yet migrated");
+    case "web_search": {
+      const { handleWebSearch } = await import("./internal/web.js");
+      return handleWebSearch(call.args, context);
+    }
+    case "web_fetch": {
+      const { handleWebFetch } = await import("./internal/web.js");
+      return handleWebFetch(call.args, context);
+    }
 
-    // Files
-    case "file_read":
-    case "file_write":
-    case "file_list":
-    case "file_delete":
-      return stubResult(call.name, "File handlers not yet migrated");
+    // Documents (replaces file_*)
+    case "document_read": {
+      const { handleDocumentRead } = await import("./internal/documents.js");
+      return handleDocumentRead(call.args, context);
+    }
+    case "document_write": {
+      const { handleDocumentWrite } = await import("./internal/documents.js");
+      return handleDocumentWrite(call.args, context);
+    }
+    case "document_list": {
+      const { handleDocumentList } = await import("./internal/documents.js");
+      return handleDocumentList(call.args, context);
+    }
+    case "document_delete": {
+      const { handleDocumentDelete } = await import("./internal/documents.js");
+      return handleDocumentDelete(call.args, context);
+    }
 
     // Memory
-    case "memory_manage":
-      return stubResult(call.name, "Memory handler not yet migrated");
+    case "memory_manage": {
+      const { handleMemoryManage } = await import("./internal/memory.js");
+      return handleMemoryManage(call.args, context);
+    }
 
     // Scheduling
-    case "schedule_create":
-    case "schedule_remove":
-      return stubResult(call.name, "Scheduling handlers not yet migrated");
+    case "schedule_create": {
+      const { handleScheduleCreate } = await import("./internal/schedule.js");
+      return handleScheduleCreate(call.args, context);
+    }
+    case "schedule_remove": {
+      const { handleScheduleRemove } = await import("./internal/schedule.js");
+      return handleScheduleRemove(call.args, context);
+    }
 
     // Subagents
-    case "subagent_spawn":
-    case "subagent_status":
-    case "subagent_stop":
-      return stubResult(call.name, "Subagent handlers not yet migrated");
+    case "subagent_spawn": {
+      const { handleSubagentSpawn } = await import("./internal/subagent.js");
+      return handleSubagentSpawn(call.args, context);
+    }
+    case "subagent_status": {
+      const { handleSubagentStatus } = await import("./internal/subagent.js");
+      return handleSubagentStatus(call.args, context);
+    }
+    case "subagent_stop": {
+      const { handleSubagentStop } = await import("./internal/subagent.js");
+      return handleSubagentStop(call.args, context);
+    }
 
     // Wallet
     case "wallet_read": {
@@ -154,11 +182,4 @@ async function routeInternalTool(
     default:
       return { success: false, output: `Unknown internal tool: ${call.name}` };
   }
-}
-
-function stubResult(name: string, message: string): ToolResult {
-  return {
-    success: false,
-    output: `[STUB] ${name}: ${message}. This handler will be implemented in a subsequent step.`,
-  };
 }
