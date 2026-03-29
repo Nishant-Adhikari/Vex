@@ -1,5 +1,8 @@
 /**
  * Messages repo — session message history.
+ *
+ * Extended with engine metadata (source, messageType, visibility,
+ * originSessionId, subagentId) — backwards-compatible, all optional.
  */
 
 import { query, execute } from "../client.js";
@@ -10,6 +13,11 @@ export interface MessageRow {
   tool_call_id: string | null;
   tool_calls: unknown;
   created_at: string;
+  source: string | null;
+  message_type: string | null;
+  visibility: string | null;
+  origin_session_id: string | null;
+  subagent_id: string | null;
 }
 
 export interface Message {
@@ -20,13 +28,41 @@ export interface Message {
   timestamp: string;
 }
 
-export async function addMessage(sessionId: string, msg: Message): Promise<void> {
+/** Engine metadata — all fields optional for backwards compatibility. */
+export interface MessageMetadata {
+  source?: string;
+  messageType?: string;
+  visibility?: string;
+  originSessionId?: string;
+  subagentId?: string;
+}
+
+export async function addMessage(sessionId: string, msg: Message, metadata?: MessageMetadata): Promise<void> {
   await execute(
-    `INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [sessionId, msg.role, msg.content, msg.toolCallId ?? null, msg.toolCalls ? JSON.stringify(msg.toolCalls) : null, msg.timestamp],
+    `INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [
+      sessionId, msg.role, msg.content, msg.toolCallId ?? null,
+      msg.toolCalls ? JSON.stringify(msg.toolCalls) : null, msg.timestamp,
+      metadata?.source ?? null, metadata?.messageType ?? null,
+      metadata?.visibility ?? null, metadata?.originSessionId ?? null,
+      metadata?.subagentId ?? null,
+    ],
   );
   await execute("UPDATE sessions SET message_count = message_count + 1 WHERE id = $1", [sessionId]);
+}
+
+/** Helper for engine-generated messages with typed metadata. */
+export async function addEngineMessage(
+  sessionId: string,
+  content: string,
+  metadata: MessageMetadata & { role?: Message["role"] },
+): Promise<void> {
+  await addMessage(
+    sessionId,
+    { role: metadata.role ?? "system", content, timestamp: new Date().toISOString() },
+    metadata,
+  );
 }
 
 /** Get live messages (not archived) for a session. */

@@ -1,0 +1,296 @@
+import { describe, it, expect, beforeEach } from "vitest";
+
+import type { EngineContext, LoopMode, SessionKind } from "../../../../echo-agent/engine/types.js";
+import {
+  buildPromptStack,
+  buildProtocolsPrompt,
+  resetProtocolsPromptCache,
+  buildModePrompt,
+  buildToolUsagePrompt,
+} from "../../../../echo-agent/engine/prompts/index.js";
+import { PROTOCOL_TOOLS, PROTOCOL_NAMESPACE_ALLOWLIST } from "../../../../echo-agent/tools/protocols/catalog.js";
+
+function makeContext(overrides: Partial<EngineContext> = {}): EngineContext {
+  return {
+    sessionId: "session-1",
+    sessionKind: "chat",
+    loopMode: "off",
+    missionId: null,
+    missionRunId: null,
+    isSubagent: false,
+    loadedDocuments: new Map(),
+    ...overrides,
+  };
+}
+
+describe("prompt-stack", () => {
+  beforeEach(() => {
+    resetProtocolsPromptCache();
+  });
+
+  // ── Constant block present in every mode ────────────────────
+
+  describe("constant layer always present", () => {
+    const modes: LoopMode[] = ["off", "restricted", "full"];
+    const kinds: SessionKind[] = ["chat", "mission"];
+
+    for (const mode of modes) {
+      for (const kind of kinds) {
+        it(`includes base + tool-usage + protocols in ${kind}/${mode}`, () => {
+          const stack = buildPromptStack(makeContext({ loopMode: mode, sessionKind: kind }));
+          const joined = stack.join("\n");
+
+          // Base prompt markers
+          expect(joined).toContain("# Identity");
+          expect(joined).toContain("Echo");
+
+          // Tool usage markers
+          expect(joined).toContain("discover_tools");
+          expect(joined).toContain("execute_tool");
+          expect(joined).toContain("2-step transfer rule");
+
+          // Protocols marker
+          expect(joined).toContain("# Available Protocol Namespaces");
+        });
+      }
+    }
+  });
+
+  // ── Protocols generated from catalog ────────────────────────
+
+  describe("protocols prompt", () => {
+    it("mentions total tool count from actual catalog", () => {
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain(`Total: ${PROTOCOL_TOOLS.length} tools`);
+    });
+
+    it("contains all active namespaces from catalog", () => {
+      const prompt = buildProtocolsPrompt();
+
+      // Group actual tools by namespace to find which ones have tools
+      const namespacesWithTools = new Set(PROTOCOL_TOOLS.map(t => t.namespace));
+
+      for (const ns of namespacesWithTools) {
+        expect(prompt).toContain(`## ${ns}`);
+      }
+    });
+
+    it("generates capability families from toolId patterns", () => {
+      const prompt = buildProtocolsPrompt();
+
+      // Check that families are derived from actual toolId patterns
+      // e.g. "khalani.balance" should produce a family
+      const hasKhalaniTools = PROTOCOL_TOOLS.some(t => t.namespace === "khalani");
+      if (hasKhalaniTools) {
+        expect(prompt).toContain("Families:");
+        expect(prompt).toContain("khalani.");
+      }
+    });
+
+    it("marks namespaces with mutating tools", () => {
+      const prompt = buildProtocolsPrompt();
+
+      // Check that namespaces with mutating tools are marked
+      const namespacesWithMutating = new Set(
+        PROTOCOL_TOOLS.filter(t => t.mutating).map(t => t.namespace),
+      );
+
+      for (const ns of namespacesWithMutating) {
+        // The namespace section should mention mutating
+        const nsSection = prompt.split(`## ${ns}`)[1]?.split("##")[0] ?? "";
+        expect(nsSection).toContain("mutating");
+      }
+    });
+
+    it("is not hardcoded — count changes with catalog", () => {
+      const prompt = buildProtocolsPrompt();
+      // The total count in the prompt should match the actual catalog
+      expect(prompt).toContain(String(PROTOCOL_TOOLS.length));
+    });
+  });
+
+  // ── Mission setup has same protocol knowledge ───────────────
+
+  describe("mission setup vs full mode protocol knowledge", () => {
+    it("has identical protocol block", () => {
+      const setupStack = buildPromptStack(makeContext({
+        sessionKind: "mission", loopMode: "restricted",
+      }));
+      const fullStack = buildPromptStack(makeContext({
+        sessionKind: "mission", loopMode: "full", missionRunId: "run-1",
+      }));
+
+      // Both should have the same protocols prompt
+      const setupProtocols = setupStack.find(s => s.includes("# Available Protocol Namespaces"));
+      const fullProtocols = fullStack.find(s => s.includes("# Available Protocol Namespaces"));
+      expect(setupProtocols).toBe(fullProtocols);
+
+      // Both should have the same tool-usage prompt
+      const setupToolUsage = setupStack.find(s => s.includes("# Tool System"));
+      const fullToolUsage = fullStack.find(s => s.includes("# Tool System"));
+      expect(setupToolUsage).toBe(fullToolUsage);
+    });
+
+    it("differs only in policy and context", () => {
+      const setupStack = buildPromptStack(makeContext({
+        sessionKind: "mission", loopMode: "restricted",
+      }));
+      const fullStack = buildPromptStack(makeContext({
+        sessionKind: "mission", loopMode: "full", missionRunId: "run-1",
+      }));
+
+      const setupJoined = setupStack.join("\n");
+      const fullJoined = fullStack.join("\n");
+
+      // Setup has setup-specific content
+      expect(setupJoined).toContain("# Mission Setup");
+      expect(setupJoined).not.toContain("# Mission Execution");
+
+      // Full has run-specific content
+      expect(fullJoined).toContain("# Mission Execution");
+      expect(fullJoined).not.toContain("# Mission Setup");
+    });
+  });
+
+  // ── Mode prompts ────────────────────────────────────────────
+
+  describe("mode prompts", () => {
+    it("off mode restricts proactive actions", () => {
+      const prompt = buildModePrompt("off");
+      expect(prompt).toContain("passive");
+      expect(prompt).toContain("do not take proactive actions");
+    });
+
+    it("restricted mode requires approval for mutations", () => {
+      const prompt = buildModePrompt("restricted");
+      expect(prompt).toContain("approval");
+      expect(prompt).toContain("Mutating tools");
+    });
+
+    it("full mode allows everything", () => {
+      const prompt = buildModePrompt("full");
+      expect(prompt).toContain("full authority");
+      expect(prompt).toContain("No approval gates");
+    });
+  });
+
+  // ── Contextual layers ───────────────────────────────────────
+
+  describe("contextual layers", () => {
+    it("chat mode includes chat prompt", () => {
+      const stack = buildPromptStack(makeContext({ sessionKind: "chat" }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("# Chat Mode");
+    });
+
+    it("mission setup includes setup prompt", () => {
+      const stack = buildPromptStack(makeContext({
+        sessionKind: "mission", missionId: "m-1",
+      }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("# Mission Setup");
+      expect(joined).not.toContain("# Mission Execution");
+    });
+
+    it("mission run includes run prompt", () => {
+      const stack = buildPromptStack(makeContext({
+        sessionKind: "mission", missionId: "m-1", missionRunId: "run-1",
+      }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("# Mission Execution");
+      expect(joined).not.toContain("# Mission Setup");
+    });
+
+    it("subagent includes subagent prompt", () => {
+      const stack = buildPromptStack(makeContext({ isSubagent: true }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("# Subagent Role");
+    });
+
+    it("mission setup with context shows draft state", () => {
+      const stack = buildPromptStack(
+        makeContext({ sessionKind: "mission" }),
+        {
+          missionSetupContext: {
+            currentDraft: { title: "SOL DCA", goal: "Accumulate SOL" },
+            missingFields: ["capitalSource", "startingCapital"],
+          },
+        },
+      );
+      const joined = stack.join("\n");
+      expect(joined).toContain("SOL DCA");
+      expect(joined).toContain("Still Missing");
+      expect(joined).toContain("capitalSource");
+    });
+
+    it("mission run with context shows mission contract", () => {
+      const stack = buildPromptStack(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        {
+          missionRunContext: {
+            missionPromptContext: "# Mission: SOL DCA\n**Goal:** Accumulate 10 SOL",
+            iterationCount: 5,
+          },
+        },
+      );
+      const joined = stack.join("\n");
+      expect(joined).toContain("SOL DCA");
+      expect(joined).toContain("Iteration: 5");
+    });
+
+    it("subagent with context shows task and restrictions", () => {
+      const stack = buildPromptStack(
+        makeContext({ isSubagent: true }),
+        {
+          subagentContext: {
+            task: "Research SOL/USDC liquidity on Jupiter",
+            allowTrades: false,
+            parentLoopMode: "restricted",
+          },
+        },
+      );
+      const joined = stack.join("\n");
+      expect(joined).toContain("Research SOL/USDC liquidity");
+      expect(joined).toContain("NO TRADES");
+      expect(joined).toContain("restricted");
+    });
+  });
+
+  // ── Base prompt ─────────────────────────────────────────────
+
+  describe("base prompt", () => {
+    it("includes session context", () => {
+      const stack = buildPromptStack(makeContext({ sessionId: "test-session" }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("test-session");
+    });
+
+    it("includes loaded documents", () => {
+      const stack = buildPromptStack(makeContext({
+        loadedDocuments: new Map([["strategy.md", "# Strategy\nBuy low sell high"]]),
+      }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("strategy.md");
+      expect(joined).toContain("Buy low sell high");
+    });
+  });
+
+  // ── Stack composition ───────────────────────────────────────
+
+  describe("stack structure", () => {
+    it("returns array of separate sections", () => {
+      const stack = buildPromptStack(makeContext());
+      expect(Array.isArray(stack)).toBe(true);
+      // Minimum: base + tool-usage + protocols + mode + chat = 5
+      expect(stack.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it("each section is a non-empty string", () => {
+      const stack = buildPromptStack(makeContext());
+      for (const section of stack) {
+        expect(typeof section).toBe("string");
+        expect(section.length).toBeGreaterThan(0);
+      }
+    });
+  });
+});

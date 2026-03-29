@@ -28,6 +28,17 @@ vi.mock("@echo-agent/db/repos/session-links.js", () => ({
   linkSessions: (...args: unknown[]) => mockLinkSessions(...args),
 }));
 
+// Mock engine subagent runner — returns immediately with result
+vi.mock("@echo-agent/engine/subagents/runner.js", () => ({
+  runSubagentEngine: vi.fn().mockResolvedValue({
+    subagentId: "subagent-test",
+    sessionId: "session-test",
+    output: "Engine subagent completed",
+    toolCallsMade: 0,
+    success: true,
+  }),
+}));
+
 const { handleSubagentSpawn, handleSubagentStatus, handleSubagentStop } = await import(
   "../../../../echo-agent/tools/internal/subagent.js"
 );
@@ -107,17 +118,19 @@ describe("subagent handlers", () => {
       expect(subagentId).toBe(parsed.id);
     });
 
-    it("subagent finalizes and does not stay zombie running", async () => {
+    it("subagent finalizes via engine runner and does not stay zombie", async () => {
       await handleSubagentSpawn(
         { name: "EchoFinalize", task: "test" },
         baseContext,
       );
-      // runSubagent is async — give it a tick to complete
-      await new Promise(r => setTimeout(r, 50));
+      // runSubagent is async — give engine runner mock time to resolve
+      await new Promise(r => setTimeout(r, 100));
 
       expect(mockUpdateStatus).toHaveBeenCalled();
-      const [, status] = mockUpdateStatus.mock.calls[0];
-      expect(status).toBe("completed");
+      const completedCall = mockUpdateStatus.mock.calls.find(
+        (c: unknown[]) => c[1] === "completed",
+      );
+      expect(completedCall).toBeTruthy();
     });
 
     it("respects allow_trades flag", async () => {

@@ -131,6 +131,29 @@ const TOOLS: readonly ToolDef[] = [
     }, required: ["id"] },
   },
 
+  // Portfolio
+  {
+    name: "portfolio_inspect", kind: "internal", mutating: false,
+    description: "Inspect your own portfolio state — open positions, activity history, executions, balances, snapshots, and summary. DB-backed, read-only.",
+    parameters: { type: "object", properties: {
+      view: { type: "string", enum: ["open_positions", "activity", "executions", "balances", "snapshots", "summary"], description: "What to inspect" },
+      namespace: { type: "string", description: "Protocol filter (e.g. solana, khalani)" },
+      productType: { type: "string", description: "Product filter (e.g. spot, perps, prediction)" },
+      limit: { type: "number", description: "Max rows (default 20)" },
+    }, required: ["view"] },
+  },
+
+  // Mission
+  {
+    name: "mission_stop", kind: "internal", mutating: false,
+    description: "Stop the current mission run. Only valid during active mission execution. Use when a stop condition is met (goal reached, capital depleted, etc.).",
+    parameters: { type: "object", properties: {
+      reason: { type: "string", enum: ["goal_reached", "deadline_reached", "capital_depleted", "max_loss_hit", "no_viable_opportunity"], description: "Stop reason" },
+      summary: { type: "string", description: "Concise explanation of why the mission should stop" },
+      evidence: { type: "object", description: "Optional structured evidence / metrics" },
+    }, required: ["reason", "summary"] },
+  },
+
   // Subagents
   {
     name: "subagent_spawn", kind: "internal", mutating: false,

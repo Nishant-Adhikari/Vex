@@ -41,9 +41,11 @@ Defined in `registry.ts`. Each handler is a pure `(params, context) → ToolResu
 | `memory_manage` | `internal/memory.ts` | CRUD on persistent memory entries (list/append/replace/delete) |
 | `schedule_create` | `internal/schedule.ts` | Create cron task (tool_call/wake_agent/reminder/monitor/snapshot/backup) |
 | `schedule_remove` | `internal/schedule.ts` | Remove a scheduled task |
-| `subagent_spawn` | `internal/subagent.ts` | Spawn background subagent (fire-and-forget) |
+| `subagent_spawn` | `internal/subagent.ts` | Spawn background subagent — runs engine-core turn-loop (session_links + engine) |
 | `subagent_status` | `internal/subagent.ts` | Check subagent progress/results |
 | `subagent_stop` | `internal/subagent.ts` | Stop a running subagent |
+| `portfolio_inspect` | `internal/portfolio-inspect.ts` | DB-backed self-inspection: open_positions, activity, executions, balances, snapshots, summary |
+| `mission_stop` | `internal/mission.ts` | Model-driven mission stop — returns engineSignal to turn-loop |
 | `wallet_read` | `internal/wallet.ts` | Wallet address + multi-chain balances via Khalani |
 | `wallet_send_prepare` | `internal/wallet.ts` | Prepare transfer intent (no broadcast) |
 | `wallet_send_confirm` | `internal/wallet.ts` | Sign + broadcast transfer (mutating, needs approval) |
@@ -112,3 +114,4 @@ This feeds the execution → sync → projection pipeline (see `db/DB.md` and `s
 | Session relations | `parent_session_id` on sessions + subagents | `session_links` table (canonical) |
 | Context tracking | `loadedKnowledge: Map<string, string>` | `loadedDocuments: Map<string, string>` |
 | DB layer | Imports from `src/agent/db/repos/` | Own repos in `src/echo-agent/db/repos/` |
+| Subagent execution | Placeholder finalize | Engine-core turn-loop with prompt stack, tool dispatch, approval |

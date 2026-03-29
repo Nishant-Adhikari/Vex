@@ -99,14 +99,38 @@ export async function handleSubagentSpawn(
 async function runSubagent(id: string, name: string, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return;
 
-  // Phase 2: echo-agent engine inference loop integration
-  // Phase 1: honest finalize — creates session/links but doesn't run inference yet.
-  // Finalize immediately so subagent doesn't stay zombie "running".
-  await subagentsRepo.updateStatus(id, "completed", {
-    result: "Subagent session created. Inference engine integration pending (phase 2).",
-    iterations: 0,
-  });
-  logger.info("subagent.completed", { id, name, phase: "placeholder" });
+  try {
+    const { runSubagentEngine } = await import("@echo-agent/engine/subagents/runner.js");
+    const result = await runSubagentEngine(id, signal);
+
+    // Race guard: if subagent was stopped while running, don't overwrite "stopped"
+    const current = await subagentsRepo.getById(id);
+    if (current?.status === "stopped") {
+      logger.info("subagent.skip_finalize", { id, name, reason: "already stopped" });
+      return;
+    }
+
+    if (result.success) {
+      await subagentsRepo.updateStatus(id, "completed", {
+        result: result.output.slice(0, 2000),
+        iterations: result.toolCallsMade,
+      });
+      logger.info("subagent.completed", { id, name, toolCalls: result.toolCallsMade });
+    } else {
+      await subagentsRepo.updateStatus(id, "error", {
+        error: result.output.slice(0, 2000),
+        iterations: result.toolCallsMade,
+      });
+      logger.warn("subagent.engine_error", { id, name, output: result.output.slice(0, 200) });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Race guard
+    const current = await subagentsRepo.getById(id);
+    if (current?.status === "stopped") return;
+    await subagentsRepo.updateStatus(id, "error", { error: message });
+    logger.warn("subagent.failed", { id, name, error: message });
+  }
 }
 
 // ── subagent_status ─────────────────────────────────────────────

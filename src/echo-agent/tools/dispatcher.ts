@@ -151,6 +151,18 @@ async function routeInternalTool(
       return handleScheduleRemove(call.args, context);
     }
 
+    // Portfolio
+    case "portfolio_inspect": {
+      const { handlePortfolioInspect } = await import("./internal/portfolio-inspect.js");
+      return handlePortfolioInspect(call.args, context);
+    }
+
+    // Mission
+    case "mission_stop": {
+      const { handleMissionStop } = await import("./internal/mission.js");
+      return handleMissionStop(call.args, context);
+    }
+
     // Subagents
     case "subagent_spawn": {
       const { handleSubagentSpawn } = await import("./internal/subagent.js");

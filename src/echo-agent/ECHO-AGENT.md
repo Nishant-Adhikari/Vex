@@ -14,8 +14,9 @@ src/echo-agent/
     client.ts            — Pool singleton + query helpers
     migrate.ts           — Startup migration runner
     migrations/
-      001_initial.sql    — Full schema (27 tables, 6 modules)
-    repos/               — 21 repo files, one per domain (includes balances.ts, activity.ts, open-positions.ts, pnl-lots.ts, subagent-messages.ts)
+      001_initial.sql    — Foundation schema (27 tables, 6 modules)
+      002_engine_missions.sql — Engine extensions (missions, mission_runs, messages metadata)
+    repos/               — 24 repo files (includes missions.ts, mission-runs.ts, runtime.ts, messages.ts extended)
   inference/             — Provider-agnostic inference (OpenRouter + 0G Compute)
     types.ts             — InferenceProvider interface, InferenceConfig, InferenceUsage
     config.ts            — ENV validation + SubagentConfig
@@ -25,7 +26,7 @@ src/echo-agent/
     0g-compute.ts        — 0G Compute raw HTTP provider
   tools/                 — Everything the LLM can call
     types.ts             — ToolDef, ToolCallRequest, ToolResult
-    registry.ts          — 17 internal tool definitions
+    registry.ts          — 19 internal tool definitions
     dispatcher.ts        — Routes every tool call
     internal/            — In-process handlers
       types.ts           — InternalToolContext, ok/fail helpers
@@ -57,6 +58,32 @@ src/echo-agent/
     worker.ts              — Sync run consumer with dedup
     seed.ts                — Default sync job seeding
     chains.ts              — Canonical chain hint resolution
+  engine/                  — Shared engine-core (chat, mission, subagent)
+    types.ts               — Session axes, mission lifecycle, stop conditions, message taxonomy
+    index.ts               — Public API exports
+    core/                  — Engine internals
+      runner.ts            — Entry points: processChatTurn, startMission, resumeMissionRun
+      turn.ts              — Single inference round-trip
+      turn-loop.ts         — Main loop (mission: text doesn't end, chat: text ends)
+      resume.ts            — approveAndResume(approvalId)
+      checkpoint.ts        — Compaction at 90% context limit
+      hydrate.ts           — Session hydration from DB
+      stop-conditions.ts   — Stop reason classification + evaluation
+    mission/               — Mission setup + validation
+      setup.ts             — Guided draft conversation
+      validator.ts         — Draft completeness (sole source of truth)
+      mapper.ts            — MissionDraft ↔ MissionDraftRow + freeze + prompt context
+      patch-parser.ts      — Safe model output → validated domain patch
+    prompts/               — Hierarchical prompt stack
+      index.ts             — buildPromptStack() composition
+      base.ts              — Identity, date, context (constant)
+      tool-usage.ts        — discover/execute contract (constant)
+      protocols.ts         — Auto-generated namespace map (constant)
+      mode.ts              — off/restricted/full policy (variable)
+      chat.ts, mission-setup.ts, mission-run.ts, subagent.ts (variable)
+    subagents/             — Child engine sessions
+      runner.ts            — runSubagentEngine() on same core
+      relay.ts             — Parent ↔ child message passing
   public/                — Static assets (images, legacy README)
 ```
 
@@ -205,11 +232,11 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 
 ---
 
-## Implementation Status (2026-03-28)
+## Implementation Status (2026-03-29)
 
 ### Done
-- DB schema (27 tables), client, migrate runner, 21 repos
-- All 17 internal tools — live handlers, zero stubs
+- DB schema (27 tables + 002_engine_missions: missions, mission_runs, messages metadata), client, migrate runner, 24 repos
+- All 19 internal tools — live handlers, zero stubs
 - Approval enforcement for mutating tools (protocol + wallet)
 - Execution capture with `external_refs` (normalized) + sync enqueue
 - Balance sync pipeline — Khalani → proj_balances → proj_portfolio_snapshots
@@ -231,13 +258,22 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 - `proj_activity.capture_status` — explicit field from `_tradeCapture.status` (not buried in meta)
 - Cross-protocol 0G inventory: slop.trade.buy → jaine.swap.sell matched via shared instrumentKey
 - Pre-engine hardening: schema FK ordering fixed, failed executions isolated from projections (audit only), capture awaited inline (deterministic projection readiness), FIFO shortfall warning
-- 1090+ passing tests across 43 test files
+- **Engine-core** — shared engine for chat, mission, and subagent sessions
+  - Session axes: `sessionKind` (chat | mission) × `loopMode` (off | restricted | full)
+  - Two-phase missions: guided setup (draft → ready) → autonomous run (against frozen contract)
+  - Turn loop: mission text does NOT end loop — engine adds internal continue, loops until stop condition
+  - Approval resume by `approvalId` — atomistic CAS, dispatch approved tool, resume run
+  - Checkpoint/compaction at 90% context limit — summary + archive
+  - Hierarchical prompt stack: constant (base + tool-usage + protocols) + variable (mode + context)
+  - Protocol prompt auto-generated from PROTOCOL_TOOLS manifests (namespace descriptions frozen)
+  - Mission patch parser: untrusted model output → validated domain → row conversion → DB
+  - Subagent engine runner wired into `tools/internal/subagent.ts` (replaces placeholder)
+  - Stop conditions: 6 business stops (terminal) + 6 runtime pauses (resumable)
+- 1336 passing tests across 64 test files
 
 ### Not yet implemented
 - **PnL reconcilers** (phase 4) — realized/unrealized PnL calculation from lots + positions
 - **Read models for UI** — portfolio curve, PnL by protocol, agent performance summary
-- **Subagent inference loop** — spawn creates session/links but doesn't run inference yet (needs engine)
-- **Echo-mama engine** — conversation loop, prompt building, approval resume, cycle bookkeeping
 - **Transport layer** — HTTP/SSE server, routes, UI
 
 ---
@@ -273,7 +309,7 @@ JUPITER_API_KEY=...                    # studio tools (3 tools)
 ## Tests
 
 ```bash
-npx vitest run src/__tests__/echo-agent/    # 43 files, 1090+ tests
+npx vitest run src/__tests__/echo-agent/    # 64 files, 1336 tests
 pnpm tsc --noEmit                           # zero type errors
 ```
 
@@ -281,17 +317,24 @@ pnpm tsc --noEmit                           # zero type errors
 |----------|-------|-------|---------------|
 | Inference | 6 | 83 | Config validation, SubagentConfig, resilience, registry, types, cost |
 | Dispatcher | 1 | 28 | Routing, protocol discovery, all internal tools, no stubs, approval |
-| Internal handlers | 5 | 102 | web, documents (nested folders), memory, schedule (new types), subagent (session links) |
-| Sync pipeline | 7 | 59 | balance-sync, worker, seed, runtime-capture, activity-populator, position-projector, hardening (failed exec isolation, FIFO shortfall, captureStatus pipeline) |
+| Internal handlers | 7 | 119 | web, documents, memory, schedule, subagent (engine wire + race guard), mission_stop (engineSignal), portfolio_inspect (6 views) |
+| Sync pipeline | 7 | 59 | balance-sync, worker, seed, runtime-capture, activity-populator, position-projector, hardening |
 | Protocol manifests | 10 | 300+ | Tool counts, mutating flags, required params, namespace, ENV gating |
 | Protocol handlers | 8 | 300+ | Handler coverage, param validation, read-only execution |
 | Registry + ENV | 2 | 50+ | Tool lookup, OpenAI format, requiresEnv filtering |
+| Engine types | 1 | 23 | Session axes, mission lifecycle, stop reasons, message taxonomy, context, draft fields |
+| Engine repos | 4 | 45 | Missions CRUD, mission-runs CRUD, runtime state, messages metadata extension |
+| Engine core | 6 | ~60 | Stop conditions, hydrate, turn, turn-loop, checkpoint, resume, runner entry points |
+| Engine mission | 4 | ~45 | Validator, mapper, patch-parser (sanitization), setup flow (draft → ready) |
+| Engine prompts | 1 | 27 | Prompt stack composition, constant/variable layer, protocols from catalog |
+| Engine subagents | 2 | ~15 | Relay (parent ↔ child), runner (engine-backed subagent execution) |
 
 ---
 
 ## Module Docs
 
-- [`db/DB.md`](db/DB.md) — Schema modules, design decisions, 21 repos API, startup
+- [`db/DB.md`](db/DB.md) — Schema modules, design decisions, 24 repos API, startup
 - [`inference/INFERENCE.md`](inference/INFERENCE.md) — Provider interface, ENV, SubagentConfig, provider differences
 - [`tools/TOOLS.md`](tools/TOOLS.md) — Tool call flow, internal tools table, protocol namespaces, execution capture
 - [`sync/SYNC.md`](sync/SYNC.md) — Balance sync pipeline, Khalani integration, dedup, snapshots
+- [`engine/ENGINE.md`](engine/ENGINE.md) — Session axes, mission lifecycle, engine-core, prompt stack, approval flow, subagent runtime

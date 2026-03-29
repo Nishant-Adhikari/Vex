@@ -57,6 +57,16 @@ export interface ToolResult {
   data?: Record<string, unknown>;
   /** If true, tool queued for approval instead of executing */
   pendingApproval?: boolean;
+  /** Engine signal — structured command from tool to engine (e.g. stop_mission) */
+  engineSignal?: EngineSignal;
+}
+
+/** Structured signal from an internal tool to the engine runtime. */
+export interface EngineSignal {
+  type: "stop_mission";
+  reason: string;
+  summary: string;
+  evidence?: Record<string, unknown>;
 }
 
 // ── OpenAI-compatible tool format (for inference providers) ──────

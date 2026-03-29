@@ -1,0 +1,154 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const mockExecute = vi.fn().mockResolvedValue(0);
+const mockQueryOne = vi.fn().mockResolvedValue(null);
+
+vi.mock("@echo-agent/db/client.js", () => ({
+  execute: (...args: unknown[]) => mockExecute(...args),
+  queryOne: (...args: unknown[]) => mockQueryOne(...args),
+  query: vi.fn().mockResolvedValue([]),
+}));
+
+const {
+  createRun, updateStatus, setLastCheckpoint, incrementIterations,
+  getActiveRun, getRun, getRunBySession,
+} = await import("../../../../echo-agent/db/repos/mission-runs.js");
+
+describe("mission-runs repo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ── createRun ───────────────────────────────────────────────
+
+  describe("createRun", () => {
+    it("inserts run with correct params", async () => {
+      await createRun("run-1", "mission-1", "session-1", "restricted");
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("INSERT INTO mission_runs");
+      expect(params).toEqual(["run-1", "mission-1", "session-1", "restricted"]);
+    });
+  });
+
+  // ── updateStatus ────────────────────────────────────────────
+
+  describe("updateStatus", () => {
+    it("updates status without ending for running", async () => {
+      await updateStatus("run-1", "running");
+      const [sql] = mockExecute.mock.calls[0];
+      expect(sql).toContain("status = $1");
+      expect(sql).toContain("ended_at = ended_at");
+    });
+
+    it("updates status without ending for paused_approval", async () => {
+      await updateStatus("run-1", "paused_approval", "approval_required");
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("ended_at = ended_at");
+      expect(params[0]).toBe("paused_approval");
+      expect(params[1]).toBe("approval_required");
+    });
+
+    it("sets ended_at for completed", async () => {
+      await updateStatus("run-1", "completed", "goal_reached");
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("ended_at = NOW()");
+      expect(params[0]).toBe("completed");
+      expect(params[1]).toBe("goal_reached");
+    });
+
+    it("sets ended_at for failed", async () => {
+      await updateStatus("run-1", "failed", "system_error");
+      const [sql] = mockExecute.mock.calls[0];
+      expect(sql).toContain("ended_at = NOW()");
+    });
+
+    it("sets ended_at for stopped", async () => {
+      await updateStatus("run-1", "stopped", "user_stopped");
+      const [sql] = mockExecute.mock.calls[0];
+      expect(sql).toContain("ended_at = NOW()");
+    });
+  });
+
+  // ── setLastCheckpoint ───────────────────────────────────────
+
+  describe("setLastCheckpoint", () => {
+    it("updates last_checkpoint_at", async () => {
+      await setLastCheckpoint("run-1");
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("last_checkpoint_at = NOW()");
+      expect(params).toEqual(["run-1"]);
+    });
+  });
+
+  // ── incrementIterations ─────────────────────────────────────
+
+  describe("incrementIterations", () => {
+    it("increments and returns new count", async () => {
+      mockQueryOne.mockResolvedValueOnce({ iteration_count: 5 });
+      const count = await incrementIterations("run-1");
+      expect(count).toBe(5);
+      const [sql] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain("iteration_count + 1");
+      expect(sql).toContain("RETURNING iteration_count");
+    });
+
+    it("returns 0 if no row", async () => {
+      const count = await incrementIterations("nonexistent");
+      expect(count).toBe(0);
+    });
+  });
+
+  // ── getActiveRun ────────────────────────────────────────────
+
+  describe("getActiveRun", () => {
+    it("queries active statuses", async () => {
+      await getActiveRun("mission-1");
+      const [sql] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain("running");
+      expect(sql).toContain("paused_approval");
+      expect(sql).toContain("paused_checkpoint");
+    });
+
+    it("returns null when no active run", async () => {
+      const result = await getActiveRun("mission-1");
+      expect(result).toBeNull();
+    });
+
+    it("maps row correctly", async () => {
+      mockQueryOne.mockResolvedValueOnce({
+        id: "run-1", mission_id: "mission-1", session_id: "session-1",
+        status: "running", loop_mode: "restricted",
+        started_at: new Date("2026-03-28"), ended_at: null,
+        last_checkpoint_at: null, stop_reason: null, iteration_count: 7,
+      });
+      const run = await getActiveRun("mission-1");
+      expect(run!.id).toBe("run-1");
+      expect(run!.missionId).toBe("mission-1");
+      expect(run!.loopMode).toBe("restricted");
+      expect(run!.iterationCount).toBe(7);
+      expect(run!.endedAt).toBeNull();
+    });
+  });
+
+  // ── getRun ──────────────────────────────────────────────────
+
+  describe("getRun", () => {
+    it("queries by id", async () => {
+      await getRun("run-1");
+      const [, params] = mockQueryOne.mock.calls[0];
+      expect(params).toEqual(["run-1"]);
+    });
+  });
+
+  // ── getRunBySession ─────────────────────────────────────────
+
+  describe("getRunBySession", () => {
+    it("queries by session_id", async () => {
+      await getRunBySession("session-1");
+      const [sql, params] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain("session_id = $1");
+      expect(params).toEqual(["session-1"]);
+    });
+  });
+});

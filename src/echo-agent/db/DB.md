@@ -13,7 +13,9 @@ db/
   repos/             — One file per domain, pure SQL queries
 ```
 
-## Schema modules (001_initial.sql)
+## Schema modules
+
+### 001_initial.sql (foundation)
 
 | Module | Tables | Purpose |
 |--------|--------|---------|
@@ -23,6 +25,15 @@ db/
 | D. Inference & Provider | `usage_log`, `billing_snapshots` | Token usage with cache/reasoning breakdown, provider balance history |
 | E. Protocol Pipeline | `protocol_executions`, `protocol_sync_jobs`, `protocol_sync_runs`, `proj_balances`, `proj_portfolio_snapshots`, `proj_open_positions`, `proj_pnl_lots`, `proj_activity` | Execution audit, sync pipeline, projection tables, FIFO lot ledger |
 | F. Web Cache | `search_cache`, `fetch_cache` | Tavily search/fetch result cache with TTL |
+
+### 002_engine_missions.sql (engine extensions)
+
+| Table | Purpose |
+|-------|---------|
+| `missions` | Mission contract: goal, constraints, wallets, chains, protocols, risk profile, stop conditions. Lifecycle: draft → ready → running → completed/failed/cancelled |
+| `mission_runs` | Per-run state: status, loop_mode, iteration_count, stop_reason, checkpoint. NO parent_run_id (session_links is canonical) |
+| `messages` (extended) | +source, +message_type, +visibility, +origin_session_id, +subagent_id — engine metadata for message taxonomy |
+| `messages_archive` (extended) | Same columns as messages — CRITICAL: must be synchronized for archivization (DELETE...RETURNING * → INSERT) |
 
 ## Key design decisions
 
@@ -61,6 +72,10 @@ db/
 | `pnl-lots.ts` | Projection | `openLot()`, `getOpenLots()` (FIFO ordered), `reduceLot()`, `closeLot()` |
 | `usage.ts` | Inference | `logUsage()` (with cached/reasoning tokens), `getStats()` |
 | `billing.ts` | Inference | `insertSnapshot()`, `getLatest()`, `getHistory()` |
+| `missions.ts` | Engine | `createDraft()`, `updateDraft()`, `setStatus()`, `setApprovedAt()`, `getMission()`, `getMissionBySession()`, `getActiveMission()` |
+| `mission-runs.ts` | Engine | `createRun()`, `updateStatus()`, `setLastCheckpoint()`, `incrementIterations()`, `getActiveRun()`, `getRun()`, `getRunBySession()` |
+| `runtime.ts` | Engine | `getState()`, `setActiveLoop()`, `updatePhase()`, `stopLoop()`, `recordCycleStart()`, `recordCycleEnd()` |
+| `messages.ts` (extended) | Runtime | Added `addMessage(sessionId, msg, metadata?)` with optional `MessageMetadata`, `addEngineMessage()` helper |
 
 ## ENV
 
