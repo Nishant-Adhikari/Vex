@@ -1,9 +1,12 @@
 /**
- * Subagent internal tool handlers — fire-and-forget with ENV config.
+ * Subagent internal tool handlers — lifecycle management + two-way control plane.
  *
- * Phase 1: spawn, status, stop. Session + session_links created on spawn.
- * Inference engine integration is phase 2 — spawn finalizes immediately
- * with honest "pending" status rather than leaving zombie "running" records.
+ * Tools:
+ *   Parent: subagent_spawn, subagent_status, subagent_stop, subagent_reply
+ *   Child:  subagent_request_parent, subagent_report_complete
+ *
+ * Lifecycle helper: startSubagentExecution() used by both spawn (initial)
+ * and reply (resume after wait_for_parent). Fire-and-forget background.
  *
  * Own implementation — does NOT import from src/agent/subagent.ts.
  */
@@ -12,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import * as subagentsRepo from "@echo-agent/db/repos/subagents.js";
 import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
 import * as sessionLinksRepo from "@echo-agent/db/repos/session-links.js";
+import * as subagentMessagesRepo from "@echo-agent/db/repos/subagent-messages.js";
 import { loadEnvConfig, loadSubagentConfig } from "@echo-agent/inference/config.js";
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
@@ -28,85 +32,65 @@ interface ActiveSubagent {
 
 const activeSubagents = new Map<string, ActiveSubagent>();
 
-// ── subagent_spawn ──────────────────────────────────────────────
+// ── Ownership guard ─────────────────────────────────────────────
 
-export async function handleSubagentSpawn(
-  params: Record<string, unknown>,
-  context: InternalToolContext,
-): Promise<ToolResult> {
-  const name = str(params, "name");
-  const task = str(params, "task");
-  if (!name || !task) return fail("Missing required: name, task");
+/**
+ * Validate that the parent session owns the subagent via session_links.
+ * Returns subagent + child session or a ToolResult error.
+ */
+async function validateOwnership(
+  subagentId: string,
+  parentSessionId: string,
+): Promise<{ subagent: subagentsRepo.SubagentState; childSessionId: string } | ToolResult> {
+  const sub = await subagentsRepo.getById(subagentId);
+  if (!sub) return fail(`Subagent ${subagentId} not found`);
 
-  const envConfig = loadEnvConfig();
-  const subConfig = loadSubagentConfig(envConfig);
-
-  // Check concurrency limit
-  if (activeSubagents.size >= subConfig.maxConcurrent) {
-    return fail(`Max concurrent subagents (${subConfig.maxConcurrent}) reached. Wait for one to complete.`);
+  const link = await sessionLinksRepo.getSubagentSession(subagentId);
+  if (!link) return fail(`No session link for subagent ${subagentId}`);
+  if (link.parentSessionId !== parentSessionId) {
+    return fail(`Subagent ${subagentId} is not owned by this session`);
   }
 
-  // Check name uniqueness among active
-  for (const [, sub] of activeSubagents) {
-    if (sub.name === name) {
-      return fail(`Subagent "${name}" is already running. Choose a different name.`);
-    }
-  }
+  return { subagent: sub, childSessionId: link.childSessionId };
+}
 
-  const allowTrades = bool(params, "allow_trades");
-  const maxIterations = num(params, "max_iterations") ?? subConfig.maxIterations;
-  const subagentId = `subagent-${randomUUID()}`;
-  const childSessionId = `session-${randomUUID()}`;
+function isToolResult(v: unknown): v is ToolResult {
+  return typeof v === "object" && v !== null && "success" in v && "output" in v;
+}
 
-  // Persist subagent record
-  await subagentsRepo.insert({
-    id: subagentId,
-    name,
-    task,
-    allowTrades,
-    maxIterations,
-  });
+// ── Shared lifecycle helper ─────────────────────────────────────
 
-  // Create child session + canonical session_links relationship
-  await sessionsRepo.createSession(childSessionId);
-  await sessionsRepo.setScope(childSessionId, "subagent");
-  await sessionLinksRepo.linkSessions(context.sessionId, childSessionId, "subagent", subagentId);
-
-  logger.info("subagent.spawned", { id: subagentId, name, childSessionId, allowTrades, maxIterations });
-
-  // Track in-memory
+/**
+ * Fire-and-forget subagent execution.
+ * Used by both subagent_spawn (initial run) and subagent_reply (resume).
+ * Registers AbortController in activeSubagents, cleans up on completion.
+ */
+function startSubagentExecution(id: string, name: string): void {
   const abortController = new AbortController();
-  activeSubagents.set(subagentId, { id: subagentId, name, abortController });
+  activeSubagents.set(id, { id, name, abortController });
 
-  // Background execution — finalizes subagent lifecycle
-  runSubagent(subagentId, name, abortController.signal).finally(() => {
-    activeSubagents.delete(subagentId);
-  });
-
-  return ok({
-    id: subagentId,
-    name,
-    sessionId: childSessionId,
-    task: task.slice(0, 200),
-    allowTrades,
-    maxIterations,
-    message: `Subagent "${name}" spawned (ID: ${subagentId}). Use subagent_status to check progress.`,
+  executeSubagentLifecycle(id, name, abortController.signal).finally(() => {
+    activeSubagents.delete(id);
   });
 }
 
-// ── Background subagent execution ───────────────────────────────
-
-async function runSubagent(id: string, name: string, signal: AbortSignal): Promise<void> {
+async function executeSubagentLifecycle(id: string, name: string, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return;
 
   try {
     const { runSubagentEngine } = await import("@echo-agent/engine/subagents/runner.js");
     const result = await runSubagentEngine(id, signal);
 
-    // Race guard: if subagent was stopped while running, don't overwrite "stopped"
+    // Race guard: if subagent was stopped while running, don't overwrite
     const current = await subagentsRepo.getById(id);
     if (current?.status === "stopped") {
       logger.info("subagent.skip_finalize", { id, name, reason: "already stopped" });
+      return;
+    }
+
+    // Don't finalize waiting_for_parent — child is paused, will resume on subagent_reply
+    if (result.stopReason === "waiting_for_parent") {
+      logger.info("subagent.waiting_for_parent", { id, name });
       return;
     }
 
@@ -125,7 +109,6 @@ async function runSubagent(id: string, name: string, signal: AbortSignal): Promi
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // Race guard
     const current = await subagentsRepo.getById(id);
     if (current?.status === "stopped") return;
     await subagentsRepo.updateStatus(id, "error", { error: message });
@@ -133,21 +116,101 @@ async function runSubagent(id: string, name: string, signal: AbortSignal): Promi
   }
 }
 
+// ── subagent_spawn ──────────────────────────────────────────────
+
+export async function handleSubagentSpawn(
+  params: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const name = str(params, "name");
+  const task = str(params, "task");
+  if (!name || !task) return fail("Missing required: name, task");
+
+  const envConfig = loadEnvConfig();
+  const subConfig = loadSubagentConfig(envConfig);
+
+  if (activeSubagents.size >= subConfig.maxConcurrent) {
+    return fail(`Max concurrent subagents (${subConfig.maxConcurrent}) reached. Wait for one to complete.`);
+  }
+
+  for (const [, sub] of activeSubagents) {
+    if (sub.name === name) {
+      return fail(`Subagent "${name}" is already running. Choose a different name.`);
+    }
+  }
+
+  const allowTrades = bool(params, "allow_trades");
+  const maxIterations = num(params, "max_iterations") ?? subConfig.maxIterations;
+  const subagentId = `subagent-${randomUUID()}`;
+  const childSessionId = `session-${randomUUID()}`;
+
+  await subagentsRepo.insert({ id: subagentId, name, task, allowTrades, maxIterations });
+  await sessionsRepo.createSession(childSessionId);
+  await sessionsRepo.setScope(childSessionId, "subagent");
+  await sessionLinksRepo.linkSessions(context.sessionId, childSessionId, "subagent", subagentId);
+
+  logger.info("subagent.spawned", { id: subagentId, name, childSessionId, allowTrades, maxIterations });
+
+  startSubagentExecution(subagentId, name);
+
+  return ok({
+    id: subagentId,
+    name,
+    sessionId: childSessionId,
+    task: task.slice(0, 200),
+    allowTrades,
+    maxIterations,
+    message: `Subagent "${name}" spawned (ID: ${subagentId}). Use subagent_status to check progress.`,
+  });
+}
+
 // ── subagent_status ─────────────────────────────────────────────
 
 export async function handleSubagentStatus(
   params: Record<string, unknown>,
-  _context: InternalToolContext,
+  context: InternalToolContext,
 ): Promise<ToolResult> {
   const id = str(params, "id") || undefined;
 
   if (id) {
-    const sub = await subagentsRepo.getById(id);
-    if (!sub) return ok({ message: `No subagent found with ID ${id}` });
-    return ok(formatSubagent(sub));
+    // Hard ownership guard for specific subagent
+    const check = await validateOwnership(id, context.sessionId);
+    if (isToolResult(check)) return check;
+    const { subagent: sub } = check;
+
+    const formatted = formatSubagent(sub);
+
+    // Enrich with pending request for waiting subagents
+    if (sub.status === "waiting_for_parent") {
+      const pending = await subagentMessagesRepo.getUnhandled(id, "to_parent", "request_parent");
+      if (pending.length > 0) {
+        const latest = pending[pending.length - 1];
+        formatted.pendingRequest = {
+          messageId: latest.id,
+          question: latest.content,
+          payload: latest.payloadJson,
+          createdAt: latest.createdAt,
+        };
+      }
+    }
+
+    // Include latest report for completed subagents
+    if (sub.status === "completed") {
+      const reports = await subagentMessagesRepo.getMessagesByType(id, "report_complete");
+      if (reports.length > 0) {
+        const latest = reports[0]; // DESC order
+        formatted.report = {
+          summary: latest.content,
+          findings: latest.payloadJson,
+          createdAt: latest.createdAt,
+        };
+      }
+    }
+
+    return ok(formatted);
   }
 
-  // All active + recent
+  // List all — no hard ownership guard, but soft enrichment only for owned
   const active = await subagentsRepo.getActive();
   const recent = await subagentsRepo.getRecent(10);
   const seen = new Set(active.map(s => s.id));
@@ -164,10 +227,14 @@ export async function handleSubagentStatus(
 
 export async function handleSubagentStop(
   params: Record<string, unknown>,
-  _context: InternalToolContext,
+  context: InternalToolContext,
 ): Promise<ToolResult> {
   const id = str(params, "id");
   if (!id) return fail("Missing required: id");
+
+  // Ownership guard
+  const check = await validateOwnership(id, context.sessionId);
+  if (isToolResult(check)) return check;
 
   const active = activeSubagents.get(id);
   if (active) {
@@ -179,6 +246,125 @@ export async function handleSubagentStop(
   logger.info("subagent.stopped", { id });
 
   return ok({ id, stopped: true, message: `Subagent ${id} stopped` });
+}
+
+// ── subagent_reply (parent → child) ─────────────────────────────
+
+export async function handleSubagentReply(
+  params: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const subagentId = str(params, "id");
+  const reply = str(params, "reply");
+  const messageId = num(params, "message_id");
+  if (!subagentId || !reply) return fail("Missing required: id, reply");
+
+  // Ownership guard
+  const check = await validateOwnership(subagentId, context.sessionId);
+  if (isToolResult(check)) return check;
+  const { subagent: sub } = check;
+
+  if (sub.status !== "waiting_for_parent") {
+    return fail(`Subagent ${subagentId} is not waiting for parent (status: ${sub.status})`);
+  }
+
+  // 1. Send reply to child
+  await subagentMessagesRepo.sendStructuredMessage(
+    subagentId, "to_child", reply, "reply", { reply }, messageId ?? undefined,
+  );
+
+  // 2. Mark original request as handled
+  if (messageId) {
+    await subagentMessagesRepo.markHandled(messageId);
+  }
+
+  // 3. Atomowe przejście: waiting_for_parent → running (CAS guard)
+  await subagentsRepo.updateStatus(subagentId, "running");
+
+  // 4. Resume via shared lifecycle helper — fire-and-forget
+  startSubagentExecution(subagentId, sub.name);
+
+  logger.info("subagent.resumed", { id: subagentId, name: sub.name });
+
+  return ok({
+    subagentId,
+    replied: true,
+    message: `Reply sent to subagent "${sub.name}". Subagent resumed.`,
+  });
+}
+
+// ── subagent_request_parent (child → parent) ────────────────────
+
+export async function handleSubagentRequestParent(
+  params: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const question = str(params, "question");
+  if (!question) return fail("Missing required: question");
+
+  // Find subagent by session (child calls this, context.sessionId is child session)
+  const link = await sessionLinksRepo.getParentSession(context.sessionId);
+  if (!link?.subagentId) return fail("Not a subagent session — cannot request parent");
+  const subagentId = link.subagentId;
+
+  const messageId = await subagentMessagesRepo.sendStructuredMessage(
+    subagentId, "to_parent", question, "request_parent",
+    { question, context: str(params, "context") || undefined },
+  );
+
+  await subagentsRepo.updateStatus(subagentId, "waiting_for_parent");
+
+  logger.info("subagent.request_parent", { id: subagentId, messageId });
+
+  return {
+    success: true,
+    output: `Request sent to parent (message #${messageId}). Waiting for reply...`,
+    data: { messageId, subagentId },
+    engineSignal: {
+      type: "wait_for_parent",
+      reason: "waiting_for_parent",
+      summary: question,
+      messageId,
+    },
+  };
+}
+
+// ── subagent_report_complete (child → parent) ───────────────────
+
+export async function handleSubagentReportComplete(
+  params: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const summary = str(params, "summary");
+  if (!summary) return fail("Missing required: summary");
+
+  const link = await sessionLinksRepo.getParentSession(context.sessionId);
+  if (!link?.subagentId) return fail("Not a subagent session");
+  const subagentId = link.subagentId;
+
+  const findings = typeof params.findings === "object" && params.findings !== null
+    ? params.findings as Record<string, unknown> : undefined;
+
+  // 1. Save structured report FIRST
+  await subagentMessagesRepo.sendStructuredMessage(
+    subagentId, "to_parent", summary, "report_complete",
+    { summary, findings, success: params.success !== false },
+  );
+
+  logger.info("subagent.report_complete", { id: subagentId, summary: summary.slice(0, 100) });
+
+  // 2. THEN return engineSignal to end child run
+  return {
+    success: true,
+    output: `Report submitted to parent: ${summary}`,
+    data: { subagentId, summary, findings },
+    engineSignal: {
+      type: "complete_subagent",
+      reason: "goal_reached",
+      summary,
+      evidence: findings,
+    },
+  };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ src/echo-agent/
     0g-compute.ts        — 0G Compute raw HTTP provider
   tools/                 — Everything the LLM can call
     types.ts             — ToolDef, ToolCallRequest, ToolResult
-    registry.ts          — 19 internal tool definitions
+    registry.ts          — 22 internal tool definitions (role-filtered via excludeRoles)
     dispatcher.ts        — Routes every tool call
     internal/            — In-process handlers
       types.ts           — InternalToolContext, ok/fail helpers
@@ -187,7 +187,7 @@ Loaded from `SUBAGENT_*` ENV with fallbacks from `AGENT_*`:
 
 ---
 
-## Internal Tools (17)
+## Internal Tools (20)
 
 See `tools/TOOLS.md` for full details.
 
@@ -205,8 +205,11 @@ See `tools/TOOLS.md` for full details.
 | `schedule_create` | `internal/schedule.ts` | Cron task with payload validation per type |
 | `schedule_remove` | `internal/schedule.ts` | Remove by ID |
 | `subagent_spawn` | `internal/subagent.ts` | Creates session + session_links, background finalize |
-| `subagent_status` | `internal/subagent.ts` | Active + recent, deduped |
-| `subagent_stop` | `internal/subagent.ts` | Abort + status update |
+| `subagent_status` | `internal/subagent.ts` | Active + recent, deduped. Enriches with pendingRequest/report. |
+| `subagent_stop` | `internal/subagent.ts` | Abort + status update. Ownership-guarded. |
+| `subagent_reply` | `internal/subagent.ts` | Parent replies to waiting child. Resumes via shared lifecycle helper. |
+| `subagent_request_parent` | `internal/subagent.ts` | Child requests parent help. Returns `wait_for_parent` signal. |
+| `subagent_report_complete` | `internal/subagent.ts` | Child submits structured final report. Returns `complete_subagent` signal. |
 | `wallet_read` | `internal/wallet.ts` | Address + multi-chain balances via Khalani |
 | `wallet_send_prepare` | `internal/wallet.ts` | Build transfer intent (no broadcast) |
 | `wallet_send_confirm` | `internal/wallet.ts` | Sign + broadcast (mutating, approval gate) |
@@ -243,6 +246,12 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
   - Startup full sync, post-mutation selective, periodic full refresh
   - Worker with dedup, transactional replace, canonical chain resolution
 - Subagent spawn creates session + session_links, honest finalize
+- **Two-way subagent control plane**: `subagent_request_parent` → `wait_for_parent` → `subagent_reply` → resume. `subagent_report_complete` → structured final report via `complete_subagent` engine signal
+- **Structured subagent messages**: `message_type` (relay/request_parent/reply/report_complete), `payload_json`, `reply_to_message_id`, `handled_at`
+- **CAS-style status transitions**: `waiting_for_parent` as non-terminal status, atomically guarded transitions
+- **Hard role enforcement**: `excludeRoles` on ToolDef, enforced at dispatcher + registry levels. Subagent cannot call `mission_stop`/`subagent_spawn`
+- **Ownership guard**: `subagent_reply`/`subagent_stop`/`subagent_status(id)` validate parent → child ownership via `session_links`
+- **Mission stop persistence**: `stop_summary` + `stop_evidence_json` on `mission_runs`
 - Nested folder resolution for documents (`"research/2024"`)
 - KyberSwap `swap.buy` (explicit buy side for projections)
 - SubagentConfig with ENV overrides
@@ -272,7 +281,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
   - Mission patch parser: untrusted model output → validated domain → row conversion → DB
   - Subagent engine runner wired into `tools/internal/subagent.ts` (replaces placeholder)
   - Stop conditions: 6 business stops (terminal) + 6 runtime pauses (resumable)
-- 1344 passing tests across 64 test files
+- 1371 passing tests across 64 test files
 
 ### Not yet implemented
 - **PnL reconcilers** (phase 4) — realized/unrealized PnL calculation from lots + positions

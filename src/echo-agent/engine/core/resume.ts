@@ -61,6 +61,8 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
     loadedDocuments: new Map(),
     loopMode: (approval.chatMode as "full" | "restricted" | "off") ?? "restricted",
     approved: true,
+    role: "parent", // Approval resume is always parent context
+    missionRunId: null, // Will be populated from hydrated context if needed
   };
 
   const result = await dispatchTool(

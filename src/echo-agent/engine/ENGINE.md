@@ -191,8 +191,11 @@ Entry points:
 
 | Tool | Handler | Purpose |
 |------|---------|---------|
-| `mission_stop` | `tools/internal/mission.ts` | Model-driven mission stop. Returns `engineSignal` to turn-loop. |
+| `mission_stop` | `tools/internal/mission.ts` | Model-driven mission stop. Returns `engineSignal` to turn-loop. Guarded: requires active `missionRunId`, excluded for subagents. |
 | `portfolio_inspect` | `tools/internal/portfolio-inspect.ts` | DB-backed self-inspection: open_positions, activity, executions, balances, snapshots, summary. |
+| `subagent_reply` | `tools/internal/subagent.ts` | Parent replies to waiting child request. Resumes child via shared lifecycle helper. Ownership-guarded via `session_links`. |
+| `subagent_request_parent` | `tools/internal/subagent.ts` | Child requests parent help. Returns `wait_for_parent` engine signal → pauses child loop. |
+| `subagent_report_complete` | `tools/internal/subagent.ts` | Child submits structured final report. Returns `complete_subagent` engine signal → `goal_reached` stop. |
 
 ## Subagent Runtime
 

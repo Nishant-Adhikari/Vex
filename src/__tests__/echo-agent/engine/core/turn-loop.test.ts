@@ -425,5 +425,89 @@ describe("turn-loop", () => {
       );
       expect(toolResults).toHaveLength(2);
     });
+
+    it("stop_mission returns stopPayload with summary and evidence", async () => {
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "mission_stop", arguments: {} }] },
+      ]);
+
+      mockDispatchTool.mockResolvedValue({
+        success: true,
+        output: "Mission stop: goal_reached",
+        engineSignal: {
+          type: "stop_mission",
+          reason: "goal_reached",
+          summary: "Accumulated target SOL",
+          evidence: { balanceSol: 10.5 },
+        },
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(result.stopReason).toBe("goal_reached");
+      expect(result.stopPayload).toBeDefined();
+      expect(result.stopPayload!.summary).toBe("Accumulated target SOL");
+      expect(result.stopPayload!.evidence).toEqual({ balanceSol: 10.5 });
+    });
+  });
+
+  // ── wait_for_parent engine signal ──────────────────────────
+
+  describe("wait_for_parent signal", () => {
+    it("breaks loop with waiting_for_parent stopReason", async () => {
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "subagent_request_parent", arguments: {} }] },
+      ]);
+
+      mockDispatchTool.mockResolvedValue({
+        success: true,
+        output: "Request sent to parent",
+        engineSignal: { type: "wait_for_parent", reason: "waiting_for_parent", summary: "Need help" },
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ isSubagent: true }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(result.stopReason).toBe("waiting_for_parent");
+      expect(result.text).toBe("Request sent to parent");
+    });
+  });
+
+  // ── complete_subagent engine signal ────────────────────────
+
+  describe("complete_subagent signal", () => {
+    it("breaks loop with goal_reached stopReason and stopPayload", async () => {
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "subagent_report_complete", arguments: {} }] },
+      ]);
+
+      mockDispatchTool.mockResolvedValue({
+        success: true,
+        output: "Report submitted",
+        engineSignal: {
+          type: "complete_subagent",
+          reason: "goal_reached",
+          summary: "Research complete",
+          evidence: { volume: 5000000 },
+        },
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ isSubagent: true }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(result.stopReason).toBe("goal_reached");
+      expect(result.stopPayload).toBeDefined();
+      expect(result.stopPayload!.summary).toBe("Research complete");
+    });
   });
 });

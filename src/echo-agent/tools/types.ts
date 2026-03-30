@@ -23,6 +23,8 @@ export interface ToolDef {
   proactive?: boolean;
   /** ENV var required for this tool. If set and ENV is empty, tool is hidden. */
   requiresEnv?: string;
+  /** Roles that should NOT see/use this tool. Hard-enforced at dispatch time. */
+  excludeRoles?: string[];
 }
 
 export interface JsonSchema {
@@ -61,12 +63,20 @@ export interface ToolResult {
   engineSignal?: EngineSignal;
 }
 
-/** Structured signal from an internal tool to the engine runtime. */
+/**
+ * Structured signal from an internal tool to the engine runtime.
+ *
+ * - stop_mission: parent mission stop (business stop reason)
+ * - wait_for_parent: child pauses for parent help (subagent_request_parent)
+ * - complete_subagent: child finished task (subagent_report_complete)
+ */
 export interface EngineSignal {
-  type: "stop_mission";
+  type: "stop_mission" | "wait_for_parent" | "complete_subagent";
   reason: string;
   summary: string;
   evidence?: Record<string, unknown>;
+  /** For wait_for_parent: the subagent message ID to track the request */
+  messageId?: number;
 }
 
 // ── OpenAI-compatible tool format (for inference providers) ──────

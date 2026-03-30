@@ -53,6 +53,8 @@ export interface TurnLoopResult {
   toolCallsMade: number;
   pendingApprovals: string[];
   stopReason: StopReason | null;
+  /** Structured stop payload — summary/evidence from mission_stop or complete_subagent. */
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> };
 }
 
 /**
@@ -125,6 +127,7 @@ export async function runTurnLoop(
       const executedResults: Array<{ toolCallId: string; output: string }> = [];
       let batchStopReason: StopReason | null = null;
       let batchStopOutput: string | null = null;
+      let batchStopPayload: { summary?: string; evidence?: Record<string, unknown> } | undefined;
 
       for (const toolCall of turnResult.toolCalls) {
         totalToolCalls++;
@@ -134,6 +137,8 @@ export async function runTurnLoop(
           loadedDocuments: context.loadedDocuments,
           loopMode: context.loopMode,
           approved: false,
+          role: context.isSubagent ? "subagent" : "parent",
+          missionRunId: context.missionRunId,
         };
 
         const result = await dispatchTool(
@@ -168,11 +173,20 @@ export async function runTurnLoop(
         executedCalls.push(toolCall);
         executedResults.push({ toolCallId: toolCall.id, output: result.output });
 
-        // ── Engine signal: result tracked, then stop ──
-        if (result.engineSignal?.type === "stop_mission") {
-          batchStopReason = result.engineSignal.reason as StopReason;
-          batchStopOutput = result.output;
-          break; // remaining calls are NOT dispatched
+        // ── Engine signals: result tracked, then stop ──
+        if (result.engineSignal) {
+          const sig = result.engineSignal;
+          if (sig.type === "stop_mission" || sig.type === "complete_subagent") {
+            batchStopReason = sig.reason as StopReason;
+            batchStopOutput = result.output;
+            batchStopPayload = { summary: sig.summary, evidence: sig.evidence };
+            break; // remaining calls are NOT dispatched
+          }
+          if (sig.type === "wait_for_parent") {
+            batchStopReason = "waiting_for_parent";
+            batchStopOutput = result.output;
+            break; // remaining calls are NOT dispatched
+          }
         }
       }
 
@@ -210,7 +224,7 @@ export async function runTurnLoop(
       }
       if (batchStopReason) {
         stopReason = batchStopReason;
-        return { text: batchStopOutput ?? lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason };
+        return { text: batchStopOutput ?? lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason, stopPayload: batchStopPayload };
       }
 
       // Normal batch complete — continue to next turn

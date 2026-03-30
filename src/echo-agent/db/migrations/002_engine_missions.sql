@@ -38,6 +38,8 @@ CREATE TABLE mission_runs (
   ended_at TIMESTAMPTZ,
   last_checkpoint_at TIMESTAMPTZ,
   stop_reason TEXT,
+  stop_summary TEXT,
+  stop_evidence_json JSONB,
   iteration_count INTEGER DEFAULT 0
 );
 CREATE INDEX idx_mission_runs_mission ON mission_runs(mission_id);

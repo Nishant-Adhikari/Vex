@@ -5,6 +5,7 @@ import {
   isMutatingTool,
   getAllTools,
   getOpenAITools,
+  isToolBlockedForRole,
 } from "../../../echo-agent/tools/registry.js";
 
 describe("registry", () => {
@@ -68,6 +69,9 @@ describe("registry", () => {
     "subagent_spawn",
     "subagent_status",
     "subagent_stop",
+    "subagent_reply",
+    "subagent_request_parent",
+    "subagent_report_complete",
     "wallet_read",
     "wallet_send_prepare",
     "wallet_send_confirm",
@@ -132,5 +136,56 @@ describe("registry", () => {
     const mutating = getAllTools().filter(t => t.mutating);
     expect(mutating).toHaveLength(1);
     expect(mutating[0].name).toBe("wallet_send_confirm");
+  });
+
+  // ── Role filtering ──────────────────────────────────────────────
+
+  describe("role filtering", () => {
+    it("subagent role excludes mission_stop, subagent_spawn, subagent_reply", () => {
+      const tools = getOpenAITools("restricted", "subagent");
+      const names = tools.map(t => t.function.name);
+      expect(names).not.toContain("mission_stop");
+      expect(names).not.toContain("subagent_spawn");
+      expect(names).not.toContain("subagent_reply");
+    });
+
+    it("subagent role includes subagent_request_parent and subagent_report_complete", () => {
+      const tools = getOpenAITools("restricted", "subagent");
+      const names = tools.map(t => t.function.name);
+      expect(names).toContain("subagent_request_parent");
+      expect(names).toContain("subagent_report_complete");
+    });
+
+    it("parent role excludes subagent_request_parent and subagent_report_complete", () => {
+      const tools = getOpenAITools("restricted", "parent");
+      const names = tools.map(t => t.function.name);
+      expect(names).not.toContain("subagent_request_parent");
+      expect(names).not.toContain("subagent_report_complete");
+    });
+
+    it("parent role includes mission_stop, subagent_spawn, subagent_reply", () => {
+      const tools = getOpenAITools("restricted", "parent");
+      const names = tools.map(t => t.function.name);
+      expect(names).toContain("mission_stop");
+      expect(names).toContain("subagent_spawn");
+      expect(names).toContain("subagent_reply");
+    });
+
+    it("isToolBlockedForRole returns true for blocked tools", () => {
+      expect(isToolBlockedForRole("mission_stop", "subagent")).toBe(true);
+      expect(isToolBlockedForRole("subagent_request_parent", "parent")).toBe(true);
+    });
+
+    it("isToolBlockedForRole returns false for allowed tools", () => {
+      expect(isToolBlockedForRole("mission_stop", "parent")).toBe(false);
+      expect(isToolBlockedForRole("subagent_request_parent", "subagent")).toBe(false);
+      expect(isToolBlockedForRole("web_search", "subagent")).toBe(false);
+    });
+
+    it("default role is parent", () => {
+      const defaultTools = getOpenAITools("restricted");
+      const parentTools = getOpenAITools("restricted", "parent");
+      expect(defaultTools.length).toBe(parentTools.length);
+    });
   });
 });

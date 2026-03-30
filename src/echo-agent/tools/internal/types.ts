@@ -25,6 +25,10 @@ export interface InternalToolContext {
   loopMode: "full" | "restricted" | "off";
   /** Whether this call was pre-approved */
   approved: boolean;
+  /** Session role — determines tool availability (hard enforcement) */
+  role: "parent" | "subagent";
+  /** Active mission run ID — for mission_stop guard */
+  missionRunId: string | null;
 }
 
 // ── Param accessors ─────────────────────────────────────────────

@@ -11,6 +11,8 @@ const baseContext = {
   loadedDocuments: new Map<string, string>(),
   loopMode: "restricted" as const,
   approved: false,
+  role: "parent" as const,
+  missionRunId: "run-1",
 };
 
 describe("mission_stop tool", () => {
@@ -62,6 +64,15 @@ describe("mission_stop tool", () => {
       baseContext,
     );
     expect(result.engineSignal!.evidence).toEqual({ balanceUsd: 0.12 });
+  });
+
+  it("rejects when no active mission run (missionRunId null)", async () => {
+    const result = await handleMissionStop(
+      { reason: "goal_reached", summary: "Done" },
+      { ...baseContext, missionRunId: null },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("only valid during an active mission run");
   });
 
   it("rejects user_stopped (not a model-driven reason)", async () => {

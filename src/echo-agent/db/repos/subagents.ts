@@ -6,7 +6,22 @@
 
 import { query, queryOne, execute } from "../client.js";
 
-export type SubagentStatus = "running" | "completed" | "stopped" | "error" | "timeout" | "interrupted";
+// ── Status transition matrix ───────────────────────────────────
+// CAS-style guard: atomically enforce valid transitions.
+
+const NON_TERMINAL_STATUSES = new Set<string>(["running", "waiting_for_parent"]);
+
+const VALID_TRANSITIONS: Record<string, Set<string>> = {
+  running: new Set(["completed", "stopped", "error", "timeout", "waiting_for_parent"]),
+  waiting_for_parent: new Set(["running", "stopped", "error", "timeout"]),
+  completed: new Set(),
+  stopped: new Set(),
+  error: new Set(),
+  timeout: new Set(),
+  interrupted: new Set(),
+};
+
+export type SubagentStatus = "running" | "completed" | "stopped" | "error" | "timeout" | "interrupted" | "waiting_for_parent";
 
 export interface SubagentState {
   id: string;
@@ -49,20 +64,44 @@ export async function insert(subagent: {
   );
 }
 
+/**
+ * Atomically update subagent status with CAS-style transition guard.
+ * Uses WHERE status = ANY(allowedSources) — two parallel calls with
+ * the same target status will not both succeed.
+ */
 export async function updateStatus(
   id: string,
-  status: SubagentStatus,
+  newStatus: SubagentStatus,
   extra?: { result?: string; error?: string; tokenCost?: number; iterations?: number },
 ): Promise<void> {
-  const ended = status !== "running" ? "NOW()" : "ended_at";
-  await execute(
+  // Compute allowed source statuses for this transition
+  const allowedFrom = Object.entries(VALID_TRANSITIONS)
+    .filter(([, targets]) => targets.has(newStatus))
+    .map(([source]) => source);
+
+  if (allowedFrom.length === 0) {
+    throw new Error(`No valid source status for transition to "${newStatus}"`);
+  }
+
+  const ended = NON_TERMINAL_STATUSES.has(newStatus) ? "ended_at" : "NOW()";
+
+  const result = await queryOne<{ id: string }>(
     `UPDATE subagents SET status = $1, ended_at = ${ended},
      result = COALESCE($2, result), error = COALESCE($3, error),
      token_cost = COALESCE($4, token_cost), iterations = COALESCE($5, iterations)
-     WHERE id = $6`,
-    [status, extra?.result ?? null, extra?.error ?? null,
-     extra?.tokenCost ?? null, extra?.iterations ?? null, id],
+     WHERE id = $6 AND status = ANY($7)
+     RETURNING id`,
+    [newStatus, extra?.result ?? null, extra?.error ?? null,
+     extra?.tokenCost ?? null, extra?.iterations ?? null,
+     id, allowedFrom],
   );
+
+  if (!result) {
+    const current = await getById(id);
+    throw new Error(
+      `Invalid status transition: ${current?.status ?? "unknown"} → ${newStatus} for subagent ${id}`,
+    );
+  }
 }
 
 export async function getById(id: string): Promise<SubagentState | null> {

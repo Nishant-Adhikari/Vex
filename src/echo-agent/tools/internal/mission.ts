@@ -23,6 +23,11 @@ export async function handleMissionStop(
   params: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
+  // Guard: mission_stop only valid during an active mission run
+  if (!context.missionRunId) {
+    return fail("mission_stop is only valid during an active mission run");
+  }
+
   const reason = str(params, "reason");
   const summary = str(params, "summary");
 

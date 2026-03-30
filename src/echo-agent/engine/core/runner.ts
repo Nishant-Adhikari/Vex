@@ -278,7 +278,7 @@ export async function startMission(
     promptOptions,
   );
 
-  const missionStatus = await finalizeMissionRunStatus(missionId, runId, result.stopReason);
+  const missionStatus = await finalizeMissionRunStatus(missionId, runId, result.stopReason, result.stopPayload);
 
   return {
     text: result.text,
@@ -350,7 +350,7 @@ export async function resumeMissionRun(
     promptOptions,
   );
 
-  const missionStatus = await finalizeMissionRunStatus(run.missionId, runId, result.stopReason);
+  const missionStatus = await finalizeMissionRunStatus(run.missionId, runId, result.stopReason, result.stopPayload);
 
   return {
     text: result.text,
@@ -374,6 +374,7 @@ async function finalizeMissionRunStatus(
   missionId: string,
   runId: string,
   stopReason: StopReason | null,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
 ): Promise<MissionStatus> {
   if (!stopReason) return "running";
 
@@ -382,7 +383,7 @@ async function finalizeMissionRunStatus(
   if (shouldTerminateRun(stopReason)) {
     const status: MissionStatus = stopReason === "user_stopped" ? "cancelled" : "completed";
     await missionsRepo.setStatus(missionId, status);
-    await missionRunsRepo.updateStatus(runId, status, stopReason);
+    await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     return status;
   }
 

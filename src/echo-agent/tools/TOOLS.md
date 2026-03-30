@@ -41,11 +41,14 @@ Defined in `registry.ts`. Each handler is a pure `(params, context) → ToolResu
 | `memory_manage` | `internal/memory.ts` | CRUD on persistent memory entries (list/append/replace/delete) |
 | `schedule_create` | `internal/schedule.ts` | Create cron task (tool_call/wake_agent/reminder/monitor/snapshot/backup) |
 | `schedule_remove` | `internal/schedule.ts` | Remove a scheduled task |
-| `subagent_spawn` | `internal/subagent.ts` | Spawn background subagent — runs engine-core turn-loop (session_links + engine) |
-| `subagent_status` | `internal/subagent.ts` | Check subagent progress/results |
-| `subagent_stop` | `internal/subagent.ts` | Stop a running subagent |
+| `subagent_spawn` | `internal/subagent.ts` | Spawn background subagent — runs engine-core turn-loop (session_links + engine). Excluded for subagents. |
+| `subagent_status` | `internal/subagent.ts` | Check subagent progress/results. Enriches with pendingRequest (waiting) or report (completed). |
+| `subagent_stop` | `internal/subagent.ts` | Stop a running subagent. Ownership-guarded via session_links. |
+| `subagent_reply` | `internal/subagent.ts` | Parent replies to waiting child's request. Resumes child via shared lifecycle helper. Excluded for subagents. |
+| `subagent_request_parent` | `internal/subagent.ts` | Child requests parent help. Returns `wait_for_parent` engine signal. Excluded for parents. |
+| `subagent_report_complete` | `internal/subagent.ts` | Child submits structured final report. Returns `complete_subagent` engine signal. Excluded for parents. |
 | `portfolio_inspect` | `internal/portfolio-inspect.ts` | DB-backed self-inspection: open_positions, activity, executions, balances, snapshots, summary |
-| `mission_stop` | `internal/mission.ts` | Model-driven mission stop — returns engineSignal to turn-loop |
+| `mission_stop` | `internal/mission.ts` | Model-driven mission stop — returns engineSignal to turn-loop. Guarded: requires active missionRunId. Excluded for subagents. |
 | `wallet_read` | `internal/wallet.ts` | Wallet address + multi-chain balances via Khalani |
 | `wallet_send_prepare` | `internal/wallet.ts` | Prepare transfer intent (no broadcast) |
 | `wallet_send_confirm` | `internal/wallet.ts` | Sign + broadcast transfer (mutating, needs approval) |

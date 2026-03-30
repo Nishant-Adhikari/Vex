@@ -146,6 +146,7 @@ const TOOLS: readonly ToolDef[] = [
   // Mission
   {
     name: "mission_stop", kind: "internal", mutating: false,
+    excludeRoles: ["subagent"],
     description: "Stop the current mission run. Only valid during active mission execution. Use when a stop condition is met (goal reached, capital depleted, etc.).",
     parameters: { type: "object", properties: {
       reason: { type: "string", enum: ["goal_reached", "deadline_reached", "capital_depleted", "max_loss_hit", "no_viable_opportunity"], description: "Stop reason" },
@@ -154,9 +155,10 @@ const TOOLS: readonly ToolDef[] = [
     }, required: ["reason", "summary"] },
   },
 
-  // Subagents
+  // Subagents — parent tools
   {
     name: "subagent_spawn", kind: "internal", mutating: false,
+    excludeRoles: ["subagent"],
     description: "Spawn a background subagent. Returns immediately. Use subagent_status to check progress.",
     parameters: { type: "object", properties: {
       name: { type: "string", description: "Echo-prefixed name (e.g. EchoSpark, EchoNibble)" },
@@ -167,7 +169,7 @@ const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "subagent_status", kind: "internal", mutating: false,
-    description: "Check status and results of spawned subagents.",
+    description: "Check status and results of spawned subagents. Shows pending requests for waiting subagents.",
     parameters: { type: "object", properties: {
       id: { type: "string", description: "Subagent ID (omit for all)" },
     } },
@@ -178,6 +180,37 @@ const TOOLS: readonly ToolDef[] = [
     parameters: { type: "object", properties: {
       id: { type: "string", description: "Subagent ID" },
     }, required: ["id"] },
+  },
+  {
+    name: "subagent_reply", kind: "internal", mutating: false,
+    excludeRoles: ["subagent"],
+    description: "Reply to a waiting subagent's request. Resumes the subagent.",
+    parameters: { type: "object", properties: {
+      id: { type: "string", description: "Subagent ID" },
+      reply: { type: "string", description: "Your reply to the subagent's question" },
+      message_id: { type: "number", description: "Original request message ID (from subagent_status pendingRequest)" },
+    }, required: ["id", "reply"] },
+  },
+
+  // Subagents — child tools
+  {
+    name: "subagent_request_parent", kind: "internal", mutating: false,
+    excludeRoles: ["parent"],
+    description: "Request help from parent agent. Pauses this subagent until parent replies via subagent_reply.",
+    parameters: { type: "object", properties: {
+      question: { type: "string", description: "What you need from the parent" },
+      context: { type: "string", description: "Additional context for the parent" },
+    }, required: ["question"] },
+  },
+  {
+    name: "subagent_report_complete", kind: "internal", mutating: false,
+    excludeRoles: ["parent"],
+    description: "Submit final structured report and end this subagent's execution. Saves report for parent to read via subagent_status.",
+    parameters: { type: "object", properties: {
+      summary: { type: "string", description: "Summary of findings/results" },
+      findings: { type: "object", description: "Structured findings data" },
+      success: { type: "boolean", description: "Whether the task was completed successfully (default: true)" },
+    }, required: ["summary"] },
   },
 
   // Wallet
@@ -231,10 +264,21 @@ export function getAllTools(): readonly ToolDef[] {
   return TOOLS;
 }
 
-/** Get tools as OpenAI format, filtering by mode and ENV availability */
-export function getOpenAITools(chatMode: "full" | "restricted" | "off" = "off"): OpenAITool[] {
+/** Get tools as OpenAI format, filtering by mode, ENV availability, and role. */
+export function getOpenAITools(
+  chatMode: "full" | "restricted" | "off" = "off",
+  role: "parent" | "subagent" = "parent",
+): OpenAITool[] {
   const filtered = TOOLS
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
-    .filter(t => chatMode === "off" ? !t.proactive : true);
+    .filter(t => chatMode === "off" ? !t.proactive : true)
+    .filter(t => !t.excludeRoles?.includes(role));
   return toOpenAITools(filtered);
+}
+
+/** Check if a tool is blocked for a given role. Hard enforcement at dispatch time. */
+export function isToolBlockedForRole(name: string, role: "parent" | "subagent"): boolean {
+  const def = byName.get(name);
+  if (!def) return false;
+  return def.excludeRoles?.includes(role) ?? false;
 }

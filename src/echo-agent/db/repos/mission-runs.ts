@@ -19,6 +19,8 @@ export interface MissionRun {
   endedAt: string | null;
   lastCheckpointAt: string | null;
   stopReason: string | null;
+  stopSummary: string | null;
+  stopEvidenceJson: Record<string, unknown> | null;
   iterationCount: number;
 }
 
@@ -33,6 +35,8 @@ function mapRow(r: Record<string, unknown>): MissionRun {
     endedAt: r.ended_at ? (r.ended_at instanceof Date ? r.ended_at.toISOString() : r.ended_at as string) : null,
     lastCheckpointAt: r.last_checkpoint_at ? (r.last_checkpoint_at instanceof Date ? r.last_checkpoint_at.toISOString() : r.last_checkpoint_at as string) : null,
     stopReason: r.stop_reason as string | null,
+    stopSummary: r.stop_summary as string | null,
+    stopEvidenceJson: r.stop_evidence_json as Record<string, unknown> | null,
     iterationCount: (r.iteration_count as number) ?? 0,
   };
 }
@@ -55,12 +59,21 @@ export async function updateStatus(
   id: string,
   status: string,
   stopReason?: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
 ): Promise<void> {
   const ended = (status !== "running" && status !== "paused_approval" && status !== "paused_checkpoint")
     ? "NOW()" : "ended_at";
   await execute(
-    `UPDATE mission_runs SET status = $1, stop_reason = COALESCE($2, stop_reason), ended_at = ${ended} WHERE id = $3`,
-    [status, stopReason ?? null, id],
+    `UPDATE mission_runs SET status = $1, stop_reason = COALESCE($2, stop_reason),
+     stop_summary = COALESCE($3, stop_summary),
+     stop_evidence_json = COALESCE($4, stop_evidence_json),
+     ended_at = ${ended} WHERE id = $5`,
+    [
+      status, stopReason ?? null,
+      stopPayload?.summary ?? null,
+      stopPayload?.evidence ? JSON.stringify(stopPayload.evidence) : null,
+      id,
+    ],
   );
 }
 

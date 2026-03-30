@@ -221,15 +221,22 @@ CREATE INDEX idx_session_links_parent ON session_links(parent_session_id);
 CREATE INDEX idx_session_links_child ON session_links(child_session_id);
 CREATE INDEX idx_session_links_subagent ON session_links(subagent_id) WHERE subagent_id IS NOT NULL;
 
--- Subagent messages (mama-dziecko channel — phase 2, schema ready)
+-- Subagent messages — structured parent ↔ child channel
+-- message_type: relay (plain text), request_parent, reply, report_complete
 CREATE TABLE subagent_messages (
   id SERIAL PRIMARY KEY,
   subagent_id TEXT NOT NULL REFERENCES subagents(id) ON DELETE CASCADE,
   direction TEXT NOT NULL,
   content TEXT NOT NULL,
+  message_type TEXT NOT NULL DEFAULT 'relay',
+  payload_json JSONB,
+  reply_to_message_id INTEGER REFERENCES subagent_messages(id),
+  handled_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX idx_subagent_msgs ON subagent_messages(subagent_id, created_at);
+CREATE INDEX idx_subagent_msgs_unhandled ON subagent_messages(subagent_id, direction, message_type)
+  WHERE handled_at IS NULL;
 
 -- Inbox events (autonomy queue)
 CREATE TABLE inbox_events (

@@ -37,7 +37,7 @@ db/
 
 ## Key design decisions
 
-**session_links is canonical** — No `parent_session_id` on sessions or subagents. All parent-child relationships go through `session_links(parent_session_id, child_session_id, relation_type, subagent_id?)`. This covers subagent, scheduler, loop, and handoff relationships without duplicating FK columns.
+**session_links is canonical** — No `parent_session_id` on sessions or subagents. All parent-child relationships go through `session_links(parent_session_id, child_session_id, relation_type, subagent_id?)`. This covers subagent, scheduler, loop, and handoff relationships without duplicating FK columns. Used for ownership guard: `subagent_reply`, `subagent_stop`, `subagent_status(id)` validate parent → child ownership.
 
 **Documents replace files** — No `knowledge_files` table. Content lives in `documents` with `folder_id` FK to `folders` table. Spaces (`knowledge`, `notes`) separate content domains. Soft delete via `archived_at`.
 
@@ -63,7 +63,7 @@ db/
 | `search.ts` | Cache | `getCached()`/`cacheResult()`, `getCachedFetch()`/`cacheFetchResult()` |
 | `schedules.ts` | Automation | `createSchedule()`, `deleteSchedule()`, `getEnabled()`, `recordRun()` |
 | `subagents.ts` | Automation | `insert()`, `updateStatus()`, `getActive()`, `getRecent()`, `markOrphans()` |
-| `subagent-messages.ts` | Automation | `sendMessage()`, `getMessages()`, `getMessagesByDirection()` |
+| `subagent-messages.ts` | Automation | `sendMessage()`, `sendStructuredMessage()`, `getMessages()`, `getMessagesByDirection()`, `getUnhandled()`, `getMessagesByType()`, `markHandled()` |
 | `executions.ts` | Protocol | `recordExecution()`, `getById()`, `getByExternalRef()`, `getByNamespace()` |
 | `sync.ts` | Protocol | `getJobsForNamespace()`, `getAllJobs()`, `getJob()`, `getLastCompletedRun()`, `enqueueRun()`, `claimPendingRun()`, `claimAllPending()`, `completeRun()`, `failRun()` |
 | `balances.ts` | Projection | `upsertBalance()`, `replaceBalancesForChain()` (transactional), `getBalances()`, `getBalancesByChain()`, `getTotalUsd()`, `insertSnapshot()`, `getLatestSnapshot()`, `getSnapshotHistory()` |
@@ -73,7 +73,7 @@ db/
 | `usage.ts` | Inference | `logUsage()` (with cached/reasoning tokens), `getStats()` |
 | `billing.ts` | Inference | `insertSnapshot()`, `getLatest()`, `getHistory()` |
 | `missions.ts` | Engine | `createDraft()`, `updateDraft()`, `setStatus()`, `setApprovedAt()`, `getMission()`, `getMissionBySession()`, `getActiveMission()` |
-| `mission-runs.ts` | Engine | `createRun()`, `updateStatus()`, `setLastCheckpoint()`, `incrementIterations()`, `getActiveRun()`, `getRun()`, `getRunBySession()` |
+| `mission-runs.ts` | Engine | `createRun()`, `updateStatus(id, status, stopReason?, stopPayload?)`, `setLastCheckpoint()`, `incrementIterations()`, `getActiveRun()`, `getRun()`, `getRunBySession()` |
 | `runtime.ts` | Engine | `getState()`, `setActiveLoop()`, `updatePhase()`, `stopLoop()`, `recordCycleStart()`, `recordCycleEnd()` |
 | `messages.ts` (extended) | Runtime | Added `addMessage(sessionId, msg, metadata?)` with optional `MessageMetadata`, `addEngineMessage()` helper |
 

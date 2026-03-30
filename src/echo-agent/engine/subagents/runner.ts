@@ -6,7 +6,7 @@
  * Uses session_links as canonical relationship graph.
  */
 
-import type { EngineContext, LoopMode } from "../types.js";
+import type { EngineContext, LoopMode, StopReason } from "../types.js";
 import { hydrateEngineSession } from "../core/hydrate.js";
 import { runTurnLoop, type TurnLoopConfig } from "../core/turn-loop.js";
 import { getOpenAITools } from "@echo-agent/tools/registry.js";
@@ -16,6 +16,7 @@ import { loadEnvConfig, loadSubagentConfig } from "@echo-agent/inference/config.
 import * as subagentsRepo from "@echo-agent/db/repos/subagents.js";
 import * as sessionLinksRepo from "@echo-agent/db/repos/session-links.js";
 import { relayToParent } from "./relay.js";
+import * as subagentMessages from "@echo-agent/db/repos/subagent-messages.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 
 export interface SubagentResult {
@@ -24,6 +25,8 @@ export interface SubagentResult {
   output: string;
   toolCallsMade: number;
   success: boolean;
+  /** Stop reason from turn loop — lifecycle helper needs this to distinguish pause vs terminal. */
+  stopReason: StopReason | null;
 }
 
 // Removed: DEFAULT_MAX_ITERATIONS / DEFAULT_TIMEOUT_MS
@@ -90,7 +93,7 @@ export async function runSubagentEngine(
     },
   };
 
-  const openAITools = getOpenAITools(effectiveLoopMode);
+  const openAITools = getOpenAITools(effectiveLoopMode, "subagent");
   const tools: ToolDefinition[] = openAITools.map(t => ({
     type: "function" as const,
     function: { name: t.function.name, description: t.function.description, parameters: t.function.parameters as unknown as Record<string, unknown> },
@@ -124,7 +127,14 @@ export async function runSubagentEngine(
     );
 
     const output = result.text ?? "Subagent completed without text output.";
-    await relayToParent(subagentId, output);
+
+    // Conditional relay: skip for pauses and structured-report completions
+    // waiting_for_parent = paused (not finished), complete_subagent = report already in subagent_messages
+    const hasStructuredReport = (await subagentMessages.getMessagesByType(subagentId, "report_complete")).length > 0;
+    const skipRelay = result.stopReason === "waiting_for_parent" || hasStructuredReport;
+    if (!skipRelay) {
+      await relayToParent(subagentId, output);
+    }
 
     // success=false if stopped by runtime error, timeout, or iteration_limit
     const runtimeFailures = new Set(["timeout", "iteration_limit", "system_error"]);
@@ -136,6 +146,7 @@ export async function runSubagentEngine(
       output,
       toolCallsMade: result.toolCallsMade,
       success,
+      stopReason: result.stopReason,
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -147,6 +158,7 @@ export async function runSubagentEngine(
       output: errorMsg,
       toolCallsMade: 0,
       success: false,
+      stopReason: null,
     };
   }
 }

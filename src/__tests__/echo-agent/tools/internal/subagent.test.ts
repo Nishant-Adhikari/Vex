@@ -23,9 +23,22 @@ vi.mock("@echo-agent/db/repos/sessions.js", () => ({
 }));
 
 const mockLinkSessions = vi.fn().mockResolvedValue({ id: 1 });
+const mockGetSubagentSession = vi.fn().mockResolvedValue(null);
+const mockGetParentSession = vi.fn().mockResolvedValue(null);
 
 vi.mock("@echo-agent/db/repos/session-links.js", () => ({
   linkSessions: (...args: unknown[]) => mockLinkSessions(...args),
+  getSubagentSession: (...args: unknown[]) => mockGetSubagentSession(...args),
+  getParentSession: (...args: unknown[]) => mockGetParentSession(...args),
+}));
+
+vi.mock("@echo-agent/db/repos/subagent-messages.js", () => ({
+  sendMessage: vi.fn().mockResolvedValue(1),
+  sendStructuredMessage: vi.fn().mockResolvedValue(1),
+  getUnhandled: vi.fn().mockResolvedValue([]),
+  getMessagesByType: vi.fn().mockResolvedValue([]),
+  getMessagesByDirection: vi.fn().mockResolvedValue([]),
+  markHandled: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock engine subagent runner — returns immediately with result
@@ -39,7 +52,19 @@ vi.mock("@echo-agent/engine/subagents/runner.js", () => ({
   }),
 }));
 
-const { handleSubagentSpawn, handleSubagentStatus, handleSubagentStop } = await import(
+const mockSendStructuredMessage = vi.mocked((await import("@echo-agent/db/repos/subagent-messages.js")).sendStructuredMessage);
+const mockMarkHandled = vi.mocked((await import("@echo-agent/db/repos/subagent-messages.js")).markHandled);
+const mockGetUnhandled = vi.mocked((await import("@echo-agent/db/repos/subagent-messages.js")).getUnhandled);
+const mockGetMessagesByType = vi.mocked((await import("@echo-agent/db/repos/subagent-messages.js")).getMessagesByType);
+
+const {
+  handleSubagentSpawn,
+  handleSubagentStatus,
+  handleSubagentStop,
+  handleSubagentReply,
+  handleSubagentRequestParent,
+  handleSubagentReportComplete,
+} = await import(
   "../../../../echo-agent/tools/internal/subagent.js"
 );
 
@@ -48,6 +73,8 @@ const baseContext = {
   loadedDocuments: new Map<string, string>(),
   loopMode: "off" as const,
   approved: false,
+  role: "parent" as const,
+  missionRunId: null,
 };
 
 describe("subagent handlers", () => {
@@ -170,11 +197,14 @@ describe("subagent handlers", () => {
       expect(parsed.message).toContain("No active");
     });
 
-    it("returns specific subagent by id", async () => {
+    it("returns specific subagent by id (with ownership)", async () => {
       mockGetById.mockResolvedValueOnce({
         id: "subagent-123", name: "EchoTest", task: "test", status: "running",
         allowTrades: false, startedAt: new Date().toISOString(), endedAt: null,
         result: null, error: null, tokenCost: 0, iterations: 5, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "test-session", childSessionId: "child-session", subagentId: "subagent-123",
       });
 
       const result = await handleSubagentStatus({ id: "subagent-123" }, baseContext);
@@ -206,10 +236,224 @@ describe("subagent handlers", () => {
       expect(result.success).toBe(false);
     });
 
-    it("stops and updates status", async () => {
+    it("stops and updates status (with ownership)", async () => {
+      mockGetById.mockResolvedValueOnce({
+        id: "subagent-123", name: "EchoStop", task: "test", status: "running",
+        allowTrades: false, startedAt: new Date().toISOString(), endedAt: null,
+        result: null, error: null, tokenCost: 0, iterations: 0, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "test-session", childSessionId: "child-session", subagentId: "subagent-123",
+      });
+
       const result = await handleSubagentStop({ id: "subagent-123" }, baseContext);
       expect(result.success).toBe(true);
       expect(mockUpdateStatus).toHaveBeenCalledWith("subagent-123", "stopped");
+    });
+
+    it("rejects stop when not owned by this session", async () => {
+      mockGetById.mockResolvedValueOnce({
+        id: "subagent-other", name: "EchoOther", task: "test", status: "running",
+        allowTrades: false, startedAt: new Date().toISOString(), endedAt: null,
+        result: null, error: null, tokenCost: 0, iterations: 0, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "different-session", childSessionId: "child", subagentId: "subagent-other",
+      });
+
+      const result = await handleSubagentStop({ id: "subagent-other" }, baseContext);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("not owned");
+    });
+  });
+
+  // ── subagent_request_parent ──────────────────────────────────────
+
+  describe("handleSubagentRequestParent", () => {
+    const childContext = { ...baseContext, sessionId: "child-session", role: "subagent" as const };
+
+    it("fails without question", async () => {
+      const result = await handleSubagentRequestParent({}, childContext);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("question");
+    });
+
+    it("fails if not a subagent session", async () => {
+      mockGetParentSession.mockResolvedValueOnce(null);
+      const result = await handleSubagentRequestParent({ question: "help?" }, childContext);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("Not a subagent session");
+    });
+
+    it("sends structured message and returns wait_for_parent signal", async () => {
+      mockGetParentSession.mockResolvedValueOnce({ parentSessionId: "parent-s", subagentId: "sub-1" });
+
+      const result = await handleSubagentRequestParent(
+        { question: "Which DEX for 0G swaps?" },
+        childContext,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.engineSignal).toBeDefined();
+      expect(result.engineSignal!.type).toBe("wait_for_parent");
+      expect(result.engineSignal!.reason).toBe("waiting_for_parent");
+      expect(mockSendStructuredMessage).toHaveBeenCalledWith(
+        "sub-1", "to_parent", "Which DEX for 0G swaps?", "request_parent",
+        expect.objectContaining({ question: "Which DEX for 0G swaps?" }),
+      );
+      expect(mockUpdateStatus).toHaveBeenCalledWith("sub-1", "waiting_for_parent");
+    });
+  });
+
+  // ── subagent_reply ───────────────────────────────────────────────
+
+  describe("handleSubagentReply", () => {
+    it("fails without id or reply", async () => {
+      const r1 = await handleSubagentReply({ reply: "answer" }, baseContext);
+      expect(r1.success).toBe(false);
+      const r2 = await handleSubagentReply({ id: "sub-1" }, baseContext);
+      expect(r2.success).toBe(false);
+    });
+
+    it("rejects if subagent is not waiting_for_parent", async () => {
+      mockGetById.mockResolvedValueOnce({
+        id: "sub-1", name: "E", task: "t", status: "running",
+        allowTrades: false, startedAt: new Date().toISOString(), endedAt: null,
+        result: null, error: null, tokenCost: 0, iterations: 0, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "test-session", childSessionId: "child", subagentId: "sub-1",
+      });
+
+      const result = await handleSubagentReply({ id: "sub-1", reply: "answer" }, baseContext);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("not waiting for parent");
+    });
+
+    it("sends reply, marks handled, resumes subagent", async () => {
+      mockGetById.mockResolvedValueOnce({
+        id: "sub-1", name: "EchoWait", task: "t", status: "waiting_for_parent",
+        allowTrades: false, startedAt: new Date().toISOString(), endedAt: null,
+        result: null, error: null, tokenCost: 0, iterations: 0, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "test-session", childSessionId: "child", subagentId: "sub-1",
+      });
+
+      const result = await handleSubagentReply(
+        { id: "sub-1", reply: "Use Jaine", message_id: 42 },
+        baseContext,
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockSendStructuredMessage).toHaveBeenCalledWith(
+        "sub-1", "to_child", "Use Jaine", "reply",
+        expect.objectContaining({ reply: "Use Jaine" }),
+        42,
+      );
+      expect(mockMarkHandled).toHaveBeenCalledWith(42);
+      expect(mockUpdateStatus).toHaveBeenCalledWith("sub-1", "running");
+    });
+
+    it("rejects when not owned by this session", async () => {
+      mockGetById.mockResolvedValueOnce({
+        id: "sub-other", name: "E", task: "t", status: "waiting_for_parent",
+        allowTrades: false, startedAt: new Date().toISOString(), endedAt: null,
+        result: null, error: null, tokenCost: 0, iterations: 0, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "different-session", childSessionId: "child", subagentId: "sub-other",
+      });
+
+      const result = await handleSubagentReply({ id: "sub-other", reply: "hi" }, baseContext);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("not owned");
+    });
+  });
+
+  // ── subagent_report_complete ─────────────────────────────────────
+
+  describe("handleSubagentReportComplete", () => {
+    const childContext = { ...baseContext, sessionId: "child-session", role: "subagent" as const };
+
+    it("fails without summary", async () => {
+      const result = await handleSubagentReportComplete({}, childContext);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("summary");
+    });
+
+    it("fails if not a subagent session", async () => {
+      mockGetParentSession.mockResolvedValueOnce(null);
+      const result = await handleSubagentReportComplete({ summary: "done" }, childContext);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("Not a subagent session");
+    });
+
+    it("saves report then returns complete_subagent signal", async () => {
+      mockGetParentSession.mockResolvedValueOnce({ parentSessionId: "parent-s", subagentId: "sub-1" });
+
+      const result = await handleSubagentReportComplete(
+        { summary: "SOL liquidity is $5M", findings: { volume: 5000000 } },
+        childContext,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.engineSignal).toBeDefined();
+      expect(result.engineSignal!.type).toBe("complete_subagent");
+      expect(result.engineSignal!.reason).toBe("goal_reached");
+
+      // Report saved BEFORE signal returned
+      expect(mockSendStructuredMessage).toHaveBeenCalledWith(
+        "sub-1", "to_parent", "SOL liquidity is $5M", "report_complete",
+        expect.objectContaining({ summary: "SOL liquidity is $5M", findings: { volume: 5000000 } }),
+      );
+    });
+  });
+
+  // ── subagent_status enrichment ───────────────────────────────────
+
+  describe("handleSubagentStatus enrichment", () => {
+    it("includes pendingRequest for waiting_for_parent subagent", async () => {
+      mockGetById.mockResolvedValueOnce({
+        id: "sub-wait", name: "EchoWait", task: "t", status: "waiting_for_parent",
+        allowTrades: false, startedAt: new Date().toISOString(), endedAt: null,
+        result: null, error: null, tokenCost: 0, iterations: 3, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "test-session", childSessionId: "child", subagentId: "sub-wait",
+      });
+      mockGetUnhandled.mockResolvedValueOnce([{
+        id: 42, subagentId: "sub-wait", direction: "to_parent", content: "Which DEX?",
+        messageType: "request_parent", payloadJson: { question: "Which DEX?" },
+        replyToMessageId: null, handledAt: null, createdAt: "2026-03-30T10:00:00Z",
+      }]);
+
+      const result = await handleSubagentStatus({ id: "sub-wait" }, baseContext);
+      const parsed = JSON.parse(result.output);
+      expect(parsed.pendingRequest).toBeDefined();
+      expect(parsed.pendingRequest.messageId).toBe(42);
+      expect(parsed.pendingRequest.question).toBe("Which DEX?");
+    });
+
+    it("includes report for completed subagent", async () => {
+      mockGetById.mockResolvedValueOnce({
+        id: "sub-done", name: "EchoDone", task: "t", status: "completed",
+        allowTrades: false, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(),
+        result: "ok", error: null, tokenCost: 0, iterations: 5, maxIterations: 25,
+      });
+      mockGetSubagentSession.mockResolvedValueOnce({
+        parentSessionId: "test-session", childSessionId: "child", subagentId: "sub-done",
+      });
+      mockGetMessagesByType.mockResolvedValueOnce([{
+        id: 99, subagentId: "sub-done", direction: "to_parent", content: "Research complete",
+        messageType: "report_complete", payloadJson: { summary: "Research complete", findings: { x: 1 } },
+        replyToMessageId: null, handledAt: null, createdAt: "2026-03-30T10:00:00Z",
+      }]);
+
+      const result = await handleSubagentStatus({ id: "sub-done" }, baseContext);
+      const parsed = JSON.parse(result.output);
+      expect(parsed.report).toBeDefined();
+      expect(parsed.report.summary).toBe("Research complete");
     });
   });
 });

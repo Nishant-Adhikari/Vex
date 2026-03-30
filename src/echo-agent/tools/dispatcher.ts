@@ -11,7 +11,7 @@
 
 import type { ToolCallRequest, ToolResult } from "./types.js";
 import type { InternalToolContext } from "./internal/types.js";
-import { isInternalTool } from "./registry.js";
+import { isInternalTool, isToolBlockedForRole } from "./registry.js";
 import { discoverProtocolCapabilities } from "./protocols/runtime.js";
 import { executeProtocolTool } from "./protocols/runtime.js";
 import logger from "@utils/logger.js";
@@ -89,6 +89,14 @@ async function routeToolCall(
       { toolId, params },
       { loopMode: context.loopMode, approved: context.approved, sessionId: context.sessionId },
     );
+  }
+
+  // Hard role enforcement — blocked tools rejected even if model emits them
+  if (isToolBlockedForRole(call.name, context.role)) {
+    return {
+      success: false,
+      output: `Tool "${call.name}" is not available for this session role (${context.role}).`,
+    };
   }
 
   // Internal tools — route by name
@@ -175,6 +183,18 @@ async function routeInternalTool(
     case "subagent_stop": {
       const { handleSubagentStop } = await import("./internal/subagent.js");
       return handleSubagentStop(call.args, context);
+    }
+    case "subagent_reply": {
+      const { handleSubagentReply } = await import("./internal/subagent.js");
+      return handleSubagentReply(call.args, context);
+    }
+    case "subagent_request_parent": {
+      const { handleSubagentRequestParent } = await import("./internal/subagent.js");
+      return handleSubagentRequestParent(call.args, context);
+    }
+    case "subagent_report_complete": {
+      const { handleSubagentReportComplete } = await import("./internal/subagent.js");
+      return handleSubagentReportComplete(call.args, context);
     }
 
     // Wallet
