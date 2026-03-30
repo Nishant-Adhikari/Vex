@@ -248,6 +248,7 @@ async function captureExecution(
 ): Promise<void> {
   const { recordExecution } = await import("@echo-agent/db/repos/executions.js");
   const tradeCapture = (result.data?._tradeCapture as Record<string, unknown>) ?? null;
+  const tradeCaptureItems = result.data?._tradeCaptureItems as Record<string, unknown>[] | undefined;
   const externalRefs = extractExternalRefs(result.data);
 
   const executionId = await recordExecution(
@@ -274,15 +275,53 @@ async function captureExecution(
 
   // Populate proj_activity ONLY for successful executions (projections = business truth)
   // Failed mutations go to protocol_executions audit log but NOT to activity/positions/lots
-  if (tradeCapture && executionId > 0 && result.success) {
+  if (executionId > 0 && result.success) {
     try {
-      const { populateActivity } = await import("@echo-agent/sync/activity-populator.js");
-      await populateActivity(executionId, toolId, namespace, tradeCapture, externalRefs);
+      await populateCaptureItems(executionId, toolId, namespace, tradeCapture, tradeCaptureItems, externalRefs);
     } catch (err) {
       logger.warn("protocol.execute.activity_populate_failed", {
         toolId, namespace, executionId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+}
+
+/**
+ * Record capture items and populate activity rows.
+ *
+ * Batch handlers (predict.closeAll) emit _tradeCaptureItems → N items → N activity rows.
+ * Single handlers emit _tradeCapture → synthesized 1 item → 1 activity row.
+ */
+async function populateCaptureItems(
+  executionId: number,
+  toolId: string,
+  namespace: string,
+  tradeCapture: Record<string, unknown> | null,
+  tradeCaptureItems: Record<string, unknown>[] | undefined,
+  executionExternalRefs: Record<string, string>,
+): Promise<void> {
+  // Build the list of capture items to record
+  const items: Record<string, unknown>[] = Array.isArray(tradeCaptureItems) && tradeCaptureItems.length > 0
+    ? tradeCaptureItems
+    : tradeCapture ? [tradeCapture] : [];
+
+  if (items.length === 0) return;
+
+  const { recordCaptureItems } = await import("@echo-agent/db/repos/capture-items.js");
+  const { populateActivity } = await import("@echo-agent/sync/activity-populator.js");
+
+  const captureItemIds = await recordCaptureItems(
+    executionId,
+    items.map(item => ({
+      tradeCapture: item,
+      externalRefs: extractExternalRefs({ _tradeCapture: item }),
+    })),
+  );
+
+  for (let i = 0; i < items.length; i++) {
+    const itemRefs = extractExternalRefs({ _tradeCapture: items[i] });
+    const mergedRefs = { ...executionExternalRefs, ...itemRefs };
+    await populateActivity(executionId, captureItemIds[i] ?? null, toolId, namespace, items[i], mergedRefs);
   }
 }

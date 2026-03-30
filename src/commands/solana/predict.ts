@@ -45,7 +45,7 @@ export function createPredictSubcommand(): Command {
       const events = result.data;
       spin.succeed(`${events.length} event(s)`);
 
-      if (isHeadless()) { writeJsonSuccess({ events }); return; }
+      if (isHeadless()) { writeJsonSuccess({ events, pagination: result.pagination }); return; }
       if (events.length === 0) { infoBox("Predictions", "No events found."); return; }
 
       printTable(
@@ -106,7 +106,11 @@ export function createPredictSubcommand(): Command {
     .option("--yes", "Skip confirmation")
     .action(async (marketId: string, options: { side: string; amount: string; yes?: boolean }) => {
       const wallet = requireSolanaWallet();
-      const isYes = options.side.toLowerCase() === "yes";
+      const normalizedSide = options.side.toLowerCase();
+      if (normalizedSide !== "yes" && normalizedSide !== "no") {
+        throw new EchoError(ErrorCodes.SOLANA_PREDICT_ORDER_FAILED, `Invalid side: "${options.side}". Must be "yes" or "no".`);
+      }
+      const isYes = normalizedSide === "yes";
       const amount = Number(options.amount);
       const depositAmount = Math.round(amount * 1_000_000);
 
@@ -149,7 +153,7 @@ export function createPredictSubcommand(): Command {
       const positions = result.data;
       spin.succeed(`${positions.length} position(s)`);
 
-      if (isHeadless()) { writeJsonSuccess({ positions }); return; }
+      if (isHeadless()) { writeJsonSuccess({ positions: result.data, pagination: result.pagination }); return; }
       if (positions.length === 0) { infoBox("Positions", "No prediction positions."); return; }
 
       printTable(
@@ -272,7 +276,7 @@ export function createPredictSubcommand(): Command {
       spin.succeed(`${history.length} event(s)`);
 
       if (isHeadless()) {
-        writeJsonSuccess({ history, hasNext });
+        writeJsonSuccess({ history, pagination: result.pagination });
         return;
       }
 

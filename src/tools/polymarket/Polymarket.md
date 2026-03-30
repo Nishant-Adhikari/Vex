@@ -1,5 +1,11 @@
 # Polymarket Module Map — Prediction Markets on Polygon (EVM)
 
+> **Last updated: 2026-03-30**
+>
+> **LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove endpoints, update types, fix stale references.
+>
+> **Docs:** https://docs.polymarket.com/api-reference/introduction
+
 This document maps every `.ts` file in `src/tools/polymarket/` and `src/commands/polymarket/` to the data it provides for prediction market trading, portfolio tracking, market research, and real-time streaming.
 
 **Chain**: Polygon (chainId 137)
@@ -362,12 +368,92 @@ All USDC amounts use **fixed-math with 6 decimals** (USDC.e standard).
 | POLY_PROXY | `1` | Magic Link exported key |
 | GNOSIS_SAFE | `2` | Gnosis Safe multisig (most common) |
 
-### Auto-Setup
+### Auto-Setup (recommended)
 
 `echoclaw polymarket setup --yes` does everything automatically:
 1. Signs L1 EIP-712 message with wallet
 2. Derives API credentials
 3. Saves to `~/.config/echoclaw/.env`
+
+---
+
+## Account Setup & API Key Generation
+
+### Prerequisites
+
+1. **EVM wallet** configured in EchoClaw: `echoclaw wallet create` or `echoclaw wallet import <key>`
+2. Wallet needs a small amount of MATIC on Polygon for gas (only if bridging/approving — trading itself is gasless via Relayer)
+
+### One-command setup
+
+```bash
+echoclaw polymarket setup --yes --json
+```
+
+This is all you need. The command:
+1. Loads your wallet from the EchoClaw keystore
+2. Requests a nonce from `GET https://clob.polymarket.com/auth/nonce`
+3. Signs the nonce with your wallet private key (EIP-191 personal_sign)
+4. Derives API credentials via `POST https://clob.polymarket.com/auth/derive-api-key` with `{ address, nonce, signature, timestamp }`
+5. Receives `{ apiKey, secret, passphrase }` from Polymarket
+6. Saves all three to `~/.config/echoclaw/.env`
+
+**No Polymarket web UI needed.** The wallet IS the account — Polymarket uses your Polygon address as the identity. First API key derivation implicitly creates the account.
+
+### ENV vars saved
+
+| Variable | Purpose |
+|----------|---------|
+| `POLYMARKET_API_KEY` | API key UUID — identifies the session |
+| `POLYMARKET_API_SECRET` | HMAC secret — used to sign every authenticated request |
+| `POLYMARKET_PASSPHRASE` | Passphrase — sent as header with each request |
+
+All three are required for trading. Market data endpoints (prices, orderbook, events) work without auth.
+
+### Re-generating credentials
+
+```bash
+echoclaw polymarket setup --yes --force --json
+```
+
+`--force` overwrites existing credentials. Useful if keys were compromised or expired.
+
+### Manual API key via raw API (reference)
+
+If not using EchoClaw CLI:
+
+```bash
+# 1. Get nonce
+NONCE=$(curl -s https://clob.polymarket.com/auth/nonce)
+
+# 2. Sign nonce with wallet (EIP-191 personal_sign)
+SIGNATURE=$(cast wallet sign --private-key $PRIVATE_KEY "$NONCE")
+
+# 3. Derive API key
+curl -X POST https://clob.polymarket.com/auth/derive-api-key \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "'$WALLET_ADDRESS'",
+    "nonce": "'$NONCE'",
+    "signature": "'$SIGNATURE'",
+    "timestamp": "'$(date +%s)'"
+  }'
+# Returns: { "apiKey": "...", "secret": "...", "passphrase": "..." }
+```
+
+### Verification
+
+```bash
+# Check if credentials work
+echoclaw polymarket orders --json
+# Should return { success: true, ... } (empty orders list if no trades yet)
+```
+
+### Implementation
+
+- Setup command: `src/commands/polymarket/setup.ts`
+- Auth + HMAC signing: `src/tools/polymarket/auth.ts`
+- Constants (env var names): `src/tools/polymarket/constants.ts`
 
 ---
 

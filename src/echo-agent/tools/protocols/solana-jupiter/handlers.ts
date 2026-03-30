@@ -182,7 +182,9 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const marketId = str(p, "marketId"), side = str(p, "side");
     const amount = num(p, "amountUsdc");
     if (!marketId || !side || amount == null) return fail("Missing required: marketId, side, amountUsdc");
-    const isYes = side.toLowerCase() === "yes";
+    const normalizedSide = side.toLowerCase();
+    if (normalizedSide !== "yes" && normalizedSide !== "no") return fail('side must be "yes" or "no"');
+    const isYes = normalizedSide === "yes";
     const depositAmount = Math.round(amount * 1_000_000);
     const result = await executeJupiterPredictionCreateOrder(walletSecret(), {
       marketId, isYes, isBuy: true, depositAmount, depositMint: JUPITER_PREDICTION_USDC_MINT,
@@ -197,8 +199,8 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
         _tradeCapture: {
           type: "prediction", chain: "solana", status: "open",
           walletAddress: walletAddress(p), tradeSide: "buy",
-          positionKey: positionPubkey, instrumentKey: `solana:predict:${marketId}:${side}`,
-          meta: { marketId, side },
+          positionKey: positionPubkey, instrumentKey: `solana:predict:${marketId}:${normalizedSide}`,
+          meta: { marketId, side: normalizedSide },
         },
       },
     };
@@ -207,6 +209,8 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const pk = str(p, "positionPubkey");
     if (!pk) return fail("Missing required: positionPubkey");
     const result = await executeJupiterPredictionClosePosition(walletSecret(), pk);
+    const order = result.raw.order;
+    const outcome = order.isYes ? "yes" : "no";
     return {
       success: true,
       output: JSON.stringify(result, null, 2),
@@ -215,7 +219,9 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
         _tradeCapture: {
           type: "prediction", chain: "solana", status: "closed",
           walletAddress: walletAddress(p), tradeSide: "sell",
-          positionKey: pk, meta: { positionPubkey: pk },
+          positionKey: pk,
+          instrumentKey: `solana:predict:${order.marketId}:${outcome}`,
+          meta: { positionPubkey: pk, marketId: order.marketId, side: outcome },
         },
       },
     };
@@ -224,6 +230,8 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const pk = str(p, "positionPubkey");
     if (!pk) return fail("Missing required: positionPubkey");
     const result = await executeJupiterPredictionClaimPosition(walletSecret(), pk);
+    const pos = result.raw.position;
+    const outcome = pos.isYes ? "yes" : "no";
     return {
       success: true,
       output: JSON.stringify(result, null, 2),
@@ -232,7 +240,9 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
         _tradeCapture: {
           type: "prediction", chain: "solana", status: "claimed",
           walletAddress: walletAddress(p), positionKey: pk,
-          meta: { positionPubkey: pk },
+          // No instrumentKey — claim response has marketPubkey (account address), not marketId.
+          // Downstream matches via positionKey from the buy capture.
+          meta: { positionPubkey: pk, side: outcome, payoutAmountUsd: pos.payoutAmountUsd },
         },
       },
     };
@@ -244,12 +254,15 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const captureItems = result.results.map(item => {
       let pk: string | undefined;
       let marketId: string | undefined;
+      let outcome: string | undefined;
 
       if ("order" in item.raw) {
         pk = item.raw.order.positionPubkey;
         marketId = item.raw.order.marketId;
+        outcome = item.raw.order.isYes ? "yes" : "no";
       } else if ("position" in item.raw) {
         pk = item.raw.position.positionPubkey;
+        outcome = item.raw.position.isYes ? "yes" : "no";
       }
 
       return {
@@ -258,8 +271,8 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
         walletAddress: wallet, tradeSide: "sell" as const,
         signature: item.signature,
         positionKey: pk,
-        instrumentKey: marketId ? `solana:predict:${marketId}` : undefined,
-        meta: { kind: item.kind, positionPubkey: pk },
+        instrumentKey: marketId && outcome ? `solana:predict:${marketId}:${outcome}` : undefined,
+        meta: { kind: item.kind, positionPubkey: pk, outcome },
       };
     });
 
@@ -297,8 +310,8 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const posAddresses = positions.map(pos => pos.token.assetAddress).filter(Boolean);
     const earningsResult = posAddresses.length > 0
       ? await getJupiterLendEarnEarnings(addr, posAddresses)
-      : { earnings: [] };
-    return ok({ positions, earnings: earningsResult.earnings });
+      : null;
+    return ok({ positions, earnings: earningsResult?.earnings ?? [], earningsRaw: earningsResult?.raw });
   },
   "solana.lend.deposit": async (p) => {
     const asset = str(p, "asset"), amount = str(p, "amount");

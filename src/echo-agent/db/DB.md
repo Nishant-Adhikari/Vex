@@ -23,7 +23,7 @@ db/
 | B. Runtime & Sessions | `sessions`, `messages`, `messages_archive`, `approval_queue`, `runtime_state`, `runtime_cycles` | Conversation lifecycle, compaction, approvals, loop engine state |
 | C. Automation | `schedules`, `schedule_runs`, `subagents`, `session_links`, `subagent_messages`, `inbox_events` | Cron tasks, subagent lifecycle, session relationships, autonomy queue |
 | D. Inference & Provider | `usage_log`, `billing_snapshots` | Token usage with cache/reasoning breakdown, provider balance history |
-| E. Protocol Pipeline | `protocol_executions`, `protocol_sync_jobs`, `protocol_sync_runs`, `proj_balances`, `proj_portfolio_snapshots`, `proj_open_positions`, `proj_pnl_lots`, `proj_activity` | Execution audit, sync pipeline, projection tables, FIFO lot ledger |
+| E. Protocol Pipeline | `protocol_executions`, `protocol_capture_items`, `protocol_sync_jobs`, `protocol_sync_runs`, `proj_balances`, `proj_portfolio_snapshots`, `proj_open_positions`, `proj_pnl_lots`, `proj_activity` | Execution audit, batch capture items, sync pipeline, projection tables, FIFO lot ledger |
 | F. Web Cache | `search_cache`, `fetch_cache` | Tavily search/fetch result cache with TTL |
 
 ### 002_engine_missions.sql (engine extensions)
@@ -43,7 +43,7 @@ db/
 
 **NULL-safe unique indexes** — `folders` and `documents` have split unique indexes for root-level (NULL parent/folder) vs nested entries, because Postgres treats NULL != NULL in unique constraints.
 
-**Protocol execution pipeline** — `protocol_executions` captures every mutating tool call with `external_refs JSONB` (txHash, orderId, positionPubkey etc.) indexed via GIN + partial btree. `protocol_sync_jobs` defines what to refresh per namespace. `protocol_sync_runs` audits each refresh. Projection tables (`proj_*`) hold derived state.
+**Protocol execution pipeline** — `protocol_executions` captures every mutating tool call (1 row per invocation) with `external_refs JSONB` indexed via GIN + partial btree. `protocol_capture_items` holds per-position/per-trade items within a single execution — batch tool calls (predict.closeAll) produce N items, single calls synthesize 1. `proj_activity` references `capture_item_id` instead of relying on UNIQUE(execution_id), enabling N activity rows per execution. `protocol_sync_jobs` defines refresh strategies. Projection tables (`proj_*`) hold derived state.
 
 **No cli_execute** — Scheduler task types: `tool_call`, `wake_agent`, `reminder`, `monitor`, `snapshot`, `backup`. No legacy CLI spawning.
 
@@ -65,9 +65,10 @@ db/
 | `subagents.ts` | Automation | `insert()`, `updateStatus()`, `getActive()`, `getRecent()`, `markOrphans()` |
 | `subagent-messages.ts` | Automation | `sendMessage()`, `sendStructuredMessage()`, `getMessages()`, `getMessagesByDirection()`, `getUnhandled()`, `getMessagesByType()`, `markHandled()` |
 | `executions.ts` | Protocol | `recordExecution()`, `getById()`, `getByExternalRef()`, `getByNamespace()` |
+| `capture-items.ts` | Protocol | `recordCaptureItems()` (bulk insert N items per execution), `getByExecution()` |
 | `sync.ts` | Protocol | `getJobsForNamespace()`, `getAllJobs()`, `getJob()`, `getLastCompletedRun()`, `enqueueRun()`, `claimPendingRun()`, `claimAllPending()`, `completeRun()`, `failRun()` |
 | `balances.ts` | Projection | `upsertBalance()`, `replaceBalancesForChain()` (transactional), `getBalances()`, `getBalancesByChain()`, `getTotalUsd()`, `insertSnapshot()`, `getLatestSnapshot()`, `getSnapshotHistory()` |
-| `activity.ts` | Projection | `insertActivity()` (idempotent UNIQUE execution_id), `getActivities()`, `getByExecution()`, `getByPositionKey()`, `getByInstrumentKey()` |
+| `activity.ts` | Projection | `insertActivity()` (with `captureItemId`), `getActivities()`, `getByExecution()` (returns list — batch captures produce N rows), `getByPositionKey()`, `getByInstrumentKey()` |
 | `open-positions.ts` | Projection | `upsertPosition()`, `closePosition()`, `getOpen()`, `getByPositionKey()` |
 | `pnl-lots.ts` | Projection | `openLot()`, `getOpenLots()` (FIFO ordered), `reduceLot()`, `closeLot()` |
 | `usage.ts` | Inference | `logUsage()` (with cached/reasoning tokens), `getStats()` |

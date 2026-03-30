@@ -112,12 +112,23 @@ Worker claims ALL pending runs at once (`claimAllPending()` with FOR UPDATE SKIP
 
 ## Activity population
 
-`activity-populator.ts` is called from `captureExecution()` in `runtime.ts` after every mutating tool execution. Maps `_tradeCapture` → `proj_activity` row with:
+`activity-populator.ts` is called from `populateCaptureItems()` in `runtime.ts` after every mutating tool execution. Maps capture items → `proj_activity` rows.
+
+### Capture model: 1 execution → N capture items → N activity rows
+
+| Handler type | `_tradeCapture` | `_tradeCaptureItems` | Result |
+|---|---|---|---|
+| Single (swap, lend.deposit) | 1 object | absent | 1 capture item → 1 activity row |
+| Batch (predict.closeAll) | summary object | N objects | N capture items → N activity rows |
+
+The runtime records `protocol_capture_items` first, then calls `populateActivity()` per item. Each activity row gets a `capture_item_id` FK pointing to its specific capture item. `execution_id` is shared by all activity rows from the same tool call.
+
+### Activity row fields
 - `product_type`: spot, perps, prediction, lp, lend, stake, bridge, reward
 - `trade_side`: only for real trades (spot buy/sell, perps open/close, prediction buy/sell). NULL for bridge, lend, stake, lp, reward, claim.
 - `instrument_key`: canonical per product (`solana:{mint}`, `polymarket:{conditionId}:{outcome}`, `{chain}:lp:{pool}`)
 - `position_key`: positionPubkey, orderKey, positionId
-- Idempotent via `UNIQUE(execution_id)` — ON CONFLICT DO NOTHING
+- `capture_item_id`: FK to `protocol_capture_items` — enables per-position correlation for batch captures
 
 ## Position projector
 

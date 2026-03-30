@@ -2,6 +2,11 @@
 
 This document maps every `.ts` file in `src/tools/dexscreener/` and `src/commands/dexscreener/` to the data it provides for token research, pair analytics, trending signals, community takeovers, and real-time WebSocket streaming.
 
+**Last updated: 2026-03-30**
+
+**LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove endpoints, update types, fix stale references.
+
+**Docs:** https://docs.dexscreener.com/api/reference
 **Base URL**: `https://api.dexscreener.com`
 **Auth**: None required (open API)
 **Rate limits**: 60 req/min (profiles, boosts, CTO, ads, orders), 300 req/min (search, pairs, tokens, token-pairs)

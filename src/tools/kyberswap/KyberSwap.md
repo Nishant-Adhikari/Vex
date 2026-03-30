@@ -1,5 +1,11 @@
 # KyberSwap Module Map — Multi-Chain EVM Swaps, Limit Orders & Liquidity
 
+> **Last updated: 2026-03-30**
+>
+> **LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove endpoints, update types, fix stale references.
+>
+> **Docs:** https://docs.kyberswap.com/
+
 This document maps every `.ts` file in `src/tools/kyberswap/` and `src/commands/kyberswap/` to the data it provides for token swaps, limit orders, liquidity provisioning, token discovery, and portfolio tracking across 18 EVM chains and 400+ DEXs.
 
 ---

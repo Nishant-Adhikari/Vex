@@ -29,6 +29,9 @@ export interface RuntimeUpdateStatus {
   readyToApply: boolean;
 }
 
+const RUNTIME_UPDATE_TODO_MESSAGE =
+  "TODO: package-managed runtime update is temporarily disabled until agent-shim is migrated to echo-agent.";
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -53,7 +56,24 @@ function clearPendingRuntimeUpdate(state: RuntimeUpdateState, appliedVersion: st
   });
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function isAgentShimTodoError(err: unknown): boolean {
+  const message = errorMessage(err);
+  return message.includes("[agent-shim]") || message.includes("legacy agent removed");
+}
+
+function logRuntimeUpdateTodo(action: string): void {
+  logger.warn(`[runtime-update][TODO] ${action}: ${RUNTIME_UPDATE_TODO_MESSAGE}`);
+}
+
 function getPullFailureMessage(err: unknown): string {
+  if (isAgentShimTodoError(err)) {
+    return RUNTIME_UPDATE_TODO_MESSAGE;
+  }
+
   const failure = getAgentComposeFailureInfo(err, { defaultHint: "Make sure Docker is running and retry." });
   return failure.hint ? `${failure.message} ${failure.hint}` : failure.message;
 }
@@ -82,6 +102,29 @@ function getDesiredAgentImageForStatus(): { desiredAgentImage: string | null; de
   return {
     desiredAgentImage: process.env.ECHO_AGENT_IMAGE?.trim() || null,
     desiredAgentTag: process.env.ECHO_AGENT_IMAGE_TAG?.trim() || null,
+  };
+}
+
+function getPassiveRuntimeUpdateStatus(
+  currentPackageVersion: string,
+  state: RuntimeUpdateState,
+  runningAgentVersion: string | null,
+  agentManagedByPackage: boolean,
+  lastErrorOverride?: string,
+): RuntimeUpdateStatus {
+  return {
+    currentPackageVersion,
+    targetPackageVersion: state.targetPackageVersion,
+    runningAgentVersion,
+    desiredAgentImage: null,
+    desiredAgentTag: null,
+    agentManagedByPackage,
+    pullStatus: state.pullStatus,
+    preparedPackageVersion: state.preparedPackageVersion,
+    applyInProgress: state.applyInProgress,
+    lastError: lastErrorOverride ?? state.lastError,
+    updateAvailable: false,
+    readyToApply: false,
   };
 }
 
@@ -117,6 +160,7 @@ export async function getRuntimeUpdateStatus(): Promise<RuntimeUpdateStatus> {
   const currentPackageVersion = readInstalledPackageVersion();
   let state = loadRuntimeUpdateState();
   const runningAgentVersion = await readRunningAgentVersion();
+  const agentManagedByPackage = isAgentImageManagedByPackage();
 
   if (
     state.targetPackageVersion != null
@@ -128,8 +172,23 @@ export async function getRuntimeUpdateStatus(): Promise<RuntimeUpdateStatus> {
     saveRuntimeUpdateState(state);
   }
 
-  const { desiredAgentImage, desiredAgentTag } = getDesiredAgentImageForStatus();
-  const agentManagedByPackage = isAgentImageManagedByPackage();
+  let desiredAgentImage: string | null;
+  let desiredAgentTag: string | null;
+  try {
+    ({ desiredAgentImage, desiredAgentTag } = getDesiredAgentImageForStatus());
+  } catch (err) {
+    if (isAgentShimTodoError(err)) {
+      return getPassiveRuntimeUpdateStatus(
+        currentPackageVersion,
+        state,
+        runningAgentVersion,
+        agentManagedByPackage,
+        state.lastError ?? RUNTIME_UPDATE_TODO_MESSAGE,
+      );
+    }
+    throw err;
+  }
+
   const updateAvailable =
     agentManagedByPackage
     && state.targetPackageVersion != null
@@ -207,7 +266,11 @@ export function startRuntimeUpdatePullInBackground(reason: "startup" | "retry" =
     } catch (err) {
       const latestState = loadRuntimeUpdateState();
       const message = getPullFailureMessage(err);
-      logger.warn(`[runtime-update] agent image pull failed: ${message}`);
+      if (isAgentShimTodoError(err)) {
+        logRuntimeUpdateTodo("pull");
+      } else {
+        logger.warn(`[runtime-update] agent image pull failed: ${message}`);
+      }
       saveRuntimeUpdateState(withUpdatedAt({
         ...latestState,
         pullStatus: latestState.targetPackageVersion === targetVersion ? "failed" : latestState.pullStatus,
@@ -313,6 +376,9 @@ export async function applyRuntimeUpdate(): Promise<{ applied: boolean; healthy:
   } catch (err) {
     const latestState = loadRuntimeUpdateState();
     const message = getPullFailureMessage(err);
+    if (isAgentShimTodoError(err)) {
+      logRuntimeUpdateTodo("apply");
+    }
     saveRuntimeUpdateState(withUpdatedAt({
       ...latestState,
       applyInProgress: false,

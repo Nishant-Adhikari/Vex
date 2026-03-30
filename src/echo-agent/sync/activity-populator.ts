@@ -1,8 +1,8 @@
 /**
  * Activity populator — maps normalized _tradeCapture → proj_activity row.
  *
- * Called from captureExecution() in runtime.ts after recording to protocol_executions.
- * Idempotent via UNIQUE(execution_id) in proj_activity.
+ * Called from populateCaptureItems() in runtime.ts after recording capture items.
+ * Batch captures (predict.closeAll) produce N activity rows per execution.
  */
 
 import * as activityRepo from "@echo-agent/db/repos/activity.js";
@@ -66,6 +66,7 @@ function deriveTradeSide(
 
 export async function populateActivity(
   executionId: number,
+  captureItemId: number | null,
   toolId: string,
   namespace: string,
   tradeCapture: Record<string, unknown>,
@@ -84,6 +85,7 @@ export async function populateActivity(
     tradeSide,
     chain,
     executionId,
+    captureItemId,
     walletAddress: typeof tradeCapture.walletAddress === "string" ? tradeCapture.walletAddress : null,
     inputToken: typeof tradeCapture.inputTokenAddress === "string" ? tradeCapture.inputTokenAddress
       : typeof tradeCapture.inputToken === "string" ? tradeCapture.inputToken : null,
@@ -100,11 +102,14 @@ export async function populateActivity(
   });
 
   if (id > 0) {
-    logger.debug("sync.activity.populated", { executionId, productType, tradeSide, namespace });
+    logger.debug("sync.activity.populated", { executionId, captureItemId, productType, tradeSide, namespace });
 
     // Project into open positions / lot ledger
     try {
-      const activityRow = await activityRepo.getByExecution(executionId);
+      const activityRows = await activityRepo.getByExecution(executionId);
+      const activityRow = captureItemId != null
+        ? activityRows.find(r => r.captureItemId === captureItemId)
+        : activityRows[0];
       if (activityRow) {
         const { projectPosition } = await import("./position-projector.js");
         await projectPosition(activityRow);
@@ -116,5 +121,4 @@ export async function populateActivity(
       });
     }
   }
-  // id === 0 means ON CONFLICT DO NOTHING fired (duplicate) — that's fine
 }

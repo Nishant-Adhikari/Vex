@@ -130,7 +130,7 @@ echoclaw config show --json
 
 - `config set-solana-rpc` changes Solana RPC endpoint and auto-detects cluster from URL.
 - `config set-solana-cluster` sets cluster and auto-fills RPC URL + explorer URL for known clusters.
-- `config set-jupiter-key` sets Jupiter API key for higher rate limits and Studio access.
+- `config set-jupiter-key` sets Jupiter API key (required for all Jupiter features: swap, browse, price, lend, predict).
 - `config show` now includes a Solana section (cluster, RPC, explorer, commitment, Jupiter key status).
 
 Interactive-only command:
@@ -183,7 +183,7 @@ Additional rules:
 - Cluster warning: a warning appears on confirm if `config.solana.cluster` is not `mainnet-beta`.
 - Recipient ATA: for SPL tokens, a recipient token account is auto-created if needed (costs ~0.002 SOL rent).
 
-For the full Solana DeFi surface (swap, stake, lend, DCA, etc.) see `references/solana/solana-jupiter.md`.
+For the full Solana DeFi surface (swap, browse, price, lend, predict) see `references/solana/solana-jupiter.md`.
 
 ## Headless Guardrail
 
@@ -325,4 +325,4 @@ Error format:
 - Trading and LP execution on 0G: `references/0g/jaine-dex.md`
 - Read-only 0G market analytics: `references/0g/jaine-subgraph.md`
 - Cross-chain bridging and token balances: `references/khalani-cross-chain.md`
-- Full Solana DeFi (swap, stake, lend, predict, DCA, etc.): `references/solana/solana-jupiter.md`
+- Solana DeFi (swap, browse, price, lend, predict): `references/solana/solana-jupiter.md`

@@ -2,6 +2,11 @@
 
 This document maps every `.ts` file in `src/tools/khalani/` and `src/commands/khalani/` to the data it provides for cross-chain bridging, quoting, token discovery, and order tracking.
 
+**Last updated: 2026-03-30**
+
+**LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove endpoints, update types, fix stale references.
+
+**Docs:** https://khalani.gitbook.io/khalani-docs
 **Base URL**: `https://api.hyperstream.dev` (configured via `config.services.khalaniApiUrl`)
 **Auth**: None required (open API, rate-limited)
 

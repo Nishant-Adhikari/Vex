@@ -103,7 +103,8 @@ export function createBrowseSubcommand(): Command {
       spin.start();
 
       try {
-        const tokens = await fetchTokens(cat, interval, limit);
+        const allTokens = await fetchTokens(cat, interval, limit);
+        const tokens = allTokens.slice(0, limit);
 
         // Cache resolved tokens for use by swap/transfer commands
         cacheSolanaTokens(tokens.map(jupiterMintInformationToMetadata));

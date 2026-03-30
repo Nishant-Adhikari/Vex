@@ -1,7 +1,8 @@
 /**
  * Activity repo — proj_activity CRUD.
  *
- * Unified cross-protocol activity feed. Idempotent via UNIQUE(execution_id).
+ * Unified cross-protocol activity feed.
+ * One execution can have N activity rows (batch captures like predict.closeAll).
  */
 
 import { query, queryOne, execute } from "../client.js";
@@ -13,6 +14,7 @@ export interface ActivityRow {
   tradeSide: string | null;
   chain: string;
   executionId: number;
+  captureItemId: number | null;
   walletAddress: string | null;
   inputToken: string | null;
   inputAmount: string | null;
@@ -31,19 +33,18 @@ export interface Activity extends ActivityRow {
   createdAt: string;
 }
 
-/** Insert activity row. Idempotent — ON CONFLICT (execution_id) DO NOTHING. */
+/** Insert activity row. Returns 0 if insert failed. */
 export async function insertActivity(row: ActivityRow): Promise<number> {
   const result = await queryOne<{ id: number }>(
     `INSERT INTO proj_activity
-     (namespace, activity_type, product_type, trade_side, chain, execution_id,
+     (namespace, activity_type, product_type, trade_side, chain, execution_id, capture_item_id,
       wallet_address, input_token, input_amount, output_token, output_amount,
       value_usd, capture_status, position_key, instrument_key, external_refs, meta)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-     ON CONFLICT (execution_id) DO NOTHING
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING id`,
     [
       row.namespace, row.activityType, row.productType, row.tradeSide, row.chain,
-      row.executionId, row.walletAddress, row.inputToken, row.inputAmount,
+      row.executionId, row.captureItemId, row.walletAddress, row.inputToken, row.inputAmount,
       row.outputToken, row.outputAmount, row.valueUsd, row.captureStatus, row.positionKey,
       row.instrumentKey, JSON.stringify(row.externalRefs), JSON.stringify(row.meta),
     ],
@@ -77,13 +78,13 @@ export async function getActivities(opts?: {
   return rows.map(mapRow);
 }
 
-/** Get activity by execution_id. */
-export async function getByExecution(executionId: number): Promise<Activity | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM proj_activity WHERE execution_id = $1",
+/** Get activities by execution_id (batch captures produce multiple rows). */
+export async function getByExecution(executionId: number): Promise<Activity[]> {
+  const rows = await query<Record<string, unknown>>(
+    "SELECT * FROM proj_activity WHERE execution_id = $1 ORDER BY id ASC",
     [executionId],
   );
-  return row ? mapRow(row) : null;
+  return rows.map(mapRow);
 }
 
 /** Get activities by position_key (for lifecycle tracking). */
@@ -113,6 +114,7 @@ function mapRow(r: Record<string, unknown>): Activity {
     tradeSide: r.trade_side as string | null,
     chain: r.chain as string,
     executionId: r.execution_id as number,
+    captureItemId: r.capture_item_id as number | null,
     walletAddress: r.wallet_address as string | null,
     inputToken: r.input_token as string | null,
     inputAmount: r.input_amount as string | null,

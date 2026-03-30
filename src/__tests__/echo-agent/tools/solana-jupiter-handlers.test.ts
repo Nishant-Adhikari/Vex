@@ -71,6 +71,25 @@ describe("solana-jupiter handlers", () => {
     expect(result.output).toContain("Missing required");
   });
 
+  it("solana.predict.buy rejects invalid side", async () => {
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
+      { marketId: "abc", side: "maybe", amountUsdc: 10 },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("yes");
+    expect(result.output).toContain("no");
+  });
+
+  it("solana.predict.buy rejects typo side silently treated as NO before fix", async () => {
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
+      { marketId: "abc", side: "Yes!", amountUsdc: 10 },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("yes");
+  });
+
   it("solana.lend.deposit fails without required params", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.lend.deposit"]!(
       {},

@@ -8,11 +8,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-// TODO(echo-agent): rewire to echo-agent/ — see agent-shim.ts for migration points
-import { PACKAGE_ROOT } from "../agent-shim.js";
+import { fileURLToPath } from "node:url";
 import { ensureConfigDir } from "../config/store.js";
 import { CONFIG_DIR } from "../config/paths.js";
 import logger from "../utils/logger.js";
+
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 export const RUNTIME_UPDATE_STATE_FILE = join(CONFIG_DIR, "runtime-update.json");
 export const RUNTIME_UPDATE_PULL_LOCK_FILE = join(CONFIG_DIR, "runtime-update.pull.lock");

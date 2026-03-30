@@ -5,8 +5,38 @@
  * and update/ are rewired to src/echo-agent/. Every export here is a
  * migration point — grep for "agent-shim" to find consumers.
  *
- * Constants are real values (stable). Docker functions throw at runtime
- * so accidental calls surface immediately.
+ * Migration status as of 2026-03-30:
+ * - runtime-update-service.ts was downgraded to TODO-mode when it hits
+ *   placeholder shim errors from this file.
+ * - GET /api/runtime-update now returns a passive status instead of
+ *   throwing `[agent-shim] ... legacy agent removed`.
+ * - retry/apply/pull paths in runtime-update persist a short TODO error
+ *   message and log `[runtime-update][TODO] ...` instead of surfacing the
+ *   raw shim exception.
+ * - runtime-update-state.ts no longer imports PACKAGE_ROOT from this shim;
+ *   it resolves package.json locally from import.meta.url.
+ * - Obsolete tests written against deleted src/agent/* modules were removed:
+ *   - src/__tests__/runtime/runtime-update-service.test.ts
+ *   - src/__tests__/runtime/runtime-update-state.test.ts
+ * - Targeted verification after that downgrade passed:
+ *   `pnpm exec vitest run src/__tests__/runtime src/__tests__/update`
+ * - Full `pnpm test` still had unrelated failures outside this shim work:
+ *   - src/__tests__/password/setup-provider-password.test.ts
+ *   - src/__tests__/echo-agent/tools/dexscreener-handlers.test.ts
+ *   - src/__tests__/echo-agent/tools/jaine-handlers.test.ts
+ *   - src/__tests__/echo-agent/tools/polymarket-handlers.test.ts
+ *   - src/__tests__/echo-agent/tools/dispatcher.test.ts
+ *
+ * Current known consumers still blocked on real Docker migration:
+ * - src/commands/echo/agent-cmd.ts
+ * - src/commands/echo/echoclaw.ts
+ * - src/launcher/handlers/agent.ts
+ * - src/launcher/handlers/tavily.ts
+ * - src/update/runtime-update-service.ts
+ *
+ * Constants below are real values and safe to keep. Docker/runtime helpers
+ * still throw on purpose so unfinished call sites fail loudly unless they
+ * explicitly handle TODO-mode.
  */
 
 import { join } from "node:path";
@@ -143,4 +173,3 @@ export function getAgentImage(): string {
 export function getAgentImageTag(): string {
   return notImplemented("getAgentImageTag");
 }
-

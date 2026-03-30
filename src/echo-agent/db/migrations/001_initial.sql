@@ -319,6 +319,19 @@ CREATE INDEX idx_executions_order_id ON protocol_executions((external_refs->>'or
 CREATE INDEX idx_executions_position ON protocol_executions((external_refs->>'positionPubkey'))
   WHERE external_refs->>'positionPubkey' IS NOT NULL;
 
+-- Protocol capture items — per-position/per-trade items within a single execution
+-- Batch tool calls (e.g. predict.closeAll) produce 1 execution + N capture items.
+-- Single tool calls synthesize 1 item from _tradeCapture for uniform downstream processing.
+CREATE TABLE protocol_capture_items (
+  id SERIAL PRIMARY KEY,
+  execution_id INTEGER NOT NULL REFERENCES protocol_executions(id) ON DELETE CASCADE,
+  item_index SMALLINT NOT NULL DEFAULT 0,
+  trade_capture JSONB NOT NULL,
+  external_refs JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_capture_items_execution ON protocol_capture_items(execution_id);
+
 -- Protocol sync jobs — refresh strategies per namespace
 CREATE TABLE protocol_sync_jobs (
   id SERIAL PRIMARY KEY,
@@ -415,7 +428,8 @@ CREATE INDEX idx_positions_position_key ON proj_open_positions(position_key) WHE
 -- product_type: spot, perps, prediction, order, lp, lend, stake, bridge, reward
 -- instrument_key: canonical per product (solana:{mint}, polymarket:{conditionId}:{outcome}, etc.)
 -- position_key: positionPubkey, orderKey, positionId — lifecycle correlation
--- execution_id is UNIQUE — idempotency key (1 execution = 1 activity row)
+-- execution_id is NOT unique — batch captures (predict.closeAll) produce N activity rows per execution
+-- capture_item_id links to the specific protocol_capture_items row for per-position correlation
 CREATE TABLE proj_activity (
   id SERIAL PRIMARY KEY,
   namespace TEXT NOT NULL,
@@ -423,7 +437,8 @@ CREATE TABLE proj_activity (
   product_type TEXT NOT NULL,
   trade_side TEXT,
   chain TEXT NOT NULL,
-  execution_id INTEGER UNIQUE REFERENCES protocol_executions(id),
+  execution_id INTEGER REFERENCES protocol_executions(id),
+  capture_item_id INTEGER REFERENCES protocol_capture_items(id),
   wallet_address TEXT,
   input_token TEXT,
   input_amount TEXT,
@@ -443,6 +458,8 @@ CREATE INDEX idx_activity_type ON proj_activity(activity_type, created_at DESC);
 CREATE INDEX idx_activity_product ON proj_activity(product_type, created_at DESC);
 CREATE INDEX idx_activity_position ON proj_activity(position_key) WHERE position_key IS NOT NULL;
 CREATE INDEX idx_activity_instrument ON proj_activity(instrument_key) WHERE instrument_key IS NOT NULL;
+CREATE INDEX idx_activity_execution ON proj_activity(execution_id);
+CREATE INDEX idx_activity_capture_item ON proj_activity(capture_item_id) WHERE capture_item_id IS NOT NULL;
 
 -- PnL lots — spot DEX cost basis ledger (FIFO)
 -- Each buy creates a lot. Sells reduce lots oldest-first.

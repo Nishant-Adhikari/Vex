@@ -20,8 +20,14 @@ vi.mock("@echo-agent/db/repos/sync.js", () => ({
   enqueueRun: vi.fn().mockResolvedValue(1),
 }));
 
+const mockRecordCaptureItems = vi.fn().mockResolvedValue([100]);
+vi.mock("@echo-agent/db/repos/capture-items.js", () => ({
+  recordCaptureItems: (...args: unknown[]) => mockRecordCaptureItems(...args),
+  getByExecution: vi.fn().mockResolvedValue([]),
+}));
+
 const mockInsertActivity = vi.fn().mockResolvedValue(1);
-const mockGetByExecution = vi.fn().mockResolvedValue(null);
+const mockGetByExecution = vi.fn().mockResolvedValue([]);
 vi.mock("@echo-agent/db/repos/activity.js", () => ({
   insertActivity: (...args: unknown[]) => mockInsertActivity(...args),
   getByExecution: (...args: unknown[]) => mockGetByExecution(...args),
@@ -206,7 +212,7 @@ describe("pre-engine hardening — runtime gate", () => {
       const { populateActivity } = await import("../../../echo-agent/sync/activity-populator.js");
 
       await populateActivity(
-        42, "solana.perps.close", "solana",
+        42, null, "solana.perps.close", "solana",
         { type: "perps", chain: "solana", status: "closed", walletAddress: "0xW", positionKey: "PK1" },
         { signature: "sig123" },
       );

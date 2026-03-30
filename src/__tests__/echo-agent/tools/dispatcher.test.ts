@@ -5,6 +5,27 @@ vi.mock("@tools/0g-compute/readiness.js", () => ({
   loadComputeState: () => null,
 }));
 
+vi.mock("@tools/wallet/multi-auth.js", () => ({
+  requireEvmWallet: () => ({
+    family: "eip155",
+    address: "0x1234567890abcdef1234567890abcdef12345678",
+    privateKey: `0x${"ab".repeat(32)}`,
+  }),
+  requireSolanaWallet: () => ({
+    family: "solana",
+    address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+    secretKey: new Uint8Array(64),
+  }),
+}));
+
+vi.mock("@tools/wallet/family.js", () => ({
+  normalizeWalletChain: (input?: string) => {
+    if (!input || input === "eip155" || input === "evm") return "eip155";
+    if (input === "solana" || input === "sol") return "solana";
+    throw new Error(`Unsupported wallet chain: ${input}`);
+  },
+}));
+
 // Mock echo-agent DB repos (no real DB in unit tests)
 vi.mock("@echo-agent/db/repos/search.js", () => ({
   getCached: vi.fn().mockResolvedValue(null),
@@ -364,7 +385,10 @@ describe("dispatcher", () => {
       baseContext,
     );
 
-    // May succeed or fail (depends on wallet config) but should never be a stub
+    expect(result.success).toBe(true);
+    const parsed = JSON.parse(result.output);
+    expect(parsed.chain).toBe("eip155");
+    expect(parsed.address).toBe("0x1234567890abcdef1234567890abcdef12345678");
     expect(result.output).not.toContain("[STUB]");
   });
 

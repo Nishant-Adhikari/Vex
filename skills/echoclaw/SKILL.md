@@ -70,7 +70,7 @@ echoclaw skill install --provider openclaw|claude|codex|other --scope user|proje
 - **Prefer task-first orchestration for setup/repair**: use `echoclaw echo connect|fund|verify|status|doctor|support-report --json` before dropping to low-level commands.
 - **Plan before apply**: for mutating `echo` flows, run `--plan` first; use `--apply` only after the user clearly wants the change.
 - **All transfers are 2-step**: run `prepare` before `confirm` for both 0G (`send prepare/confirm`) and Solana (`solana send prepare/confirm`, `solana send-token prepare/confirm`). Intents expire after 10 minutes. Prepare is read-only (no key access). Confirm requires password + `--yes`.
-- **Explicit confirmation required**: `confirm` requires `--yes`. All other Solana write commands (swap execute, stake, lend deposit, etc.) also require `--yes`.
+- **Explicit confirmation required**: `confirm` requires `--yes`. All other Solana write commands (swap execute, lend deposit, predict buy, etc.) also require `--yes`.
 - **Headless wallet mutations are blocked by default**:
   - blocked operations: `wallet create`, `wallet import`, `wallet restore`
   - override only if explicitly needed: `ECHO_ALLOW_WALLET_MUTATION=1`

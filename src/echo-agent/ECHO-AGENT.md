@@ -257,7 +257,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 - SubagentConfig with ENV overrides
 - Capture normalization: canonical `_tradeCapture` with walletAddress, instrumentKey, positionKey, tradeSide, token addresses across all 6 trading namespaces
 - **WS3 coverage matrix**: Frozen per-tool matrix (78 mutating tools, PortfolioRole × CaptureSupport). All audit captures domknięte (except 2 Polymarket bridge address-creation). `classifySolanaSwap()` deterministic trade classification in `src/tools`. Atomic amounts from source (no lossy UI→atomic). `jaine.swap.sell` instrumentKey fixed to input token.
-- `proj_activity` auto-populated from captureExecution() with idempotency (UNIQUE execution_id)
+- `proj_activity` auto-populated from captureExecution() via `protocol_capture_items` — 1 execution → N capture items → N activity rows (batch captures like predict.closeAll)
 - Activity populator with product-aware tradeSide rules (claim ≠ sell, lend/stake/bridge → null)
 - Order management mutations captured: DCA, limit orders, closeAll, cancel, fees/rewards
 - Position projector (phase 3): activity → proj_open_positions + proj_pnl_lots

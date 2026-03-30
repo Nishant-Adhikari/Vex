@@ -12,17 +12,11 @@
 
 import { requireEvmWallet, requireSolanaWallet } from "@tools/wallet/multi-auth.js";
 import { normalizeWalletChain } from "@tools/wallet/family.js";
-import { getKhalaniClient } from "@tools/khalani/client.js";
-import { getPublicClient } from "@tools/wallet/client.js";
-import { getSigningClient } from "@tools/wallet/signingClient.js";
-import { sendSol, sendSplToken } from "@tools/solana-ecosystem/shared/solana-transfer.js";
-import { resolveJupiterToken } from "@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
-import { Keypair } from "@solana/web3.js";
-import { formatUnits, parseUnits, type Address } from "viem";
+import type { Address } from "viem";
 
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
-import { str, num } from "./types.js";
+import { str } from "./types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -72,6 +66,7 @@ export async function handleWalletRead(
   }
 
   if (action === "balances") {
+    const { getKhalaniClient } = await import("@tools/khalani/client.js");
     const walletScope = str(params, "wallet") || "all";
     const chainIds = parseChainIds(str(params, "chainIds"));
     const results: Array<{ wallet: string; address: string; tokens: unknown[] }> = [];
@@ -215,6 +210,11 @@ export async function handleWalletSendConfirm(
 // ── Solana transfer execution ────────────────────────────────────
 
 async function executeSolanaTransfer(intent: TransferIntent): Promise<ToolResult> {
+  const [{ Keypair }, { sendSol, sendSplToken }, { resolveJupiterToken }] = await Promise.all([
+    import("@solana/web3.js"),
+    import("@tools/solana-ecosystem/shared/solana-transfer.js"),
+    import("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js"),
+  ]);
   const wallet = requireSolanaWallet();
   const keypair = Keypair.fromSecretKey(wallet.secretKey);
 
@@ -283,6 +283,11 @@ async function executeSolanaTransfer(intent: TransferIntent): Promise<ToolResult
 // ── EVM transfer execution (0G native) ───────────────────────────
 
 async function executeEvmTransfer(intent: TransferIntent): Promise<ToolResult> {
+  const [{ getSigningClient }, { getPublicClient }, { parseUnits }] = await Promise.all([
+    import("@tools/wallet/signingClient.js"),
+    import("@tools/wallet/client.js"),
+    import("viem"),
+  ]);
   const wallet = requireEvmWallet();
   const client = getSigningClient(wallet.privateKey);
 
