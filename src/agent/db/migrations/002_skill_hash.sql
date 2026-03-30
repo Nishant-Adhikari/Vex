@@ -1,2 +1,0 @@
--- 002: (removed) skill_references content_hash — table dropped in 012
--- Kept as placeholder to preserve migration numbering.

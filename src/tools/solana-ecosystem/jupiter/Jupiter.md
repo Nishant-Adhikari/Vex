@@ -12,6 +12,8 @@ Local source-of-truth for Jupiter integrations under `src/tools/solana-ecosystem
 - `https://dev.jup.ag/docs/swap/routing/index.md`
 - `https://dev.jup.ag/docs/swap/advanced/index.md`
 - `https://dev.jup.ag/guides/how-to-get-token-price.md`
+- `https://dev.jup.ag/docs/prediction/index.md`
+- indexed Prediction OpenAPI entries from `llms.txt`
 - `https://dev.jup.ag/openapi-spec/price/v3/price.yaml`
 - `https://dev.jup.ag/portal/migrate-from-lite-api`
 - Verified on `2026-03-30`
@@ -27,9 +29,9 @@ Local source-of-truth for Jupiter integrations under `src/tools/solana-ecosystem
   - `jupiter-prices/` for Jupiter Price API V3.
   - `jupiter-tokens/` for Tokens API V2 and Token Content API.
   - `jupiter-lend/` for Jupiter Lend Earn REST.
+  - `jupiter-prediction/` for indexed Jupiter Prediction REST.
 - Planned next:
   - perps
-  - prediction
   - orders
   - studio
   - send
@@ -59,6 +61,17 @@ src/tools/solana-ecosystem/jupiter/
 │       ├── validation.ts
 │       ├── index.ts
 │       └── JupiterLendEarnApi.md
+├── jupiter-prediction/
+│   ├── index.ts
+│   ├── constants.ts
+│   ├── JupiterPrediction.md
+│   └── prediction-api/
+│       ├── client.ts
+│       ├── service.ts
+│       ├── types.ts
+│       ├── validation.ts
+│       ├── index.ts
+│       └── JupiterPredictionApi.md
 ├── jupiter-tokens/
 │   ├── client.ts
 │   ├── service.ts
@@ -90,7 +103,7 @@ src/tools/solana-ecosystem/jupiter/
 - `src/tools/solana-ecosystem/jupiter/**/*` must not import legacy `src/tools/chains/solana/*`.
 
 ## API Key Policy
-- Jupiter Swap V2, Tokens API V2, Token Content API, and Jupiter Lend Earn REST require `x-api-key`.
+- Jupiter Swap V2, Tokens API V2, Token Content API, Jupiter Lend Earn REST, and Jupiter Prediction require `x-api-key`.
 - Local resolution order:
   1. `process.env.JUPITER_API_KEY`
   2. `loadConfig().solana.jupiterApiKey`
@@ -108,3 +121,4 @@ src/tools/solana-ecosystem/jupiter/
 - Rewiring should happen only after the new Jupiter shelves are complete enough to replace their legacy surfaces.
 - `content/summaries` is implemented from official docs guidance plus sibling content schemas because Jupiter does not currently expose a dedicated reference page for it in the docs index.
 - Jupiter Lend advanced guides that still depend on `lite-api.jup.ag` are explicitly deferred in the new shelf rather than reimplemented here.
+- Jupiter Prediction prose currently mentions some routes that are not present in the indexed OpenAPI pages from `llms.txt`; those stay deferred until the indexed contract is available.
