@@ -5,9 +5,9 @@
 
 import { Keypair } from "@solana/web3.js";
 import { EchoError, ErrorCodes } from "../../../../errors.js";
-import { resolveToken } from "../../../chains/solana/token-registry.js";
-import { deserializeVersionedTx, signVersionedTx } from "../../../chains/solana/tx.js";
-import { solanaExplorerUrl, tokenAmountToUi, uiToTokenAmount } from "../../../chains/solana/validation.js";
+import { requireJupiterResolvedToken } from "../jupiter-tokens/service.js";
+import { deserializeVersionedTx, signVersionedTx } from "../../shared/solana-transaction.js";
+import { solanaExplorerUrl, tokenAmountToUi, uiToTokenAmount } from "../../shared/solana-validation.js";
 import { jupiterSwapBuild, jupiterSwapExecute, jupiterSwapOrder } from "./client.js";
 import type {
   JupiterSwapBuildOptions,
@@ -36,23 +36,8 @@ async function resolveSwapTokens(
   inputSymbolOrMint: string,
   outputSymbolOrMint: string,
 ): Promise<{ inputToken: TokenMetadata; outputToken: TokenMetadata }> {
-  const inputToken = await resolveToken(inputSymbolOrMint);
-  if (!inputToken) {
-    throw new EchoError(
-      ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
-      `Input token not found: ${inputSymbolOrMint}`,
-      "Use a mint address or check spelling.",
-    );
-  }
-
-  const outputToken = await resolveToken(outputSymbolOrMint);
-  if (!outputToken) {
-    throw new EchoError(
-      ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
-      `Output token not found: ${outputSymbolOrMint}`,
-      "Use a mint address or check spelling.",
-    );
-  }
+  const inputToken = await requireJupiterResolvedToken(inputSymbolOrMint);
+  const outputToken = await requireJupiterResolvedToken(outputSymbolOrMint);
 
   return { inputToken, outputToken };
 }

@@ -2,9 +2,12 @@
  * Validation and auth helpers for Jupiter Swap API V2.
  */
 
-import { loadConfig } from "../../../../config/store.js";
 import { EchoError, ErrorCodes } from "../../../../errors.js";
-import { validateSolanaAddress } from "../../../chains/solana/validation.js";
+import {
+  requireJupiterApiKey as requireSharedJupiterApiKey,
+  resolveJupiterApiKey as resolveSharedJupiterApiKey,
+} from "../../shared/jupiter-auth.js";
+import { validateSolanaAddress } from "../../shared/solana-validation.js";
 import type {
   JupiterSwapBuildParams,
   JupiterSwapExecuteRequest,
@@ -90,19 +93,14 @@ function normalizeCsvValue(value?: string | string[]): string | undefined {
 }
 
 export function resolveJupiterApiKey(): string {
-  return process.env.JUPITER_API_KEY?.trim() || loadConfig().solana.jupiterApiKey || "";
+  return resolveSharedJupiterApiKey();
 }
 
 export function requireJupiterApiKey(): string {
-  const apiKey = resolveJupiterApiKey();
-  if (!apiKey) {
-    throw new EchoError(
-      ErrorCodes.SOLANA_SWAP_FAILED,
-      "JUPITER_API_KEY is required for Jupiter Swap API V2.",
-      "Generate a key at https://portal.jup.ag and set JUPITER_API_KEY or config.solana.jupiterApiKey.",
-    );
-  }
-  return apiKey;
+  return requireSharedJupiterApiKey({
+    feature: "Jupiter Swap API V2",
+    errorCode: ErrorCodes.SOLANA_SWAP_FAILED,
+  });
 }
 
 export function getJupiterSwapHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {

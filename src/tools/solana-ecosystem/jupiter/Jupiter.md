@@ -22,8 +22,8 @@ Local source-of-truth for Jupiter integrations under `src/tools/solana-ecosystem
 ## Current Status
 - Implemented now:
   - `jupiter-swaps/` for Jupiter Swap API V2.
+  - `jupiter-tokens/` for Tokens API V2 and Token Content API.
 - Planned next:
-  - tokens
   - perps
   - prediction
   - orders
@@ -37,6 +37,20 @@ Local source-of-truth for Jupiter integrations under `src/tools/solana-ecosystem
 src/tools/solana-ecosystem/jupiter/
 ├── index.ts
 ├── Jupiter.md
+├── jupiter-tokens/
+│   ├── client.ts
+│   ├── service.ts
+│   ├── types.ts
+│   ├── validation.ts
+│   ├── index.ts
+│   ├── JupiterTokens.md
+│   └── content/
+│       ├── client.ts
+│       ├── service.ts
+│       ├── types.ts
+│       ├── validation.ts
+│       ├── index.ts
+│       └── JupiterTokenContent.md
 └── jupiter-swaps/
     ├── client.ts
     ├── service.ts
@@ -51,9 +65,10 @@ src/tools/solana-ecosystem/jupiter/
 - `types.ts` preserves full response shapes instead of flattening them into CLI-only DTOs.
 - `service.ts` may add convenience summaries, token resolution, UI amount conversion, and signing, but must keep the raw response available.
 - `validation.ts` owns request contract checks and API key requirements.
+- `src/tools/solana-ecosystem/jupiter/**/*` must not import legacy `src/tools/chains/solana/*`.
 
 ## API Key Policy
-- Jupiter Swap V2 requires `x-api-key`.
+- Jupiter Swap V2, Tokens API V2, and Token Content API require `x-api-key`.
 - Local resolution order:
   1. `process.env.JUPITER_API_KEY`
   2. `loadConfig().solana.jupiterApiKey`
@@ -69,3 +84,4 @@ src/tools/solana-ecosystem/jupiter/
 ## Notes For Future Migration
 - Legacy `src/tools/chains/solana/*` consumers are intentionally not rewired in this pass.
 - Rewiring should happen only after the new Jupiter shelves are complete enough to replace their legacy surfaces.
+- `content/summaries` is implemented from official docs guidance plus sibling content schemas because Jupiter does not currently expose a dedicated reference page for it in the docs index.

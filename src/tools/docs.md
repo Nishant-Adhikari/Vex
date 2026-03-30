@@ -3,9 +3,11 @@
 Local docs:
 - `src/tools/solana-ecosystem/jupiter/Jupiter.md`
 - `src/tools/solana-ecosystem/jupiter/jupiter-swaps/JupiterSwaps.md`
+- `src/tools/solana-ecosystem/jupiter/jupiter-tokens/JupiterTokens.md`
+- `src/tools/solana-ecosystem/jupiter/jupiter-tokens/content/JupiterTokenContent.md`
 
 Official docs index:
-https://dev.jup.ag/llms.txt
+https://dev.jup.ag/docs/llms.txt
 
 # Khalani
 

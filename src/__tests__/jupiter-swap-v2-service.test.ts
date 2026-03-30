@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockResolveToken = vi.fn();
-vi.mock("../tools/chains/solana/token-registry.js", () => ({
-  resolveToken: (...args: unknown[]) => mockResolveToken(...args),
+const mockRequireResolvedToken = vi.fn();
+vi.mock("../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
+  requireJupiterResolvedToken: (...args: unknown[]) => mockRequireResolvedToken(...args),
 }));
 
 const mockSwapOrder = vi.fn();
@@ -16,7 +16,7 @@ vi.mock("../tools/solana-ecosystem/jupiter/jupiter-swaps/client.js", () => ({
 
 const mockDeserialize = vi.fn(() => ({ serialize: () => new Uint8Array([1, 2, 3]) }));
 const mockSign = vi.fn();
-vi.mock("../tools/chains/solana/tx.js", () => ({
+vi.mock("../tools/solana-ecosystem/shared/solana-transaction.js", () => ({
   deserializeVersionedTx: (...args: unknown[]) => mockDeserialize(...args),
   signVersionedTx: (...args: unknown[]) => mockSign(...args),
 }));
@@ -56,7 +56,7 @@ describe("jupiter swap v2 service", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveToken.mockImplementation((symbol: string) => {
+    mockRequireResolvedToken.mockImplementation((symbol: string) => {
       if (symbol === "SOL") return SOL_TOKEN;
       if (symbol === "USDC") return USDC_TOKEN;
       return undefined;
