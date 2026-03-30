@@ -3,7 +3,11 @@
  * Verified from official Jupiter docs and API reference on 2026-03-30.
  */
 
-import type { TokenMetadata } from "../../shared/types.js";
+import type {
+  SolanaInstructionAccountMeta,
+  SolanaInstructionWire,
+  TokenMetadata,
+} from "../../shared/types.js";
 
 export const JUPITER_SWAP_V2_BASE_URL = "https://api.jup.ag/swap/v2";
 
@@ -35,17 +39,8 @@ export interface JupiterSwapPlatformFee {
   feeMint: string;
 }
 
-export interface JupiterSwapInstructionAccount {
-  pubkey: string;
-  isWritable: boolean;
-  isSigner: boolean;
-}
-
-export interface JupiterSwapInstruction {
-  programId: string;
-  accounts: JupiterSwapInstructionAccount[];
-  data: string;
-}
+export type JupiterSwapInstructionAccount = SolanaInstructionAccountMeta;
+export type JupiterSwapInstruction = SolanaInstructionWire;
 
 export interface JupiterSwapBuildBlockhashWithMetadata {
   blockhash: number[];

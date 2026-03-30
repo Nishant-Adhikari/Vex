@@ -1,27 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+function callMock<T>(mock: unknown, args: unknown[]): T {
+  return (mock as (...innerArgs: unknown[]) => T)(...args);
+}
+
 const mockRequireResolvedToken = vi.fn();
-vi.mock("../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
-  requireJupiterResolvedToken: (...args: unknown[]) => mockRequireResolvedToken(...args),
+vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
+  requireJupiterResolvedToken: (...args: unknown[]) => callMock(mockRequireResolvedToken, args),
 }));
 
 const mockSwapOrder = vi.fn();
 const mockSwapBuild = vi.fn();
 const mockSwapExecute = vi.fn();
-vi.mock("../tools/solana-ecosystem/jupiter/jupiter-swaps/client.js", () => ({
-  jupiterSwapOrder: (...args: unknown[]) => mockSwapOrder(...args),
-  jupiterSwapBuild: (...args: unknown[]) => mockSwapBuild(...args),
-  jupiterSwapExecute: (...args: unknown[]) => mockSwapExecute(...args),
+vi.mock("@tools/solana-ecosystem/jupiter/jupiter-swaps/client.js", () => ({
+  jupiterSwapOrder: (...args: unknown[]) => callMock(mockSwapOrder, args),
+  jupiterSwapBuild: (...args: unknown[]) => callMock(mockSwapBuild, args),
+  jupiterSwapExecute: (...args: unknown[]) => callMock(mockSwapExecute, args),
 }));
 
 const mockDeserialize = vi.fn(() => ({ serialize: () => new Uint8Array([1, 2, 3]) }));
 const mockSign = vi.fn();
-vi.mock("../tools/solana-ecosystem/shared/solana-transaction.js", () => ({
-  deserializeVersionedTx: (...args: unknown[]) => mockDeserialize(...args),
-  signVersionedTx: (...args: unknown[]) => mockSign(...args),
+vi.mock("@tools/solana-ecosystem/shared/solana-transaction.js", () => ({
+  deserializeVersionedTx: (...args: unknown[]) => callMock(mockDeserialize, args),
+  signVersionedTx: (...args: unknown[]) => callMock(mockSign, args),
 }));
 
-vi.mock("../config/store.js", () => ({
+vi.mock("@config/store.js", () => ({
   loadConfig: () => ({
     solana: { explorerUrl: "https://explorer.solana.com", cluster: "mainnet-beta" },
   }),
@@ -31,8 +35,8 @@ const {
   getJupiterSwapQuote,
   buildSwapTransaction,
   executeJupiterSwap,
-} = await import("../tools/solana-ecosystem/jupiter/jupiter-swaps/service.js");
-const { ErrorCodes } = await import("../errors.js");
+} = await import("@tools/solana-ecosystem/jupiter/jupiter-swaps/service.js");
+const { ErrorCodes } = await import("../../../../errors.js");
 const { Keypair } = await import("@solana/web3.js");
 
 const SOL_TOKEN = {

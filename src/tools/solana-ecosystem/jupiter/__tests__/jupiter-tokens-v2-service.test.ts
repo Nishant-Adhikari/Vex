@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+function callMock<T>(mock: unknown, args: unknown[]): T {
+  return (mock as (...innerArgs: unknown[]) => T)(...args);
+}
+
 const mockGetCachedSolanaToken = vi.fn();
 const mockCacheSolanaTokens = vi.fn();
-vi.mock("../tools/solana-ecosystem/shared/solana-token-cache.js", () => ({
-  getCachedSolanaToken: (...args: unknown[]) => mockGetCachedSolanaToken(...args),
-  cacheSolanaTokens: (...args: unknown[]) => mockCacheSolanaTokens(...args),
+vi.mock("@tools/solana-ecosystem/shared/solana-token-cache.js", () => ({
+  getCachedSolanaToken: (...args: unknown[]) => callMock(mockGetCachedSolanaToken, args),
+  cacheSolanaTokens: (...args: unknown[]) => callMock(mockCacheSolanaTokens, args),
 }));
 
 const mockTokenSearch = vi.fn();
@@ -12,12 +16,12 @@ const mockTokensByMint = vi.fn();
 const mockTokensByTag = vi.fn();
 const mockTokensByCategory = vi.fn();
 const mockRecentTokens = vi.fn();
-vi.mock("../tools/solana-ecosystem/jupiter/jupiter-tokens/client.js", () => ({
-  jupiterTokenSearch: (...args: unknown[]) => mockTokenSearch(...args),
-  jupiterTokensByMint: (...args: unknown[]) => mockTokensByMint(...args),
-  jupiterTokensByTag: (...args: unknown[]) => mockTokensByTag(...args),
-  jupiterTokensByCategory: (...args: unknown[]) => mockTokensByCategory(...args),
-  jupiterRecentTokens: (...args: unknown[]) => mockRecentTokens(...args),
+vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/client.js", () => ({
+  jupiterTokenSearch: (...args: unknown[]) => callMock(mockTokenSearch, args),
+  jupiterTokensByMint: (...args: unknown[]) => callMock(mockTokensByMint, args),
+  jupiterTokensByTag: (...args: unknown[]) => callMock(mockTokensByTag, args),
+  jupiterTokensByCategory: (...args: unknown[]) => callMock(mockTokensByCategory, args),
+  jupiterRecentTokens: (...args: unknown[]) => callMock(mockRecentTokens, args),
 }));
 
 const {
@@ -28,8 +32,8 @@ const {
   getJupiterRecentTokens,
   resolveJupiterToken,
   requireJupiterResolvedToken,
-} = await import("../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js");
-const { ErrorCodes } = await import("../errors.js");
+} = await import("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js");
+const { ErrorCodes } = await import("../../../../errors.js");
 
 describe("jupiter tokens v2 service", () => {
   beforeEach(() => {

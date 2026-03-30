@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFetchJson = vi.fn();
-vi.mock("../utils/http.js", () => ({
-  fetchJson: (...args: unknown[]) => mockFetchJson(...args),
+function callMock<T>(mock: unknown, args: unknown[]): T {
+  return (mock as (...innerArgs: unknown[]) => T)(...args);
+}
+vi.mock("@utils/http.js", () => ({
+  fetchJson: (...args: unknown[]) => callMock(mockFetchJson, args),
 }));
 
 const mockLoadConfig = vi.fn();
-vi.mock("../config/store.js", () => ({
+vi.mock("@config/store.js", () => ({
   loadConfig: () => mockLoadConfig(),
 }));
 
@@ -15,7 +18,7 @@ const {
   jupiterTokenContentCooking,
   jupiterTokenContentFeed,
   jupiterTokenContentSummaries,
-} = await import("../tools/solana-ecosystem/jupiter/jupiter-tokens/content/client.js");
+} = await import("@tools/solana-ecosystem/jupiter/jupiter-tokens/content/client.js");
 
 describe("jupiter token content client", () => {
   const originalEnv = { ...process.env };

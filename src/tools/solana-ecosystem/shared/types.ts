@@ -18,3 +18,15 @@ export interface TransferResult {
   signature: string;
   explorerUrl: string;
 }
+
+export interface SolanaInstructionAccountMeta {
+  pubkey: string;
+  isWritable: boolean;
+  isSigner: boolean;
+}
+
+export interface SolanaInstructionWire {
+  programId: string;
+  accounts: SolanaInstructionAccountMeta[];
+  data: string;
+}

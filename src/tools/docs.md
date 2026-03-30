@@ -2,6 +2,9 @@
 
 Local docs:
 - `src/tools/solana-ecosystem/jupiter/Jupiter.md`
+- `src/tools/solana-ecosystem/jupiter/jupiter-lend/JupiterLend.md`
+- `src/tools/solana-ecosystem/jupiter/jupiter-lend/earn-api/JupiterLendEarnApi.md`
+- `src/tools/solana-ecosystem/jupiter/jupiter-prices/JupiterPrices.md`
 - `src/tools/solana-ecosystem/jupiter/jupiter-swaps/JupiterSwaps.md`
 - `src/tools/solana-ecosystem/jupiter/jupiter-tokens/JupiterTokens.md`
 - `src/tools/solana-ecosystem/jupiter/jupiter-tokens/content/JupiterTokenContent.md`

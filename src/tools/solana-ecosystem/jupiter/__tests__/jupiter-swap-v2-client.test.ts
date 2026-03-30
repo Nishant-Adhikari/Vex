@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFetchJson = vi.fn();
-vi.mock("../utils/http.js", () => ({
-  fetchJson: (...args: unknown[]) => mockFetchJson(...args),
+function callMock<T>(mock: unknown, args: unknown[]): T {
+  return (mock as (...innerArgs: unknown[]) => T)(...args);
+}
+vi.mock("@utils/http.js", () => ({
+  fetchJson: (...args: unknown[]) => callMock(mockFetchJson, args),
 }));
 
 const mockLoadConfig = vi.fn();
-vi.mock("../config/store.js", () => ({
+vi.mock("@config/store.js", () => ({
   loadConfig: () => mockLoadConfig(),
 }));
 
@@ -14,7 +17,7 @@ const {
   jupiterSwapOrder,
   jupiterSwapBuild,
   jupiterSwapExecute,
-} = await import("../tools/solana-ecosystem/jupiter/jupiter-swaps/client.js");
+} = await import("@tools/solana-ecosystem/jupiter/jupiter-swaps/client.js");
 
 describe("jupiter swap v2 client", () => {
   const originalEnv = { ...process.env };
