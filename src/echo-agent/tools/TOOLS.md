@@ -107,6 +107,18 @@ Every mutating protocol tool call (success AND failure) is captured to `protocol
 
 This feeds the execution → sync → projection pipeline (see `db/DB.md` and `sync/SYNC.md`).
 
+### Coverage matrix
+
+Every mutating protocol tool is classified by `PortfolioRole × CaptureSupport` in `capture-contract.test.ts`. Canonical source-of-truth for capture requirements. Types defined in `protocols/types.ts`.
+
+- `pnl_spot` (7 tools): tradeSide + instrumentKey + atomic amounts required. `classifySolanaSwap()` in `src/tools/chains/solana/swap-classify.ts` for deterministic Solana classification.
+- `pnl_perps`, `pnl_prediction`: positionKey + instrumentKey required.
+- `projection`: orders/LP lifecycle. positionKey required.
+- `audit` (20 with capture, 2 without): balance/state mutations. Audit trail only.
+- `utility` (18): social/operational. No `_tradeCapture`.
+
+`NAMESPACE_DEFAULTS` in `catalog.ts` is a helper for pure namespaces, NOT runtime truth.
+
 ## Key differences from legacy src/agent/
 
 | Aspect | Legacy (src/agent/) | Echo Agent (src/echo-agent/) |

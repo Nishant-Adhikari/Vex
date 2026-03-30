@@ -146,13 +146,19 @@ export async function executeSwap(
     );
   }
 
-  const inputAmountUi = tokenAmountToUi(execResp.inputAmountResult || orderResp.inAmount, inputToken.decimals);
-  const outputAmountUi = tokenAmountToUi(execResp.outputAmountResult || orderResp.outAmount, outputToken.decimals);
+  const inputAmountRaw = (execResp.inputAmountResult || orderResp.inAmount).toString();
+  const outputAmountRaw = (execResp.outputAmountResult || orderResp.outAmount).toString();
+  const inputAmountUi = tokenAmountToUi(inputAmountRaw, inputToken.decimals);
+  const outputAmountUi = tokenAmountToUi(outputAmountRaw, outputToken.decimals);
 
   return {
     signature: execResp.signature,
     explorerUrl: solanaExplorerUrl(execResp.signature),
     inputAmount: inputAmountUi.toString(),
     outputAmount: outputAmountUi.toString(),
+    inputAmountRaw,
+    outputAmountRaw,
+    inputToken,
+    outputToken,
   };
 }

@@ -20,6 +20,13 @@ const TYPE_TO_PRODUCT: Record<string, string> = {
   lp: "lp",
   order: "order",
   reward: "reward",
+  // Safe audit types — projector skips these (switch/case default → return)
+  wrap: "wrap",
+  allowance: "allowance",
+  send: "send",
+  account: "account",
+  token_create: "token_create",
+  studio: "studio",
 };
 
 // ── Trade side rules ────────────────────────────────────────────

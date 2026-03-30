@@ -200,7 +200,7 @@ export async function withdrawStake(
 export async function claimMev(
   secretKey: Uint8Array,
   stakeAccountAddress?: string,
-): Promise<Array<{ stakeAccount: string; claimedSol: number; signature: string }>> {
+): Promise<Array<{ stakeAccount: string; claimedSol: number; claimedLamports: number; signature: string }>> {
   const walletKeypair = Keypair.fromSecretKey(secretKey);
   const connection = getSolanaConnection();
 
@@ -219,7 +219,7 @@ export async function claimMev(
     );
   }
 
-  const results: Array<{ stakeAccount: string; claimedSol: number; signature: string }> = [];
+  const results: Array<{ stakeAccount: string; claimedSol: number; claimedLamports: number; signature: string }> = [];
 
   for (const account of claimable) {
     const stakeAccountPubkey = new PublicKey(account.address);
@@ -257,6 +257,7 @@ export async function claimMev(
       results.push({
         stakeAccount: account.address,
         claimedSol: lamportsToSol(BigInt(excessLamports)),
+        claimedLamports: excessLamports,
         signature,
       });
     } catch {

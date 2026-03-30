@@ -112,7 +112,7 @@ export const SLOP_HANDLERS: Record<string, ProtocolHandler> = {
 
     if (!tokenAddress) return fail("Failed to decode TokenCreated event from receipt");
 
-    return ok({ txHash, tokenAddress, tokenId: tokenId?.toString(), name, symbol });
+    return { success: true, output: JSON.stringify({ txHash, tokenAddress, tokenId: tokenId?.toString(), name, symbol }, null, 2), data: { txHash, _tradeCapture: { type: "token_create", chain: "0g", status: "executed", instrumentKey: `0g:${tokenAddress}`, walletAddress: wallet.address, signature: txHash, meta: { tokenAddress, tokenId: tokenId?.toString(), name, symbol } } } };
   },
 
   "slop.token.info": async (p) => {

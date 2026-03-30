@@ -28,8 +28,12 @@ export interface SwapQuote {
 export interface SwapResult {
   signature: string;
   explorerUrl: string;
-  inputAmount: string;
-  outputAmount: string;
+  inputAmount: string;       // UI (human-readable) — for display
+  outputAmount: string;      // UI (human-readable) — for display
+  inputAmountRaw: string;    // Atomic (raw integer string) — for ledger
+  outputAmountRaw: string;   // Atomic (raw integer string) — for ledger
+  inputToken: TokenMetadata;
+  outputToken: TokenMetadata;
 }
 
 export interface TransferResult {

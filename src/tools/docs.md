@@ -1,5 +1,10 @@
 # JUPITER
 
+Local docs:
+- `src/tools/solana-ecosystem/jupiter/Jupiter.md`
+- `src/tools/solana-ecosystem/jupiter/jupiter-swaps/JupiterSwaps.md`
+
+Official docs index:
 https://dev.jup.ag/llms.txt
 
 # Khalani

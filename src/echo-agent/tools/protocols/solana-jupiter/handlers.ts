@@ -80,6 +80,7 @@ import {
   closeEmptyAccounts,
 } from "@tools/chains/solana/account-service.js";
 import { requireSolanaWallet } from "@tools/wallet/multi-auth.js";
+import { classifySolanaSwap } from "@tools/chains/solana/swap-classify.js";
 
 import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler } from "../types.js";
@@ -148,7 +149,8 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const amount = num(p, "amount");
     if (!input || !output || amount == null) return fail("Missing required: inputToken, outputToken, amount");
     const result = await executeSwap(input, output, amount, walletSecret(), { slippageBps: num(p, "slippageBps") });
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "swap", chain: "solana", status: "executed", inputToken: input, outputToken: output, inputAmount: result.inputAmount, outputAmount: result.outputAmount, signature: result.signature, walletAddress: walletAddress(p), instrumentKey: `solana:${output}` } } };
+    const cls = classifySolanaSwap(result.inputToken.address, result.outputToken.address);
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "swap", chain: "solana", status: "executed", inputToken: result.inputToken.symbol, outputToken: result.outputToken.symbol, inputTokenAddress: result.inputToken.address, outputTokenAddress: result.outputToken.address, inputAmount: result.inputAmountRaw, outputAmount: result.outputAmountRaw, signature: result.signature, walletAddress: walletAddress(p), tradeSide: cls.tradeSide, instrumentKey: `solana:${cls.instrumentMint}`, meta: { inputAmountUi: result.inputAmount, outputAmountUi: result.outputAmount, ...cls.meta } } } };
   },
 
   // Perps
@@ -336,8 +338,10 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "stake", chain: "solana", status: "executed", walletAddress: walletAddress(p), meta: { action: "withdraw" } } } };
   },
   "solana.stake.claimMev": async (p) => {
-    const result = await claimMev(walletSecret(), str(p, "stakeAccount") || undefined);
-    return ok(result);
+    const claims = await claimMev(walletSecret(), str(p, "stakeAccount") || undefined);
+    const totalLamports = claims.reduce((s, c) => s + c.claimedLamports, 0);
+    const totalSol = claims.reduce((s, c) => s + c.claimedSol, 0);
+    return { success: true, output: JSON.stringify(claims, null, 2), data: { claims, _tradeCapture: { type: "reward", chain: "solana", status: "executed", walletAddress: walletAddress(p), signature: claims[0]?.signature, meta: { action: "claimMev", totalClaimedLamports: totalLamports, totalClaimedSol: totalSol, signatures: claims.map(c => c.signature) } } } };
   },
 
   // Send
@@ -346,12 +350,13 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const amount = num(p, "amount");
     if (amount == null) return fail("Missing required: amount");
     const result = await craftSend(walletSecret(), amount, str(p, "mint") || undefined);
-    return ok(result);
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "send", chain: "solana", status: "executed", inputAmount: result.amountRaw, inputTokenAddress: result.mint, inputToken: result.tokenSymbol, walletAddress: walletAddress(p), signature: result.signature, meta: { action: "invite", inviteCode: result.inviteCode } } } };
   },
   "solana.send.clawback": async (p) => {
     const code = str(p, "inviteCode");
     if (!code) return fail("Missing required: inviteCode");
-    return ok(await craftClawback(walletSecret(), code));
+    const result = await craftClawback(walletSecret(), code);
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "send", chain: "solana", status: "executed", walletAddress: walletAddress(p), signature: result.signature, meta: { action: "clawback", inviteCode: result.inviteCode } } } };
   },
 
   // Studio
@@ -365,13 +370,13 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const initMcap = num(p, "initialMarketCap"), migMcap = num(p, "migrationMarketCap");
     if (!name || !symbol || !image || initMcap == null || migMcap == null) return fail("Missing required: tokenName, tokenSymbol, imagePath, initialMarketCap, migrationMarketCap");
     const result = await studioCreateToken(walletSecret(), { tokenName: name, tokenSymbol: symbol, imagePath: image, initialMarketCap: initMcap, migrationMarketCap: migMcap, description: str(p, "description") || undefined, website: str(p, "website") || undefined, twitter: str(p, "twitter") || undefined, telegram: str(p, "telegram") || undefined, feeBps: num(p, "feeBps"), isLpLocked: typeof p.isLpLocked === "boolean" ? p.isLpLocked : undefined });
-    return ok(result);
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "studio", chain: "solana", status: result.signature ? "executed" : "submitted", instrumentKey: `solana:${result.mint}`, walletAddress: walletAddress(p), signature: result.signature ?? undefined, meta: { action: "create", mint: result.mint, tokenName: name, tokenSymbol: symbol } } } };
   },
   "solana.studio.claimFees": async (p) => {
     const pool = str(p, "poolAddress");
     if (!pool) return fail("Missing required: poolAddress");
     const result = await studioClaimFees(walletSecret(), pool, str(p, "maxAmount") || undefined);
-    return ok(result);
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "reward", chain: "solana", status: "executed", walletAddress: walletAddress(p), signature: result.signature, meta: { action: "claimFees", poolAddress: pool } } } };
   },
 
   // Account
@@ -379,9 +384,13 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
     const mint = str(p, "mint");
     if (!mint) return fail("Missing required: mint");
     const amount = str(p, "amount") ? BigInt(str(p, "amount")) : undefined;
-    return ok(await burnSplToken(walletSecret(), mint, amount));
+    const result = await burnSplToken(walletSecret(), mint, amount);
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "account", chain: "solana", status: "executed", inputTokenAddress: result.mint, inputAmount: result.amountRaw, walletAddress: walletAddress(p), signature: result.signature, meta: { action: "burn" } } } };
   },
-  "solana.account.closeEmpty": async () => ok(await closeEmptyAccounts(walletSecret())),
+  "solana.account.closeEmpty": async () => {
+    const result = await closeEmptyAccounts(walletSecret());
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "account", chain: "solana", status: result.closed > 0 ? "executed" : "noop", walletAddress: walletAddress({}), signature: result.signatures[0] || undefined, meta: { action: "closeEmpty", closed: result.closed, failed: result.failed, rentReclaimedLamports: result.rentReclaimedLamports, signatures: result.signatures } } } };
+  },
 
   // History
   "solana.history.spot": async (p) => {

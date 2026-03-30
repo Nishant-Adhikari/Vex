@@ -338,7 +338,7 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
           signature: txHash,
           walletAddress: wallet.address,
           tradeSide: "sell",
-          instrumentKey: `0g:${tokenOut}`,
+          instrumentKey: `0g:${tokenIn}`,
           meta: { dex: "jaine", hops: route.tokens.length - 1 },
         },
       },
@@ -473,7 +473,7 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
     }
 
     const result = await safeApprove(token as Address, spender, approveExact ? amount : maxUint256, wallet.privateKey as Hex);
-    return ok({ token, spender: spenderType, spenderAddress: spender, txHash: result.txHash, resetTxHash: result.resetTxHash });
+    return { success: true, output: JSON.stringify({ token, spender: spenderType, spenderAddress: spender, txHash: result.txHash, resetTxHash: result.resetTxHash }, null, 2), data: { txHash: result.txHash, _tradeCapture: { type: "allowance", chain: "0g", status: "executed", inputTokenAddress: token, walletAddress: wallet.address, signature: result.txHash, meta: { action: "approve", spenderType, spenderAddress: spender, resetTxHash: result.resetTxHash } } } };
   },
 
   "jaine.allowance.revoke": async (p) => {
@@ -484,7 +484,7 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
     const wallet = requireEvmWallet();
     const spender = getSpenderAddress(spenderType);
     const txHash = await revokeApproval(token as Address, spender, wallet.privateKey as Hex);
-    return ok({ token, spender: spenderType, spenderAddress: spender, txHash, status: "revoked" });
+    return { success: true, output: JSON.stringify({ token, spender: spenderType, spenderAddress: spender, txHash, status: "revoked" }, null, 2), data: { txHash, _tradeCapture: { type: "allowance", chain: "0g", status: "executed", inputTokenAddress: token, walletAddress: wallet.address, signature: txHash, meta: { action: "revoke", spenderType, spenderAddress: spender } } } };
   },
 
   // ── W0G wrap/unwrap ───────────────────────────────────────────
@@ -507,7 +507,7 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
       value: amount,
     });
 
-    return ok({ txHash, amount: amount.toString(), formatted: amountRaw, action: "wrap" });
+    return { success: true, output: JSON.stringify({ txHash, amount: amount.toString(), formatted: amountRaw, action: "wrap" }, null, 2), data: { txHash, _tradeCapture: { type: "wrap", chain: "0g", status: "executed", inputToken: "0G", outputToken: "w0G", inputAmount: amount.toString(), walletAddress: wallet.address, signature: txHash, meta: { action: "wrap" } } } };
   },
 
   "jaine.w0g.unwrap": async (p) => {
@@ -528,6 +528,6 @@ export const JAINE_HANDLERS: Record<string, ProtocolHandler> = {
       args: [amount],
     });
 
-    return ok({ txHash, amount: amount.toString(), formatted: amountRaw, action: "unwrap" });
+    return { success: true, output: JSON.stringify({ txHash, amount: amount.toString(), formatted: amountRaw, action: "unwrap" }, null, 2), data: { txHash, _tradeCapture: { type: "wrap", chain: "0g", status: "executed", inputToken: "w0G", outputToken: "0G", inputAmount: amount.toString(), walletAddress: wallet.address, signature: txHash, meta: { action: "unwrap" } } } };
   },
 };

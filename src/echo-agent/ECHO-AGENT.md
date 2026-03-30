@@ -255,7 +255,8 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 - Nested folder resolution for documents (`"research/2024"`)
 - KyberSwap `swap.buy` (explicit buy side for projections)
 - SubagentConfig with ENV overrides
-- Capture normalization (phase 2): canonical `_tradeCapture` with walletAddress, instrumentKey, positionKey, tradeSide, token addresses across all 6 trading namespaces
+- Capture normalization: canonical `_tradeCapture` with walletAddress, instrumentKey, positionKey, tradeSide, token addresses across all 6 trading namespaces
+- **WS3 coverage matrix**: Frozen per-tool matrix (78 mutating tools, PortfolioRole × CaptureSupport). All audit captures domknięte (except 2 Polymarket bridge address-creation). `classifySolanaSwap()` deterministic trade classification in `src/tools`. Atomic amounts from source (no lossy UI→atomic). `jaine.swap.sell` instrumentKey fixed to input token.
 - `proj_activity` auto-populated from captureExecution() with idempotency (UNIQUE execution_id)
 - Activity populator with product-aware tradeSide rules (claim ≠ sell, lend/stake/bridge → null)
 - Order management mutations captured: DCA, limit orders, closeAll, cancel, fees/rewards
@@ -281,7 +282,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
   - Mission patch parser: untrusted model output → validated domain → row conversion → DB
   - Subagent engine runner wired into `tools/internal/subagent.ts` (replaces placeholder)
   - Stop conditions: 6 business stops (terminal) + 6 runtime pauses (resumable)
-- 1371 passing tests across 64 test files
+- 1387 passing tests across 66 test files
 
 ### Not yet implemented
 - **PnL reconcilers** (phase 4) — realized/unrealized PnL calculation from lots + positions

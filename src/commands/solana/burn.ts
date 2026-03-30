@@ -43,7 +43,7 @@ export function createBurnSubcommand(): Command {
         spin.succeed("Tokens burned");
 
         if (isHeadless()) {
-          writeJsonSuccess({ action: "burn", token: tokenMeta.symbol, mint: tokenMeta.address, ...result });
+          writeJsonSuccess({ ...result, action: "burn", token: tokenMeta.symbol });
         } else {
           successBox("Burned", `Token: ${colors.info(tokenMeta.symbol)}\nSignature: ${colors.muted(result.signature)}\nExplorer: ${colors.muted(result.explorerUrl)}`);
         }

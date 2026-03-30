@@ -5,7 +5,7 @@
  * Discovery searches this catalog. Execution looks up handlers.
  */
 
-import type { ProtocolNamespace, ProtocolToolManifest, ProtocolHandler } from "./types.js";
+import type { ProtocolNamespace, ProtocolToolManifest, ProtocolHandler, PortfolioRole } from "./types.js";
 import { KHALANI_TOOLS } from "./khalani/manifest.js";
 import { KHALANI_HANDLERS } from "./khalani/handlers.js";
 import { SOLANA_JUPITER_TOOLS } from "./solana-jupiter/manifest.js";
@@ -83,3 +83,25 @@ export function getProtocolHandler(toolId: string): ProtocolHandler | undefined 
 export function getProtocolManifest(toolId: string): ProtocolToolManifest | undefined {
   return PROTOCOL_TOOLS.find(t => t.toolId === toolId);
 }
+
+// ── Namespace defaults ──────────────────────────────────────────
+// Helper for "pure" namespaces. NOT runtime truth: mixed namespaces
+// have tools in multiple PortfolioRole classes. Per-tool matrix in
+// capture-contract.test.ts is the canonical source-of-truth.
+
+export type NamespaceDefault = "mixed_trading" | "bridge" | "non_portfolio";
+
+export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
+  solana: "mixed_trading",
+  kyberswap: "mixed_trading",
+  jaine: "mixed_trading",
+  slop: "mixed_trading",
+  polymarket: "mixed_trading",
+  khalani: "bridge",
+  dexscreener: "non_portfolio",
+  chainscan: "non_portfolio",
+  echobook: "non_portfolio",
+  "slop-app": "non_portfolio",
+  "0g-compute": "non_portfolio",
+  "0g-storage": "non_portfolio",
+};

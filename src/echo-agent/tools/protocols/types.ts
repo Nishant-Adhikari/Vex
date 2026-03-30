@@ -110,3 +110,17 @@ export interface ProtocolExecuteRequest {
   toolId: string;
   params: Record<string, unknown>;
 }
+
+// ── Coverage matrix types ───────────────────────────────────────
+
+/** Business semantics of a mutation — how downstream treats the capture. */
+export type PortfolioRole =
+  | "pnl_spot"       // lot matching, realized PnL
+  | "pnl_perps"      // perps position lifecycle + PnL
+  | "pnl_prediction" // prediction position lifecycle + PnL
+  | "projection"     // orders, LP — lifecycle, no realized PnL
+  | "audit"          // balance/state impact — audit trail only
+  | "utility";       // no portfolio impact
+
+/** Whether handler produces _tradeCapture today. */
+export type CaptureSupport = "full" | "none";

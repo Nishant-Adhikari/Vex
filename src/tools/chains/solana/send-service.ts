@@ -41,7 +41,7 @@ export async function craftSend(
   secretKey: Uint8Array,
   amount: number,
   mint?: string,
-): Promise<{ inviteCode: string; signature: string; explorerUrl: string }> {
+): Promise<{ inviteCode: string; signature: string; explorerUrl: string; amountRaw: string; mint: string; tokenSymbol: string }> {
   const walletKeypair = Keypair.fromSecretKey(secretKey);
   const inviteCode = generateInviteCode();
   const inviteKeypair = deriveKeypairFromCode(inviteCode);
@@ -75,17 +75,21 @@ export async function craftSend(
   // Sign with BOTH sender and invite keypair
   const signature = await signAndSendVersionedTx(txBase64, [walletKeypair, inviteKeypair]);
 
+  const resolvedToken = mint ? await resolveToken(mint) : null;
   return {
     inviteCode,
     signature,
     explorerUrl: solanaExplorerUrl(signature),
+    amountRaw: atomicAmount,
+    mint: mint ?? SOL_MINT,
+    tokenSymbol: resolvedToken?.symbol ?? "SOL",
   };
 }
 
 export async function craftClawback(
   secretKey: Uint8Array,
   inviteCode: string,
-): Promise<TransferResult> {
+): Promise<TransferResult & { inviteCode: string }> {
   const walletKeypair = Keypair.fromSecretKey(secretKey);
   const inviteKeypair = deriveKeypairFromCode(inviteCode);
 
@@ -115,7 +119,7 @@ export async function craftClawback(
   }
 
   const signature = await signAndSendVersionedTx(txBase64, [walletKeypair]);
-  return { signature, explorerUrl: solanaExplorerUrl(signature) };
+  return { signature, explorerUrl: solanaExplorerUrl(signature), inviteCode };
 }
 
 export async function getPendingInvites(address: string): Promise<PendingInvite[]> {

@@ -19,7 +19,7 @@ export async function burnSplToken(
   secretKey: Uint8Array,
   mint: string,
   amount?: bigint,
-): Promise<TransferResult> {
+): Promise<TransferResult & { mint: string; amountRaw: string }> {
   const connection = getSolanaConnection();
   const keypair = Keypair.fromSecretKey(secretKey);
   const mintPubkey = new PublicKey(mint);
@@ -57,12 +57,12 @@ export async function burnSplToken(
   );
 
   const signature = await signAndSendLegacyTx(transaction, keypair);
-  return { signature, explorerUrl: solanaExplorerUrl(signature) };
+  return { signature, explorerUrl: solanaExplorerUrl(signature), mint, amountRaw: burnAmount.toString() };
 }
 
 export async function closeEmptyAccounts(
   secretKey: Uint8Array,
-): Promise<{ closed: number; failed: number; rentReclaimedSol: number; signatures: string[] }> {
+): Promise<{ closed: number; failed: number; rentReclaimedSol: number; rentReclaimedLamports: number; signatures: string[] }> {
   const connection = getSolanaConnection();
   const keypair = Keypair.fromSecretKey(secretKey);
 
@@ -85,7 +85,7 @@ export async function closeEmptyAccounts(
   }
 
   if (emptyAccounts.length === 0) {
-    return { closed: 0, failed: 0, rentReclaimedSol: 0, signatures: [] };
+    return { closed: 0, failed: 0, rentReclaimedSol: 0, rentReclaimedLamports: 0, signatures: [] };
   }
 
   const signatures: string[] = [];
@@ -126,6 +126,7 @@ export async function closeEmptyAccounts(
     closed: actualClosed,
     failed: emptyAccounts.length - actualClosed,
     rentReclaimedSol: lamportsToSol(BigInt(actualRentReclaimed)),
+    rentReclaimedLamports: actualRentReclaimed,
     signatures,
   };
 }
