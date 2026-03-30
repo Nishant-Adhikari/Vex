@@ -16,7 +16,7 @@ import { getKhalaniClient } from "@tools/khalani/client.js";
 import { getPublicClient } from "@tools/wallet/client.js";
 import { getSigningClient } from "@tools/wallet/signingClient.js";
 import { sendSol, sendSplToken } from "@tools/chains/solana/transfer-service.js";
-import { resolveToken } from "@tools/chains/solana/token-registry.js";
+import { resolveJupiterToken } from "@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
 import { Keypair } from "@solana/web3.js";
 import { formatUnits, parseUnits, type Address } from "viem";
 
@@ -242,7 +242,12 @@ async function executeSolanaTransfer(intent: TransferIntent): Promise<ToolResult
   }
 
   // SPL token transfer
-  const tokenMeta = await resolveToken(intent.token);
+  let tokenMeta;
+  try {
+    tokenMeta = await resolveJupiterToken(intent.token);
+  } catch {
+    // resolveJupiterToken may throw if JUPITER_API_KEY is missing
+  }
   if (!tokenMeta) {
     return fail(`Token not found: ${intent.token}`);
   }

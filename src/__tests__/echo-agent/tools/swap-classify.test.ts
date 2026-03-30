@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { classifySolanaSwap } from "@tools/chains/solana/swap-classify.js";
-import { SOL_MINT } from "@tools/chains/solana/constants.js";
+import { classifySolanaSwap } from "@tools/solana-ecosystem/shared/swap-classify.js";
+import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 
 const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";

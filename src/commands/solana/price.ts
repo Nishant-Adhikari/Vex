@@ -4,8 +4,7 @@
  */
 
 import { Command } from "commander";
-import { jupiterGetPrices } from "../../tools/chains/solana/jupiter-client.js";
-import { resolveTokens } from "../../tools/chains/solana/token-registry.js";
+import { getJupiterPricesForTokenQueries } from "../../tools/solana-ecosystem/jupiter/jupiter-prices/service.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
@@ -28,32 +27,22 @@ export function createPriceSubcommand(): Command {
       spin.start();
 
       try {
-        // Resolve all tokens
-        const resolved = await resolveTokens(tokens);
-        const notFound = tokens.filter((t) => !resolved.has(t));
-        if (notFound.length > 0 && resolved.size === 0) {
-          spin.fail("No tokens found");
-          throw new EchoError(
-            ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
-            `Tokens not found: ${notFound.join(", ")}`,
-          );
-        }
+        const batch = await getJupiterPricesForTokenQueries(tokens);
 
-        // Fetch prices for resolved mints
-        const mints = Array.from(resolved.values()).map((t) => t.address);
-        const prices = await jupiterGetPrices(mints);
+        spin.succeed(`Prices for ${batch.resolved.length} token(s)`);
 
-        spin.succeed(`Prices for ${resolved.size} token(s)`);
-
-        const results = Array.from(resolved.entries()).map(([query, meta]) => ({
-          query,
-          symbol: meta.symbol,
-          mint: meta.address,
-          priceUsd: prices.get(meta.address) ?? null,
+        const results = batch.resolved.map((r) => ({
+          query: r.query,
+          symbol: r.token?.symbol ?? r.query,
+          mint: r.mint,
+          priceUsd: r.price?.usdPrice ?? null,
+          liquidity: r.price?.liquidity ?? null,
+          priceChange24h: r.price?.priceChange24h ?? null,
+          decimals: r.price?.decimals ?? null,
         }));
 
         if (isHeadless()) {
-          writeJsonSuccess({ prices: results, notFound });
+          writeJsonSuccess({ prices: results, raw: batch.raw });
           return;
         }
 
@@ -69,12 +58,6 @@ export function createPriceSubcommand(): Command {
             r.priceUsd != null ? formatPrice(r.priceUsd) : colors.muted("N/A"),
           ]),
         );
-
-        if (notFound.length > 0) {
-          process.stderr.write(
-            `\n  ${colors.muted(`Not found: ${notFound.join(", ")}`)}\n`,
-          );
-        }
       } catch (err) {
         spin.fail("Price fetch failed");
         throw err;

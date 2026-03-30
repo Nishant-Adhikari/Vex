@@ -1,41 +1,82 @@
 /**
- * Browse trending/top Solana tokens via Jupiter Token API.
+ * Browse trending/top Solana tokens via Jupiter Tokens API V2.
  * This is the one discovery feature Khalani does NOT cover.
  */
 
 import { Command } from "commander";
 import {
-  jupiterGetTrendingTokens,
-  type JupiterTokenListEntry,
-} from "../../tools/chains/solana/jupiter-client.js";
-import { cacheTokens } from "../../tools/chains/solana/token-cache.js";
+  getJupiterTokensByCategory,
+  getJupiterTokensByTag,
+  getJupiterRecentTokens,
+} from "../../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
+import type {
+  JupiterMintInformation,
+  JupiterTokenCategory,
+  JupiterTokenTag,
+  JupiterTokenInterval,
+} from "../../tools/solana-ecosystem/jupiter/jupiter-tokens/types.js";
+import { jupiterMintInformationToMetadata } from "../../tools/solana-ecosystem/jupiter/jupiter-tokens/types.js";
+import { cacheSolanaTokens } from "../../tools/solana-ecosystem/shared/solana-token-cache.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 
 type Category = "trending" | "top-traded" | "top-organic" | "recent" | "lst" | "verified";
 
-const CATEGORY_MAP: Record<Category, string> = {
+const CATEGORY_CATEGORIES: Record<string, JupiterTokenCategory> = {
   trending: "toptrending",
   "top-traded": "toptraded",
   "top-organic": "toporganicscore",
-  recent: "recent",
+};
+
+const TAG_CATEGORIES: Record<string, JupiterTokenTag> = {
   lst: "lst",
   verified: "verified",
 };
 
-function formatPrice(price?: number): string {
+const ALL_CATEGORIES = new Set<string>([
+  ...Object.keys(CATEGORY_CATEGORIES),
+  ...Object.keys(TAG_CATEGORIES),
+  "recent",
+]);
+
+function formatPrice(price?: number | null): string {
   if (price == null) return "-";
   if (price < 0.01) return `$${price.toFixed(8)}`;
   if (price < 1) return `$${price.toFixed(4)}`;
   return `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function formatVolume(vol?: number): string {
+function formatVolume(vol?: number | null): string {
   if (vol == null) return "-";
   if (vol >= 1_000_000) return `$${(vol / 1_000_000).toFixed(1)}M`;
   if (vol >= 1_000) return `$${(vol / 1_000).toFixed(1)}K`;
   return `$${vol.toFixed(0)}`;
+}
+
+async function fetchTokens(
+  cat: Category,
+  interval: JupiterTokenInterval,
+  limit: number,
+): Promise<JupiterMintInformation[]> {
+  if (cat in CATEGORY_CATEGORIES) {
+    return getJupiterTokensByCategory({
+      category: CATEGORY_CATEGORIES[cat],
+      interval,
+      limit,
+    });
+  }
+  if (cat in TAG_CATEGORIES) {
+    return getJupiterTokensByTag(TAG_CATEGORIES[cat]);
+  }
+  if (cat === "recent") {
+    return getJupiterRecentTokens();
+  }
+  throw new EchoError(
+    ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
+    `Unknown category: ${cat}`,
+    `Available: ${[...ALL_CATEGORIES].join(", ")}`,
+  );
 }
 
 export function createBrowseSubcommand(): Command {
@@ -47,33 +88,25 @@ export function createBrowseSubcommand(): Command {
     .exitOverride()
     .action(async (category: string, options: { interval: string; limit: string }) => {
       const cat = category as Category;
-      if (!(cat in CATEGORY_MAP)) {
+      if (!ALL_CATEGORIES.has(cat)) {
         throw new EchoError(
           ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
           `Unknown category: ${cat}`,
-          `Available: ${Object.keys(CATEGORY_MAP).join(", ")}`,
+          `Available: ${[...ALL_CATEGORIES].join(", ")}`,
         );
       }
 
-      const jupiterCategory = CATEGORY_MAP[cat] as Parameters<typeof jupiterGetTrendingTokens>[0];
-      const interval = options.interval as Parameters<typeof jupiterGetTrendingTokens>[1];
+      const interval = options.interval as JupiterTokenInterval;
       const limit = Number(options.limit) || 20;
 
       const spin = spinner(`Fetching ${cat} tokens...`);
       spin.start();
 
       try {
-        const tokens = await jupiterGetTrendingTokens(jupiterCategory, interval, limit);
+        const tokens = await fetchTokens(cat, interval, limit);
 
         // Cache resolved tokens for use by swap/transfer commands
-        cacheTokens(tokens.map((t) => ({
-          chain: "solana" as const,
-          address: t.id,
-          symbol: t.symbol,
-          name: t.name,
-          decimals: t.decimals,
-          logoUri: t.icon,
-        })));
+        cacheSolanaTokens(tokens.map(jupiterMintInformationToMetadata));
 
         spin.succeed(`Found ${tokens.length} ${cat} tokens`);
 
@@ -87,7 +120,7 @@ export function createBrowseSubcommand(): Command {
           return;
         }
 
-        const getVolume = (t: JupiterTokenListEntry): number | undefined => {
+        const getVolume = (t: JupiterMintInformation): number | undefined => {
           if (!t.stats24h) return undefined;
           return (t.stats24h.buyVolume ?? 0) + (t.stats24h.sellVolume ?? 0);
         };
@@ -101,7 +134,7 @@ export function createBrowseSubcommand(): Command {
             { header: "Price", width: 14 },
             { header: "Volume 24h", width: 12 },
           ],
-          tokens.map((t: JupiterTokenListEntry, i: number) => [
+          tokens.map((t: JupiterMintInformation, i: number) => [
             String(i + 1),
             t.symbol,
             t.name.length > 18 ? `${t.name.slice(0, 17)}…` : t.name,

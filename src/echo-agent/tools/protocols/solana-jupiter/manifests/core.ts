@@ -2,17 +2,6 @@ import type { ProtocolToolManifest } from "../../types.js";
 
 export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   {
-    toolId: "solana.holdings",
-    namespace: "solana",
-    lifecycle: "active",
-    description: "Get SOL balance + all SPL token holdings for a wallet address.",
-    mutating: false,
-    params: [
-      { key: "address", type: "string", required: true, description: "Solana wallet address." },
-    ],
-    exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
-  },
-  {
     toolId: "solana.prices",
     namespace: "solana",
     lifecycle: "active",
@@ -22,6 +11,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "mints", type: "string", required: true, description: "Comma-separated mint addresses." },
     ],
     exampleParams: { mints: "So11111111111111111111111111111111111111112,EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.tokens.search",
@@ -33,6 +23,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "query", type: "string", required: true, description: "Token name, symbol, or mint address." },
     ],
     exampleParams: { query: "BONK" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.tokens.trending",
@@ -46,16 +37,6 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "limit", type: "number", description: "Max results (default 20)." },
     ],
     exampleParams: { category: "toptrending", interval: "1h", limit: 10 },
-  },
-  {
-    toolId: "solana.tokens.shield",
-    namespace: "solana",
-    lifecycle: "active",
-    description: "Get security warnings for tokens — honeypot, rug pull, freeze authority risks.",
-    mutating: false,
-    params: [
-      { key: "mints", type: "string", required: true, description: "Comma-separated mint addresses to check." },
-    ],
-    exampleParams: { mints: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263" },
+    requiresEnv: "JUPITER_API_KEY",
   },
 ];

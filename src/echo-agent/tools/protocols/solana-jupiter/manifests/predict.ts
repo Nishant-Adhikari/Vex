@@ -12,6 +12,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "filter", type: "string", description: "Filter: trending, live, new." },
     ],
     exampleParams: { category: "crypto", filter: "trending" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.search",
@@ -23,6 +24,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "query", type: "string", required: true, description: "Search query." },
     ],
     exampleParams: { query: "bitcoin" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.market",
@@ -34,6 +36,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "marketId", type: "string", required: true, description: "Market ID." },
     ],
     exampleParams: { marketId: "abc123" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.positions",
@@ -45,6 +48,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "address", type: "string", required: true, description: "Wallet address." },
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.history",
@@ -58,6 +62,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.buy",
@@ -71,6 +76,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "amountUsdc", type: "number", required: true, description: "Amount in USDC." },
     ],
     exampleParams: { marketId: "abc123", side: "yes", amountUsdc: 10 },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.sell",
@@ -82,6 +88,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
     ],
     exampleParams: { positionPubkey: "Abc123..." },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.claim",
@@ -93,6 +100,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
     ],
     exampleParams: { positionPubkey: "Abc123..." },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.closeAll",
@@ -102,6 +110,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: true,
     params: [],
     exampleParams: {},
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.event",
@@ -113,6 +122,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "eventId", type: "string", required: true, description: "Event ID." },
     ],
     exampleParams: { eventId: "abc123" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.predict.position",
@@ -124,5 +134,6 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
     ],
     exampleParams: { positionPubkey: "Abc123..." },
+    requiresEnv: "JUPITER_API_KEY",
   },
 ];

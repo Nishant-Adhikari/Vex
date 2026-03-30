@@ -6,18 +6,19 @@
 import { Command } from "commander";
 import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
 import {
-  listEvents,
-  searchEvents,
-  getMarket,
-  getEvent,
-  createPredictOrder,
-  getPosition,
-  getPositions,
-  claimPosition,
-  closePosition,
-  closeAllPositions,
-  getPredictHistory,
-} from "../../tools/chains/solana/prediction-service.js";
+  getJupiterPredictionEvents,
+  searchJupiterPredictionEvents,
+  getJupiterPredictionMarket,
+  getJupiterPredictionEvent,
+  getJupiterPredictionPosition,
+  getJupiterPredictionPositions,
+  getJupiterPredictionHistory,
+  executeJupiterPredictionCreateOrder,
+  executeJupiterPredictionClaimPosition,
+  executeJupiterPredictionClosePosition,
+  executeJupiterPredictionCloseAllPositions,
+} from "../../tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js";
+import { JUPITER_PREDICTION_USDC_MINT } from "../../tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
@@ -36,7 +37,12 @@ export function createPredictSubcommand(): Command {
       const spin = spinner("Loading events...");
       spin.start();
 
-      const events = await listEvents(category, options?.filter as "trending" | "live" | "new" | undefined);
+      const result = await getJupiterPredictionEvents({
+        category: category as any || undefined,
+        filter: options?.filter as any || undefined,
+        includeMarkets: true,
+      });
+      const events = result.data;
       spin.succeed(`${events.length} event(s)`);
 
       if (isHeadless()) { writeJsonSuccess({ events }); return; }
@@ -44,7 +50,7 @@ export function createPredictSubcommand(): Command {
 
       printTable(
         [{ header: "ID", width: 14 }, { header: "Title", width: 40 }, { header: "Category", width: 12 }, { header: "Status", width: 10 }],
-        events.map((e) => [e.id, e.title.slice(0, 38), e.category, e.status]),
+        events.map((e) => [e.eventId, (e.metadata?.title ?? "").slice(0, 38), e.category, e.isLive ? "live" : e.isActive ? "active" : "closed"]),
       );
     });
 
@@ -55,7 +61,8 @@ export function createPredictSubcommand(): Command {
       const spin = spinner(`Searching: ${query}...`);
       spin.start();
 
-      const events = await searchEvents(query);
+      const result = await searchJupiterPredictionEvents({ query });
+      const events = result.data;
       spin.succeed(`${events.length} result(s)`);
 
       if (isHeadless()) { writeJsonSuccess({ events }); return; }
@@ -63,7 +70,7 @@ export function createPredictSubcommand(): Command {
 
       printTable(
         [{ header: "ID", width: 14 }, { header: "Title", width: 40 }, { header: "Status", width: 10 }],
-        events.map((e) => [e.id, e.title.slice(0, 38), e.status]),
+        events.map((e) => [e.eventId, (e.metadata?.title ?? "").slice(0, 38), e.isLive ? "live" : e.isActive ? "active" : "closed"]),
       );
     });
 
@@ -74,16 +81,21 @@ export function createPredictSubcommand(): Command {
       const spin = spinner("Loading market...");
       spin.start();
 
-      const market = await getMarket(marketId);
+      const market = await getJupiterPredictionMarket(marketId);
       spin.succeed("Market loaded");
 
       if (isHeadless()) { writeJsonSuccess({ market }); return; }
 
+      const title = market.metadata?.title ?? marketId;
+      const yesPrice = market.pricing?.buyYesPriceUsd ?? 0;
+      const noPrice = market.pricing?.buyNoPriceUsd ?? 0;
+      const volume = market.pricing?.volume ?? 0;
+
       infoBox("Prediction Market",
-        `${colors.bold(market.title)}\n` +
+        `${colors.bold(title)}\n` +
         `Status: ${market.status} | Result: ${market.result || "pending"}\n` +
-        `YES: ${colors.info(`$${market.buyYesPriceUsd.toFixed(2)}`)} | NO: ${colors.info(`$${market.buyNoPriceUsd.toFixed(2)}`)}\n` +
-        `Volume: $${market.volume.toLocaleString()}`);
+        `YES: ${colors.info(`$${yesPrice.toFixed(2)}`)} | NO: ${colors.info(`$${noPrice.toFixed(2)}`)}\n` +
+        `Volume: $${volume.toLocaleString()}`);
     });
 
   predict
@@ -96,6 +108,7 @@ export function createPredictSubcommand(): Command {
       const wallet = requireSolanaWallet();
       const isYes = options.side.toLowerCase() === "yes";
       const amount = Number(options.amount);
+      const depositAmount = Math.round(amount * 1_000_000);
 
       if (!options.yes && !isHeadless()) {
         process.stderr.write(`\n  Buy ${colors.info(isYes ? "YES" : "NO")} on ${marketId} for ${colors.info(`$${amount}`)}\n  Use ${colors.muted("--yes")} to execute.\n\n`);
@@ -106,13 +119,20 @@ export function createPredictSubcommand(): Command {
       spin.start();
 
       try {
-        const result = await createPredictOrder(wallet.secretKey, marketId, isYes, amount);
+        const result = await executeJupiterPredictionCreateOrder(wallet.secretKey, {
+          marketId,
+          isYes,
+          isBuy: true,
+          depositAmount,
+          depositMint: JUPITER_PREDICTION_USDC_MINT,
+        });
         spin.succeed("Order placed");
 
+        const positionPubkey = result.raw.order.positionPubkey;
         if (isHeadless()) {
-          writeJsonSuccess({ action: "predict-buy", marketId, side: isYes ? "yes" : "no", amount, ...result });
+          writeJsonSuccess({ action: "predict-buy", marketId, side: isYes ? "yes" : "no", amount, signature: result.signature, positionPubkey, raw: result.raw });
         } else {
-          successBox("Prediction Order", `Side: ${colors.info(isYes ? "YES" : "NO")}\nAmount: ${colors.info(`$${amount}`)}\nPosition: ${colors.muted(result.positionPubkey)}\nSignature: ${colors.muted(result.signature)}`);
+          successBox("Prediction Order", `Side: ${colors.info(isYes ? "YES" : "NO")}\nAmount: ${colors.info(`$${amount}`)}\nPosition: ${colors.muted(positionPubkey)}\nSignature: ${colors.muted(result.signature)}`);
         }
       } catch (err) { spin.fail("Order failed"); throw err; }
     });
@@ -125,7 +145,8 @@ export function createPredictSubcommand(): Command {
       const spin = spinner("Loading positions...");
       spin.start();
 
-      const positions = await getPositions(wallet.address);
+      const result = await getJupiterPredictionPositions({ ownerPubkey: wallet.address });
+      const positions = result.data;
       spin.succeed(`${positions.length} position(s)`);
 
       if (isHeadless()) { writeJsonSuccess({ positions }); return; }
@@ -140,14 +161,20 @@ export function createPredictSubcommand(): Command {
           { header: "Value", width: 10 },
           { header: "P&L", width: 12 },
         ],
-        positions.map((p) => [
-          `${p.pubkey.slice(0, 4)}...${p.pubkey.slice(-4)}`,
-          p.isYes ? "YES" : "NO",
-          String(p.contracts),
-          `$${p.totalCostUsd.toFixed(2)}`,
-          `$${p.valueUsd.toFixed(2)}`,
-          `${p.pnlUsd >= 0 ? "+" : ""}$${p.pnlUsd.toFixed(2)} (${p.pnlUsdPercent.toFixed(1)}%)`,
-        ]),
+        positions.map((p) => {
+          const cost = Number(p.totalCostUsd);
+          const value = Number(p.valueUsd ?? 0);
+          const pnl = Number(p.pnlUsd ?? 0);
+          const pnlPct = p.pnlUsdPercent ?? 0;
+          return [
+            `${p.pubkey.slice(0, 4)}...${p.pubkey.slice(-4)}`,
+            p.isYes ? "YES" : "NO",
+            p.contracts,
+            `$${cost.toFixed(2)}`,
+            `$${value.toFixed(2)}`,
+            `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)} (${pnlPct.toFixed(1)}%)`,
+          ];
+        }),
       );
     });
 
@@ -156,7 +183,7 @@ export function createPredictSubcommand(): Command {
     .description("Claim winnings from resolved market")
     .option("--yes", "Skip confirmation")
     .action(async (positionPubkey: string, options: { yes?: boolean }) => {
-      const wallet = requireSolanaWallet();
+      requireSolanaWallet();
       if (!options.yes && !isHeadless()) {
         process.stderr.write(`\n  Claim position ${colors.muted(positionPubkey.slice(0, 8))}...\n  Use ${colors.muted("--yes")} to execute.\n\n`);
         throw new EchoError(ErrorCodes.CONFIRMATION_REQUIRED, "Add --yes to proceed.");
@@ -166,9 +193,10 @@ export function createPredictSubcommand(): Command {
       spin.start();
 
       try {
-        const result = await claimPosition(wallet.secretKey, positionPubkey);
+        const wallet = requireSolanaWallet();
+        const result = await executeJupiterPredictionClaimPosition(wallet.secretKey, positionPubkey);
         spin.succeed("Claimed");
-        if (isHeadless()) { writeJsonSuccess({ action: "predict-claim", ...result }); }
+        if (isHeadless()) { writeJsonSuccess({ action: "predict-claim", signature: result.signature, explorerUrl: result.explorerUrl, raw: result.raw }); }
         else { successBox("Claimed", `Signature: ${colors.muted(result.signature)}\nExplorer: ${colors.muted(result.explorerUrl)}`); }
       } catch (err) { spin.fail("Claim failed"); throw err; }
     });
@@ -178,7 +206,7 @@ export function createPredictSubcommand(): Command {
     .description("Close/sell a prediction position")
     .option("--yes", "Skip confirmation")
     .action(async (positionPubkey: string, options: { yes?: boolean }) => {
-      const wallet = requireSolanaWallet();
+      requireSolanaWallet();
       if (!options.yes && !isHeadless()) {
         process.stderr.write(`\n  Sell position ${colors.muted(positionPubkey.slice(0, 8))}...\n  Use ${colors.muted("--yes")} to execute.\n\n`);
         throw new EchoError(ErrorCodes.CONFIRMATION_REQUIRED, "Add --yes to proceed.");
@@ -188,9 +216,10 @@ export function createPredictSubcommand(): Command {
       spin.start();
 
       try {
-        const result = await closePosition(wallet.secretKey, positionPubkey);
+        const wallet = requireSolanaWallet();
+        const result = await executeJupiterPredictionClosePosition(wallet.secretKey, positionPubkey);
         spin.succeed("Position closed");
-        if (isHeadless()) { writeJsonSuccess({ action: "predict-sell", ...result }); }
+        if (isHeadless()) { writeJsonSuccess({ action: "predict-sell", signature: result.signature, explorerUrl: result.explorerUrl, raw: result.raw }); }
         else { successBox("Position Closed", `Signature: ${colors.muted(result.signature)}\nExplorer: ${colors.muted(result.explorerUrl)}`); }
       } catch (err) { spin.fail("Sell failed"); throw err; }
     });
@@ -200,7 +229,7 @@ export function createPredictSubcommand(): Command {
     .description("Close all open prediction positions")
     .option("--yes", "Skip confirmation")
     .action(async (options: { yes?: boolean }) => {
-      const wallet = requireSolanaWallet();
+      requireSolanaWallet();
       if (!options.yes && !isHeadless()) {
         process.stderr.write(`\n  Close ALL prediction positions\n  Use ${colors.muted("--yes")} to execute.\n\n`);
         throw new EchoError(ErrorCodes.CONFIRMATION_REQUIRED, "Add --yes to proceed.");
@@ -210,12 +239,13 @@ export function createPredictSubcommand(): Command {
       spin.start();
 
       try {
-        const results = await closeAllPositions(wallet.secretKey);
-        spin.succeed(`Closed ${results.length} position(s)`);
+        const wallet = requireSolanaWallet();
+        const result = await executeJupiterPredictionCloseAllPositions(wallet.secretKey);
+        spin.succeed(`Closed ${result.results.length} position(s)`);
         if (isHeadless()) {
-          writeJsonSuccess({ action: "predict-close-all", results });
+          writeJsonSuccess({ action: "predict-close-all", results: result.results, raw: result.raw });
         } else {
-          successBox("All Positions Closed", results.map((r) => `Signature: ${colors.muted(r.signature)}`).join("\n") || "No positions to close.");
+          successBox("All Positions Closed", result.results.map((r) => `Signature: ${colors.muted(r.signature)}`).join("\n") || "No positions to close.");
         }
       } catch (err) { spin.fail("Failed"); throw err; }
     });
@@ -230,10 +260,15 @@ export function createPredictSubcommand(): Command {
       const spin = spinner("Loading history...");
       spin.start();
 
-      const { history, hasNext } = await getPredictHistory(wallet.address, {
-        limit: Number(options.limit),
-        offset: Number(options.offset),
+      const start = Number(options.offset);
+      const end = start + Number(options.limit);
+      const result = await getJupiterPredictionHistory({
+        ownerPubkey: wallet.address,
+        start,
+        end,
       });
+      const history = result.data;
+      const hasNext = result.pagination?.hasNext ?? false;
       spin.succeed(`${history.length} event(s)`);
 
       if (isHeadless()) {
@@ -257,18 +292,18 @@ export function createPredictSubcommand(): Command {
           { header: "Tx", width: 14 },
         ],
         history.map((h) => [
-          new Date(h.time).toLocaleDateString(),
+          new Date(h.timestamp * 1000).toLocaleDateString(),
           h.eventType,
-          h.side,
-          String(h.contracts),
-          `$${h.avgPriceUsd.toFixed(2)}`,
-          h.pnlUsd != null ? `$${h.pnlUsd.toFixed(2)}` : colors.muted("-"),
+          h.isYes ? "yes" : "no",
+          h.filledContracts,
+          `$${Number(h.avgFillPriceUsd).toFixed(2)}`,
+          h.realizedPnl != null ? `$${Number(h.realizedPnl).toFixed(2)}` : colors.muted("-"),
           `${h.signature.slice(0, 4)}...${h.signature.slice(-4)}`,
         ]),
       );
 
       if (hasNext) {
-        process.stderr.write(`\n  Next: --offset ${Number(options.offset) + Number(options.limit)}\n`);
+        process.stderr.write(`\n  Next: --offset ${end}\n`);
       }
     });
 
@@ -279,24 +314,26 @@ export function createPredictSubcommand(): Command {
       const spin = spinner("Loading event...");
       spin.start();
 
-      const event = await getEvent(eventId);
+      const event = await getJupiterPredictionEvent({ eventId, includeMarkets: true });
       spin.succeed("Event loaded");
 
       if (isHeadless()) { writeJsonSuccess({ event }); return; }
 
+      const title = event.metadata?.title ?? eventId;
+      const status = event.isLive ? "live" : event.isActive ? "active" : "closed";
       infoBox("Prediction Event",
-        `${colors.bold(event.title)}\n` +
-        `Category: ${event.category} | Status: ${event.status}`);
+        `${colors.bold(title)}\n` +
+        `Category: ${event.category} | Status: ${status}`);
 
       if (event.markets && event.markets.length > 0) {
         printTable(
           [{ header: "Market", width: 14 }, { header: "Title", width: 30 }, { header: "YES", width: 10 }, { header: "NO", width: 10 }, { header: "Volume", width: 14 }],
           event.markets.map((m) => [
             m.marketId,
-            m.title.slice(0, 28),
-            `$${m.buyYesPriceUsd.toFixed(2)}`,
-            `$${m.buyNoPriceUsd.toFixed(2)}`,
-            `$${m.volume.toLocaleString()}`,
+            (m.metadata?.title ?? "").slice(0, 28),
+            `$${(m.pricing?.buyYesPriceUsd ?? 0).toFixed(2)}`,
+            `$${(m.pricing?.buyNoPriceUsd ?? 0).toFixed(2)}`,
+            `$${(m.pricing?.volume ?? 0).toLocaleString()}`,
           ]),
         );
       }
@@ -309,18 +346,23 @@ export function createPredictSubcommand(): Command {
       const spin = spinner("Loading position...");
       spin.start();
 
-      const position = await getPosition(positionPubkey);
+      const position = await getJupiterPredictionPosition(positionPubkey);
       spin.succeed("Position loaded");
 
       if (isHeadless()) { writeJsonSuccess({ position }); return; }
+
+      const cost = Number(position.totalCostUsd);
+      const value = Number(position.valueUsd ?? 0);
+      const pnl = Number(position.pnlUsd ?? 0);
+      const pnlPct = position.pnlUsdPercent ?? 0;
 
       infoBox("Prediction Position",
         `Position: ${colors.muted(position.pubkey)}\n` +
         `Market: ${position.marketId}\n` +
         `Side: ${colors.info(position.isYes ? "YES" : "NO")}\n` +
         `Contracts: ${position.contracts}\n` +
-        `Cost: $${position.totalCostUsd.toFixed(2)} | Value: $${position.valueUsd.toFixed(2)}\n` +
-        `P&L: ${position.pnlUsd >= 0 ? "+" : ""}$${position.pnlUsd.toFixed(2)} (${position.pnlUsdPercent.toFixed(1)}%)\n` +
+        `Cost: $${cost.toFixed(2)} | Value: $${value.toFixed(2)}\n` +
+        `P&L: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)} (${pnlPct.toFixed(1)}%)\n` +
         `Claimable: ${position.claimable ? colors.info("YES") : "no"}`);
     });
 

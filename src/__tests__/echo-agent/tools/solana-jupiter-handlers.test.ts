@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { SOLANA_JUPITER_HANDLERS } from "../../../echo-agent/tools/protocols/solana-jupiter/handlers.js";
 import { SOLANA_JUPITER_TOOLS } from "../../../echo-agent/tools/protocols/solana-jupiter/manifest.js";
 
@@ -62,36 +62,9 @@ describe("solana-jupiter handlers", () => {
     expect(result.output).toContain("Missing required");
   });
 
-  it("solana.perps.open fails without required params", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.perps.open"]!(
-      { asset: "SOL" },
-      { loopMode: "off", approved: false },
-    );
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("Missing required");
-  });
-
   it("solana.predict.buy fails without required params", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
       { marketId: "abc" },
-      { loopMode: "off", approved: false },
-    );
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("Missing required");
-  });
-
-  it("solana.dca.create fails without required params", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.dca.create"]!(
-      { inputToken: "USDC" },
-      { loopMode: "off", approved: false },
-    );
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("Missing required");
-  });
-
-  it("solana.limit.create fails without required params", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.limit.create"]!(
-      { inputToken: "SOL" },
       { loopMode: "off", approved: false },
     );
     expect(result.success).toBe(false);
@@ -105,15 +78,6 @@ describe("solana-jupiter handlers", () => {
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
-  });
-
-  it("solana.perps.close fails without positionPubkey", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.perps.close"]!(
-      {},
-      { loopMode: "off", approved: false },
-    );
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("positionPubkey");
   });
 
   it("solana.predict.event fails without eventId", async () => {
@@ -134,12 +98,12 @@ describe("solana-jupiter handlers", () => {
     expect(result.output).toContain("mints");
   });
 
-  it("solana.tokens.shield fails without mints", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.tokens.shield"]!(
+  it("solana.predict.search fails without query", async () => {
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!(
       {},
       { loopMode: "off", approved: false },
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("mints");
+    expect(result.output).toContain("query");
   });
 });

@@ -4,34 +4,20 @@ import { SOLANA_JUPITER_TOOLS } from "../../../echo-agent/tools/protocols/solana
 describe("solana-jupiter manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
 
-  it("has 52 tools total", () => {
-    expect(SOLANA_JUPITER_TOOLS).toHaveLength(52);
+  it("has 20 tools total", () => {
+    expect(SOLANA_JUPITER_TOOLS).toHaveLength(20);
   });
 
   // ── All expected toolIds present ─────────────────────────────────
 
   const EXPECTED_TOOL_IDS = [
-    // Core (5)
-    "solana.holdings",
+    // Core (3)
     "solana.prices",
     "solana.tokens.search",
     "solana.tokens.trending",
-    "solana.tokens.shield",
     // Swap (2)
     "solana.swap.quote",
     "solana.swap.execute",
-    // Perps (11)
-    "solana.perps.markets",
-    "solana.perps.positions",
-    "solana.perps.history",
-    "solana.perps.open",
-    "solana.perps.close",
-    "solana.perps.closeAll",
-    "solana.perps.tpsl",
-    "solana.perps.cancelLimitOrder",
-    "solana.perps.updateLimitOrder",
-    "solana.perps.cancelTpsl",
-    "solana.perps.updateTpsl",
     // Predict (11)
     "solana.predict.events",
     "solana.predict.search",
@@ -44,41 +30,15 @@ describe("solana-jupiter manifest", () => {
     "solana.predict.sell",
     "solana.predict.claim",
     "solana.predict.closeAll",
-    // DCA (3)
-    "solana.dca.list",
-    "solana.dca.create",
-    "solana.dca.cancel",
-    // Limit (3)
-    "solana.limit.list",
-    "solana.limit.create",
-    "solana.limit.cancel",
     // Lend (4)
     "solana.lend.rates",
     "solana.lend.positions",
     "solana.lend.deposit",
     "solana.lend.withdraw",
-    // Stake (4)
-    "solana.stake.accounts",
-    "solana.stake.delegate",
-    "solana.stake.withdraw",
-    "solana.stake.claimMev",
-    // Send (3)
-    "solana.send.pending",
-    "solana.send.invite",
-    "solana.send.clawback",
-    // Studio (3)
-    "solana.studio.fees",
-    "solana.studio.create",
-    "solana.studio.claimFees",
-    // Account (2)
-    "solana.account.burn",
-    "solana.account.closeEmpty",
-    // History (1)
-    "solana.history.spot",
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(52);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(20);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -120,33 +80,12 @@ describe("solana-jupiter manifest", () => {
 
   const EXPECTED_MUTATING = [
     "solana.swap.execute",
-    "solana.perps.open",
-    "solana.perps.close",
-    "solana.perps.closeAll",
-    "solana.perps.tpsl",
-    "solana.perps.cancelLimitOrder",
-    "solana.perps.updateLimitOrder",
-    "solana.perps.cancelTpsl",
-    "solana.perps.updateTpsl",
     "solana.predict.buy",
     "solana.predict.sell",
     "solana.predict.claim",
     "solana.predict.closeAll",
-    "solana.dca.create",
-    "solana.dca.cancel",
-    "solana.limit.create",
-    "solana.limit.cancel",
     "solana.lend.deposit",
     "solana.lend.withdraw",
-    "solana.stake.delegate",
-    "solana.stake.withdraw",
-    "solana.stake.claimMev",
-    "solana.send.invite",
-    "solana.send.clawback",
-    "solana.studio.create",
-    "solana.studio.claimFees",
-    "solana.account.burn",
-    "solana.account.closeEmpty",
   ];
 
   it("has correct number of mutating tools", () => {
@@ -169,20 +108,11 @@ describe("solana-jupiter manifest", () => {
     }
   });
 
-  // ── requiresEnv ──────────────────────────────────────────────────
+  // ── requiresEnv — ALL retained tools require JUPITER_API_KEY ────
 
-  it("studio tools require JUPITER_API_KEY", () => {
-    const studioTools = SOLANA_JUPITER_TOOLS.filter(t => t.toolId.startsWith("solana.studio."));
-    expect(studioTools).toHaveLength(3);
-    for (const tool of studioTools) {
+  it("all tools require JUPITER_API_KEY", () => {
+    for (const tool of SOLANA_JUPITER_TOOLS) {
       expect(tool.requiresEnv).toBe("JUPITER_API_KEY");
-    }
-  });
-
-  it("non-studio tools do not require ENV", () => {
-    const nonStudio = SOLANA_JUPITER_TOOLS.filter(t => !t.toolId.startsWith("solana.studio."));
-    for (const tool of nonStudio) {
-      expect(tool.requiresEnv).toBeUndefined();
     }
   });
 
@@ -196,26 +126,12 @@ describe("solana-jupiter manifest", () => {
     expect(required).toContain("amount");
   });
 
-  it("solana.perps.open requires asset, side, amountUsd", () => {
-    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.perps.open")!;
-    const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("asset");
-    expect(required).toContain("side");
-    expect(required).toContain("amountUsd");
-  });
-
   it("solana.predict.buy requires marketId, side, amountUsdc", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.buy")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
     expect(required).toContain("marketId");
     expect(required).toContain("side");
     expect(required).toContain("amountUsdc");
-  });
-
-  it("solana.perps.markets has no required params", () => {
-    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.perps.markets")!;
-    const required = tool.params.filter(p => p.required);
-    expect(required).toHaveLength(0);
   });
 
   // ── Descriptions quality ─────────────────────────────────────────

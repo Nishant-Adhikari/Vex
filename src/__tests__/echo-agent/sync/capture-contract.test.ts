@@ -26,16 +26,6 @@ const MATRIX: MatrixRow[] = [
   { toolId: "slop.trade.buy", role: "pnl_spot", capture: "full" },
   { toolId: "slop.trade.sell", role: "pnl_spot", capture: "full" },
 
-  // ── pnl_perps ─────────────────────────────────────────────
-  { toolId: "solana.perps.open", role: "pnl_perps", capture: "full" },
-  { toolId: "solana.perps.close", role: "pnl_perps", capture: "full" },
-  { toolId: "solana.perps.closeAll", role: "pnl_perps", capture: "full" },
-  { toolId: "solana.perps.tpsl", role: "pnl_perps", capture: "full" },
-  { toolId: "solana.perps.cancelLimitOrder", role: "pnl_perps", capture: "full" },
-  { toolId: "solana.perps.updateLimitOrder", role: "pnl_perps", capture: "full" },
-  { toolId: "solana.perps.cancelTpsl", role: "pnl_perps", capture: "full" },
-  { toolId: "solana.perps.updateTpsl", role: "pnl_perps", capture: "full" },
-
   // ── pnl_prediction ────────────────────────────────────────
   { toolId: "solana.predict.buy", role: "pnl_prediction", capture: "full" },
   { toolId: "solana.predict.sell", role: "pnl_prediction", capture: "full" },
@@ -49,10 +39,6 @@ const MATRIX: MatrixRow[] = [
   { toolId: "polymarket.clob.cancelMarket", role: "pnl_prediction", capture: "full" },
 
   // ── projection (orders, LP) ───────────────────────────────
-  { toolId: "solana.dca.create", role: "projection", capture: "full" },
-  { toolId: "solana.dca.cancel", role: "projection", capture: "full" },
-  { toolId: "solana.limit.create", role: "projection", capture: "full" },
-  { toolId: "solana.limit.cancel", role: "projection", capture: "full" },
   { toolId: "kyberswap.limitOrder.create", role: "projection", capture: "full" },
   { toolId: "kyberswap.limitOrder.cancel", role: "projection", capture: "full" },
   { toolId: "kyberswap.limitOrder.hardCancel", role: "projection", capture: "full" },
@@ -67,9 +53,6 @@ const MATRIX: MatrixRow[] = [
   { toolId: "khalani.bridge", role: "audit", capture: "full" },
   { toolId: "solana.lend.deposit", role: "audit", capture: "full" },
   { toolId: "solana.lend.withdraw", role: "audit", capture: "full" },
-  { toolId: "solana.stake.delegate", role: "audit", capture: "full" },
-  { toolId: "solana.stake.withdraw", role: "audit", capture: "full" },
-  { toolId: "solana.stake.claimMev", role: "audit", capture: "full" },
   { toolId: "slop.fees.claimCreator", role: "audit", capture: "full" },
   { toolId: "slop.fees.lpCollect", role: "audit", capture: "full" },
   { toolId: "slop.reward.claim", role: "audit", capture: "full" },
@@ -77,12 +60,6 @@ const MATRIX: MatrixRow[] = [
   { toolId: "jaine.w0g.unwrap", role: "audit", capture: "full" },
   { toolId: "jaine.allowance.approve", role: "audit", capture: "full" },
   { toolId: "jaine.allowance.revoke", role: "audit", capture: "full" },
-  { toolId: "solana.send.invite", role: "audit", capture: "full" },
-  { toolId: "solana.send.clawback", role: "audit", capture: "full" },
-  { toolId: "solana.account.burn", role: "audit", capture: "full" },
-  { toolId: "solana.account.closeEmpty", role: "audit", capture: "full" },
-  { toolId: "solana.studio.create", role: "audit", capture: "full" },
-  { toolId: "solana.studio.claimFees", role: "audit", capture: "full" },
   { toolId: "slop.token.create", role: "audit", capture: "full" },
 
   // ── audit (capture: none — address creation, no direct tx) ─

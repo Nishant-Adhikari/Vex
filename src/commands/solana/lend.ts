@@ -4,9 +4,15 @@
 
 import { Command } from "commander";
 import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
-import { getLendRates, getLendPositions, getLendEarnings, lendDeposit, lendWithdraw } from "../../tools/chains/solana/lend-service.js";
-import { resolveToken } from "../../tools/chains/solana/token-registry.js";
-import { uiToTokenAmount } from "../../tools/chains/solana/validation.js";
+import {
+  getJupiterLendEarnTokens,
+  getJupiterLendEarnPositions,
+  getJupiterLendEarnEarnings,
+  executeJupiterLendEarnDeposit,
+  executeJupiterLendEarnWithdraw,
+} from "../../tools/solana-ecosystem/jupiter/jupiter-lend/earn-api/service.js";
+import { resolveJupiterToken } from "../../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
+import { uiToTokenAmount } from "../../tools/solana-ecosystem/shared/solana-validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
@@ -26,19 +32,19 @@ export function createLendSubcommand(): Command {
       spin.start();
 
       try {
-        let rates = await getLendRates();
+        let tokens = await getJupiterLendEarnTokens();
         if (token) {
           const lower = token.toLowerCase();
-          rates = rates.filter((r) => r.symbol.toLowerCase().includes(lower));
+          tokens = tokens.filter((t) => t.symbol.toLowerCase().includes(lower));
         }
-        spin.succeed(`${rates.length} lending pool(s)`);
+        spin.succeed(`${tokens.length} lending pool(s)`);
 
         if (isHeadless()) {
-          writeJsonSuccess({ rates });
+          writeJsonSuccess({ rates: tokens });
           return;
         }
 
-        if (rates.length === 0) {
+        if (tokens.length === 0) {
           infoBox("Lend Rates", "No pools found.");
           return;
         }
@@ -50,11 +56,11 @@ export function createLendSubcommand(): Command {
             { header: "Total APY", width: 12 },
             { header: "Total Supply", width: 18 },
           ],
-          rates.map((r) => [
-            r.symbol,
-            `${(r.supplyRate * 100).toFixed(2)}%`,
-            `${(r.totalRate * 100).toFixed(2)}%`,
-            r.totalAssets,
+          tokens.map((t) => [
+            t.symbol,
+            `${(Number(t.supplyRate) * 100).toFixed(2)}%`,
+            `${(Number(t.totalRate) * 100).toFixed(2)}%`,
+            t.totalAssets,
           ]),
         );
       } catch (err) { spin.fail("Failed"); throw err; }
@@ -70,14 +76,14 @@ export function createLendSubcommand(): Command {
       spin.start();
 
       try {
-        const positions = await getLendPositions(wallet.address);
+        const positions = await getJupiterLendEarnPositions(wallet.address);
 
-        // Fetch earnings for positions that have token addresses
-        const posAddresses = positions.map((p) => p.tokenAddress).filter(Boolean);
-        const earnings = posAddresses.length > 0
-          ? await getLendEarnings(wallet.address, posAddresses)
-          : [];
-        const earningsMap = new Map(earnings.map((e) => [e.address, e.earnings]));
+        // Fetch earnings for positions that have asset addresses
+        const posAddresses = positions.map((p) => p.token.assetAddress).filter(Boolean);
+        const earningsResult = posAddresses.length > 0
+          ? await getJupiterLendEarnEarnings(wallet.address, posAddresses)
+          : { earnings: [] };
+        const earningsMap = new Map(earningsResult.earnings.map((e) => [e.address, e.earnings]));
 
         spin.succeed(`${positions.length} position(s)`);
 
@@ -85,7 +91,7 @@ export function createLendSubcommand(): Command {
           writeJsonSuccess({
             positions: positions.map((p) => ({
               ...p,
-              earnings: earningsMap.get(p.tokenAddress) ?? 0,
+              earnings: earningsMap.get(p.token.assetAddress) ?? 0,
             })),
           });
           return;
@@ -104,10 +110,10 @@ export function createLendSubcommand(): Command {
             { header: "Earnings", width: 16 },
           ],
           positions.map((p) => [
-            p.tokenSymbol,
+            p.token.symbol,
             p.shares,
             p.underlyingAssets,
-            String(earningsMap.get(p.tokenAddress) ?? 0),
+            String(earningsMap.get(p.token.assetAddress) ?? 0),
           ]),
         );
       } catch (err) { spin.fail("Failed"); throw err; }
@@ -121,7 +127,7 @@ export function createLendSubcommand(): Command {
     .option("--yes", "Skip confirmation")
     .action(async (token: string, options: { amount: string; yes?: boolean }) => {
       const wallet = requireSolanaWallet();
-      const tokenMeta = await resolveToken(token);
+      const tokenMeta = await resolveJupiterToken(token);
       if (!tokenMeta) throw new EchoError(ErrorCodes.SOLANA_TOKEN_NOT_FOUND, `Token not found: ${token}`);
 
       const atomicAmount = uiToTokenAmount(Number(options.amount), tokenMeta.decimals);
@@ -135,7 +141,7 @@ export function createLendSubcommand(): Command {
       spin.start();
 
       try {
-        const result = await lendDeposit(wallet.secretKey, tokenMeta.address, atomicAmount.toString());
+        const result = await executeJupiterLendEarnDeposit(wallet.secretKey, tokenMeta.address, atomicAmount.toString());
         spin.succeed("Deposited");
 
         if (isHeadless()) {
@@ -154,7 +160,7 @@ export function createLendSubcommand(): Command {
     .option("--yes", "Skip confirmation")
     .action(async (token: string, options: { amount: string; yes?: boolean }) => {
       const wallet = requireSolanaWallet();
-      const tokenMeta = await resolveToken(token);
+      const tokenMeta = await resolveJupiterToken(token);
       if (!tokenMeta) throw new EchoError(ErrorCodes.SOLANA_TOKEN_NOT_FOUND, `Token not found: ${token}`);
 
       const atomicAmount = uiToTokenAmount(Number(options.amount), tokenMeta.decimals);
@@ -168,7 +174,7 @@ export function createLendSubcommand(): Command {
       spin.start();
 
       try {
-        const result = await lendWithdraw(wallet.secretKey, tokenMeta.address, atomicAmount.toString());
+        const result = await executeJupiterLendEarnWithdraw(wallet.secretKey, tokenMeta.address, atomicAmount.toString());
         spin.succeed("Withdrawn");
 
         if (isHeadless()) {

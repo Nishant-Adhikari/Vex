@@ -25,8 +25,8 @@ const NAMESPACE_EXAMPLES: Record<string, string[]> = {
   ],
   solana: [
     'discover_tools(query="swap sol to usdc", namespace="solana")',
-    'discover_tools(query="perps positions", namespace="solana")',
-    'discover_tools(query="jupiter dca", namespace="solana")',
+    'discover_tools(query="token prices", namespace="solana")',
+    'discover_tools(query="prediction markets", namespace="solana")',
   ],
   kyberswap: [
     'discover_tools(query="swap on ethereum", namespace="kyberswap")',
@@ -57,7 +57,7 @@ const NAMESPACE_EXAMPLES: Record<string, string[]> = {
 const NAMESPACE_DESCRIPTIONS: Record<string, string> = {
   khalani: "Cross-chain balances, token discovery, bridge quotes and execution (40+ chains)",
   dexscreener: "DEX analytics, trending pairs, token profiles, price research",
-  solana: "Jupiter swaps, perps, DCA, lending, staking, prediction markets, token history",
+  solana: "Jupiter swaps, token prices, token discovery, lending, prediction markets (requires JUPITER_API_KEY)",
   kyberswap: "Multi-chain EVM swaps, token safety, limit orders, LP zap",
   polymarket: "Prediction markets, positions, CLOB trading, analytics, orderbook",
   jaine: "0G DEX swaps, LP management, wrap/unwrap A0GI",

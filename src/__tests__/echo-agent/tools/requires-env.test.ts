@@ -77,37 +77,22 @@ describe("requiresEnv filtering", () => {
   // ── Protocol tools (discovery) ─────────────────────────────────
 
   describe("protocol discovery", () => {
-    it("hides studio tools when JUPITER_API_KEY not set", () => {
+    it("hides ALL solana tools when JUPITER_API_KEY not set", () => {
       const result = discoverProtocolCapabilities({
         namespace: "solana",
-        query: "studio",
         includeMutating: true,
       });
-      const studioTools = result.tools.filter(t => t.toolId.startsWith("solana.studio."));
-      expect(studioTools).toHaveLength(0);
+      expect(result.count).toBe(0);
     });
 
-    it("shows studio tools when JUPITER_API_KEY is set", () => {
+    it("shows all 20 solana tools when JUPITER_API_KEY is set", () => {
       process.env.JUPITER_API_KEY = "test-jupiter-key";
       const result = discoverProtocolCapabilities({
         namespace: "solana",
-        query: "studio",
         includeMutating: true,
+        limit: 100,
       });
-      const studioTools = result.tools.filter(t => t.toolId.startsWith("solana.studio."));
-      expect(studioTools).toHaveLength(3);
-    });
-
-    it("non-studio solana tools visible without JUPITER_API_KEY", () => {
-      const result = discoverProtocolCapabilities({
-        namespace: "solana",
-        includeMutating: true,
-      });
-      expect(result.count).toBeGreaterThan(0);
-      const hasSwap = result.tools.some(t => t.toolId === "solana.swap.quote");
-      const hasHoldings = result.tools.some(t => t.toolId === "solana.holdings");
-      expect(hasSwap).toBe(true);
-      expect(hasHoldings).toBe(true);
+      expect(result.count).toBe(20);
     });
 
     it("khalani tools unaffected by JUPITER_API_KEY", () => {
@@ -115,55 +100,51 @@ describe("requiresEnv filtering", () => {
       expect(result.count).toBeGreaterThan(0);
     });
 
-    it("total tool count is lower without JUPITER_API_KEY", () => {
-      const without = discoverProtocolCapabilities({ includeMutating: true, limit: 200 });
+    it("total tool count is higher with JUPITER_API_KEY", () => {
+      const without = discoverProtocolCapabilities({ includeMutating: true, limit: 300 });
       process.env.JUPITER_API_KEY = "test-key";
-      const withKey = discoverProtocolCapabilities({ includeMutating: true, limit: 200 });
-      expect(without.count).toBe(200);
-      expect(withKey.count).toBe(200);
-      expect(without.hasMore).toBe(true);
-      expect(withKey.hasMore).toBe(true);
-      expect(withKey.totalCount).toBe(without.totalCount + 3);
+      const withKey = discoverProtocolCapabilities({ includeMutating: true, limit: 300 });
+      expect(withKey.totalCount).toBe(without.totalCount + 20);
     });
   });
 
   // ── Protocol execute guard ─────────────────────────────────────
 
   describe("protocol execute guard", () => {
-    it("blocks studio.create without JUPITER_API_KEY", async () => {
+    it("blocks solana.swap.quote without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
-        { toolId: "solana.studio.create", params: { tokenName: "Test", tokenSymbol: "TST", imagePath: "/tmp/a.png", initialMarketCap: 1000, migrationMarketCap: 10000 } },
+        { toolId: "solana.swap.quote", params: { inputToken: "SOL", outputToken: "USDC", amount: 1 } },
         { loopMode: "off", approved: false },
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");
     });
 
-    it("blocks studio.fees without JUPITER_API_KEY", async () => {
-      const result = await executeProtocolTool(
-        { toolId: "solana.studio.fees", params: { mint: "abc" } },
-        { loopMode: "off", approved: false },
-      );
-      expect(result.success).toBe(false);
-      expect(result.output).toContain("JUPITER_API_KEY");
-    });
-
-    it("blocks studio.claimFees without JUPITER_API_KEY", async () => {
-      const result = await executeProtocolTool(
-        { toolId: "solana.studio.claimFees", params: { poolAddress: "abc" } },
-        { loopMode: "off", approved: false },
-      );
-      expect(result.success).toBe(false);
-      expect(result.output).toContain("JUPITER_API_KEY");
-    });
-
-    it("non-studio execute not blocked by missing JUPITER_API_KEY", async () => {
+    it("blocks solana.tokens.search without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.tokens.search", params: { query: "SOL" } },
         { loopMode: "off", approved: false },
       );
-      // Will fail at network level (no real API) but NOT blocked by ENV guard
-      expect(result.output).not.toContain("JUPITER_API_KEY");
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("JUPITER_API_KEY");
+    });
+
+    it("blocks solana.predict.events without JUPITER_API_KEY", async () => {
+      const result = await executeProtocolTool(
+        { toolId: "solana.predict.events", params: {} },
+        { loopMode: "off", approved: false },
+      );
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("JUPITER_API_KEY");
+    });
+
+    it("blocks solana.lend.rates without JUPITER_API_KEY", async () => {
+      const result = await executeProtocolTool(
+        { toolId: "solana.lend.rates", params: {} },
+        { loopMode: "off", approved: false },
+      );
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("JUPITER_API_KEY");
     });
   });
 });

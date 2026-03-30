@@ -5,7 +5,7 @@
 
 import { Command } from "commander";
 import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
-import { getSwapQuote, executeSwap } from "../../tools/chains/solana/swap-service.js";
+import { getSwapQuote, executeSwap } from "../../tools/solana-ecosystem/jupiter/jupiter-swaps/service.js";
 import { loadConfig } from "../../config/store.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, infoBox, spinner, colors, warnBox } from "../../utils/ui.js";
@@ -18,13 +18,13 @@ function formatQuoteDisplay(quote: Awaited<ReturnType<typeof getSwapQuote>>["quo
     `${colors.info(`${quote.outputAmount} ${quote.outputToken.symbol}`)}\n` +
     `Price impact: ${colors.muted(quote.priceImpactPct + "%")}\n` +
     `Route: ${colors.muted(routeStr)} (${quote.provider})\n` +
-    `Slippage: ${colors.muted((quote.slippageBps / 100).toFixed(1) + "%")}`
+    `Slippage: ${colors.muted(((quote.slippageBps ?? 0) / 100).toFixed(1) + "%")}`
   );
 }
 
 export function createSwapSubcommand(): Command {
   const swap = new Command("swap")
-    .description("Swap tokens via Jupiter (aggregates Raydium, Orca, Meteora)")
+    .description("Swap tokens via Jupiter Swap API V2 (aggregates Raydium, Orca, Meteora)")
     .exitOverride();
 
   // echoclaw solana swap quote <from> <to> --amount <n>

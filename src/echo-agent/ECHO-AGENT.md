@@ -41,7 +41,7 @@ src/echo-agent/
       catalog.ts         — All 10 namespaces registered
       runtime.ts         — Discovery, execution, approval gate, capture hook
       khalani/           — 9 tools (bridge, balances, orders)
-      solana-jupiter/    — 37 tools (swap, perps, predict, DCA, limit, lend, stake)
+      solana-jupiter/    — 20 tools (prices, tokens, swap, predict, lend — requires JUPITER_API_KEY)
       kyberswap/         — 20 tools (swap buy+sell, limit orders, zap LP)
       polymarket/        — 69 tools (bridge, CLOB, data, gamma)
       dexscreener/       — 11 tools (search, pairs, trending)
@@ -223,7 +223,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 | Namespace | Tools | Chains | Key capabilities |
 |-----------|-------|--------|-----------------|
 | `khalani` | 9 | 40+ EVM + Solana | Cross-chain bridge, multi-chain balances, orders |
-| `solana` | 37 | Solana | Swap, perps, predictions, DCA, limits, lend, stake, studio |
+| `solana` | 20 | Solana | Prices, tokens, swap, predictions, lend (requires JUPITER_API_KEY) |
 | `kyberswap` | 20 | 18 EVM | Swap (buy + sell), limit orders (maker + taker), zap LP |
 | `polymarket` | 69 | Polygon | CLOB trading (buy/sell), bridge, positions, gamma discovery |
 | `dexscreener` | 11 | Multi-chain | Pair search, trending, boosts (all read-only) |
@@ -314,7 +314,7 @@ SUBAGENT_TIMEOUT_MS=300000
 # ── Optional ─────────────────────────────────
 TAVILY_API_KEY=tvly-...                # web_search + web_fetch
 POLYMARKET_API_KEY=...                 # CLOB trading (11 tools)
-JUPITER_API_KEY=...                    # studio tools (3 tools)
+JUPITER_API_KEY=...                    # all solana tools (20 tools)
 ```
 
 ---

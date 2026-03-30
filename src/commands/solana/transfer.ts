@@ -7,7 +7,7 @@ import { Command } from "commander";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
 import { sendSol, sendSplToken } from "../../tools/chains/solana/transfer-service.js";
-import { resolveToken } from "../../tools/chains/solana/token-registry.js";
+import { resolveJupiterToken } from "../../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
 import { getSolanaConnection } from "../../tools/chains/solana/connection.js";
 import {
   validateSolanaAddress,
@@ -129,7 +129,7 @@ export function createSendTokenSubcommand(): Command {
 
       const spin = spinner(`Resolving token ${options.token}...`);
       spin.start();
-      const tokenMeta = await resolveToken(options.token);
+      const tokenMeta = await resolveJupiterToken(options.token);
       if (!tokenMeta) {
         spin.fail("Token not found");
         throw new EchoError(ErrorCodes.SOLANA_TOKEN_NOT_FOUND, `Token not found: ${options.token}`);

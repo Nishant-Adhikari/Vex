@@ -1,6 +1,6 @@
 ---
 name: echoclaw
-description: CLI for 0G Network, Solana, and 20 EVM chains — wallet operations, native transfers, Jaine DEX, Slop.money, Jupiter (swap, perps, lend, predict, DCA, stake, history), Khalani cross-chain bridge (40+ chains), KyberSwap (multi-chain EVM swap, limit orders with taker fill, zap liquidity across 400+ DEXs), DexScreener (analytics, CTO signals, real-time streams), Polymarket (EVM prediction markets on Polygon — browse, trade, track), EchoBook and many more features.
+description: CLI for 0G Network, Solana, and 20 EVM chains — wallet operations, native transfers, Jaine DEX, Slop.money, Jupiter (swap, prices, tokens, lend, predict), Khalani cross-chain bridge (40+ chains), KyberSwap (multi-chain EVM swap, limit orders with taker fill, zap liquidity across 400+ DEXs), DexScreener (analytics, CTO signals, real-time streams), Polymarket (EVM prediction markets on Polygon — browse, trade, track), EchoBook and many more features.
 user-invocable: true
 homepage: https://echoclaw.ai
 metadata: {"openclaw":{"emoji":"\ud83d\udcb0","requires":{"bins":["echoclaw"],"env":["ECHO_KEYSTORE_PASSWORD"]},"install":[{"id":"npm","kind":"node","package":"@echoclaw/echo","bins":["echoclaw"],"label":"Install EchoClaw CLI (npm)"}],"homepage":"https://echoclaw.ai"}}
@@ -18,7 +18,7 @@ Use this skill whenever the user asks to perform actions through `echoclaw`, esp
 
 - **Wallet & Configuration**: EVM and Solana wallet create/import, passwords, RPC config (0G + Solana), Jupiter API key, native balances, Khalani-backed multi-chain balances.
 - **On-chain Transfers (0G + Solana)**: all transfers use 2-step prepare → confirm intent flow with 10-minute expiry. 0G: `send prepare` → `send confirm`. Solana: `solana send prepare` → `solana send confirm`.
-- **Solana DeFi (Jupiter)**: token swaps via Jupiter Ultra (aggregates all Solana DEXes), perpetual futures (leveraged SOL/BTC/ETH), token browse/price, SOL/SPL transfers, staking, DCA, limit orders, lending (with earnings), prediction markets (with history and batch close), portfolio/holdings, token security (shield), token creation (Studio), send-invite, spot trade history, SPL burn/close-accounts.
+- **Solana DeFi (Jupiter)**: token swaps via Jupiter Swap API V2 (aggregates all Solana DEXes), token browse/price, SOL/SPL transfers, lending (with earnings), prediction markets (with history and batch close), SPL burn/close-accounts. Requires `JUPITER_API_KEY` for all Jupiter features.
 - **Prediction Markets (Polymarket)**: EVM prediction markets on Polygon — browse events across politics/sports/crypto/culture, search, buy/sell YES/NO outcome shares, track any user's positions and PnL, leaderboard, auto-generate API key (one-click setup), bridge deposit/withdraw, real-time WebSocket streams (market orderbook/prices/trades + authenticated user order/trade events), batch market data endpoints.
 - **Multi-chain EVM DeFi (KyberSwap)**: Token swaps across 20 EVM chains via DEX aggregator (400+ DEXs), token search with honeypot/FOT safety checks, gasless limit orders (off-chain signed, on-chain settlement — create/list/cancel/hard-cancel/fill as taker), EIP-2612 permit for gasless approval, concentrated liquidity provisioning (Zap In/Out/Migrate) on UniswapV3/PancakeSwap/SushiSwap and 50+ DEXes including Scroll and zkSync (ZaaS-only), pool discovery via DexScreener integration.
 - **Cross-Chain Bridging (Khalani)**: cross-chain swaps and bridges across 40+ chains (with aliases), multi-chain token discovery and balances with USD, quote (with `--filler` and streaming)/bridge/order tracking (with provider status and lifecycle timestamps), EVM + Solana wallet flows, hex amount support.
@@ -42,7 +42,7 @@ For Solana wallet and Jupiter setup:
 ```bash
 echoclaw wallet create --chain solana --json
 echoclaw config set-solana-rpc https://your-rpc-endpoint.com   # optional: private RPC
-echoclaw config set-jupiter-key YOUR_KEY                        # optional: higher rate limits + Studio
+echoclaw config set-jupiter-key YOUR_KEY                        # required for all Jupiter features (swap, browse, price, lend, predict)
 echoclaw wallet ensure --json                                   # verify both EVM + Solana wallets
 ```
 
@@ -152,13 +152,8 @@ Intent-to-reference mapping:
 - **"Send 0G" / "transfer native"** → `references/wallet-transfers.md` (0G 2-step section)
 - **"Swap on Solana" / "buy BONK" / "sell SOL for USDC" / "Jupiter swap"** → `references/solana/solana-jupiter.md`
 - **"Browse trending tokens" / "token price" / "Solana portfolio"** → `references/solana/solana-jupiter.md`
-- **"Stake SOL" / "claim MEV" / "DCA" / "limit order" / "trade history"** → `references/solana/solana-jupiter.md`
-- **"Leveraged long" / "short SOL" / "perps" / "perpetual" / "TP/SL"** → `references/solana/solana-jupiter.md`
 - **"Lend USDC" / "earn yield on Solana"** → `references/solana/solana-jupiter.md`
 - **"Prediction market" / "bet on crypto"** → `references/solana/solana-jupiter.md`
-- **"Create token on Jupiter" / "Studio"** → `references/solana/solana-jupiter.md`
-- **"Token security" / "is this token safe"** → `references/solana/solana-jupiter.md` (shield command)
-- **"Send invite" / "clawback"** → `references/solana/solana-jupiter.md`
 - **"Burn tokens" / "close empty accounts"** → `references/solana/solana-jupiter.md`
 - **"Predict election" / "bet on crypto" / "buy yes shares" / "Polymarket"** → `references/polymarket/prediction-markets.md`
 - **"Polymarket orderbook" / "prediction market prices" / "stream Polymarket prices"** → `references/polymarket/market-data.md`

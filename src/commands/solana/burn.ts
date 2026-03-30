@@ -6,7 +6,7 @@
 import { Command } from "commander";
 import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
 import { burnSplToken, closeEmptyAccounts } from "../../tools/chains/solana/account-service.js";
-import { resolveToken } from "../../tools/chains/solana/token-registry.js";
+import { resolveJupiterToken } from "../../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
 import { parseSplAmount, shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, spinner, colors } from "../../utils/ui.js";
@@ -22,7 +22,7 @@ export function createBurnSubcommand(): Command {
     .action(async (token: string, amount: string | undefined, options: { yes?: boolean }) => {
       const wallet = requireSolanaWallet();
 
-      const tokenMeta = await resolveToken(token);
+      const tokenMeta = await resolveJupiterToken(token);
       if (!tokenMeta) {
         throw new EchoError(ErrorCodes.SOLANA_TOKEN_NOT_FOUND, `Token not found: ${token}`);
       }

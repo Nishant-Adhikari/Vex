@@ -9,6 +9,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [],
     exampleParams: {},
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.lend.positions",
@@ -20,6 +21,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "address", type: "string", required: true, description: "Wallet address." },
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.lend.deposit",
@@ -32,6 +34,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "amount", type: "string", required: true, description: "Amount in atomic units." },
     ],
     exampleParams: { asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", amount: "1000000" },
+    requiresEnv: "JUPITER_API_KEY",
   },
   {
     toolId: "solana.lend.withdraw",
@@ -44,5 +47,6 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "amount", type: "string", required: true, description: "Amount in atomic units." },
     ],
     exampleParams: { asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", amount: "1000000" },
+    requiresEnv: "JUPITER_API_KEY",
   },
 ];

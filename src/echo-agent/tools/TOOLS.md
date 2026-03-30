@@ -87,7 +87,7 @@ protocols/
   catalog.ts     — All manifests + handlers registered here
   runtime.ts     — discover + execute logic + execution capture hook
   khalani/       — 9 tools: bridge, balances, orders, chains, tokens
-  solana-jupiter/— 37 tools: swap, perps, predict, DCA, limit, lend, stake, history, studio
+  solana-jupiter/— 20 tools: prices, tokens, swap, predict, lend (requires JUPITER_API_KEY)
   kyberswap/     — 16 tools: swap, limit orders (maker+taker), zap LP, chains, tokens
   polymarket/    — 69 tools: bridge, CLOB trading, data/positions, gamma discovery
   dexscreener/   — 11 tools: search, pairs, trending, orders (all read-only)

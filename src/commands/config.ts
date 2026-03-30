@@ -297,7 +297,7 @@ export function createConfigCommand(): Command {
   // echoclaw config set-jupiter-key <key>
   config
     .command("set-jupiter-key <key>")
-    .description("Set Jupiter API key (for premium rate limits)")
+    .description("Set Jupiter API key (required for swap, browse, price, lend, predict)")
     .action(async (key: string) => {
       const cfg = loadConfig();
       cfg.solana.jupiterApiKey = key;
@@ -305,7 +305,7 @@ export function createConfigCommand(): Command {
 
       respond({
         data: { jupiterApiKey: `${key.slice(0, 8)}…`, status: "updated" as const },
-        ui: { type: "success", title: "Jupiter API Key Set", body: `Key: ${colors.muted(`${key.slice(0, 8)}…`)}` },
+        ui: { type: "success", title: "Jupiter API Key Set", body: `Key: ${colors.muted(`${key.slice(0, 8)}…`)}\nRequired for all Jupiter features.` },
       });
     });
 
