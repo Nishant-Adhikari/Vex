@@ -31,13 +31,13 @@ vi.mock("@tools/wallet/signingClient.js", () => ({
   getSigningClient: () => ({ sendTransaction: async () => "0xmockhash" }),
 }));
 
-vi.mock("@tools/chains/solana/transfer-service.js", () => ({
+vi.mock("@tools/solana-ecosystem/shared/solana-transfer.js", () => ({
   sendSol: async () => ({ signature: "mocksig123", explorerUrl: "https://explorer.solana.com/tx/mocksig123" }),
   sendSplToken: async () => ({ signature: "mocksplsig456", explorerUrl: "https://explorer.solana.com/tx/mocksplsig456" }),
 }));
 
-vi.mock("@tools/chains/solana/token-registry.js", () => ({
-  resolveToken: async (sym: string) => {
+vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
+  resolveJupiterToken: async (sym: string) => {
     if (sym === "USDC") return { chain: "solana", address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC", name: "USD Coin", decimals: 6 };
     return undefined;
   },

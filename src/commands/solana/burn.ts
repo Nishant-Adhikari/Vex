@@ -5,9 +5,9 @@
 
 import { Command } from "commander";
 import { requireSolanaWallet } from "../../tools/wallet/multi-auth.js";
-import { burnSplToken, closeEmptyAccounts } from "../../tools/chains/solana/account-service.js";
+import { burnSplToken, closeEmptyAccounts } from "../../tools/solana-ecosystem/shared/solana-account.js";
 import { resolveJupiterToken } from "../../tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
-import { parseSplAmount, shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
+import { parseSplAmount } from "../../tools/solana-ecosystem/shared/solana-validation.js";
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { successBox, spinner, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";

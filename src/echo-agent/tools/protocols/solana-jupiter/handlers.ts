@@ -239,6 +239,30 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
   },
   "solana.predict.closeAll": async (p) => {
     const result = await executeJupiterPredictionCloseAllPositions(walletSecret());
+    const wallet = walletAddress(p);
+
+    const captureItems = result.results.map(item => {
+      let pk: string | undefined;
+      let marketId: string | undefined;
+
+      if ("order" in item.raw) {
+        pk = item.raw.order.positionPubkey;
+        marketId = item.raw.order.marketId;
+      } else if ("position" in item.raw) {
+        pk = item.raw.position.positionPubkey;
+      }
+
+      return {
+        type: "prediction" as const, chain: "solana" as const,
+        status: item.kind === "claim" ? "claimed" as const : "closed" as const,
+        walletAddress: wallet, tradeSide: "sell" as const,
+        signature: item.signature,
+        positionKey: pk,
+        instrumentKey: marketId ? `solana:predict:${marketId}` : undefined,
+        meta: { kind: item.kind, positionPubkey: pk },
+      };
+    });
+
     return {
       success: true,
       output: JSON.stringify(result, null, 2),
@@ -246,9 +270,11 @@ export const SOLANA_JUPITER_HANDLERS: Record<string, ProtocolHandler> = {
         ...result,
         _tradeCapture: {
           type: "prediction", chain: "solana", status: "closed",
-          walletAddress: walletAddress(p), tradeSide: "sell",
+          walletAddress: wallet, tradeSide: "sell",
+          signature: result.results[0]?.signature,
           meta: { action: "closeAll", count: result.results.length },
         },
+        _tradeCaptureItems: captureItems,
       },
     };
   },

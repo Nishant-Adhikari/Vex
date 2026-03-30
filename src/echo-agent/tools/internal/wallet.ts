@@ -15,7 +15,7 @@ import { normalizeWalletChain } from "@tools/wallet/family.js";
 import { getKhalaniClient } from "@tools/khalani/client.js";
 import { getPublicClient } from "@tools/wallet/client.js";
 import { getSigningClient } from "@tools/wallet/signingClient.js";
-import { sendSol, sendSplToken } from "@tools/chains/solana/transfer-service.js";
+import { sendSol, sendSplToken } from "@tools/solana-ecosystem/shared/solana-transfer.js";
 import { resolveJupiterToken } from "@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
 import { Keypair } from "@solana/web3.js";
 import { formatUnits, parseUnits, type Address } from "viem";

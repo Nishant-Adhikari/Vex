@@ -2,7 +2,7 @@
  * Shared Solana validation and amount helpers for the new solana-ecosystem shelf.
  */
 
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { loadConfig } from "../../../config/store.js";
 import { EchoError, ErrorCodes } from "../../../errors.js";
 
@@ -37,6 +37,47 @@ export function uiToTokenAmount(uiAmount: number, decimals: number): bigint {
 
 export function looksLikeSolanaAddress(value: string): boolean {
   return value.length >= 32 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(value);
+}
+
+export function parseSolAmount(value: string): { lamports: bigint; ui: number } {
+  const ui = Number(value);
+  if (Number.isNaN(ui) || ui < 0) {
+    throw new EchoError(
+      ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
+      `Invalid SOL amount: ${value}`,
+      "Amount must be a non-negative number.",
+    );
+  }
+  if (ui > 1_000_000_000) {
+    throw new EchoError(
+      ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
+      `SOL amount too large: ${value}`,
+    );
+  }
+  const lamports = BigInt(Math.round(ui * LAMPORTS_PER_SOL));
+  return { lamports, ui };
+}
+
+export function parseSplAmount(value: string, decimals: number): { atomic: bigint; ui: number } {
+  const ui = Number(value);
+  if (Number.isNaN(ui) || ui < 0) {
+    throw new EchoError(
+      ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
+      `Invalid token amount: ${value}`,
+      "Amount must be a non-negative number.",
+    );
+  }
+  const atomic = BigInt(Math.round(ui * 10 ** decimals));
+  return { atomic, ui };
+}
+
+export function lamportsToSol(lamports: bigint | number): number {
+  return Number(lamports) / LAMPORTS_PER_SOL;
+}
+
+export function shortenSolanaAddress(addr: string, chars = 4): string {
+  if (addr.length <= chars * 2 + 3) return addr;
+  return `${addr.slice(0, chars)}...${addr.slice(-chars)}`;
 }
 
 export function solanaExplorerUrl(

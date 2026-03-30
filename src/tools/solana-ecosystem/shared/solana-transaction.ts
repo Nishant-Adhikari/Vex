@@ -2,7 +2,7 @@
  * Shared Solana transaction primitives for Jupiter shelves.
  */
 
-import { Connection, type Commitment, type Keypair, VersionedTransaction } from "@solana/web3.js";
+import { Connection, type Commitment, Keypair, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { loadConfig } from "../../../config/store.js";
 import { EchoError, ErrorCodes } from "../../../errors.js";
 import { solanaExplorerUrl } from "./solana-validation.js";
@@ -155,4 +155,47 @@ export function signVersionedTx(
       `Failed to sign transaction: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
+
+// ── Connection singleton ────────────────────────────────────────
+
+let connectionInstance: Connection | null = null;
+
+export function getSolanaConnection(): Connection {
+  if (connectionInstance) return connectionInstance;
+
+  const cfg = loadConfig();
+  const rpcUrl = cfg.solana.rpcUrl;
+  const commitment = (cfg.solana.commitment ?? "confirmed") as Commitment;
+
+  connectionInstance = new Connection(rpcUrl, commitment);
+  return connectionInstance;
+}
+
+export function resetSolanaConnection(): void {
+  connectionInstance = null;
+}
+
+// ── Legacy transaction helper ───────────────────────────────────
+
+export async function signAndSendLegacyTx(
+  transaction: Transaction,
+  keypair: Keypair,
+  opts?: { connection?: Connection },
+): Promise<string> {
+  const connection = opts?.connection ?? getSolanaConnection();
+
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  transaction.recentBlockhash = blockhash;
+  transaction.lastValidBlockHeight = lastValidBlockHeight;
+  transaction.feePayer = keypair.publicKey;
+  transaction.sign(keypair);
+
+  const signature = await connection.sendRawTransaction(transaction.serialize(), {
+    skipPreflight: false,
+    maxRetries: 2,
+  });
+
+  await confirmVersionedTx(connection, signature);
+  return signature;
 }

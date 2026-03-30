@@ -50,16 +50,20 @@ export function createSwapSubcommand(): Command {
 
         if (isHeadless()) {
           writeJsonSuccess({
-            inputToken: quote.inputToken.symbol,
-            inputMint: quote.inputToken.address,
-            outputToken: quote.outputToken.symbol,
-            outputMint: quote.outputToken.address,
+            inputToken: quote.inputToken,
+            outputToken: quote.outputToken,
             inputAmount: quote.inputAmount,
             outputAmount: quote.outputAmount,
+            inputAmountRaw: quote.inputAmountRaw,
+            outputAmountRaw: quote.outputAmountRaw,
             priceImpactPct: quote.priceImpactPct,
             route: quote.route,
+            routePlan: quote.routePlan,
             provider: quote.provider,
             slippageBps: quote.slippageBps,
+            requestId: quote.requestId,
+            lastValidBlockHeight: quote.lastValidBlockHeight,
+            raw: quote.raw,
           });
         } else {
           infoBox("Swap Quote", formatQuoteDisplay(quote));
@@ -123,11 +127,17 @@ export function createSwapSubcommand(): Command {
           writeJsonSuccess({
             signature: result.signature,
             explorerUrl: result.explorerUrl,
-            inputToken: quote.inputToken.symbol,
-            outputToken: quote.outputToken.symbol,
+            inputToken: result.inputToken,
+            outputToken: result.outputToken,
             inputAmount: result.inputAmount,
             outputAmount: result.outputAmount,
-            provider: quote.provider,
+            inputAmountRaw: result.inputAmountRaw,
+            outputAmountRaw: result.outputAmountRaw,
+            routePlan: result.routePlan,
+            requestId: result.requestId,
+            lastValidBlockHeight: result.lastValidBlockHeight,
+            order: result.order,
+            execute: result.execute,
           });
         } else {
           successBox(

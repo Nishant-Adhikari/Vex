@@ -8,7 +8,7 @@ import { getJupiterPricesForTokenQueries } from "../../tools/solana-ecosystem/ju
 import { isHeadless, writeJsonSuccess } from "../../utils/output.js";
 import { spinner, printTable, colors } from "../../utils/ui.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
-import { shortenSolanaAddress } from "../../tools/chains/solana/validation.js";
+import { shortenSolanaAddress } from "../../tools/solana-ecosystem/shared/solana-validation.js";
 
 function formatPrice(price: number): string {
   if (price < 0.0001) return `$${price.toFixed(10)}`;
@@ -42,7 +42,7 @@ export function createPriceSubcommand(): Command {
         }));
 
         if (isHeadless()) {
-          writeJsonSuccess({ prices: results, raw: batch.raw });
+          writeJsonSuccess({ resolved: batch.resolved, raw: batch.raw });
           return;
         }
 

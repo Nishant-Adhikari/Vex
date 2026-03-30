@@ -7,7 +7,8 @@
 
 import { registerRoute, jsonResponse, errorResponse } from "../routes.js";
 import { loadProviderDotenv, writeAppEnvValue } from "../../providers/env-resolution.js";
-import { isAgentRunning, runAgentCompose } from "../../agent/compose.js";
+// TODO(echo-agent): rewire to echo-agent/ — see agent-shim.ts for migration points
+import { isAgentRunning, runAgentCompose } from "../../agent-shim.js";
 import logger from "../../utils/logger.js";
 
 export function registerTavilyRoutes(): void {

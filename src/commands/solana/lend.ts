@@ -82,8 +82,10 @@ export function createLendSubcommand(): Command {
         const posAddresses = positions.map((p) => p.token.assetAddress).filter(Boolean);
         const earningsResult = posAddresses.length > 0
           ? await getJupiterLendEarnEarnings(wallet.address, posAddresses)
-          : { earnings: [] };
-        const earningsMap = new Map(earningsResult.earnings.map((e) => [e.address, e.earnings]));
+          : null;
+        const earningsMap = new Map(
+          (earningsResult?.earnings ?? []).map((e) => [e.address, e.earnings]),
+        );
 
         spin.succeed(`${positions.length} position(s)`);
 
@@ -93,6 +95,7 @@ export function createLendSubcommand(): Command {
               ...p,
               earnings: earningsMap.get(p.token.assetAddress) ?? 0,
             })),
+            ...(earningsResult ? { earningsRaw: earningsResult.raw } : {}),
           });
           return;
         }

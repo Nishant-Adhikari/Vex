@@ -8,9 +8,9 @@ Jupiter API key is **required** for all Solana protocol tools.
 
 Without `JUPITER_API_KEY`, the entire `solana` namespace is hidden from discovery and blocked in execution.
 
-**Key resolution chain** (in `jupiter-auth.ts:resolveJupiterApiKey()`):
-1. `process.env.JUPITER_API_KEY` — set by echo-agent via `.env`
-2. `loadConfig().solana.jupiterApiKey` — CLI config store fallback
+**echo-agent discovery/execute**: gates strictly on `process.env.JUPITER_API_KEY`. Config-store key does NOT make tools visible to the agent — only env var does.
+
+**CLI commands**: resolve key via `process.env.JUPITER_API_KEY` first, then `loadConfig().solana.jupiterApiKey` as fallback.
 
 ENV setup: add `JUPITER_API_KEY=...` to `.env` (free from [portal.jup.ag](https://portal.jup.ag))
 CLI setup: `echoclaw config set-jupiter-key <key>`

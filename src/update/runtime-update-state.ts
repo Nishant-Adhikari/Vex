@@ -8,7 +8,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { PACKAGE_ROOT } from "../agent/constants.js";
+// TODO(echo-agent): rewire to echo-agent/ — see agent-shim.ts for migration points
+import { PACKAGE_ROOT } from "../agent-shim.js";
 import { ensureConfigDir } from "../config/store.js";
 import { CONFIG_DIR } from "../config/paths.js";
 import logger from "../utils/logger.js";

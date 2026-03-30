@@ -1,11 +1,5 @@
-import { AGENT_DEFAULT_PORT } from "../agent/constants.js";
-import {
-  getAgentComposeFailureInfo,
-  getAgentImage,
-  getAgentImageTag,
-  runAgentCompose,
-  waitForAgentHealth,
-} from "../agent/compose.js";
+// TODO(echo-agent): rewire to echo-agent/ — see agent-shim.ts for migration points
+import { AGENT_DEFAULT_PORT, getAgentComposeFailureInfo, getAgentImage, getAgentImageTag, runAgentCompose, waitForAgentHealth } from "../agent-shim.js";
 import { loadProviderDotenv } from "../providers/env-resolution.js";
 import { ensureAgentPasswordReadyForContainer } from "../password/compat.js";
 import logger from "../utils/logger.js";

@@ -9,9 +9,8 @@
 import { existsSync } from "node:fs";
 import type { RouteHandler } from "../types.js";
 import { jsonResponse, errorResponse, registerRoute } from "../routes.js";
-import { checkDockerAsync, getDockerInstallUrl, type DockerStatus } from "../../agent/docker-check.js";
-import { AGENT_DEFAULT_PORT } from "../../agent/constants.js";
-import { AGENT_COMPOSE_FILE, getAgentComposeFailureInfo, getAgentUrl, runAgentCompose, waitForAgentHealth } from "../../agent/compose.js";
+// TODO(echo-agent): rewire to echo-agent/ — see agent-shim.ts for migration points
+import { AGENT_DEFAULT_PORT, AGENT_COMPOSE_FILE, checkDockerAsync, getDockerInstallUrl, getAgentComposeFailureInfo, getAgentUrl, runAgentCompose, waitForAgentHealth, type DockerStatus } from "../../agent-shim.js";
 import { EchoError } from "../../errors.js";
 import { isCoreComputeReady, listCoreComputeFailures } from "../core-compute.js";
 import logger from "../../utils/logger.js";

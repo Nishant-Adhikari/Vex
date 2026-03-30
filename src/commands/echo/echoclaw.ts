@@ -10,9 +10,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { infoBox, successBox, warnBox } from "../../utils/ui.js";
 import { loadProviderDotenv, writeAppEnvValue } from "../../providers/env-resolution.js";
-import { checkDocker, formatDockerError } from "../../agent/docker-check.js";
-import { AGENT_DIR } from "../../agent/constants.js";
-import { AGENT_COMPOSE_FILE, AGENT_PROJECT_NAME, getAgentComposeFailureInfo, getAgentUrl, isAgentRunning, runAgentCompose, waitForAgentHealth } from "../../agent/compose.js";
+// TODO(echo-agent): rewire to echo-agent/ — see agent-shim.ts for migration points
+import { AGENT_DIR, AGENT_COMPOSE_FILE, AGENT_PROJECT_NAME, checkDocker, formatDockerError, getAgentComposeFailureInfo, getAgentUrl, isAgentRunning, runAgentCompose, waitForAgentHealth } from "../../agent-shim.js";
 import { EchoError } from "../../errors.js";
 import { ensureAgentPasswordReadyForContainer } from "../../password/compat.js";
 
