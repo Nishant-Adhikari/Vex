@@ -17,8 +17,9 @@ You (Claude) are connected to a local MCP server that exposes Echo Agent's tool 
 |------|---------|-------------|
 | `echo_discover` | Search protocol capabilities | Find tools, check params |
 | `echo_execute` | Execute a protocol tool | **Main tool for manual tests** |
-| `echo_wallet_read` | Check wallet balances | Before/after each flow |
-| `echo_portfolio_inspect` | DB-backed inspection: positions, activity, balances, snapshots | Quick overview. **Does NOT show lots.** |
+| `echo_wallet_address` | Get wallet address per chain | Verify wallet setup |
+| `echo_wallet_balances` | Check multi-chain balances | Before/after each flow (source of truth) |
+| `echo_portfolio_inspect` | DB inspection: positions, activity, executions | Quick overview. **No lots.** Balances/snapshots not authoritative without fullBalanceSync. |
 | `echo_inspect_pipeline` | Read-only query on pipeline tables | Detailed inspection per table |
 | `echo_replay_verify` | Replay projections and compare | After multi-namespace tests |
 | `echo_discovery_smoke` | Automated discovery check | Verify all namespaces are active |
@@ -29,7 +30,7 @@ You (Claude) are connected to a local MCP server that exposes Echo Agent's tool 
 1. **Max notional per transaction:** $5 USD equivalent (spot, prediction, bridge)
 2. **Allowed namespaces:** khalani, kyberswap, solana, polymarket, jaine, slop
 3. **STOP immediately if:** wallet balance drops unexpectedly, handler throws unexpected error, DB state is inconsistent
-4. **Never** execute without checking `echo_wallet_read` first
+4. **Never** execute without checking `echo_wallet_balances` first
 5. **Never** execute the same mutation twice without inspecting DB state between
 
 ## Session Setup
@@ -43,7 +44,7 @@ You (Claude) are connected to a local MCP server that exposes Echo Agent's tool 
 ## Test Order
 
 ### 1. Preflight
-- `echo_wallet_read` — confirm seed funds on each chain
+- `echo_wallet_balances` — confirm seed funds on each chain
 - `echo_discovery_smoke` — all active namespaces return tools
 - `echo_preview_smoke` — dryRun produces zero writes
 
@@ -65,16 +66,19 @@ For each: execute buy → inspect DB → execute sell → inspect FIFO close
 - `solana.predict.buy` → `echo_inspect_pipeline proj_open_positions` → `solana.predict.sell`
 - `solana.predict.closeAll` — check _tradeCaptureItems count
 - `polymarket.clob.buy` (matched) → dual-type "prediction" → position open
+- `polymarket.clob.buy` (live/open) → dual-type "order" → pending order tracked in proj_open_positions
 - `polymarket.clob.sell` (matched) → position close
 
 ### 4. Order Lifecycle (projection)
 - `kyberswap.limitOrder.create` → open → `kyberswap.limitOrder.cancel` → close
 - `kyberswap.limitOrder.hardCancel` — on-chain cancel
 - `kyberswap.limitOrder.fill` — order filled
+- `kyberswap.limitOrder.batchFill` — multi-order fill as taker, check _tradeCaptureItems per order
 - `kyberswap.limitOrder.cancelAll` — bulk close, check _tradeCaptureItems
 - `polymarket.clob.cancel` → single order cancel
 - `polymarket.clob.cancelOrders` → bulk, check items
 - `polymarket.clob.cancelAll` → bulk all
+- `polymarket.clob.cancelMarket` → market-wide cancel, check _tradeCaptureItems
 
 ### 5. Audit Flows
 - `khalani.bridge` — audit capture in protocol_executions

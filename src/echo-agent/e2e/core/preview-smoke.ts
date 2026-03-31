@@ -3,6 +3,11 @@
  *
  * Takes snapshot before, executes preview tools, takes snapshot after.
  * All counts must be identical.
+ *
+ * IMPORTANT: This checks the invariant "dryRun never writes to DB", NOT that
+ * each handler correctly entered its preview branch. Handlers may fail before
+ * reaching dryRun (e.g. slop validates token, polymarket looks up market).
+ * Handler failures are acceptable — what matters is zero writes.
  */
 
 import { dispatchTool } from "@echo-agent/tools/dispatcher.js";
@@ -20,10 +25,11 @@ const PREVIEW_SMOKE_TOOLS: { toolId: string; params: Record<string, unknown> }[]
 ];
 
 export interface PreviewSmokeResult {
+  /** True if zero writes across all 5 pipeline tables */
   pass: boolean;
   before: PipelineSnapshot;
   after: PipelineSnapshot;
-  toolResults: { toolId: string; success: boolean; isDryRun: boolean }[];
+  toolResults: { toolId: string; success: boolean; handlerFailed: boolean }[];
 }
 
 export async function runPreviewSmoke(): Promise<PreviewSmokeResult> {
@@ -45,12 +51,12 @@ export async function runPreviewSmoke(): Promise<PreviewSmokeResult> {
       toolResults.push({
         toolId,
         success: result.success,
-        isDryRun: (result.data?.dryRun === true) || result.success,
+        handlerFailed: !result.success,
       });
     } catch (err) {
-      // Preview failures are expected (missing wallet, missing API key, etc.)
-      // What matters is that nothing was written to DB
-      toolResults.push({ toolId, success: false, isDryRun: true });
+      // Handler failures are expected (missing wallet, invalid token, missing API key).
+      // What matters is the invariant: zero writes to DB regardless of handler outcome.
+      toolResults.push({ toolId, success: false, handlerFailed: true });
       logger.debug("e2e.preview_smoke.tool_error", {
         toolId,
         error: err instanceof Error ? err.message : String(err),

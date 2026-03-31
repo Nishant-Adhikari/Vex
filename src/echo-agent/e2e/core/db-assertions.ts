@@ -105,35 +105,55 @@ const ALLOWED_TABLES = new Set([
   "proj_pnl_lots",
 ]);
 
+// Per-table filterable columns (from 001_initial.sql schema).
+// Only columns that actually exist in each table are allowed as filters.
+const TABLE_FILTERS: Record<string, Record<string, string>> = {
+  protocol_executions:    { executionId: "id", toolId: "tool_id", sessionId: "session_id", namespace: "namespace" },
+  protocol_capture_items: { executionId: "execution_id" },
+  proj_activity:          { executionId: "execution_id", positionKey: "position_key", instrumentKey: "instrument_key", namespace: "namespace" },
+  proj_open_positions:    { positionKey: "position_key", instrumentKey: "instrument_key", namespace: "namespace" },
+  proj_pnl_lots:          { executionId: "execution_id", instrumentKey: "instrument_key", namespace: "namespace" },
+};
+
+export interface InspectOpts {
+  limit?: number;
+  executionId?: number;
+  toolId?: string;
+  sessionId?: string;
+  positionKey?: string;
+  instrumentKey?: string;
+  namespace?: string;
+}
+
 export async function inspectTable(
   table: string,
-  opts?: { limit?: number; executionId?: number; toolId?: string; positionKey?: string; sessionId?: string },
+  opts?: InspectOpts,
 ): Promise<Record<string, unknown>[]> {
   if (!ALLOWED_TABLES.has(table)) {
     throw new Error(`Table "${table}" not in whitelist: ${[...ALLOWED_TABLES].join(", ")}`);
   }
 
+  const filters = TABLE_FILTERS[table] ?? {};
   const conditions: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
 
-  if (opts?.executionId != null) {
-    conditions.push(`execution_id = $${idx++}`);
-    params.push(opts.executionId);
-  }
-  if (opts?.toolId) {
-    conditions.push(`tool_id = $${idx++}`);
-    params.push(opts.toolId);
-  }
-  // sessionId filter — works for protocol_executions (has session_id column).
-  // proj_open_positions does NOT have session_id — use positionKey or namespace instead.
-  if (opts?.sessionId) {
-    conditions.push(`session_id = $${idx++}`);
-    params.push(opts.sessionId);
-  }
-  if (opts?.positionKey) {
-    conditions.push(`position_key = $${idx++}`);
-    params.push(opts.positionKey);
+  // Apply only filters that exist as columns in this table
+  const filterMap: Record<string, unknown> = {
+    executionId: opts?.executionId,
+    toolId: opts?.toolId,
+    sessionId: opts?.sessionId,
+    positionKey: opts?.positionKey,
+    instrumentKey: opts?.instrumentKey,
+    namespace: opts?.namespace,
+  };
+
+  for (const [optKey, column] of Object.entries(filters)) {
+    const value = filterMap[optKey];
+    if (value !== undefined && value !== null && value !== "") {
+      conditions.push(`${column} = $${idx++}`);
+      params.push(value);
+    }
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

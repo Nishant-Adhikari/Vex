@@ -11,6 +11,7 @@ import type { InternalToolContext } from "@echo-agent/tools/internal/types.js";
 import type { ToolResult } from "@echo-agent/tools/types.js";
 import { runMigrations } from "@echo-agent/db/migrate.js";
 import { closePool } from "@echo-agent/db/client.js";
+import { seedSyncJobs } from "@echo-agent/sync/seed.js";
 import logger from "@utils/logger.js";
 
 // ── Types ──────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ export function makeContext(sessionId: string): InternalToolContext {
 export async function setup(): Promise<void> {
   logger.info("e2e.setup.migrations");
   await runMigrations();
+  await seedSyncJobs(); // idempotent — seeds protocol_sync_jobs for post-mutation sync
   logger.info("e2e.setup.ready");
 }
 

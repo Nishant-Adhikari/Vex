@@ -1,6 +1,6 @@
 # E2E Test Harness — Echo Agent
 
-> MCP-first E2E harness. Docker Postgres + local stdio MCP server. Claude Code jako zastępcza warstwa inferencji do manualnego testowania persistence pipeline na realnych środkach.
+> MCP-first E2E harness. Docker Postgres + local stdio MCP server. Claude Code acts as a stand-in inference layer for manual persistence pipeline testing with real funds.
 >
 > **Last updated: 2026-03-31**
 >
@@ -43,12 +43,14 @@ ECHO_AGENT_DB_URL=postgresql://echo_agent:echo_agent@localhost:5555/echo_agent_t
 # 3. Copy MCP config
 cp .mcp.e2e.json.example .mcp.e2e.json
 
-# 4. Register MCP in Claude Code
-claude mcp add --transport stdio echo-agent-e2e -- pnpm exec tsx src/echo-agent/e2e/mcp/server.ts
+# 4. Register MCP in Claude Code (option A: --env flag)
+claude mcp add --transport stdio \
+  --env ECHO_AGENT_DB_URL=postgresql://echo_agent:echo_agent@localhost:5555/echo_agent_test \
+  echo-agent-e2e -- pnpm exec tsx src/echo-agent/e2e/mcp/server.ts
 
-# 5. Or run isolated session
-ECHO_AGENT_DB_URL=postgresql://echo_agent:echo_agent@localhost:5555/echo_agent_test \
-  claude --strict-mcp-config --mcp-config .mcp.e2e.json
+# 4. Or use config file (option B, recommended — works on all platforms)
+cp .mcp.e2e.json.example .mcp.e2e.json
+claude --strict-mcp-config --mcp-config .mcp.e2e.json
 ```
 
 ---
@@ -80,11 +82,11 @@ src/echo-agent/e2e/
 |------|------|---------|
 | `echo_discover` | Core | Search protocol capabilities (via dispatchTool) |
 | `echo_execute` | Core | Execute protocol tool (via dispatchTool, with capture pipeline) |
-| `echo_wallet_read` | Read-only | Wallet address + multi-chain balances |
-| `echo_portfolio_inspect` | Read-only | DB inspection: positions, activity, balances, snapshots. **No lots.** |
+| `echo_wallet_address` | Read-only | Wallet address per chain family |
+| `echo_wallet_balances` | Read-only | Multi-chain token balances via Khalani (source of truth for wallet state) |
+| `echo_portfolio_inspect` | Read-only | DB inspection: positions, activity, executions. **No lots.** Balances/snapshots not authoritative in E2E (no fullBalanceSync). |
 | `echo_inspect_pipeline` | Operator | Whitelisted read-only query on 5 pipeline tables. Filters: executionId, toolId, positionKey, sessionId. |
 | `echo_replay_verify` | Operator | Run replayProjections() + compare before/after counts |
-| `echo_run_scenario` | Operator | Run named scenario from registry |
 | `echo_discovery_smoke` | Smoke | Automated discovery check for all active namespaces |
 | `echo_preview_smoke` | Smoke | Automated dryRun zero-write verification |
 
@@ -130,7 +132,7 @@ docker compose -f docker/echo-agent/docker-compose.e2e.yml up -d
 | Layer | Method | Scope |
 |-------|--------|-------|
 | Discovery | Automated (`echo_discovery_smoke`) | All active namespaces |
-| Preview | Automated (`echo_preview_smoke`) | 5 representative tools |
+| Preview | Automated (`echo_preview_smoke`) | 5 representative tools. Checks zero-write invariant only — handler failures (missing wallet/token) are acceptable. |
 | Live mutations | Manual (Claude + `echo_execute`) | Per TESTSCENARIO.md |
 | Replay | Semi-automated (`echo_replay_verify`) | After multi-namespace session |
 
