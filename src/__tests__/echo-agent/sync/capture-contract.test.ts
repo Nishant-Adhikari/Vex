@@ -196,14 +196,35 @@ describe("capture contract — runtime validator", () => {
     expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "swap" })).toBe(false);
   });
 
-  it("rejects capture without type field (F4: type is required for all capture:full)", () => {
+  it("rejects capture without type field (type is required for all capture:full)", () => {
     const valid = validateCaptureContract("solana.swap.execute", {
       walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
-      // no type field
     });
     expect(valid).toBe(false);
+  });
+
+  it("validates real matrix tools — kyberswap.limitOrder.cancel requires type+positionKey+status", () => {
+    // Missing positionKey
+    expect(validateCaptureContract("kyberswap.limitOrder.cancel", {
+      type: "order", status: "cancelled",
+    })).toBe(false);
+
+    // Complete
+    expect(validateCaptureContract("kyberswap.limitOrder.cancel", {
+      type: "order", status: "cancelled", positionKey: "123",
+    })).toBe(true);
+  });
+
+  it("validates real matrix tools — khalani.bridge requires type+walletAddress+status", () => {
+    expect(validateCaptureContract("khalani.bridge", {
+      type: "bridge", status: "pending",
+    })).toBe(false);
+
+    expect(validateCaptureContract("khalani.bridge", {
+      type: "bridge", status: "pending", walletAddress: "0x123",
+    })).toBe(true);
   });
 });
 

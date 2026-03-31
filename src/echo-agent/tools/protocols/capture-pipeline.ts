@@ -91,19 +91,20 @@ export async function populateCaptureItems(
 /**
  * Populate activity rows from existing capture items (for replay).
  * Does NOT record new capture items — reads what's already in the DB.
+ * Preserves capture_item_id FK when available.
  */
 export async function replayActivityFromCapture(
   executionId: number,
   toolId: string,
   namespace: string,
-  captureItems: Record<string, unknown>[],
+  captureItems: { id: number | null; data: Record<string, unknown> }[],
   executionExternalRefs: Record<string, string>,
 ): Promise<void> {
   const { populateActivity } = await import("@echo-agent/sync/activity-populator.js");
 
   for (const item of captureItems) {
-    const itemRefs = extractExternalRefs({ _tradeCapture: item });
+    const itemRefs = extractExternalRefs({ _tradeCapture: item.data });
     const mergedRefs = { ...executionExternalRefs, ...itemRefs };
-    await populateActivity(executionId, null, toolId, namespace, item, mergedRefs);
+    await populateActivity(executionId, item.id, toolId, namespace, item.data, mergedRefs);
   }
 }

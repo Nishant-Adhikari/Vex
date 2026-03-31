@@ -64,20 +64,20 @@ export async function replayProjections(): Promise<ReplayStats> {
     }
 
     try {
-      // 3. Read capture items for this execution (batch truth)
+      // 3. Read capture items for this execution (batch truth — preserves capture_item_id FK)
       const captureItemRows = await query<Record<string, unknown>>(
-        "SELECT trade_capture FROM protocol_capture_items WHERE execution_id = $1 ORDER BY id ASC",
+        "SELECT id, trade_capture FROM protocol_capture_items WHERE execution_id = $1 ORDER BY id ASC",
         [executionId],
       );
 
       // Build items: prefer capture_items (batch truth), fallback to execution.trade_capture
-      let items: Record<string, unknown>[];
+      let items: { id: number | null; data: Record<string, unknown> }[];
       if (captureItemRows.length > 0) {
         items = captureItemRows
-          .map(r => r.trade_capture as Record<string, unknown>)
-          .filter(Boolean);
+          .filter(r => r.trade_capture != null)
+          .map(r => ({ id: r.id as number, data: r.trade_capture as Record<string, unknown> }));
       } else if (storedCapture) {
-        items = [storedCapture];
+        items = [{ id: null, data: storedCapture }];
       } else {
         stats.skipped++;
         continue;
@@ -88,22 +88,24 @@ export async function replayProjections(): Promise<ReplayStats> {
         continue;
       }
 
-      // 4. Apply type correction per item
+      // 4. Apply type correction per item (single-type tools only)
+      // Dual-type tools (e.g. polymarket buy/sell) chose type at execution time
+      // based on result.status — stored type is already correct, don't overwrite.
       const contract = MUTATION_MATRIX.get(toolId);
       const correctedItems = items.map(item => {
         if (!contract) return item;
-        const currentType = typeof item.type === "string" ? item.type : "";
+        const currentType = typeof item.data.type === "string" ? item.data.type : "";
         if (currentType && !isExpectedType(contract, currentType)) {
-          // Correct type to first expected type
-          const correctedType = Array.isArray(contract.expectedType)
-            ? contract.expectedType[0]
-            : contract.expectedType;
-          return { ...item, type: correctedType };
+          if (Array.isArray(contract.expectedType)) {
+            logger.warn("replay.dual_type_mismatch", { toolId, executionId, storedType: currentType, allowed: contract.expectedType });
+            return item;
+          }
+          return { ...item, data: { ...item.data, type: contract.expectedType } };
         }
         return item;
       });
 
-      // 5. Replay activity (does NOT create new capture_items — reads existing)
+      // 5. Replay activity with capture_item_id FK preserved
       const executionRefs = extractExternalRefs({ _tradeCapture: storedCapture });
       await replayActivityFromCapture(executionId, toolId, namespace, correctedItems, executionRefs);
       stats.replayed++;
