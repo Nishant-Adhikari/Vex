@@ -107,7 +107,7 @@ const ALLOWED_TABLES = new Set([
 
 export async function inspectTable(
   table: string,
-  opts?: { limit?: number; executionId?: number; toolId?: string; positionKey?: string },
+  opts?: { limit?: number; executionId?: number; toolId?: string; positionKey?: string; sessionId?: string },
 ): Promise<Record<string, unknown>[]> {
   if (!ALLOWED_TABLES.has(table)) {
     throw new Error(`Table "${table}" not in whitelist: ${[...ALLOWED_TABLES].join(", ")}`);
@@ -124,6 +124,12 @@ export async function inspectTable(
   if (opts?.toolId) {
     conditions.push(`tool_id = $${idx++}`);
     params.push(opts.toolId);
+  }
+  // sessionId filter — works for protocol_executions (has session_id column).
+  // proj_open_positions does NOT have session_id — use positionKey or namespace instead.
+  if (opts?.sessionId) {
+    conditions.push(`session_id = $${idx++}`);
+    params.push(opts.sessionId);
   }
   if (opts?.positionKey) {
     conditions.push(`position_key = $${idx++}`);

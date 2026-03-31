@@ -1,7 +1,7 @@
 /**
  * MCP tool definitions — v1 surface for E2E testing.
  *
- * 7 tools: 2 core (protocol surface) + 2 read-only internal + 3 operator.
+ * 9 tools: 2 core + 2 read-only internal + 5 operator.
  * All prefixed echo_ to avoid collision.
  */
 
@@ -11,6 +11,8 @@ import { dispatchTool } from "@echo-agent/tools/dispatcher.js";
 import { makeContext, runScenario, type Scenario } from "../core/scenario-runner.js";
 import { inspectTable } from "../core/db-assertions.js";
 import { runReplayCheck } from "../core/replay-check.js";
+import { runDiscoverySmoke } from "../core/discovery-smoke.js";
+import { runPreviewSmoke } from "../core/preview-smoke.js";
 
 // Lazy-load scenarios to avoid importing all protocol handlers at registration time
 async function loadScenarios(): Promise<Record<string, Scenario>> {
@@ -134,6 +136,7 @@ export function registerTools(server: McpServer): void {
       executionId: z.number().optional().describe("Filter by execution_id"),
       toolId: z.string().optional().describe("Filter by tool_id"),
       positionKey: z.string().optional().describe("Filter by position_key"),
+      sessionId: z.string().optional().describe("Filter by session_id (protocol_executions only, NOT proj_open_positions)"),
     },
     async (params) => {
       const rows = await inspectTable(params.table, {
@@ -141,6 +144,7 @@ export function registerTools(server: McpServer): void {
         executionId: params.executionId,
         toolId: params.toolId,
         positionKey: params.positionKey,
+        sessionId: params.sessionId,
       });
       return { content: [{ type: "text" as const, text: JSON.stringify({ table: params.table, count: rows.length, rows }, null, 2) }] };
     },
@@ -152,6 +156,30 @@ export function registerTools(server: McpServer): void {
     {},
     async () => {
       const result = await runReplayCheck();
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  // ── Automated smoke tools ────────────────────────────────────
+
+  server.tool(
+    "echo_discovery_smoke",
+    "Run discovery smoke for all active namespaces — verify each returns tools",
+    {},
+    async () => {
+      const ctx = makeContext(`disco-smoke-${Date.now()}`);
+      const results = await runDiscoverySmoke(ctx);
+      const pass = results.every(r => r.count > 0);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ pass, namespaces: results }, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "echo_preview_smoke",
+    "Run preview smoke — verify dryRun produces zero writes in all 5 pipeline tables",
+    {},
+    async () => {
+      const result = await runPreviewSmoke();
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     },
   );

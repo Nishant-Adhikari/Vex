@@ -1,5 +1,5 @@
 # E2E Test Stack — Postgres only (no agent container)
-# Port 5433 to avoid collision with production 5432
+# Port 5555 to avoid collision with production 5432
 # tmpfs for fast ephemeral storage — data lost on `down`
 
 services:
