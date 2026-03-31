@@ -1,147 +1,220 @@
 /**
- * Frozen coverage matrix — every mutating protocol tool classified by
- * PortfolioRole × CaptureSupport. Canonical source-of-truth for capture
- * requirements. Detects handler drift automatically.
+ * Frozen coverage matrix — canonical source-of-truth from mutation-matrix.ts.
+ *
+ * Tests structural invariants (every mutating tool classified exactly once)
+ * and contract invariants (expectedType, previewSupport, requiredFields).
+ * Detects handler drift automatically.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { PROTOCOL_TOOLS } from "../../../echo-agent/tools/protocols/catalog.js";
-import type { PortfolioRole, CaptureSupport } from "../../../echo-agent/tools/protocols/types.js";
+import { MUTATION_MATRIX, getMatrixToolIds, getToolsByRole, isExpectedType } from "../../../echo-agent/tools/protocols/mutation-matrix.js";
+import { validateCaptureContract, isPreviewExecution } from "../../../echo-agent/tools/protocols/capture-validator.js";
+import type { PortfolioRole } from "../../../echo-agent/tools/protocols/types.js";
 
-interface MatrixRow {
-  toolId: string;
-  role: PortfolioRole;
-  capture: CaptureSupport;
-}
+// ── Structural coverage ────────────────────────────────────────
 
-// ── Frozen per-tool matrix ──────────────────────────────────────
-
-const MATRIX: MatrixRow[] = [
-  // ── pnl_spot ──────────────────────────────────────────────
-  { toolId: "solana.swap.execute", role: "pnl_spot", capture: "full" },
-  { toolId: "jaine.swap.sell", role: "pnl_spot", capture: "full" },
-  { toolId: "jaine.swap.buy", role: "pnl_spot", capture: "full" },
-  { toolId: "kyberswap.swap.sell", role: "pnl_spot", capture: "full" },
-  { toolId: "kyberswap.swap.buy", role: "pnl_spot", capture: "full" },
-  { toolId: "slop.trade.buy", role: "pnl_spot", capture: "full" },
-  { toolId: "slop.trade.sell", role: "pnl_spot", capture: "full" },
-
-  // ── pnl_prediction ────────────────────────────────────────
-  { toolId: "solana.predict.buy", role: "pnl_prediction", capture: "full" },
-  { toolId: "solana.predict.sell", role: "pnl_prediction", capture: "full" },
-  { toolId: "solana.predict.claim", role: "pnl_prediction", capture: "full" },
-  { toolId: "solana.predict.closeAll", role: "pnl_prediction", capture: "full" },
-  { toolId: "polymarket.clob.buy", role: "pnl_prediction", capture: "full" },
-  { toolId: "polymarket.clob.sell", role: "pnl_prediction", capture: "full" },
-  { toolId: "polymarket.clob.cancel", role: "pnl_prediction", capture: "full" },
-  { toolId: "polymarket.clob.cancelOrders", role: "pnl_prediction", capture: "full" },
-  { toolId: "polymarket.clob.cancelAll", role: "pnl_prediction", capture: "full" },
-  { toolId: "polymarket.clob.cancelMarket", role: "pnl_prediction", capture: "full" },
-
-  // ── projection (orders, LP) ───────────────────────────────
-  { toolId: "kyberswap.limitOrder.create", role: "projection", capture: "full" },
-  { toolId: "kyberswap.limitOrder.cancel", role: "projection", capture: "full" },
-  { toolId: "kyberswap.limitOrder.hardCancel", role: "projection", capture: "full" },
-  { toolId: "kyberswap.limitOrder.fill", role: "projection", capture: "full" },
-  { toolId: "kyberswap.limitOrder.batchFill", role: "projection", capture: "full" },
-  { toolId: "kyberswap.limitOrder.cancelAll", role: "projection", capture: "full" },
-  { toolId: "kyberswap.zap.in", role: "projection", capture: "full" },
-  { toolId: "kyberswap.zap.out", role: "projection", capture: "full" },
-  { toolId: "kyberswap.zap.migrate", role: "projection", capture: "full" },
-
-  // ── audit (capture: full) ─────────────────────────────────
-  { toolId: "khalani.bridge", role: "audit", capture: "full" },
-  { toolId: "solana.lend.deposit", role: "audit", capture: "full" },
-  { toolId: "solana.lend.withdraw", role: "audit", capture: "full" },
-  { toolId: "slop.fees.claimCreator", role: "audit", capture: "full" },
-  { toolId: "slop.fees.lpCollect", role: "audit", capture: "full" },
-  { toolId: "slop.reward.claim", role: "audit", capture: "full" },
-  { toolId: "jaine.w0g.wrap", role: "audit", capture: "full" },
-  { toolId: "jaine.w0g.unwrap", role: "audit", capture: "full" },
-  { toolId: "jaine.allowance.approve", role: "audit", capture: "full" },
-  { toolId: "jaine.allowance.revoke", role: "audit", capture: "full" },
-  { toolId: "slop.token.create", role: "audit", capture: "full" },
-
-  // ── audit (capture: none — address creation, no direct tx) ─
-  { toolId: "polymarket.bridge.deposit", role: "audit", capture: "none" },
-  { toolId: "polymarket.bridge.withdraw", role: "audit", capture: "none" },
-
-  // ── utility (no portfolio impact) ─────────────────────────
-  { toolId: "echobook.post.create", role: "utility", capture: "none" },
-  { toolId: "echobook.post.delete", role: "utility", capture: "none" },
-  { toolId: "echobook.comment.create", role: "utility", capture: "none" },
-  { toolId: "echobook.comment.delete", role: "utility", capture: "none" },
-  { toolId: "echobook.follow.toggle", role: "utility", capture: "none" },
-  { toolId: "echobook.vote.post", role: "utility", capture: "none" },
-  { toolId: "echobook.vote.comment", role: "utility", capture: "none" },
-  { toolId: "echobook.repost", role: "utility", capture: "none" },
-  { toolId: "echobook.profile.update", role: "utility", capture: "none" },
-  { toolId: "echobook.submolt.join", role: "utility", capture: "none" },
-  { toolId: "echobook.submolt.leave", role: "utility", capture: "none" },
-  { toolId: "echobook.tradeProof.submit", role: "utility", capture: "none" },
-  { toolId: "echobook.notifications.markRead", role: "utility", capture: "none" },
-  { toolId: "slop-app.profile.register", role: "utility", capture: "none" },
-  { toolId: "slop-app.image.upload", role: "utility", capture: "none" },
-  { toolId: "slop-app.image.generate", role: "utility", capture: "none" },
-  { toolId: "slop-app.chat.post", role: "utility", capture: "none" },
-  { toolId: "polymarket.clob.heartbeat", role: "utility", capture: "none" },
-];
-
-// ── Tests ────────────────────────────────────────────────────────
-
-describe("capture contract coverage matrix", () => {
-  const matrixMap = new Map(MATRIX.map(r => [r.toolId, r]));
-
-  it("every mutating tool in PROTOCOL_TOOLS is in the matrix exactly once", () => {
+describe("capture contract — structural coverage", () => {
+  it("every mutating tool in PROTOCOL_TOOLS is in MUTATION_MATRIX exactly once", () => {
     const mutatingTools = PROTOCOL_TOOLS.filter(t => t.mutating).map(t => t.toolId).sort();
-    const matrixTools = MATRIX.map(r => r.toolId).sort();
+    const matrixTools = getMatrixToolIds().sort();
 
-    // Check completeness: every mutating tool is in matrix
     for (const toolId of mutatingTools) {
-      expect(matrixMap.has(toolId), `Missing from matrix: ${toolId}`).toBe(true);
+      expect(MUTATION_MATRIX.has(toolId), `Missing from matrix: ${toolId}`).toBe(true);
     }
 
-    // Check no duplicates in matrix
     const seen = new Set<string>();
-    for (const row of MATRIX) {
-      expect(seen.has(row.toolId), `Duplicate in matrix: ${row.toolId}`).toBe(false);
-      seen.add(row.toolId);
-    }
-
-    // Check no phantom entries (in matrix but not in PROTOCOL_TOOLS)
-    const protocolToolIds = new Set(PROTOCOL_TOOLS.map(t => t.toolId));
-    for (const row of MATRIX) {
-      expect(protocolToolIds.has(row.toolId), `Phantom in matrix (not in PROTOCOL_TOOLS): ${row.toolId}`).toBe(true);
+    for (const toolId of matrixTools) {
+      expect(seen.has(toolId), `Duplicate in matrix: ${toolId}`).toBe(false);
+      seen.add(toolId);
     }
   });
 
-  it("non-mutating tools are NOT in the matrix", () => {
+  it("non-mutating tools are NOT in MUTATION_MATRIX", () => {
     const nonMutating = PROTOCOL_TOOLS.filter(t => !t.mutating).map(t => t.toolId);
     for (const toolId of nonMutating) {
-      expect(matrixMap.has(toolId), `Non-mutating tool in matrix: ${toolId}`).toBe(false);
+      expect(MUTATION_MATRIX.has(toolId), `Non-mutating tool in matrix: ${toolId}`).toBe(false);
     }
   });
 
-  it("audit capture:none has exactly 2 entries (polymarket bridge)", () => {
-    const auditNone = MATRIX.filter(r => r.role === "audit" && r.capture === "none");
-    expect(auditNone.map(r => r.toolId).sort()).toEqual([
-      "polymarket.bridge.deposit",
-      "polymarket.bridge.withdraw",
-    ]);
-  });
-
-  it("utility tools all have capture:none", () => {
-    const utility = MATRIX.filter(r => r.role === "utility");
-    for (const row of utility) {
-      expect(row.capture, `${row.toolId} should have capture:none`).toBe("none");
+  it("no phantom entries (in matrix but not in PROTOCOL_TOOLS)", () => {
+    const protocolToolIds = new Set(PROTOCOL_TOOLS.map(t => t.toolId));
+    for (const toolId of getMatrixToolIds()) {
+      expect(protocolToolIds.has(toolId), `Phantom in matrix (not in PROTOCOL_TOOLS): ${toolId}`).toBe(true);
     }
   });
 
   it("pnl_spot tools all have capture:full", () => {
-    const spot = MATRIX.filter(r => r.role === "pnl_spot");
+    const spot = getToolsByRole("pnl_spot");
     expect(spot.length).toBe(7);
-    for (const row of spot) {
-      expect(row.capture).toBe("full");
+    for (const [toolId, c] of spot) {
+      expect(c.capture, `${toolId} should have capture:full`).toBe("full");
     }
+  });
+
+  it("utility tools all have capture:none", () => {
+    const utility = getToolsByRole("utility");
+    for (const [toolId, c] of utility) {
+      expect(c.capture, `${toolId} should have capture:none`).toBe("none");
+    }
+  });
+
+  it("audit capture:none has exactly 2 entries (polymarket bridge)", () => {
+    const auditNone = getToolsByRole("audit").filter(([, c]) => c.capture === "none");
+    expect(auditNone.map(([id]) => id).sort()).toEqual([
+      "polymarket.bridge.deposit",
+      "polymarket.bridge.withdraw",
+    ]);
+  });
+});
+
+// ── Contract invariants ────────────────────────────────────────
+
+describe("capture contract — contract invariants", () => {
+  it("every capture:full tool has at least 1 requiredField", () => {
+    for (const [toolId, c] of MUTATION_MATRIX) {
+      if (c.capture === "full") {
+        expect(c.requiredFields.length, `${toolId} capture:full but no requiredFields`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("every capture:none tool has empty requiredFields", () => {
+    for (const [toolId, c] of MUTATION_MATRIX) {
+      if (c.capture === "none") {
+        expect(c.requiredFields.length, `${toolId} capture:none but has requiredFields`).toBe(0);
+      }
+    }
+  });
+
+  it("KyberSwap limitOrder tools all have expectedType 'order' (not 'swap')", () => {
+    const loTools = getMatrixToolIds().filter(id => id.startsWith("kyberswap.limitOrder."));
+    expect(loTools.length).toBeGreaterThanOrEqual(6);
+    for (const toolId of loTools) {
+      const c = MUTATION_MATRIX.get(toolId)!;
+      expect(c.expectedType, `${toolId} should be "order"`).toBe("order");
+    }
+  });
+
+  it("Polymarket buy/sell are dual-type (order|prediction)", () => {
+    for (const toolId of ["polymarket.clob.buy", "polymarket.clob.sell"]) {
+      const c = MUTATION_MATRIX.get(toolId)!;
+      expect(Array.isArray(c.expectedType), `${toolId} should have dual expectedType`).toBe(true);
+      expect(c.expectedType).toContain("prediction");
+      expect(c.expectedType).toContain("order");
+    }
+  });
+
+  it("Polymarket cancel* are type 'order' with role 'projection'", () => {
+    const cancelTools = [
+      "polymarket.clob.cancel", "polymarket.clob.cancelOrders",
+      "polymarket.clob.cancelAll", "polymarket.clob.cancelMarket",
+    ];
+    for (const toolId of cancelTools) {
+      const c = MUTATION_MATRIX.get(toolId)!;
+      expect(c.expectedType, `${toolId} should be "order"`).toBe("order");
+      expect(c.role, `${toolId} should be "projection"`).toBe("projection");
+    }
+  });
+
+  it("bulk operations have fanOut: 'items'", () => {
+    const bulkTools = [
+      "solana.predict.closeAll",
+      "kyberswap.limitOrder.batchFill",
+      "kyberswap.limitOrder.cancelAll",
+      "polymarket.clob.cancelOrders",
+      "polymarket.clob.cancelAll",
+      "polymarket.clob.cancelMarket",
+    ];
+    for (const toolId of bulkTools) {
+      const c = MUTATION_MATRIX.get(toolId)!;
+      expect(c.fanOut, `${toolId} should be fanOut:"items"`).toBe("items");
+    }
+  });
+
+  it("solana.predict.claim has exception for instrumentKey", () => {
+    const c = MUTATION_MATRIX.get("solana.predict.claim")!;
+    expect(c.exceptions).toBeDefined();
+    expect(c.exceptions!.some(e => e.includes("instrumentKey"))).toBe(true);
+  });
+});
+
+// ── Capture validator tests ────────────────────────────────────
+
+describe("capture contract — runtime validator", () => {
+  it("validates pnl_spot with all required fields", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x", tradeSide: "buy",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+    });
+    expect(valid).toBe(true);
+  });
+
+  it("rejects pnl_spot missing tradeSide", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+    });
+    expect(valid).toBe(false);
+  });
+
+  it("rejects capture:full with null tradeCapture", () => {
+    expect(validateCaptureContract("solana.swap.execute", null)).toBe(false);
+  });
+
+  it("passes capture:none regardless of tradeCapture", () => {
+    expect(validateCaptureContract("echobook.post.create", null)).toBe(true);
+    expect(validateCaptureContract("echobook.post.create", { type: "social" })).toBe(true);
+  });
+
+  it("passes unknown toolId (not in matrix)", () => {
+    expect(validateCaptureContract("unknown.tool", null)).toBe(true);
+  });
+
+  it("solana.predict.claim passes without instrumentKey (exception)", () => {
+    const valid = validateCaptureContract("solana.predict.claim", {
+      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "PK1",
+    });
+    expect(valid).toBe(true);
+  });
+
+  it("rejects unexpected type", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "prediction", walletAddress: "0x", tradeSide: "buy",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+    });
+    expect(valid).toBe(false);
+  });
+
+  it("accepts dual-type tool with either valid type", () => {
+    const base = { walletAddress: "0x", status: "executed", positionKey: "pk", instrumentKey: "ik" };
+    expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "prediction" })).toBe(true);
+    expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "order" })).toBe(true);
+    expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "swap" })).toBe(false);
+  });
+});
+
+// ── Preview detection tests ────────────────────────────────────
+
+describe("capture contract — preview detection", () => {
+  it("detects preview for tools with previewSupport", () => {
+    expect(isPreviewExecution("jaine.swap.sell", { dryRun: true })).toBe(true);
+    expect(isPreviewExecution("kyberswap.limitOrder.batchFill", { dryRun: true })).toBe(true);
+    expect(isPreviewExecution("khalani.bridge", { dryRun: true })).toBe(true);
+    expect(isPreviewExecution("polymarket.clob.buy", { dryRun: true })).toBe(true);
+  });
+
+  it("does not detect preview when dryRun is false or absent", () => {
+    expect(isPreviewExecution("jaine.swap.sell", { dryRun: false })).toBe(false);
+    expect(isPreviewExecution("jaine.swap.sell", {})).toBe(false);
+  });
+
+  it("does not detect preview for tools without previewSupport", () => {
+    expect(isPreviewExecution("solana.swap.execute", { dryRun: true })).toBe(false);
+    expect(isPreviewExecution("solana.predict.buy", { dryRun: true })).toBe(false);
+    expect(isPreviewExecution("polymarket.clob.cancel", { dryRun: true })).toBe(false);
   });
 });

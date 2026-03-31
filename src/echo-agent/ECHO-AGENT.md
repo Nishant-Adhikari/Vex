@@ -1,8 +1,15 @@
 # Echo Agent — Architecture Reference
 
-> New-generation autonomous AI agent. Own database, DB-first content model, manifest-driven protocol tools, provider-agnostic inference. Built from scratch .
+> New-generation autonomous AI agent. Own database, DB-first content model, manifest-driven protocol tools, provider-agnostic inference. Built from scratch.
 >
-> **Last updated: 2026-03-28**
+> **Last updated: 2026-03-31**
+>
+> **LLM maintainers:** If you add/remove a top-level module, update this file. Each module has its own `.md` with detailed docs — update those when modifying files within:
+> - [`db/DB.md`](db/DB.md) — Schema, repos, design decisions
+> - [`inference/INFERENCE.md`](inference/INFERENCE.md) — Providers, config, SubagentConfig
+> - [`tools/TOOLS.md`](tools/TOOLS.md) — Tool call flow, coverage matrix, capture contracts
+> - [`sync/SYNC.md`](sync/SYNC.md) — Balance sync, activity population, position projection, replay
+> - [`engine/ENGINE.md`](engine/ENGINE.md) — Session axes, missions, turn loop, prompts, subagents
 
 ---
 
@@ -235,11 +242,11 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 
 ---
 
-## Implementation Status (2026-03-29)
+## Implementation Status (2026-03-31)
 
 ### Done
 - DB schema (27 tables + 002_engine_missions: missions, mission_runs, messages metadata), client, migrate runner, 24 repos
-- All 19 internal tools — live handlers, zero stubs
+- All 22 internal tools — live handlers, zero stubs
 - Approval enforcement for mutating tools (protocol + wallet)
 - Execution capture with `external_refs` (normalized) + sync enqueue
 - Balance sync pipeline — Khalani → proj_balances → proj_portfolio_snapshots
@@ -256,7 +263,14 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 - KyberSwap `swap.buy` (explicit buy side for projections)
 - SubagentConfig with ENV overrides
 - Capture normalization: canonical `_tradeCapture` with walletAddress, instrumentKey, positionKey, tradeSide, token addresses across all 6 trading namespaces
-- **WS3 coverage matrix**: Frozen per-tool matrix (78 mutating tools, PortfolioRole × CaptureSupport). All audit captures domknięte (except 2 Polymarket bridge address-creation). `classifySolanaSwap()` deterministic trade classification in `src/tools`. Atomic amounts from source (no lossy UI→atomic). `jaine.swap.sell` instrumentKey fixed to input token.
+- **WS3 coverage matrix**: Canonical `MUTATION_MATRIX` in `protocols/mutation-matrix.ts` (shared by runtime, tests, replay). Per-tool `MutationContract` with role, capture, expectedType, previewSupport, fanOut, requiredFields.
+  - `classifySolanaSwap()` deterministic trade classification in `src/tools`. Atomic amounts from source.
+  - KyberSwap limit orders corrected: `type: "order"` (was "swap"). `limitOrder.create` now emits `_tradeCapture`. `batchFill`/`cancelAll` emit `_tradeCaptureItems` per order.
+  - Polymarket dual-type model: matched buy/sell → `type: "prediction"` (position lifecycle), live → `type: "order"` (pending order). Cancel* → `type: "order"`, `_tradeCaptureItems` per cancelled order, reclassified from pnl_prediction to projection.
+  - Runtime validation boundary: `capture-validator.ts` blocks `capture:"full"` missing required fields before projection pipeline.
+  - Preview/dryRun: tools with `previewSupport: true` skip approval gate and capture pipeline.
+  - `capture-pipeline.ts` extracted as shared seam (runtime + replay).
+  - `sync/replay.ts` for one-time projection correction from immutable audit trail.
 - `proj_activity` auto-populated from captureExecution() via `protocol_capture_items` — 1 execution → N capture items → N activity rows (batch captures like predict.closeAll)
 - Activity populator with product-aware tradeSide rules (claim ≠ sell, lend/stake/bridge → null)
 - Order management mutations captured: DCA, limit orders, closeAll, cancel, fees/rewards
@@ -282,7 +296,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
   - Mission patch parser: untrusted model output → validated domain → row conversion → DB
   - Subagent engine runner wired into `tools/internal/subagent.ts` (replaces placeholder)
   - Stop conditions: 6 business stops (terminal) + 6 runtime pauses (resumable)
-- 1387 passing tests across 66 test files
+- Tests passing across 66 test files
 
 ### Not yet implemented
 - **PnL reconcilers** (phase 4) — realized/unrealized PnL calculation from lots + positions

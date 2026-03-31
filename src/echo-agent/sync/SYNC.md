@@ -8,8 +8,9 @@ Balance sync pipeline: Khalani API → `proj_balances` → `proj_portfolio_snaps
 sync/
   index.ts               — Public API: initSync(), syncTick()
   balance-sync.ts        — Khalani → proj_balances → snapshot
-  activity-populator.ts  — _tradeCapture → proj_activity (from runtime capture hook)
+  activity-populator.ts  — _tradeCapture → proj_activity (from capture-pipeline)
   position-projector.ts  — activity → proj_open_positions + proj_pnl_lots (FIFO)
+  replay.ts              — One-time projection correction from immutable audit trail
   worker.ts              — Claims pending sync runs, deduplicates, dispatches
   seed.ts                — Seeds default protocol_sync_jobs
   chains.ts              — Canonical chain hint resolution
@@ -112,7 +113,9 @@ Worker claims ALL pending runs at once (`claimAllPending()` with FOR UPDATE SKIP
 
 ## Activity population
 
-`activity-populator.ts` is called from `populateCaptureItems()` in `runtime.ts` after every mutating tool execution. Maps capture items → `proj_activity` rows.
+`activity-populator.ts` is called from `populateCaptureItems()` in `protocols/capture-pipeline.ts` after every mutating tool execution. Maps capture items → `proj_activity` rows.
+
+The shared `capture-pipeline.ts` is imported by both `runtime.ts` (inline after execution) and `replay.ts` (one-time correction).
 
 ### Capture model: 1 execution → N capture items → N activity rows
 
@@ -146,6 +149,27 @@ The runtime records `protocol_capture_items` first, then calls `populateActivity
 Key: `captureStatus` comes from `proj_activity.capture_status` which is set directly from `_tradeCapture.status` — not from meta.
 
 Cross-protocol: slop.trade.buy + jaine.swap.sell match via shared `instrumentKey` (`0g:{tokenAddress}`).
+
+## Replay (`replay.ts`)
+
+One-time projection correction tool. Reads immutable audit trail (`protocol_executions` + `protocol_capture_items`), truncates projection tables, re-runs `populateActivity()` with type correction from `MUTATION_MATRIX.expectedType`.
+
+**What it does:**
+1. `TRUNCATE proj_activity, proj_open_positions, proj_pnl_lots`
+2. Read all successful executions chronologically
+3. For each: read its `protocol_capture_items` (batch truth), apply type correction, skip previews
+4. Re-run `populateActivity()` per corrected item via `replayActivityFromCapture()`
+
+**What it does NOT do:**
+- Does NOT modify `protocol_executions` or `protocol_capture_items` (immutable audit trail)
+- Does NOT re-record capture items (reads existing)
+
+**When to use:** After handler fixes that change `_tradeCapture.type` (e.g. KyberSwap limit orders `swap` → `order`). Idempotent — safe to run multiple times.
+
+```typescript
+import { replayProjections } from "@echo-agent/sync/replay.js";
+const stats = await replayProjections(); // { replayed, skipped, errors }
+```
 
 ## What's NOT in this module
 

@@ -171,10 +171,20 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
       orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD",
     });
 
+    const isMatched = result.status === "matched";
     return {
       success: true,
       output: JSON.stringify({ ...result, conditionId, outcome, amount, price }, null, 2),
-      data: { ...result, conditionId, _tradeCapture: { type: "prediction", chain: "polygon", status: result.status === "matched" ? "executed" : "open", inputToken: "USDC", outputToken: `${outcome}@${conditionId.slice(0, 8)}`, inputAmount: String(amount), walletAddress: wallet.address, tradeSide: "buy", instrumentKey: `polymarket:${conditionId}:${outcome}`, meta: { dex: "polymarket", conditionId, outcome, price } } },
+      data: { ...result, conditionId, _tradeCapture: {
+        type: isMatched ? "prediction" : "order",
+        chain: "polygon",
+        status: isMatched ? "executed" : "open",
+        inputToken: "USDC", outputToken: `${outcome}@${conditionId.slice(0, 8)}`,
+        inputAmount: String(amount), walletAddress: wallet.address, tradeSide: "buy",
+        positionKey: isMatched ? `polymarket:${conditionId}:${outcome}` : result.orderID,
+        instrumentKey: `polymarket:${conditionId}:${outcome}`,
+        meta: { dex: "polymarket", conditionId, outcome, price, orderID: result.orderID },
+      } },
     };
   },
 
@@ -209,18 +219,29 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
 
     const result = await clob.postOrder({ order: { ...orderData, signature }, owner: creds.apiKey, orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" });
 
+    const isMatched = result.status === "matched";
     return {
       success: true,
       output: JSON.stringify({ ...result, conditionId, outcome, shares, price }, null, 2),
-      data: { ...result, conditionId, _tradeCapture: { type: "prediction", chain: "polygon", status: result.status === "matched" ? "closed" : "open", outputToken: "USDC", inputToken: `${outcome}@${conditionId.slice(0, 8)}`, inputAmount: String(shares), walletAddress: wallet.address, tradeSide: "sell", instrumentKey: `polymarket:${conditionId}:${outcome}`, meta: { dex: "polymarket", conditionId, outcome, price } } },
+      data: { ...result, conditionId, _tradeCapture: {
+        type: isMatched ? "prediction" : "order",
+        chain: "polygon",
+        status: isMatched ? "closed" : "open",
+        outputToken: "USDC", inputToken: `${outcome}@${conditionId.slice(0, 8)}`,
+        inputAmount: String(shares), walletAddress: wallet.address, tradeSide: "sell",
+        positionKey: isMatched ? `polymarket:${conditionId}:${outcome}` : result.orderID,
+        instrumentKey: `polymarket:${conditionId}:${outcome}`,
+        meta: { dex: "polymarket", conditionId, outcome, price, orderID: result.orderID },
+      } },
     };
   },
 
   "polymarket.clob.cancel": async (p) => {
     const orderId = str(p, "orderId");
     if (!orderId) return fail("Missing required: orderId");
+    const wallet = requireEvmWallet();
     const result = await getPolyClobClient().cancelOrder(orderId);
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, orderId, _tradeCapture: { type: "prediction", chain: "polygon", status: "cancelled", positionKey: orderId, meta: { action: "cancel" } } } };
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, orderId, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, positionKey: orderId, meta: { action: "cancel" } } } };
   },
 
   "polymarket.clob.cancelOrders": async (p) => {
@@ -228,20 +249,35 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     if (!raw) return fail("Missing required: orderIds");
     const ids = splitIds(raw);
     if (ids.length === 0) return fail("No valid order IDs provided");
+    const wallet = requireEvmWallet();
     const result = await getPolyClobClient().cancelOrders(ids);
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "prediction", chain: "polygon", status: "cancelled", meta: { action: "cancelOrders", orderIds: ids } } } };
+    const captureItems = result.canceled.map(oid => ({
+      type: "order" as const, chain: "polygon" as const, status: "cancelled" as const,
+      walletAddress: wallet.address, positionKey: oid, meta: { action: "cancel" },
+    }));
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, meta: { action: "cancelOrders", count: result.canceled.length } }, _tradeCaptureItems: captureItems } };
   },
 
   "polymarket.clob.cancelAll": async () => {
+    const wallet = requireEvmWallet();
     const result = await getPolyClobClient().cancelAll();
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "prediction", chain: "polygon", status: "cancelled", meta: { action: "cancelAll" } } } };
+    const captureItems = result.canceled.map(oid => ({
+      type: "order" as const, chain: "polygon" as const, status: "cancelled" as const,
+      walletAddress: wallet.address, positionKey: oid, meta: { action: "cancel" },
+    }));
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, meta: { action: "cancelAll", count: result.canceled.length } }, _tradeCaptureItems: captureItems.length > 0 ? captureItems : undefined } };
   },
 
   "polymarket.clob.cancelMarket": async (p) => {
     const market = str(p, "market"), assetId = str(p, "assetId");
     if (!market || !assetId) return fail("Missing required: market, assetId");
+    const wallet = requireEvmWallet();
     const result = await getPolyClobClient().cancelMarketOrders(market, assetId);
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, conditionId: market, _tradeCapture: { type: "prediction", chain: "polygon", status: "cancelled", meta: { action: "cancelMarket", conditionId: market, assetId } } } };
+    const captureItems = result.canceled.map(oid => ({
+      type: "order" as const, chain: "polygon" as const, status: "cancelled" as const,
+      walletAddress: wallet.address, positionKey: oid, meta: { action: "cancelMarket", conditionId: market, assetId },
+    }));
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, conditionId: market, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, meta: { action: "cancelMarket", conditionId: market, assetId } }, _tradeCaptureItems: captureItems.length > 0 ? captureItems : undefined } };
   },
 
   "polymarket.clob.orders": async (p) => {

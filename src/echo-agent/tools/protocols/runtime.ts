@@ -14,6 +14,8 @@ import type {
 } from "./types.js";
 import type { ToolResult } from "../types.js";
 import { PROTOCOL_TOOLS, PROTOCOL_NAMESPACE_ALLOWLIST, getProtocolHandler, getProtocolManifest } from "./catalog.js";
+import { isPreviewExecution, validateCaptureContract } from "./capture-validator.js";
+import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js";
 import logger from "@utils/logger.js";
 
 const DEFAULT_DISCOVERY_LIMIT = 15;
@@ -126,7 +128,8 @@ export async function executeProtocolTool(
   }
 
   // Approval gate — mutating tools require approval in restricted/off mode
-  if (manifest.mutating && !context.approved && context.loopMode !== "full") {
+  // Preview (dryRun) is read-only simulation — skip approval
+  if (manifest.mutating && !context.approved && context.loopMode !== "full" && !isPreviewExecution(request.toolId, params)) {
     logger.info("protocol.execute.approval_required", { toolId: request.toolId, loopMode: context.loopMode });
     return {
       success: false,
@@ -191,52 +194,7 @@ export async function executeProtocolTool(
 
 // ── Execution capture ───────────────────────────────────────────
 
-/**
- * Extract external_refs from handler result data for correlation/lookup.
- * Maps known fields per namespace to canonical keys.
- */
-function extractExternalRefs(data: Record<string, unknown> | undefined): Record<string, string> {
-  if (!data) return {};
-  const refs: Record<string, string> = {};
-  // Correlation keys (NOT identity like walletAddress)
-  const candidates = ["txHash", "orderId", "positionPubkey", "orderKey", "positionId", "conditionId", "signature", "instrumentKey", "positionKey"];
-
-  for (const key of candidates) {
-    let value = data[key];
-    // Normalize: Polymarket returns "orderID" instead of "orderId"
-    if (value === undefined && key === "orderId") value = data["orderID"];
-    // Coerce numbers to strings (KyberSwap orderId can be number)
-    if (typeof value === "number") value = String(value);
-    if (typeof value === "string" && value) refs[key] = value;
-  }
-
-  // Check nested _tradeCapture for refs not in top-level data
-  const capture = data._tradeCapture as Record<string, unknown> | undefined;
-  if (capture) {
-    if (!refs.signature && typeof capture.signature === "string" && capture.signature) {
-      refs.signature = capture.signature;
-    }
-    // positionKey from capture (perps, predictions, LP)
-    if (!refs.positionKey && typeof capture.positionKey === "string" && capture.positionKey) {
-      refs.positionKey = capture.positionKey;
-    }
-    // instrumentKey from capture (spot, predictions, LP)
-    if (!refs.instrumentKey && typeof capture.instrumentKey === "string" && capture.instrumentKey) {
-      refs.instrumentKey = capture.instrumentKey;
-    }
-    // positionPubkey sometimes only in meta (perps close, prediction sell/claim)
-    const meta = capture.meta as Record<string, unknown> | undefined;
-    if (!refs.positionPubkey && typeof meta?.positionPubkey === "string" && meta.positionPubkey) {
-      refs.positionPubkey = meta.positionPubkey;
-    }
-    // conditionId from meta (Polymarket)
-    if (!refs.conditionId && typeof meta?.conditionId === "string" && meta.conditionId) {
-      refs.conditionId = meta.conditionId;
-    }
-  }
-
-  return refs;
-}
+// extractExternalRefs moved to capture-pipeline.ts (shared with replay.ts)
 
 async function captureExecution(
   toolId: string,
@@ -246,6 +204,9 @@ async function captureExecution(
   result: ToolResult,
   durationMs: number,
 ): Promise<void> {
+  // Defense-in-depth: preview results are NOT mutations — skip entire capture pipeline
+  if (result.data?.dryRun === true) return;
+
   const { recordExecution } = await import("@echo-agent/db/repos/executions.js");
   const tradeCapture = (result.data?._tradeCapture as Record<string, unknown>) ?? null;
   const tradeCaptureItems = result.data?._tradeCaptureItems as Record<string, unknown>[] | undefined;
@@ -276,6 +237,14 @@ async function captureExecution(
   // Populate proj_activity ONLY for successful executions (projections = business truth)
   // Failed mutations go to protocol_executions audit log but NOT to activity/positions/lots
   if (executionId > 0 && result.success) {
+    // Validate capture contract before sending to projection pipeline
+    if (!validateCaptureContract(toolId, tradeCapture)) {
+      logger.warn("protocol.execute.capture_validation_failed", {
+        toolId, namespace, executionId,
+        hint: "Capture blocked by validator — not sent to projection pipeline",
+      });
+      return;
+    }
     try {
       await populateCaptureItems(executionId, toolId, namespace, tradeCapture, tradeCaptureItems, externalRefs);
     } catch (err) {
@@ -287,41 +256,4 @@ async function captureExecution(
   }
 }
 
-/**
- * Record capture items and populate activity rows.
- *
- * Batch handlers (predict.closeAll) emit _tradeCaptureItems → N items → N activity rows.
- * Single handlers emit _tradeCapture → synthesized 1 item → 1 activity row.
- */
-async function populateCaptureItems(
-  executionId: number,
-  toolId: string,
-  namespace: string,
-  tradeCapture: Record<string, unknown> | null,
-  tradeCaptureItems: Record<string, unknown>[] | undefined,
-  executionExternalRefs: Record<string, string>,
-): Promise<void> {
-  // Build the list of capture items to record
-  const items: Record<string, unknown>[] = Array.isArray(tradeCaptureItems) && tradeCaptureItems.length > 0
-    ? tradeCaptureItems
-    : tradeCapture ? [tradeCapture] : [];
-
-  if (items.length === 0) return;
-
-  const { recordCaptureItems } = await import("@echo-agent/db/repos/capture-items.js");
-  const { populateActivity } = await import("@echo-agent/sync/activity-populator.js");
-
-  const captureItemIds = await recordCaptureItems(
-    executionId,
-    items.map(item => ({
-      tradeCapture: item,
-      externalRefs: extractExternalRefs({ _tradeCapture: item }),
-    })),
-  );
-
-  for (let i = 0; i < items.length; i++) {
-    const itemRefs = extractExternalRefs({ _tradeCapture: items[i] });
-    const mergedRefs = { ...executionExternalRefs, ...itemRefs };
-    await populateActivity(executionId, captureItemIds[i] ?? null, toolId, namespace, items[i], mergedRefs);
-  }
-}
+// populateCaptureItems moved to capture-pipeline.ts (shared with replay.ts)

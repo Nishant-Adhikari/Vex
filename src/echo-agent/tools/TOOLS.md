@@ -109,13 +109,33 @@ This feeds the execution → sync → projection pipeline (see `db/DB.md` and `s
 
 ### Coverage matrix
 
-Every mutating protocol tool is classified by `PortfolioRole × CaptureSupport` in `capture-contract.test.ts`. Canonical source-of-truth for capture requirements. Types defined in `protocols/types.ts`.
+Canonical source-of-truth: `protocols/mutation-matrix.ts` (`MUTATION_MATRIX`). Imported by runtime (validation, preview detection), tests (structural coverage), and replay (type correction).
+
+Each mutating tool has a `MutationContract`: `role`, `capture`, `expectedType`, `previewSupport`, `fanOut`, `requiredFields`.
 
 - `pnl_spot` (7 tools): tradeSide + instrumentKey + atomic amounts required. `classifySolanaSwap()` in `src/tools/solana-ecosystem/shared/swap-classify.ts` for deterministic Solana classification.
-- `pnl_perps`, `pnl_prediction`: positionKey + instrumentKey required.
-- `projection`: orders/LP lifecycle. positionKey required.
-- `audit` (20 with capture, 2 without): balance/state mutations. Audit trail only.
+- `pnl_prediction`: positionKey + instrumentKey required. Polymarket buy/sell are dual-type (`["prediction","order"]`): matched → prediction position lifecycle, live → order lifecycle.
+- `projection`: orders/LP lifecycle. positionKey required. KyberSwap limit orders use `type: "order"` (not "swap"). Polymarket cancel* reclassified here from pnl_prediction.
+- `audit` (11 with capture, 2 without): balance/state mutations. Audit trail only.
 - `utility` (18): social/operational. No `_tradeCapture`.
+
+### Preview (dryRun)
+
+Tools with `previewSupport: true` in `MUTATION_MATRIX` skip approval gate and capture pipeline when `params.dryRun === true`. Defense-in-depth: `result.data?.dryRun === true` also skips capture in `captureExecution()`.
+
+### Runtime validation boundary
+
+`capture-validator.ts` checks `capture:"full"` handlers return required fields BEFORE sending to projection pipeline. Missing fields → logger.error + skip projection (fail-loud, not silent null-fill).
+
+### Bulk operations (_tradeCaptureItems)
+
+Handlers that touch N logical entities in one execution emit `_tradeCaptureItems: Record<string, unknown>[]`. Runtime records N capture items → N activity rows. Single-capture handlers emit only `_tradeCapture`.
+
+Used by: `solana.predict.closeAll`, `kyberswap.limitOrder.batchFill`, `kyberswap.limitOrder.cancelAll`, `polymarket.clob.cancelOrders`, `polymarket.clob.cancelAll`, `polymarket.clob.cancelMarket`.
+
+### History replay
+
+`sync/replay.ts` — one-time projection correction. Reads immutable `protocol_executions` + `protocol_capture_items`, truncates projection tables, re-runs `populateActivity()` with type correction from `MUTATION_MATRIX.expectedType`. Idempotent.
 
 `NAMESPACE_DEFAULTS` in `catalog.ts` is a helper for pure namespaces, NOT runtime truth.
 

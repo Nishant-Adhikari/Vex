@@ -224,7 +224,23 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
       signature,
     });
 
-    return ok({ chain: slug, orderId: result.orderId, makerAsset: makerToken.symbol, takerAsset: takerToken.symbol, makingAmount, takingAmount, expiredAt });
+    return {
+      success: true,
+      output: JSON.stringify({ chain: slug, orderId: result.orderId, makerAsset: makerToken.symbol, takerAsset: takerToken.symbol, makingAmount, takingAmount, expiredAt }, null, 2),
+      data: {
+        orderId: result.orderId,
+        _tradeCapture: {
+          type: "order", chain: slug, status: "open",
+          walletAddress: wallet.address,
+          positionKey: String(result.orderId),
+          instrumentKey: `${slug}:lo:${makerToken.address}:${takerToken.address}`,
+          inputTokenAddress: makerToken.address, inputToken: makerToken.symbol,
+          outputTokenAddress: takerToken.address, outputToken: takerToken.symbol,
+          inputAmount: makingAmount, outputAmount: takingAmount,
+          meta: { orderType: "limitOrder", expiredAt },
+        },
+      },
+    };
   },
 
   "kyberswap.limitOrder.cancel": async (p) => {
@@ -241,7 +257,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const signature = await signEip712Message(wallet.privateKey, eip712);
     await getKyberLimitOrderClient().cancelOrders({ ...eip712, signature });
 
-    return { success: true, output: JSON.stringify({ chain: slug, orderId, method: "gasless", status: "cancelled" }, null, 2), data: { orderId: String(orderId), _tradeCapture: { type: "swap", chain: slug, status: "cancelled", walletAddress: wallet.address, positionKey: String(orderId), meta: { orderType: "limitOrder", method: "gasless" } } } };
+    return { success: true, output: JSON.stringify({ chain: slug, orderId, method: "gasless", status: "cancelled" }, null, 2), data: { orderId: String(orderId), _tradeCapture: { type: "order", chain: slug, status: "cancelled", walletAddress: wallet.address, positionKey: String(orderId), meta: { orderType: "limitOrder", method: "gasless" } } } };
   },
 
   "kyberswap.limitOrder.hardCancel": async (p) => {
@@ -257,7 +273,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
       data: encoded.encodedData as Hex,
     });
 
-    return { success: true, output: JSON.stringify({ chain: slug, orderId, txHash, method: "hard-cancel" }, null, 2), data: { txHash, orderId: String(orderId), _tradeCapture: { type: "swap", chain: slug, status: "cancelled", walletAddress: wallet.address, positionKey: String(orderId), signature: txHash, meta: { orderType: "limitOrder", method: "hard-cancel" } } } };
+    return { success: true, output: JSON.stringify({ chain: slug, orderId, txHash, method: "hard-cancel" }, null, 2), data: { txHash, orderId: String(orderId), _tradeCapture: { type: "order", chain: slug, status: "cancelled", walletAddress: wallet.address, positionKey: String(orderId), signature: txHash, meta: { orderType: "limitOrder", method: "hard-cancel" } } } };
   },
 
   // ── Limit Orders (Taker) ─────────────────────────────────────────
@@ -309,7 +325,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const to = encoded.routerAddress ? getAddress(encoded.routerAddress) : DSLO_PROTOCOL;
     const txHash = await sendKyberTransaction(publicClient, walletClient, { to, data: encoded.encodedData as Hex });
 
-    return { success: true, output: JSON.stringify({ chain: slug, orderId, txHash }, null, 2), data: { txHash, orderId: String(orderId), _tradeCapture: { type: "swap", chain: slug, status: "executed", walletAddress: wallet.address, positionKey: String(orderId), signature: txHash, tradeSide: "buy", meta: { orderType: "limitOrder", action: "fill" } } } };
+    return { success: true, output: JSON.stringify({ chain: slug, orderId, txHash }, null, 2), data: { txHash, orderId: String(orderId), _tradeCapture: { type: "order", chain: slug, status: "filled", walletAddress: wallet.address, positionKey: String(orderId), signature: txHash, tradeSide: "buy", meta: { orderType: "limitOrder", action: "fill" } } } };
   },
 
   "kyberswap.limitOrder.batchFill": async (p) => {
@@ -345,7 +361,14 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const to = encoded.routerAddress ? getAddress(encoded.routerAddress) : DSLO_PROTOCOL;
     const txHash = await sendKyberTransaction(publicClient, walletClient, { to, data: encoded.encodedData as Hex });
 
-    return { success: true, output: JSON.stringify({ chain: slug, orderIds, txHash }, null, 2), data: { txHash, _tradeCapture: { type: "swap", chain: slug, status: "executed", walletAddress: wallet.address, signature: txHash, tradeSide: "buy", meta: { orderType: "limitOrder", action: "batchFill", orderIds } } } };
+    const captureItems = orderIds.map(id => ({
+      type: "order" as const, chain: slug, status: "filled" as const,
+      walletAddress: wallet.address, positionKey: String(id),
+      signature: txHash, tradeSide: "buy" as const,
+      meta: { orderType: "limitOrder", action: "fill" },
+    }));
+
+    return { success: true, output: JSON.stringify({ chain: slug, orderIds, txHash }, null, 2), data: { txHash, _tradeCapture: captureItems[0] ?? { type: "order", chain: slug, status: "filled", walletAddress: wallet.address, signature: txHash, meta: { orderType: "limitOrder", action: "batchFill", orderIds } }, _tradeCaptureItems: captureItems } };
   },
 
   "kyberswap.limitOrder.cancelAll": async (p) => {
@@ -354,14 +377,29 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const { slug, chainId } = resolveChainWithId(chain);
     const wallet = requireEvmWallet();
 
-    const encoded = await getKyberLimitOrderClient().encodeIncreaseNonce(String(chainId));
+    // Prefetch active orders BEFORE nonce increase for per-order itemization.
+    // Race condition: orders may fill between list and cancel — acceptable,
+    // fill would have its own capture. Prefetch is best-effort.
+    const loClient = getKyberLimitOrderClient();
+    const activeOrders = await loClient.getOrders({
+      chainId: String(chainId), maker: wallet.address, status: "active",
+    });
+
+    const encoded = await loClient.encodeIncreaseNonce(String(chainId));
     const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
     const txHash = await sendKyberTransaction(publicClient, walletClient, {
       to: DSLO_PROTOCOL,
       data: encoded.encodedData as Hex,
     });
 
-    return { success: true, output: JSON.stringify({ chain: slug, txHash, method: "increase-nonce", message: "All open orders cancelled" }, null, 2), data: { txHash, _tradeCapture: { type: "swap", chain: slug, status: "cancelled", walletAddress: wallet.address, signature: txHash, meta: { orderType: "limitOrder", action: "cancelAll" } } } };
+    const captureItems = activeOrders.map(order => ({
+      type: "order" as const, chain: slug, status: "cancelled" as const,
+      walletAddress: wallet.address, positionKey: String(order.id),
+      signature: txHash,
+      meta: { orderType: "limitOrder", action: "cancelAll" },
+    }));
+
+    return { success: true, output: JSON.stringify({ chain: slug, txHash, method: "increase-nonce", cancelledCount: captureItems.length }, null, 2), data: { txHash, _tradeCapture: captureItems[0] ?? { type: "order", chain: slug, status: "cancelled", walletAddress: wallet.address, signature: txHash, meta: { orderType: "limitOrder", action: "cancelAll" } }, _tradeCaptureItems: captureItems.length > 0 ? captureItems : undefined } };
   },
 
   // ── Zap ──────────────────────────────────────────────────────────
