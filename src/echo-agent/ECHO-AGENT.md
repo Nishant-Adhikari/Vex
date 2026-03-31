@@ -91,6 +91,12 @@ src/echo-agent/
     subagents/             — Child engine sessions
       runner.ts            — runSubagentEngine() on same core
       relay.ts             — Parent ↔ child message passing
+  e2e/                     — E2E test harness (Docker Postgres + local MCP)
+    core/                  — Scenario runner, DB assertions, discovery/preview smoke, replay check
+    mcp/                   — Local stdio MCP server (9 echo_* tools)
+    scenarios/             — Scenario registry
+    TESTSCENARIO.md        — Runbook for Claude as manual debugger
+    E2E.md                 — Module docs
   public/                — Static assets (images, legacy README)
 ```
 
@@ -296,6 +302,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
   - Mission patch parser: untrusted model output → validated domain → row conversion → DB
   - Subagent engine runner wired into `tools/internal/subagent.ts` (replaces placeholder)
   - Stop conditions: 6 business stops (terminal) + 6 runtime pauses (resumable)
+- **E2E test harness**: Docker Postgres (port 5555, tmpfs) + local MCP server (9 echo_* tools). Automated discovery + preview smoke. Manual real-funds testing via Claude + `echo_execute`. Replay verification via `echo_replay_verify`.
 - Tests passing across 66 test files
 
 ### Not yet implemented
@@ -365,3 +372,4 @@ pnpm tsc --noEmit                           # zero type errors
 - [`tools/TOOLS.md`](tools/TOOLS.md) — Tool call flow, internal tools table, protocol namespaces, execution capture
 - [`sync/SYNC.md`](sync/SYNC.md) — Balance sync pipeline, Khalani integration, dedup, snapshots
 - [`engine/ENGINE.md`](engine/ENGINE.md) — Session axes, mission lifecycle, engine-core, prompt stack, approval flow, subagent runtime
+- [`e2e/E2E.md`](e2e/E2E.md) — E2E test harness: Docker Postgres, local MCP server, manual real-funds testing

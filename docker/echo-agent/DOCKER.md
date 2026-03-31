@@ -154,3 +154,25 @@ Currently in TODO-mode via `agent-shim.ts` — Docker functions throw until echo
 - Host maps `127.0.0.1:4201` → container (default, override via `AGENT_PORT`)
 - Postgres is internal only (no port exposed to host)
 - Agent connects to postgres via Docker network DNS: `postgres:5432`
+
+---
+
+## E2E Test Stack
+
+Separate compose for E2E testing — Postgres only, no agent container.
+
+```bash
+docker compose -f docker/echo-agent/docker-compose.e2e.yml up -d
+```
+
+| Setting | Value |
+|---------|-------|
+| File | `docker-compose.e2e.yml` |
+| Port | `5555` (host) → `5432` (container) |
+| Database | `echo_agent_test` |
+| Storage | `tmpfs` — RAM disk, data lost on `down` |
+| Reset | `down` + `up -d` (instant, no volumes to clean) |
+
+Connection: `ECHO_AGENT_DB_URL=postgresql://echo_agent:echo_agent@localhost:5555/echo_agent_test`
+
+See `src/echo-agent/e2e/E2E.md` for full E2E harness docs.

@@ -139,6 +139,10 @@ Used by: `solana.predict.closeAll`, `kyberswap.limitOrder.batchFill`, `kyberswap
 
 `NAMESPACE_DEFAULTS` in `catalog.ts` is a helper for pure namespaces, NOT runtime truth.
 
+### E2E verification
+
+Full pipeline verified via local MCP harness (`e2e/E2E.md`). Automated: discovery smoke + preview zero-write. Manual: real-funds mutations via `echo_execute`. Replay: `echo_replay_verify` after multi-namespace sessions.
+
 ## Key differences from legacy src/agent/
 
 | Aspect | Legacy (src/agent/) | Echo Agent (src/echo-agent/) |

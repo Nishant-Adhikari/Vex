@@ -171,6 +171,8 @@ import { replayProjections } from "@echo-agent/sync/replay.js";
 const stats = await replayProjections(); // { replayed, skipped, errors }
 ```
 
+**E2E verification:** `echo_replay_verify` MCP tool runs replay + compares before/after pipeline snapshots. See `e2e/E2E.md`.
+
 ## What's NOT in this module
 
 - **PnL reconcilers** (realized/unrealized calculation) — phase 4
