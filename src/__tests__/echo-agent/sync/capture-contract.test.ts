@@ -195,6 +195,16 @@ describe("capture contract — runtime validator", () => {
     expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "order" })).toBe(true);
     expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "swap" })).toBe(false);
   });
+
+  it("rejects capture without type field (F4: type is required for all capture:full)", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      walletAddress: "0x", tradeSide: "buy",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+      // no type field
+    });
+    expect(valid).toBe(false);
+  });
 });
 
 // ── Preview detection tests ────────────────────────────────────

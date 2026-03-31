@@ -87,7 +87,7 @@ export function getProtocolManifest(toolId: string): ProtocolToolManifest | unde
 // ── Namespace defaults ──────────────────────────────────────────
 // Helper for "pure" namespaces. NOT runtime truth: mixed namespaces
 // have tools in multiple PortfolioRole classes. Per-tool matrix in
-// capture-contract.test.ts is the canonical source-of-truth.
+// mutation-matrix.ts (MUTATION_MATRIX) is the canonical source-of-truth.
 
 export type NamespaceDefault = "mixed_trading" | "bridge" | "non_portfolio";
 

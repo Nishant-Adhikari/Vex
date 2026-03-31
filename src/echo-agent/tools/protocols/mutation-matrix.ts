@@ -31,20 +31,20 @@ export interface MutationContract {
 // ── Required field sets per role ────────────────────────────────
 
 const PNL_SPOT_FIELDS = [
-  "walletAddress", "tradeSide", "instrumentKey",
+  "type", "walletAddress", "tradeSide", "instrumentKey",
   "inputTokenAddress", "outputTokenAddress", "inputAmount", "outputAmount",
 ] as const;
 
 const PNL_PREDICTION_FIELDS = [
-  "walletAddress", "status", "positionKey", "instrumentKey",
+  "type", "walletAddress", "status", "positionKey", "instrumentKey",
 ] as const;
 
 const PROJECTION_FIELDS = [
-  "positionKey", "type", "status",
+  "type", "positionKey", "status",
 ] as const;
 
 const AUDIT_FIELDS = [
-  "walletAddress", "status", "type",
+  "type", "walletAddress", "status",
 ] as const;
 
 const NO_FIELDS: readonly string[] = [];

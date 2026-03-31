@@ -39,7 +39,7 @@ export function validateCaptureContract(
     return false;
   }
 
-  // Validate expectedType
+  // Validate expectedType (type is now a required field — always present after field check)
   const actualType = typeof tradeCapture.type === "string" ? tradeCapture.type : "";
   if (actualType && !isExpectedType(contract, actualType)) {
     logger.error("capture.validator.unexpected_type", {

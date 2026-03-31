@@ -109,7 +109,7 @@ export async function populateActivity(
       const activityRows = await activityRepo.getByExecution(executionId);
       const activityRow = captureItemId != null
         ? activityRows.find(r => r.captureItemId === captureItemId)
-        : activityRows[0];
+        : activityRows.find(r => r.id === id);  // match by freshly inserted id (safe for replay with null captureItemId)
       if (activityRow) {
         const { projectPosition } = await import("./position-projector.js");
         await projectPosition(activityRow);

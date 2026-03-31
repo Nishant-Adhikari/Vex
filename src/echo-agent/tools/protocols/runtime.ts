@@ -16,6 +16,7 @@ import type { ToolResult } from "../types.js";
 import { PROTOCOL_TOOLS, PROTOCOL_NAMESPACE_ALLOWLIST, getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution, validateCaptureContract } from "./capture-validator.js";
 import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js";
+import { MUTATION_MATRIX } from "./mutation-matrix.js";
 import logger from "@utils/logger.js";
 
 const DEFAULT_DISCOVERY_LIMIT = 15;
@@ -138,6 +139,10 @@ export async function executeProtocolTool(
     };
   }
 
+  // Determine preview BEFORE handler call — flag survives thrown exceptions
+  const isPreview = isPreviewExecution(request.toolId, params);
+  const shouldCapture = manifest.mutating && !isPreview;
+
   // Execute + capture
   const startTime = Date.now();
   try {
@@ -153,7 +158,8 @@ export async function executeProtocolTool(
     // Capture mutating execution — awaited inline for deterministic projection readiness
     // protocol_executions: ALL mutations (success + failure) for audit
     // proj_activity + positions/lots: ONLY successful mutations (business truth)
-    if (manifest.mutating) {
+    // Preview executions skip capture entirely (determined before handler call)
+    if (shouldCapture) {
       try {
         await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs);
       } catch (err) {
@@ -176,8 +182,9 @@ export async function executeProtocolTool(
     });
 
     // Capture thrown mutations to audit trail only (no projections for failures)
+    // Preview: skip capture even for thrown exceptions
     const failedResult: ToolResult = { success: false, output: `${request.toolId} failed: ${message}` };
-    if (manifest.mutating) {
+    if (shouldCapture) {
       try {
         await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, failedResult, durationMs);
       } catch (captureErr) {
@@ -238,7 +245,13 @@ async function captureExecution(
   // Failed mutations go to protocol_executions audit log but NOT to activity/positions/lots
   if (executionId > 0 && result.success) {
     // Validate capture contract before sending to projection pipeline
-    if (!validateCaptureContract(toolId, tradeCapture)) {
+    // For fanOut:"items" tools, validate items (not summary) — summary intentionally lacks per-item identity
+    const contract = MUTATION_MATRIX.get(toolId);
+    const itemsToValidate = contract?.fanOut === "items" && Array.isArray(tradeCaptureItems) && tradeCaptureItems.length > 0
+      ? tradeCaptureItems
+      : tradeCapture ? [tradeCapture] : [];
+    const allValid = itemsToValidate.every(item => validateCaptureContract(toolId, item));
+    if (!allValid) {
       logger.warn("protocol.execute.capture_validation_failed", {
         toolId, namespace, executionId,
         hint: "Capture blocked by validator — not sent to projection pipeline",
