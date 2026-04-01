@@ -23,7 +23,7 @@ src/echo-agent/
     migrations/
       001_initial.sql    — Foundation schema (27 tables, 6 modules)
       002_engine_missions.sql — Engine extensions (missions, mission_runs, messages metadata)
-    repos/               — 24 repo files (includes missions.ts, mission-runs.ts, runtime.ts, messages.ts extended)
+    repos/               — 25 repo files (includes missions.ts, mission-runs.ts, runtime.ts, messages.ts extended)
   inference/             — Provider-agnostic inference (OpenRouter + 0G Compute)
     types.ts             — InferenceProvider interface, InferenceConfig, InferenceUsage
     config.ts            — ENV validation + SubagentConfig
@@ -37,6 +37,12 @@ src/echo-agent/
     dispatcher.ts        — Routes every tool call
     internal/            — In-process handlers
       types.ts           — InternalToolContext, ok/fail helpers
+      portfolio-inspect.ts — 14-view router (delegates to inspect-views/)
+      inspect-views/     — View implementations split by family
+        trading.ts       — lots, profits, unrealized
+        positions.ts     — open_positions, closed_positions, orders
+        activity.ts      — activity, bridges, lp_history, non_trading_history
+        portfolio.ts     — summary, balances, snapshots, executions
       web.ts             — web_search, web_fetch (Tavily + cache)
       documents.ts       — document_read/write/list/delete (DB-first, folders)
       memory.ts          — memory_manage (CRUD with hash dedup)
@@ -45,6 +51,7 @@ src/echo-agent/
       wallet.ts          — wallet_read, send_prepare, send_confirm
     protocols/           — discover_tools + execute_tool system
       types.ts           — ProtocolToolManifest, ProtocolHandler
+      handler-helpers.ts — Shared str/num/bool/ok/fail (extracted from 13 handlers)
       catalog.ts         — All 10 namespaces registered
       runtime.ts         — Discovery, execution, approval gate, capture hook
       khalani/           — 9 tools (bridge, balances, orders)
@@ -251,7 +258,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 ## Implementation Status (2026-03-31)
 
 ### Done
-- DB schema (27 tables + 002_engine_missions: missions, mission_runs, messages metadata), client, migrate runner, 24 repos
+- DB schema (27 tables + 002_engine_missions: missions, mission_runs, messages metadata), client, migrate runner, 25 repos
 - All 22 internal tools — live handlers, zero stubs
 - Approval enforcement for mutating tools (protocol + wallet)
 - Execution capture with `external_refs` (normalized) + sync enqueue
@@ -391,7 +398,7 @@ pnpm tsc --noEmit                           # zero type errors
 
 ## Module Docs
 
-- [`db/DB.md`](db/DB.md) — Schema modules, design decisions, 24 repos API, startup
+- [`db/DB.md`](db/DB.md) — Schema modules, design decisions, 25 repos API, startup
 - [`inference/INFERENCE.md`](inference/INFERENCE.md) — Provider interface, ENV, SubagentConfig, provider differences
 - [`tools/TOOLS.md`](tools/TOOLS.md) — Tool call flow, internal tools table, protocol namespaces, execution capture
 - [`sync/SYNC.md`](sync/SYNC.md) — Balance sync pipeline, Khalani integration, dedup, snapshots
