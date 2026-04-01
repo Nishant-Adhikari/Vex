@@ -367,6 +367,7 @@ SUBAGENT_TIMEOUT_MS=300000
 TAVILY_API_KEY=tvly-...                # web_search + web_fetch
 POLYMARKET_API_KEY=...                 # CLOB trading (11 tools)
 JUPITER_API_KEY=...                    # all solana tools (20 tools)
+CHAINSCAN_API_KEY=...                  # 0G ChainScan (optional — free tier works without key)
 ```
 
 ---

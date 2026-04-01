@@ -11,7 +11,6 @@ export const DECODE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "hashes", type: "string", required: true, description: "Comma-separated 4-byte method hashes (max 10)." },
     ],
     exampleParams: { hashes: "0xa9059cbb,0x095ea7b3" },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.decode.raw",
@@ -24,6 +23,5 @@ export const DECODE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "inputs", type: "string", required: true, description: "Comma-separated raw calldata hex strings (same order as contracts)." },
     ],
     exampleParams: { contracts: "0xaaa...", inputs: "0xa9059cbb000..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
 ];

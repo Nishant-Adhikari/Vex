@@ -11,7 +11,6 @@ export const TRANSACTION_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "txHash", type: "string", required: true, description: "Transaction hash (0x + 64 hex chars)." },
     ],
     exampleParams: { txHash: "0xabc123..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.tx.receipt",
@@ -23,6 +22,5 @@ export const TRANSACTION_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "txHash", type: "string", required: true, description: "Transaction hash (0x + 64 hex chars)." },
     ],
     exampleParams: { txHash: "0xabc123..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
 ];

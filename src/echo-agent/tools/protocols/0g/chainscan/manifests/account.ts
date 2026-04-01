@@ -12,7 +12,6 @@ export const ACCOUNT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tag", type: "string", description: "Block tag: latest_state, latest_mined, latest_finalized, latest_confirmed, latest_checkpoint, earliest." },
     ],
     exampleParams: { address: "0x1234567890abcdef1234567890abcdef12345678" },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.account.balanceMulti",
@@ -25,7 +24,6 @@ export const ACCOUNT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tag", type: "string", description: "Block tag (default: latest_state)." },
     ],
     exampleParams: { addresses: "0xaaa...,0xbbb..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.account.transactions",
@@ -42,7 +40,6 @@ export const ACCOUNT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "endblock", type: "number", description: "End block number." },
     ],
     exampleParams: { address: "0x1234...", page: 1, offset: 25, sort: "desc" },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.account.tokenTransfers",
@@ -60,7 +57,6 @@ export const ACCOUNT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "endblock", type: "number", description: "End block number." },
     ],
     exampleParams: { address: "0x1234..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.account.nftTransfers",
@@ -78,7 +74,6 @@ export const ACCOUNT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "endblock", type: "number", description: "End block number." },
     ],
     exampleParams: { address: "0x1234..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.account.tokenBalance",
@@ -91,6 +86,5 @@ export const ACCOUNT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "contractAddress", type: "string", required: true, description: "ERC-20 token contract address." },
     ],
     exampleParams: { address: "0x1234...", contractAddress: "0xabcd..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
 ];

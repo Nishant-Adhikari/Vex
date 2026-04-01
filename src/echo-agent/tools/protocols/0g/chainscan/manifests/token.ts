@@ -11,6 +11,5 @@ export const TOKEN_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "contractAddress", type: "string", required: true, description: "ERC-20 token contract address." },
     ],
     exampleParams: { contractAddress: "0xabcd..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
 ];

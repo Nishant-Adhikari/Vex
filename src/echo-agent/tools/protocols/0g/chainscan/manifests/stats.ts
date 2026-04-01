@@ -16,7 +16,6 @@ export const STATS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "maxTimestamp", type: "number", description: "End timestamp filter (Unix seconds)." },
     ],
     exampleParams: { contract: "0xabcd...", limit: 30, sort: "desc" },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.stats.transfers",
@@ -33,7 +32,6 @@ export const STATS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "maxTimestamp", type: "number", description: "End timestamp filter (Unix seconds)." },
     ],
     exampleParams: { contract: "0xabcd...", limit: 30 },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.stats.participants",
@@ -50,7 +48,6 @@ export const STATS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "maxTimestamp", type: "number", description: "End timestamp filter (Unix seconds)." },
     ],
     exampleParams: { contract: "0xabcd...", limit: 30 },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.stats.topSenders",
@@ -62,7 +59,6 @@ export const STATS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "spanType", type: "string", description: "Time span: 24h, 3d, or 7d (default: 24h)." },
     ],
     exampleParams: { spanType: "24h" },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.stats.topReceivers",
@@ -74,7 +70,6 @@ export const STATS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "spanType", type: "string", description: "Time span: 24h, 3d, or 7d (default: 24h)." },
     ],
     exampleParams: { spanType: "24h" },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.stats.topParticipants",
@@ -86,6 +81,5 @@ export const STATS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "spanType", type: "string", description: "Time span: 24h, 3d, or 7d (default: 24h)." },
     ],
     exampleParams: { spanType: "24h" },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
 ];

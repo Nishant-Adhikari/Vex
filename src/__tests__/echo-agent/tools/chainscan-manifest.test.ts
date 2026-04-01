@@ -89,9 +89,9 @@ describe("chainscan manifest", () => {
 
   // ── requiresEnv ──────────────────────────────────────────────────
 
-  it("all tools require CHAINSCAN_API_KEY", () => {
+  it("no tools require env (chainscan free tier — API key optional)", () => {
     for (const tool of CHAINSCAN_TOOLS) {
-      expect(tool.requiresEnv).toBe("CHAINSCAN_API_KEY");
+      expect(tool.requiresEnv).toBeUndefined();
     }
   });
 

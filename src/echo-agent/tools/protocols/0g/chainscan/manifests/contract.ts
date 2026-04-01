@@ -11,7 +11,6 @@ export const CONTRACT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "address", type: "string", required: true, description: "Contract address (0x...)." },
     ],
     exampleParams: { address: "0xabcd..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.contract.source",
@@ -23,7 +22,6 @@ export const CONTRACT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "address", type: "string", required: true, description: "Contract address (0x...)." },
     ],
     exampleParams: { address: "0xabcd..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
   {
     toolId: "chainscan.contract.creation",
@@ -35,6 +33,5 @@ export const CONTRACT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "addresses", type: "string", required: true, description: "Comma-separated contract addresses (max 5)." },
     ],
     exampleParams: { addresses: "0xaaa...,0xbbb..." },
-    requiresEnv: "CHAINSCAN_API_KEY",
   },
 ];
