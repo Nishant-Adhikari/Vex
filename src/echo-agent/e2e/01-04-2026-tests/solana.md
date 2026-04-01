@@ -221,7 +221,25 @@ Audit trail intact (executions + capture items unchanged). Activity, positions, 
 
 **Root cause hypothesis**: SQL NUMERIC pro-rata computation (`cost_basis_usd * matched_qty / quantity_raw`) may produce marginally different precision when computed on a freshly inserted lot vs a replayed lot. The lot's `cost_basis_usd` is the same string, but the subquery execution context differs. This is a known edge case in SQL NUMERIC division — not a data corruption issue.
 
-**Severity**: Low. Realized PnL values are functionally identical. The hash mechanism is overly strict for NUMERIC precision. Consider rounding to a fixed decimal place before hashing, or accepting NUMERIC epsilon in comparison.
+### Root cause analysis
+
+The hash includes `sell_activity_id` — a FK pointing to `proj_activity.id`. After replay:
+
+1. `TRUNCATE proj_activity, proj_open_positions, proj_pnl_lots, proj_pnl_matches` runs **without** `RESTART IDENTITY`
+2. `proj_activity` SERIAL sequence is NOT reset — continues from where it left off
+3. Before replay: activity ids = 1, 2, 3, 4, ... → matches have `sell_activity_id = 2, 3`
+4. After replay: activity ids = 10, 11, 12, 13, ... → matches have `sell_activity_id = 11, 12`
+5. Hash includes `sell_activity_id` → different values → hash mismatch
+
+**The business data is identical.** Only the auto-incremented FK references differ because SERIAL sequences weren't reset.
+
+### Fix options (not applied — documented only)
+
+1. **`TRUNCATE ... RESTART IDENTITY CASCADE`** in `replay.ts` — resets sequences to 1, replay produces same ids. Clean fix but CASCADE may have side effects on other FK relationships.
+2. **Remove `sell_activity_id` from hash query** — hash only business fields (instrument_key, quantity_matched, cost_basis_usd, etc.), not internal FK references. Simpler but slightly weaker verification.
+3. **Use `execution_id` instead of `sell_activity_id`** in hash — execution ids come from `protocol_executions` (immutable, not truncated), so they survive replay unchanged.
+
+**Severity**: Low. Not data corruption — business values are identical. Only internal auto-increment references differ.
 
 ---
 
