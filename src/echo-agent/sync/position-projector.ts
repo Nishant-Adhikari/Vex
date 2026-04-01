@@ -249,7 +249,7 @@ async function projectSpotSell(
             cost_basis_native, proceeds_native, realized_pnl_native, benchmark_asset_key,
             namespace, chain)
          VALUES
-           ('matched', $1, $2, $3, $4, $5,
+           ('matched', $1, $2, $3, $4, $5::text,
             (SELECT cost_basis_usd * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
             $6::numeric * $5::numeric / $7::numeric,
             ($6::numeric * $5::numeric / $7::numeric) -
@@ -280,7 +280,7 @@ async function projectSpotSell(
             cost_basis_native, proceeds_native, realized_pnl_native, benchmark_asset_key,
             namespace, chain)
          VALUES
-           ('shortfall', $1, NULL, $2, $3, $4, NULL,
+           ('shortfall', $1, NULL, $2, $3, $4::text, NULL,
             $5::numeric * $4::numeric / $6::numeric,
             NULL,
             NULL,

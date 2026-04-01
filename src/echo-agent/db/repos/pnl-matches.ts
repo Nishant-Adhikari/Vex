@@ -64,7 +64,7 @@ export async function recordMatchFromLot(params: RecordMatchFromLotParams): Prom
        (match_kind, sell_activity_id, lot_id, instrument_key, wallet_address,
         quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd, namespace, chain)
      VALUES
-       ('matched', $1, $2, $3, $4, $5,
+       ('matched', $1, $2, $3, $4, $5::text,
         (SELECT cost_basis_usd * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
         $6::numeric * $5::numeric / $7::numeric,
         ($6::numeric * $5::numeric / $7::numeric) -
@@ -91,7 +91,7 @@ export async function recordShortfall(params: RecordShortfallParams): Promise<nu
        (match_kind, sell_activity_id, lot_id, instrument_key, wallet_address,
         quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd, namespace, chain)
      VALUES
-       ('shortfall', $1, NULL, $2, $3, $4, NULL,
+       ('shortfall', $1, NULL, $2, $3, $4::text, NULL,
         $5::numeric * $4::numeric / $6::numeric,
         NULL, $7, $8)
      RETURNING id`,
