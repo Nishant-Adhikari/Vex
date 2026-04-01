@@ -62,6 +62,9 @@ async function projectLifecyclePosition(activity: Activity): Promise<void> {
       entryPriceUsd: activity.unitPriceUsd ?? undefined,
       notionalUsd: activity.inputValueUsd ?? undefined,
       feeUsd: activity.feeValueUsd ?? undefined,
+      contracts: typeof (activity.meta as Record<string, unknown>)?.contracts === "string"
+        ? (activity.meta as Record<string, unknown>).contracts as string : undefined,
+      settlementAssetKey: activity.settlementAssetKey ?? undefined,
       status: "open",
       data: activity.meta,
     });
@@ -174,6 +177,8 @@ async function projectSpotLot(activity: Activity): Promise<void> {
       quantityRaw: quantity,
       costBasisUsd: activity.inputValueUsd ?? undefined,
       priceUsd: activity.unitPriceUsd ?? undefined,
+      costBasisNative: activity.inputValueNative ?? undefined,
+      benchmarkAssetKey: activity.benchmarkAssetKey ?? undefined,
       executionId: activity.executionId,
       activityId: activity.id,
       namespace: activity.namespace,
@@ -236,21 +241,29 @@ async function projectSpotSell(
         );
       }
 
-      // Inline match insert with SQL-side pro-rata (same transaction)
+      // Inline match insert with SQL-side pro-rata — USD + native (same transaction)
       await client.query(
         `INSERT INTO proj_pnl_matches
            (match_kind, sell_activity_id, lot_id, instrument_key, wallet_address,
-            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd, namespace, chain)
+            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd,
+            cost_basis_native, proceeds_native, realized_pnl_native, benchmark_asset_key,
+            namespace, chain)
          VALUES
            ('matched', $1, $2, $3, $4, $5,
             (SELECT cost_basis_usd * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
             $6::numeric * $5::numeric / $7::numeric,
             ($6::numeric * $5::numeric / $7::numeric) -
               (SELECT cost_basis_usd * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
-            $8, $9)`,
+            (SELECT cost_basis_native * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
+            $8::numeric * $5::numeric / $7::numeric,
+            ($8::numeric * $5::numeric / $7::numeric) -
+              (SELECT cost_basis_native * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
+            $9,
+            $10, $11)`,
         [
           activity.id, lotId, instrumentKey, walletAddress,
           toReduce.toString(), activity.outputValueUsd, quantityToSell.toString(),
+          activity.outputValueNative, activity.benchmarkAssetKey,
           activity.namespace, activity.chain,
         ],
       );
@@ -263,14 +276,22 @@ async function projectSpotSell(
       await client.query(
         `INSERT INTO proj_pnl_matches
            (match_kind, sell_activity_id, lot_id, instrument_key, wallet_address,
-            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd, namespace, chain)
+            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd,
+            cost_basis_native, proceeds_native, realized_pnl_native, benchmark_asset_key,
+            namespace, chain)
          VALUES
            ('shortfall', $1, NULL, $2, $3, $4, NULL,
             $5::numeric * $4::numeric / $6::numeric,
-            NULL, $7, $8)`,
+            NULL,
+            NULL,
+            $7::numeric * $4::numeric / $6::numeric,
+            NULL,
+            $8,
+            $9, $10)`,
         [
           activity.id, instrumentKey, walletAddress,
           remaining.toString(), activity.outputValueUsd, quantityToSell.toString(),
+          activity.outputValueNative, activity.benchmarkAssetKey,
           activity.namespace, activity.chain,
         ],
       );

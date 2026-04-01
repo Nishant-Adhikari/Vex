@@ -20,6 +20,10 @@ export interface PnlMatch {
   costBasisUsd: string | null;
   proceedsUsd: string | null;
   realizedPnlUsd: string | null;
+  costBasisNative: string | null;
+  proceedsNative: string | null;
+  realizedPnlNative: string | null;
+  benchmarkAssetKey: string | null;
   namespace: string;
   chain: string;
   matchedAt: string;
@@ -148,6 +152,10 @@ function mapRow(r: Record<string, unknown>): PnlMatch {
     costBasisUsd: r.cost_basis_usd != null ? String(r.cost_basis_usd) : null,
     proceedsUsd: r.proceeds_usd != null ? String(r.proceeds_usd) : null,
     realizedPnlUsd: r.realized_pnl_usd != null ? String(r.realized_pnl_usd) : null,
+    costBasisNative: r.cost_basis_native != null ? String(r.cost_basis_native) : null,
+    proceedsNative: r.proceeds_native != null ? String(r.proceeds_native) : null,
+    realizedPnlNative: r.realized_pnl_native != null ? String(r.realized_pnl_native) : null,
+    benchmarkAssetKey: r.benchmark_asset_key as string | null,
     namespace: r.namespace as string,
     chain: r.chain as string,
     matchedAt: r.matched_at as string,

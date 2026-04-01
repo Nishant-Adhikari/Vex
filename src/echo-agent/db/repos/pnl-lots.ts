@@ -16,6 +16,8 @@ export interface Lot {
   quantityRaw: string;
   costBasisUsd: string | null;
   priceUsd: string | null;
+  costBasisNative: string | null;
+  benchmarkAssetKey: string | null;
   remainingQuantityRaw: string;
   executionId: number | null;
   activityId: number | null;
@@ -33,6 +35,8 @@ export interface OpenLotRow {
   quantityRaw: string;
   costBasisUsd?: string;
   priceUsd?: string;
+  costBasisNative?: string;
+  benchmarkAssetKey?: string;
   executionId?: number;
   activityId?: number;
   namespace: string;
@@ -42,10 +46,11 @@ export interface OpenLotRow {
 /** Open a new lot (buy event). */
 export async function openLot(row: OpenLotRow): Promise<number> {
   const result = await queryOne<{ id: number }>(
-    `INSERT INTO proj_pnl_lots (instrument_key, wallet_address, side, quantity_raw, cost_basis_usd, price_usd, remaining_quantity_raw, execution_id, activity_id, namespace, chain)
-     VALUES ($1, $2, $3, $4, $5, $6, $4, $7, $8, $9, $10) RETURNING id`,
+    `INSERT INTO proj_pnl_lots (instrument_key, wallet_address, side, quantity_raw, cost_basis_usd, price_usd, cost_basis_native, benchmark_asset_key, remaining_quantity_raw, execution_id, activity_id, namespace, chain)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $4, $9, $10, $11, $12) RETURNING id`,
     [row.instrumentKey, row.walletAddress, row.side, row.quantityRaw,
      row.costBasisUsd ?? null, row.priceUsd ?? null,
+     row.costBasisNative ?? null, row.benchmarkAssetKey ?? null,
      row.executionId ?? null, row.activityId ?? null, row.namespace, row.chain],
   );
   return result?.id ?? 0;
@@ -115,6 +120,8 @@ function mapRow(r: Record<string, unknown>): Lot {
     quantityRaw: r.quantity_raw as string,
     costBasisUsd: r.cost_basis_usd != null ? String(r.cost_basis_usd) : null,
     priceUsd: r.price_usd != null ? String(r.price_usd) : null,
+    costBasisNative: r.cost_basis_native != null ? String(r.cost_basis_native) : null,
+    benchmarkAssetKey: r.benchmark_asset_key as string | null,
     remainingQuantityRaw: r.remaining_quantity_raw as string,
     executionId: r.execution_id as number | null,
     activityId: r.activity_id as number | null,

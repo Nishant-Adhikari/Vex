@@ -88,10 +88,32 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
     value: BigInt(buildResp.data.transactionValue),
   });
 
+  const inputIsNative = tokenIn.address.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase();
+  const outputIsNative = tokenOut.address.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase();
+  const hasNativeLeg = inputIsNative || outputIsNative;
+
+  // Benchmark: only when native token is one leg
+  const { resolveChainBenchmark } = await import("@echo-agent/sync/benchmark.js");
+  const benchmarkAssetKey = hasNativeLeg ? resolveChainBenchmark(slug) : undefined;
+
   return {
     success: true,
     output: JSON.stringify({ txHash, side, chain: slug, tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol, amountIn: buildResp.data.amountIn, amountOut: buildResp.data.amountOut, amountInUsd: buildResp.data.amountInUsd, amountOutUsd: buildResp.data.amountOutUsd }, null, 2),
-    data: { txHash, _tradeCapture: { type: "swap", chain: slug, status: "executed", inputToken: tokenIn.symbol, outputToken: tokenOut.symbol, inputTokenAddress: tokenIn.address, outputTokenAddress: tokenOut.address, inputAmount: buildResp.data.amountIn, outputAmount: buildResp.data.amountOut, signature: txHash, walletAddress: wallet.address, tradeSide: side, instrumentKey: `${slug}:${side === "buy" ? tokenOut.address : tokenIn.address}`, inputValueUsd: buildResp.data.amountInUsd, outputValueUsd: buildResp.data.amountOutUsd, feeValueUsd: buildResp.data.gasUsd, valuationSource: "kyberswap_exact", meta: { dex: "kyberswap", side } } },
+    data: { txHash, _tradeCapture: {
+      type: "swap", chain: slug, status: "executed",
+      inputToken: tokenIn.symbol, outputToken: tokenOut.symbol,
+      inputTokenAddress: tokenIn.address, outputTokenAddress: tokenOut.address,
+      inputAmount: buildResp.data.amountIn, outputAmount: buildResp.data.amountOut,
+      signature: txHash, walletAddress: wallet.address, tradeSide: side,
+      instrumentKey: `${slug}:${side === "buy" ? tokenOut.address : tokenIn.address}`,
+      inputValueUsd: buildResp.data.amountInUsd, outputValueUsd: buildResp.data.amountOutUsd,
+      feeValueUsd: buildResp.data.gasUsd, valuationSource: "kyberswap_exact",
+      benchmarkAssetKey: benchmarkAssetKey ?? undefined,
+      settlementAssetKey: side === "buy" ? tokenIn.symbol : tokenOut.symbol,
+      // Native values: not available — KyberSwap buildResp has raw atomic amounts, not human-unit native.
+      // Benchmark-native PnL for KyberSwap requires decimals lookup at capture time — deferred.
+      meta: { dex: "kyberswap", side },
+    } },
   };
 }
 

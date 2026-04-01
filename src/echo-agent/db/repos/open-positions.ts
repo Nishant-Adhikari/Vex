@@ -21,6 +21,8 @@ export interface Position {
   unrealizedPnlUsd: string | null;
   notionalUsd: string | null;
   feeUsd: string | null;
+  contracts: string | null;
+  settlementAssetKey: string | null;
   data: Record<string, unknown>;
   status: string;
   openedAt: string | null;
@@ -38,6 +40,8 @@ export interface UpsertPositionRow {
   entryPriceUsd?: string;
   notionalUsd?: string;
   feeUsd?: string;
+  contracts?: string;
+  settlementAssetKey?: string;
   data?: Record<string, unknown>;
   status?: string;
 }
@@ -45,28 +49,31 @@ export interface UpsertPositionRow {
 /** Upsert position — ON CONFLICT updates status and data. */
 export async function upsertPosition(row: UpsertPositionRow): Promise<void> {
   await execute(
-    `INSERT INTO proj_open_positions (namespace, position_type, chain, external_id, wallet_address, instrument_key, position_key, entry_price_usd, notional_usd, fee_usd, data, status, opened_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+    `INSERT INTO proj_open_positions (namespace, position_type, chain, external_id, wallet_address, instrument_key, position_key, entry_price_usd, notional_usd, fee_usd, contracts, settlement_asset_key, data, status, opened_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
      ON CONFLICT (namespace, position_type, external_id) WHERE external_id IS NOT NULL
-     DO UPDATE SET status = COALESCE($12, proj_open_positions.status),
-       data = COALESCE($11, proj_open_positions.data),
+     DO UPDATE SET status = COALESCE($14, proj_open_positions.status),
+       data = COALESCE($13, proj_open_positions.data),
        instrument_key = COALESCE($6, proj_open_positions.instrument_key),
        position_key = COALESCE($7, proj_open_positions.position_key),
        entry_price_usd = COALESCE($8, proj_open_positions.entry_price_usd),
        notional_usd = COALESCE($9, proj_open_positions.notional_usd),
        fee_usd = COALESCE($10, proj_open_positions.fee_usd),
+       contracts = COALESCE($11, proj_open_positions.contracts),
+       settlement_asset_key = COALESCE($12, proj_open_positions.settlement_asset_key),
        synced_at = NOW()`,
     [row.namespace, row.positionType, row.chain, row.externalId, row.walletAddress,
      row.instrumentKey ?? null, row.positionKey ?? null, row.entryPriceUsd ?? null,
      row.notionalUsd ?? null, row.feeUsd ?? null,
+     row.contracts ?? null, row.settlementAssetKey ?? null,
      JSON.stringify(row.data ?? {}), row.status ?? "open"],
   );
 }
 
-/** Close a position by marking status and closed_at. */
+/** Close a position by marking status and closed_at. Nulls out MTM fields. */
 export async function closePosition(namespace: string, positionType: string, externalId: string, status = "closed"): Promise<boolean> {
   const n = await execute(
-    "UPDATE proj_open_positions SET status = $4, closed_at = NOW(), synced_at = NOW() WHERE namespace = $1 AND position_type = $2 AND external_id = $3 AND status = 'open'",
+    "UPDATE proj_open_positions SET status = $4, closed_at = NOW(), current_value_usd = NULL, unrealized_pnl_usd = NULL, last_refresh_at = NULL, synced_at = NOW() WHERE namespace = $1 AND position_type = $2 AND external_id = $3 AND status = 'open'",
     [namespace, positionType, externalId, status],
   );
   return n > 0;
@@ -112,6 +119,8 @@ function mapRow(r: Record<string, unknown>): Position {
     unrealizedPnlUsd: r.unrealized_pnl_usd != null ? String(r.unrealized_pnl_usd) : null,
     notionalUsd: r.notional_usd != null ? String(r.notional_usd) : null,
     feeUsd: r.fee_usd != null ? String(r.fee_usd) : null,
+    contracts: r.contracts != null ? String(r.contracts) : null,
+    settlementAssetKey: r.settlement_asset_key as string | null,
     data: (r.data as Record<string, unknown>) ?? {},
     status: r.status as string,
     openedAt: r.opened_at as string | null,
