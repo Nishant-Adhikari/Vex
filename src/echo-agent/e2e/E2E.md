@@ -71,6 +71,7 @@ src/echo-agent/e2e/
     tools.ts               — 9 MCP tools (echo_* prefixed)
   scenarios/
     index.ts               — Scenario registry (ALL_SCENARIOS)
+    pnl-roundtrip.ts       — Spot buy → sell → verify PnL scenario
   TESTSCENARIO.md          — Runbook for Claude as manual debugger
   E2E.md                   — This file
 ```

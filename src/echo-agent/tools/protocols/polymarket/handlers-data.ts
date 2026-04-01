@@ -4,24 +4,8 @@
  */
 
 import { getPolyDataClient } from "@tools/polymarket/data/client.js";
-import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler } from "../types.js";
-
-function str(p: Record<string, unknown>, k: string): string {
-  const v = p[k]; return typeof v === "string" ? v : "";
-}
-function num(p: Record<string, unknown>, k: string): number | undefined {
-  const v = p[k]; return typeof v === "number" ? v : undefined;
-}
-function bool(p: Record<string, unknown>, k: string): boolean | undefined {
-  return typeof p[k] === "boolean" ? (p[k] as boolean) : undefined;
-}
-function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
-}
-function fail(msg: string): ToolResult {
-  return { success: false, output: msg };
-}
+import { str, num, bool, ok, fail } from "../handler-helpers.js";
 
 export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
   // ── User Data ─────────────────────────────────────────────────

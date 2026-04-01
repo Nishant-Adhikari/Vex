@@ -322,12 +322,17 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 - **DB migration**: `004_w4_full.sql`.
 - **Shared helpers**: `parseInstrumentKey()`, `resolveChainBenchmark()`.
 
-### Not yet implemented
-- **Khalani fallback valuation** for Jaine/Slop trade economics (needs timestamped/persisted price source)
-- **Perps MTM** (no active runtime shelf)
-- **LP PnL** (lifecycle only, no economics model)
-- **Read models for UI** — portfolio curve
-- **Transport layer** — HTTP/SSE server, routes, UI
+### Deferred — with explicit reasoning
+
+| Item | Why deferred | What would unblock it |
+|------|-------------|----------------------|
+| **Khalani fallback valuation** for Jaine/Slop | `proj_balances` has current price only, not historical execution-time price. Using it for trade valuation would create false audit trail and break replay determinism. | Timestamped price persistence at execution time, or dedicated historical price source. |
+| **Perps MTM** | No active perps runtime shelf in `src/tools`. Types exist but no execution/capture/mark pipeline. | Active perps handler with source mark price API. |
+| **LP PnL** | Current LP capture is lifecycle only (zap-in/out/migrate). Truthful LP PnL needs: token legs in/out, fee accrual, partial liquidity, impermanent loss. Separate mini-workstream. | Dedicated LP economics model beyond open/close. |
+| **Shared capture-enrichment boundary** | Valuation is handler-local by design — each handler knows its source API best. Centralizing would couple handlers to a shared abstraction without clear benefit today. | If multiple handlers need the same fallback logic. |
+| **Integration-grade Postgres tests** for FIFO/replay | Current tests mock DB. Real Postgres tests need Docker fixture in CI. E2E harness exists but is manual-first. | CI Docker Postgres fixture or test-level DB connection. |
+| **Read models for UI** | Backend truth layer complete. UI presentation deferred. | Transport/UI workstream. |
+| **Transport layer** | HTTP/SSE server, routes — separate scope. | Next workstream after echo-agent closure. |
 
 ---
 
@@ -362,7 +367,7 @@ JUPITER_API_KEY=...                    # all solana tools (20 tools)
 ## Tests
 
 ```bash
-npx vitest run src/__tests__/echo-agent/    # 64 files, 1336 tests
+npx vitest run src/__tests__/echo-agent/    # 68 files, 1400+ tests
 pnpm tsc --noEmit                           # zero type errors
 ```
 
@@ -370,8 +375,8 @@ pnpm tsc --noEmit                           # zero type errors
 |----------|-------|-------|---------------|
 | Inference | 6 | 83 | Config validation, SubagentConfig, resilience, registry, types, cost |
 | Dispatcher | 1 | 28 | Routing, protocol discovery, all internal tools, no stubs, approval |
-| Internal handlers | 7 | 119 | web, documents, memory, schedule, subagent (engine wire + race guard), mission_stop (engineSignal), portfolio_inspect (6 views) |
-| Sync pipeline | 7 | 59 | balance-sync, worker, seed, runtime-capture, activity-populator, position-projector, hardening |
+| Internal handlers | 7 | 140+ | web, documents, memory, schedule, subagent (engine wire + race guard), mission_stop (engineSignal), portfolio_inspect (14 views) |
+| Sync pipeline | 10 | 120+ | balance-sync, worker, seed, runtime-capture, activity-populator, position-projector, hardening, capture-contract, instrument-key, mtm |
 | Protocol manifests | 10 | 300+ | Tool counts, mutating flags, required params, namespace, ENV gating |
 | Protocol handlers | 8 | 300+ | Handler coverage, param validation, read-only execution |
 | Registry + ENV | 2 | 50+ | Tool lookup, OpenAI format, requiresEnv filtering |

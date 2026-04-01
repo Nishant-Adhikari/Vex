@@ -7,13 +7,16 @@ Balance sync pipeline: Khalani API → `proj_balances` → `proj_portfolio_snaps
 ```
 sync/
   index.ts               — Public API: initSync(), syncTick()
-  balance-sync.ts        — Khalani → proj_balances → snapshot
+  balance-sync.ts        — Khalani → proj_balances → snapshot → MTM refresh
   activity-populator.ts  — _tradeCapture → proj_activity (from capture-pipeline)
-  position-projector.ts  — activity → proj_open_positions + proj_pnl_lots (FIFO)
+  position-projector.ts  — activity → proj_open_positions + proj_pnl_lots + proj_pnl_matches (transactional FIFO)
+  mtm.ts                 — Mark-to-market: Jupiter Prediction + Polymarket exit prices
   replay.ts              — One-time projection correction from immutable audit trail
-  worker.ts              — Claims pending sync runs, deduplicates, dispatches
+  worker.ts              — Claims pending sync runs, deduplicates, dispatches → MTM refresh
   seed.ts                — Seeds default protocol_sync_jobs
   chains.ts              — Canonical chain hint resolution
+  benchmark.ts           — Chain → benchmark asset key resolution (SOL, ETH, 0G, etc.)
+  instrument-key.ts      — parseInstrumentKey() typed helper for all instrumentKey patterns
 ```
 
 ## Data flow

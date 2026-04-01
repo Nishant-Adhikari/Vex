@@ -46,23 +46,8 @@ import { classifySolanaSwap } from "@tools/solana-ecosystem/shared/swap-classify
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import { requireSolanaWallet } from "@tools/wallet/multi-auth.js";
 
-import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler } from "../types.js";
-
-// ── Helpers ──────────────────────────────────────────────────────
-
-function str(p: Record<string, unknown>, k: string): string {
-  const v = p[k]; return typeof v === "string" ? v : "";
-}
-function num(p: Record<string, unknown>, k: string): number | undefined {
-  const v = p[k]; return typeof v === "number" ? v : undefined;
-}
-function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
-}
-function fail(msg: string): ToolResult {
-  return { success: false, output: msg };
-}
+import { str, num, ok, fail } from "../handler-helpers.js";
 function walletAddress(p: Record<string, unknown>): string {
   const explicit = str(p, "address");
   if (explicit) return explicit;

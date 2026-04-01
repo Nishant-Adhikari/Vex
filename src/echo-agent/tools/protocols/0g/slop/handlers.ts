@@ -33,21 +33,7 @@ import {
 } from "@commands/slop/helpers.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler } from "../../types.js";
-
-// ── Helpers ──────────────────────────────────────────────────────
-
-function str(p: Record<string, unknown>, k: string): string {
-  const v = p[k]; return typeof v === "string" ? v : "";
-}
-function num(p: Record<string, unknown>, k: string): number | undefined {
-  const v = p[k]; return typeof v === "number" ? v : undefined;
-}
-function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
-}
-function fail(msg: string): ToolResult {
-  return { success: false, output: msg };
-}
+import { str, num, ok, fail } from "../../handler-helpers.js";
 function requireTokenAddr(p: Record<string, unknown>): Address | ToolResult {
   const raw = str(p, "token");
   if (!raw) return fail("Missing required: token");

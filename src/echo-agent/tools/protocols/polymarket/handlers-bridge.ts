@@ -4,18 +4,8 @@
  */
 
 import { getPolyBridgeClient } from "@tools/polymarket/bridge/client.js";
-import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler } from "../types.js";
-
-function str(p: Record<string, unknown>, k: string): string {
-  const v = p[k]; return typeof v === "string" ? v : "";
-}
-function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
-}
-function fail(msg: string): ToolResult {
-  return { success: false, output: msg };
-}
+import { str, ok, fail } from "../handler-helpers.js";
 
 export const BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
   "polymarket.bridge.assets": async () => {

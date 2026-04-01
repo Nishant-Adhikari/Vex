@@ -25,12 +25,7 @@ import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../types.js";
 import logger from "@utils/logger.js";
 
-// ── Helper ───────────────────────────────────────────────────────
-
-function str(params: Record<string, unknown>, key: string): string {
-  const v = params[key];
-  return typeof v === "string" ? v : "";
-}
+import { str } from "../handler-helpers.js";
 
 async function parseChainIds(raw: string | undefined): Promise<number[] | undefined> {
   if (!raw) return undefined;

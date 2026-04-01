@@ -13,23 +13,8 @@ import { USDC_E_DECIMALS } from "@tools/polymarket/constants.js";
 import { requireEvmWallet } from "@tools/wallet/multi-auth.js";
 import { parseClobTokenIds } from "@commands/polymarket/helpers.js";
 import type { Hex } from "viem";
-import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler } from "../types.js";
-
-// ── Helpers ──────────────────────────────────────────────────────
-
-function str(p: Record<string, unknown>, k: string): string {
-  const v = p[k]; return typeof v === "string" ? v : "";
-}
-function num(p: Record<string, unknown>, k: string): number | undefined {
-  const v = p[k]; return typeof v === "number" ? v : undefined;
-}
-function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
-}
-function fail(msg: string): ToolResult {
-  return { success: false, output: msg };
-}
+import { str, num, ok, fail } from "../handler-helpers.js";
 function usdcToBaseUnits(amount: number): string {
   return Math.round(amount * 10 ** USDC_E_DECIMALS).toString();
 }

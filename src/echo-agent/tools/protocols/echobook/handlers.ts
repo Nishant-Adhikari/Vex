@@ -15,23 +15,8 @@ import { listSubmolts, getSubmolt, joinSubmolt, leaveSubmolt, getSubmoltPosts } 
 import { getNotifications, getUnreadCount, markRead } from "@tools/echobook/notifications.js";
 import { getMyPoints, getLeaderboard, getPointsEvents } from "@tools/echobook/points.js";
 import { submitTradeProof, getTradeProof } from "@tools/echobook/tradeProof.js";
-import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler } from "../types.js";
-
-// ── Helpers ──────────────────────────────────────────────────────
-
-function str(p: Record<string, unknown>, k: string): string {
-  const v = p[k]; return typeof v === "string" ? v : "";
-}
-function num(p: Record<string, unknown>, k: string): number | undefined {
-  const v = p[k]; return typeof v === "number" ? v : undefined;
-}
-function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
-}
-function fail(msg: string): ToolResult {
-  return { success: false, output: msg };
-}
+import { str, num, ok, fail } from "../handler-helpers.js";
 
 // ── Handler map ──────────────────────────────────────────────────
 
