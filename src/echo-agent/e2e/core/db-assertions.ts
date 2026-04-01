@@ -77,7 +77,8 @@ export async function getPositionByKey(positionKey: string): Promise<Record<stri
 }
 
 export async function countOpenPositions(): Promise<number> {
-  const row = await queryOne<{ count: string }>("SELECT COUNT(*) as count FROM proj_open_positions WHERE status = 'open'", []);
+  // Count ALL rows (not just status='open') — preview smoke must detect writes to closed/cancelled rows too
+  const row = await queryOne<{ count: string }>("SELECT COUNT(*) as count FROM proj_open_positions", []);
   return parseInt(row?.count ?? "0", 10);
 }
 

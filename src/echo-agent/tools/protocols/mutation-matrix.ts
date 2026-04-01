@@ -27,9 +27,9 @@ export interface MutationContract {
   /** Named exceptions to requiredFields (e.g. "claim: no instrumentKey"). */
   exceptions?: readonly string[];
   /**
-   * Handler's USD valuation capability. Drives regression tests (soft contract, not runtime gate).
-   * - "exact": always emits exact USD from source API (inputValueUsd/outputValueUsd/valuationSource).
-   * - "conditional": emits exact USD only on certain paths (e.g. Polymarket matched vs unmatched).
+   * Handler's USD valuation capability. Runtime hard gate in capture-validator.ts.
+   * - "exact": must emit inputValueUsd/outputValueUsd + valuationSource. Capture rejected without them.
+   * - "conditional": may emit exact USD on certain paths (e.g. Polymarket matched). No guard on unmatched.
    * - "none": no USD from source — honest null / valuationSource: "none".
    */
   valuationExpected: "exact" | "conditional" | "none";

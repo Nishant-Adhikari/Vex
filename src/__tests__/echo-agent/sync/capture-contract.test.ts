@@ -142,11 +142,12 @@ describe("capture contract — contract invariants", () => {
 // ── Capture validator tests ────────────────────────────────────
 
 describe("capture contract — runtime validator", () => {
-  it("validates pnl_spot with all required fields", () => {
+  it("validates pnl_spot with all required fields + valuation", () => {
     const valid = validateCaptureContract("solana.swap.execute", {
       type: "swap", walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
+      inputValueUsd: "5.00", outputValueUsd: "4.90", valuationSource: "jupiter_exact",
     });
     expect(valid).toBe(true);
   });
@@ -173,9 +174,10 @@ describe("capture contract — runtime validator", () => {
     expect(validateCaptureContract("unknown.tool", null)).toBe(true);
   });
 
-  it("solana.predict.claim passes without instrumentKey (exception)", () => {
+  it("solana.predict.claim passes without instrumentKey (exception) with valuation", () => {
     const valid = validateCaptureContract("solana.predict.claim", {
       type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "PK1",
+      outputValueUsd: "3.50", valuationSource: "prediction_exact",
     });
     expect(valid).toBe(true);
   });
@@ -225,6 +227,132 @@ describe("capture contract — runtime validator", () => {
     expect(validateCaptureContract("khalani.bridge", {
       type: "bridge", status: "pending", walletAddress: "0x123",
     })).toBe(true);
+  });
+});
+
+// ── Valuation expectations (W4A regression guard) ──────────────
+
+describe("capture contract — valuation expectations", () => {
+  it("exact tools have valuationExpected: 'exact'", () => {
+    const exactTools = [
+      "solana.swap.execute",
+      "kyberswap.swap.buy", "kyberswap.swap.sell",
+      "solana.predict.buy", "solana.predict.sell", "solana.predict.claim", "solana.predict.closeAll",
+    ];
+    for (const toolId of exactTools) {
+      const c = MUTATION_MATRIX.get(toolId)!;
+      expect(c.valuationExpected, `${toolId} should be "exact"`).toBe("exact");
+    }
+  });
+
+  it("conditional tools have valuationExpected: 'conditional'", () => {
+    for (const toolId of ["polymarket.clob.buy", "polymarket.clob.sell"]) {
+      const c = MUTATION_MATRIX.get(toolId)!;
+      expect(c.valuationExpected, `${toolId} should be "conditional"`).toBe("conditional");
+    }
+  });
+
+  it("none tools have valuationExpected: 'none'", () => {
+    const noneSpotTools = ["jaine.swap.buy", "jaine.swap.sell", "slop.trade.buy", "slop.trade.sell"];
+    for (const toolId of noneSpotTools) {
+      const c = MUTATION_MATRIX.get(toolId)!;
+      expect(c.valuationExpected, `${toolId} should be "none"`).toBe("none");
+    }
+  });
+
+  it("all audit tools have valuationExpected: 'none'", () => {
+    const auditTools = getToolsByRole("audit");
+    for (const [toolId, c] of auditTools) {
+      expect(c.valuationExpected, `${toolId} should be "none"`).toBe("none");
+    }
+  });
+
+  it("all utility tools have valuationExpected: 'none'", () => {
+    const utilityTools = getToolsByRole("utility");
+    for (const [toolId, c] of utilityTools) {
+      expect(c.valuationExpected, `${toolId} should be "none"`).toBe("none");
+    }
+  });
+
+  it("all projection tools have valuationExpected: 'none'", () => {
+    const projectionTools = getToolsByRole("projection");
+    for (const [toolId, c] of projectionTools) {
+      expect(c.valuationExpected, `${toolId} should be "none"`).toBe("none");
+    }
+  });
+
+  it("every matrix entry has valuationExpected defined", () => {
+    for (const [toolId, c] of MUTATION_MATRIX) {
+      expect(["exact", "conditional", "none"]).toContain(c.valuationExpected);
+    }
+  });
+
+  // ── Content-level regression guard: validate capture economics ──
+
+  it("exact capture with full valuation passes validator", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x", tradeSide: "buy",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+      inputValueUsd: "5.00", outputValueUsd: "4.90", valuationSource: "jupiter_exact",
+    });
+    expect(valid).toBe(true);
+  });
+
+  it("exact capture WITHOUT USD fields is REJECTED (hard fail)", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x", tradeSide: "buy",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+      // No inputValueUsd, no outputValueUsd — handler regression
+    });
+    expect(valid).toBe(false);
+  });
+
+  it("exact capture WITHOUT valuationSource is REJECTED", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x", tradeSide: "buy",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+      inputValueUsd: "5.00", // has USD but no valuationSource
+    });
+    expect(valid).toBe(false);
+  });
+
+  it("exact capture with valuationSource 'none' is REJECTED", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x", tradeSide: "buy",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
+      inputAmount: "100", outputAmount: "200",
+      inputValueUsd: "5.00", valuationSource: "none",
+    });
+    expect(valid).toBe(false);
+  });
+
+  it("exact capture with only outputValueUsd passes (e.g. predict.claim)", () => {
+    const valid = validateCaptureContract("solana.predict.claim", {
+      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "pk",
+      outputValueUsd: "3.50", valuationSource: "prediction_exact",
+    });
+    expect(valid).toBe(true);
+  });
+
+  it("conditional capture with polymarket_exact on matched path", () => {
+    const valid = validateCaptureContract("polymarket.clob.buy", {
+      type: "prediction", walletAddress: "0x", status: "executed",
+      positionKey: "pk", instrumentKey: "ik",
+      inputValueUsd: "2.00", unitPriceUsd: "0.65", valuationSource: "polymarket_exact",
+    });
+    expect(valid).toBe(true);
+  });
+
+  it("conditional capture with valuationSource 'none' on unmatched path passes (no exact guard)", () => {
+    const valid = validateCaptureContract("polymarket.clob.buy", {
+      type: "order", walletAddress: "0x", status: "open",
+      positionKey: "pk", instrumentKey: "ik",
+      valuationSource: "none",
+    });
+    expect(valid).toBe(true);
   });
 });
 

@@ -19,7 +19,7 @@ You (Claude) are connected to a local MCP server that exposes Echo Agent's tool 
 | `echo_execute` | Execute a protocol tool | **Main tool for manual tests** |
 | `echo_wallet_address` | Get wallet address per chain | Verify wallet setup |
 | `echo_wallet_balances` | Check multi-chain balances | Before/after each flow (source of truth) |
-| `echo_portfolio_inspect` | DB inspection: positions, activity, executions | Quick overview. **No lots.** Balances/snapshots not authoritative without fullBalanceSync. |
+| `echo_portfolio_inspect` | DB inspection: positions, activity, executions, lots, profits | Quick overview including lots and profits. Balances/snapshots not authoritative without fullBalanceSync. |
 | `echo_inspect_pipeline` | Read-only query on pipeline tables | Detailed inspection per table |
 | `echo_replay_verify` | Replay projections and compare | After multi-namespace tests |
 | `echo_discovery_smoke` | Automated discovery check | Verify all namespaces are active |
@@ -57,10 +57,12 @@ For each: execute buy → inspect DB → execute sell → inspect FIFO close
 - `solana.swap.execute` (classifySolanaSwap deterministic)
 
 **DB check after buy:**
-- `echo_inspect_pipeline proj_pnl_lots` — open lot with quantityRaw > 0
+- `echo_inspect_pipeline proj_pnl_lots` — open lot with quantityRaw > 0, cost_basis_usd non-null (exact handlers)
+- `echo_portfolio_inspect lots` — verify economics present
 
 **DB check after sell:**
 - `echo_inspect_pipeline proj_pnl_lots` — lot status partial/closed
+- `echo_inspect_pipeline proj_pnl_matches` — match_kind='matched', realized_pnl_usd non-null (exact handlers), shortfall if sell > inventory
 
 ### 3. Prediction Flows (pnl_prediction)
 - `solana.predict.buy` → `echo_inspect_pipeline proj_open_positions` → `solana.predict.sell`
@@ -104,7 +106,8 @@ After each mutating execution, check:
 | `protocol_capture_items` | Item count matches fanOut (1 for single, N for batch) | `echo_inspect_pipeline protocol_capture_items` |
 | `proj_activity` | productType, tradeSide, instrumentKey, positionKey correct | `echo_inspect_pipeline proj_activity` |
 | `proj_open_positions` | Lifecycle: open/closed/cancelled (prediction, order, lp) | `echo_inspect_pipeline proj_open_positions` |
-| `proj_pnl_lots` | Lot opened on buy, FIFO reduced on sell (spot only) | `echo_inspect_pipeline proj_pnl_lots` |
+| `proj_pnl_lots` | Lot opened on buy with cost_basis_usd, FIFO reduced on sell | `echo_inspect_pipeline proj_pnl_lots` |
+| `proj_pnl_matches` | Match with realized_pnl_usd on sell, shortfall evidence if sell > inventory | `echo_inspect_pipeline proj_pnl_matches` |
 
 ## Report Format
 

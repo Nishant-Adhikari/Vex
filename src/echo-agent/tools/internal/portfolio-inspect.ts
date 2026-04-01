@@ -39,7 +39,7 @@ export async function handlePortfolioInspect(
     case "snapshots": return inspectSnapshots();
     case "summary": return inspectSummary();
     case "lots": return inspectLots(str(params, "instrumentKey") || undefined, namespace, str(params, "status") || undefined);
-    case "profits": return inspectProfits(str(params, "walletAddress") || undefined, namespace);
+    case "profits": return inspectProfits(str(params, "walletAddress") || undefined, namespace, str(params, "instrumentKey") || undefined);
     case "closed_positions": return inspectClosedPositions(namespace);
     case "non_trading_history": return inspectNonTradingHistory(namespace, limit);
     default: return fail(`Unknown view: ${view}`);
@@ -231,7 +231,7 @@ async function inspectLots(instrumentKey?: string, namespace?: string, status?: 
   });
 }
 
-async function inspectProfits(walletAddress?: string, namespace?: string): Promise<ToolResult> {
+async function inspectProfits(walletAddress?: string, namespace?: string, instrumentKey?: string): Promise<ToolResult> {
   const { query } = await import("@echo-agent/db/client.js");
 
   const conditions: string[] = [];
@@ -240,6 +240,7 @@ async function inspectProfits(walletAddress?: string, namespace?: string): Promi
 
   if (walletAddress) { conditions.push(`wallet_address = $${idx++}`); params.push(walletAddress); }
   if (namespace) { conditions.push(`namespace = $${idx++}`); params.push(namespace); }
+  if (instrumentKey) { conditions.push(`instrument_key = $${idx++}`); params.push(instrumentKey); }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 

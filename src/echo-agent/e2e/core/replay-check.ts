@@ -26,14 +26,16 @@ interface ProjectionHashes {
 async function hashProjections(): Promise<ProjectionHashes> {
   const activityRows = await query(
     `SELECT execution_id, capture_item_id, namespace, activity_type, product_type,
-            trade_side, chain, wallet_address, instrument_key, position_key, capture_status
+            trade_side, chain, wallet_address, instrument_key, position_key, capture_status,
+            input_value_usd, output_value_usd, fee_value_usd, unit_price_usd, valuation_source
      FROM proj_activity ORDER BY execution_id, id`,
     [],
   );
 
   const positionRows = await query(
     `SELECT namespace, position_type, chain, wallet_address,
-            instrument_key, position_key, status, external_id
+            instrument_key, position_key, status, external_id,
+            entry_price_usd, notional_usd, fee_usd
      FROM proj_open_positions ORDER BY namespace, position_type, external_id`,
     [],
   );

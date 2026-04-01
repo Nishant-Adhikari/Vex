@@ -113,7 +113,7 @@ Canonical source-of-truth: `protocols/mutation-matrix.ts` (`MUTATION_MATRIX`). I
 
 Each mutating tool has a `MutationContract`: `role`, `capture`, `expectedType`, `previewSupport`, `fanOut`, `requiredFields`, `valuationExpected`.
 
-`valuationExpected` (W4A): `"exact"` (always emits USD from source), `"conditional"` (path-dependent, e.g. Polymarket matched vs unmatched), `"none"` (no source USD — honest null). Soft contract for regression tests, not a runtime gate.
+`valuationExpected` (W4A): `"exact"` (always emits USD from source), `"conditional"` (path-dependent, e.g. Polymarket matched vs unmatched), `"none"` (no source USD — honest null). **Runtime hard gate** — `capture-validator.ts` rejects `exact` captures missing `inputValueUsd`/`outputValueUsd` or `valuationSource`. Projection is blocked on validation failure.
 
 - `pnl_spot` (7 tools): tradeSide + instrumentKey + atomic amounts required. `classifySolanaSwap()` in `src/tools/solana-ecosystem/shared/swap-classify.ts` for deterministic Solana classification.
 - `pnl_prediction`: positionKey + instrumentKey required. Polymarket buy/sell are dual-type (`["prediction","order"]`): matched → prediction position lifecycle, live → order lifecycle.

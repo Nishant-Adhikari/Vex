@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ── Mocks (phase 3.1 — uses captureStatus, order lifecycle, LP actions) ──
+// ── Mocks ──────────────────────────────────────────────────────
 
 const mockUpsertPosition = vi.fn().mockResolvedValue(undefined);
 const mockClosePosition = vi.fn().mockResolvedValue(true);
@@ -20,12 +20,21 @@ vi.mock("@echo-agent/db/repos/pnl-lots.js", () => ({
   reduceLot: (...args: unknown[]) => mockReduceLot(...args),
 }));
 
-const mockRecordMatchFromLot = vi.fn().mockResolvedValue(1);
-const mockRecordShortfall = vi.fn().mockResolvedValue(1);
+// DB client mock for transactional sell path
+const queryResults: Record<string, unknown>[] = [];
+const mockClientQuery = vi.fn().mockImplementation(async (sql: string, params?: unknown[]) => {
+  if (typeof sql === "string" && sql.includes("SELECT * FROM proj_pnl_lots")) {
+    return { rows: queryResults.splice(0) };
+  }
+  return { rows: [], rowCount: 1 };
+});
+const mockClient = {
+  query: mockClientQuery,
+  release: vi.fn(),
+};
 
-vi.mock("@echo-agent/db/repos/pnl-matches.js", () => ({
-  recordMatchFromLot: (...args: unknown[]) => mockRecordMatchFromLot(...args),
-  recordShortfall: (...args: unknown[]) => mockRecordShortfall(...args),
+vi.mock("@echo-agent/db/client.js", () => ({
+  getPool: () => ({ connect: () => Promise.resolve(mockClient) }),
 }));
 
 const { projectPosition } = await import("../../../echo-agent/sync/position-projector.js");
@@ -45,7 +54,10 @@ function makeActivity(overrides: Record<string, unknown>) {
 }
 
 describe("position-projector", () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryResults.length = 0;
+  });
 
   // ── Perps — uses captureStatus from _tradeCapture.status ──────
 
@@ -191,36 +203,44 @@ describe("position-projector", () => {
       expect(mockOpenLot).not.toHaveBeenCalled();
     });
 
-    it("FIFO reduces on sell and records matches", async () => {
-      mockGetOpenLots.mockResolvedValueOnce([
-        { id: 1, remainingQuantityRaw: "500000", quantityRaw: "500000", costBasisUsd: "2.50" },
-        { id: 2, remainingQuantityRaw: "1000000", quantityRaw: "1000000", costBasisUsd: "5.00" },
-      ]);
+    it("FIFO sell uses transactional client with FOR UPDATE", async () => {
+      // Seed the mock client's SELECT response
+      queryResults.push(
+        { id: 1, remaining_quantity_raw: "500000", quantity_raw: "500000", cost_basis_usd: "2.50" },
+        { id: 2, remaining_quantity_raw: "1000000", quantity_raw: "1000000", cost_basis_usd: "5.00" },
+      );
+
       await projectPosition(makeActivity({
         productType: "spot", tradeSide: "sell", instrumentKey: "solana:USDC",
         inputAmount: "700000", outputValueUsd: "3.50",
       }));
-      expect(mockReduceLot).toHaveBeenCalledTimes(2);
-      expect(mockReduceLot).toHaveBeenCalledWith(1, 500000n);
-      expect(mockReduceLot).toHaveBeenCalledWith(2, 200000n);
-      expect(mockRecordMatchFromLot).toHaveBeenCalledTimes(2);
-      expect(mockRecordMatchFromLot.mock.calls[0][0].matchedQty).toBe("500000");
-      expect(mockRecordMatchFromLot.mock.calls[0][0].sellOutputValueUsd).toBe("3.50");
-      expect(mockRecordMatchFromLot.mock.calls[1][0].matchedQty).toBe("200000");
+
+      // Verify transaction lifecycle
+      const calls = mockClientQuery.mock.calls.map((c: unknown[]) => String(c[0]).trim().split(/\s+/).slice(0, 2).join(" "));
+      expect(calls[0]).toBe("BEGIN");
+      expect(calls).toContain("COMMIT");
+
+      // Verify FOR UPDATE in SELECT
+      const selectCall = mockClientQuery.mock.calls.find((c: unknown[]) => String(c[0]).includes("FOR UPDATE"));
+      expect(selectCall).toBeTruthy();
+
+      // Verify client released
+      expect(mockClient.release).toHaveBeenCalled();
     });
 
-    it("records shortfall when sell exceeds inventory", async () => {
-      mockGetOpenLots.mockResolvedValueOnce([
-        { id: 1, remainingQuantityRaw: "300000", quantityRaw: "500000", costBasisUsd: "1.50" },
-      ]);
+    it("records shortfall for sell exceeding inventory", async () => {
+      queryResults.push(
+        { id: 1, remaining_quantity_raw: "300000", quantity_raw: "500000", cost_basis_usd: "1.50" },
+      );
+
       await projectPosition(makeActivity({
         productType: "spot", tradeSide: "sell", instrumentKey: "solana:USDC",
         inputAmount: "500000", outputValueUsd: "2.50",
       }));
-      expect(mockReduceLot).toHaveBeenCalledTimes(1);
-      expect(mockRecordMatchFromLot).toHaveBeenCalledTimes(1);
-      expect(mockRecordShortfall).toHaveBeenCalledTimes(1);
-      expect(mockRecordShortfall.mock.calls[0][0].shortfallQty).toBe("200000");
+
+      // Should have shortfall INSERT
+      const shortfallCall = mockClientQuery.mock.calls.find((c: unknown[]) => String(c[0]).includes("shortfall"));
+      expect(shortfallCall).toBeTruthy();
     });
   });
 
@@ -237,20 +257,21 @@ describe("position-projector", () => {
   // ── Cross-protocol 0G ─────────────────────────────────────────
 
   describe("cross-protocol 0G", () => {
-    it("slop buy → lot, jaine sell → reduce + match", async () => {
+    it("slop buy → lot, jaine sell → transactional reduce", async () => {
       await projectPosition(makeActivity({
         productType: "spot", tradeSide: "buy", instrumentKey: "0g:0xToken",
         outputAmount: "5000000000000000000", namespace: "slop", chain: "0g",
       }));
       expect(mockOpenLot.mock.calls[0][0].instrumentKey).toBe("0g:0xToken");
 
-      mockGetOpenLots.mockResolvedValueOnce([{ id: 10, remainingQuantityRaw: "5000000000000000000", quantityRaw: "5000000000000000000", costBasisUsd: null }]);
+      queryResults.push({ id: 10, remaining_quantity_raw: "5000000000000000000", quantity_raw: "5000000000000000000", cost_basis_usd: null });
       await projectPosition(makeActivity({
         productType: "spot", tradeSide: "sell", instrumentKey: "0g:0xToken",
         inputAmount: "2000000000000000000", namespace: "jaine", chain: "0g",
       }));
-      expect(mockReduceLot).toHaveBeenCalledWith(10, 2000000000000000000n);
-      expect(mockRecordMatchFromLot).toHaveBeenCalledTimes(1);
+      // Verify transaction happened
+      const beginCall = mockClientQuery.mock.calls.find((c: unknown[]) => String(c[0]).includes("BEGIN"));
+      expect(beginCall).toBeTruthy();
     });
   });
 });

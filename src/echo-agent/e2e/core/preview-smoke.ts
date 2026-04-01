@@ -25,7 +25,7 @@ const PREVIEW_SMOKE_TOOLS: { toolId: string; params: Record<string, unknown> }[]
 ];
 
 export interface PreviewSmokeResult {
-  /** True if zero writes across all 5 pipeline tables */
+  /** True if zero writes across all 6 pipeline tables */
   pass: boolean;
   before: PipelineSnapshot;
   after: PipelineSnapshot;
@@ -70,7 +70,8 @@ export async function runPreviewSmoke(): Promise<PreviewSmokeResult> {
     && before.captureItems === after.captureItems
     && before.activities === after.activities
     && before.openPositions === after.openPositions
-    && before.lots === after.lots;
+    && before.lots === after.lots
+    && before.matches === after.matches;
 
   logger.info("e2e.preview_smoke.result", { pass, before, after });
 

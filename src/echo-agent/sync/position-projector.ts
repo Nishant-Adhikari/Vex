@@ -14,7 +14,6 @@
 
 import * as openPositionsRepo from "@echo-agent/db/repos/open-positions.js";
 import * as pnlLotsRepo from "@echo-agent/db/repos/pnl-lots.js";
-import * as pnlMatchesRepo from "@echo-agent/db/repos/pnl-matches.js";
 import type { Activity } from "@echo-agent/db/repos/activity.js";
 import logger from "@utils/logger.js";
 
@@ -186,41 +185,95 @@ async function projectSpotLot(activity: Activity): Promise<void> {
     const quantityToSell = BigInt(activity.inputAmount ?? "0");
     if (quantityToSell <= 0n) return;
 
-    const openLots = await pnlLotsRepo.getOpenLots(instrumentKey, walletAddress);
+    await projectSpotSell(activity, instrumentKey, walletAddress, quantityToSell);
+    logger.debug("sync.lot.reduced", { instrumentKey, quantitySold: quantityToSell.toString() });
+  }
+}
+
+// ── Transactional spot sell — FIFO reduce + match ledger ─────────
+
+async function projectSpotSell(
+  activity: Activity,
+  instrumentKey: string,
+  walletAddress: string,
+  quantityToSell: bigint,
+): Promise<void> {
+  const { getPool } = await import("@echo-agent/db/client.js");
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // FOR UPDATE locks lots against concurrent sell races
+    const lotResult = await client.query<Record<string, unknown>>(
+      `SELECT * FROM proj_pnl_lots
+       WHERE instrument_key = $1 AND wallet_address = $2 AND status IN ('open', 'partial')
+       ORDER BY opened_at ASC
+       FOR UPDATE`,
+      [instrumentKey, walletAddress],
+    );
+
     let remaining = quantityToSell;
 
-    for (const lot of openLots) {
+    for (const lot of lotResult.rows) {
       if (remaining <= 0n) break;
-      const lotRemaining = BigInt(lot.remainingQuantityRaw);
+      const lotId = lot.id as number;
+      const lotRemaining = BigInt(lot.remaining_quantity_raw as string);
       const toReduce = remaining < lotRemaining ? remaining : lotRemaining;
+      const newRemaining = lotRemaining - toReduce;
 
-      await pnlLotsRepo.reduceLot(lot.id, toReduce);
-      await pnlMatchesRepo.recordMatchFromLot({
-        sellActivityId: activity.id,
-        lotId: lot.id,
-        instrumentKey,
-        walletAddress,
-        matchedQty: toReduce.toString(),
-        sellOutputValueUsd: activity.outputValueUsd,
-        totalSellQty: quantityToSell.toString(),
-        namespace: activity.namespace,
-        chain: activity.chain,
-      });
+      // Inline reduce (same transaction)
+      if (newRemaining <= 0n) {
+        await client.query(
+          "UPDATE proj_pnl_lots SET remaining_quantity_raw = '0', status = 'closed', closed_at = NOW() WHERE id = $1",
+          [lotId],
+        );
+      } else {
+        await client.query(
+          "UPDATE proj_pnl_lots SET remaining_quantity_raw = $2, status = 'partial' WHERE id = $1",
+          [lotId, newRemaining.toString()],
+        );
+      }
+
+      // Inline match insert with SQL-side pro-rata (same transaction)
+      await client.query(
+        `INSERT INTO proj_pnl_matches
+           (match_kind, sell_activity_id, lot_id, instrument_key, wallet_address,
+            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd, namespace, chain)
+         VALUES
+           ('matched', $1, $2, $3, $4, $5,
+            (SELECT cost_basis_usd * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
+            $6::numeric * $5::numeric / $7::numeric,
+            ($6::numeric * $5::numeric / $7::numeric) -
+              (SELECT cost_basis_usd * $5::numeric / quantity_raw::numeric FROM proj_pnl_lots WHERE id = $2),
+            $8, $9)`,
+        [
+          activity.id, lotId, instrumentKey, walletAddress,
+          toReduce.toString(), activity.outputValueUsd, quantityToSell.toString(),
+          activity.namespace, activity.chain,
+        ],
+      );
 
       remaining -= toReduce;
     }
 
+    // Shortfall evidence (same transaction)
     if (remaining > 0n) {
-      await pnlMatchesRepo.recordShortfall({
-        sellActivityId: activity.id,
-        instrumentKey,
-        walletAddress,
-        shortfallQty: remaining.toString(),
-        sellOutputValueUsd: activity.outputValueUsd,
-        totalSellQty: quantityToSell.toString(),
-        namespace: activity.namespace,
-        chain: activity.chain,
-      });
+      await client.query(
+        `INSERT INTO proj_pnl_matches
+           (match_kind, sell_activity_id, lot_id, instrument_key, wallet_address,
+            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd, namespace, chain)
+         VALUES
+           ('shortfall', $1, NULL, $2, $3, $4, NULL,
+            $5::numeric * $4::numeric / $6::numeric,
+            NULL, $7, $8)`,
+        [
+          activity.id, instrumentKey, walletAddress,
+          remaining.toString(), activity.outputValueUsd, quantityToSell.toString(),
+          activity.namespace, activity.chain,
+        ],
+      );
       logger.warn("sync.lot.shortfall", {
         instrumentKey,
         quantitySold: quantityToSell.toString(),
@@ -228,6 +281,11 @@ async function projectSpotLot(activity: Activity): Promise<void> {
       });
     }
 
-    logger.debug("sync.lot.reduced", { instrumentKey, quantitySold: quantityToSell.toString() });
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
 }

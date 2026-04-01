@@ -130,4 +130,101 @@ describe("portfolio_inspect tool", () => {
       expect(r.data!.realizedPnlUsd).toBe(42.50);
     });
   });
+
+  describe("lots", () => {
+    it("returns empty lots list", async () => {
+      const r = await handlePortfolioInspect({ view: "lots" }, ctx);
+      expect(r.success).toBe(true);
+      expect(r.data!.view).toBe("lots");
+      expect(r.data!.count).toBe(0);
+    });
+
+    it("returns lots with economics when DB has rows", async () => {
+      const { query } = await import("@echo-agent/db/client.js");
+      (query as any).mockResolvedValueOnce([{
+        id: 1, instrument_key: "solana:BONK", namespace: "solana", chain: "solana",
+        side: "buy", quantity_raw: "1000000", remaining_quantity_raw: "500000",
+        cost_basis_usd: "5.25", price_usd: "0.00000525", status: "partial",
+        opened_at: "2026-04-01", closed_at: null,
+      }]);
+      const r = await handlePortfolioInspect({ view: "lots", instrumentKey: "solana:BONK" }, ctx);
+      expect(r.success).toBe(true);
+      expect(r.data!.count).toBe(1);
+      const lot = (r.data!.lots as any[])[0];
+      expect(lot.costBasisUsd).toBe(5.25);
+      expect(lot.priceUsd).toBe(0.00000525);
+      expect(lot.status).toBe("partial");
+    });
+  });
+
+  describe("profits", () => {
+    it("returns empty profits list", async () => {
+      const r = await handlePortfolioInspect({ view: "profits" }, ctx);
+      expect(r.success).toBe(true);
+      expect(r.data!.view).toBe("profits");
+      expect(r.data!.count).toBe(0);
+    });
+
+    it("returns per-instrument realized PnL", async () => {
+      const { query } = await import("@echo-agent/db/client.js");
+      (query as any).mockResolvedValueOnce([{
+        instrument_key: "solana:BONK",
+        matched_count: "3", shortfall_count: "1",
+        realized_pnl_usd: "1.25", total_cost_basis: "4.00", total_proceeds: "5.25",
+      }]);
+      const r = await handlePortfolioInspect({ view: "profits", instrumentKey: "solana:BONK" }, ctx);
+      expect(r.success).toBe(true);
+      expect(r.data!.count).toBe(1);
+      const instr = (r.data!.instruments as any[])[0];
+      expect(instr.realizedPnlUsd).toBe(1.25);
+      expect(instr.matchedCount).toBe(3);
+      expect(instr.shortfallCount).toBe(1);
+    });
+  });
+
+  describe("closed_positions", () => {
+    it("returns empty closed positions", async () => {
+      const r = await handlePortfolioInspect({ view: "closed_positions" }, ctx);
+      expect(r.success).toBe(true);
+      expect(r.data!.view).toBe("closed_positions");
+    });
+
+    it("returns closed positions with economics", async () => {
+      const { query } = await import("@echo-agent/db/client.js");
+      (query as any).mockResolvedValueOnce([{
+        namespace: "solana", position_type: "prediction", chain: "solana",
+        instrument_key: "solana:predict:abc:yes", position_key: "pk1",
+        entry_price_usd: "0.65", notional_usd: "2.00", status: "closed",
+        opened_at: "2026-04-01", closed_at: "2026-04-01",
+      }]);
+      const r = await handlePortfolioInspect({ view: "closed_positions" }, ctx);
+      expect(r.data!.count).toBe(1);
+      const pos = (r.data!.positions as any[])[0];
+      expect(pos.entryPrice).toBe(0.65);
+      expect(pos.notionalUsd).toBe(2.00);
+      expect(pos.status).toBe("closed");
+    });
+  });
+
+  describe("non_trading_history", () => {
+    it("returns empty non-trading history", async () => {
+      const r = await handlePortfolioInspect({ view: "non_trading_history" }, ctx);
+      expect(r.success).toBe(true);
+      expect(r.data!.view).toBe("non_trading_history");
+    });
+
+    it("returns audit activities for non-trading flows", async () => {
+      const { query } = await import("@echo-agent/db/client.js");
+      (query as any).mockResolvedValueOnce([{
+        namespace: "khalani", activity_type: "bridge", product_type: "bridge",
+        chain: "ethereum", wallet_address: "0x1", capture_status: "executed",
+        created_at: "2026-04-01",
+      }]);
+      const r = await handlePortfolioInspect({ view: "non_trading_history" }, ctx);
+      expect(r.data!.count).toBe(1);
+      const act = (r.data!.activities as any[])[0];
+      expect(act.product).toBe("bridge");
+      expect(act.namespace).toBe("khalani");
+    });
+  });
 });

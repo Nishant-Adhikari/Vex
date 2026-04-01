@@ -24,6 +24,7 @@ ClaudeCode ──MCP stdio──> LocalTestMcp (pnpm exec tsx)
                                    proj_activity
                                    proj_open_positions
                                    proj_pnl_lots
+                                   proj_pnl_matches
 ```
 
 **Key decision:** Mutating flows tested manually by Claude via `echo_execute`. Automated smoke only for discovery, read-only, and preview (dryRun).
@@ -62,7 +63,7 @@ src/echo-agent/e2e/
   core/
     scenario-runner.ts     — Setup, teardown, runStep, runScenario, makeContext
     discovery-smoke.ts     — Discovery enumeration per active namespace
-    preview-smoke.ts       — dryRun zero-write verification (5 pipeline tables)
+    preview-smoke.ts       — dryRun zero-write verification (6 pipeline tables)
     db-assertions.ts       — Pipeline table assertions + inspectTable (whitelisted)
     replay-check.ts        — Replay smoke (snapshot before/after)
   mcp/
@@ -84,9 +85,9 @@ src/echo-agent/e2e/
 | `echo_execute` | Core | Execute protocol tool (via dispatchTool, with capture pipeline) |
 | `echo_wallet_address` | Read-only | Wallet address per chain family |
 | `echo_wallet_balances` | Read-only | Multi-chain token balances via Khalani (source of truth for wallet state) |
-| `echo_portfolio_inspect` | Read-only | DB inspection: positions, activity, executions. **No lots.** Balances/snapshots not authoritative in E2E (no fullBalanceSync). |
-| `echo_inspect_pipeline` | Operator | Whitelisted read-only query on 5 pipeline tables. Filters: executionId, toolId, positionKey, sessionId. |
-| `echo_replay_verify` | Operator | Run replayProjections() + compare before/after counts |
+| `echo_portfolio_inspect` | Read-only | DB inspection: positions, activity, executions, lots, profits, closed_positions, non_trading_history. Balances/snapshots not authoritative in E2E (no fullBalanceSync). |
+| `echo_inspect_pipeline` | Operator | Whitelisted read-only query on 6 pipeline tables (incl. proj_pnl_matches). Filters: executionId, toolId, positionKey, sessionId. |
+| `echo_replay_verify` | Operator | Run replayProjections() + compare before/after counts and content hashes (including valuation fields) |
 | `echo_discovery_smoke` | Smoke | Automated discovery check for all active namespaces |
 | `echo_preview_smoke` | Smoke | Automated dryRun zero-write verification |
 

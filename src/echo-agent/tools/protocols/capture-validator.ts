@@ -75,6 +75,31 @@ export function validateCaptureContract(
     return false;
   }
 
+  // W4A valuation guard — hard fail when exact handler omits USD economics.
+  // Blocks projection: capture without valuation from an "exact" handler is a handler regression.
+  if (contract.valuationExpected === "exact") {
+    const hasInputUsd = typeof tradeCapture.inputValueUsd === "string" && tradeCapture.inputValueUsd !== "";
+    const hasOutputUsd = typeof tradeCapture.outputValueUsd === "string" && tradeCapture.outputValueUsd !== "";
+    const vs = typeof tradeCapture.valuationSource === "string" ? tradeCapture.valuationSource : "";
+
+    if (!hasInputUsd && !hasOutputUsd) {
+      logger.error("capture.validator.missing_valuation", {
+        toolId,
+        valuationExpected: "exact",
+        hint: "Handler must emit inputValueUsd or outputValueUsd for exact valuation tools",
+      });
+      return false;
+    }
+    if (!vs || vs === "none") {
+      logger.error("capture.validator.missing_valuation_source", {
+        toolId,
+        valuationExpected: "exact",
+        hint: "Handler must emit valuationSource != 'none' for exact valuation tools",
+      });
+      return false;
+    }
+  }
+
   return true;
 }
 
