@@ -356,6 +356,25 @@ describe("capture contract — valuation expectations", () => {
   });
 });
 
+// ── Meta fields regression guard (contracts for MTM) ───────────
+
+describe("capture contract — required meta fields", () => {
+  it("solana.predict.buy requires meta.contracts", () => {
+    const c = MUTATION_MATRIX.get("solana.predict.buy")!;
+    expect(c.requiredMetaFields).toContain("contracts");
+  });
+
+  it("prediction buy with contracts in meta passes", () => {
+    const valid = validateCaptureContract("solana.predict.buy", {
+      type: "prediction", walletAddress: "0x", status: "open",
+      positionKey: "pk", instrumentKey: "solana:predict:m1:yes",
+      inputValueUsd: "2.00", valuationSource: "prediction_exact",
+      meta: { contracts: "3.5" },
+    });
+    expect(valid).toBe(true);
+  });
+});
+
 // ── Preview detection tests ────────────────────────────────────
 
 describe("capture contract — preview detection", () => {

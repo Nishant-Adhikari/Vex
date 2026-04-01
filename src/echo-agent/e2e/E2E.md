@@ -85,7 +85,7 @@ src/echo-agent/e2e/
 | `echo_execute` | Core | Execute protocol tool (via dispatchTool, with capture pipeline) |
 | `echo_wallet_address` | Read-only | Wallet address per chain family |
 | `echo_wallet_balances` | Read-only | Multi-chain token balances via Khalani (source of truth for wallet state) |
-| `echo_portfolio_inspect` | Read-only | DB inspection: positions, activity, executions, lots, profits, closed_positions, non_trading_history. Balances/snapshots not authoritative in E2E (no fullBalanceSync). |
+| `echo_portfolio_inspect` | Read-only | DB inspection: 14 views — positions, activity, executions, lots, profits, closed_positions, non_trading_history, bridges, lp_history, orders, unrealized + balances/snapshots/summary. |
 | `echo_inspect_pipeline` | Operator | Whitelisted read-only query on 6 pipeline tables (incl. proj_pnl_matches). Filters: executionId, toolId, positionKey, sessionId. |
 | `echo_replay_verify` | Operator | Run replayProjections() + compare before/after counts and content hashes (including valuation fields) |
 | `echo_discovery_smoke` | Smoke | Automated discovery check for all active namespaces |

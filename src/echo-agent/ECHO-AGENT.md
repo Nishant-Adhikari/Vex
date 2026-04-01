@@ -307,17 +307,26 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 
 ### W4A — USD-exact valuation + realized PnL (done)
 - **Valuation extraction**: handlers emit `inputValueUsd`, `outputValueUsd`, `unitPriceUsd`, `valuationSource` from source APIs (Jupiter, KyberSwap, Polymarket matched path, Jupiter prediction). Jaine/Slop: honest `"none"`.
-- **`valuationExpected` contract**: `MutationContract` extended with `"exact"` | `"conditional"` | `"none"` per tool. Regression-testable.
+- **`valuationExpected` contract**: `MutationContract` extended with `"exact"` | `"conditional"` | `"none"` per tool. Hard runtime gate.
 - **Realized PnL**: `proj_pnl_matches` FIFO match ledger with SQL-side NUMERIC pro-rata math. `cost_basis_usd`, `proceeds_usd`, `realized_pnl_usd` per match. Shortfall evidence: `match_kind = 'shortfall'`, `lot_id = NULL`.
 - **Prediction valuation**: `entry_price_usd`, `notional_usd`, `fee_usd` on `proj_open_positions`.
-- **`portfolio_inspect`**: new views `lots`, `profits`, `closed_positions`, `non_trading_history`. Summary includes `realizedPnlUsd`.
 - **DB migration**: `003_w4_pnl.sql` — new columns + `proj_pnl_matches` table.
 
+### W4 Full — benchmark-native PnL, MTM, full inspection (done)
+- **Benchmark-native PnL**: `benchmarkAssetKey` (chain-analytic, only when native leg present), `settlementAssetKey` (trade-specific quote token), `inputValueNative`/`outputValueNative` on `proj_activity`. Native pro-rata in FIFO match ledger. Jaine/Slop: native values only when 0G/w0G is swap leg.
+- **Mark-to-market**: Jupiter Prediction (sellYes/sellNo exit price) and Polymarket (public SELL price). `contracts` persisted on positions. SQL-side math. Per-position resilience. Wired after fullBalanceSync + worker drain.
+- **Close semantics**: `closePosition()` nulls MTM fields.
+- **14-view `portfolio_inspect`**: open_positions, activity, executions, balances, snapshots, summary, lots, profits, closed_positions, non_trading_history, bridges, lp_history, orders, unrealized. Profits groupBy namespace. Unrealized: CTE spot lots + proj_balances join.
+- **Registry**: 14-view enum with instrumentKey, walletAddress, status, groupBy params. MCP + prompts synced.
+- **Replay**: content hash includes all W4 fields (native, benchmark, settlement, contracts). MTM fields excluded (post-replay recompute).
+- **DB migration**: `004_w4_full.sql`.
+- **Shared helpers**: `parseInstrumentKey()`, `resolveChainBenchmark()`.
+
 ### Not yet implemented
-- **Unrealized PnL / mark-to-market** — requires live price feed (W4B)
-- **Benchmark/quote-asset PnL** (SOL/ETH/USDC/0G) — W4B
-- **Khalani fallback valuation** for Jaine/Slop — W4B
-- **Read models for UI** — portfolio curve, PnL by protocol
+- **Khalani fallback valuation** for Jaine/Slop trade economics (needs timestamped/persisted price source)
+- **Perps MTM** (no active runtime shelf)
+- **LP PnL** (lifecycle only, no economics model)
+- **Read models for UI** — portfolio curve
 - **Transport layer** — HTTP/SSE server, routes, UI
 
 ---

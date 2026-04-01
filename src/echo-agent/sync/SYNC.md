@@ -194,11 +194,34 @@ Shortfall rows have `lot_id = NULL`, `cost_basis_usd = NULL`, `realized_pnl_usd 
 
 **Precision model:** All pro-rata math is done in SQL (`NUMERIC` arithmetic). USD values flow as strings through the pipeline: handler → `_tradeCapture` → `proj_activity` → SQL `INSERT` with subquery. No JS `Number()` on USD or raw quantities in the write path.
 
+## Mark-to-market (W4)
+
+`mtm.ts` refreshes `current_value_usd` / `unrealized_pnl_usd` on open prediction positions.
+
+- **Jupiter**: `getJupiterPredictionMarket()` → `pricing.sellYesPriceUsd` / `sellNoPriceUsd` (exit price)
+- **Polymarket**: `getPolyClobClient().getPrice(tokenId, "SELL")` — public endpoint, no API key
+- **Math**: SQL-side `contracts * $markPrice::numeric`
+- **Triggered**: after `fullBalanceSync()` and `drainPendingRuns()`
+- **Resilience**: per-position try/catch, dedup marketIds
+- **Close**: `closePosition()` nulls MTM fields
+
+Spot unrealized is read-model only — CTE join `proj_pnl_lots` × `proj_balances` at query time.
+
+## Benchmark-native PnL (W4)
+
+`benchmarkAssetKey` = chain-level analytic benchmark (SOL, 0G, ETH). Set ONLY when native leg present in swap.
+
+`settlementAssetKey` = actual quote/collateral of the trade (SOL, USDC, 0G). Trade-specific, not chain-mapped.
+
+Native values (`input_value_native`, `output_value_native`) = human-unit amount of native leg. NULL when swap doesn't touch native asset.
+
+Native pro-rata in FIFO match ledger: `cost_basis_native`, `proceeds_native`, `realized_pnl_native`.
+
 ## What's NOT in this module
 
-- **Unrealized PnL / mark-to-market** — requires live price feed (W4B)
-- **Benchmark/quote-asset PnL** (SOL/ETH/USDC/0G) — W4B
-- **Khalani fallback valuation** for Jaine/Slop — W4B
+- **Khalani fallback valuation** for Jaine/Slop (needs timestamped price source)
+- **Perps MTM** (no active runtime shelf)
+- **LP PnL** (lifecycle only)
 - **Cron/timer** — engine responsibility, sync exposes `initSync()` and `syncTick()`
 - **UI/API endpoints** — transport layer
 

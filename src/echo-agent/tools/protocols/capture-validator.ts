@@ -75,6 +75,25 @@ export function validateCaptureContract(
     return false;
   }
 
+  // W4: validate required meta fields (e.g. contracts for prediction MTM)
+  if (contract.requiredMetaFields && contract.requiredMetaFields.length > 0) {
+    const meta = tradeCapture.meta as Record<string, unknown> | undefined;
+    const missingMeta: string[] = [];
+    for (const field of contract.requiredMetaFields) {
+      const value = meta?.[field];
+      if (value === undefined || value === null || value === "") {
+        missingMeta.push(field);
+      }
+    }
+    if (missingMeta.length > 0) {
+      logger.warn("capture.validator.missing_meta_fields", {
+        toolId,
+        missingMetaFields: missingMeta,
+        hint: `Required meta fields: [${contract.requiredMetaFields.join(", ")}]`,
+      });
+    }
+  }
+
   // W4A valuation guard — hard fail when exact handler omits USD economics.
   // Blocks projection: capture without valuation from an "exact" handler is a handler regression.
   if (contract.valuationExpected === "exact") {

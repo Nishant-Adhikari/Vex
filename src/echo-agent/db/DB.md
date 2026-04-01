@@ -34,6 +34,15 @@ db/
 | `proj_pnl_matches` (new) | FIFO lot match ledger — `match_kind` (matched/shortfall), `lot_id` (nullable), `cost_basis_usd`, `proceeds_usd`, `realized_pnl_usd`. Pro-rata math in SQL NUMERIC. |
 | `proj_open_positions` +2 columns | `notional_usd`, `fee_usd` — prediction position economics |
 
+### 004_w4_full.sql (W4 full closure)
+
+| Table/Column | Purpose |
+|--------------|---------|
+| `proj_activity` +4 columns | `benchmark_asset_key`, `settlement_asset_key`, `input_value_native`, `output_value_native` — benchmark-native PnL |
+| `proj_pnl_lots` +2 columns | `cost_basis_native`, `benchmark_asset_key` — native cost basis on lots |
+| `proj_pnl_matches` +4 columns | `cost_basis_native`, `proceeds_native`, `realized_pnl_native`, `benchmark_asset_key` — native realized PnL |
+| `proj_open_positions` +2 columns | `contracts` (NUMERIC), `settlement_asset_key` — prediction MTM + settlement |
+
 ### 002_engine_missions.sql (engine extensions)
 
 | Table | Purpose |

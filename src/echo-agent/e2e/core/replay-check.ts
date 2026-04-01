@@ -27,7 +27,8 @@ async function hashProjections(): Promise<ProjectionHashes> {
   const activityRows = await query(
     `SELECT execution_id, capture_item_id, namespace, activity_type, product_type,
             trade_side, chain, wallet_address, instrument_key, position_key, capture_status,
-            input_value_usd, output_value_usd, fee_value_usd, unit_price_usd, valuation_source
+            input_value_usd, output_value_usd, fee_value_usd, unit_price_usd, valuation_source,
+            benchmark_asset_key, settlement_asset_key, input_value_native, output_value_native
      FROM proj_activity ORDER BY execution_id, id`,
     [],
   );
@@ -35,21 +36,24 @@ async function hashProjections(): Promise<ProjectionHashes> {
   const positionRows = await query(
     `SELECT namespace, position_type, chain, wallet_address,
             instrument_key, position_key, status, external_id,
-            entry_price_usd, notional_usd, fee_usd
+            entry_price_usd, notional_usd, fee_usd, contracts, settlement_asset_key
      FROM proj_open_positions ORDER BY namespace, position_type, external_id`,
     [],
   );
 
   const lotRows = await query(
     `SELECT execution_id, instrument_key, namespace, chain, wallet_address,
-            side, status, quantity_raw, remaining_quantity_raw, cost_basis_usd, price_usd
+            side, status, quantity_raw, remaining_quantity_raw, cost_basis_usd, price_usd,
+            cost_basis_native, benchmark_asset_key
      FROM proj_pnl_lots ORDER BY instrument_key, opened_at, id`,
     [],
   );
 
   const matchRows = await query(
     `SELECT match_kind, sell_activity_id, lot_id, instrument_key, wallet_address,
-            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd, namespace, chain
+            quantity_matched, cost_basis_usd, proceeds_usd, realized_pnl_usd,
+            cost_basis_native, proceeds_native, realized_pnl_native, benchmark_asset_key,
+            namespace, chain
      FROM proj_pnl_matches ORDER BY sell_activity_id, id`,
     [],
   );

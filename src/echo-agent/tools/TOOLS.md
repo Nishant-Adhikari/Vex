@@ -47,7 +47,7 @@ Defined in `registry.ts`. Each handler is a pure `(params, context) → ToolResu
 | `subagent_reply` | `internal/subagent.ts` | Parent replies to waiting child's request. Resumes child via shared lifecycle helper. Excluded for subagents. |
 | `subagent_request_parent` | `internal/subagent.ts` | Child requests parent help. Returns `wait_for_parent` engine signal. Excluded for parents. |
 | `subagent_report_complete` | `internal/subagent.ts` | Child submits structured final report. Returns `complete_subagent` engine signal. Excluded for parents. |
-| `portfolio_inspect` | `internal/portfolio-inspect.ts` | DB-backed self-inspection: open_positions, activity, executions, balances, snapshots, summary, lots, profits, closed_positions, non_trading_history |
+| `portfolio_inspect` | `internal/portfolio-inspect.ts` | DB-backed self-inspection: 14 views — open_positions, activity, executions, balances, snapshots, summary, lots, profits, closed_positions, non_trading_history, bridges, lp_history, orders, unrealized |
 | `mission_stop` | `internal/mission.ts` | Model-driven mission stop — returns engineSignal to turn-loop. Guarded: requires active missionRunId. Excluded for subagents. |
 | `wallet_read` | `internal/wallet.ts` | Wallet address + multi-chain balances via Khalani |
 | `wallet_send_prepare` | `internal/wallet.ts` | Prepare transfer intent (no broadcast) |

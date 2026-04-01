@@ -19,7 +19,7 @@ You (Claude) are connected to a local MCP server that exposes Echo Agent's tool 
 | `echo_execute` | Execute a protocol tool | **Main tool for manual tests** |
 | `echo_wallet_address` | Get wallet address per chain | Verify wallet setup |
 | `echo_wallet_balances` | Check multi-chain balances | Before/after each flow (source of truth) |
-| `echo_portfolio_inspect` | DB inspection: positions, activity, executions, lots, profits | Quick overview including lots and profits. Balances/snapshots not authoritative without fullBalanceSync. |
+| `echo_portfolio_inspect` | DB inspection: 14 views — positions, activity, lots, profits, orders, bridges, unrealized, etc. | Full self-inspection with benchmark-native and MTM. |
 | `echo_inspect_pipeline` | Read-only query on pipeline tables | Detailed inspection per table |
 | `echo_replay_verify` | Replay projections and compare | After multi-namespace tests |
 | `echo_discovery_smoke` | Automated discovery check | Verify all namespaces are active |

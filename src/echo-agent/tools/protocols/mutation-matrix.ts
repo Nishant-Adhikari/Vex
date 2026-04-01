@@ -33,6 +33,11 @@ export interface MutationContract {
    * - "none": no USD from source — honest null / valuationSource: "none".
    */
   valuationExpected: "exact" | "conditional" | "none";
+  /**
+   * Meta fields required for downstream features (e.g. contracts for MTM).
+   * Validated in capture-validator.ts alongside requiredFields.
+   */
+  requiredMetaFields?: readonly string[];
 }
 
 // ── Required field sets per role ────────────────────────────────
@@ -70,7 +75,7 @@ const entries: [string, MutationContract][] = [
 
   // ── pnl_prediction ────────────────────────────────────────
   // Solana predictions — single positionPubkey per buy/sell/claim
-  ["solana.predict.buy",     { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: PNL_PREDICTION_FIELDS, valuationExpected: "exact" }],
+  ["solana.predict.buy",     { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: PNL_PREDICTION_FIELDS, valuationExpected: "exact", requiredMetaFields: ["contracts"] }],
   ["solana.predict.sell",    { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: PNL_PREDICTION_FIELDS, valuationExpected: "exact" }],
   ["solana.predict.claim",   { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: ["walletAddress", "status", "positionKey"], exceptions: ["claim: no instrumentKey — matches via positionKey"], valuationExpected: "exact" }],
   ["solana.predict.closeAll",{ role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "items",  requiredFields: PNL_PREDICTION_FIELDS, valuationExpected: "exact" }],
