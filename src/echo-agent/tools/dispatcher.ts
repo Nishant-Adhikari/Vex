@@ -165,6 +165,12 @@ async function routeInternalTool(
       return handlePortfolioInspect(call.args, context);
     }
 
+    // Setup / Configuration
+    case "polymarket_setup": {
+      const { handlePolymarketSetup } = await import("./internal/polymarket-setup.js");
+      return handlePolymarketSetup(call.args, context);
+    }
+
     // Mission
     case "mission_stop": {
       const { handleMissionStop } = await import("./internal/mission.js");

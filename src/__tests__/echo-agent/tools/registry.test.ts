@@ -132,10 +132,9 @@ describe("registry", () => {
     }
   });
 
-  it("only wallet_send_confirm is mutating", () => {
-    const mutating = getAllTools().filter(t => t.mutating);
-    expect(mutating).toHaveLength(1);
-    expect(mutating[0].name).toBe("wallet_send_confirm");
+  it("mutating tools are wallet_send_confirm and polymarket_setup", () => {
+    const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
+    expect(mutating).toEqual(["polymarket_setup", "wallet_send_confirm"]);
   });
 
   // ── Role filtering ──────────────────────────────────────────────

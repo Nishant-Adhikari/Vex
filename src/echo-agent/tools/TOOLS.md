@@ -48,6 +48,7 @@ Defined in `registry.ts`. Each handler is a pure `(params, context) → ToolResu
 | `subagent_request_parent` | `internal/subagent.ts` | Child requests parent help. Returns `wait_for_parent` engine signal. Excluded for parents. |
 | `subagent_report_complete` | `internal/subagent.ts` | Child submits structured final report. Returns `complete_subagent` engine signal. Excluded for parents. |
 | `portfolio_inspect` | `internal/portfolio-inspect.ts` (router) + `internal/inspect-views/*.ts` (4 modules) | DB-backed self-inspection: 14 views across 4 families — trading (lots, profits, unrealized), positions (open, closed, orders), activity (activity, bridges, lp_history, non_trading), portfolio (summary, balances, snapshots, executions) |
+| `polymarket_setup` | `internal/polymarket-setup.ts` | Derive + save Polymarket CLOB API credentials from wallet keystore. Visible ONLY when `POLYMARKET_API_KEY` not configured (`showOnlyWhenEnvMissing`). No secrets in output. |
 | `mission_stop` | `internal/mission.ts` | Model-driven mission stop — returns engineSignal to turn-loop. Guarded: requires active missionRunId. Excluded for subagents. |
 | `wallet_read` | `internal/wallet.ts` | Wallet address + multi-chain balances via Khalani |
 | `wallet_send_prepare` | `internal/wallet.ts` | Prepare transfer intent (no broadcast) |

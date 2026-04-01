@@ -23,6 +23,8 @@ export interface ToolDef {
   proactive?: boolean;
   /** ENV var required for this tool. If set and ENV is empty, tool is hidden. */
   requiresEnv?: string;
+  /** Show tool ONLY when this env var is NOT set. Inverse of requiresEnv. For setup/config tools. */
+  showOnlyWhenEnvMissing?: string;
   /** Roles that should NOT see/use this tool. Hard-enforced at dispatch time. */
   excludeRoles?: string[];
 }

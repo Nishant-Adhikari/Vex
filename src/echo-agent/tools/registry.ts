@@ -147,6 +147,15 @@ const TOOLS: readonly ToolDef[] = [
     }, required: ["view"] },
   },
 
+  // Setup / Configuration
+  {
+    name: "polymarket_setup", kind: "internal", mutating: true,
+    showOnlyWhenEnvMissing: "POLYMARKET_API_KEY",
+    excludeRoles: ["subagent"],
+    description: "Derive and save Polymarket CLOB API credentials from your wallet keystore. Run this to enable Polymarket trading tools (buy/sell/cancel). No parameters needed — credentials are derived automatically from your configured wallet.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+
   // Mission
   {
     name: "mission_stop", kind: "internal", mutating: false,
@@ -275,6 +284,7 @@ export function getOpenAITools(
 ): OpenAITool[] {
   const filtered = TOOLS
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
+    .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => chatMode === "off" ? !t.proactive : true)
     .filter(t => !t.excludeRoles?.includes(role));
   return toOpenAITools(filtered);

@@ -33,7 +33,7 @@ src/echo-agent/
     0g-compute.ts        — 0G Compute raw HTTP provider
   tools/                 — Everything the LLM can call
     types.ts             — ToolDef, ToolCallRequest, ToolResult
-    registry.ts          — 22 internal tool definitions (role-filtered via excludeRoles)
+    registry.ts          — 23 internal tool definitions (role-filtered via excludeRoles)
     dispatcher.ts        — Routes every tool call
     internal/            — In-process handlers
       types.ts           — InternalToolContext, ok/fail helpers
@@ -259,7 +259,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 
 ### Done
 - DB schema (27 tables + 002_engine_missions: missions, mission_runs, messages metadata), client, migrate runner, 25 repos
-- All 22 internal tools — live handlers, zero stubs
+- All 23 internal tools — live handlers, zero stubs
 - Approval enforcement for mutating tools (protocol + wallet)
 - Execution capture with `external_refs` (normalized) + sync enqueue
 - Balance sync pipeline — Khalani → proj_balances → proj_portfolio_snapshots
