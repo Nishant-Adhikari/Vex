@@ -2,7 +2,7 @@
  * Slop.money (0G Network) protocol handlers — on-chain bonding curve operations.
  *
  * All handlers call contracts directly via viem (factory, token, registry, feeCollector).
- * Quote math from @tools/slop/quote.js. Validation from @commands/slop/helpers.js.
+ * Quote math from @tools/slop/quote.js. Validation from @tools/slop/validation.js.
  */
 
 import { randomBytes } from "node:crypto";
@@ -30,7 +30,7 @@ import {
   getTokenState,
   parseUnitsSafe,
   validateUserSalt,
-} from "@commands/slop/helpers.js";
+} from "@tools/slop/validation.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
