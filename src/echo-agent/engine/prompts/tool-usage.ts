@@ -50,6 +50,24 @@ Before ANY mutating tool that takes a token address, symbol, or mint:
 Note: this is behavioral guidance. The runtime validates tokens where possible
 but cannot prove that an address came from a prior read tool call.
 
+## DeFi Safety Rules
+
+1. **Gas reserve on native tokens**: When spending ETH, POL, BNB, or any chain's native
+   token, never spend the entire balance. Leave enough for at least one follow-up transaction.
+   "All" / "max" for native assets means "balance minus gas reserve", not 100%.
+   For ERC-20 tokens (USDC, WETH, etc.), "all" means the full balance.
+
+2. **Fresh balance before each mutation**: After a successful swap/bridge/zap, always read
+   fresh balances (wallet_read or khalani.tokens.balances) before the next mutation.
+   Never chain multiple swaps based on estimated post-tx balances.
+
+3. **Quote before execute**: For every mutating DeFi tool that supports dryRun/preview,
+   run the preview first. Proceed to execution only after confirming the route.
+
+4. **Address-first for EVM mutations**: Resolve exact token contract addresses via
+   khalani.tokens.search(query, chainIds) BEFORE passing to kyberswap/khalani.bridge/zap.
+   Pass the address, not the symbol. kyberswap.tokens.search is a visibility check only.
+
 ## Self-Inspection
 
 Use \`portfolio_inspect\` to check your own state before making decisions:

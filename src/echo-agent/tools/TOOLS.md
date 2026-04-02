@@ -142,6 +142,16 @@ Agent-facing manifests include token resolution guidance in descriptions. Prompt
 
 Runtime-level: `resolveTokenMetadata()` reads ERC-20 metadata on-chain for address input, Token API fallback for symbol. Zap handlers validate address format before passing to ZaaS API.
 
+### DeFi safety policy
+
+Prompt layer (`tool-usage.ts`) defines DeFi Safety Rules:
+1. **Gas reserve**: never spend 100% of native token, leave gas for follow-up tx
+2. **Fresh balance**: read live balances after each mutation, don't chain on estimates
+3. **Quote before execute**: preview every mutating DeFi tool that supports dryRun
+4. **Address-first**: resolve via khalani before EVM mutations, pass address not symbol
+
+These are behavioral guidelines enforced via prompt. Runtime gas reserve backstop planned for PR B.
+
 Synthetic captures from settlement sync use toolIds not in MUTATION_MATRIX (`settlement_sync.jupiter`, `settlement_sync.polymarket`). `capture-validator.ts` returns `true` for unknown toolIds. `synthetic-capture.ts` has its own local validation boundary.
 
 ### History replay

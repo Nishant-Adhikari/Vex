@@ -19,7 +19,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "kyberswap.limitOrder.activeMakingAmount",
     namespace: "kyberswap",
     lifecycle: "active",
-    description: "Get total active making amount locked in open orders for a token (for allowance planning). Resolve makerAsset address via kyberswap.tokens.search first.",
+    description: "Get total active making amount locked in open orders for a token (for allowance planning). Resolve makerAsset address via khalani.tokens.search first.",
     mutating: false,
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
@@ -31,7 +31,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "kyberswap.limitOrder.create",
     namespace: "kyberswap",
     lifecycle: "active",
-    description: "Create a gasless EIP-712 signed limit order. Off-chain relay, on-chain settlement.",
+    description: "Create a gasless EIP-712 signed limit order. Off-chain relay, on-chain settlement. Resolve token addresses via khalani.tokens.search first.",
     mutating: true,
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },

@@ -277,6 +277,52 @@ describe("prompt-stack", () => {
 
   // ── Stack composition ───────────────────────────────────────
 
+  // ── DeFi safety rules ──────────────────────────────────────
+
+  describe("DeFi safety rules in prompt", () => {
+    it("contains gas reserve rule", () => {
+      const stack = buildPromptStack(makeContext());
+      const joined = stack.join("\n");
+      expect(joined).toContain("Gas reserve on native tokens");
+      expect(joined).toContain("balance minus gas reserve");
+    });
+
+    it("contains fresh balance rule", () => {
+      const stack = buildPromptStack(makeContext());
+      const joined = stack.join("\n");
+      expect(joined).toContain("Fresh balance before each mutation");
+    });
+
+    it("contains quote before execute rule", () => {
+      const stack = buildPromptStack(makeContext());
+      const joined = stack.join("\n");
+      expect(joined).toContain("Quote before execute");
+    });
+
+    it("contains address-first rule", () => {
+      const stack = buildPromptStack(makeContext());
+      const joined = stack.join("\n");
+      expect(joined).toContain("Address-first for EVM mutations");
+      expect(joined).toContain("khalani.tokens.search");
+    });
+
+    it("khalani is canonical resolver in protocols section, kyberswap is not primary", () => {
+      const prompt = buildProtocolsPrompt();
+      // kyberswap section should reference khalani as resolver, not itself
+      const kyberSection = prompt.split("## kyberswap")[1]?.split("##")[0] ?? "";
+      expect(kyberSection).toContain("khalani.tokens.search");
+      expect(kyberSection).not.toContain("Resolve tokens via kyberswap.tokens.search before swap");
+    });
+
+    it("chainscan is described as 0G-only in protocols", () => {
+      const prompt = buildProtocolsPrompt();
+      const chainscanSection = prompt.split("## chainscan")[1]?.split("##")[0] ?? "";
+      expect(chainscanSection).toContain("0G-only");
+    });
+  });
+
+  // ── Stack structure ───────────────────────────────────────
+
   describe("stack structure", () => {
     it("returns array of separate sections", () => {
       const stack = buildPromptStack(makeContext());

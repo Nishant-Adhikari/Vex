@@ -47,6 +47,7 @@ export function buildMissionRunPrompt(
   lines.push("1. Assess current state (balances, positions, market conditions)");
   lines.push("2. Decide next action based on goal and constraints");
   lines.push("3. Execute the action");
+  lines.push("3.5. Refresh balances — read live wallet state after each execution, don't rely on estimates");
   lines.push("4. Verify the result");
   lines.push("5. Repeat from step 1");
   lines.push("");

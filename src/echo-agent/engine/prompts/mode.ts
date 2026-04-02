@@ -46,4 +46,6 @@ You are in full autonomous mode. Rules:
 - Stop only when a stop condition is met (goal reached, deadline, capital depleted, etc.)
 - Log significant decisions and their rationale
 - If you encounter an error, diagnose and adapt — don't stop unless the error is unrecoverable
-- Prioritize safety: verify before large trades, use quotes before executions, monitor positions`;
+- Prioritize safety: verify before large trades, use quotes before executions, monitor positions
+- Before native-token spends, always reserve gas for at least one follow-up transaction
+- After each successful mutation, refresh wallet balances before the next action`;

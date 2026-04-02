@@ -141,4 +141,12 @@ describe("khalani manifest", () => {
       expect(tool.exampleParams[key]).toBeDefined();
     }
   });
+
+  // ── Canonical resolver ─────────────────────────────────────────
+
+  it("khalani.tokens.search is described as canonical resolver", () => {
+    const tool = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.search")!;
+    expect(tool.description).toContain("canonical");
+    expect(tool.description).toContain("cross-chain token resolver");
+  });
 });

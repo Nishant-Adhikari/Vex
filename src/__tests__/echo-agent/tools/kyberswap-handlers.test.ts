@@ -19,8 +19,8 @@ describe("kyberswap handlers", () => {
     expect(extra).toEqual([]);
   });
 
-  it("handler count matches manifest count (20)", () => {
-    expect(Object.keys(KYBERSWAP_HANDLERS)).toHaveLength(20);
+  it("handler count matches manifest count (21)", () => {
+    expect(Object.keys(KYBERSWAP_HANDLERS)).toHaveLength(21);
   });
 
   it("every handler is a function", () => {

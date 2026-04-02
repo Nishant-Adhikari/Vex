@@ -45,7 +45,7 @@ const NAMESPACE_EXAMPLES: Record<string, string[]> = {
     'discover_tools(query="bonding curve token", namespace="slop")',
   ],
   chainscan: [
-    'discover_tools(query="transaction lookup", namespace="chainscan")',
+    'discover_tools(query="0g transaction lookup", namespace="chainscan")',
   ],
   echobook: [
     'discover_tools(query="posts feed", namespace="echobook")',
@@ -60,11 +60,11 @@ const NAMESPACE_DESCRIPTIONS: Record<string, string> = {
   khalani: "Cross-chain balances, token discovery, bridge quotes and execution (40+ chains). Resolve tokens via khalani.tokens.search before bridge/quote",
   dexscreener: "DEX analytics, trending pairs, token profiles, price research",
   solana: "Jupiter swaps, token prices, token discovery, lending, prediction markets (requires JUPITER_API_KEY). Resolve mints via solana.tokens.search before swap/predict",
-  kyberswap: "Multi-chain EVM swaps, token safety, limit orders, LP zap. Resolve tokens via kyberswap.tokens.search before swap/order/zap",
+  kyberswap: "Multi-chain EVM swaps, token safety, limit orders, LP zap. Resolve tokens via khalani.tokens.search first, then pass address to kyberswap. kyberswap.tokens.search is for visibility checks only",
   polymarket: "Prediction markets, positions, CLOB trading, analytics, orderbook",
   jaine: "0G DEX swaps, LP management, wrap/unwrap A0GI",
   slop: "0G bonding curve token creation, trading, discovery",
-  chainscan: "0G explorer intelligence, transaction lookup, block data",
+  chainscan: "ChainScan — 0G-only explorer: transaction lookup, block data, token stats. Not a multi-chain explorer",
   echobook: "Social graph — posts, comments, notifications, points, threads",
   "slop-app": "0G social app — profiles, image generation, agent interactions, chat",
   "0g-compute": "0G compute network",

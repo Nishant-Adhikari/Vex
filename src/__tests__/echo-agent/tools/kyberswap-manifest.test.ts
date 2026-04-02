@@ -4,8 +4,8 @@ import { KYBERSWAP_TOOLS } from "../../../echo-agent/tools/protocols/kyberswap/m
 describe("kyberswap manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
 
-  it("has 20 tools total", () => {
-    expect(KYBERSWAP_TOOLS).toHaveLength(20);
+  it("has 21 tools total", () => {
+    expect(KYBERSWAP_TOOLS).toHaveLength(21);
   });
 
   const EXPECTED_TOOL_IDS = [
@@ -32,14 +32,15 @@ describe("kyberswap manifest", () => {
     "kyberswap.limitOrder.batchFill",
     // Limit Order — Cancel All (1)
     "kyberswap.limitOrder.cancelAll",
-    // Zap (3)
+    // Zap (4)
     "kyberswap.zap.in",
     "kyberswap.zap.out",
     "kyberswap.zap.migrate",
+    "kyberswap.zap.list",
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(20);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(21);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -193,5 +194,39 @@ describe("kyberswap manifest", () => {
         expect(param.description.length).toBeGreaterThan(3);
       }
     }
+  });
+
+  // ── Swap hardening: exact-input semantics ─────────────────────
+
+  it("swap.sell and swap.buy describe exact-input semantics", () => {
+    const sell = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.sell")!;
+    const buy = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.buy")!;
+    expect(sell.description).toContain("exact-input");
+    expect(buy.description).toContain("exact-input");
+  });
+
+  it("swap tools reference khalani as resolver, not kyberswap", () => {
+    const sell = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.sell")!;
+    const buy = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.buy")!;
+    expect(sell.description).toContain("khalani.tokens.search");
+    expect(buy.description).toContain("khalani.tokens.search");
+  });
+
+  // ── Zap hardening: DEX_* IDs ──────────────────────────────────
+
+  it("zap exampleParams use DEX_* format IDs", () => {
+    const zapIn = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.in")!;
+    const zapOut = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.out")!;
+    const zapMigrate = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.migrate")!;
+    expect(zapIn.exampleParams.dex).toMatch(/^DEX_/);
+    expect(zapOut.exampleParams.dex).toMatch(/^DEX_/);
+    expect(zapMigrate.exampleParams.dexFrom).toMatch(/^DEX_/);
+    expect(zapMigrate.exampleParams.dexTo).toMatch(/^DEX_/);
+  });
+
+  it("zap.list is a read-only tool", () => {
+    const zapList = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.list")!;
+    expect(zapList).toBeDefined();
+    expect(zapList.mutating).toBe(false);
   });
 });

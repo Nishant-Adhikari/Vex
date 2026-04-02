@@ -524,6 +524,31 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
 
     return { success: true, output: JSON.stringify({ txHash, chain: slug, positionId, from: poolFrom, to: poolTo }, null, 2), data: { txHash, _tradeCapture: { type: "lp", chain: slug, status: "executed", walletAddress: wallet.address, positionKey: positionId, instrumentKey: `${slug}:lp:${poolTo}`, meta: { dexFrom, dexTo, poolFrom, poolTo, action: "zap-migrate" } } } };
   },
+
+  // ── Zap list (supported DEXes per chain) ────────────────────────
+  "kyberswap.zap.list": async (p) => {
+    const chain = str(p, "chain");
+    if (!chain) return fail("Missing required: chain");
+    const slug = resolveChainSlug(chain);
+    const dexes = ZAAS_CHAIN_DEXES[slug] ?? [];
+    return ok({ chain: slug, count: dexes.length, dexes, note: dexes.length === 0 ? `No ZaaS DEXes configured for ${slug}. Check KyberSwap ZaaS docs.` : undefined });
+  },
+};
+
+// ── ZaaS supported DEXes per chain (from KyberSwap docs) ────────
+
+const ZAAS_CHAIN_DEXES: Record<string, string[]> = {
+  polygon: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_QUICKSWAPV3ALGEBRA", "DEX_QUICKSWAPV2"],
+  ethereum: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2"],
+  base: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_AERODROMECL", "DEX_AERODROMEBASIC"],
+  arbitrum: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_CAMELOTV3", "DEX_RAMSESCL"],
+  bsc: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_THENAFUSION", "DEX_THENAALGEBRAINTEGRAL"],
+  optimism: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_VELODROME_SLIPSTREAM", "DEX_VELODROMEBASIC"],
+  avalanche: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_PANGOLINSTANDARD"],
+  linea: ["DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_METAVAULTV3", "DEX_LINEHUBV3"],
+  sonic: ["DEX_SHADOW_CL", "DEX_SHADOW_LEGACY", "DEX_SQUADSWAP_V3"],
+  berachain: ["DEX_KODIAK_V2", "DEX_KODIAK_V3", "DEX_BERAHUB", "DEX_9MM_V2", "DEX_9MM_V3", "DEX_ARBERA"],
+  ronin: ["DEX_KATANA_V2", "DEX_KATANA_V3"],
 };
 
 // ── Duration parser ──────────────────────────────────────────────
