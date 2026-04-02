@@ -31,3 +31,11 @@ export function fail(msg: string): ToolResult {
 export function bool(p: Record<string, unknown>, k: string): boolean | undefined {
   return typeof p[k] === "boolean" ? (p[k] as boolean) : undefined;
 }
+
+// ── Native gas reserve (future) ─────────────────────────────────
+// TODO: Runtime gas reserve backstop for native-token spends.
+// Currently enforced via prompt only (DeFi Safety Rules in tool-usage.ts).
+// If prompt-level guidance proves insufficient, add safeNativeAmount()
+// here that deducts ~10% reserve when spending >90% of native balance.
+// Requires moving getKyberEvmClients() before route quote in executeKyberSwap()
+// so publicClient.getBalance() is available before amountIn is used.

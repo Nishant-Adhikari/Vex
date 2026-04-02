@@ -142,6 +142,10 @@ Agent-facing manifests include token resolution guidance in descriptions. Prompt
 
 Runtime-level: `resolveTokenMetadata()` reads ERC-20 metadata on-chain for address input, Token API fallback for symbol. Zap handlers validate address format before passing to ZaaS API.
 
+### LP position capture (zap.in)
+
+`kyberswap.zap.in` uses `sendKyberTransactionWithReceipt()` to get tx receipt, then `extractMintedNftId()` parses ERC-721 Transfer mint logs filtered by recipient address. Extracted `positionId` (NFT token ID) is stored in `_tradeCapture.positionKey`, enabling projection into `proj_open_positions` and subsequent `zap.out`.
+
 ### DeFi safety policy
 
 Prompt layer (`tool-usage.ts`) defines DeFi Safety Rules:

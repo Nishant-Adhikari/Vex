@@ -343,3 +343,66 @@ export async function sendKyberTransaction(
     throw new EchoError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
   }
 }
+
+/**
+ * Send a KyberSwap transaction and return both hash and receipt.
+ * Used by zap.in to extract NFT position ID from receipt logs.
+ */
+export async function sendKyberTransactionWithReceipt(
+  publicClient: PublicClient<Transport, Chain>,
+  walletClient: WalletClient<Transport, Chain>,
+  params: { to: Address; data: Hex; value?: bigint },
+): Promise<{ hash: Hex; receipt: { logs: Array<{ address: string; topics: string[]; data: string }> } }> {
+  try {
+    const hash = await walletClient.sendTransaction({
+      account: walletClient.account!,
+      to: params.to,
+      data: params.data,
+      value: params.value ?? 0n,
+      chain: walletClient.chain,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    return {
+      hash,
+      receipt: {
+        logs: receipt.logs.map(l => ({
+          address: l.address,
+          topics: l.topics as string[],
+          data: l.data,
+        })),
+      },
+    };
+  } catch (err) {
+    throw new EchoError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+// ── ERC-721 mint extraction from receipt ────────────────────────
+
+const ERC721_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const ZERO_ADDR_PADDED = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+/**
+ * Extract NFT position ID from transaction receipt logs.
+ * Looks for ERC-721 Transfer(from=0x0, to=recipient, tokenId) — a mint event.
+ * Filters by recipient to avoid capturing intermediary mints.
+ */
+export function extractMintedNftId(
+  logs: Array<{ address: string; topics: string[]; data: string }>,
+  recipientAddress: string,
+): string | undefined {
+  const recipientPadded = `0x000000000000000000000000${recipientAddress.slice(2).toLowerCase()}`;
+
+  for (const log of logs) {
+    if (
+      log.topics[0] === ERC721_TRANSFER_TOPIC &&
+      log.topics.length === 4 &&                    // ERC-721 (4 indexed topics), not ERC-20 (3)
+      log.topics[1] === ZERO_ADDR_PADDED &&          // from = 0x0 (mint)
+      log.topics[2]?.toLowerCase() === recipientPadded // to = our wallet
+    ) {
+      return BigInt(log.topics[3]).toString();
+    }
+  }
+
+  return undefined;
+}

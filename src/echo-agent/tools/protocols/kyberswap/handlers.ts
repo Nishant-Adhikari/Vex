@@ -18,6 +18,8 @@ import {
   getKyberEvmClients,
   ensureKyberAllowance,
   sendKyberTransaction,
+  sendKyberTransactionWithReceipt,
+  extractMintedNftId,
   verifyRouterAddress,
 } from "@tools/kyberswap/evm-utils.js";
 import { META_AGGREGATION_ROUTER_V2, DSLO_PROTOCOL, KS_ZAP_ROUTER_POSITION, NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
@@ -449,9 +451,12 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     }
 
     const buildResp = await getKyberZaasClient().buildZapIn(slug, { sender: wallet.address, recipient: wallet.address, route: routeResp.data.route });
-    const txHash = await sendKyberTransaction(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
+    const { hash: txHash, receipt } = await sendKyberTransactionWithReceipt(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
-    return { success: true, output: JSON.stringify({ txHash, chain: slug, dex, pool }, null, 2), data: { txHash, _tradeCapture: { type: "lp", chain: slug, status: "executed", walletAddress: wallet.address, positionKey: str(p, "positionId") || undefined, instrumentKey: `${slug}:lp:${pool}`, meta: { dex, pool, action: "zap-in" } } } };
+    // Extract LP NFT position ID from receipt (ERC-721 mint to our wallet)
+    const positionId = str(p, "positionId") || extractMintedNftId(receipt.logs, wallet.address) || undefined;
+
+    return { success: true, output: JSON.stringify({ txHash, chain: slug, dex, pool, positionId }, null, 2), data: { txHash, _tradeCapture: { type: "lp", chain: slug, status: "executed", walletAddress: wallet.address, positionKey: positionId, instrumentKey: `${slug}:lp:${pool}`, meta: { dex, pool, action: "zap-in", positionId } } } };
   },
 
   "kyberswap.zap.out": async (p) => {
