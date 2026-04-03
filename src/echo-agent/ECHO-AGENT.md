@@ -2,7 +2,7 @@
 
 > New-generation autonomous AI agent. Own database, DB-first content model, manifest-driven protocol tools, provider-agnostic inference. Built from scratch.
 >
-> **Last updated: 2026-03-31**
+> **Last updated: 2026-04-03**
 >
 > **LLM maintainers:** If you add/remove a top-level module, update this file. Each module has its own `.md` with detailed docs — update those when modifying files within:
 > - [`db/DB.md`](db/DB.md) — Schema, repos, design decisions
@@ -23,7 +23,10 @@ src/echo-agent/
     migrations/
       001_initial.sql    — Foundation schema (27 tables, 6 modules)
       002_engine_missions.sql — Engine extensions (missions, mission_runs, messages metadata)
-    repos/               — 25 repo files (includes missions.ts, mission-runs.ts, runtime.ts, messages.ts extended)
+      003_w4_pnl.sql     — PnL match ledger + position economics
+      004_w4_full.sql    — Benchmark-native PnL, contracts, settlement columns
+      005_lp_economics.sql — LP events + event legs (projection tables)
+    repos/               — 26 repo files (includes lp-events.ts, missions.ts, mission-runs.ts, runtime.ts, messages.ts extended)
   inference/             — Provider-agnostic inference (OpenRouter + 0G Compute)
     types.ts             — InferenceProvider interface, InferenceConfig, InferenceUsage
     config.ts            — ENV validation + SubagentConfig
@@ -33,7 +36,7 @@ src/echo-agent/
     0g-compute.ts        — 0G Compute raw HTTP provider
   tools/                 — Everything the LLM can call
     types.ts             — ToolDef, ToolCallRequest, ToolResult
-    registry.ts          — 23 internal tool definitions (role-filtered via excludeRoles)
+    registry.ts          — 24 internal tool definitions (role-filtered via excludeRoles)
     dispatcher.ts        — Routes every tool call
     internal/            — In-process handlers
       types.ts           — InternalToolContext, ok/fail helpers
@@ -48,7 +51,8 @@ src/echo-agent/
       memory.ts          — memory_manage (CRUD with hash dedup)
       schedule.ts        — schedule_create/remove (no cli_execute)
       subagent.ts        — subagent_spawn/status/stop (session_links)
-      wallet.ts          — wallet_read, send_prepare, send_confirm
+      wallet.ts          — wallet_read, send_prepare, send_confirm (dynamic EVM chain + ERC-20 + ERC-721)
+      evm-read.ts        — evm_read: on-chain reads (tx_receipt, erc721_mint, erc20_metadata, balance)
     protocols/           — discover_tools + execute_tool system
       types.ts           — ProtocolToolManifest, ProtocolHandler
       handler-helpers.ts — Shared str/num/bool/ok/fail (extracted from 13 handlers)
@@ -56,7 +60,7 @@ src/echo-agent/
       runtime.ts         — Discovery, execution, approval gate, capture hook
       khalani/           — 9 tools (bridge, balances, orders)
       solana-jupiter/    — 20 tools (prices, tokens, swap, predict, lend — requires JUPITER_API_KEY)
-      kyberswap/         — 20 tools (swap buy+sell, limit orders, zap LP)
+      kyberswap/         — 21 tools (swap buy+sell, limit orders, zap LP + zap.list)
       polymarket/        — 69 tools (bridge, CLOB, data, gamma)
       dexscreener/       — 11 tools (search, pairs, trending)
       0g/chainscan/      — 17 tools (account, tx, contract, stats)
@@ -64,13 +68,16 @@ src/echo-agent/
       0g/slop/           — 11 tools (token, trade, curve, fees)
       echobook/          — 28 tools (posts, social, points)
       0g/slop-app/       — 8 tools (profile, image, agents, chat)
-  sync/                    — Sync pipeline (balances + activity projections)
+  sync/                    — Sync pipeline (balances + activity projections + settlement + LP economics)
     index.ts               — Public API: initSync(), syncTick()
     balance-sync.ts        — Khalani → proj_balances → proj_portfolio_snapshots
     activity-populator.ts  — _tradeCapture → proj_activity (from runtime capture hook)
-    position-projector.ts  — activity → proj_open_positions + proj_pnl_lots (FIFO)
+    position-projector.ts  — activity → proj_open_positions + proj_pnl_lots (FIFO) + proj_lp_events
+    prediction-settlement-sync.ts — Auto-close settled prediction positions (Jupiter + Polymarket)
+    synthetic-capture.ts   — Record settlement/reconciliation events through capture pipeline
+    lp-economics.ts        — Extract LP cashflow legs from ZaaS zapDetails
     worker.ts              — Sync run consumer with dedup
-    seed.ts                — Default sync job seeding
+    seed.ts                — Default sync job seeding (8 jobs: balances + prediction_settlement)
     chains.ts              — Canonical chain hint resolution
   engine/                  — Shared engine-core (chat, mission, subagent)
     types.ts               — Session axes, mission lifecycle, stop conditions, message taxonomy
@@ -152,7 +159,7 @@ See `sync/SYNC.md` for full details.
 ```
 Startup   → drain backlog → fullBalanceSync() → proj_balances + snapshot
 Trade     → enqueue sync run → worker dedup → selective Khalani refresh (affected chains only)
-Periodic  → syncTick() every 60s → full refresh if snapshot > 5min old
+Periodic  → syncTick() every 60s → balances refresh + prediction settlement reconciliation
 ```
 
 Source of truth: Khalani `getTokenBalances()` — native + altcoins, balance + USD price + decimals in one call per wallet family. Worker deduplicates multiple pending runs into one Khalani call.
@@ -161,7 +168,7 @@ Source of truth: Khalani `getTokenBalances()` — native + altcoins, balance + U
 
 ---
 
-## Database — 27 Tables, 6 Modules
+## Database — 29 Tables, 6 Modules
 
 Own Postgres via `ECHO_AGENT_DB_URL`. See `db/DB.md` for full details.
 
@@ -171,7 +178,7 @@ Own Postgres via `ECHO_AGENT_DB_URL`. See `db/DB.md` for full details.
 | **B. Runtime & Sessions** | `sessions`, `messages`, `messages_archive`, `approval_queue`, `runtime_state`, `runtime_cycles` | Conversation lifecycle, compaction, approval queue, loop engine |
 | **C. Automation** | `schedules`, `schedule_runs`, `subagents`, `session_links`, `subagent_messages`, `inbox_events` | Cron tasks, subagent lifecycle, canonical session relationships |
 | **D. Inference** | `usage_log`, `billing_snapshots` | Token usage (cached/reasoning breakdown), provider balance tracking |
-| **E. Protocol Pipeline** | `protocol_executions`, `protocol_sync_jobs`, `protocol_sync_runs`, `proj_balances`, `proj_portfolio_snapshots`, `proj_open_positions`, `proj_activity` | Execution audit, sync pipeline, projection tables |
+| **E. Protocol Pipeline** | `protocol_executions`, `protocol_capture_items`, `protocol_sync_jobs`, `protocol_sync_runs`, `proj_balances`, `proj_portfolio_snapshots`, `proj_open_positions`, `proj_activity`, `proj_pnl_lots`, `proj_pnl_matches`, `proj_lp_events`, `proj_lp_event_legs` | Execution audit, sync pipeline, projection tables, LP economics |
 | **F. Cache** | `search_cache`, `fetch_cache` | Tavily search/fetch with TTL |
 
 ### Key design decisions
@@ -207,7 +214,7 @@ Loaded from `SUBAGENT_*` ENV with fallbacks from `AGENT_*`:
 
 ---
 
-## Internal Tools (20)
+## Internal Tools (21)
 
 See `tools/TOOLS.md` for full details.
 
@@ -230,8 +237,9 @@ See `tools/TOOLS.md` for full details.
 | `subagent_reply` | `internal/subagent.ts` | Parent replies to waiting child. Resumes via shared lifecycle helper. |
 | `subagent_request_parent` | `internal/subagent.ts` | Child requests parent help. Returns `wait_for_parent` signal. |
 | `subagent_report_complete` | `internal/subagent.ts` | Child submits structured final report. Returns `complete_subagent` signal. |
+| `evm_read` | `internal/evm-read.ts` | On-chain EVM reads: tx_receipt, erc721_mint, erc20_metadata, balance (via khalani chain registry) |
 | `wallet_read` | `internal/wallet.ts` | Address + multi-chain balances via Khalani |
-| `wallet_send_prepare` | `internal/wallet.ts` | Build transfer intent (no broadcast) |
+| `wallet_send_prepare` | `internal/wallet.ts` | Build transfer intent — native, ERC-20, ERC-721 on any EVM chain |
 | `wallet_send_confirm` | `internal/wallet.ts` | Sign + broadcast (mutating, approval gate) |
 
 ---
@@ -244,7 +252,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 |-----------|-------|--------|-----------------|
 | `khalani` | 9 | 40+ EVM + Solana | Cross-chain bridge, multi-chain balances, orders |
 | `solana` | 20 | Solana | Prices, tokens, swap, predictions, lend (requires JUPITER_API_KEY) |
-| `kyberswap` | 20 | 18 EVM | Swap (buy + sell), limit orders (maker + taker), zap LP |
+| `kyberswap` | 21 | 18 EVM | Swap (buy + sell), limit orders (maker + taker), zap LP + zap.list, LP fee collection |
 | `polymarket` | 69 | Polygon | CLOB trading (buy/sell), bridge, positions, gamma discovery |
 | `dexscreener` | 11 | Multi-chain | Pair search, trending, boosts (all read-only) |
 | `chainscan` | 17 | 0G | Account, tx, contract, decode, token stats |
@@ -255,7 +263,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 
 ---
 
-## Implementation Status (2026-03-31)
+## Implementation Status (2026-04-03)
 
 ### Done
 - DB schema (27 tables + 002_engine_missions: missions, mission_runs, messages metadata), client, migrate runner, 25 repos
@@ -310,7 +318,7 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
   - Subagent engine runner wired into `tools/internal/subagent.ts` (replaces placeholder)
   - Stop conditions: 6 business stops (terminal) + 6 runtime pauses (resumable)
 - **E2E test harness**: Docker Postgres (port 5555, tmpfs) + local MCP server (9 echo_* tools). Automated discovery + preview smoke. Manual real-funds testing via Claude + `echo_execute`. Replay verification via `echo_replay_verify`.
-- Tests passing across 66 test files
+- Tests passing across 203 test files (2800+ tests)
 
 ### W4A — USD-exact valuation + realized PnL (done)
 - **Valuation extraction**: handlers emit `inputValueUsd`, `outputValueUsd`, `unitPriceUsd`, `valuationSource` from source APIs (Jupiter, KyberSwap, Polymarket matched path, Jupiter prediction). Jaine/Slop: honest `"none"`.
@@ -329,13 +337,32 @@ LLM uses `discover_tools` to search, `execute_tool` to call. Each namespace has 
 - **DB migration**: `004_w4_full.sql`.
 - **Shared helpers**: `parseInstrumentKey()`, `resolveChainBenchmark()`.
 
+### Token & Prediction Hardening (April 2-3, done)
+- **KyberSwap token resolution**: on-chain ERC-20 metadata read for address input (`readErc20Metadata()`), Token API symbol fallback (whitelisted → broader). Fixes `axlUSDC` address + symbol resolution.
+- **Prediction settlement sync**: `prediction-settlement-sync.ts` — periodic job reconciles Jupiter + Polymarket positions via read APIs. Synthetic captures through standard pipeline (`synthetic-capture.ts`). Jupiter: position_lost/won/claimed semantics. Polymarket: proxy wallet via relayer.
+- **Agent guardrails**: DeFi Safety Rules (gas reserve, fresh balance, quote-before-execute, address-first). khalani as canonical resolver. Token Verification Rule in prompts.
+- **Replay hash fix**: removed unstable FK columns (`sell_activity_id`, `lot_id`, `capture_item_id`) from hash.
+- **`evm_read` internal tool**: 4 scoped read-only actions (tx_receipt, erc721_mint, erc20_metadata, balance) via khalani chain registry + viem.
+
+### Swap Hardening (April 2-3, done)
+- **DeFi Safety Rules** in tool-usage.ts, mode.ts, mission-run.ts.
+- **Resolver alignment**: khalani canonical, kyberswap is visibility check only. All manifests updated.
+- **KyberSwap swap semantics**: buy/sell both described as exact-input.
+- **Zap DEX IDs**: `DEX_*` format in examples, structured DEX catalog in `src/tools/kyberswap/zaas/zap-dexes/` (11 chains, capability-aware: Curve/Balancer source-only).
+- **`kyberswap.zap.list`**: returns structured entries per chain (id, name, supports, verification, dexscreenerIds).
+- **ChainScan**: described as "0G-only explorer" in prompts.
+- **LP NFT capture**: `sendKyberTransactionWithReceipt()` + `extractMintedNftId()` filtered by recipient. `positionKey` now captured for new zap.in positions.
+- **LP fee collection**: `collectFee` param in zap.out/migrate (default true). ZaaS types updated.
+- **LP economics model**: `proj_lp_events` + `proj_lp_event_legs` tables (projection, in replay cycle). Legs extracted from ZaaS zapDetails: deposit/withdraw/fee/refund. Position projector sets `notionalUsd`, carries cost basis on migrate. `valuation_source: "zaas_estimate"`.
+- **EVM wallet transfers**: `wallet_send` extended for dynamic EVM chains (not just 0G), ERC-20 transfer, ERC-721 safeTransferFrom via khalani chain discovery.
+
 ### Deferred — with explicit reasoning
 
 | Item | Why deferred | What would unblock it |
 |------|-------------|----------------------|
 | **Khalani fallback valuation** for Jaine/Slop | `proj_balances` has current price only, not historical execution-time price. Using it for trade valuation would create false audit trail and break replay determinism. | Timestamped price persistence at execution time, or dedicated historical price source. |
 | **Perps MTM** | No active perps runtime shelf in `src/tools`. Types exist but no execution/capture/mark pipeline. | Active perps handler with source mark price API. |
-| **LP PnL** | Current LP capture is lifecycle only (zap-in/out/migrate). Truthful LP PnL needs: token legs in/out, fee accrual, partial liquidity, impermanent loss. Separate mini-workstream. | Dedicated LP economics model beyond open/close. |
+| **LP PnL computation** | LP economics model (proj_lp_events + legs) captures multi-leg cashflows. Realized PnL computation (deposit vs withdraw legs) is a separate query/view layer — not a single field. | Query view on lp_event_legs aggregating deposit legs vs withdraw legs per position. |
 | **Shared capture-enrichment boundary** | Valuation is handler-local by design — each handler knows its source API best. Centralizing would couple handlers to a shared abstraction without clear benefit today. | If multiple handlers need the same fallback logic. |
 | **Integration-grade Postgres tests** for FIFO/replay | Current tests mock DB. Real Postgres tests need Docker fixture in CI. E2E harness exists but is manual-first. | CI Docker Postgres fixture or test-level DB connection. |
 | **Read models for UI** | Backend truth layer complete. UI presentation deferred. | Transport/UI workstream. |
@@ -375,7 +402,7 @@ CHAINSCAN_API_KEY=...                  # 0G ChainScan (optional — free tier wo
 ## Tests
 
 ```bash
-npx vitest run src/__tests__/echo-agent/    # 68 files, 1400+ tests
+npx vitest run                              # 203 files, 2800+ tests
 pnpm tsc --noEmit                           # zero type errors
 ```
 

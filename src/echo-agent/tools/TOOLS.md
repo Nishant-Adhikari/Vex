@@ -158,6 +158,18 @@ Not a generic RPC gateway — actions are whitelisted and validated. Chain resol
 
 `kyberswap.zap.in` uses `sendKyberTransactionWithReceipt()` to get tx receipt, then `extractMintedNftId()` parses ERC-721 Transfer mint logs filtered by recipient address. Extracted `positionId` (NFT token ID) is stored in `_tradeCapture.positionKey`, enabling projection into `proj_open_positions` and subsequent `zap.out`.
 
+### LP economics model
+
+LP positions tracked via `proj_lp_events` + `proj_lp_event_legs` (projection tables). Populated from `_tradeCapture.meta.zapDetails` by position-projector → `recordLpEconomics()`. Legs: deposit, withdraw, fee, refund. `valuation_source: "zaas_estimate"` — route preview estimates, not on-chain exacts.
+
+`zap.out` and `zap.migrate` support `collectFee` param (default true) — collects accumulated LP fees during exit/migration.
+
+`zap.list` returns structured DEX entries per chain from curated catalog (`src/tools/kyberswap/zaas/zap-dexes/`): id, name, supports (capability-aware: Curve/Balancer source-only), verification status, DexScreener mapping fields.
+
+### EVM wallet transfers
+
+`wallet_send_prepare/confirm` supports dynamic EVM chains (not just 0G): native tokens, ERC-20 (`transfer()`), ERC-721 (`safeTransferFrom()`). Uses khalani chain discovery (`createDynamicPublicClient/WalletClient`) for RPC resolution. Token format: `"native"`, contract address (ERC-20), `"nft:{contract}:{tokenId}"` (ERC-721).
+
 ### DeFi safety policy
 
 Prompt layer (`tool-usage.ts`) defines DeFi Safety Rules:

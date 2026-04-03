@@ -43,6 +43,13 @@ db/
 | `proj_pnl_matches` +4 columns | `cost_basis_native`, `proceeds_native`, `realized_pnl_native`, `benchmark_asset_key` — native realized PnL |
 | `proj_open_positions` +2 columns | `contracts` (NUMERIC), `settlement_asset_key` — prediction MTM + settlement |
 
+### 005_lp_economics.sql (LP economics model)
+
+| Table | Purpose |
+|-------|---------|
+| `proj_lp_events` | LP cashflow events — links to execution via execution_id/capture_item_id (not projection FKs). Action: zap-in/zap-out/zap-migrate. Total value USD, fee collected USD, valuation_source (zaas_estimate). Projection table — in replay truncate cycle. |
+| `proj_lp_event_legs` | Per-token cashflow legs within an LP event — leg_type (deposit/withdraw/fee/refund), token_address, amount_raw (atomic), amount_usd (estimate). CASCADE delete with parent event. |
+
 ### 002_engine_missions.sql (engine extensions)
 
 | Table | Purpose |
@@ -89,6 +96,7 @@ db/
 | `open-positions.ts` | Projection | `upsertPosition()`, `closePosition()`, `getOpen()`, `getByPositionKey()` |
 | `pnl-lots.ts` | Projection | `openLot()`, `getOpenLots()` (FIFO ordered), `reduceLot()`, `closeLot()` |
 | `pnl-matches.ts` | Projection | `recordMatchFromLot()` (SQL pro-rata), `recordShortfall()`, `getMatchesByInstrument()`, `getMatchesBySell()`, `getTotalRealizedPnl()` |
+| `lp-events.ts` | Projection | `insertLpEvent()`, `insertLpLegs()`, `getLpEventsByPosition()`, `getLpLegsByEvent()` — LP economics multi-leg cashflows |
 | `usage.ts` | Inference | `logUsage()` (with cached/reasoning tokens), `getStats()` |
 | `billing.ts` | Inference | `insertSnapshot()`, `getLatest()`, `getHistory()` |
 | `missions.ts` | Engine | `createDraft()`, `updateDraft()`, `setStatus()`, `setApprovedAt()`, `getMission()`, `getMissionBySession()`, `getActiveMission()` |

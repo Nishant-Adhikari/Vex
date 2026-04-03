@@ -251,12 +251,13 @@ const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "wallet_send_prepare", kind: "internal", mutating: false,
-    description: "Prepare a transfer intent (no broadcast). Returns intent ID for confirmation.",
+    description: "Prepare a transfer intent (no broadcast). Returns intent ID for confirmation. Supports native tokens, ERC-20, and ERC-721 on any EVM chain.",
     parameters: { type: "object", properties: {
       network: { type: "string", enum: ["eip155", "solana"], description: "Network family" },
+      chain: { type: "string", description: "EVM chain ID or alias (e.g. 'polygon', '137', '0g'). Default: 0g. Ignored for solana." },
       to: { type: "string", description: "Recipient address" },
-      amount: { type: "string", description: "Amount in user-facing units" },
-      token: { type: "string", description: "Token symbol or mint (Solana SPL)" },
+      amount: { type: "string", description: "Amount in user-facing units (for native/ERC-20) or '1' for ERC-721" },
+      token: { type: "string", description: "Token: 'native' for chain native, contract address for ERC-20, 'nft:{contract}:{tokenId}' for ERC-721. Solana: symbol or mint." },
     }, required: ["network", "to", "amount"] },
   },
   {

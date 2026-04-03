@@ -420,7 +420,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
 
     // Validate tokenIn is a properly formatted address
     if (tokenIn.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase() && !isAddress(tokenIn)) {
-      return fail(`Invalid tokenIn address: "${tokenIn}". Resolve via kyberswap.tokens.search first.`);
+      return fail(`Invalid tokenIn address: "${tokenIn}". Resolve via khalani.tokens.search first.`);
     }
 
     const slug = resolveChainSlug(chain);
@@ -455,8 +455,15 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
 
     // Extract LP NFT position ID from receipt (ERC-721 mint to our wallet)
     const positionId = str(p, "positionId") || extractMintedNftId(receipt.logs, wallet.address) || undefined;
+    const zapDetails = routeResp.data.zapDetails;
 
-    return { success: true, output: JSON.stringify({ txHash, chain: slug, dex, pool, positionId }, null, 2), data: { txHash, _tradeCapture: { type: "lp", chain: slug, status: "executed", walletAddress: wallet.address, positionKey: positionId, instrumentKey: `${slug}:lp:${pool}`, meta: { dex, pool, action: "zap-in", positionId } } } };
+    return { success: true, output: JSON.stringify({ txHash, chain: slug, dex, pool, positionId }, null, 2), data: { txHash, _tradeCapture: {
+      type: "lp", chain: slug, status: "executed", walletAddress: wallet.address,
+      positionKey: positionId, instrumentKey: `${slug}:lp:${pool}`,
+      inputValueUsd: zapDetails?.initialAmountUsd,
+      valuationSource: zapDetails?.initialAmountUsd ? "zaas_estimate" : "none",
+      meta: { dex, pool, action: "zap-in", positionId, zapDetails },
+    } } };
   },
 
   "kyberswap.zap.out": async (p) => {
@@ -466,18 +473,20 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
 
     // Validate tokenOut is a properly formatted address
     if (tokenOut.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase() && !isAddress(tokenOut)) {
-      return fail(`Invalid tokenOut address: "${tokenOut}". Resolve via kyberswap.tokens.search first.`);
+      return fail(`Invalid tokenOut address: "${tokenOut}". Resolve via khalani.tokens.search first.`);
     }
 
     const slug = resolveChainSlug(chain);
     requireFeature(slug, "zaas");
     const wallet = requireEvmWallet();
 
+    const collectFee = p.collectFee !== false; // default true
     const routeResp = await getKyberZaasClient().getZapOutRoute(slug, {
       dexFrom: dex,
       "poolFrom.id": pool,
       "positionFrom.id": positionId,
       tokenOut,
+      collectFee,
       liquidityOut: str(p, "liquidity") || undefined,
       slippage: num(p, "slippageBps"),
     });
@@ -492,7 +501,14 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
     const txHash = await sendKyberTransaction(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
-    return { success: true, output: JSON.stringify({ txHash, chain: slug, positionId }, null, 2), data: { txHash, _tradeCapture: { type: "lp", chain: slug, status: "executed", walletAddress: wallet.address, positionKey: positionId, instrumentKey: `${slug}:lp:${pool}`, meta: { dex, pool, action: "zap-out" } } } };
+    const zapDetails = routeResp.data.zapDetails;
+    return { success: true, output: JSON.stringify({ txHash, chain: slug, positionId, collectFee }, null, 2), data: { txHash, _tradeCapture: {
+      type: "lp", chain: slug, status: "executed", walletAddress: wallet.address,
+      positionKey: positionId, instrumentKey: `${slug}:lp:${pool}`,
+      outputValueUsd: zapDetails?.finalAmountUsd,
+      valuationSource: zapDetails?.finalAmountUsd ? "zaas_estimate" : "none",
+      meta: { dex, pool, action: "zap-out", collectFee, zapDetails },
+    } } };
   },
 
   "kyberswap.zap.migrate": async (p) => {
@@ -505,6 +521,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     requireFeature(slug, "zaas");
     const wallet = requireEvmWallet();
 
+    const collectFee = p.collectFee !== false; // default true
     const routeResp = await getKyberZaasClient().getZapMigrateRoute(slug, {
       dexFrom,
       dexTo,
@@ -514,6 +531,7 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
       "positionTo.tickLower": num(p, "tickLower"),
       "positionTo.tickUpper": num(p, "tickUpper"),
       liquidityOut: str(p, "liquidity") || undefined,
+      collectFee,
       slippage: num(p, "slippageBps"),
     });
 
@@ -527,33 +545,42 @@ export const KYBERSWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
     const txHash = await sendKyberTransaction(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
-    return { success: true, output: JSON.stringify({ txHash, chain: slug, positionId, from: poolFrom, to: poolTo }, null, 2), data: { txHash, _tradeCapture: { type: "lp", chain: slug, status: "executed", walletAddress: wallet.address, positionKey: positionId, instrumentKey: `${slug}:lp:${poolTo}`, meta: { dexFrom, dexTo, poolFrom, poolTo, action: "zap-migrate" } } } };
+    const zapDetails = routeResp.data.zapDetails;
+    return { success: true, output: JSON.stringify({ txHash, chain: slug, positionId, from: poolFrom, to: poolTo, collectFee }, null, 2), data: { txHash, _tradeCapture: {
+      type: "lp", chain: slug, status: "executed", walletAddress: wallet.address,
+      positionKey: positionId, instrumentKey: `${slug}:lp:${poolTo}`,
+      valuationSource: zapDetails?.finalAmountUsd ? "zaas_estimate" : "none",
+      meta: { dexFrom, dexTo, poolFrom, poolTo, action: "zap-migrate", collectFee, zapDetails },
+    } } };
   },
 
-  // ── Zap list (supported DEXes per chain) ────────────────────────
+  // ── Zap list (supported DEXes per chain — structured catalog) ───
   "kyberswap.zap.list": async (p) => {
     const chain = str(p, "chain");
     if (!chain) return fail("Missing required: chain");
     const slug = resolveChainSlug(chain);
-    const dexes = ZAAS_CHAIN_DEXES[slug] ?? [];
-    return ok({ chain: slug, count: dexes.length, dexes, note: dexes.length === 0 ? `No ZaaS DEXes configured for ${slug}. Check KyberSwap ZaaS docs.` : undefined });
+
+    const { getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
+    const config = getZapDexConfig(slug);
+
+    if (!config || config.dexes.length === 0) {
+      return ok({ chain: slug, count: 0, dexes: [], note: `No ZaaS DEXes configured for ${slug}. Check KyberSwap ZaaS docs for supported chains.` });
+    }
+
+    return ok({
+      chain: slug,
+      lastVerified: config.lastVerified,
+      count: config.dexes.length,
+      dexes: config.dexes.map(d => ({
+        id: d.id,
+        name: d.name,
+        supports: d.supports,
+        verification: d.verification,
+        dexscreenerIds: d.dexscreenerIds,
+        dexscreenerLabels: d.dexscreenerLabels,
+      })),
+    });
   },
-};
-
-// ── ZaaS supported DEXes per chain (from KyberSwap docs) ────────
-
-const ZAAS_CHAIN_DEXES: Record<string, string[]> = {
-  polygon: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_QUICKSWAPV3ALGEBRA", "DEX_QUICKSWAPV2"],
-  ethereum: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2"],
-  base: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_AERODROMECL", "DEX_AERODROMEBASIC"],
-  arbitrum: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_CAMELOTV3", "DEX_RAMSESCL"],
-  bsc: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_THENAFUSION", "DEX_THENAALGEBRAINTEGRAL"],
-  optimism: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_VELODROME_SLIPSTREAM", "DEX_VELODROMEBASIC"],
-  avalanche: ["DEX_UNISWAPV3", "DEX_UNISWAP_V4", "DEX_UNISWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_PANGOLINSTANDARD"],
-  linea: ["DEX_PANCAKESWAPV3", "DEX_PANCAKESWAPV2", "DEX_SUSHISWAPV3", "DEX_SUSHISWAPV2", "DEX_METAVAULTV3", "DEX_LINEHUBV3"],
-  sonic: ["DEX_SHADOW_CL", "DEX_SHADOW_LEGACY", "DEX_SQUADSWAP_V3"],
-  berachain: ["DEX_KODIAK_V2", "DEX_KODIAK_V3", "DEX_BERAHUB", "DEX_9MM_V2", "DEX_9MM_V3", "DEX_ARBERA"],
-  ronin: ["DEX_KATANA_V2", "DEX_KATANA_V3"],
 };
 
 // ── Duration parser ──────────────────────────────────────────────

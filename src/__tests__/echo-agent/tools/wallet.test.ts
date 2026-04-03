@@ -14,15 +14,40 @@ vi.mock("@tools/wallet/family.js", () => ({
   },
 }));
 
+const MOCK_CHAIN = {
+  id: 16661, name: "0G", type: "eip155" as const,
+  nativeCurrency: { name: "0G", symbol: "0G", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.0g.example.com"] } },
+};
+
 vi.mock("@tools/khalani/client.js", () => ({
   getKhalaniClient: () => ({
     getTokenBalances: async (address: string, chainIds?: number[]) => [
       { address: "native", chainId: 16661, symbol: "0G", decimals: 18, extensions: { balance: "5000000000000000000", price: { usd: "0.05" } } },
       { address: "0xUSDC", chainId: 16661, symbol: "USDC", decimals: 6, extensions: { balance: "100000000", price: { usd: "1.00" } } },
     ],
+    getChains: async () => [MOCK_CHAIN],
   }),
 }));
 
+vi.mock("@tools/khalani/chains.js", () => ({
+  resolveChainId: () => 16661,
+  getChain: () => MOCK_CHAIN,
+}));
+
+vi.mock("@tools/khalani/evm-client.js", () => ({
+  createDynamicPublicClient: () => ({
+    waitForTransactionReceipt: async () => ({ status: "success", blockNumber: 123n }),
+    readContract: async () => 18, // decimals fallback
+  }),
+  createDynamicWalletClient: () => ({
+    sendTransaction: async () => "0xmockhash" as `0x${string}`,
+    writeContract: async () => "0xmockhash" as `0x${string}`,
+    account: { address: "0x1234567890abcdef1234567890abcdef12345678" },
+  }),
+}));
+
+// Keep old mocks for backward compat (unused after rewrite but safe to have)
 vi.mock("@tools/wallet/client.js", () => ({
   getPublicClient: () => ({ waitForTransactionReceipt: async () => ({ status: "success", blockNumber: 123n }) }),
 }));

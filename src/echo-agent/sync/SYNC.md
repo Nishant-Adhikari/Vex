@@ -13,6 +13,7 @@ sync/
   mtm.ts                           — Mark-to-market: Jupiter Prediction + Polymarket exit prices
   prediction-settlement-sync.ts    — Auto-close settled prediction positions (Jupiter + Polymarket)
   synthetic-capture.ts             — Record settlement/reconciliation events through capture pipeline
+  lp-economics.ts                  — Extract LP cashflow legs from ZaaS zapDetails → proj_lp_events
   replay.ts                        — One-time projection correction from immutable audit trail
   worker.ts                        — Claims pending sync runs, deduplicates, dispatches → MTM refresh
   seed.ts                          — Seeds default protocol_sync_jobs
@@ -248,6 +249,25 @@ Native pro-rata in FIFO match ledger: `cost_basis_native`, `proceeds_native`, `r
 - `status: "closed"`, `meta.realizedPnl` from API, no `outputValueUsd`
 
 **Synthetic captures** use toolIds not in MUTATION_MATRIX (`settlement_sync.jupiter`, `settlement_sync.polymarket`). The capture validator returns `true` for unknown toolIds. `synthetic-capture.ts` has its own local validation boundary (type, status, walletAddress, positionKey).
+
+## LP Economics
+
+`lp-economics.ts` extracts multi-leg cashflows from ZaaS `zapDetails` stored in `_tradeCapture.meta`.
+
+**Tables**: `proj_lp_events` + `proj_lp_event_legs` (projection tables, included in replay truncate cycle).
+
+**Leg types**: `deposit` (tokens into pool), `withdraw` (tokens out of pool), `fee` (protocol/partner fees), `refund` (leftover tokens).
+
+**Triggered from**: `position-projector.ts` → `recordLpEconomics()` after each LP activity insert. Only runs when `meta.zapDetails` is present.
+
+**Semantics**:
+- `zap-in`: deposit legs + fee legs. Position gets `notionalUsd` from `inputValueUsd`.
+- `zap-out`: withdraw legs + fee legs (if `collectFee` enabled, default true).
+- `zap-migrate`: cost basis carry from old position's `notionalUsd` to new. Fee/refund legs from migration.
+
+**Valuation**: `zaas_estimate` — from ZaaS route preview, not on-chain exact. Good for audit trail and approximate PnL, not accounting-grade precision.
+
+**No FK to proj_activity.id or proj_open_positions.id** — link via `execution_id`, `capture_item_id`, `position_key`, `instrument_key` (stable across replay).
 
 ## What's NOT in this module
 

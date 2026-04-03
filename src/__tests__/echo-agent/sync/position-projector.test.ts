@@ -5,9 +5,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockUpsertPosition = vi.fn().mockResolvedValue(undefined);
 const mockClosePosition = vi.fn().mockResolvedValue(true);
 
+const mockGetByPositionKey = vi.fn().mockResolvedValue(null);
+
 vi.mock("@echo-agent/db/repos/open-positions.js", () => ({
   upsertPosition: (...args: unknown[]) => mockUpsertPosition(...args),
   closePosition: (...args: unknown[]) => mockClosePosition(...args),
+  getByPositionKey: (...args: unknown[]) => mockGetByPositionKey(...args),
 }));
 
 const mockOpenLot = vi.fn().mockResolvedValue(1);
@@ -35,6 +38,17 @@ const mockClient = {
 
 vi.mock("@echo-agent/db/client.js", () => ({
   getPool: () => ({ connect: () => Promise.resolve(mockClient) }),
+}));
+
+// LP economics mocks (lazy-imported by projectLpLifecycle → recordLpEconomics)
+vi.mock("@echo-agent/db/repos/lp-events.js", () => ({
+  insertLpEvent: vi.fn().mockResolvedValue(1),
+  insertLpLegs: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../../echo-agent/sync/lp-economics.js", () => ({
+  extractLpLegs: vi.fn().mockReturnValue([]),
+  extractFeeCollectedUsd: vi.fn().mockReturnValue(undefined),
 }));
 
 const { projectPosition } = await import("../../../echo-agent/sync/position-projector.js");

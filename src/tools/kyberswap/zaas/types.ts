@@ -65,8 +65,9 @@ export interface ZapSwapAction {
 }
 
 export interface ZapLiquidityAction {
-  token0: ZapTokenAmount;
-  token1: ZapTokenAmount;
+  tokens?: ZapTokenAmount[];
+  token0?: ZapTokenAmount;
+  token1?: ZapTokenAmount;
 }
 
 export interface ZapRefundAction {
@@ -107,6 +108,7 @@ export interface ZapOutRouteParams {
   "poolFrom.id": string;
   "positionFrom.id": string;
   liquidityOut?: string;
+  collectFee?: boolean;
   tokenOut: string;
   slippage?: number;
   "aggregatorOptions.disable"?: boolean;
@@ -128,6 +130,7 @@ export interface ZapMigrateRouteParams {
   "positionTo.tickLower"?: number;
   "positionTo.tickUpper"?: number;
   liquidityOut?: string;
+  collectFee?: boolean;
   slippage?: number;
   "aggregatorOptions.disable"?: boolean;
   "aggregatorOptions.includedSources"?: string;

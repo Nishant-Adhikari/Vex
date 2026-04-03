@@ -38,6 +38,7 @@ function fail(msg: string): ToolResult {
 interface TransferIntent {
   id: string;
   network: "eip155" | "solana";
+  chain?: string;  // EVM chain alias (default: "0g"). Ignored for solana.
   to: string;
   amount: string;
   token: string | null;
@@ -138,9 +139,11 @@ export async function handleWalletSendPrepare(
   // Create intent
   intentCounter++;
   const intentId = `intent-${Date.now()}-${intentCounter}`;
+  const chain = str(params, "chain") || undefined;
   const intent: TransferIntent = {
     id: intentId,
     network,
+    chain,
     to,
     amount,
     token,
@@ -280,47 +283,97 @@ async function executeSolanaTransfer(intent: TransferIntent): Promise<ToolResult
   };
 }
 
-// ── EVM transfer execution (0G native) ───────────────────────────
+// ── EVM transfer execution (dynamic chain: native + ERC-20 + ERC-721) ──
 
 async function executeEvmTransfer(intent: TransferIntent): Promise<ToolResult> {
-  const [{ getSigningClient }, { getPublicClient }, { parseUnits }] = await Promise.all([
-    import("@tools/wallet/signingClient.js"),
-    import("@tools/wallet/client.js"),
-    import("viem"),
-  ]);
+  const { createDynamicPublicClient, createDynamicWalletClient } = await import("@tools/khalani/evm-client.js");
+  const { getKhalaniClient } = await import("@tools/khalani/client.js");
+  const { resolveChainId, getChain } = await import("@tools/khalani/chains.js");
+  const { parseUnits, getAddress } = await import("viem");
+
   const wallet = requireEvmWallet();
-  const client = getSigningClient(wallet.privateKey);
+  const chains = await getKhalaniClient().getChains();
+  const chainAlias = intent.chain ?? "0g";
+  const chainId = resolveChainId(chainAlias, chains);
+  const chain = getChain(chainId, chains);
+  const publicClient = createDynamicPublicClient(chain, chains);
+  const walletClient = createDynamicWalletClient(chain, chains, wallet.privateKey as `0x${string}`);
 
-  // Native transfer only (ERC-20 transfers would need token contract interaction)
-  const value = parseUnits(intent.amount, 18);
+  const isNft = intent.token?.startsWith("nft:");
+  const isNative = !intent.token || intent.token === "native";
+  const chainName = chain.name || chainAlias;
 
-  const hash = await client.sendTransaction({
-    to: intent.to as Address,
-    value,
-  });
+  let hash: `0x${string}`;
+  let tokenSymbol = chain.nativeCurrency.symbol;
 
-  // Wait for receipt
-  const publicClient = getPublicClient();
+  if (isNative) {
+    const value = parseUnits(intent.amount, chain.nativeCurrency.decimals);
+    hash = await walletClient.sendTransaction({
+      to: getAddress(intent.to),
+      value,
+      chain: undefined,
+    });
+  } else if (isNft) {
+    const parts = intent.token!.split(":");
+    const nftContract = getAddress(parts[1]);
+    const nftTokenId = BigInt(parts[2]);
+    tokenSymbol = `NFT#${nftTokenId}`;
+
+    hash = await walletClient.writeContract({
+      address: nftContract,
+      abi: [{
+        inputs: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "tokenId", type: "uint256" }],
+        name: "safeTransferFrom", outputs: [], stateMutability: "nonpayable", type: "function",
+      }] as const,
+      functionName: "safeTransferFrom",
+      args: [wallet.address as `0x${string}`, getAddress(intent.to), nftTokenId],
+      chain: undefined,
+    });
+  } else {
+    const tokenAddress = getAddress(intent.token!);
+    tokenSymbol = intent.token!;
+
+    const decimals = await publicClient.readContract({
+      address: tokenAddress,
+      abi: [{ inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" }] as const,
+      functionName: "decimals",
+    });
+    const value = parseUnits(intent.amount, decimals);
+
+    hash = await walletClient.writeContract({
+      address: tokenAddress,
+      abi: [{
+        inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }],
+        name: "transfer", outputs: [{ type: "bool" }], stateMutability: "nonpayable", type: "function",
+      }] as const,
+      functionName: "transfer",
+      args: [getAddress(intent.to), value],
+      chain: undefined,
+    });
+  }
+
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
   return {
     success: true,
     output: JSON.stringify({
       txHash: hash,
+      chain: chainName,
       status: receipt.status === "success" ? "confirmed" : "failed",
       blockNumber: Number(receipt.blockNumber),
     }, null, 2),
     data: {
       txHash: hash,
       _tradeCapture: {
-        type: "transfer",
-        chain: "0g",
+        type: isNft ? "send" : "transfer",
+        chain: chainName,
         status: "executed",
-        inputToken: "0G",
+        inputToken: tokenSymbol,
         inputAmount: intent.amount,
-        outputToken: "0G",
+        outputToken: tokenSymbol,
         outputAmount: intent.amount,
         signature: hash,
+        walletAddress: wallet.address,
       },
     },
   };
