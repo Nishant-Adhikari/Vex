@@ -12,15 +12,24 @@ vi.mock("@tools/wallet/multi-auth.js", () => ({
 
 const mockGetZapInRoute = vi.fn();
 const mockBuildZapIn = vi.fn();
+const mockGetZapOutRoute = vi.fn();
+const mockBuildZapOut = vi.fn();
+const mockGetZapMigrateRoute = vi.fn();
+const mockBuildZapMigrate = vi.fn();
 
 vi.mock("@tools/kyberswap/zaas/client.js", () => ({
   getKyberZaasClient: () => ({
     getZapInRoute: (...args: unknown[]) => mockGetZapInRoute(...args),
     buildZapIn: (...args: unknown[]) => mockBuildZapIn(...args),
+    getZapOutRoute: (...args: unknown[]) => mockGetZapOutRoute(...args),
+    buildZapOut: (...args: unknown[]) => mockBuildZapOut(...args),
+    getZapMigrateRoute: (...args: unknown[]) => mockGetZapMigrateRoute(...args),
+    buildZapMigrate: (...args: unknown[]) => mockBuildZapMigrate(...args),
   }),
 }));
 
 const mockExtractMintedNftId = vi.fn();
+const mockExtractErc1155Position = vi.fn();
 
 vi.mock("@tools/kyberswap/evm-utils.js", () => ({
   getKyberEvmClients: () => ({
@@ -28,13 +37,24 @@ vi.mock("@tools/kyberswap/evm-utils.js", () => ({
     walletClient: {},
   }),
   ensureKyberAllowance: vi.fn().mockResolvedValue(undefined),
+  ensureErc721Approval: vi.fn().mockResolvedValue(null),
+  ensureErc1155ApprovalForAll: vi.fn().mockResolvedValue(null),
   sendKyberTransaction: vi.fn().mockResolvedValue("0xmockhash"),
   sendKyberTransactionWithReceipt: vi.fn().mockResolvedValue({
     hash: "0xzaphash",
     receipt: { logs: [{ topics: ["0xddf252ad"], data: "0x" }] },
   }),
   extractMintedNftId: (...args: unknown[]) => mockExtractMintedNftId(...args),
+  extractErc1155Position: (...args: unknown[]) => mockExtractErc1155Position(...args),
   verifyRouterAddress: vi.fn(),
+}));
+
+// Mock token API for safety gate
+vi.mock("@tools/kyberswap/token-api/client.js", () => ({
+  getKyberTokenApiClient: () => ({
+    searchTokens: vi.fn().mockResolvedValue([]),
+    getHoneypotFotInfo: vi.fn().mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 }),
+  }),
 }));
 
 import { KYBERSWAP_HANDLERS } from "../../../echo-agent/tools/protocols/kyberswap/handlers.js";
@@ -238,6 +258,40 @@ describe("kyberswap handlers", () => {
     expect(data[0].aggregator).toBeDefined();
   });
 
+  // ── positionRef rename ──────────────────────────────────────────
+
+  it("kyberswap.zap.out fails with old positionId param name", async () => {
+    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.out"]!(
+      { chain: "polygon", dex: "DEX_UNISWAPV3", pool: "0xPool", positionId: "123", tokenOut: "0xToken" },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Missing required");
+  });
+
+  it("kyberswap.zap.migrate fails with old positionId param name", async () => {
+    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.migrate"]!(
+      { chain: "polygon", dexFrom: "DEX_UNISWAPV3", dexTo: "DEX_UNISWAPV3", poolFrom: "0xA", poolTo: "0xB", positionId: "123" },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Missing required");
+  });
+
+  // ── source-only / TBD rejection ───────────────────────────────
+
+  it("kyberswap.zap.in rejects unknown DEX", async () => {
+    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
+      {
+        chain: "polygon", dex: "DEX_NONEXISTENT", pool: "0xPool",
+        tokenIn: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", amountIn: "100",
+      },
+      { loopMode: "off", approved: false },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Unknown DEX");
+  });
+
   // ── zap.in positionKey regression ───────────────────────────────
 
   it("kyberswap.zap.in captures positionKey from receipt NFT mint", async () => {
@@ -274,5 +328,81 @@ describe("kyberswap handlers", () => {
     expect(capture.instrumentKey).toBe("polygon:lp:0xPoolAddress");
     expect(capture.valuationSource).toBe("zaas_estimate");
     expect(mockExtractMintedNftId).toHaveBeenCalledTimes(1);
+  });
+
+  // ── zap.migrate emits 2 capture items (R6) ────────────────────
+
+  it("kyberswap.zap.migrate emits close + open capture items with different positionKeys", async () => {
+    mockGetZapMigrateRoute.mockResolvedValueOnce({
+      data: {
+        route: "encoded-route",
+        routerAddress: "0x0e97c887b61ccd952a53578b04763e7134429e05",
+        zapDetails: { finalAmountUsd: "100.00", actions: [] },
+      },
+    });
+    mockBuildZapMigrate.mockResolvedValueOnce({
+      data: {
+        routerAddress: "0x0e97c887b61ccd952a53578b04763e7134429e05",
+        callData: "0xdeadbeef",
+        value: "0",
+      },
+    });
+    mockExtractMintedNftId.mockReturnValueOnce("99999");
+
+    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.migrate"]!(
+      {
+        chain: "polygon", dexFrom: "DEX_UNISWAPV3", dexTo: "DEX_UNISWAPV3",
+        poolFrom: "0xB6e57ed85c4c9dbfEF2a68711e9d6f36c56e0FcB", poolTo: "0xA374094527e1673A86dE625aa7147BeE868d0D1a",
+        sourcePositionRef: "12345",
+      },
+      { loopMode: "full", approved: true },
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const items = data._tradeCaptureItems as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(2);
+
+    // First item: close source
+    expect((items[0].meta as Record<string, unknown>).action).toBe("zap-out");
+    expect(items[0].positionKey).toBe("12345"); // sourcePositionKey = NFT tokenId
+
+    // Second item: open destination
+    expect((items[1].meta as Record<string, unknown>).action).toBe("zap-in");
+    expect(items[1].positionKey).toBe("99999"); // newPositionKey from receipt
+    expect(items[1].instrumentKey).toBe("polygon:lp:0xA374094527e1673A86dE625aa7147BeE868d0D1a");
+  });
+
+  // ── zap.out uses approval target from catalog (R1) ─────────────
+
+  it("kyberswap.zap.out resolves approval target from DEX entry", async () => {
+    mockGetZapOutRoute.mockResolvedValueOnce({
+      data: {
+        route: "encoded-route",
+        routerAddress: "0x0e97c887b61ccd952a53578b04763e7134429e05",
+        zapDetails: { finalAmountUsd: "50.00", actions: [] },
+      },
+    });
+    mockBuildZapOut.mockResolvedValueOnce({
+      data: {
+        routerAddress: "0x0e97c887b61ccd952a53578b04763e7134429e05",
+        callData: "0xdeadbeef",
+        value: "0",
+      },
+    });
+
+    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.out"]!(
+      {
+        chain: "polygon", dex: "DEX_UNISWAPV3", pool: "0xB6e57ed85c4c9dbfEF2a68711e9d6f36c56e0FcB",
+        positionRef: "12345",
+        tokenOut: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      },
+      { loopMode: "full", approved: true },
+    );
+
+    expect(result.success).toBe(true);
+    // ensureErc721Approval should have been called (ERC-721 DEX)
+    const { ensureErc721Approval } = await import("@tools/kyberswap/evm-utils.js");
+    expect(ensureErc721Approval).toHaveBeenCalled();
   });
 });

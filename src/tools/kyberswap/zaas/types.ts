@@ -33,6 +33,10 @@ export interface ZapRouteResponse {
     zapDetails?: ZapDetails;
     route?: string;
     routerAddress?: Address;
+    poolDetails?: ZapPoolDetails;
+    positionDetails?: ZapPositionDetails;
+    gas?: string;
+    gasUsd?: string;
   };
   requestId?: string;
 }
@@ -80,6 +84,23 @@ export interface ZapTokenAmount {
   amountUsd?: string;
 }
 
+// ── Pool / Position details from route response ───────────────────────
+
+export interface ZapPoolDetails {
+  category?: string;         // "concentrated" | "basic" | "bin" | ...
+  token0?: string;
+  token1?: string;
+  fee?: number;
+  address?: string;
+}
+
+export interface ZapPositionDetails {
+  tokenId?: string;
+  tickLower?: number;
+  tickUpper?: number;
+  liquidity?: string;
+}
+
 // ── Zap Build ───────────────────────────────────────────────────────
 
 export interface ZapBuildRequest {
@@ -88,6 +109,14 @@ export interface ZapBuildRequest {
   route: string;
   deadline?: number;
   source?: string;
+}
+
+export interface ZapBuildOutRequest extends ZapBuildRequest {
+  burnNft?: boolean;
+}
+
+export interface ZapBuildMigrateRequest extends ZapBuildRequest {
+  burnNft?: boolean;
 }
 
 export interface ZapBuildResponse {

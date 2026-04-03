@@ -13,6 +13,14 @@ import { registerTools } from "./tools.js";
 // ── Startup smoke ──────────────────────────────────────────────
 
 async function runStartupSmoke(): Promise<void> {
+  // 0. Load provider .env (Polymarket credentials, etc.)
+  const { loadProviderDotenv } = await import("../../../providers/env-resolution.js");
+  try {
+    loadProviderDotenv();
+  } catch (err) {
+    console.error("[echo-agent-e2e] loadProviderDotenv failed:", err instanceof Error ? err.message : err);
+  }
+
   // 1. Verify alias resolution (this import itself proves @echo-agent/* works)
   const { getPool } = await import("@echo-agent/db/client.js");
 

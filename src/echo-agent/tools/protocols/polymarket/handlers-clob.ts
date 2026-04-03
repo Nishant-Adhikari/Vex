@@ -127,7 +127,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     if (amount <= 0) return fail("Amount must be positive");
 
     const outcome = outcomeRaw.toUpperCase() === "YES" ? "YES" : "NO";
-    const market = await getPolyGammaClient().getMarket(conditionId);
+    const market = await getPolyGammaClient().resolveMarket(conditionId);
     const tokens = parseClobTokenIds(market.clobTokenIds);
     const tokenId = outcome === "YES" ? tokens.yes : tokens.no;
     if (!tokenId) return fail(`No ${outcome} token found for market ${conditionId}`);
@@ -137,6 +137,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     if (price === null) {
       price = (await clob.getPrice(tokenId, "BUY")).price;
     }
+    if (!price || price <= 0) return fail(`Cannot determine price for ${outcome} token — price is ${price}. Market may be illiquid or closed.`);
     const shares = amount / price;
 
     if (p.dryRun === true) {
@@ -182,7 +183,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     if (shares <= 0) return fail("Amount must be positive");
 
     const outcome = outcomeRaw.toUpperCase() === "YES" ? "YES" : "NO";
-    const market = await getPolyGammaClient().getMarket(conditionId);
+    const market = await getPolyGammaClient().resolveMarket(conditionId);
     const tokens = parseClobTokenIds(market.clobTokenIds);
     const tokenId = outcome === "YES" ? tokens.yes : tokens.no;
     if (!tokenId) return fail(`No ${outcome} token found for market ${conditionId}`);
@@ -192,6 +193,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     if (price === null) {
       price = (await clob.getPrice(tokenId, "SELL")).price;
     }
+    if (!price || price <= 0) return fail(`Cannot determine price for ${outcome} token — price is ${price}. Market may be illiquid or closed.`);
 
     if (p.dryRun === true) {
       return ok({ dryRun: true, conditionId, outcome, shares, price, usdcValue: (shares * price).toFixed(2), tokenId, question: market.question });

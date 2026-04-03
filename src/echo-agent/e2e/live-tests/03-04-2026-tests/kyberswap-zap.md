@@ -105,11 +105,11 @@ Neither is done in the handler. The `ensureKyberAllowance()` utility only handle
 
 ## 5. Summary of Findings
 
-| # | Severity | Finding | Impact | Fix |
-|---|----------|---------|--------|-----|
-| 1 | **High** | `extractMintedNftId` misses router-intermediated mints | LP positions not tracked in proj_open_positions | Add fallback for non-mint Transfer (from=router) or parse IncreaseLiquidity event |
-| 2 | **Medium** | `zapDetails` missing from live capture meta | LP economics (legs, valuation) not recorded | Debug zapDetails propagation in live vs dryRun path |
-| 3 | **High** | zap.out missing ERC-721 approve to router | zap.out always reverts — LP positions can't be closed via agent | Add NFT approve step before buildZapOut |
+| # | Severity | Finding | Impact | Fix | Status |
+|---|----------|---------|--------|-----|--------|
+| 1 | **High** | `extractMintedNftId` misses router-intermediated mints | LP positions not tracked in proj_open_positions | Added pass 2 (router→wallet) + `expectedContract` filter | **FIXED** (commit pending) |
+| 2 | **Medium** | `zapDetails` missing from live capture meta | LP economics (legs, valuation) not recorded | `zapDetails` now included in capture meta; `ZapRouteResponse` extended with `poolDetails`/`positionDetails` | **FIXED** (commit pending) |
+| 3 | **High** | zap.out missing ERC-721 approve to router | zap.out always reverts — LP positions can't be closed via agent | Family-aware approval via `resolveZapApprovalTarget()` — ERC-721/ERC-20/ERC-1155 per `approvalStandard` + `approvalTargetKind` | **FIXED** (commit pending) |
 
 ### Missing Tooling Identified
 

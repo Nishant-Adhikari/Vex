@@ -23,6 +23,8 @@ import type {
   ZapMigrateRouteParams,
   ZapRouteResponse,
   ZapBuildRequest,
+  ZapBuildOutRequest,
+  ZapBuildMigrateRequest,
   ZapBuildResponse,
 } from "./types.js";
 
@@ -114,7 +116,7 @@ export class KyberZaasClient {
     });
   }
 
-  buildZapOut(chain: KyberChainSlug, body: ZapBuildRequest): Promise<ZapBuildResponse> {
+  buildZapOut(chain: KyberChainSlug, body: ZapBuildOutRequest): Promise<ZapBuildResponse> {
     return this.request(chain, "/api/v1/out/route/build", validateZapBuildResponse, {
       method: "POST", body,
     });
@@ -128,7 +130,7 @@ export class KyberZaasClient {
     });
   }
 
-  buildZapMigrate(chain: KyberChainSlug, body: ZapBuildRequest): Promise<ZapBuildResponse> {
+  buildZapMigrate(chain: KyberChainSlug, body: ZapBuildMigrateRequest): Promise<ZapBuildResponse> {
     return this.request(chain, "/api/v1/migrate/route/build", validateZapBuildResponse, {
       method: "POST", body,
     });

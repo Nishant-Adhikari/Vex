@@ -63,7 +63,7 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   "polymarket.gamma.market": async (p) => {
     const id = str(p, "id");
     if (!id) return fail("Missing required: id");
-    return ok(await getPolyGammaClient().getMarket(id));
+    return ok(await getPolyGammaClient().resolveMarket(id));
   },
 
   "polymarket.gamma.marketBySlug": async (p) => {
@@ -154,9 +154,15 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   // ── Comments ──────────────────────────────────────────────────
 
   "polymarket.gamma.comments": async (p) => {
+    const parentEntityType = str(p, "parentEntityType") || undefined;
+    const parentEntityId = num(p, "parentEntityId");
+    // R10: Validate param pair — parentEntityId without parentEntityType is nonsensical
+    if (parentEntityId != null && !parentEntityType) {
+      return fail("parentEntityId requires parentEntityType (e.g. 'event' or 'market').");
+    }
     const comments = await getPolyGammaClient().listComments({
-      parent_entity_type: str(p, "parentEntityType") || undefined,
-      parent_entity_id: num(p, "parentEntityId"),
+      parent_entity_type: parentEntityType,
+      parent_entity_id: parentEntityId,
       holders_only: bool(p, "holdersOnly"),
       limit: num(p, "limit"),
     });

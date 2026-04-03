@@ -101,6 +101,30 @@ export class PolyGammaClient {
     return this.request(`/markets/${encodeURIComponent(id)}`, validateMarketResponse);
   }
 
+  /**
+   * Resolve a market by conditionId or numeric ID.
+   *
+   * Gamma's `/markets/{id}` endpoint expects a numeric database ID, not a conditionId.
+   * If the input looks like a hex conditionId (0x...), we search via `listMarkets` first.
+   */
+  async resolveMarket(idOrConditionId: string): Promise<GammaMarket> {
+    // Numeric ID — direct lookup
+    if (/^\d+$/.test(idOrConditionId)) {
+      return this.getMarket(idOrConditionId);
+    }
+
+    // Hex conditionId — search via condition_ids param
+    if (idOrConditionId.startsWith("0x")) {
+      const markets = await this.listMarkets({ condition_ids: [idOrConditionId] });
+      if (markets.length > 0) return markets[0];
+      // Fallback: try direct lookup (some Gamma deployments accept conditionId in path)
+      return this.getMarket(idOrConditionId);
+    }
+
+    // Unknown format — try direct
+    return this.getMarket(idOrConditionId);
+  }
+
   getMarketBySlug(slug: string): Promise<GammaMarket> {
     return this.request(`/markets/slug/${encodeURIComponent(slug)}`, validateMarketResponse);
   }

@@ -1,6 +1,6 @@
 # KyberSwap Module Map — Multi-Chain EVM Swaps, Limit Orders & Liquidity
 
-> **Last updated: 2026-03-30**
+> **Last updated: 2026-04-03**
 >
 > **LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove endpoints, update types, fix stale references.
 >
@@ -44,7 +44,7 @@ All EVM-only. No Solana support in KyberSwap.
 | `constants.ts` | URLs, contract addresses, native token address, spender allowlist, per-service timeouts |
 | `chains.ts` | 18-chain static registry with feature matrix, aliases, slug/ID resolution, dynamic chain cache |
 | `errors.ts` | `mapKyberTransportError()` — remap HTTP/timeout to `KYBER_` error codes |
-| `evm-utils.ts` | Multi-chain viem clients, ERC-20 allowance (USDT reset), spender validation, tx sending |
+| `evm-utils.ts` | Multi-chain viem clients, ERC-20/721/1155 approval (USDT reset, NFT `isApprovedForAll`), spender validation, tx sending, NFT mint extraction (with contract filter), ERC-1155 position extraction |
 
 ### Aggregator (`src/tools/kyberswap/aggregator/`)
 
@@ -78,10 +78,13 @@ All EVM-only. No Solana support in KyberSwap.
 
 | File | Role |
 |------|------|
-| `client.ts` | `KyberZaasClient` — zap in/out/migrate (route + build for each), singleton |
-| `types.ts` | `ZapInRouteParams`, `ZapOutRouteParams`, `ZapMigrateRouteParams`, `ZapRouteResponse`, `ZapBuildResponse`, `ZapDetails`, `ZapAction` |
-| `validation.ts` | Runtime validators for zap route and build responses |
+| `client.ts` | `KyberZaasClient` — zap in/out/migrate (route + build for each), singleton. Build uses `ZapBuildOutRequest`/`ZapBuildMigrateRequest` (with `burnNft?`) |
+| `types.ts` | `ZapInRouteParams`, `ZapOutRouteParams`, `ZapMigrateRouteParams`, `ZapRouteResponse` (incl. `poolDetails`, `positionDetails`, `gas`), `ZapBuildOutRequest`, `ZapBuildMigrateRequest`, `ZapDetails`, `ZapAction` |
+| `validation.ts` | Runtime validators for zap route and build responses (preserves `poolDetails`/`positionDetails`/`gas`/`gasUsd`) |
 | `errors.ts` | `mapZaasError()` — 400/404/429/5xx mapping |
+| `zap-dexes/types.ts` | 5-axis position model: `PositionRefKind`, `ApprovalStandard`, `ApprovalTargetKind`, `CaptureKind`, `PositionKeyStrategy`, `ZapDexEntry` |
+| `zap-dexes/chains/*.ts` | Per-chain DEX catalogs with 5-axis tuples. Source of truth for approval routing, capture, and positionKey strategy |
+| `zap-dexes/index.ts` | `getZapDexConfig(chain)`, `getSupportedZapChains()` — catalog lookup |
 
 ### Common Service (`src/tools/kyberswap/common/`)
 

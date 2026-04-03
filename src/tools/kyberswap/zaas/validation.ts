@@ -17,6 +17,23 @@ export function validateZapRouteResponse(raw: unknown): ZapRouteResponse {
   const code = typeof raw.code === "number" ? raw.code : 0;
   const data = isRecord(raw.data) ? raw.data : {};
 
+  // Extract poolDetails if present
+  const poolDetails = isRecord(data.poolDetails) ? {
+    category: typeof data.poolDetails.category === "string" ? data.poolDetails.category : undefined,
+    token0: typeof data.poolDetails.token0 === "string" ? data.poolDetails.token0 : undefined,
+    token1: typeof data.poolDetails.token1 === "string" ? data.poolDetails.token1 : undefined,
+    fee: typeof data.poolDetails.fee === "number" ? data.poolDetails.fee : undefined,
+    address: typeof data.poolDetails.address === "string" ? data.poolDetails.address : undefined,
+  } : undefined;
+
+  // Extract positionDetails if present
+  const positionDetails = isRecord(data.positionDetails) ? {
+    tokenId: typeof data.positionDetails.tokenId === "string" ? data.positionDetails.tokenId : undefined,
+    tickLower: typeof data.positionDetails.tickLower === "number" ? data.positionDetails.tickLower : undefined,
+    tickUpper: typeof data.positionDetails.tickUpper === "number" ? data.positionDetails.tickUpper : undefined,
+    liquidity: typeof data.positionDetails.liquidity === "string" ? data.positionDetails.liquidity : undefined,
+  } : undefined;
+
   return {
     code,
     message: asOptionalString(raw.message),
@@ -27,6 +44,10 @@ export function validateZapRouteResponse(raw: unknown): ZapRouteResponse {
       routerAddress: typeof data.routerAddress === "string"
         ? data.routerAddress as ZapRouteResponse["data"]["routerAddress"]
         : undefined,
+      poolDetails,
+      positionDetails,
+      gas: typeof data.gas === "string" ? data.gas : undefined,
+      gasUsd: typeof data.gasUsd === "string" ? data.gasUsd : undefined,
     },
     requestId: asOptionalString(raw.requestId),
   };

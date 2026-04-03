@@ -1,6 +1,6 @@
 # Polymarket Module Map — Prediction Markets on Polygon (EVM)
 
-> **Last updated: 2026-03-30**
+> **Last updated: 2026-04-03**
 >
 > **LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove endpoints, update types, fix stale references.
 >
@@ -527,7 +527,8 @@ polymarket stream-user [--markets <conditionId1> <conditionId2>] --json
 ### Buy/Sell
 
 ```
-1. resolveMarket(conditionId) → clobTokenIds, negRisk, tickSize
+1. resolveMarket(conditionId | numericId) → clobTokenIds, negRisk, tickSize
+   (accepts both hex conditionId and numeric Gamma ID; normalizes via listMarkets)
 2. resolveTokenId(outcome, clobTokenIds) → YES or NO token ID
 3. getFeeRate(tokenId) → base_fee in bps
 4. buildClobOrder({ maker, signer, tokenId, makerAmount, takerAmount, side, feeRateBps })

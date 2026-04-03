@@ -377,6 +377,158 @@ export async function sendKyberTransactionWithReceipt(
   }
 }
 
+// ── ERC-721 approval ───────────────────────────────────────────────
+
+const ERC721_ABI = [
+  {
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    name: "getApproved",
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "owner", type: "address" }, { name: "operator", type: "address" }],
+    name: "isApprovedForAll",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "to", type: "address" }, { name: "tokenId", type: "uint256" }],
+    name: "approve",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+/**
+ * Ensure ERC-721 NFT is approved for a spender. Approve if needed.
+ */
+export async function ensureErc721Approval(
+  publicClient: PublicClient<Transport, Chain>,
+  walletClient: WalletClient<Transport, Chain>,
+  nftContract: Address,
+  tokenId: bigint,
+  spender: Address,
+): Promise<Hex | null> {
+  validateKyberSpender(spender);
+  const owner = walletClient.account!.address;
+
+  // Check isApprovedForAll first — many DEXes (Algebra, Velodrome) use operator approval
+  try {
+    const operatorApproved = await publicClient.readContract({
+      address: nftContract,
+      abi: ERC721_ABI,
+      functionName: "isApprovedForAll",
+      args: [owner, spender],
+    });
+    if (operatorApproved) {
+      logger.debug({ event: "kyberswap.erc721.operator_approved", nftContract, spender });
+      return null;
+    }
+  } catch {
+    logger.debug({ event: "kyberswap.erc721.isApprovedForAll_failed", nftContract });
+  }
+
+  // Check per-token approval
+  try {
+    const approved = await publicClient.readContract({
+      address: nftContract,
+      abi: ERC721_ABI,
+      functionName: "getApproved",
+      args: [tokenId],
+    });
+
+    if (getAddress(approved) === getAddress(spender)) {
+      logger.debug({ event: "kyberswap.erc721.already_approved", nftContract, tokenId: tokenId.toString(), spender });
+      return null;
+    }
+  } catch {
+    logger.debug({ event: "kyberswap.erc721.getApproved_failed", nftContract, tokenId: tokenId.toString() });
+  }
+
+  try {
+    logger.debug({ event: "kyberswap.erc721.approve", nftContract, tokenId: tokenId.toString(), spender });
+    const txHash = await walletClient.writeContract({
+      account: walletClient.account!,
+      address: nftContract,
+      abi: ERC721_ABI,
+      functionName: "approve",
+      args: [spender, tokenId],
+    });
+    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    return txHash;
+  } catch (err) {
+    throw new EchoError(ErrorCodes.APPROVAL_FAILED, `ERC-721 approve failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+// ── ERC-1155 approval ──────────────────────────────────────────────
+
+const ERC1155_ABI = [
+  {
+    inputs: [{ name: "account", type: "address" }, { name: "operator", type: "address" }],
+    name: "isApprovedForAll",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "operator", type: "address" }, { name: "approved", type: "bool" }],
+    name: "setApprovalForAll",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+/**
+ * Ensure ERC-1155 setApprovalForAll for a spender. Approve if needed.
+ */
+export async function ensureErc1155ApprovalForAll(
+  publicClient: PublicClient<Transport, Chain>,
+  walletClient: WalletClient<Transport, Chain>,
+  contract: Address,
+  operator: Address,
+): Promise<Hex | null> {
+  validateKyberSpender(operator);
+
+  const owner = walletClient.account!.address;
+
+  try {
+    const approved = await publicClient.readContract({
+      address: contract,
+      abi: ERC1155_ABI,
+      functionName: "isApprovedForAll",
+      args: [owner, operator],
+    });
+
+    if (approved) {
+      logger.debug({ event: "kyberswap.erc1155.already_approved", contract, operator });
+      return null;
+    }
+  } catch {
+    logger.debug({ event: "kyberswap.erc1155.isApprovedForAll_failed", contract, operator });
+  }
+
+  try {
+    logger.debug({ event: "kyberswap.erc1155.setApprovalForAll", contract, operator });
+    const txHash = await walletClient.writeContract({
+      account: walletClient.account!,
+      address: contract,
+      abi: ERC1155_ABI,
+      functionName: "setApprovalForAll",
+      args: [operator, true],
+    });
+    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    return txHash;
+  } catch (err) {
+    throw new EchoError(ErrorCodes.APPROVAL_FAILED, `ERC-1155 setApprovalForAll failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 // ── ERC-721 mint extraction from receipt ────────────────────────
 
 const ERC721_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -384,23 +536,95 @@ const ZERO_ADDR_PADDED = "0x0000000000000000000000000000000000000000000000000000
 
 /**
  * Extract NFT position ID from transaction receipt logs.
- * Looks for ERC-721 Transfer(from=0x0, to=recipient, tokenId) — a mint event.
- * Filters by recipient to avoid capturing intermediary mints.
+ *
+ * Priority:
+ * 1. Direct mint: Transfer(from=0x0, to=wallet, tokenId) — standard mint
+ * 2. Router-intermediated: Transfer(from=any, to=wallet, tokenId) — router mints to
+ *    itself first, then transfers to wallet. Only matches logs with 4 indexed topics
+ *    (ERC-721, not ERC-20).
  */
 export function extractMintedNftId(
+  logs: Array<{ address: string; topics: string[]; data: string }>,
+  recipientAddress: string,
+  expectedContract?: string,
+): string | undefined {
+  const recipientPadded = `0x000000000000000000000000${recipientAddress.slice(2).toLowerCase()}`;
+  const expectedLower = expectedContract?.toLowerCase();
+
+  // Pass 1: direct mint (from=0x0 → wallet)
+  for (const log of logs) {
+    if (
+      log.topics[0] === ERC721_TRANSFER_TOPIC &&
+      log.topics.length === 4 &&
+      log.topics[1] === ZERO_ADDR_PADDED &&
+      log.topics[2]?.toLowerCase() === recipientPadded &&
+      (!expectedLower || log.address.toLowerCase() === expectedLower)
+    ) {
+      return BigInt(log.topics[3]).toString();
+    }
+  }
+
+  // Pass 2: router-intermediated (any → wallet, 4 topics = ERC-721)
+  for (const log of logs) {
+    if (
+      log.topics[0] === ERC721_TRANSFER_TOPIC &&
+      log.topics.length === 4 &&
+      log.topics[1] !== ZERO_ADDR_PADDED &&
+      log.topics[2]?.toLowerCase() === recipientPadded &&
+      (!expectedLower || log.address.toLowerCase() === expectedLower)
+    ) {
+      return BigInt(log.topics[3]).toString();
+    }
+  }
+
+  return undefined;
+}
+
+// ── ERC-1155 position extraction from receipt ──────────────────────
+
+const ERC1155_TRANSFER_SINGLE_TOPIC = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
+const ERC1155_TRANSFER_BATCH_TOPIC = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
+
+/**
+ * Extract ERC-1155 position token ID from receipt logs.
+ * Looks for TransferSingle or TransferBatch events where `to` is the recipient.
+ */
+export function extractErc1155Position(
   logs: Array<{ address: string; topics: string[]; data: string }>,
   recipientAddress: string,
 ): string | undefined {
   const recipientPadded = `0x000000000000000000000000${recipientAddress.slice(2).toLowerCase()}`;
 
+  // TransferSingle(operator, from, to, id, value) — to is topics[3]
   for (const log of logs) {
     if (
-      log.topics[0] === ERC721_TRANSFER_TOPIC &&
-      log.topics.length === 4 &&                    // ERC-721 (4 indexed topics), not ERC-20 (3)
-      log.topics[1] === ZERO_ADDR_PADDED &&          // from = 0x0 (mint)
-      log.topics[2]?.toLowerCase() === recipientPadded // to = our wallet
+      log.topics[0] === ERC1155_TRANSFER_SINGLE_TOPIC &&
+      log.topics.length === 4 &&
+      log.topics[3]?.toLowerCase() === recipientPadded
     ) {
-      return BigInt(log.topics[3]).toString();
+      // id is in data[0:32]
+      const id = BigInt("0x" + log.data.slice(2, 66));
+      return id.toString();
+    }
+  }
+
+  // TransferBatch(operator, from, to, ids[], values[]) — to is topics[3]
+  for (const log of logs) {
+    if (
+      log.topics[0] === ERC1155_TRANSFER_BATCH_TOPIC &&
+      log.topics.length === 4 &&
+      log.topics[3]?.toLowerCase() === recipientPadded
+    ) {
+      // For batch, take the first id from the ABI-encoded array
+      // Offset to ids array starts at data position 0 (offset pointer), then length, then first element
+      try {
+        const dataHex = log.data.slice(2);
+        const idsOffset = Number(BigInt("0x" + dataHex.slice(0, 64))) * 2;
+        const firstId = BigInt("0x" + dataHex.slice(idsOffset + 64, idsOffset + 128));
+        return firstId.toString();
+      } catch {
+        continue;
+      }
     }
   }
 

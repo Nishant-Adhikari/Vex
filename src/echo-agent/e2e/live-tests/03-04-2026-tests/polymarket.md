@@ -22,41 +22,25 @@ Trading (buy/sell/cancel) blocked — credentials not loaded into process.env + 
 
 ## Bugs Found
 
-### BUG 1 (High): `clob.buy` handler uses conditionId as Gamma market ID
+### BUG 1 (High): `clob.buy` handler uses conditionId as Gamma market ID — **FIXED**
 
 **File:** `src/echo-agent/tools/protocols/polymarket/handlers-clob.ts:130`
 
-Handler does `getPolyGammaClient().getMarket(conditionId)` but Gamma API `GET /markets/{id}` expects numeric ID (e.g. `1640919`) or slug, NOT hex conditionId.
+Handler did `getPolyGammaClient().getMarket(conditionId)` but Gamma API `GET /markets/{id}` expects numeric ID.
 
-- With conditionId (hex): `"Polymarket Gamma: id is invalid"`
-- With numeric ID: dryRun works correctly
+**Fix applied:** `resolveMarket()` method added to `PolyGammaClient` — accepts both hex conditionId and numeric ID. Used in `clob.buy`, `clob.sell`, and `gamma.market` handlers.
 
-**Fix:** Either resolve conditionId → numeric ID via Gamma search, or change manifest to accept numeric market ID.
+### BUG 2 (High): `clob.buy` price=0 causes NaN/Infinity — **FIXED**
 
-### BUG 2 (High): `clob.buy` price=0 causes NaN/Infinity
+**Fix applied:** Zero-price guard added to both `clob.buy` and `clob.sell` handlers: `if (!price || price <= 0) return fail(...)`.
 
-When `getPrice(tokenId, "BUY")` returns 0 (no immediate fill), handler computes:
-```
-shares = amount / 0 = Infinity
-calcAmounts("BUY", Infinity, 0) → NaN
-→ "Cannot convert NaN to a BigInt"
-```
+### BUG 3 (Medium): `polymarket_setup` doesn't set process.env — **FIXED (E2E)**
 
-**Fix:** Guard against price=0, fall back to bestAsk from orderbook or require explicit `price` param.
+**Fix applied:** `loadProviderDotenv()` called at E2E MCP server startup. Not a full fix for main runtime (separate concern), but E2E tests now load credentials.
 
-### BUG 3 (Medium): `polymarket_setup` doesn't set process.env
+### BUG 4 (Medium): `gamma.comments` param mismatch — **FIXED**
 
-`polymarket_setup` saves credentials to `~/.config/echoclaw/.env` file and reports "configured", but doesn't set `process.env.POLYMARKET_API_KEY`. Registry has `requiresEnv: "POLYMARKET_API_KEY"` → tools remain blocked until process restart with env vars.
-
-**Impact:** After running `polymarket_setup`, trading tools still unavailable. User must manually restart MCP/engine with env vars.
-
-**Fix:** After saving to file, do `process.env[key] = value` for each credential.
-
-### BUG 4 (Medium): `gamma.comments` param mismatch
-
-Handler sends `marketId` but API requires `parent_entity_id` + `entity_entity_type`.
-
-**Error:** `"parent_entity_id and entity_entity_type are mandatory"`
+**Fix applied:** Handler now uses `parentEntityType` / `parentEntityId` params correctly, with validation that `parentEntityId` requires `parentEntityType`.
 
 ### BUG 5 (Low): `clob.price` / `clob.midpoint` return 0
 

@@ -160,6 +160,44 @@ export async function resolveTokenMetadata(input: string, chainId: number): Prom
   };
 }
 
+/**
+ * Strict token metadata resolver — address-only for mutating operations.
+ *
+ * Rejects symbol/name inputs to prevent ambiguous resolution (e.g. "USDC"
+ * resolving to axlUSDC instead of native USDC). Symbols must be resolved
+ * via khalani.tokens.search BEFORE calling mutating swap/order tools.
+ */
+export async function resolveTokenMetadataStrict(input: string, chainId: number): Promise<ResolvedKyberTokenMetadata> {
+  const lower = input.toLowerCase();
+
+  if (lower === "native" || lower === "eth") {
+    return {
+      address: NATIVE_TOKEN_ADDRESS,
+      symbol: "NATIVE",
+      name: "Native token",
+      decimals: 18,
+      isNative: true,
+    };
+  }
+
+  if (!isAddress(input)) {
+    throw new EchoError(
+      ErrorCodes.KYBER_TOKEN_NOT_FOUND,
+      `Token "${input}" is not a valid address. Resolve token addresses via khalani.tokens.search before calling mutating tools.`,
+      "Pass the exact contract address, not a symbol or name.",
+    );
+  }
+
+  const slug = chainIdToSlug(chainId);
+  if (!slug) {
+    throw new EchoError(
+      ErrorCodes.KYBER_TOKEN_NOT_FOUND,
+      `Cannot resolve chain slug for chainId ${chainId}`,
+    );
+  }
+  return readErc20Metadata(slug, getAddress(input));
+}
+
 /** Format USD value for display. */
 export function formatUsd(value: string | number): string {
   const num = typeof value === "string" ? parseFloat(value) : value;

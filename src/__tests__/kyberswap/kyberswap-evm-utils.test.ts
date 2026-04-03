@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateKyberSpender, verifyRouterAddress, extractMintedNftId } from "@tools/kyberswap/evm-utils.js";
+import { validateKyberSpender, verifyRouterAddress, extractMintedNftId, extractErc1155Position } from "@tools/kyberswap/evm-utils.js";
 import {
   META_AGGREGATION_ROUTER_V2,
   DSLO_PROTOCOL,
@@ -98,16 +98,47 @@ describe("extractMintedNftId", () => {
     expect(extractMintedNftId(logs, WALLET)).toBeUndefined();
   });
 
-  it("ignores non-mint transfers (from != 0x0)", () => {
+  it("captures router-intermediated transfers (from != 0x0, to = wallet) as pass 2", () => {
     const SENDER = "0x0000000000000000000000002222222222222222222222222222222222222222";
     const logs = [
       { address: "0xnft", topics: [TRANSFER_TOPIC, SENDER, WALLET_PADDED, "0x0000000000000000000000000000000000000000000000000000000000000042"], data: "0x" },
     ];
-    expect(extractMintedNftId(logs, WALLET)).toBeUndefined();
+    // Now captured as router-intermediated (pass 2) — tokenId 66 = 0x42
+    expect(extractMintedNftId(logs, WALLET)).toBe("66");
+  });
+
+  it("prefers direct mint over router-intermediated", () => {
+    const SENDER = "0x0000000000000000000000002222222222222222222222222222222222222222";
+    const logs = [
+      // Router-intermediated transfer (pass 2 candidate)
+      { address: "0xnft", topics: [TRANSFER_TOPIC, SENDER, WALLET_PADDED, "0x0000000000000000000000000000000000000000000000000000000000000099"], data: "0x" },
+      // Direct mint (pass 1 — should win)
+      { address: "0xnft", topics: [TRANSFER_TOPIC, ZERO, WALLET_PADDED, "0x0000000000000000000000000000000000000000000000000000000000000042"], data: "0x" },
+    ];
+    expect(extractMintedNftId(logs, WALLET)).toBe("66"); // 0x42 from direct mint
   });
 
   it("handles empty logs", () => {
     expect(extractMintedNftId([], WALLET)).toBeUndefined();
+  });
+
+  it("filters by expectedContract when provided (R3)", () => {
+    const EXPECTED_NFT = "0xc36442b4a4522e871399cd717abdd847ab11fe88";
+    const FOREIGN_NFT = "0x1111111111111111111111111111111111111111";
+    const logs = [
+      // Foreign NFT mint — should be filtered out
+      { address: FOREIGN_NFT, topics: [TRANSFER_TOPIC, ZERO, WALLET_PADDED, "0x0000000000000000000000000000000000000000000000000000000000000099"], data: "0x" },
+      // Expected NFT mint
+      { address: EXPECTED_NFT, topics: [TRANSFER_TOPIC, ZERO, WALLET_PADDED, "0x0000000000000000000000000000000000000000000000000000000000000042"], data: "0x" },
+    ];
+    expect(extractMintedNftId(logs, WALLET, EXPECTED_NFT)).toBe("66"); // 0x42
+  });
+
+  it("returns undefined when expectedContract doesn't match any log (R3)", () => {
+    const logs = [
+      { address: "0xforeign", topics: [TRANSFER_TOPIC, ZERO, WALLET_PADDED, "0x0000000000000000000000000000000000000000000000000000000000000042"], data: "0x" },
+    ];
+    expect(extractMintedNftId(logs, WALLET, "0xexpected")).toBeUndefined();
   });
 
   it("extracts real tokenId 2879807 from April 2 retest", () => {
@@ -116,5 +147,40 @@ describe("extractMintedNftId", () => {
       { address: "0xc36442b4a4522e871399cd717abdd847ab11fe88", topics: [TRANSFER_TOPIC, ZERO, WALLET_PADDED, "0x00000000000000000000000000000000000000000000000000000000002bf43f"], data: "0x" },
     ];
     expect(extractMintedNftId(logs, WALLET)).toBe("2880575"); // 0x2BF43F
+  });
+});
+
+// ── extractErc1155Position ────────────────────────────────────────
+
+describe("extractErc1155Position", () => {
+  const TRANSFER_SINGLE_TOPIC = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
+  const WALLET = "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79";
+  const WALLET_PADDED = "0x00000000000000000000000018b467cb28fc07ca6e17a964b3319051b3072b79";
+  const OPERATOR = "0x0000000000000000000000001111111111111111111111111111111111111111";
+  const FROM = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+  it("extracts token ID from TransferSingle event", () => {
+    // TransferSingle(operator, from, to, id=42, value=100)
+    // topics: [event, operator, from, to]  data: [id, value]
+    const idHex = "000000000000000000000000000000000000000000000000000000000000002a"; // 42
+    const valueHex = "0000000000000000000000000000000000000000000000000000000000000064"; // 100
+    const logs = [
+      { address: "0xBinManager", topics: [TRANSFER_SINGLE_TOPIC, OPERATOR, FROM, WALLET_PADDED], data: "0x" + idHex + valueHex },
+    ];
+    expect(extractErc1155Position(logs, WALLET)).toBe("42");
+  });
+
+  it("returns undefined for no matching logs", () => {
+    expect(extractErc1155Position([], WALLET)).toBeUndefined();
+  });
+
+  it("ignores transfers to different recipient", () => {
+    const OTHER = "0x0000000000000000000000009999999999999999999999999999999999999999";
+    const idHex = "000000000000000000000000000000000000000000000000000000000000002a";
+    const valueHex = "0000000000000000000000000000000000000000000000000000000000000064";
+    const logs = [
+      { address: "0xBin", topics: [TRANSFER_SINGLE_TOPIC, OPERATOR, FROM, OTHER], data: "0x" + idHex + valueHex },
+    ];
+    expect(extractErc1155Position(logs, WALLET)).toBeUndefined();
   });
 });

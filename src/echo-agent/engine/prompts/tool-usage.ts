@@ -68,6 +68,11 @@ but cannot prove that an address came from a prior read tool call.
    khalani.tokens.search(query, chainIds) BEFORE passing to kyberswap/khalani.bridge/zap.
    Pass the address, not the symbol. kyberswap.tokens.search is a visibility check only.
 
+5. **Check before swap**: Before any kyberswap.swap.sell or kyberswap.swap.buy, run
+   kyberswap.tokens.check on BOTH tokenIn and tokenOut to verify they are not honeypots
+   and check fee-on-transfer tax. The runtime enforces this gate, but discovering issues
+   early gives better error messages. Skip for native tokens (ETH/POL/BNB/etc).
+
 ## Self-Inspection
 
 Use \`portfolio_inspect\` to check your own state before making decisions:

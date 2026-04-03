@@ -127,6 +127,40 @@ describe("resolveTokenMetadata — symbol path with fallback", () => {
   });
 });
 
+// ── resolveTokenMetadataStrict (address-only for mutations) ────────
+
+describe("resolveTokenMetadataStrict", () => {
+  it("rejects symbol input (not address)", async () => {
+    const { resolveTokenMetadataStrict } = await import("@commands/kyberswap/helpers.js");
+    await expect(resolveTokenMetadataStrict("USDC", 137)).rejects.toThrow(/not a valid address/);
+  });
+
+  it("rejects name input", async () => {
+    const { resolveTokenMetadataStrict } = await import("@commands/kyberswap/helpers.js");
+    await expect(resolveTokenMetadataStrict("USD Coin", 137)).rejects.toThrow(/not a valid address/);
+  });
+
+  it("accepts valid address", async () => {
+    const { resolveTokenMetadataStrict } = await import("@commands/kyberswap/helpers.js");
+    const result = await resolveTokenMetadataStrict("0x750e4C4984a9e0f12978eA6742Bc1c5D248f40ed", 137);
+    expect(result.address).toBe("0x750e4C4984a9e0f12978eA6742Bc1c5D248f40ed");
+    expect(result.isNative).toBe(false);
+  });
+
+  it("accepts native token keywords", async () => {
+    const { resolveTokenMetadataStrict } = await import("@commands/kyberswap/helpers.js");
+    const result = await resolveTokenMetadataStrict("native", 137);
+    expect(result.isNative).toBe(true);
+    expect(result.decimals).toBe(18);
+  });
+
+  it("accepts ETH keyword", async () => {
+    const { resolveTokenMetadataStrict } = await import("@commands/kyberswap/helpers.js");
+    const result = await resolveTokenMetadataStrict("eth", 1);
+    expect(result.isNative).toBe(true);
+  });
+});
+
 describe("resolveTokenAddress — symbol fallback", () => {
   it("resolves address for whitelisted symbol", async () => {
     const { resolveTokenAddress } = await import("@commands/kyberswap/helpers.js");

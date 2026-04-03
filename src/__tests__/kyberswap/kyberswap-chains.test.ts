@@ -166,6 +166,67 @@ describe("zaas catalog consistency", () => {
     const missing = zaasChains.filter(slug => !catalogChains.includes(slug));
     expect(missing).toEqual([]);
   });
+
+  it("every catalog entry has valid 5-axis position model", async () => {
+    const { getSupportedZapChains, getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
+    const validRefKinds = new Set(["tokenId", "ownerAddress", "erc1155TokenId", "opaqueRef"]);
+    const validApprovalStandards = new Set(["erc721", "erc20", "erc1155", "none"]);
+    const validApprovalTargets = new Set(["positionManager", "poolAddress", "vaultShare", "binManager", "lpToken", "none"]);
+    const validCaptureKinds = new Set(["receiptNftMint", "receiptErc1155", "shareBalance", "none"]);
+    const validKeyStrategies = new Set(["nftTokenId", "chainPoolWallet", "chainVaultWallet", "erc1155TokenId", "none"]);
+
+    for (const chain of getSupportedZapChains()) {
+      const config = getZapDexConfig(chain);
+      expect(config).toBeDefined();
+      for (const dex of config!.dexes) {
+        expect(validRefKinds.has(dex.positionRefKind), `${chain}/${dex.id} invalid positionRefKind: ${dex.positionRefKind}`).toBe(true);
+        expect(validApprovalStandards.has(dex.approvalStandard), `${chain}/${dex.id} invalid approvalStandard: ${dex.approvalStandard}`).toBe(true);
+        expect(validApprovalTargets.has(dex.approvalTargetKind), `${chain}/${dex.id} invalid approvalTargetKind: ${dex.approvalTargetKind}`).toBe(true);
+        expect(validCaptureKinds.has(dex.captureKind), `${chain}/${dex.id} invalid captureKind: ${dex.captureKind}`).toBe(true);
+        expect(validKeyStrategies.has(dex.positionKeyStrategy), `${chain}/${dex.id} invalid positionKeyStrategy: ${dex.positionKeyStrategy}`).toBe(true);
+        expect(dex.supports.length).toBeGreaterThan(0);
+        expect(dex.id).toMatch(/^DEX_/);
+      }
+    }
+  });
+
+  it("no duplicate DEX IDs within a chain", async () => {
+    const { getSupportedZapChains, getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
+    for (const chain of getSupportedZapChains()) {
+      const config = getZapDexConfig(chain)!;
+      const ids = config.dexes.map(d => d.id);
+      const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+      expect(duplicates, `${chain} has duplicate DEX IDs`).toEqual([]);
+    }
+  });
+
+  it("5-axis tuples are internally consistent", async () => {
+    const { getSupportedZapChains, getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
+    for (const chain of getSupportedZapChains()) {
+      const config = getZapDexConfig(chain)!;
+      for (const dex of config.dexes) {
+        // NFT CL family: tokenId ref → erc721 approval → positionManager target → receiptNftMint capture → nftTokenId key
+        if (dex.approvalStandard === "erc721") {
+          expect(dex.positionRefKind, `${chain}/${dex.id}`).toBe("tokenId");
+          expect(dex.approvalTargetKind, `${chain}/${dex.id}`).toBe("positionManager");
+          expect(dex.captureKind, `${chain}/${dex.id}`).toBe("receiptNftMint");
+          expect(dex.positionKeyStrategy, `${chain}/${dex.id}`).toBe("nftTokenId");
+        }
+        // ERC-1155 family: erc1155TokenId ref → erc1155 approval → binManager target
+        if (dex.approvalStandard === "erc1155") {
+          expect(dex.positionRefKind, `${chain}/${dex.id}`).toBe("erc1155TokenId");
+          expect(dex.approvalTargetKind, `${chain}/${dex.id}`).toBe("binManager");
+          expect(dex.captureKind, `${chain}/${dex.id}`).toBe("receiptErc1155");
+          expect(dex.positionKeyStrategy, `${chain}/${dex.id}`).toBe("erc1155TokenId");
+        }
+        // Source-only: no capture, no projection key
+        if (dex.supports.length === 1 && dex.supports[0] === "zap-migrate-source") {
+          expect(dex.captureKind, `${chain}/${dex.id}`).toBe("none");
+          expect(dex.positionKeyStrategy, `${chain}/${dex.id}`).toBe("none");
+        }
+      }
+    }
+  });
 });
 
 describe("dynamic chain cache", () => {

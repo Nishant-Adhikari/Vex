@@ -171,6 +171,15 @@ describe("polymarket handlers (bridge + clob + data + gamma)", () => {
     const r = await POLYMARKET_HANDLERS["polymarket.gamma.comment"]!({}, { loopMode: "off", approved: false });
     expect(r.success).toBe(false); expect(r.output).toContain("id");
   });
+  it("gamma.comments rejects parentEntityId without parentEntityType (R10)", async () => {
+    const r = await POLYMARKET_HANDLERS["polymarket.gamma.comments"]!(
+      { parentEntityId: 12345 },
+      { loopMode: "off", approved: false },
+    );
+    expect(r.success).toBe(false);
+    expect(r.output).toContain("parentEntityType");
+  });
+
   it("gamma.commentsByUser fails without address", async () => {
     const r = await POLYMARKET_HANDLERS["polymarket.gamma.commentsByUser"]!({}, { loopMode: "off", approved: false });
     expect(r.success).toBe(false); expect(r.output).toContain("address");
