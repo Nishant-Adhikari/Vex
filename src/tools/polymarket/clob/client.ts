@@ -231,6 +231,14 @@ export class PolyClobClient {
     }, body);
   }
 
+  getSimplifiedMarkets(nextCursor?: string): Promise<unknown> {
+    return this.requestPublic("/simplified-markets", (raw) => raw, nextCursor ? { next_cursor: nextCursor } : undefined);
+  }
+
+  getRebates(date: string, makerAddress: string): Promise<unknown> {
+    return this.requestPublic("/rebates/current", (raw) => raw, { date, maker_address: makerAddress });
+  }
+
   getOrderScoring(orderId: string): Promise<OrderScoringResponse> {
     return this.requestAuth("GET", "/order-scoring", validateOrderScoringResponse, undefined, { order_id: orderId });
   }
@@ -274,11 +282,14 @@ export class PolyClobClient {
     return this.requestAuth("GET", `/order/${encodeURIComponent(orderId)}`, validateOpenOrder);
   }
 
-  getTrades(opts?: { maker_address?: string; market?: string; asset_id?: string; next_cursor?: string }): Promise<PaginatedTrades> {
+  getTrades(opts?: { id?: string; maker_address?: string; market?: string; asset_id?: string; before?: string; after?: string; next_cursor?: string }): Promise<PaginatedTrades> {
     return this.requestAuth("GET", "/data/trades", validatePaginatedTrades, undefined, {
+      id: opts?.id,
       maker_address: opts?.maker_address,
       market: opts?.market,
       asset_id: opts?.asset_id,
+      before: opts?.before,
+      after: opts?.after,
       next_cursor: opts?.next_cursor,
     });
   }

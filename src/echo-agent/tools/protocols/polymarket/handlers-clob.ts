@@ -304,11 +304,24 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
   "polymarket.clob.trades": async (p) => {
     const wallet = requireEvmWallet();
     return ok(await getPolyClobClient().getTrades({
+      id: str(p, "id") || undefined,
       maker_address: wallet.address,
       market: str(p, "market") || undefined,
       asset_id: str(p, "assetId") || undefined,
+      before: str(p, "before") || undefined,
+      after: str(p, "after") || undefined,
       next_cursor: str(p, "cursor") || undefined,
     }));
+  },
+
+  "polymarket.clob.simplifiedMarkets": async (p) => {
+    return ok(await getPolyClobClient().getSimplifiedMarkets(str(p, "cursor") || undefined));
+  },
+
+  "polymarket.clob.rebates": async (p) => {
+    const date = str(p, "date"), makerAddress = str(p, "makerAddress");
+    if (!date || !makerAddress) return fail("Missing required: date, makerAddress");
+    return ok(await getPolyClobClient().getRebates(date, makerAddress));
   },
 
   "polymarket.clob.heartbeat": async () => {
