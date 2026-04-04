@@ -131,6 +131,21 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     exampleParams: { market: "0xabc...", interval: "1d" },
   },
   {
+    toolId: "polymarket.clob.batchPriceHistory",
+    namespace: "polymarket",
+    lifecycle: "active",
+    description: "Get price history for multiple markets in one call (max 20). POST endpoint.",
+    mutating: false,
+    params: [
+      { key: "markets", type: "string", required: true, description: "Comma-separated market asset IDs (max 20)." },
+      { key: "interval", type: "string", description: "Time interval: 1h, 6h, 1d, 1w, 1m, all, max." },
+      { key: "fidelity", type: "number", description: "Data point granularity in minutes." },
+      { key: "startTs", type: "number", description: "Start timestamp (unix seconds)." },
+      { key: "endTs", type: "number", description: "End timestamp (unix seconds)." },
+    ],
+    exampleParams: { markets: "0xabc...,0xdef...", interval: "1d" },
+  },
+  {
     toolId: "polymarket.clob.serverTime",
     namespace: "polymarket",
     lifecycle: "active",

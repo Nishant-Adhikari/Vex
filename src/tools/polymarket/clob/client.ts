@@ -216,6 +216,18 @@ export class PolyClobClient {
     return this.requestPublicPost("/last-trades-prices", validateBatchLastTradesPricesResponse, requests);
   }
 
+  getBatchPriceHistory(markets: string[], opts?: { startTs?: number; endTs?: number; interval?: string; fidelity?: number }): Promise<PriceHistoryResponse[]> {
+    const body: Record<string, unknown> = { markets };
+    if (opts?.startTs != null) body.start_ts = opts.startTs;
+    if (opts?.endTs != null) body.end_ts = opts.endTs;
+    if (opts?.interval) body.interval = opts.interval;
+    if (opts?.fidelity != null) body.fidelity = opts.fidelity;
+    return this.requestPublicPost("/prices-history", (raw) => {
+      if (Array.isArray(raw)) return raw.map(r => validatePriceHistoryResponse(r));
+      return [validatePriceHistoryResponse(raw)];
+    }, body);
+  }
+
   getOrderScoring(orderId: string): Promise<OrderScoringResponse> {
     return this.requestAuth("GET", "/order-scoring", validateOrderScoringResponse);
   }

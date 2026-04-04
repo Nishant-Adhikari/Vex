@@ -313,6 +313,21 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     return ok(await getPolyClobClient().sendHeartbeat());
   },
 
+  "polymarket.clob.batchPriceHistory": async (p) => {
+    const marketsRaw = str(p, "markets");
+    if (!marketsRaw) return fail("Missing required: markets");
+    const markets = marketsRaw.split(",").map(s => s.trim()).filter(Boolean);
+    if (markets.length === 0) return fail("No valid market IDs provided");
+    if (markets.length > 20) return fail("Maximum 20 markets per batch request");
+    const result = await getPolyClobClient().getBatchPriceHistory(markets, {
+      startTs: num(p, "startTs"),
+      endTs: num(p, "endTs"),
+      interval: str(p, "interval") || undefined,
+      fidelity: num(p, "fidelity"),
+    });
+    return ok(result);
+  },
+
   "polymarket.clob.orderScoring": async (p) => {
     const orderId = str(p, "orderId");
     if (!orderId) return fail("Missing required: orderId");
