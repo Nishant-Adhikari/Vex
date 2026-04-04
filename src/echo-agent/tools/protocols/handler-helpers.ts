@@ -32,6 +32,22 @@ export function bool(p: Record<string, unknown>, k: string): boolean | undefined
   return typeof p[k] === "boolean" ? (p[k] as boolean) : undefined;
 }
 
+/** Comma-separated string → trimmed string array. Returns undefined if empty/missing. */
+export function strArray(p: Record<string, unknown>, k: string): string[] | undefined {
+  const v = typeof p[k] === "string" ? (p[k] as string) : "";
+  if (!v) return undefined;
+  const arr = v.split(",").map(s => s.trim()).filter(Boolean);
+  return arr.length > 0 ? arr : undefined;
+}
+
+/** Comma-separated string → number array. Filters out non-finite values. Returns undefined if empty/missing. */
+export function numArray(p: Record<string, unknown>, k: string): number[] | undefined {
+  const v = typeof p[k] === "string" ? (p[k] as string) : "";
+  if (!v) return undefined;
+  const arr = v.split(",").map(Number).filter(n => Number.isFinite(n));
+  return arr.length > 0 ? arr : undefined;
+}
+
 // ── Native gas reserve (future) ─────────────────────────────────
 // TODO: Runtime gas reserve backstop for native-token spends.
 // Currently enforced via prompt only (DeFi Safety Rules in tool-usage.ts).

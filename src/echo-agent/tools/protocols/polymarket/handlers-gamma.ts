@@ -5,7 +5,7 @@
 
 import { getPolyGammaClient } from "@tools/polymarket/gamma/client.js";
 import type { ProtocolHandler } from "../types.js";
-import { str, num, bool, ok, fail } from "../handler-helpers.js";
+import { str, num, bool, strArray, numArray, ok, fail } from "../handler-helpers.js";
 
 export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   // ── Events ────────────────────────────────────────────────────
@@ -17,11 +17,11 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
       order: str(p, "order") || undefined,
       ascending: bool(p, "ascending"),
       // Identifiers
-      slug: str(p, "slug") ? str(p, "slug").split(",").map(s => s.trim()) : undefined,
+      slug: strArray(p, "slug"),
       // Tags
       tag_slug: str(p, "tagSlug") || undefined,
       tag_id: num(p, "tagId"),
-      exclude_tag_id: str(p, "excludeTagId") ? str(p, "excludeTagId").split(",").map(Number).filter(n => Number.isFinite(n)) : undefined,
+      exclude_tag_id: numArray(p, "excludeTagId"),
       related_tags: bool(p, "relatedTags"),
       // Status
       active: bool(p, "active"),
@@ -81,10 +81,10 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
       order: str(p, "order") || undefined,
       ascending: bool(p, "ascending"),
       // Identifiers
-      slug: str(p, "slug") ? str(p, "slug").split(",").map(s => s.trim()) : undefined,
-      clob_token_ids: str(p, "clobTokenIds") ? str(p, "clobTokenIds").split(",").map(s => s.trim()) : undefined,
-      condition_ids: str(p, "conditionIds") ? str(p, "conditionIds").split(",").map(s => s.trim()) : undefined,
-      question_ids: str(p, "questionIds") ? str(p, "questionIds").split(",").map(s => s.trim()) : undefined,
+      slug: strArray(p, "slug"),
+      clob_token_ids: strArray(p, "clobTokenIds"),
+      condition_ids: strArray(p, "conditionIds"),
+      question_ids: strArray(p, "questionIds"),
       // Status / filtering
       closed: bool(p, "closed"),
       tag_id: num(p, "tagId"),
@@ -104,7 +104,7 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
       end_date_max: str(p, "endDateMax") || undefined,
       // Sports
       game_id: str(p, "gameId") || undefined,
-      sports_market_types: str(p, "sportsMarketTypes") ? str(p, "sportsMarketTypes").split(",").map(s => s.trim()) : undefined,
+      sports_market_types: strArray(p, "sportsMarketTypes"),
       // Rewards
       rewards_min_size: num(p, "rewardsMinSize"),
     });
@@ -259,9 +259,8 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "polymarket.gamma.teams": async (p) => {
-    const league = str(p, "league");
     const teams = await getPolyGammaClient().listTeams({
-      league: league ? league.split(",").map(s => s.trim()) : undefined,
+      league: strArray(p, "league"),
       limit: num(p, "limit"),
     });
     return ok({ count: teams.length, teams });
