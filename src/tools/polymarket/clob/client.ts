@@ -69,19 +69,22 @@ export class PolyClobClient {
     }
   }
 
-  /** Authenticated request (trading). Uses HMAC-SHA256 headers. */
+  /** Authenticated request (trading). Uses HMAC-SHA256 headers.
+   *  HMAC signs path only (without query string) — query params go to URL separately. */
   private async requestAuth<T>(
     method: string,
     path: string,
     validator: (raw: unknown) => T,
     body?: unknown,
+    query?: Record<string, string | undefined>,
   ): Promise<T> {
     const creds = requirePolyClobCredentials();
     const { address } = requireEvmWallet();
     const bodyStr = body !== undefined ? JSON.stringify(body) : "";
+    // HMAC signs path without query — per Polymarket CLOB auth spec
     const headers = buildClobHeaders(creds.apiKey, address, creds.passphrase, method, path, bodyStr, creds.apiSecret);
 
-    const url = this.buildUrl(path);
+    const url = this.buildUrl(path, query);
     try {
       logger.debug({ event: "polymarket.clob.auth_request.start", path, method });
       const response = await fetchWithTimeout(url, {
@@ -229,7 +232,7 @@ export class PolyClobClient {
   }
 
   getOrderScoring(orderId: string): Promise<OrderScoringResponse> {
-    return this.requestAuth("GET", "/order-scoring", validateOrderScoringResponse);
+    return this.requestAuth("GET", "/order-scoring", validateOrderScoringResponse, undefined, { order_id: orderId });
   }
 
   // ── Trading (authenticated) ─────────────────────────────────────
@@ -259,20 +262,25 @@ export class PolyClobClient {
   }
 
   getOrders(opts?: { id?: string; market?: string; asset_id?: string; next_cursor?: string }): Promise<PaginatedOrders> {
-    const query: Record<string, string | undefined> = {};
-    if (opts?.id) query.id = opts.id;
-    if (opts?.market) query.market = opts.market;
-    if (opts?.asset_id) query.asset_id = opts.asset_id;
-    if (opts?.next_cursor) query.next_cursor = opts.next_cursor;
-    return this.requestAuth("GET", "/orders", validatePaginatedOrders);
+    return this.requestAuth("GET", "/data/orders", validatePaginatedOrders, undefined, {
+      id: opts?.id,
+      market: opts?.market,
+      asset_id: opts?.asset_id,
+      next_cursor: opts?.next_cursor,
+    });
   }
 
   getOrder(orderId: string): Promise<OpenOrder> {
     return this.requestAuth("GET", `/order/${encodeURIComponent(orderId)}`, validateOpenOrder);
   }
 
-  getTrades(opts?: { maker_address: string; market?: string; asset_id?: string; next_cursor?: string }): Promise<PaginatedTrades> {
-    return this.requestAuth("GET", "/trades", validatePaginatedTrades);
+  getTrades(opts?: { maker_address?: string; market?: string; asset_id?: string; next_cursor?: string }): Promise<PaginatedTrades> {
+    return this.requestAuth("GET", "/data/trades", validatePaginatedTrades, undefined, {
+      maker_address: opts?.maker_address,
+      market: opts?.market,
+      asset_id: opts?.asset_id,
+      next_cursor: opts?.next_cursor,
+    });
   }
 
   sendHeartbeat(): Promise<{ status: string }> {

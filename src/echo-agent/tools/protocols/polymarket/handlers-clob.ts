@@ -161,7 +161,8 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     const result = await clob.postOrder({
       order: { ...orderData, signature },
       owner: creds.apiKey,
-      orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD",
+      orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" | "FAK",
+      deferExec: p.deferExec === true ? true : undefined,
     });
 
     const isMatched = result.status === "matched";
@@ -220,7 +221,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     const orderData = buildClobOrder({ maker: wallet.address, signer: wallet.address, tokenId, makerAmount, takerAmount, side: "SELL", feeRateBps: String(feeRate.base_fee) });
     const signature = await signClobOrder(wallet.privateKey as Hex, orderData, market.negRisk ?? false);
 
-    const result = await clob.postOrder({ order: { ...orderData, signature }, owner: creds.apiKey, orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" });
+    const result = await clob.postOrder({ order: { ...orderData, signature }, owner: creds.apiKey, orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" | "FAK", deferExec: p.deferExec === true ? true : undefined });
 
     const isMatched = result.status === "matched";
     return {
@@ -287,6 +288,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
 
   "polymarket.clob.orders": async (p) => {
     return ok(await getPolyClobClient().getOrders({
+      id: str(p, "id") || undefined,
       market: str(p, "market") || undefined,
       asset_id: str(p, "assetId") || undefined,
       next_cursor: str(p, "cursor") || undefined,
