@@ -135,7 +135,14 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     const clob = getPolyClobClient();
     let price = num(p, "price") ?? null;
     if (price === null) {
-      price = (await clob.getPrice(tokenId, "BUY")).price;
+      const priceResp = await clob.getPrice(tokenId, "BUY");
+      price = priceResp.price;
+      // Fallback: getPrice returns 0 for some markets — use best ask from orderbook
+      if (!price || price <= 0) {
+        const ob = await clob.getOrderBook(tokenId);
+        const bestAsk = ob.asks?.length ? Number(ob.asks[ob.asks.length - 1]?.price) : 0;
+        if (bestAsk > 0) price = bestAsk;
+      }
     }
     if (!price || price <= 0) return fail(`Cannot determine price for ${outcome} token — price is ${price}. Market may be illiquid or closed.`);
     const shares = amount / price;
@@ -191,7 +198,14 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     const clob = getPolyClobClient();
     let price = num(p, "price") ?? null;
     if (price === null) {
-      price = (await clob.getPrice(tokenId, "SELL")).price;
+      const priceResp = await clob.getPrice(tokenId, "SELL");
+      price = priceResp.price;
+      // Fallback: getPrice returns 0 for some markets — use best bid from orderbook
+      if (!price || price <= 0) {
+        const ob = await clob.getOrderBook(tokenId);
+        const bestBid = ob.bids?.length ? Number(ob.bids[ob.bids.length - 1]?.price) : 0;
+        if (bestBid > 0) price = bestBid;
+      }
     }
     if (!price || price <= 0) return fail(`Cannot determine price for ${outcome} token — price is ${price}. Market may be illiquid or closed.`);
 

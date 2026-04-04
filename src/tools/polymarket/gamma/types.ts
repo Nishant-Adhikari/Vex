@@ -146,20 +146,40 @@ export interface GammaSearchResult {
   pagination: { hasMore: boolean; totalResults: number } | null;
 }
 
-/** Query params for listEvents. */
+/** Query params for listEvents. Full parity with Polymarket Gamma API. */
 export interface ListEventsParams {
   limit?: number;
   offset?: number;
   order?: string;
   ascending?: boolean;
+  // Identifiers
   id?: number[];
+  slug?: string[];
+  // Tags
   tag_id?: number;
+  exclude_tag_id?: number[];
   tag_slug?: string;
+  related_tags?: boolean;
+  // Status
   active?: boolean;
   closed?: boolean;
   featured?: boolean;
+  archived?: boolean;
+  cyom?: boolean;
+  // Market data bounds
   liquidity_min?: number;
+  liquidity_max?: number;
   volume_min?: number;
+  volume_max?: number;
+  // Date range
+  start_date_min?: string;
+  start_date_max?: string;
+  end_date_min?: string;
+  end_date_max?: string;
+  // Content
+  recurrence?: string;
+  include_chat?: boolean;
+  include_template?: boolean;
 }
 
 /** Query params for listMarkets. */

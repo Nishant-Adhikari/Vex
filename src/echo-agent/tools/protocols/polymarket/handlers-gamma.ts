@@ -16,13 +16,33 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
       offset: num(p, "offset"),
       order: str(p, "order") || undefined,
       ascending: bool(p, "ascending"),
+      // Identifiers
+      slug: str(p, "slug") ? str(p, "slug").split(",").map(s => s.trim()) : undefined,
+      // Tags
       tag_slug: str(p, "tagSlug") || undefined,
       tag_id: num(p, "tagId"),
+      exclude_tag_id: str(p, "excludeTagId") ? str(p, "excludeTagId").split(",").map(Number).filter(n => Number.isFinite(n)) : undefined,
+      related_tags: bool(p, "relatedTags"),
+      // Status
       active: bool(p, "active"),
       closed: bool(p, "closed"),
       featured: bool(p, "featured"),
+      archived: bool(p, "archived"),
+      cyom: bool(p, "cyom"),
+      // Market data bounds
       liquidity_min: num(p, "liquidityMin"),
+      liquidity_max: num(p, "liquidityMax"),
       volume_min: num(p, "volumeMin"),
+      volume_max: num(p, "volumeMax"),
+      // Date range
+      start_date_min: str(p, "startDateMin") || undefined,
+      start_date_max: str(p, "startDateMax") || undefined,
+      end_date_min: str(p, "endDateMin") || undefined,
+      end_date_max: str(p, "endDateMax") || undefined,
+      // Content
+      recurrence: str(p, "recurrence") || undefined,
+      include_chat: bool(p, "includeChat"),
+      include_template: bool(p, "includeTemplate"),
     });
     return ok({ count: events.length, events });
   },
@@ -30,13 +50,19 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   "polymarket.gamma.event": async (p) => {
     const id = str(p, "id");
     if (!id) return fail("Missing required: id");
-    return ok(await getPolyGammaClient().getEvent(id));
+    return ok(await getPolyGammaClient().getEvent(id, {
+      include_chat: bool(p, "includeChat"),
+      include_template: bool(p, "includeTemplate"),
+    }));
   },
 
   "polymarket.gamma.eventBySlug": async (p) => {
     const slug = str(p, "slug");
     if (!slug) return fail("Missing required: slug");
-    return ok(await getPolyGammaClient().getEventBySlug(slug));
+    return ok(await getPolyGammaClient().getEventBySlug(slug, {
+      include_chat: bool(p, "includeChat"),
+      include_template: bool(p, "includeTemplate"),
+    }));
   },
 
   "polymarket.gamma.eventTags": async (p) => {

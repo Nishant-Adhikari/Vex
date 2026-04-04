@@ -79,12 +79,12 @@ export class PolyGammaClient {
     return this.request("/events", validateEventsResponse, params ? this.toQuery(params) : undefined);
   }
 
-  getEvent(id: number | string): Promise<GammaEvent> {
-    return this.request(`/events/${encodeURIComponent(id)}`, validateEventResponse);
+  getEvent(id: number | string, opts?: { include_chat?: boolean; include_template?: boolean }): Promise<GammaEvent> {
+    return this.request(`/events/${encodeURIComponent(id)}`, validateEventResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getEventBySlug(slug: string): Promise<GammaEvent> {
-    return this.request(`/events/slug/${encodeURIComponent(slug)}`, validateEventResponse);
+  getEventBySlug(slug: string, opts?: { include_chat?: boolean; include_template?: boolean }): Promise<GammaEvent> {
+    return this.request(`/events/slug/${encodeURIComponent(slug)}`, validateEventResponse, opts ? this.toQuery(opts) : undefined);
   }
 
   getEventTags(id: number | string): Promise<GammaTag[]> {
