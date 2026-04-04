@@ -88,13 +88,9 @@ vi.mock("@echo-agent/db/repos/sync.js", () => ({
 }));
 
 const { dispatchTool } = await import("../../../echo-agent/tools/dispatcher.js");
+import { makeTestContext } from "./_test-context.js";
 
-const baseContext = {
-  sessionId: "test-session",
-  loadedDocuments: new Map<string, string>(),
-  loopMode: "off" as const,
-  approved: false,
-};
+const baseContext = makeTestContext();
 
 describe("dispatcher", () => {
   // ── Protocol routing ─────────────────────────────────────────────

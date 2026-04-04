@@ -31,13 +31,10 @@ const {
   handleDocumentDelete,
 } = await import("../../../../echo-agent/tools/internal/documents.js");
 
+import { makeTestContext } from "../_test-context.js";
+
 function makeContext() {
-  return {
-    sessionId: "test-session",
-    loadedDocuments: new Map<string, string>(),
-    loopMode: "off" as const,
-    approved: false,
-  };
+  return makeTestContext();
 }
 
 describe("document handlers", () => {

@@ -14,13 +14,9 @@ vi.mock("@echo-agent/db/repos/search.js", () => ({
 }));
 
 const { handleWebSearch, handleWebFetch } = await import("../../../../echo-agent/tools/internal/web.js");
+import { makeTestContext } from "../_test-context.js";
 
-const baseContext = {
-  sessionId: "test-session",
-  loadedDocuments: new Map<string, string>(),
-  loopMode: "off" as const,
-  approved: false,
-};
+const baseContext = makeTestContext();
 
 describe("web handlers", () => {
   beforeEach(() => {

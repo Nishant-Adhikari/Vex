@@ -1,6 +1,6 @@
 # EchoClaw — Developer Makefile
 
-.PHONY: build test dev clean lint check e2e-db-up e2e-db-down
+.PHONY: build test dev clean lint lint-all check e2e-db-up e2e-db-down
 
 # -- Build & Test -------------------------------------------------------------
 
@@ -18,6 +18,9 @@ clean:
 
 lint:
 	pnpm exec tsc --noEmit
+
+lint-all:
+	pnpm exec tsc --noEmit -p tsconfig.test.json
 
 check: lint test
 

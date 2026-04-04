@@ -13,13 +13,9 @@ vi.mock("@echo-agent/db/repos/memory.js", () => ({
 }));
 
 const { handleMemoryManage } = await import("../../../../echo-agent/tools/internal/memory.js");
+import { makeTestContext } from "../_test-context.js";
 
-const baseContext = {
-  sessionId: "test",
-  loadedDocuments: new Map<string, string>(),
-  loopMode: "off" as const,
-  approved: false,
-};
+const baseContext = makeTestContext({ sessionId: "test" });
 
 describe("handleMemoryManage", () => {
   beforeEach(() => {

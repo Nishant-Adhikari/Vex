@@ -62,7 +62,7 @@ function makeBroker(overrides: {
       getLedger: overrides.ledger === false
         ? () => { throw new Error("no ledger"); }
         : () => ({}),
-      getLedgerWithDetail: () => ({ infers: [] }),
+      getLedgerWithDetail: () => ({ infers: [] as [string, bigint, bigint][] }),
     },
     inference: {
       getAccount: overrides.subAccount === null

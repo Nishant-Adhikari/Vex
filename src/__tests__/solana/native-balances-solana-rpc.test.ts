@@ -6,7 +6,7 @@ const mockConnection = vi.fn(function MockConnection() {
     getBalance: mockGetBalance,
   };
 });
-const mockPublicKey = vi.fn(function MockPublicKey(value: string) {
+const mockPublicKey = vi.fn(function MockPublicKey(this: { value: string }, value: string) {
   this.value = value;
 });
 

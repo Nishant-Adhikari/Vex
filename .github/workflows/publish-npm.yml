@@ -13,7 +13,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: github.ref_name == 'production'
+    if: false # DISABLED post-cleanup — re-enable for MCP release
     steps:
       - uses: actions/checkout@v4
 

@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   cleanup:
+    if: false # DISABLED post-cleanup — re-enable for MCP release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

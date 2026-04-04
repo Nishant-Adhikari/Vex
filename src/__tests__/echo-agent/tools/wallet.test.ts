@@ -84,13 +84,9 @@ vi.mock("@solana/web3.js", async () => {
 const { handleWalletRead, handleWalletSendPrepare, handleWalletSendConfirm } = await import(
   "../../../echo-agent/tools/internal/wallet.js"
 );
+import { makeTestContext } from "./_test-context.js";
 
-const baseContext = {
-  sessionId: "test-session",
-  loadedKnowledge: new Map<string, string>(),
-  loopMode: "off" as const,
-  approved: false,
-};
+const baseContext = makeTestContext();
 
 describe("wallet_read", () => {
   // ── address ────────────────────────────────────────────────────

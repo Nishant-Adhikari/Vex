@@ -32,8 +32,9 @@ vi.mock("@echo-agent/db/client.js", () => ({
 }));
 
 const { handlePortfolioInspect } = await import("../../../../echo-agent/tools/internal/portfolio-inspect.js");
+import { makeTestContext } from "../_test-context.js";
 
-const ctx = { sessionId: "s1", loadedDocuments: new Map<string, string>(), loopMode: "off" as const, approved: false };
+const ctx = makeTestContext({ sessionId: "s1" });
 
 describe("portfolio_inspect tool", () => {
   beforeEach(() => vi.clearAllMocks());

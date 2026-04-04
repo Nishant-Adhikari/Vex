@@ -44,8 +44,8 @@ vi.mock("@tools/wallet/multi-auth.js", () => ({
   })),
 }));
 
-const mockSendTransaction = vi.fn(async () => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" as const);
-const mockWriteContract = vi.fn(async () => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" as const);
+const mockSendTransaction = vi.fn(async (): Promise<`0x${string}`> => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+const mockWriteContract = vi.fn(async (): Promise<`0x${string}`> => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
 const mockWaitForTransactionReceipt = vi.fn(async () => ({ status: "success" as const }));
 const mockSubmitDeposit = vi.fn(async () => ({
   orderId: "order-123",

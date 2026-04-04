@@ -172,7 +172,7 @@ export const BALANCE_CACHE_TTL_MS = 30_000;
 export const OPENROUTER_APP_URL = "https://echoclaw.ai";
 
 /** OpenRouter app display name */
-export const OPENROUTER_APP_TITLE = "EchoClaw Agent";
+export const OPENROUTER_APP_TITLE = "Vex Agent";
 
 /** OpenRouter app category */
 export const OPENROUTER_APP_CATEGORY = "cli-agent";

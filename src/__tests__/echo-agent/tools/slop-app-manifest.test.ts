@@ -142,6 +142,6 @@ describe("slop-app manifest", () => {
   });
 
   it("no tools require ENV", () => {
-    for (const tool of SLOP_APP_TOOLS) expect((tool as Record<string, unknown>).requiresEnv).toBeUndefined();
+    for (const tool of SLOP_APP_TOOLS) expect((tool as unknown as Record<string, unknown>).requiresEnv).toBeUndefined();
   });
 });

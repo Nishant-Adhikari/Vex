@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 const mockReadEnvValue = vi.fn<(key: string, path: string) => string | null>();
 
 vi.mock("../../providers/env-resolution.js", () => ({
-  readEnvValue: (...args: any[]) => mockReadEnvValue(...args),
+  readEnvValue: (key: string, path: string) => mockReadEnvValue(key, path),
 }));
 
 vi.mock("@config/paths.js", async (importOriginal) => {
