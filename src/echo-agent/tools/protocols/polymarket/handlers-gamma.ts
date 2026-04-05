@@ -290,7 +290,12 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   "polymarket.gamma.teams": async (p) => {
     const teams = await getPolyGammaClient().listTeams({
       league: strArray(p, "league"),
+      name: strArray(p, "name"),
+      abbreviation: strArray(p, "abbreviation"),
       limit: num(p, "limit"),
+      offset: num(p, "offset"),
+      order: str(p, "order") || undefined,
+      ascending: bool(p, "ascending"),
     });
     return ok({ count: teams.length, teams });
   },

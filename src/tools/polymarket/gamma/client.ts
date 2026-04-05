@@ -234,7 +234,7 @@ export class PolyGammaClient {
     });
   }
 
-  listTeams(opts?: { league?: string[]; limit?: number }): Promise<GammaTeam[]> {
+  listTeams(opts?: { league?: string[]; name?: string[]; abbreviation?: string[]; limit?: number; offset?: number; order?: string; ascending?: boolean }): Promise<GammaTeam[]> {
     return this.request("/teams", validateTeamsResponse, opts ? this.toQuery(opts) : undefined);
   }
 }
