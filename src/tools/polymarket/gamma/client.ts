@@ -150,37 +150,37 @@ export class PolyGammaClient {
 
   // ── Tags ────────────────────────────────────────────────────────
 
-  listTags(opts?: { is_carousel?: boolean }): Promise<GammaTag[]> {
+  listTags(opts?: { limit?: number; offset?: number; order?: string; ascending?: boolean; is_carousel?: boolean; include_template?: boolean }): Promise<GammaTag[]> {
     return this.request("/tags", validateTagsResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getTag(id: number | string): Promise<GammaTag> {
+  getTag(id: number | string, opts?: { include_template?: boolean }): Promise<GammaTag> {
     return this.request(`/tags/${encodeURIComponent(id)}`, (raw) => {
       const tags = validateTagsResponse(Array.isArray(raw) ? raw : [raw]);
       return tags[0];
-    });
+    }, opts ? this.toQuery(opts) : undefined);
   }
 
-  getTagBySlug(slug: string): Promise<GammaTag> {
+  getTagBySlug(slug: string, opts?: { include_template?: boolean }): Promise<GammaTag> {
     return this.request(`/tags/slug/${encodeURIComponent(slug)}`, (raw) => {
       const tags = validateTagsResponse(Array.isArray(raw) ? raw : [raw]);
       return tags[0];
-    });
+    }, opts ? this.toQuery(opts) : undefined);
   }
 
-  getRelatedTags(id: number | string, opts?: { status?: string }): Promise<GammaRelatedTag[]> {
+  getRelatedTags(id: number | string, opts?: { status?: string; omit_empty?: boolean }): Promise<GammaRelatedTag[]> {
     return this.request(`/tags/${encodeURIComponent(id)}/related-tags`, validateRelatedTagsResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getTagsRelatedToTag(id: number | string, opts?: { status?: string }): Promise<GammaTag[]> {
+  getTagsRelatedToTag(id: number | string, opts?: { status?: string; omit_empty?: boolean }): Promise<GammaTag[]> {
     return this.request(`/tags/${encodeURIComponent(id)}/related-tags/tags`, validateTagsResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getRelatedTagsBySlug(slug: string, opts?: { status?: string }): Promise<GammaRelatedTag[]> {
+  getRelatedTagsBySlug(slug: string, opts?: { status?: string; omit_empty?: boolean }): Promise<GammaRelatedTag[]> {
     return this.request(`/tags/slug/${encodeURIComponent(slug)}/related-tags`, validateRelatedTagsResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getTagsRelatedToTagBySlug(slug: string, opts?: { status?: string }): Promise<GammaTag[]> {
+  getTagsRelatedToTagBySlug(slug: string, opts?: { status?: string; omit_empty?: boolean }): Promise<GammaTag[]> {
     return this.request(`/tags/slug/${encodeURIComponent(slug)}/related-tags/tags`, validateTagsResponse, opts ? this.toQuery(opts) : undefined);
   }
 

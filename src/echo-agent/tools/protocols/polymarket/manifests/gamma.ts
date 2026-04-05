@@ -182,10 +182,15 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "polymarket.gamma.tags",
     namespace: "polymarket",
     lifecycle: "active",
-    description: "List all tags (categories) on Polymarket.",
+    description: "List all tags (categories) on Polymarket with pagination and sorting.",
     mutating: false,
     params: [
+      { key: "limit", type: "number", description: "Max results." },
+      { key: "offset", type: "number", description: "Pagination offset." },
+      { key: "order", type: "string", description: "Sort field." },
+      { key: "ascending", type: "boolean", description: "Ascending sort." },
       { key: "isCarousel", type: "boolean", description: "Filter carousel tags only." },
+      { key: "includeTemplate", type: "boolean", description: "Include template data." },
     ],
     exampleParams: {},
   },
@@ -197,6 +202,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [
       { key: "id", type: "string", required: true, description: "Tag ID." },
+      { key: "includeTemplate", type: "boolean", description: "Include template data." },
     ],
     exampleParams: { id: "42" },
   },
@@ -208,6 +214,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [
       { key: "slug", type: "string", required: true, description: "Tag slug." },
+      { key: "includeTemplate", type: "boolean", description: "Include template data." },
     ],
     exampleParams: { slug: "crypto" },
   },
@@ -219,7 +226,8 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [
       { key: "id", type: "string", required: true, description: "Tag ID." },
-      { key: "status", type: "string", description: "Filter by status." },
+      { key: "status", type: "string", description: "Filter: active, closed, all." },
+      { key: "omitEmpty", type: "boolean", description: "Exclude empty relationships." },
     ],
     exampleParams: { id: "42" },
   },
@@ -231,7 +239,8 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [
       { key: "slug", type: "string", required: true, description: "Tag slug." },
-      { key: "status", type: "string", description: "Filter by status." },
+      { key: "status", type: "string", description: "Filter: active, closed, all." },
+      { key: "omitEmpty", type: "boolean", description: "Exclude empty relationships." },
     ],
     exampleParams: { slug: "crypto" },
   },
@@ -243,7 +252,8 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [
       { key: "id", type: "string", required: true, description: "Tag ID." },
-      { key: "status", type: "string", description: "Filter by status." },
+      { key: "status", type: "string", description: "Filter: active, closed, all." },
+      { key: "omitEmpty", type: "boolean", description: "Exclude empty relationships." },
     ],
     exampleParams: { id: "42" },
   },
@@ -255,7 +265,8 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [
       { key: "slug", type: "string", required: true, description: "Tag slug." },
-      { key: "status", type: "string", description: "Filter by status." },
+      { key: "status", type: "string", description: "Filter: active, closed, all." },
+      { key: "omitEmpty", type: "boolean", description: "Exclude empty relationships." },
     ],
     exampleParams: { slug: "crypto" },
   },

@@ -158,47 +158,51 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   // ── Tags ──────────────────────────────────────────────────────
 
   "polymarket.gamma.tags": async (p) => {
-    const tags = await getPolyGammaClient().listTags({ is_carousel: bool(p, "isCarousel") });
+    const tags = await getPolyGammaClient().listTags({
+      limit: num(p, "limit"), offset: num(p, "offset"),
+      order: str(p, "order") || undefined, ascending: bool(p, "ascending"),
+      is_carousel: bool(p, "isCarousel"), include_template: bool(p, "includeTemplate"),
+    });
     return ok({ count: tags.length, tags });
   },
 
   "polymarket.gamma.tag": async (p) => {
     const id = str(p, "id");
     if (!id) return fail("Missing required: id");
-    return ok(await getPolyGammaClient().getTag(id));
+    return ok(await getPolyGammaClient().getTag(id, { include_template: bool(p, "includeTemplate") }));
   },
 
   "polymarket.gamma.tagBySlug": async (p) => {
     const slug = str(p, "slug");
     if (!slug) return fail("Missing required: slug");
-    return ok(await getPolyGammaClient().getTagBySlug(slug));
+    return ok(await getPolyGammaClient().getTagBySlug(slug, { include_template: bool(p, "includeTemplate") }));
   },
 
   "polymarket.gamma.relatedTags": async (p) => {
     const id = str(p, "id");
     if (!id) return fail("Missing required: id");
-    const tags = await getPolyGammaClient().getRelatedTags(id, { status: str(p, "status") || undefined });
+    const tags = await getPolyGammaClient().getRelatedTags(id, { status: str(p, "status") || undefined, omit_empty: bool(p, "omitEmpty") });
     return ok({ count: tags.length, tags });
   },
 
   "polymarket.gamma.relatedTagsBySlug": async (p) => {
     const slug = str(p, "slug");
     if (!slug) return fail("Missing required: slug");
-    const tags = await getPolyGammaClient().getRelatedTagsBySlug(slug, { status: str(p, "status") || undefined });
+    const tags = await getPolyGammaClient().getRelatedTagsBySlug(slug, { status: str(p, "status") || undefined, omit_empty: bool(p, "omitEmpty") });
     return ok({ count: tags.length, tags });
   },
 
   "polymarket.gamma.tagsRelatedToTag": async (p) => {
     const id = str(p, "id");
     if (!id) return fail("Missing required: id");
-    const tags = await getPolyGammaClient().getTagsRelatedToTag(id, { status: str(p, "status") || undefined });
+    const tags = await getPolyGammaClient().getTagsRelatedToTag(id, { status: str(p, "status") || undefined, omit_empty: bool(p, "omitEmpty") });
     return ok({ count: tags.length, tags });
   },
 
   "polymarket.gamma.tagsRelatedToTagBySlug": async (p) => {
     const slug = str(p, "slug");
     if (!slug) return fail("Missing required: slug");
-    const tags = await getPolyGammaClient().getTagsRelatedToTagBySlug(slug, { status: str(p, "status") || undefined });
+    const tags = await getPolyGammaClient().getTagsRelatedToTagBySlug(slug, { status: str(p, "status") || undefined, omit_empty: bool(p, "omitEmpty") });
     return ok({ count: tags.length, tags });
   },
 
