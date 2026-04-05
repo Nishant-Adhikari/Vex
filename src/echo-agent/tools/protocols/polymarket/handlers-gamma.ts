@@ -209,14 +209,23 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   // ── Series ────────────────────────────────────────────────────
 
   "polymarket.gamma.series": async (p) => {
-    const series = await getPolyGammaClient().listSeries({ closed: bool(p, "closed") });
+    const series = await getPolyGammaClient().listSeries({
+      limit: num(p, "limit"), offset: num(p, "offset"),
+      order: str(p, "order") || undefined, ascending: bool(p, "ascending"),
+      slug: strArray(p, "slug"), closed: bool(p, "closed"),
+      categories_ids: numArray(p, "categoriesIds"),
+      categories_labels: strArray(p, "categoriesLabels"),
+      include_chat: bool(p, "includeChat"),
+      recurrence: str(p, "recurrence") || undefined,
+      exclude_events: bool(p, "excludeEvents"),
+    });
     return ok({ count: series.length, series });
   },
 
   "polymarket.gamma.seriesById": async (p) => {
     const id = str(p, "id");
     if (!id) return fail("Missing required: id");
-    return ok(await getPolyGammaClient().getSeries(id));
+    return ok(await getPolyGammaClient().getSeries(id, { include_chat: bool(p, "includeChat") }));
   },
 
   // ── Comments ──────────────────────────────────────────────────
@@ -232,7 +241,11 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
       parent_entity_type: parentEntityType,
       parent_entity_id: parentEntityId,
       holders_only: bool(p, "holdersOnly"),
+      get_positions: bool(p, "getPositions"),
       limit: num(p, "limit"),
+      offset: num(p, "offset"),
+      order: str(p, "order") || undefined,
+      ascending: bool(p, "ascending"),
     });
     return ok({ count: comments.length, comments });
   },
@@ -240,7 +253,7 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
   "polymarket.gamma.comment": async (p) => {
     const id = str(p, "id");
     if (!id) return fail("Missing required: id");
-    return ok(await getPolyGammaClient().getComment(id));
+    return ok(await getPolyGammaClient().getComment(id, { get_positions: bool(p, "getPositions") }));
   },
 
   "polymarket.gamma.commentsByUser": async (p) => {
@@ -249,6 +262,8 @@ export const GAMMA_HANDLERS: Record<string, ProtocolHandler> = {
     const comments = await getPolyGammaClient().getCommentsByUser(address, {
       limit: num(p, "limit"),
       offset: num(p, "offset"),
+      order: str(p, "order") || undefined,
+      ascending: bool(p, "ascending"),
     });
     return ok({ count: comments.length, comments });
   },

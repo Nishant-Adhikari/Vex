@@ -186,27 +186,32 @@ export class PolyGammaClient {
 
   // ── Series ──────────────────────────────────────────────────────
 
-  listSeries(opts?: { slug?: string[]; closed?: boolean }): Promise<GammaSeries[]> {
+  listSeries(opts?: {
+    limit?: number; offset?: number; order?: string; ascending?: boolean;
+    slug?: string[]; closed?: boolean; categories_ids?: number[];
+    categories_labels?: string[]; include_chat?: boolean; recurrence?: string;
+    exclude_events?: boolean;
+  }): Promise<GammaSeries[]> {
     return this.request("/series", validateSeriesResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getSeries(id: number | string): Promise<GammaSeries> {
+  getSeries(id: number | string, opts?: { include_chat?: boolean }): Promise<GammaSeries> {
     return this.request(`/series/${encodeURIComponent(id)}`, (raw) => {
       return validateSeriesResponse([raw])[0];
-    });
+    }, opts ? this.toQuery(opts) : undefined);
   }
 
   // ── Comments ────────────────────────────────────────────────────
 
-  listComments(opts?: { parent_entity_type?: string; parent_entity_id?: number; holders_only?: boolean; limit?: number }): Promise<GammaComment[]> {
+  listComments(opts?: { parent_entity_type?: string; parent_entity_id?: number; holders_only?: boolean; get_positions?: boolean; limit?: number; offset?: number; order?: string; ascending?: boolean }): Promise<GammaComment[]> {
     return this.request("/comments", validateCommentsResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getComment(id: number | string): Promise<GammaComment[]> {
-    return this.request(`/comments/${encodeURIComponent(id)}`, validateCommentsResponse);
+  getComment(id: number | string, opts?: { get_positions?: boolean }): Promise<GammaComment[]> {
+    return this.request(`/comments/${encodeURIComponent(id)}`, validateCommentsResponse, opts ? this.toQuery(opts) : undefined);
   }
 
-  getCommentsByUser(address: string, opts?: { limit?: number; offset?: number }): Promise<GammaComment[]> {
+  getCommentsByUser(address: string, opts?: { limit?: number; offset?: number; order?: string; ascending?: boolean }): Promise<GammaComment[]> {
     return this.request(`/comments/user_address/${encodeURIComponent(address)}`, validateCommentsResponse, opts ? this.toQuery(opts) : undefined);
   }
 
