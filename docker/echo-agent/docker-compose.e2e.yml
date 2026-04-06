@@ -32,5 +32,9 @@ services:
       interval: 3s
       timeout: 2s
       retries: 10
+    # Postgres 18+ requires the mount at /var/lib/postgresql (parent), NOT
+    # /var/lib/postgresql/data. PGDATA is now version-specific
+    # (/var/lib/postgresql/18/docker) so the parent directory carries the data.
+    # See docker-library/postgres PR #1259 — mounting on /data fails fast on pg18+.
     tmpfs:
-      - /var/lib/postgresql/data
+      - /var/lib/postgresql

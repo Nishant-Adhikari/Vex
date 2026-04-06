@@ -28,8 +28,12 @@ services:
       POSTGRES_DB: echo_agent
       POSTGRES_USER: echo_agent
       POSTGRES_PASSWORD: echo_agent
+    # Postgres 18+ requires the mount at /var/lib/postgresql (parent), NOT
+    # /var/lib/postgresql/data. PGDATA is now version-specific
+    # (/var/lib/postgresql/18/docker) so the parent directory carries the data.
+    # See docker-library/postgres PR #1259 — mounting on /data fails fast on pg18+.
     volumes:
-      - echo-agent-db-data:/var/lib/postgresql/data
+      - echo-agent-db-data:/var/lib/postgresql
     # Dummy puller carrier — Postgres does not actually use the embedding model.
     # Per https://docs.docker.com/reference/compose-file/models/ a top-level
     # `models:` block alone does NOT trigger Compose to pull/run the model;
