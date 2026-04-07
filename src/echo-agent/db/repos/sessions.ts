@@ -28,6 +28,22 @@ export async function createSession(id: string): Promise<void> {
   await execute("INSERT INTO sessions (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", [id]);
 }
 
+/**
+ * Mark a session as ended. Idempotent — safe to call multiple times on a
+ * session that has already been ended (only the first call writes a value).
+ *
+ * Used by the production MCP server (`src/mcp/sessions.ts`) on transport
+ * disconnect, so the `sessions.ended_at` column reflects MCP connection
+ * lifecycle. Echo Agent's chat / mission flows do not call this — their
+ * sessions stay open until compaction.
+ */
+export async function endSession(id: string): Promise<void> {
+  await execute(
+    "UPDATE sessions SET ended_at = NOW() WHERE id = $1 AND ended_at IS NULL",
+    [id],
+  );
+}
+
 export async function getSession(id: string): Promise<Session | null> {
   const row = await queryOne<SessionRow>("SELECT * FROM sessions WHERE id = $1", [id]);
   return row ? mapRow(row) : null;

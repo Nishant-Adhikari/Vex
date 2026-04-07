@@ -29,6 +29,21 @@ export interface InternalToolContext {
   role: "parent" | "subagent";
   /** Active mission run ID — for mission_stop guard */
   missionRunId: string | null;
+  /**
+   * Origin of the call. Used for knowledge provenance (knowledge_entries.source_surface).
+   * - undefined / "echo_agent": Echo Agent (mission loop, chat, scheduler, scripts) — default
+   * - "mcp_local": production MCP server (`src/mcp`)
+   *
+   * Defaulting to undefined means existing call sites stay unchanged; the knowledge
+   * write path interprets undefined as "echo_agent".
+   */
+  sourceSurface?: "echo_agent" | "mcp_local";
+  /**
+   * Session id of the writer surface. For MCP this is the MCP-side session id
+   * (`mcp-stdio-{nanoid}` / `mcp-http-{nanoid}`). Echo Agent typically leaves
+   * this undefined and relies on `sessionId` for its own session tracking.
+   */
+  sourceSession?: string;
 }
 
 // ── Param accessors ─────────────────────────────────────────────

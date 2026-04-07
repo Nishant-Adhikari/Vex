@@ -40,6 +40,8 @@ interface KnowledgeRow {
   content_hash: string;
   embedding_model: string;
   embedding_dim: number;
+  source_surface: string;
+  source_session: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +71,8 @@ export interface KnowledgeEntry {
   contentHash: string;
   embeddingModel: string;
   embeddingDim: number;
+  sourceSurface: "echo_agent" | "mcp_local";
+  sourceSession: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,6 +107,10 @@ export interface InsertEntryInput {
   embeddingDim: number;
   /** Vector as plain number[]. Must match embeddingDim. Serialized to pgvector literal. */
   embedding: number[];
+  // ── Optional provenance fields. Default 'echo_agent' / NULL when omitted.
+  // Production MCP server (`src/mcp`) passes 'mcp_local' + its session id.
+  sourceSurface?: "echo_agent" | "mcp_local";
+  sourceSession?: string;
   // ── Optional audit fields (used by knowledge-import to preserve roundtrip).
   // knowledge_write does NOT pass these — defaults `'active'` / NOW() apply.
   status?: KnowledgeStatus;
@@ -147,6 +155,8 @@ function mapRow(r: KnowledgeRow): KnowledgeEntry {
     contentHash: r.content_hash,
     embeddingModel: r.embedding_model,
     embeddingDim: r.embedding_dim,
+    sourceSurface: (r.source_surface as "echo_agent" | "mcp_local") ?? "echo_agent",
+    sourceSession: r.source_session,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -233,13 +243,15 @@ export async function insertEntry(input: InsertEntryInput): Promise<InsertEntryR
          kind, title, summary, content_md, tags, source_refs,
          confidence, status, pinned, valid_from, valid_until,
          content_hash, embedding_model, embedding_dim, embedding,
+         source_surface, source_session,
          created_at, updated_at
        )
        VALUES (
          $1, $2, $3, $4, $5, $6,
          $7, COALESCE($8::text, 'active'), $9, COALESCE($10::timestamptz, NOW()), $11,
          $12, $13, $14, $15::vector,
-         COALESCE($16::timestamptz, NOW()), COALESCE($17::timestamptz, NOW())
+         COALESCE($16::text, 'echo_agent'), $17,
+         COALESCE($18::timestamptz, NOW()), COALESCE($19::timestamptz, NOW())
        )
        ON CONFLICT (content_hash) DO NOTHING
        RETURNING *
@@ -264,6 +276,8 @@ export async function insertEntry(input: InsertEntryInput): Promise<InsertEntryR
       input.embeddingModel,
       input.embeddingDim,
       vectorLiteral(input.embedding),
+      input.sourceSurface ?? null,
+      input.sourceSession ?? null,
       toIsoOrNull(input.createdAt),
       toIsoOrNull(input.updatedAt),
     ],
@@ -482,7 +496,9 @@ export async function* streamAllForExport(
       `SELECT
          id, kind, title, summary, content_md, tags, source_refs,
          confidence, status, pinned, valid_from, valid_until,
-         content_hash, embedding_model, embedding_dim, created_at, updated_at
+         content_hash, embedding_model, embedding_dim,
+         source_surface, source_session,
+         created_at, updated_at
        FROM knowledge_entries
        WHERE id > $1
        ORDER BY id ASC

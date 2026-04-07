@@ -18,6 +18,10 @@ Thumbs.db
 
 # MCP local config (copy from .mcp.e2e.json.example)
 .mcp.e2e.json
+.mcp.e2e.json.example
+
+# E2E harness — internal test scaffolding, never published
+src/echo-agent/e2e/
 
 # Test coverage
 coverage/
@@ -25,7 +29,7 @@ coverage/
 # Local collaboration / planning
 TEAM/
 agents_dm/
-docs/
+/docs/
 .cursor/plans/
 .cursor/agent-transcripts/
 agent-transcripts/

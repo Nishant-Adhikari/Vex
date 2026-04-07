@@ -354,6 +354,29 @@ export function getOpenAITools(
   return toOpenAITools(filtered);
 }
 
+/**
+ * Surface for the production MCP server (`src/mcp`).
+ *
+ * Reuses the canonical env / showOnlyWhenEnvMissing / role filtering used
+ * everywhere else. The MCP server is a passive bridge — it surfaces the
+ * `parent`-role view of tools (no subagent child-only tools), and hard-excludes
+ * any name starting with `subagent_` as defense in depth (today these are
+ * already filtered by `excludeRoles: ["subagent"]` for child-only ones, but
+ * parent-spawn tools like subagent_spawn / subagent_status / subagent_stop /
+ * subagent_reply are NOT role-filtered out — they belong to parent. We do
+ * NOT want them in MCP regardless of role).
+ *
+ * MCP does NOT pass a `chatMode` filter — there is no concept of "MCP mode".
+ * Proactive tools (none today) would be visible.
+ */
+export function getProductionMcpTools(): readonly ToolDef[] {
+  return TOOLS
+    .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
+    .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
+    .filter(t => !t.excludeRoles?.includes("parent")) // none today, defensive
+    .filter(t => !t.name.startsWith("subagent_"));    // hard guard for `full-minus-subagents`
+}
+
 /** Check if a tool is blocked for a given role. Hard enforcement at dispatch time. */
 export function isToolBlockedForRole(name: string, role: "parent" | "subagent"): boolean {
   const def = byName.get(name);

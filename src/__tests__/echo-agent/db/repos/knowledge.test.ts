@@ -135,13 +135,20 @@ describe("knowledge repo", () => {
       mockQueryOne.mockResolvedValueOnce({ ...SAMPLE_ROW, inserted: true });
       await insertEntry(baseInsertInput());
       const [, params] = mockQueryOne.mock.calls[0];
-      // status (param 8 / index 7) defaults to null → SQL COALESCE picks 'active'
+      // Param order after the source_surface/source_session add (R3 knowledge
+      // provenance migration):
+      //   7  status        → COALESCE → 'active'
+      //   9  valid_from    → COALESCE → NOW()
+      //   15 source_surface → COALESCE → 'echo_agent'
+      //   16 source_session → NULL when not provided
+      //   17 created_at    → COALESCE → NOW()
+      //   18 updated_at    → COALESCE → NOW()
       expect(params[7]).toBeNull();
-      // valid_from (param 10 / index 9) defaults to null → COALESCE → NOW()
       expect(params[9]).toBeNull();
-      // created_at (param 16 / index 15) and updated_at (param 17 / index 16) default to null
-      expect(params[15]).toBeNull();
-      expect(params[16]).toBeNull();
+      expect(params[15]).toBeNull(); // sourceSurface defaults to undefined → null at param level
+      expect(params[16]).toBeNull(); // sourceSession defaults to undefined → null
+      expect(params[17]).toBeNull();
+      expect(params[18]).toBeNull();
     });
 
     it("preserves audit fields when provided (import roundtrip)", async () => {
@@ -159,8 +166,10 @@ describe("knowledge repo", () => {
       const [, params] = mockQueryOne.mock.calls[0];
       expect(params[7]).toBe("invalidated");
       expect(params[9]).toBe(validFrom.toISOString());
-      expect(params[15]).toBe(createdAt.toISOString());
-      expect(params[16]).toBe(updatedAt.toISOString());
+      // After source_surface/source_session add: created_at moved 15 → 17,
+      // updated_at moved 16 → 18.
+      expect(params[17]).toBe(createdAt.toISOString());
+      expect(params[18]).toBe(updatedAt.toISOString());
     });
 
     it("throws when embedding length does not match embeddingDim (pre-DB guard)", async () => {

@@ -39,7 +39,7 @@ import logger from "@utils/logger.js";
 
 export async function handleKnowledgeWrite(
   params: Record<string, unknown>,
-  _context: InternalToolContext,
+  context: InternalToolContext,
 ): Promise<ToolResult> {
   const kind = str(params, "kind");
   const title = str(params, "title");
@@ -134,6 +134,11 @@ export async function handleKnowledgeWrite(
       embeddingModel: providerModel,
       embeddingDim: embedding.length,
       embedding,
+      // Surface provenance: defaults to 'echo_agent' when context omits it
+      // (legacy / scripts / tests). Production MCP server fills in 'mcp_local'
+      // and its own session id via makeProductionContext.
+      sourceSurface: context.sourceSurface,
+      sourceSession: context.sourceSession,
     });
     if (!inserted) {
       logger.info("knowledge.write.duplicate", {

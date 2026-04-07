@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "echoclaw": {
+      "command": "echoclaw-mcp"
+    }
+  }
+}

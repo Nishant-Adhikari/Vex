@@ -52,6 +52,8 @@ CREATE TABLE knowledge_entries (
   embedding_model TEXT NOT NULL,            -- audit: which model produced the embedding (authoritative — recall filters on this)
   embedding_dim   INTEGER NOT NULL,         -- audit: actual provider response dim, NOT a schema lock
   embedding       vector NOT NULL,          -- embedding-on-write — entry never created without sidecar; no typmod (re-embed-friendly)
+  source_surface  TEXT NOT NULL DEFAULT 'echo_agent', -- 'echo_agent' (mission loop / chat) or 'mcp_local' (production MCP server)
+  source_session  TEXT,                     -- session id of the writer (Echo Agent session id, MCP session id, or NULL for legacy / scripts)
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT ke_embedding_dim_range CHECK (embedding_dim > 0 AND embedding_dim <= 8192),
@@ -63,6 +65,7 @@ CREATE INDEX idx_ke_pinned ON knowledge_entries(pinned) WHERE pinned = TRUE;
 CREATE INDEX idx_ke_tags ON knowledge_entries USING GIN (tags);
 CREATE INDEX idx_ke_source_refs ON knowledge_entries USING GIN (source_refs jsonb_path_ops);
 CREATE UNIQUE INDEX idx_ke_content_hash ON knowledge_entries(content_hash);
+CREATE INDEX idx_ke_source_surface ON knowledge_entries(source_surface);
 -- No vector index in MVP. Exact cosine scan after status/kind/validity prefilter is OK to ~5k entries.
 -- The vector column uses no typmod; adding ANN (ivfflat/hnsw) later requires re-typing the column.
 

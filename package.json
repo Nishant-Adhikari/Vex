@@ -11,12 +11,16 @@
     "dist/**",
     "src/echo-agent/db/migrations/**"
   ],
+  "bin": {
+    "echoclaw-mcp": "dist/mcp/index.js"
+  },
   "scripts": {
     "clean": "node --input-type=commonjs -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "pnpm run clean && tsc && tsc-alias",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "mcp": "tsx src/mcp/index.ts",
     "knowledge-export": "tsx src/echo-agent/scripts/knowledge-export.ts",
     "knowledge-import": "tsx src/echo-agent/scripts/knowledge-import.ts",
     "knowledge-reembed": "tsx src/echo-agent/scripts/knowledge-reembed.ts"
@@ -30,6 +34,7 @@
     "@tavily/core": "^0.7.2",
     "bs58": "^6.0.0",
     "ethers": "^6.13.1",
+    "fastify": "^5.8.4",
     "node-cron": "^4.2.1",
     "pg": "^8.20.0",
     "socket.io-client": "^4.8.3",
