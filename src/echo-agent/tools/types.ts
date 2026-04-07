@@ -27,6 +27,14 @@ export interface ToolDef {
   showOnlyWhenEnvMissing?: string;
   /** Roles that should NOT see/use this tool. Hard-enforced at dispatch time. */
   excludeRoles?: string[];
+  /**
+   * Hide this tool from the production MCP surface (`getProductionMcpTools`).
+   * Use for tools that only make sense inside the Echo Agent runtime — e.g.
+   * `schedule_*` (cron is owned by the agent, not the host) or `mission_stop`
+   * (only valid mid-mission, MCP has no mission concept). Echo Agent still
+   * sees and dispatches them; MCP / docs / instructions never advertise them.
+   */
+  excludeFromMcp?: boolean;
 }
 
 export interface JsonSchema {

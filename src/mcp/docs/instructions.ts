@@ -40,8 +40,7 @@ export function buildInstructions(): string {
 
 EchoClaw MCP is a passive tool surface bridge over the EchoClaw stack. It
 exposes ${overview.surfaceSize} internal tools (knowledge, documents, wallet,
-portfolio, schedule, web, EVM, mission, setup) plus two meta tools for
-protocol capabilities.
+portfolio, web, EVM, setup) plus two meta tools for protocol capabilities.
 
 ## How to use this server
 
@@ -49,9 +48,8 @@ protocol capabilities.
   then \`execute_tool\` to invoke them with structured params. There are
   ${overview.protocolNamespaceCount} protocol namespaces available — they are
   NOT individually surfaced as MCP tools to keep \`tools/list\` manageable.
-- Internal tools (knowledge_*, document_*, wallet_*, portfolio_*, schedule_*,
-  web_*, evm_*, mission_*) are surfaced individually with their real names —
-  use them directly.
+- Internal tools (knowledge_*, document_*, wallet_*, portfolio_*, web_*,
+  evm_*) are surfaced individually with their real names — use them directly.
 - Knowledge writes go to a shared local Postgres + pgvector store; entries
   written through this MCP are tagged \`source_surface = mcp_local\`.
 - Mutating tools (wallet_send_confirm, polymarket_setup, mutating protocol
@@ -74,6 +72,8 @@ ${namespaceGroups}
 ## What this server does NOT have
 
 - No \`subagent_*\` tools (production MCP runs without background subagents)
+- No \`schedule_*\` tools (cron lifecycle is owned by Echo Agent, not the host)
+- No \`mission_*\` tools (MCP has no mission concept — those live in Echo Agent)
 - No own approval queue (your MCP host's permission UX is the gate)
 - No persistent loop / mode (this is a tool server, not an agent)
 `;

@@ -114,6 +114,23 @@ describe("mcp docs — registry projection", () => {
         }
       }
     });
+
+    it("does not surface a Schedule or Mission group (echo-agent only)", () => {
+      const groups = buildToolGroups();
+      const labels = groups.map((g) => g.group);
+      expect(labels).not.toContain("Schedule");
+      expect(labels).not.toContain("Mission");
+    });
+
+    it("does not include schedule_* or mission_stop in any group", () => {
+      const groups = buildToolGroups();
+      for (const group of groups) {
+        for (const tool of group.tools) {
+          expect(tool.name.startsWith("schedule_")).toBe(false);
+          expect(tool.name).not.toBe("mission_stop");
+        }
+      }
+    });
   });
 
   // ── Protocol list ───────────────────────────────────────────────
@@ -290,6 +307,14 @@ describe("mcp docs — registry projection", () => {
       const manifest = buildSurfaceManifest();
       for (const name of manifest.tools) {
         expect(name.startsWith("subagent_")).toBe(false);
+      }
+    });
+
+    it("excludes schedule_* and mission_stop from manifest tools", () => {
+      const manifest = buildSurfaceManifest();
+      for (const name of manifest.tools) {
+        expect(name.startsWith("schedule_")).toBe(false);
+        expect(name).not.toBe("mission_stop");
       }
     });
 

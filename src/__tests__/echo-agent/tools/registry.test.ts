@@ -5,6 +5,7 @@ import {
   isMutatingTool,
   getAllTools,
   getOpenAITools,
+  getProductionMcpTools,
   isToolBlockedForRole,
 } from "../../../echo-agent/tools/registry.js";
 
@@ -202,6 +203,46 @@ describe("registry", () => {
       const defaultTools = getOpenAITools("restricted");
       const parentTools = getOpenAITools("restricted", "parent");
       expect(defaultTools.length).toBe(parentTools.length);
+    });
+  });
+
+  // ── Production MCP surface ───────────────────────────────────────
+
+  describe("getProductionMcpTools", () => {
+    it("includes the core host-relevant tools", () => {
+      const names = getProductionMcpTools().map((t) => t.name);
+      expect(names).toContain("discover_tools");
+      expect(names).toContain("execute_tool");
+      expect(names).toContain("wallet_read");
+      expect(names).toContain("wallet_send_prepare");
+      expect(names).toContain("wallet_send_confirm");
+      expect(names).toContain("knowledge_write");
+      expect(names).toContain("portfolio_inspect");
+    });
+
+    it("excludes schedule_* tools (echo-agent runtime concept)", () => {
+      const names = getProductionMcpTools().map((t) => t.name);
+      expect(names).not.toContain("schedule_create");
+      expect(names).not.toContain("schedule_remove");
+    });
+
+    it("excludes mission_stop (echo-agent runtime concept)", () => {
+      const names = getProductionMcpTools().map((t) => t.name);
+      expect(names).not.toContain("mission_stop");
+    });
+
+    it("excludes every subagent_* tool", () => {
+      const names = getProductionMcpTools().map((t) => t.name);
+      for (const name of names) {
+        expect(name.startsWith("subagent_")).toBe(false);
+      }
+    });
+
+    it("schedule_* and mission_stop remain visible to Echo Agent (parent role, restricted mode)", () => {
+      const names = getOpenAITools("restricted", "parent").map((t) => t.function.name);
+      expect(names).toContain("schedule_create");
+      expect(names).toContain("schedule_remove");
+      expect(names).toContain("mission_stop");
     });
   });
 });

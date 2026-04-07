@@ -163,9 +163,11 @@ const TOOLS: readonly ToolDef[] = [
     }, required: ["id", "status"] },
   },
 
-  // Scheduling
+  // Scheduling — echo-agent only. Cron lifecycle is owned by the agent
+  // runtime, not the MCP host; MCP hides these via `excludeFromMcp`.
   {
     name: "schedule_create", kind: "internal", mutating: false,
+    excludeFromMcp: true,
     description: "Create a recurring cron task.",
     parameters: { type: "object", properties: {
       name: { type: "string", description: "Task name" },
@@ -177,6 +179,7 @@ const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "schedule_remove", kind: "internal", mutating: false,
+    excludeFromMcp: true,
     description: "Remove a scheduled task.",
     parameters: { type: "object", properties: {
       id: { type: "string", description: "Task ID" },
@@ -208,10 +211,12 @@ const TOOLS: readonly ToolDef[] = [
     parameters: { type: "object", properties: {}, required: [] },
   },
 
-  // Mission
+  // Mission — echo-agent only. MCP has no mission concept (`missionRunId`
+  // is always null in MCP context); hide via `excludeFromMcp`.
   {
     name: "mission_stop", kind: "internal", mutating: false,
     excludeRoles: ["subagent"],
+    excludeFromMcp: true,
     description: "Stop the current mission run. Only valid during active mission execution. Use when a stop condition is met (goal reached, capital depleted, etc.).",
     parameters: { type: "object", properties: {
       reason: { type: "string", enum: ["goal_reached", "deadline_reached", "capital_depleted", "max_loss_hit", "no_viable_opportunity"], description: "Stop reason" },
@@ -360,8 +365,10 @@ export function getOpenAITools(
  *
  * Reuses the canonical env / showOnlyWhenEnvMissing / role filtering used
  * everywhere else. The MCP server is a passive bridge — it surfaces the
- * `parent`-role view of tools (no subagent child-only tools), and hard-excludes
- * any name starting with `subagent_` as defense in depth (today these are
+ * `parent`-role view of tools (no subagent child-only tools), drops anything
+ * marked `excludeFromMcp` (e.g. `schedule_*`, `mission_stop` — runtime
+ * concepts owned by Echo Agent, not the MCP host), and hard-excludes any
+ * name starting with `subagent_` as defense in depth (today these are
  * already filtered by `excludeRoles: ["subagent"]` for child-only ones, but
  * parent-spawn tools like subagent_spawn / subagent_status / subagent_stop /
  * subagent_reply are NOT role-filtered out — they belong to parent. We do
@@ -375,6 +382,7 @@ export function getProductionMcpTools(): readonly ToolDef[] {
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => !t.excludeRoles?.includes("parent")) // none today, defensive
+    .filter(t => !t.excludeFromMcp)                   // schedule_*, mission_stop — echo-agent only
     .filter(t => !t.name.startsWith("subagent_"));    // hard guard for `full-minus-subagents`
 }
 

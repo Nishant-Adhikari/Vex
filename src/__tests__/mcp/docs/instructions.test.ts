@@ -56,6 +56,22 @@ describe("mcp docs — buildInstructions", () => {
     expect(text).toMatch(/no.*subagent|without.*subagent/i);
   });
 
+  it("explicitly states schedule_* and mission_* are not surfaced", () => {
+    const text = buildInstructions();
+    expect(text).toMatch(/no.*schedule_/i);
+    expect(text).toMatch(/no.*mission_/i);
+  });
+
+  it("does not list schedule_* or mission_* in the internal tools blurb", () => {
+    const text = buildInstructions();
+    // The "Internal tools (...)" line must NOT mention schedule_* or mission_*
+    // anymore — they live in Echo Agent only.
+    const internalToolsLine = text.match(/Internal tools \([^)]*\)/);
+    expect(internalToolsLine).not.toBeNull();
+    expect(internalToolsLine![0]).not.toMatch(/schedule_/);
+    expect(internalToolsLine![0]).not.toMatch(/mission_/);
+  });
+
   it("references docs:// resources for deeper reading", () => {
     const text = buildInstructions();
     expect(text).toContain("docs://overview");
