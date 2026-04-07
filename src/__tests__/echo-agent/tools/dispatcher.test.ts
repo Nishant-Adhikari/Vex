@@ -204,12 +204,9 @@ describe("dispatcher", () => {
 
     const parsed = JSON.parse(result.output);
     expect(parsed.count).toBeGreaterThan(0);
-    for (const tool of parsed.tools) {
-      const matchesQuery =
-        tool.toolId.includes("balance") ||
-        tool.description.toLowerCase().includes("balance");
-      expect(matchesQuery).toBe(true);
-    }
+    expect(parsed.tools.some((tool: { toolId: string; description: string }) =>
+      tool.toolId.includes("balance") || tool.description.toLowerCase().includes("balance"),
+    )).toBe(true);
   });
 
   it("discover_tools respects limit", async () => {
@@ -220,6 +217,18 @@ describe("dispatcher", () => {
 
     const parsed = JSON.parse(result.output);
     expect(parsed.count).toBeLessThanOrEqual(2);
+  });
+
+  it("discover_tools rejects reserved hidden namespaces", async () => {
+    const result = await dispatchTool(
+      { name: "discover_tools", args: { namespace: "0g-compute" }, toolCallId: "call_5b" },
+      baseContext,
+    );
+
+    expect(result.success).toBe(false);
+    const parsed = JSON.parse(result.output);
+    expect(parsed.success).toBe(false);
+    expect(parsed.warnings[0]).toContain("reserved");
   });
 
   // ── execute_tool validation ──────────────────────────────────────

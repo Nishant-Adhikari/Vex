@@ -10,6 +10,7 @@
 
 import type { ToolDef, JsonSchema, OpenAITool } from "./types.js";
 import { toOpenAITools } from "./types.js";
+import { buildDiscoverNamespaceDescription } from "./protocols/descriptions.js";
 
 // ── execute_tool params schema ───────────────────────────────────
 
@@ -31,7 +32,7 @@ const TOOLS: readonly ToolDef[] = [
     description: "Search available protocol capabilities by query or namespace. Returns tool metadata (ID, params, description) for use with execute_tool.",
     parameters: { type: "object", properties: {
       query: { type: "string", description: "Free-text intent (e.g. 'bridge usdc', 'swap on solana')" },
-      namespace: { type: "string", description: "Protocol filter (khalani, kyberswap, solana, polymarket)" },
+      namespace: { type: "string", description: buildDiscoverNamespaceDescription() },
       includeMutating: { type: "boolean", description: "Include mutating/trading capabilities" },
       includeDeclared: { type: "boolean", description: "Include not-yet-active capabilities" },
       limit: { type: "number", description: "Max tools to return" },

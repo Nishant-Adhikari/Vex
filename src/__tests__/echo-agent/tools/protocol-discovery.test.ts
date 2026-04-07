@@ -1,7 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { discoverProtocolCapabilities } from "../../../echo-agent/tools/protocols/runtime.js";
+import {
+  PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
+} from "../../../echo-agent/tools/protocols/catalog.js";
 
 describe("protocol discovery", () => {
+  // Snapshot env-gating keys so each test sees a deterministic baseline.
+  // Tests that exercise env-gating delete the relevant key explicitly.
+  const ENV_KEYS = ["JUPITER_API_KEY", "POLYMARKET_API_KEY"] as const;
+  const original: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) original[k] = process.env[k];
+    process.env.JUPITER_API_KEY = "test-jupiter-key";
+    process.env.POLYMARKET_API_KEY = "test-polymarket-key";
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (original[k] === undefined) delete process.env[k];
+      else process.env[k] = original[k];
+    }
+  });
   // ── Basic discovery ──────────────────────────────────────────────
 
   it("returns tools with no filters", () => {
@@ -31,8 +51,9 @@ describe("protocol discovery", () => {
     }
   });
 
-  it("returns empty for namespace with no active tools", () => {
+  it("rejects reserved hidden namespaces", () => {
     const result = discoverProtocolCapabilities({ namespace: "0g-compute" });
+    expect(result.success).toBe(false);
     expect(result.count).toBe(0);
     expect(result.warnings.length).toBeGreaterThan(0);
   });
@@ -116,20 +137,11 @@ describe("protocol discovery", () => {
 
   // ── Warnings ─────────────────────────────────────────────────────
 
-  it("warns about declared-only namespaces", () => {
+  it("does not advertise reserved namespaces in generic discovery results", () => {
     const result = discoverProtocolCapabilities({});
-    const declaredWarning = result.warnings.find(w => w.includes("Declared-only"));
-    expect(declaredWarning).toBeDefined();
-    // 0g-compute, 0g-storage etc. are declared but have no active tools yet
-    // kyberswap, solana, dexscreener are now active — should NOT appear in declared-only warning
-    expect(declaredWarning).not.toContain("kyberswap");
-    expect(declaredWarning).not.toContain("solana");
-    expect(declaredWarning).not.toContain("dexscreener");
-    expect(declaredWarning).not.toContain("chainscan");
-    expect(declaredWarning).not.toContain("jaine");
-    expect(declaredWarning).not.toContain("slop");
-    expect(declaredWarning).not.toContain("echobook");
-    expect(declaredWarning).not.toContain("polymarket");
+    const namespaces = new Set(result.tools.map((tool) => tool.namespace));
+    expect(namespaces.has("0g-compute")).toBe(false);
+    expect(namespaces.has("0g-storage")).toBe(false);
   });
 
   it("returns dexscreener tools when filtering by dexscreener namespace", () => {
@@ -163,5 +175,93 @@ describe("protocol discovery", () => {
     const bridge = result.tools.find(t => t.toolId === "khalani.bridge");
     expect(bridge).toBeDefined();
     expect(bridge!.mutating).toBe(true);
+  });
+
+  it("matches alias query for 0g explorer to chainscan", () => {
+    const result = discoverProtocolCapabilities({ query: "0g explorer" });
+    expect(result.success).toBe(true);
+    expect(result.tools[0]?.namespace).toBe("chainscan");
+  });
+
+  it("matches polymarket clob from natural language query", () => {
+    const result = discoverProtocolCapabilities({ query: "prediction market orderbook" });
+    expect(result.success).toBe(true);
+    expect(result.tools[0]?.toolId.startsWith("polymarket.clob")).toBe(true);
+  });
+
+  it("matches community takeover query to dexscreener", () => {
+    const result = discoverProtocolCapabilities({ query: "community takeover" });
+    expect(result.success).toBe(true);
+    expect(result.tools[0]?.toolId).toBe("dexscreener.communityTakeovers");
+  });
+
+  it("matches profile image query to slop app tools", () => {
+    const result = discoverProtocolCapabilities({ query: "profile image" });
+    expect(result.success).toBe(true);
+    expect(result.tools[0]?.namespace).toBe("slop-app");
+  });
+
+  // ── Defense in depth: reserved namespaces never leak ─────────────
+
+  it("free-text discovery only ever returns advertised namespaces", () => {
+    // Run a few diverse queries — every result must belong to advertised set.
+    const queries = ["", "bridge", "swap", "token", "0g", "market"];
+    for (const query of queries) {
+      const result = discoverProtocolCapabilities({ query, includeMutating: true, limit: 200 });
+      for (const tool of result.tools) {
+        expect(PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).toContain(tool.namespace);
+      }
+    }
+  });
+
+  // ── Env-gating contract (audit follow-up) ────────────────────────
+
+  it("hides env-gated tools when their requiresEnv is missing", () => {
+    delete process.env.JUPITER_API_KEY;
+    const result = discoverProtocolCapabilities({ namespace: "solana", limit: 100 });
+    // All solana tools require JUPITER_API_KEY → namespace returns nothing.
+    expect(result.count).toBe(0);
+  });
+
+  it("returns env-gated tools when their requiresEnv is present", () => {
+    const result = discoverProtocolCapabilities({ namespace: "solana", includeMutating: true, limit: 100 });
+    expect(result.count).toBeGreaterThan(0);
+  });
+
+  it("does not surface gated polymarket clob mutating tools when key missing", () => {
+    delete process.env.POLYMARKET_API_KEY;
+    const result = discoverProtocolCapabilities({
+      namespace: "polymarket",
+      query: "buy yes",
+      includeMutating: true,
+      limit: 100,
+    });
+    // The mutating clob.buy tool requires POLYMARKET_API_KEY → must be hidden.
+    expect(result.tools.some((t) => t.toolId === "polymarket.clob.buy")).toBe(false);
+  });
+
+  // ── Facet-driven discovery (audit follow-up) ─────────────────────
+
+  it("matches echobook comment tools via facet hints", () => {
+    const result = discoverProtocolCapabilities({
+      query: "comment thread",
+      namespace: "echobook",
+      includeMutating: true,
+      limit: 50,
+    });
+    expect(result.success).toBe(true);
+    const ids = result.tools.map((t) => t.toolId);
+    expect(ids).toContain("echobook.comments.get");
+  });
+
+  it("matches slop.tokens.mine via 'my tokens' facet hint", () => {
+    const result = discoverProtocolCapabilities({
+      query: "my tokens",
+      namespace: "slop",
+      limit: 50,
+    });
+    expect(result.success).toBe(true);
+    const ids = result.tools.map((t) => t.toolId);
+    expect(ids).toContain("slop.tokens.mine");
   });
 });

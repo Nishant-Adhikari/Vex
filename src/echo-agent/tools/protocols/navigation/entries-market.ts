@@ -1,0 +1,227 @@
+import type { ProtocolNamespaceNavigation } from "./types.js";
+
+export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] = [
+  {
+    namespace: "khalani",
+    advertised: true,
+    groupId: "cross-chain",
+    groupLabel: "Cross-chain",
+    summary: "Cross-chain bridge, token resolver, balances, quotes, and order tracking across EVM + Solana chains.",
+    whenToUse:
+      "Use when the task crosses chains or needs a canonical multi-chain token resolver, wallet balances, bridge quote, or bridge execution flow.",
+    preferInstead:
+      "Use `kyberswap` for EVM-only swaps/limit orders, `solana` for Solana-only swaps, and `jaine` for 0G-only DEX execution.",
+    exampleQueries: [
+      'discover_tools(query="token search", namespace="khalani")',
+      'discover_tools(query="bridge quote", namespace="khalani")',
+      'discover_tools(query="cross-chain order status", namespace="khalani")',
+    ],
+    aliases: ["bridge", "cross chain", "hyperstream", "multi chain token resolver"],
+    discoveryHints: [
+      "bridge quote",
+      "cross-chain transfer",
+      "token resolver",
+      "balances across chains",
+      "bridge order status",
+    ],
+    facets: [
+      {
+        label: "Chains and token resolution",
+        summary: "List supported chains and resolve/search token metadata before any multi-chain or EVM mutation.",
+        toolPrefixes: ["khalani.chains", "khalani.tokens"],
+        hints: ["supported chains", "token search", "token autocomplete", "wallet balances"],
+      },
+      {
+        label: "Bridge quotes and orders",
+        summary: "Quote/execute cross-chain transfers and inspect bridge order lifecycle.",
+        toolPrefixes: ["khalani.quote", "khalani.orders", "khalani.bridge"],
+        hints: ["bridge quote", "bridge usdc", "order status", "cross-chain bridge"],
+      },
+    ],
+  },
+  {
+    namespace: "kyberswap",
+    advertised: true,
+    groupId: "evm-trading",
+    groupLabel: "EVM Trading",
+    summary: "EVM-only swaps, limit orders, zap liquidity, and token safety checks across KyberSwap routes.",
+    whenToUse:
+      "Use when the user wants EVM execution on an existing chain: swap, place/fill/cancel limit orders, zap into liquidity, or run honeypot/FOT checks.",
+    preferInstead:
+      "Use `khalani` to resolve cross-chain token addresses first, `solana` for Solana trading, and `dexscreener` for read-only research.",
+    exampleQueries: [
+      'discover_tools(query="swap on base", namespace="kyberswap")',
+      'discover_tools(query="limit order", namespace="kyberswap")',
+      'discover_tools(query="zap liquidity", namespace="kyberswap")',
+    ],
+    aliases: ["kyber", "evm swap", "limit order", "zap liquidity"],
+    discoveryHints: ["swap on ethereum", "limit order", "fill order", "zap liquidity", "honeypot check"],
+    facets: [
+      {
+        label: "Chains and token safety",
+        summary: "Inspect supported chains, search token metadata, and run honeypot/FOT safety checks.",
+        toolPrefixes: ["kyberswap.chains", "kyberswap.tokens"],
+        hints: ["supported evm chains", "token search", "honeypot", "fee on transfer"],
+      },
+      {
+        label: "Swaps",
+        summary: "Quote or execute routed swaps on EVM chains after token resolution.",
+        toolPrefixes: ["kyberswap.swap"],
+        hints: ["swap quote", "sell token", "buy token", "route build"],
+      },
+      {
+        label: "Limit orders",
+        summary: "Create, list, cancel, hard-cancel, or fill gasless limit orders.",
+        toolPrefixes: ["kyberswap.limitOrder"],
+        hints: ["limit order", "cancel order", "fill order", "active making amount"],
+      },
+      {
+        label: "Zaps and LP",
+        summary: "Search pools and zap in/out/migrate concentrated-liquidity positions.",
+        toolPrefixes: ["kyberswap.zap"],
+        hints: ["zap liquidity", "lp position", "migrate lp", "pool search"],
+      },
+    ],
+  },
+  {
+    namespace: "solana",
+    advertised: true,
+    groupId: "solana",
+    groupLabel: "Solana",
+    summary: "Jupiter-backed Solana surface for token search, prices, swaps, lending, and prediction markets.",
+    whenToUse:
+      "Use when the task is Solana-only: resolve mints, fetch Jupiter prices, swap on Solana, inspect lend positions, or trade Jupiter prediction markets.",
+    preferInstead:
+      "Use `polymarket` for Polygon prediction markets, `khalani` for cross-chain bridging, and `kyberswap` for EVM-only execution.",
+    exampleQueries: [
+      'discover_tools(query="solana token search", namespace="solana")',
+      'discover_tools(query="swap on solana", namespace="solana")',
+      'discover_tools(query="solana prediction markets", namespace="solana")',
+    ],
+    aliases: ["jupiter", "solana swap", "solana lending", "solana prediction"],
+    discoveryHints: ["token mint search", "solana swap", "jupiter price", "lend rates", "prediction market"],
+    facets: [
+      {
+        label: "Core token and price lookup",
+        summary: "Search Solana mints and fetch prices/trending token metadata.",
+        toolPrefixes: ["solana.prices", "solana.tokens"],
+        hints: ["token search", "token mint", "trending tokens", "price lookup"],
+      },
+      {
+        label: "Swaps and lending",
+        summary: "Quote/execute swaps and inspect deposit/withdraw lend positions.",
+        toolPrefixes: ["solana.swap", "solana.lend"],
+        hints: ["swap quote", "swap execute", "lend rates", "lend positions"],
+      },
+      {
+        label: "Prediction markets",
+        summary: "Browse, analyze, and trade Jupiter prediction markets on Solana.",
+        toolPrefixes: ["solana.predict"],
+        hints: ["prediction market", "buy yes", "sell shares", "market history"],
+      },
+    ],
+  },
+  {
+    namespace: "polymarket",
+    advertised: true,
+    groupId: "prediction-markets",
+    groupLabel: "Prediction Markets",
+    summary: "Polymarket prediction-market surface for discovery, orderbook trading, positions, bridge flows, and rewards.",
+    whenToUse:
+      "Use when the user wants Polymarket on Polygon: browse markets/events, inspect the orderbook, place/cancel trades, read positions/activity, bridge funds, or inspect rewards.",
+    preferInstead:
+      "Use `solana` for Jupiter prediction markets and `dexscreener` for non-prediction token research.",
+    exampleQueries: [
+      'discover_tools(query="prediction market orderbook", namespace="polymarket")',
+      'discover_tools(query="polymarket positions", namespace="polymarket")',
+      'discover_tools(query="bridge funds to polymarket", namespace="polymarket")',
+    ],
+    aliases: ["prediction market", "orderbook market", "clob", "gamma", "polymarket"],
+    discoveryHints: [
+      "prediction market orderbook",
+      "yes no market",
+      "gamma market discovery",
+      "positions and pnl",
+      "bridge to polymarket",
+      "rewards earnings",
+    ],
+    facets: [
+      {
+        label: "Gamma discovery",
+        summary: "Browse/search events, markets, tags, comments, profiles, and sports metadata.",
+        toolPrefixes: ["polymarket.gamma"],
+        hints: ["gamma", "market discovery", "event search", "tag search", "sports metadata"],
+      },
+      {
+        label: "CLOB trading",
+        summary: "Read orderbooks/prices and place, cancel, or inspect orders and trades.",
+        toolPrefixes: ["polymarket.clob"],
+        hints: ["orderbook", "clob", "buy yes", "sell no", "cancel order", "price history"],
+      },
+      {
+        label: "Portfolio and analytics",
+        summary: "Read positions, activity, holders, open interest, and leaderboard data.",
+        toolPrefixes: ["polymarket.data"],
+        hints: ["positions", "activity", "holders", "open interest", "leaderboard", "pnl"],
+      },
+      {
+        label: "Bridge",
+        summary: "Inspect supported assets, bridge quote/status, deposit, and withdraw flows.",
+        toolPrefixes: ["polymarket.bridge"],
+        hints: ["bridge funds", "supported assets", "deposit address", "withdraw quote"],
+      },
+      {
+        label: "Rewards",
+        summary: "Inspect market/user rewards, earnings, and percentage snapshots.",
+        toolPrefixes: ["polymarket.rewards"],
+        hints: ["rewards", "earnings", "active rewards", "user markets"],
+      },
+    ],
+  },
+  {
+    namespace: "dexscreener",
+    advertised: true,
+    groupId: "market-research",
+    groupLabel: "Market Research",
+    summary: "Read-only multi-chain DEX research for search, pair analytics, trending, boosts, CTO signals, ads, and order verification.",
+    whenToUse:
+      "Use when the user needs research/discovery rather than execution: search tokens, inspect pairs/liquidity, see trending projects, boosts, community takeovers, ads, or paid-order verification.",
+    preferInstead:
+      "Use `kyberswap`, `solana`, `jaine`, or `slop` for execution after the research step.",
+    exampleQueries: [
+      'discover_tools(query="trending meme tokens", namespace="dexscreener")',
+      'discover_tools(query="community takeover", namespace="dexscreener")',
+      'discover_tools(query="pair liquidity research", namespace="dexscreener")',
+    ],
+    aliases: ["dex screener", "market research", "trending tokens", "cto"],
+    discoveryHints: [
+      "token search",
+      "pair analytics",
+      "trending tokens",
+      "boosts",
+      "community takeover",
+      "order verification",
+      "ads",
+    ],
+    facets: [
+      {
+        label: "Search and pair analytics",
+        summary: "Search tokens/pairs and inspect pair detail or all pools for a token.",
+        toolPrefixes: ["dexscreener.search", "dexscreener.pairs", "dexscreener.tokens", "dexscreener.tokenPairs"],
+        hints: ["token search", "pair analytics", "price research", "all pools", "liquidity"],
+      },
+      {
+        label: "Profiles, boosts, and trending",
+        summary: "Read token profiles, boost feeds, and merged trending signals.",
+        toolPrefixes: ["dexscreener.profiles", "dexscreener.boosts", "dexscreener.trending"],
+        hints: ["token profiles", "boosts", "top boosts", "trending projects"],
+      },
+      {
+        label: "Community takeovers and promotion checks",
+        summary: "Track CTO signals plus ads and paid-order verification.",
+        toolPrefixes: ["dexscreener.communityTakeovers", "dexscreener.orders", "dexscreener.ads"],
+        hints: ["community takeover", "cto", "paid orders", "ads", "promotion"],
+      },
+    ],
+  },
+] as const;

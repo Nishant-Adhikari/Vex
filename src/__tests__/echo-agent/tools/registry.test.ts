@@ -140,6 +140,15 @@ describe("registry", () => {
     }
   });
 
+  it("discover_tools namespace description is generated from advertised namespaces", () => {
+    const discover = getToolDef("discover_tools");
+    const namespace = discover?.parameters.properties?.namespace;
+    expect(namespace).toBeDefined();
+    expect(namespace?.description).toContain("dexscreener");
+    expect(namespace?.description).toContain("0G Ecosystem");
+    expect(namespace?.description).not.toContain("0g-compute");
+  });
+
   it("mutating tools are wallet_send_confirm and polymarket_setup", () => {
     const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
     expect(mutating).toEqual(["polymarket_setup", "wallet_send_confirm"]);

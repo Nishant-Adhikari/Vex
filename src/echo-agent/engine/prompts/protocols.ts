@@ -1,30 +1,29 @@
 /**
  * Protocol prompt — constant layer, always present.
  *
- * Auto-generated from PROTOCOL_TOOLS manifests (catalog.ts).
- * Namespace descriptions and discover_tools example queries come from
- * `tools/protocols/descriptions.ts` — a single source-of-truth shared
- * with the production MCP server (so the same per-namespace copy ends
- * up in both Echo Agent's mission loop prompt and MCP handshake +
- * docs resources).
- * Capability families and tool counts are auto-generated from toolId patterns.
+ * Auto-generated from protocol manifests plus shared navigation metadata.
+ * The prompt intentionally exposes product groups and "when to use" guidance
+ * instead of heuristic toolId families.
  */
 
-import { PROTOCOL_TOOLS } from "@echo-agent/tools/protocols/catalog.js";
 import {
-  NAMESPACE_DESCRIPTIONS,
-  NAMESPACE_EXAMPLES,
+  PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
+  PROTOCOL_TOOLS,
+  isProtocolToolAvailable,
+  getMissingEnvForNamespace,
+} from "@echo-agent/tools/protocols/catalog.js";
+import {
+  getGroupedAdvertisedProtocolNavigation,
 } from "@echo-agent/tools/protocols/descriptions.js";
 import type { ProtocolNamespace, ProtocolToolManifest } from "@echo-agent/tools/protocols/types.js";
 
 // ── Auto-generation from manifests ──────────────────────────────
 
 interface NamespaceSummary {
-  description: string;
   toolCount: number;
   activeCount: number;
-  families: string[];
   hasMutating: boolean;
+  missingEnv: string[];
 }
 
 function groupByNamespace(
@@ -39,36 +38,19 @@ function groupByNamespace(
   return map;
 }
 
-function extractFamilies(tools: ProtocolToolManifest[]): string[] {
-  const prefixes = new Map<string, number>();
-
-  for (const t of tools) {
-    // toolId like "khalani.bridge" → prefix "khalani.bridge"
-    // toolId like "solana.swap.quote" → prefix "solana.swap"
-    const parts = t.toolId.split(".");
-    if (parts.length >= 2) {
-      const prefix = parts.slice(0, 2).join(".");
-      prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1);
-    }
-  }
-
-  // Return families with 1+ tools, sorted, with wildcard
-  return [...prefixes.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([prefix, count]) => count > 1 ? `${prefix}.*` : prefix);
-}
-
 function buildNamespaceSummaries(): Map<ProtocolNamespace, NamespaceSummary> {
-  const byNs = groupByNamespace(PROTOCOL_TOOLS);
+  const byNs = groupByNamespace(
+    PROTOCOL_TOOLS.filter((tool) => PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace)),
+  );
   const summaries = new Map<ProtocolNamespace, NamespaceSummary>();
 
   for (const [ns, tools] of byNs) {
     summaries.set(ns, {
-      description: NAMESPACE_DESCRIPTIONS[ns],
       toolCount: tools.length,
-      activeCount: tools.filter(t => t.lifecycle === "active").length,
-      families: extractFamilies(tools),
+      // env-aware: matches what discover_tools would return right now
+      activeCount: tools.filter((t) => isProtocolToolAvailable(t)).length,
       hasMutating: tools.some(t => t.mutating),
+      missingEnv: getMissingEnvForNamespace(ns),
     });
   }
 
@@ -83,33 +65,55 @@ let cached: string | null = null;
 export function buildProtocolsPrompt(): string {
   if (cached) return cached;
 
+  const advertisedTools = PROTOCOL_TOOLS.filter((tool) =>
+    PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace),
+  );
   const summaries = buildNamespaceSummaries();
   const lines: string[] = [];
 
   lines.push("# Available Protocol Namespaces");
   lines.push("");
-  lines.push(`Total: ${PROTOCOL_TOOLS.length} tools across ${summaries.size} namespaces.`);
+  lines.push(`Total: ${advertisedTools.length} tools across ${summaries.size} namespaces.`);
   lines.push("Use discover_tools(namespace=...) to explore any namespace.");
   lines.push("");
 
-  for (const [ns, summary] of summaries) {
-    lines.push(`## ${ns}`);
-    lines.push(summary.description);
-    lines.push(`Tools: ${summary.activeCount} active${summary.toolCount > summary.activeCount ? ` / ${summary.toolCount} total` : ""}`);
-    if (summary.families.length > 0) {
-      lines.push(`Families: ${summary.families.join(", ")}`);
-    }
-    if (summary.hasMutating) {
-      lines.push("⚠ Contains mutating tools (may require approval)");
-    }
-    const examples = NAMESPACE_EXAMPLES[ns];
-    if (examples && examples.length > 0) {
-      lines.push("Examples:");
-      for (const ex of examples) {
-        lines.push(`  ${ex}`);
-      }
-    }
+  for (const group of getGroupedAdvertisedProtocolNavigation()) {
+    lines.push(`### ${group.groupLabel}`);
     lines.push("");
+
+    for (const metadata of group.namespaces) {
+      const summary = summaries.get(metadata.namespace);
+      if (!summary || summary.toolCount === 0) continue;
+
+      lines.push(`## ${metadata.namespace}`);
+      lines.push(metadata.summary);
+      lines.push(`Use when: ${metadata.whenToUse}`);
+      if (metadata.preferInstead) {
+        lines.push(`Use instead: ${metadata.preferInstead}`);
+      }
+      lines.push(`Tools: ${summary.activeCount} active${summary.toolCount > summary.activeCount ? ` / ${summary.toolCount} total` : ""}`);
+      // Surface env requirement only when the namespace is fully gated —
+      // partial gating is silent (the count itself is correct).
+      if (summary.activeCount === 0 && summary.missingEnv.length > 0) {
+        lines.push(`Requires env: ${summary.missingEnv.join(", ")} to enable any tool in this namespace.`);
+      }
+      if (summary.hasMutating) {
+        lines.push("Contains mutating tools (may require approval).");
+      }
+      if (metadata.facets.length > 0) {
+        lines.push("Paths:");
+        for (const facet of metadata.facets) {
+          lines.push(`- ${facet.label}: ${facet.summary}`);
+        }
+      }
+      if (metadata.exampleQueries.length > 0) {
+        lines.push("Examples:");
+        for (const example of metadata.exampleQueries) {
+          lines.push(`  ${example}`);
+        }
+      }
+      lines.push("");
+    }
   }
 
   cached = lines.join("\n");

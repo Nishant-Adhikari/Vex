@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import type { EngineContext, LoopMode, SessionKind } from "../../../../echo-agent/engine/types.js";
 import {
@@ -8,7 +8,7 @@ import {
   buildModePrompt,
   buildToolUsagePrompt,
 } from "../../../../echo-agent/engine/prompts/index.js";
-import { PROTOCOL_TOOLS, PROTOCOL_NAMESPACE_ALLOWLIST } from "../../../../echo-agent/tools/protocols/catalog.js";
+import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST, PROTOCOL_TOOLS } from "../../../../echo-agent/tools/protocols/catalog.js";
 
 function makeContext(overrides: Partial<EngineContext> = {}): EngineContext {
   return {
@@ -61,7 +61,10 @@ describe("prompt-stack", () => {
   describe("protocols prompt", () => {
     it("mentions total tool count from actual catalog", () => {
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain(`Total: ${PROTOCOL_TOOLS.length} tools`);
+      const advertisedToolCount = PROTOCOL_TOOLS.filter((tool) =>
+        PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace),
+      ).length;
+      expect(prompt).toContain(`Total: ${advertisedToolCount} tools`);
     });
 
     it("contains all active namespaces from catalog", () => {
@@ -75,16 +78,11 @@ describe("prompt-stack", () => {
       }
     });
 
-    it("generates capability families from toolId patterns", () => {
+    it("renders explicit product groups instead of heuristic families", () => {
       const prompt = buildProtocolsPrompt();
-
-      // Check that families are derived from actual toolId patterns
-      // e.g. "khalani.balance" should produce a family
-      const hasKhalaniTools = PROTOCOL_TOOLS.some(t => t.namespace === "khalani");
-      if (hasKhalaniTools) {
-        expect(prompt).toContain("Families:");
-        expect(prompt).toContain("khalani.");
-      }
+      expect(prompt).toContain("### 0G Ecosystem");
+      expect(prompt).toContain("### Cross-chain");
+      expect(prompt).not.toContain("Families:");
     });
 
     it("marks namespaces with mutating tools", () => {
@@ -310,14 +308,65 @@ describe("prompt-stack", () => {
       const prompt = buildProtocolsPrompt();
       // kyberswap section should reference khalani as resolver, not itself
       const kyberSection = prompt.split("## kyberswap")[1]?.split("##")[0] ?? "";
-      expect(kyberSection).toContain("khalani.tokens.search");
-      expect(kyberSection).not.toContain("Resolve tokens via kyberswap.tokens.search before swap");
+      expect(kyberSection).toContain("khalani");
+      expect(kyberSection).not.toContain("kyberswap.tokens.search");
     });
 
     it("chainscan is described as 0G-only in protocols", () => {
       const prompt = buildProtocolsPrompt();
       const chainscanSection = prompt.split("## chainscan")[1]?.split("##")[0] ?? "";
       expect(chainscanSection).toContain("0G-only");
+    });
+
+    it("polymarket section exposes subarea guidance", () => {
+      const prompt = buildProtocolsPrompt();
+      const polymarketSection = prompt.split("## polymarket")[1]?.split("##")[0] ?? "";
+      expect(polymarketSection).toContain("Paths:");
+      expect(polymarketSection).toContain("Gamma discovery");
+      expect(polymarketSection).toContain("CLOB trading");
+    });
+
+    it("echobook section renders 'Feeds, posts, and comments' path label", () => {
+      const prompt = buildProtocolsPrompt();
+      const echobookSection = prompt.split("## echobook")[1]?.split("##")[0] ?? "";
+      expect(echobookSection).toContain("Feeds, posts, and comments");
+    });
+  });
+
+  // ── Env-aware availability in protocols prompt ──────────────────
+
+  describe("protocols prompt — env awareness", () => {
+    const ENV_KEYS = ["JUPITER_API_KEY", "POLYMARKET_API_KEY"] as const;
+    const original: Record<string, string | undefined> = {};
+
+    beforeEach(() => {
+      for (const k of ENV_KEYS) original[k] = process.env[k];
+      resetProtocolsPromptCache();
+    });
+
+    afterEach(() => {
+      for (const k of ENV_KEYS) {
+        if (original[k] === undefined) delete process.env[k];
+        else process.env[k] = original[k];
+      }
+      resetProtocolsPromptCache();
+    });
+
+    it("renders 'Requires env' hint for a fully env-gated namespace with 0 available tools", () => {
+      delete process.env.JUPITER_API_KEY;
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      const solanaSection = prompt.split("## solana")[1]?.split("##")[0] ?? "";
+      expect(solanaSection).toContain("Tools: 0 active");
+      expect(solanaSection).toContain("Requires env: JUPITER_API_KEY");
+    });
+
+    it("does not render 'Requires env' hint when env is present", () => {
+      process.env.JUPITER_API_KEY = "test-jupiter-key";
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      const solanaSection = prompt.split("## solana")[1]?.split("##")[0] ?? "";
+      expect(solanaSection).not.toContain("Requires env:");
     });
   });
 

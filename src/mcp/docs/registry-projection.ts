@@ -18,12 +18,16 @@ import {
 } from "@echo-agent/tools/registry.js";
 import {
   PROTOCOL_TOOLS,
-  PROTOCOL_NAMESPACE_ALLOWLIST,
+  PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
   NAMESPACE_DEFAULTS,
+  countAvailableToolsForNamespace,
+  getMissingEnvForNamespace,
+  isProtocolToolAvailable,
 } from "@echo-agent/tools/protocols/catalog.js";
 import {
-  NAMESPACE_DESCRIPTIONS,
-  NAMESPACE_EXAMPLES,
+  getGroupedAdvertisedProtocolNavigation,
+  getProtocolNamespaceNavigation,
+  getMatchingFacetsForTool,
 } from "@echo-agent/tools/protocols/descriptions.js";
 import { loadEmbeddingConfig } from "@echo-agent/embeddings/config.js";
 import type { ProtocolNamespace, ProtocolToolManifest } from "@echo-agent/tools/protocols/types.js";
@@ -111,7 +115,7 @@ export function buildOverview(): OverviewDoc {
       "web, EVM, mission, setup) that Echo Agent uses, plus discover_tools / execute_tool " +
       "for protocol capabilities. No subagents.",
     surfaceSize: tools.length,
-    protocolNamespaceCount: PROTOCOL_NAMESPACE_ALLOWLIST.length,
+    protocolNamespaceCount: PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.length,
     embeddingModel: config?.model ?? "<unknown — EMBEDDING_MODEL not set>",
     embeddingDim: config?.dim ?? 0,
   };
@@ -121,21 +125,43 @@ export function buildOverview(): OverviewDoc {
 
 export interface ProtocolNamespaceDoc {
   namespace: ProtocolNamespace;
-  /** One-line description of what this namespace does (R5 — shared with Echo Agent prompt). */
   description: string;
-  /** Concrete `discover_tools(...)` queries the model can copy to find tools. May be empty. */
+  groupId: string;
+  groupLabel: string;
+  whenToUse: string;
+  preferInstead?: string;
   exampleQueries: readonly string[];
   defaultPortfolioRole: string;
+  /**
+   * Tools that are *currently usable* — active lifecycle AND any
+   * `requiresEnv` actually present. Mirrors what `discover_tools` returns.
+   */
   activeToolCount: number;
+  /**
+   * Distinct unset env vars that gate active tools in this namespace.
+   * Empty when nothing is gated. Renderers show a hint when this is
+   * non-empty AND `activeToolCount === 0`.
+   */
+  gatedByEnv: string[];
+  paths: Array<{ label: string; summary: string }>;
 }
 
 export function buildProtocolList(): ProtocolNamespaceDoc[] {
-  return PROTOCOL_NAMESPACE_ALLOWLIST.map((ns) => ({
-    namespace: ns,
-    description: NAMESPACE_DESCRIPTIONS[ns],
-    exampleQueries: NAMESPACE_EXAMPLES[ns] ?? [],
-    defaultPortfolioRole: NAMESPACE_DEFAULTS[ns],
-    activeToolCount: PROTOCOL_TOOLS.filter((t) => t.namespace === ns && t.lifecycle === "active").length,
+  return getGroupedAdvertisedProtocolNavigation().flatMap((group) => group.namespaces.map((metadata) => {
+    const namespace = metadata.namespace;
+    return {
+      namespace,
+      description: metadata.summary,
+      groupId: group.groupId,
+      groupLabel: group.groupLabel,
+      whenToUse: metadata.whenToUse,
+      preferInstead: metadata.preferInstead,
+      exampleQueries: metadata.exampleQueries,
+      defaultPortfolioRole: NAMESPACE_DEFAULTS[namespace],
+      activeToolCount: countAvailableToolsForNamespace(namespace),
+      gatedByEnv: getMissingEnvForNamespace(namespace),
+      paths: metadata.facets.map((facet) => ({ label: facet.label, summary: facet.summary })),
+    };
   }));
 }
 
@@ -149,20 +175,32 @@ export interface ProtocolToolDoc {
 
 export interface ProtocolNamespaceDetailDoc {
   namespace: ProtocolNamespace;
-  /** Header description (R5 — shared with Echo Agent prompt via descriptions.ts). */
   description: string;
+  groupId: string;
+  groupLabel: string;
+  whenToUse: string;
+  preferInstead?: string;
   exampleQueries: readonly string[];
+  /**
+   * Distinct unset env vars that gate tools in this namespace. Empty when
+   * everything required is present. Mirrors `ProtocolNamespaceDoc.gatedByEnv`.
+   */
+  gatedByEnv: string[];
+  paths: Array<{ label: string; summary: string; tools: string[] }>;
   tools: ProtocolToolDoc[];
 }
 
 export function buildProtocolNamespace(
   namespace: string,
 ): ProtocolNamespaceDetailDoc | null {
-  if (!PROTOCOL_NAMESPACE_ALLOWLIST.includes(namespace as ProtocolNamespace)) {
+  if (!PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(namespace as ProtocolNamespace)) {
     return null;
   }
   const ns = namespace as ProtocolNamespace;
-  const tools: ProtocolToolDoc[] = PROTOCOL_TOOLS.filter((t) => t.namespace === ns)
+  const metadata = getProtocolNamespaceNavigation(ns);
+  // Only surface tools that runtime would actually return — keeps docs in
+  // sync with `discover_tools` for env-gated namespaces.
+  const tools: ProtocolToolDoc[] = PROTOCOL_TOOLS.filter((t) => t.namespace === ns && isProtocolToolAvailable(t))
     .sort((a, b) => a.toolId.localeCompare(b.toolId))
     .map((t: ProtocolToolManifest) => ({
       toolId: t.toolId,
@@ -173,8 +211,20 @@ export function buildProtocolNamespace(
     }));
   return {
     namespace: ns,
-    description: NAMESPACE_DESCRIPTIONS[ns],
-    exampleQueries: NAMESPACE_EXAMPLES[ns] ?? [],
+    description: metadata.summary,
+    groupId: metadata.groupId,
+    groupLabel: metadata.groupLabel,
+    whenToUse: metadata.whenToUse,
+    preferInstead: metadata.preferInstead,
+    exampleQueries: metadata.exampleQueries,
+    gatedByEnv: getMissingEnvForNamespace(ns),
+    paths: metadata.facets.map((facet) => ({
+      label: facet.label,
+      summary: facet.summary,
+      tools: tools
+        .filter((tool) => getMatchingFacetsForTool(ns, tool.toolId).some((candidate) => candidate.label === facet.label))
+        .map((tool) => tool.toolId),
+    })),
     tools,
   };
 }
@@ -192,7 +242,7 @@ export function buildSurfaceManifest(): SurfaceManifest {
   return {
     version: 1,
     tools: getProductionMcpTools().map((t) => t.name).sort(),
-    protocolNamespaces: [...PROTOCOL_NAMESPACE_ALLOWLIST],
+    protocolNamespaces: [...PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST],
     generatedAt: new Date().toISOString(),
   };
 }

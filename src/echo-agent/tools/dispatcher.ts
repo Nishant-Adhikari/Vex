@@ -63,7 +63,7 @@ async function routeToolCall(
   if (call.name === "discover_tools") {
     const result = discoverProtocolCapabilities({
       query: typeof call.args.query === "string" ? call.args.query : undefined,
-      namespace: typeof call.args.namespace === "string" ? call.args.namespace as any : undefined,
+      namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
       includeMutating: call.args.includeMutating === true,
       includeDeclared: call.args.includeDeclared === true,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,

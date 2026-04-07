@@ -6,76 +6,15 @@
  * Execution validates params, finds the handler, and calls it.
  */
 
-import type {
-  ProtocolDiscoveryRequest,
-  ProtocolDiscoveryResult,
-  ProtocolExecuteRequest,
-  ProtocolExecutionContext,
-} from "./types.js";
+import type { ProtocolExecuteRequest, ProtocolExecutionContext } from "./types.js";
 import type { ToolResult } from "../types.js";
-import { PROTOCOL_TOOLS, PROTOCOL_NAMESPACE_ALLOWLIST, getProtocolHandler, getProtocolManifest } from "./catalog.js";
+import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution, validateCaptureContract } from "./capture-validator.js";
 import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js";
 import { MUTATION_MATRIX } from "./mutation-matrix.js";
 import logger from "@utils/logger.js";
 
-const DEFAULT_DISCOVERY_LIMIT = 15;
-
-// ── Discovery ────────────────────────────────────────────────────
-
-function normalizeText(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-export function discoverProtocolCapabilities(
-  request: ProtocolDiscoveryRequest,
-): ProtocolDiscoveryResult {
-  const limit = typeof request.limit === "number" && Number.isFinite(request.limit)
-    ? Math.max(1, Math.floor(request.limit))
-    : DEFAULT_DISCOVERY_LIMIT;
-
-  const matchingTools = PROTOCOL_TOOLS
-    .filter(m => !m.requiresEnv || Boolean(process.env[m.requiresEnv]?.trim()))
-    .filter(m => request.namespace ? m.namespace === request.namespace : true)
-    .filter(m => request.includeMutating ? true : !m.mutating)
-    .filter(m => request.includeDeclared ? true : m.lifecycle === "active")
-    .filter(m => {
-      if (!request.query) return true;
-      const q = normalizeText(request.query);
-      return [m.toolId, m.namespace, m.description]
-        .some(v => normalizeText(v).includes(q));
-    });
-
-  const tools = matchingTools
-    .slice(0, limit)
-    .map(m => ({
-      toolId: m.toolId,
-      namespace: m.namespace,
-      lifecycle: m.lifecycle,
-      description: m.description,
-      mutating: m.mutating,
-      params: m.params,
-      exampleParams: m.exampleParams,
-    }));
-  const totalCount = matchingTools.length;
-  const hasMore = totalCount > tools.length;
-
-  const warnings: string[] = [];
-  if (tools.length === 0) {
-    warnings.push("No protocol capabilities matched the query/filter.");
-  }
-  if (hasMore) {
-    warnings.push(`Showing first ${tools.length} of ${totalCount} matching capabilities. Increase limit to see more.`);
-  }
-
-  const activeNamespaces = new Set(PROTOCOL_TOOLS.map(t => t.namespace));
-  const declaredOnly = PROTOCOL_NAMESPACE_ALLOWLIST.filter(ns => !activeNamespaces.has(ns));
-  if (declaredOnly.length > 0) {
-    warnings.push(`Declared-only namespaces (coming soon): ${declaredOnly.join(", ")}`);
-  }
-
-  return { success: true, count: tools.length, totalCount, hasMore, tools, warnings };
-}
+export { discoverProtocolCapabilities } from "./discovery.js";
 
 // ── Execution ────────────────────────────────────────────────────
 

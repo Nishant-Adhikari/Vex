@@ -76,7 +76,7 @@ export interface ProtocolExecutionContext {
 
 export interface ProtocolDiscoveryRequest {
   query?: string;
-  namespace?: ProtocolNamespace;
+  namespace?: string;
   includeMutating?: boolean;
   includeDeclared?: boolean;
   limit?: number;

@@ -13,6 +13,7 @@ describe("mcp docs — registry projection", () => {
   const ENV_KEYS = [
     "TAVILY_API_KEY",
     "POLYMARKET_API_KEY",
+    "JUPITER_API_KEY",
     "EMBEDDING_BASE_URL",
     "EMBEDDING_MODEL",
     "EMBEDDING_DIM",
@@ -28,6 +29,12 @@ describe("mcp docs — registry projection", () => {
     process.env.EMBEDDING_MODEL = "ai/embeddinggemma:300M-Q8_0";
     process.env.EMBEDDING_DIM = "768";
     process.env.EMBEDDING_PROVIDER = "local";
+    // Set env-gated namespaces' API keys so tests that assert "solana has
+    // tools" / "polymarket has tools" are deterministic regardless of shell
+    // env. Individual tests that exercise the env-gating contract delete
+    // these explicitly.
+    process.env.JUPITER_API_KEY = "test-jupiter-key";
+    process.env.POLYMARKET_API_KEY = "test-polymarket-key";
   });
 
   afterEach(() => {
@@ -112,13 +119,15 @@ describe("mcp docs — registry projection", () => {
   // ── Protocol list ───────────────────────────────────────────────
 
   describe("buildProtocolList", () => {
-    it("returns the full namespace allowlist", () => {
+    it("returns only advertised namespaces", () => {
       const list = buildProtocolList();
       const namespaces = list.map((n) => n.namespace);
       expect(namespaces).toContain("solana");
       expect(namespaces).toContain("polymarket");
       expect(namespaces).toContain("kyberswap");
       expect(namespaces).toContain("khalani");
+      expect(namespaces).not.toContain("0g-compute");
+      expect(namespaces).not.toContain("0g-storage");
     });
 
     it("each namespace has a default portfolio role", () => {
@@ -130,12 +139,17 @@ describe("mcp docs — registry projection", () => {
 
     // ── R5: descriptions and example queries ──────────────────────
 
-    it("each namespace carries a non-empty description and an exampleQueries array", () => {
+    it("each namespace carries navigation metadata and example queries", () => {
       const list = buildProtocolList();
       for (const ns of list) {
         expect(typeof ns.description).toBe("string");
         expect(ns.description.length).toBeGreaterThan(0);
+        expect(typeof ns.groupLabel).toBe("string");
+        expect(ns.groupLabel.length).toBeGreaterThan(0);
+        expect(typeof ns.whenToUse).toBe("string");
+        expect(ns.whenToUse.length).toBeGreaterThan(0);
         expect(Array.isArray(ns.exampleQueries)).toBe(true);
+        expect(Array.isArray(ns.paths)).toBe(true);
       }
     });
 
@@ -148,7 +162,6 @@ describe("mcp docs — registry projection", () => {
 
     it("namespaces with active tools also carry exampleQueries", () => {
       const list = buildProtocolList();
-      // 0g-compute / 0g-storage are intentionally excluded — no active tools yet.
       const withTools = list.filter((n) => n.activeToolCount > 0);
       for (const ns of withTools) {
         expect(ns.exampleQueries.length).toBeGreaterThan(0);
@@ -157,6 +170,44 @@ describe("mcp docs — registry projection", () => {
           expect(example).toContain(`namespace="${ns.namespace}"`);
         }
       }
+    });
+
+    // ── Env-aware availability (audit follow-up) ───────────────────
+
+    it("activeToolCount is env-aware: drops to 0 when JUPITER_API_KEY is missing", () => {
+      delete process.env.JUPITER_API_KEY;
+      const list = buildProtocolList();
+      const solana = list.find((n) => n.namespace === "solana");
+      expect(solana).toBeDefined();
+      expect(solana!.activeToolCount).toBe(0);
+      expect(solana!.gatedByEnv).toContain("JUPITER_API_KEY");
+    });
+
+    it("activeToolCount is non-zero and gatedByEnv empty when env is present", () => {
+      const list = buildProtocolList();
+      const solana = list.find((n) => n.namespace === "solana");
+      expect(solana).toBeDefined();
+      expect(solana!.activeToolCount).toBeGreaterThan(0);
+      expect(solana!.gatedByEnv).toEqual([]);
+    });
+
+    it("partially gated namespace keeps its non-gated tools and reports empty gatedByEnv when env present", () => {
+      const list = buildProtocolList();
+      const polymarket = list.find((n) => n.namespace === "polymarket");
+      expect(polymarket).toBeDefined();
+      expect(polymarket!.activeToolCount).toBeGreaterThan(0);
+      expect(polymarket!.gatedByEnv).toEqual([]);
+    });
+
+    it("partially gated namespace shrinks but does not zero when only env is missing", () => {
+      delete process.env.POLYMARKET_API_KEY;
+      const list = buildProtocolList();
+      const polymarket = list.find((n) => n.namespace === "polymarket");
+      expect(polymarket).toBeDefined();
+      // public gamma/data/bridge tools remain available — count > 0 but
+      // strictly less than the manifest total because clob/rewards are gated
+      expect(polymarket!.activeToolCount).toBeGreaterThan(0);
+      expect(polymarket!.gatedByEnv).toContain("POLYMARKET_API_KEY");
     });
   });
 
@@ -167,6 +218,10 @@ describe("mcp docs — registry projection", () => {
       expect(buildProtocolNamespace("nonexistent")).toBeNull();
     });
 
+    it("returns null for reserved hidden namespace", () => {
+      expect(buildProtocolNamespace("0g-compute")).toBeNull();
+    });
+
     it("returns sorted tool list for solana", () => {
       const ns = buildProtocolNamespace("solana");
       expect(ns).not.toBeNull();
@@ -175,13 +230,17 @@ describe("mcp docs — registry projection", () => {
       expect(ns!.tools.map((t) => t.toolId)).toEqual(sorted.map((t) => t.toolId));
     });
 
-    it("includes header description and exampleQueries before tools (R5)", () => {
+    it("includes navigation metadata and paths before tools", () => {
       const ns = buildProtocolNamespace("solana");
       expect(ns).not.toBeNull();
       expect(typeof ns!.description).toBe("string");
       expect(ns!.description.length).toBeGreaterThan(0);
+      expect(typeof ns!.whenToUse).toBe("string");
+      expect(ns!.whenToUse.length).toBeGreaterThan(0);
       expect(Array.isArray(ns!.exampleQueries)).toBe(true);
       expect(ns!.exampleQueries.length).toBeGreaterThan(0);
+      expect(Array.isArray(ns!.paths)).toBe(true);
+      expect(ns!.paths.length).toBeGreaterThan(0);
     });
 
     it("each tool carries namespace, description, mutating, lifecycle", () => {
@@ -193,6 +252,23 @@ describe("mcp docs — registry projection", () => {
         expect(typeof tool.mutating).toBe("boolean");
         expect(typeof tool.lifecycle).toBe("string");
       }
+    });
+
+    // ── Env-aware availability (audit follow-up) ───────────────────
+
+    it("filters out env-gated tools when env is missing", () => {
+      delete process.env.JUPITER_API_KEY;
+      const ns = buildProtocolNamespace("solana");
+      expect(ns).not.toBeNull();
+      expect(ns!.tools).toEqual([]);
+      expect(ns!.gatedByEnv).toContain("JUPITER_API_KEY");
+    });
+
+    it("returns the full env-available tool list when env is present", () => {
+      const ns = buildProtocolNamespace("solana");
+      expect(ns).not.toBeNull();
+      expect(ns!.tools.length).toBeGreaterThan(0);
+      expect(ns!.gatedByEnv).toEqual([]);
     });
   });
 
@@ -206,6 +282,8 @@ describe("mcp docs — registry projection", () => {
       const sorted = [...manifest.tools].sort();
       expect(manifest.tools).toEqual(sorted);
       expect(manifest.protocolNamespaces.length).toBeGreaterThan(0);
+      expect(manifest.protocolNamespaces).not.toContain("0g-compute");
+      expect(manifest.protocolNamespaces).not.toContain("0g-storage");
     });
 
     it("excludes subagent_* from manifest tools", () => {

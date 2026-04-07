@@ -14,15 +14,27 @@ import { buildOverview, buildProtocolList } from "./registry-projection.js";
 export function buildInstructions(): string {
   const overview = buildOverview();
   const namespaces = buildProtocolList();
-  // R5: render one-liner per namespace so the model knows what each does
-  // before calling discover_tools. Description copy comes from
-  // `tools/protocols/descriptions.ts` (shared with Echo Agent system prompt).
-  const namespaceList = namespaces
-    .map(
-      (n) =>
-        `- **\`${n.namespace}\`** — ${n.description} _(${n.activeToolCount} active tools)_`,
-    )
-    .join("\n");
+  const namespaceGroups = namespaces
+    .reduce<Array<{ label: string; lines: string[] }>>((groups, namespace) => {
+      const currentGroup = groups.at(-1);
+      // When the namespace has zero usable tools but its tools declare
+      // `requiresEnv`, surface the missing env so the model knows what to set.
+      // Partial gating is intentionally silent — the count is already correct.
+      const envHint = namespace.activeToolCount === 0 && namespace.gatedByEnv.length > 0
+        ? ` _(requires ${namespace.gatedByEnv.join(", ")} to enable)_`
+        : "";
+      const line =
+        `- **\`${namespace.namespace}\`** — ${namespace.description} ` +
+        `Use when: ${namespace.whenToUse} _(${namespace.activeToolCount} active tools)_${envHint}`;
+      if (!currentGroup || currentGroup.label !== namespace.groupLabel) {
+        groups.push({ label: namespace.groupLabel, lines: [line] });
+        return groups;
+      }
+      currentGroup.lines.push(line);
+      return groups;
+    }, [])
+    .map((group) => `### ${group.label}\n${group.lines.join("\n")}`)
+    .join("\n\n");
 
   return `# EchoClaw MCP
 
@@ -57,7 +69,7 @@ protocol capabilities.
 
 ## Active protocol namespaces
 
-${namespaceList}
+${namespaceGroups}
 
 ## What this server does NOT have
 

@@ -6,6 +6,7 @@
  */
 
 import type { ProtocolNamespace, ProtocolToolManifest, ProtocolHandler, PortfolioRole } from "./types.js";
+import { PROTOCOL_NAMESPACE_NAVIGATION } from "./descriptions.js";
 import { KHALANI_TOOLS } from "./khalani/manifest.js";
 import { KHALANI_HANDLERS } from "./khalani/handlers.js";
 import { SOLANA_JUPITER_TOOLS } from "./solana-jupiter/manifest.js";
@@ -43,6 +44,59 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "chainscan",
   "slop-app",
 ] as const;
+
+export const PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] =
+  PROTOCOL_NAMESPACE_ALLOWLIST.filter((namespace) => PROTOCOL_NAMESPACE_NAVIGATION[namespace].advertised);
+
+export function isKnownProtocolNamespace(value: string): value is ProtocolNamespace {
+  return PROTOCOL_NAMESPACE_ALLOWLIST.includes(value as ProtocolNamespace);
+}
+
+export function isAdvertisedProtocolNamespace(value: string): value is ProtocolNamespace {
+  return PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(value as ProtocolNamespace);
+}
+
+// ── Runtime availability ─────────────────────────────────────────
+//
+// Mirrors the gate enforced by `discoverProtocolCapabilities` and
+// `executeProtocolTool`. Single source of truth for "is this manifest
+// actually usable right now". Projection / docs / instructions / prompt
+// must reuse these so they never advertise tools that runtime would hide.
+
+/** True iff the manifest is active AND its `requiresEnv` (if any) is set. */
+export function isProtocolToolAvailable(manifest: ProtocolToolManifest): boolean {
+  if (manifest.lifecycle !== "active") return false;
+  if (manifest.requiresEnv && !process.env[manifest.requiresEnv]?.trim()) return false;
+  return true;
+}
+
+/** Count tools in `namespace` that pass `isProtocolToolAvailable`. */
+export function countAvailableToolsForNamespace(namespace: ProtocolNamespace): number {
+  let count = 0;
+  for (const tool of PROTOCOL_TOOLS) {
+    if (tool.namespace === namespace && isProtocolToolAvailable(tool)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Distinct unset env vars that gate active tools in `namespace`.
+ * Empty array means no env gating (all required envs are present, or
+ * none of the active tools declare `requiresEnv`). Used by docs /
+ * instructions / prompt to render `_(requires X to enable)_` hints
+ * when a namespace has zero available tools.
+ */
+export function getMissingEnvForNamespace(namespace: ProtocolNamespace): string[] {
+  const missing = new Set<string>();
+  for (const tool of PROTOCOL_TOOLS) {
+    if (tool.namespace !== namespace) continue;
+    if (tool.lifecycle !== "active") continue;
+    if (!tool.requiresEnv) continue;
+    if (process.env[tool.requiresEnv]?.trim()) continue;
+    missing.add(tool.requiresEnv);
+  }
+  return [...missing].sort();
+}
 
 // ── All protocol manifests ───────────────────────────────────────
 
