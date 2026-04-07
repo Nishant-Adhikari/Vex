@@ -96,19 +96,19 @@ export async function reembedKnowledge(opts: ReembedOptions = {}): Promise<Reemb
     );
   }
 
-  // Probe the provider once to discover its actual model name. We use this
-  // value for both the streamRowsForReembed selector AND as the value we
-  // stamp into embedding_model — that way the audit column is always the
-  // truth (what the provider reported), not the requested config.model.
-  // If the provider aliases (request "X" → response "Y"), every row gets
-  // "Y" and recall filters consistently look for "Y".
-  const probe = await embedDocument("__schema_probe__", "ignore", config);
-  const currentProviderModel = probe.providerModel;
-
+  // ── Dry-run: pure preview, NO provider call.
+  // Counts rows that would be re-embedded based on the REQUESTED model name
+  // (config.model). Trade-off: if the provider aliases (request "X" →
+  // response "Y"), the planned count may be off — every row in DB is stamped
+  // with "Y" and the stream filter looks for rows ≠ "X", which yields
+  // every row even if a real reembed would re-process zero. Operators who
+  // need a 100%-accurate count run without --dry-run (which probes the
+  // provider for honest provenance). Dry-run is the operator's safe preview
+  // and MUST work even when the embedding runtime is down — that's the
+  // contract documented in --help and the file docstring.
   if (opts.dryRun) {
-    // Count rows that would be re-embedded.
     let planned = 0;
-    for await (const _row of streamRowsForReembed(currentProviderModel, {
+    for await (const _row of streamRowsForReembed(config.model, {
       includeMatching: opts.force ?? false,
     })) {
       void _row;
@@ -116,6 +116,15 @@ export async function reembedKnowledge(opts: ReembedOptions = {}): Promise<Reemb
     }
     return { reembedded: 0, failed: 0, dryRun: true, plannedCount: planned };
   }
+
+  // ── Non-dry-run: probe the provider once to discover its actual model
+  // name. We use this value for both the streamRowsForReembed selector AND
+  // as the value we stamp into embedding_model — that way the audit column
+  // is always the truth (what the provider reported), not the requested
+  // config.model. If the provider aliases (request "X" → response "Y"),
+  // every row gets "Y" and recall filters consistently look for "Y".
+  const probe = await embedDocument("__schema_probe__", "ignore", config);
+  const currentProviderModel = probe.providerModel;
 
   let reembedded = 0;
   let failed = 0;

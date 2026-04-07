@@ -212,7 +212,7 @@ describe("reembedKnowledge", () => {
 
   // ── Dry run ──────────────────────────────────────────────────
 
-  it("--dry-run counts rows; calls provider once for the probe but does NOT write DB", async () => {
+  it("--dry-run is a pure preview: NO provider calls, NO DB writes", async () => {
     mockStreamRowsForReembed.mockReturnValueOnce(
       asyncIterableOf([makeRow(1), makeRow(2)]),
     );
@@ -220,10 +220,28 @@ describe("reembedKnowledge", () => {
     expect(report.dryRun).toBe(true);
     expect(report.plannedCount).toBe(2);
     expect(report.reembedded).toBe(0);
-    // Exactly one embed call: the probe. No per-row embeds, no DB writes.
-    expect(mockEmbedDocument).toHaveBeenCalledTimes(1);
-    expect(mockEmbedDocument.mock.calls[0]?.[0]).toBe("__schema_probe__");
+    // Critical: dry-run must work even when the embedding runtime is down.
+    // Zero embed calls (no probe, no per-row).
+    expect(mockEmbedDocument).not.toHaveBeenCalled();
     expect(mockUpdateEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("--dry-run survives a broken embedding provider (regression for R3 finding)", async () => {
+    // Provider is dead. Reaching for it would throw — dry-run must NOT touch it.
+    mockEmbedDocument.mockRejectedValue(new Error("ECONNREFUSED 12434"));
+    mockStreamRowsForReembed.mockReturnValueOnce(asyncIterableOf([makeRow(1)]));
+    const report = await reembedKnowledge({ dryRun: true });
+    expect(report.dryRun).toBe(true);
+    expect(report.plannedCount).toBe(1);
+    expect(mockEmbedDocument).not.toHaveBeenCalled();
+  });
+
+  it("--dry-run uses config.model as model-name proxy (acceptable for non-aliasing providers)", async () => {
+    mockStreamRowsForReembed.mockReturnValueOnce(asyncIterableOf([]));
+    await reembedKnowledge({ dryRun: true });
+    const [streamKey] = mockStreamRowsForReembed.mock.calls[0]!;
+    // Dry-run uses config.model directly (no probe to discover providerModel).
+    expect(streamKey).toBe("new-model");
   });
 
   // ── Per-row failure ──────────────────────────────────────────
