@@ -1,7 +1,13 @@
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { writeStderr } from "../../utils/output.js";
 import { writeConnectorArtifacts } from "./connectors.js";
-import { ensureKeystorePassword, ensureRequiredEnvDefaults, synchronizeTrackedEnv } from "./setup.js";
+import { collectOptionalApiKeyGuidance } from "./api-key-guidance.js";
+import {
+  ensureJupiterApiKey,
+  ensureKeystorePassword,
+  ensureRequiredEnvDefaults,
+  synchronizeTrackedEnv,
+} from "./setup.js";
 import { collectEnvFieldStatuses, getEvmWalletStatus, getSolanaWalletStatus } from "./status.js";
 import { ensureSystemChecksPassed, startLocalServices, waitForBootstrapSuccess } from "./system.js";
 import { ensureWallets } from "./wallets.js";
@@ -29,8 +35,13 @@ export async function runConnectFlow(): Promise<void> {
   renderEnvStatuses(collectEnvFieldStatuses());
   ensureRequiredEnvDefaults();
   await ensureKeystorePassword();
+  await ensureJupiterApiKey();
   synchronizeTrackedEnv();
-  renderEnvStatuses(collectEnvFieldStatuses());
+  const envStatuses = collectEnvFieldStatuses();
+  renderEnvStatuses(envStatuses);
+  for (const guidance of collectOptionalApiKeyGuidance(envStatuses)) {
+    renderSection(guidance.title, guidance.body);
+  }
 
   await ensureWallets();
   renderWalletStatuses([getEvmWalletStatus(), getSolanaWalletStatus()]);

@@ -58,6 +58,9 @@ describe("echo connector generation", () => {
     expect(readGeneratedArtifact(join(outputDir, "quickstart.prompt.md"))).toContain(
       "Use the connected EchoClaw MCP in read-only mode first.",
     );
+    expect(readGeneratedArtifact(join(outputDir, "quickstart.prompt.md"))).toContain(
+      "polymarket_setup can enable it later",
+    );
   });
 
   it("builds a connector index readme with all target names", () => {
@@ -73,6 +76,12 @@ describe("echo connector generation", () => {
     expect(readme).toContain("## Default MCP Client");
     expect(readme).toContain("## Quickstart");
     expect(readme).toContain("Prompt file: quickstart.prompt.md");
+    expect(readme).toContain("Run In Shell");
+    expect(readme).toContain("Paste Into AI");
+    expect(readme).toContain(
+      "You can run it in this same terminal after `echoclaw echo` exits, or open a second terminal if you prefer.",
+    );
     expect(readme).toContain("Use the connected EchoClaw MCP in read-only mode first.");
+    expect(readme).toContain("polymarket_setup can enable it later");
   });
 });

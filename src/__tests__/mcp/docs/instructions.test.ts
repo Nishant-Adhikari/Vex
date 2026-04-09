@@ -50,6 +50,13 @@ describe("mcp docs — buildInstructions", () => {
     expect(text).toMatch(/approval|gate|permission/i);
   });
 
+  it("tells the model to use polymarket_setup instead of manual env editing", () => {
+    const text = buildInstructions();
+    expect(text).toContain("polymarket_setup");
+    expect(text).toContain("POLYMARKET_API_KEY");
+    expect(text).toContain("manually edit");
+  });
+
   it("explicitly states there are no subagents", () => {
     const text = buildInstructions();
     expect(text).toMatch(/subagent/i);

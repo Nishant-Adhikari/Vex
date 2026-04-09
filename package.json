@@ -20,9 +20,9 @@
     "echoclaw-mcp": "dist/mcp/index.js"
   },
   "scripts": {
-    "clean": "node --input-type=commonjs -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "pnpm run clean && tsc && tsc-alias",
-    "build:release": "pnpm run clean && tsc -p tsconfig.release.json && tsc-alias -p tsconfig.release.json",
+    "clean": "node scripts/clean-dist.cjs",
+    "build": "pnpm run clean && pnpm exec tsc && pnpm exec tsc-alias --outDir dist",
+    "build:release": "pnpm run clean && pnpm exec tsc -p tsconfig.release.json && pnpm exec tsc-alias -p tsconfig.release.json --outDir dist",
     "dev": "tsc --watch",
     "prepack": "pnpm run build:release",
     "test": "vitest run",

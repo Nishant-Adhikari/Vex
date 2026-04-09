@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("echo connector UI rendering", () => {
-  it("prints the quickstart prompt after the connector steps", () => {
+  it("prints action-first shell and AI guidance for connector details", () => {
     renderConnectorDetails(
       {
         id: "claude",
@@ -34,15 +34,27 @@ describe("echo connector UI rendering", () => {
           {
             fileName: "quickstart.prompt.md",
             content: "Use the connected EchoClaw MCP in read-only mode first.\n",
-            description: "Docs-first starter prompt to paste into your AI agent after connecting EchoClaw.",
+            description: "Starter text to paste into the AI after the MCP is connected.",
           },
         ],
       },
       "/tmp/connectors",
     );
 
-    expect(writeStderr).toHaveBeenCalledWith("Quickstart prompt");
-    expect(writeStderr).toHaveBeenCalledWith("Use the connected EchoClaw MCP in read-only mode first.");
-    expect(writeStderr).toHaveBeenCalledWith("Read docs://overview.");
+    const output = writeStderr.mock.calls.map(([line]) => String(line)).join("\n");
+
+    expect(writeStderr).toHaveBeenCalledWith("Order: 1. Run in shell  2. Confirm MCP connected  3. Paste into AI");
+    expect(writeStderr).toHaveBeenCalledWith("Run In Shell");
+    expect(writeStderr).toHaveBeenCalledWith(
+      "Paste this into your shell. You can run it in this same terminal after echoclaw echo exits, or open a second terminal if you prefer.",
+    );
+    expect(writeStderr).toHaveBeenCalledWith("Paste Into AI");
+    expect(writeStderr).toHaveBeenCalledWith(
+      "After the MCP is connected, paste this directly into your AI agent chat.",
+    );
+    expect(output).toContain("RUN IN SHELL");
+    expect(output).toContain("PASTE INTO AI");
+    expect(output).toContain("Use the connected EchoClaw MCP in read-only mode first.");
+    expect(output).toContain("Read docs://overview.");
   });
 });

@@ -60,14 +60,14 @@ export const ENV_FIELDS: readonly EnvFieldSpec[] = [
     description: "Password used to unlock and validate both local wallets.",
   },
   {
-    key: "TAVILY_API_KEY",
-    required: false,
-    description: "Optional web search capability key.",
+    key: "JUPITER_API_KEY",
+    required: true,
+    description: "Jupiter API key required to enable Solana swaps, lending, and prediction tools.",
   },
   {
-    key: "POLYMARKET_API_KEY",
+    key: "TAVILY_API_KEY",
     required: false,
-    description: "Optional protocol capability key configured outside MCP setup.",
+    description: "Optional key for web_search and web_fetch. You can add it later without rerunning wallet setup.",
   },
 ] as const;
 

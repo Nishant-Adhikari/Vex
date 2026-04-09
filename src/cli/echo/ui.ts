@@ -31,6 +31,20 @@ function bold(text: string): string {
   return color(text, ANSI.bold);
 }
 
+function renderCalloutBlock(title: string, content: string, ansi: string): void {
+  const lines = content.split("\n");
+  const width = Math.max(title.length, ...lines.map((line) => line.length));
+  const border = `+${"-".repeat(width + 2)}+`;
+
+  writeStderr(color(border, ansi));
+  writeStderr(color(`| ${title.padEnd(width)} |`, ansi));
+  writeStderr(color(border, ansi));
+  for (const line of lines) {
+    writeStderr(color(`| ${line.padEnd(width)} |`, ansi));
+  }
+  writeStderr(color(border, ansi));
+}
+
 export function assertInteractiveLauncher(): void {
   if (isHeadless() || stdin.isTTY !== true) {
     throw new EchoError(
@@ -220,9 +234,19 @@ export function renderConnectorDetails(bundle: ConnectorBundle, artifactBaseDir:
 
   if (bundle.commandPreview) {
     writeBlankLine();
-    writeStderr(bold("Ready command"));
-    writeStderr(bundle.commandPreview);
+    writeStderr(bold("Order: 1. Run in shell  2. Confirm MCP connected  3. Paste into AI"));
+    writeBlankLine();
+    writeStderr(bold("Run In Shell"));
+    writeStderr(
+      "Paste this into your shell. You can run it in this same terminal after echoclaw echo exits, or open a second terminal if you prefer.",
+    );
+    renderCalloutBlock("RUN IN SHELL", bundle.commandPreview, ANSI.cyan);
   }
+
+  writeBlankLine();
+  writeStderr(bold("Paste Into AI"));
+  writeStderr("After the MCP is connected, paste this directly into your AI agent chat.");
+  renderCalloutBlock("PASTE INTO AI", bundle.quickstartPrompt, ANSI.green);
 
   writeBlankLine();
   writeStderr(bold("Generated artifacts"));
@@ -235,11 +259,5 @@ export function renderConnectorDetails(bundle: ConnectorBundle, artifactBaseDir:
   writeStderr(bold("Next steps"));
   for (const step of bundle.nextSteps) {
     writeStderr(`- ${step}`);
-  }
-
-  writeBlankLine();
-  writeStderr(bold("Quickstart prompt"));
-  for (const line of bundle.quickstartPrompt.split("\n")) {
-    writeStderr(line);
   }
 }

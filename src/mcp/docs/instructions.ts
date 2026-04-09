@@ -52,6 +52,9 @@ portfolio, web, EVM, setup) plus two meta tools for protocol capabilities.
   evm_*) are surfaced individually with their real names — use them directly.
 - Knowledge writes go to a shared local Postgres + pgvector store; entries
   written through this MCP are tagged \`source_surface = mcp_local\`.
+- If Polymarket trading is gated by missing credentials, use
+  \`polymarket_setup\` to derive local CLOB credentials instead of telling the
+  user to manually edit \`POLYMARKET_API_KEY\`.
 - Mutating tools (wallet_send_confirm, polymarket_setup, mutating protocol
   tools) execute directly. Your host (Claude Code / Cursor / Codex) is the
   approval gate — configure its permission policy to your risk tolerance.

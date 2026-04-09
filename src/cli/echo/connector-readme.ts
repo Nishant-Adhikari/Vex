@@ -23,11 +23,22 @@ export function buildConnectorReadme(
     }
     if (bundle.commandPreview) {
       lines.push("");
-      lines.push("Command:");
+      lines.push("Run In Shell");
+      lines.push("");
+      lines.push(
+        "Paste this into your shell. You can run it in this same terminal after `echoclaw echo` exits, or open a second terminal if you prefer.",
+      );
       lines.push("```bash");
       lines.push(bundle.commandPreview);
       lines.push("```");
     }
+    lines.push("");
+    lines.push("Paste Into AI");
+    lines.push("");
+    lines.push("After the MCP is connected, paste this directly into your AI agent chat.");
+    lines.push("```text");
+    lines.push(bundle.quickstartPrompt);
+    lines.push("```");
     lines.push("");
     lines.push("Artifacts:");
     for (const artifact of bundle.artifacts) {

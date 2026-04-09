@@ -104,9 +104,8 @@ src/tools/solana-ecosystem/jupiter/
 
 ## API Key Policy
 - Jupiter Swap V2, Tokens API V2, Token Content API, Jupiter Lend Earn REST, and Jupiter Prediction require `x-api-key`.
-- Local resolution order:
+- Local resolution:
   1. `process.env.JUPITER_API_KEY`
-  2. `loadConfig().solana.jupiterApiKey`
 - Do not add `lite-api.jup.ag` fallback in this module.
 
 ## Documentation Policy

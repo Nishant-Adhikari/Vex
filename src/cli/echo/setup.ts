@@ -5,8 +5,14 @@ import { writeStderr } from "../../utils/output.js";
 import { getEnvExamplePath } from "./package-assets.js";
 import { readAppEnvMap } from "./status.js";
 import { promptSecret, renderSection } from "./ui.js";
+import { JUPITER_API_KEY_GUIDANCE } from "./api-key-guidance.js";
 
-const TRACKED_ENV_KEYS = [...REQUIRED_ENV, "ECHO_KEYSTORE_PASSWORD", "TAVILY_API_KEY", "POLYMARKET_API_KEY"];
+const LOCAL_DEFAULT_ENV_KEYS = REQUIRED_ENV.filter((key) => key !== "JUPITER_API_KEY");
+const TRACKED_ENV_KEYS = [
+  ...REQUIRED_ENV,
+  "ECHO_KEYSTORE_PASSWORD",
+  "TAVILY_API_KEY",
+];
 
 function readBundledEnvDefaults(): Record<string, string> {
   return readAppEnvMap(getEnvExamplePath());
@@ -29,7 +35,7 @@ export function ensureRequiredEnvDefaults(): void {
   const current = readAppEnvMap();
   const defaults = readBundledEnvDefaults();
 
-  for (const key of REQUIRED_ENV) {
+  for (const key of LOCAL_DEFAULT_ENV_KEYS) {
     if ((current[key] ?? "").trim()) {
       continue;
     }
@@ -46,6 +52,34 @@ export function ensureRequiredEnvDefaults(): void {
     writeAppEnvValue(key, fallback);
     process.env[key] = fallback;
     writeStderr(`Configured ${key} from bundled local defaults.`);
+  }
+}
+
+export async function ensureJupiterApiKey(): Promise<void> {
+  const envMap = readAppEnvMap();
+  const existingKey = envMap.JUPITER_API_KEY?.trim();
+
+  if (existingKey) {
+    process.env.JUPITER_API_KEY = existingKey;
+    return;
+  }
+
+  renderSection(
+    "Jupiter API Key",
+    JUPITER_API_KEY_GUIDANCE,
+  );
+
+  while (true) {
+    const apiKey = await promptSecret("Enter JUPITER_API_KEY");
+    if (!apiKey.trim()) {
+      writeStderr("JUPITER_API_KEY cannot be empty.");
+      continue;
+    }
+
+    writeAppEnvValue("JUPITER_API_KEY", apiKey.trim());
+    process.env.JUPITER_API_KEY = apiKey.trim();
+    writeStderr("Stored JUPITER_API_KEY in CONFIG_DIR/.env.");
+    return;
   }
 }
 

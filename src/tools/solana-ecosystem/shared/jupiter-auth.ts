@@ -2,7 +2,6 @@
  * Shared Jupiter auth helpers for all Jupiter shelves.
  */
 
-import { loadConfig } from "../../../config/store.js";
 import { EchoError, ErrorCodes } from "../../../errors.js";
 
 export interface JupiterApiKeyOptions {
@@ -11,7 +10,7 @@ export interface JupiterApiKeyOptions {
 }
 
 export function resolveJupiterApiKey(): string {
-  return process.env.JUPITER_API_KEY?.trim() || loadConfig().solana.jupiterApiKey || "";
+  return process.env.JUPITER_API_KEY?.trim() || "";
 }
 
 export function requireJupiterApiKey(options: JupiterApiKeyOptions = {}): string {
@@ -25,7 +24,7 @@ export function requireJupiterApiKey(options: JupiterApiKeyOptions = {}): string
     throw new EchoError(
       errorCode,
       `JUPITER_API_KEY is required for ${feature}.`,
-      "Generate a key at https://portal.jup.ag and set JUPITER_API_KEY or config.solana.jupiterApiKey.",
+      "Generate a key at https://portal.jup.ag and set JUPITER_API_KEY in CONFIG_DIR/.env.",
     );
   }
 

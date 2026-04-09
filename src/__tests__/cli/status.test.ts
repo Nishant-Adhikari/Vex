@@ -39,6 +39,7 @@ describe("echo env status helpers", () => {
       "EMBEDDING_BASE_URL=http://localhost:12434/v1",
       "EMBEDDING_MODEL=ai/embeddinggemma:300M-Q8_0",
       "ECHO_KEYSTORE_PASSWORD=supersecret",
+      "JUPITER_API_KEY=test-jupiter-key",
       "TAVILY_API_KEY=test-key",
     ].join("\n"));
 
@@ -50,6 +51,8 @@ describe("echo env status helpers", () => {
     expect(statusByKey.get("ECHO_AGENT_DB_URL")?.status).toBe("configured");
     expect(statusByKey.get("EMBEDDING_PROVIDER")?.status).toBe("missing");
     expect(statusByKey.get("ECHO_KEYSTORE_PASSWORD")?.status).toBe("configured");
-    expect(statusByKey.get("POLYMARKET_API_KEY")?.status).toBe("missing");
+    expect(statusByKey.get("JUPITER_API_KEY")?.status).toBe("configured");
+    expect(statusByKey.get("TAVILY_API_KEY")?.status).toBe("configured");
+    expect(statusByKey.has("POLYMARKET_API_KEY")).toBe(false);
   });
 });

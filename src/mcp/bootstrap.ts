@@ -3,7 +3,7 @@
  *
  * fail-fast pipeline executed before any transport is bound:
  *   1. loadProviderDotenv() — pulls the same `ENV_FILE` Echo Agent uses.
- *   2. validateRequiredEnv() — explicit ECHO_AGENT_DB_URL + EMBEDDING_*.
+ *   2. validateRequiredEnv() — explicit ECHO_AGENT_DB_URL + EMBEDDING_* + JUPITER_API_KEY.
  *   3. runMigrations() — idempotent additive migration runner.
  *   4. probeAll() — DB ping + embeddings round-trip.
  *
@@ -23,6 +23,7 @@ export const REQUIRED_ENV = [
   "EMBEDDING_MODEL",
   "EMBEDDING_DIM",
   "EMBEDDING_PROVIDER",
+  "JUPITER_API_KEY",
 ] as const;
 
 export class McpBootstrapError extends Error {
