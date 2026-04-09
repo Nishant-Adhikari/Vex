@@ -33,6 +33,9 @@
  *               provider and do NOT write to the DB
  */
 
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
 import { runMigrations } from "@echo-agent/db/migrate.js";
 import { closePool } from "@echo-agent/db/client.js";
 import {
@@ -227,9 +230,7 @@ async function main(): Promise<void> {
   }
 }
 
-const isDirectInvocation =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith("knowledge-reembed.ts") === true;
+const isDirectInvocation = import.meta.url === pathToFileURL(realpathSync(process.argv[1]!)).href;
 
 if (isDirectInvocation) {
   main().catch((err) => {

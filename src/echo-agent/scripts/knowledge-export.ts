@@ -27,8 +27,9 @@
  * Help text reminder: backup files contain plaintext content_md. Treat as sensitive.
  */
 
-import { createWriteStream } from "node:fs";
+import { createWriteStream, realpathSync } from "node:fs";
 import type { WriteStream } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { runMigrations } from "@echo-agent/db/migrate.js";
 import { closePool, query } from "@echo-agent/db/client.js";
 import { streamAllForExport, type KnowledgeEntry } from "@echo-agent/db/repos/knowledge.js";
@@ -192,9 +193,7 @@ async function main(): Promise<void> {
   process.stderr.write(`knowledge-export: wrote ${count} entries\n`);
 }
 
-const isDirectInvocation =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith("knowledge-export.ts") === true;
+const isDirectInvocation = import.meta.url === pathToFileURL(realpathSync(process.argv[1]!)).href;
 
 if (isDirectInvocation) {
   main().catch((err) => {

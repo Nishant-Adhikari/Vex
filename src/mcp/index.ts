@@ -20,6 +20,9 @@
  * up to the top-level catch and we exit non-zero.
  */
 
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
 import { bootstrap } from "./bootstrap.js";
 import { startStdioTransport } from "./transports/stdio.js";
 import { startHttpTransport } from "./transports/http.js";
@@ -61,10 +64,7 @@ export async function runMcpCli(argv: readonly string[] = process.argv.slice(2))
   }
 }
 
-const isDirectInvocation =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith("mcp/index.ts") === true ||
-  process.argv[1]?.endsWith("mcp/index.js") === true;
+const isDirectInvocation = import.meta.url === pathToFileURL(realpathSync(process.argv[1]!)).href;
 
 if (isDirectInvocation) {
   runMcpCli().catch((err) => {

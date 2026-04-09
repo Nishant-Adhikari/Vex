@@ -18,9 +18,10 @@
  *   pnpm exec tsx src/echo-agent/scripts/knowledge-import.ts [--in FILE]
  */
 
-import { createReadStream } from "node:fs";
+import { createReadStream, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
 import { runMigrations } from "@echo-agent/db/migrate.js";
 import { closePool } from "@echo-agent/db/client.js";
 import { findByContentHash, insertEntry } from "@echo-agent/db/repos/knowledge.js";
@@ -340,9 +341,7 @@ async function main(): Promise<void> {
   }
 }
 
-const isDirectInvocation =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith("knowledge-import.ts") === true;
+const isDirectInvocation = import.meta.url === pathToFileURL(realpathSync(process.argv[1]!)).href;
 
 if (isDirectInvocation) {
   main().catch((err) => {

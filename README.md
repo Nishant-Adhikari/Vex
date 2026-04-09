@@ -39,30 +39,6 @@ src/utils/        Shared utilities (logger, http, validation, rate limiting)
 src/errors.ts     Error codes and types
 ```
 
-## Development
-
-```bash
-pnpm install
-pnpm run build      # tsc + tsc-alias
-pnpm run dev        # tsc --watch
-```
-
-## Testing
-
-```bash
-pnpm test           # vitest — all retained suites
-make lint           # tsc --noEmit (includes tests)
-make check          # lint + test
-```
-
-## E2E (requires Docker + Docker Model Runner)
-
-```bash
-make e2e-up         # start pgvector Postgres on port 5777 + pull EmbeddingGemma model
-make e2e-down       # stop
-make e2e-smoke      # POST /v1/embeddings against the local Model Runner; verifies $EMBEDDING_DIM
-```
-
 The E2E stack uses **Docker Model Runner** to host the embedding model. The
 default is `ai/embeddinggemma:300M-Q8_0` (768-dim), pinned in `docker-compose.e2e.yml`,
 distributed through Docker Hub under the [Gemma Terms of Use](https://ai.google.dev/gemma/terms).

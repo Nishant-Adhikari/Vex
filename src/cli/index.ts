@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
 import { EchoError, ErrorCodes } from "../errors.js";
 import { writeStderr } from "../utils/output.js";
 import { suppressDep0040Warnings } from "./shared/warnings.js";
@@ -69,10 +72,7 @@ export async function runRootCli(argv: readonly string[] = process.argv.slice(2)
   );
 }
 
-const isDirectInvocation =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith("cli/index.ts") === true ||
-  process.argv[1]?.endsWith("cli/index.js") === true;
+const isDirectInvocation = import.meta.url === pathToFileURL(realpathSync(process.argv[1]!)).href;
 
 if (isDirectInvocation) {
   runRootCli().catch((error) => {
