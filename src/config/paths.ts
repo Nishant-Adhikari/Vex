@@ -55,6 +55,7 @@ export const LAUNCHER_PID_FILE = join(LAUNCHER_DIR, "launcher.pid");
 export const LAUNCHER_LOG_FILE = join(LAUNCHER_DIR, "launcher.log");
 export const LAUNCHER_STOPPED_FILE = join(LAUNCHER_DIR, "launcher.stopped");
 export const LAUNCHER_DEFAULT_PORT = 4200;
+export const CONNECTORS_DIR = join(CONFIG_DIR, "connectors");
 
 // Solana paths
 export const SOLANA_TOKEN_CACHE_FILE = join(CONFIG_DIR, "solana-token-cache.json");

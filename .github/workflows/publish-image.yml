@@ -13,7 +13,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: false # DISABLED post-cleanup — re-enable for MCP release
+    if: false # DISABLED for the current CLI-only release; update later for echo-agent / VEX image publishing
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

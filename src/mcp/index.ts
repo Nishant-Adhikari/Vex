@@ -27,7 +27,7 @@ import logger from "@utils/logger.js";
 
 type Transport = "stdio" | "http";
 
-function parseTransport(argv: readonly string[]): Transport {
+export function parseTransport(argv: readonly string[]): Transport {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--transport") {
@@ -41,10 +41,10 @@ function parseTransport(argv: readonly string[]): Transport {
   return "stdio";
 }
 
-async function main(): Promise<void> {
+export async function runMcpCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   let transport: Transport;
   try {
-    transport = parseTransport(process.argv.slice(2));
+    transport = parseTransport(argv);
   } catch (err) {
     process.stderr.write(`echoclaw-mcp: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(2);
@@ -61,13 +61,20 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  logger.error("mcp.fatal", {
-    error: err instanceof Error ? err.message : String(err),
-    stack: err instanceof Error ? err.stack : undefined,
+const isDirectInvocation =
+  import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1]?.endsWith("mcp/index.ts") === true ||
+  process.argv[1]?.endsWith("mcp/index.js") === true;
+
+if (isDirectInvocation) {
+  runMcpCli().catch((err) => {
+    logger.error("mcp.fatal", {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    process.stderr.write(
+      `echoclaw-mcp fatal: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    process.exit(1);
   });
-  process.stderr.write(
-    `echoclaw-mcp fatal: ${err instanceof Error ? err.message : String(err)}\n`,
-  );
-  process.exit(1);
-});
+}

@@ -1,0 +1,56 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ErrorCodes } from "../../errors.js";
+
+const runEchoCli = vi.fn();
+const runMcpCli = vi.fn();
+const runVexCli = vi.fn();
+
+vi.mock("../../cli/echo/index.js", () => ({
+  runEchoCli,
+}));
+
+vi.mock("../../mcp/index.js", () => ({
+  runMcpCli,
+}));
+
+vi.mock("../../cli/vex/index.js", () => ({
+  runVexCli,
+}));
+
+const { buildRootHelpText, runRootCli } = await import("../../cli/index.js");
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("root CLI router", () => {
+  it("documents the echo, mcp, and vex entrypoints", () => {
+    const helpText = buildRootHelpText();
+
+    expect(helpText).toContain("echoclaw <command>");
+    expect(helpText).toContain("echo");
+    expect(helpText).toContain("mcp");
+    expect(helpText).toContain("vex");
+  });
+
+  it("delegates echo arguments to the echo router", async () => {
+    await runRootCli(["echo", "connect"]);
+    expect(runEchoCli).toHaveBeenCalledWith(["connect"]);
+  });
+
+  it("delegates mcp arguments to the MCP runtime", async () => {
+    await runRootCli(["mcp", "--transport", "stdio"]);
+    expect(runMcpCli).toHaveBeenCalledWith(["--transport", "stdio"]);
+  });
+
+  it("delegates vex arguments to the placeholder vex router", async () => {
+    await runRootCli(["vex"]);
+    expect(runVexCli).toHaveBeenCalledWith([]);
+  });
+
+  it("rejects unknown root commands with a structured CLI error", async () => {
+    await expect(runRootCli(["unknown"])).rejects.toMatchObject({
+      code: ErrorCodes.INTERACTIVE_COMMAND_NOT_SUPPORTED,
+    });
+  });
+});

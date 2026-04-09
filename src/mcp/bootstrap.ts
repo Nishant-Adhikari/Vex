@@ -17,7 +17,7 @@ import { loadProviderDotenv } from "../providers/env-resolution.js";
 import { McpHealthError, probeAll } from "./runtime/health.js";
 import logger from "@utils/logger.js";
 
-const REQUIRED_ENV = [
+export const REQUIRED_ENV = [
   "ECHO_AGENT_DB_URL",
   "EMBEDDING_BASE_URL",
   "EMBEDDING_MODEL",
@@ -46,6 +46,37 @@ export function validateRequiredEnv(): void {
 }
 
 /**
+ * Shared bootstrap checks without dotenv loading or process exit.
+ *
+ * Used by the launcher to validate readiness before generating client
+ * connector instructions. Throws structured errors instead of exiting.
+ */
+export async function runBootstrapChecks(): Promise<void> {
+  validateRequiredEnv();
+
+  try {
+    await runMigrations();
+  } catch (err) {
+    throw new McpBootstrapError(
+      err instanceof Error ? `Migrations failed: ${err.message}` : `Migrations failed: ${String(err)}`,
+      "Inspect the Postgres logs and ensure the user has CREATE privileges on the DB.",
+    );
+  }
+
+  try {
+    await probeAll();
+  } catch (err) {
+    if (err instanceof McpHealthError) {
+      throw err;
+    }
+
+    throw new McpHealthError(
+      err instanceof Error ? `Health probe failed: ${err.message}` : `Health probe failed: ${String(err)}`,
+    );
+  }
+}
+
+/**
  * Run the boot sequence. On success returns `void` and the caller can build
  * the McpServer + bind a transport. On failure writes a structured message
  * to stderr and exits the process with code 2 (no recovery is sensible).
@@ -62,31 +93,15 @@ export async function bootstrap(): Promise<void> {
     );
   }
 
-  // 2. Required env validation — explicit only, no silent fallback.
   try {
-    validateRequiredEnv();
+    await runBootstrapChecks();
   } catch (err) {
     if (err instanceof McpBootstrapError) {
-      failFast("MCP bootstrap: env validation failed", err.message, err.hint);
+      const prefix = err.message.startsWith("Migrations failed:")
+        ? "MCP bootstrap: migrations failed"
+        : "MCP bootstrap: env validation failed";
+      failFast(prefix, err.message, err.hint);
     }
-    throw err;
-  }
-
-  // 3. Migrations (idempotent).
-  try {
-    await runMigrations();
-  } catch (err) {
-    failFast(
-      "MCP bootstrap: migrations failed",
-      err instanceof Error ? err.message : String(err),
-      "Inspect the Postgres logs and ensure the user has CREATE privileges on the DB.",
-    );
-  }
-
-  // 4. Health probes (DB + embeddings).
-  try {
-    await probeAll();
-  } catch (err) {
     if (err instanceof McpHealthError) {
       failFast("MCP bootstrap: health probe failed", err.message, err.hint);
     }

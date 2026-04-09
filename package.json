@@ -1,23 +1,30 @@
 {
   "name": "@echoclaw/echo",
-  "version": "1.0.11",
-  "private": true,
-  "description": "EchoClaw echo-agent core",
+  "version": "1.0.12",
+  "description": "EchoClaw local MCP and agent launcher",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=22"
   },
   "files": [
     "dist/**",
-    "src/echo-agent/db/migrations/**"
+    "src/echo-agent/db/migrations/**",
+    "docker/echo-agent/**",
+    "docker/echo-agent/.env.example"
   ],
   "bin": {
+    "echoclaw": "dist/cli/index.js",
     "echoclaw-mcp": "dist/mcp/index.js"
   },
   "scripts": {
     "clean": "node --input-type=commonjs -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "pnpm run clean && tsc && tsc-alias",
+    "build:release": "pnpm run clean && tsc -p tsconfig.release.json && tsc-alias -p tsconfig.release.json",
     "dev": "tsc --watch",
+    "prepack": "pnpm run build:release",
     "test": "vitest run",
     "test:watch": "vitest",
     "mcp": "tsx src/mcp/index.ts",

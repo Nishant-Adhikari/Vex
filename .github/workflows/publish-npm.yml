@@ -45,33 +45,36 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify matching GHCR agent image exists
-        if: steps.version-check.outputs.skip != 'true'
-        env:
-          AGENT_IMAGE_REPOSITORY: echoclaw-labs/echoclaw/echo-agent
-        run: |
-          set -euo pipefail
-
-          LOCAL_VERSION=$(node -p "require('./package.json').version")
-          TOKEN_RESPONSE=$(curl -sSL "https://ghcr.io/token?service=ghcr.io&scope=repository:${AGENT_IMAGE_REPOSITORY}:pull")
-          TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | node -e "const fs=require('node:fs'); try { const data=JSON.parse(fs.readFileSync(0,'utf8')); process.stdout.write(typeof data.token === 'string' ? data.token : ''); } catch {}")
-
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Public GHCR pull token unavailable for ghcr.io/${AGENT_IMAGE_REPOSITORY}. Publish the image and make the package public before npm publish."
-            printf '%s\n' "$TOKEN_RESPONSE"
-            exit 1
-          fi
-
-          HTTP_STATUS=$(curl -sSL -o /tmp/echo-agent-manifest.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
-            "https://ghcr.io/v2/${AGENT_IMAGE_REPOSITORY}/manifests/${LOCAL_VERSION}")
-
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Missing or non-public GHCR image ghcr.io/${AGENT_IMAGE_REPOSITORY}:${LOCAL_VERSION}. Publish the image first, then rerun npm publish."
-            cat /tmp/echo-agent-manifest.json || true
-            exit 1
-          fi
+      # GHCR image validation is intentionally disabled for the current npm CLI release.
+      # Update this step later when echo-agent / VEX image publishing is reintroduced.
+      #
+      # - name: Verify matching GHCR agent image exists
+      #   if: steps.version-check.outputs.skip != 'true'
+      #   env:
+      #     AGENT_IMAGE_REPOSITORY: echoclaw-labs/echoclaw/echo-agent
+      #   run: |
+      #     set -euo pipefail
+      #
+      #     LOCAL_VERSION=$(node -p "require('./package.json').version")
+      #     TOKEN_RESPONSE=$(curl -sSL "https://ghcr.io/token?service=ghcr.io&scope=repository:${AGENT_IMAGE_REPOSITORY}:pull")
+      #     TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | node -e "const fs=require('node:fs'); try { const data=JSON.parse(fs.readFileSync(0,'utf8')); process.stdout.write(typeof data.token === 'string' ? data.token : ''); } catch {}")
+      #
+      #     if [ -z "$TOKEN" ]; then
+      #       echo "::error::Public GHCR pull token unavailable for ghcr.io/${AGENT_IMAGE_REPOSITORY}. Publish the image and make the package public before npm publish."
+      #       printf '%s\n' "$TOKEN_RESPONSE"
+      #       exit 1
+      #     fi
+      #
+      #     HTTP_STATUS=$(curl -sSL -o /tmp/echo-agent-manifest.json -w "%{http_code}" \
+      #       -H "Authorization: Bearer ${TOKEN}" \
+      #       -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+      #       "https://ghcr.io/v2/${AGENT_IMAGE_REPOSITORY}/manifests/${LOCAL_VERSION}")
+      #
+      #     if [ "$HTTP_STATUS" != "200" ]; then
+      #       echo "::error::Missing or non-public GHCR image ghcr.io/${AGENT_IMAGE_REPOSITORY}:${LOCAL_VERSION}. Publish the image first, then rerun npm publish."
+      #       cat /tmp/echo-agent-manifest.json || true
+      #       exit 1
+      #     fi
 
       - name: Publish to npm
         if: steps.version-check.outputs.skip != 'true'

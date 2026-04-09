@@ -4,7 +4,29 @@ Native Crypto MCP + Vex Agent core.
 
 ## Status
 
-`private` / pre-MCP / internal dev-only. No public entrypoint yet.
+Public npm package with local MCP launcher support. Primary entrypoints:
+
+- `echoclaw echo` — guided local MCP setup + ready AI agent connectors
+- `echoclaw-mcp` — direct production MCP server entrypoint
+- `echoclaw vex` — reserved for the future VEX runtime
+
+## Quickstart
+
+```bash
+pnpm add -g @echoclaw/echo
+echoclaw echo
+```
+
+The guided `echo` flow:
+
+- checks local runtime requirements,
+- shows which `.env` values are already configured,
+- fills bundled MCP defaults required for local bootstrap,
+- configures local EVM + Solana wallets,
+- starts the bundled local services,
+- generates ready connector artifacts for Cursor, Claude Code, Codex, OpenClaw, and a default MCP client.
+
+For npm publish, the package uses a dedicated release build that keeps the CLI fully functional while omitting sourcemaps and TypeScript declaration artifacts from the tarball.
 
 ## Structure
 
