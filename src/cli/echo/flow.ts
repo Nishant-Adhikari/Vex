@@ -4,7 +4,7 @@ import { writeConnectorArtifacts } from "./connectors.js";
 import { ensureKeystorePassword, ensureRequiredEnvDefaults, synchronizeTrackedEnv } from "./setup.js";
 import { collectEnvFieldStatuses, getEvmWalletStatus, getSolanaWalletStatus } from "./status.js";
 import { ensureSystemChecksPassed, startLocalServices, waitForBootstrapSuccess } from "./system.js";
-import { ensureEvmWallet, ensureSolanaWallet } from "./wallets.js";
+import { ensureWallets } from "./wallets.js";
 import {
   assertInteractiveLauncher,
   promptMenu,
@@ -32,8 +32,7 @@ export async function runConnectFlow(): Promise<void> {
   synchronizeTrackedEnv();
   renderEnvStatuses(collectEnvFieldStatuses());
 
-  await ensureEvmWallet();
-  await ensureSolanaWallet();
+  await ensureWallets();
   renderWalletStatuses([getEvmWalletStatus(), getSolanaWalletStatus()]);
 
   startLocalServices();

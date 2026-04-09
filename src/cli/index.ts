@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 
-import { runMcpCli } from "../mcp/index.js";
 import { EchoError, ErrorCodes } from "../errors.js";
 import { writeStderr } from "../utils/output.js";
-import { runEchoCli } from "./echo/index.js";
-import { runVexCli } from "./vex/index.js";
+import { suppressDep0040Warnings } from "./shared/warnings.js";
 
 export function buildRootHelpText(): string {
   return [
@@ -46,16 +44,20 @@ export async function runRootCli(argv: readonly string[] = process.argv.slice(2)
   }
 
   if (command === "echo") {
+    suppressDep0040Warnings();
+    const { runEchoCli } = await import("./echo/index.js");
     await runEchoCli(rest);
     return;
   }
 
   if (command === "mcp") {
+    const { runMcpCli } = await import("../mcp/index.js");
     await runMcpCli(rest);
     return;
   }
 
   if (command === "vex") {
+    const { runVexCli } = await import("./vex/index.js");
     await runVexCli(rest);
     return;
   }

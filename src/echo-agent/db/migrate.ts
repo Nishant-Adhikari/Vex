@@ -6,15 +6,14 @@
  */
 
 import { readdirSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { getPool } from "./client.js";
 import logger from "@utils/logger.js";
-
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
+import { getEchoAgentMigrationsDir } from "@utils/package-assets.js";
 
 export async function runMigrations(): Promise<void> {
   const pool = getPool();
+  const migrationsDir = getEchoAgentMigrationsDir();
 
   // Ensure schema_version table exists (bootstrap)
   await pool.query(`
@@ -31,7 +30,7 @@ export async function runMigrations(): Promise<void> {
   const currentVersion = result.rows[0]?.version ?? 0;
 
   // Find migration files
-  const files = readdirSync(MIGRATIONS_DIR)
+  const files = readdirSync(migrationsDir)
     .filter(f => f.endsWith(".sql") && /^\d{3}_/.test(f))
     .sort();
 
@@ -41,7 +40,7 @@ export async function runMigrations(): Promise<void> {
     const version = parseInt(file.slice(0, 3), 10);
     if (version <= currentVersion) continue;
 
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf-8");
+    const sql = readFileSync(join(migrationsDir, file), "utf-8");
     logger.info("echo-db.migration.applying", { file });
 
     const client = await pool.connect();

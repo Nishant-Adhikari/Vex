@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { CONNECTORS_DIR } from "../../config/paths.js";
 import { getHttpTokenPath } from "../../mcp/auth/token.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
+import { getMcpCliEntryPath } from "./package-assets.js";
 
 export type ConnectorTarget = "cursor" | "claude" | "codex" | "openclaw" | "default";
 
@@ -24,7 +25,6 @@ export interface ConnectorBundle {
 }
 
 const MCP_SERVER_NAME = "echoclaw";
-const STDIO_COMMAND = "echoclaw-mcp";
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -34,29 +34,50 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value, null, 2) + "\n";
 }
 
-function buildRootMcpConfig(): { mcpServers: Record<string, { command: string; args?: string[] }> } {
+interface StdioInvocation {
+  command: string;
+  args: string[];
+}
+
+function getStdioInvocation(): StdioInvocation {
+  return {
+    command: process.execPath,
+    args: [getMcpCliEntryPath()],
+  };
+}
+
+function formatShellCommand(command: string, args: readonly string[]): string {
+  return [shellQuote(command), ...args.map((arg) => shellQuote(arg))].join(" ");
+}
+
+function buildRootMcpConfig(
+  invocation: StdioInvocation,
+): { mcpServers: Record<string, { command: string; args?: string[] }> } {
   return {
     mcpServers: {
       [MCP_SERVER_NAME]: {
-        command: STDIO_COMMAND,
+        command: invocation.command,
+        args: invocation.args,
       },
     },
   };
 }
 
-function buildClaudeServerConfig(): { type: "stdio"; command: string; args: string[]; env: Record<string, string> } {
+function buildClaudeServerConfig(
+  invocation: StdioInvocation,
+): { type: "stdio"; command: string; args: string[]; env: Record<string, string> } {
   return {
     type: "stdio",
-    command: STDIO_COMMAND,
-    args: [],
+    command: invocation.command,
+    args: invocation.args,
     env: {},
   };
 }
 
-function buildOpenClawServerConfig(): { command: string; args: string[] } {
+function buildOpenClawServerConfig(invocation: StdioInvocation): { command: string; args: string[] } {
   return {
-    command: STDIO_COMMAND,
-    args: [],
+    command: invocation.command,
+    args: invocation.args,
   };
 }
 
@@ -70,15 +91,17 @@ function buildConnectorBundles(baseDir: string = CONNECTORS_DIR): ConnectorBundl
   const defaultPath = join(baseDir, "default.mcp.json");
   const defaultHttpPath = join(baseDir, "default-http.txt");
   const tokenPath = getHttpTokenPath();
+  const stdioInvocation = getStdioInvocation();
 
-  const cursorConfig = stableJson(buildRootMcpConfig());
-  const claudeServerConfig = stableJson(buildClaudeServerConfig());
-  const openClawServerConfig = stableJson(buildOpenClawServerConfig());
-  const defaultConfig = stableJson(buildRootMcpConfig());
+  const cursorConfig = stableJson(buildRootMcpConfig(stdioInvocation));
+  const claudeServerConfig = stableJson(buildClaudeServerConfig(stdioInvocation));
+  const openClawServerConfig = stableJson(buildOpenClawServerConfig(stdioInvocation));
+  const defaultConfig = stableJson(buildRootMcpConfig(stdioInvocation));
 
   const claudeCommand =
     `claude mcp add-json --scope local ${MCP_SERVER_NAME} "$(cat ${shellQuote(claudeServerPath)})"\n`;
-  const codexCommand = `codex mcp add ${MCP_SERVER_NAME} -- ${STDIO_COMMAND}\n`;
+  const codexCommand =
+    `codex mcp add ${MCP_SERVER_NAME} -- ${formatShellCommand(stdioInvocation.command, stdioInvocation.args)}\n`;
   const openClawCommand =
     `openclaw mcp set ${MCP_SERVER_NAME} "$(cat ${shellQuote(openClawServerPath)})"\n`;
   const defaultHttpNotes =
@@ -222,7 +245,7 @@ function buildConnectorReadme(bundles: readonly ConnectorBundle[]): string {
   const lines: string[] = [
     "# EchoClaw MCP connectors",
     "",
-    `Generated for local MCP setup. Server command: \`${STDIO_COMMAND}\`.`,
+    `Generated for local MCP setup. Server command: \`${formatShellCommand(process.execPath, [getMcpCliEntryPath()])}\`.`,
     "",
   ];
 

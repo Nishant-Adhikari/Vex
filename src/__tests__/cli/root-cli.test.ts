@@ -4,9 +4,14 @@ import { ErrorCodes } from "../../errors.js";
 const runEchoCli = vi.fn();
 const runMcpCli = vi.fn();
 const runVexCli = vi.fn();
+const suppressDep0040Warnings = vi.fn();
 
 vi.mock("../../cli/echo/index.js", () => ({
   runEchoCli,
+}));
+
+vi.mock("../../cli/shared/warnings.js", () => ({
+  suppressDep0040Warnings,
 }));
 
 vi.mock("../../mcp/index.js", () => ({
@@ -35,16 +40,19 @@ describe("root CLI router", () => {
 
   it("delegates echo arguments to the echo router", async () => {
     await runRootCli(["echo", "connect"]);
+    expect(suppressDep0040Warnings).toHaveBeenCalledTimes(1);
     expect(runEchoCli).toHaveBeenCalledWith(["connect"]);
   });
 
   it("delegates mcp arguments to the MCP runtime", async () => {
     await runRootCli(["mcp", "--transport", "stdio"]);
+    expect(suppressDep0040Warnings).not.toHaveBeenCalled();
     expect(runMcpCli).toHaveBeenCalledWith(["--transport", "stdio"]);
   });
 
   it("delegates vex arguments to the placeholder vex router", async () => {
     await runRootCli(["vex"]);
+    expect(suppressDep0040Warnings).not.toHaveBeenCalled();
     expect(runVexCli).toHaveBeenCalledWith([]);
   });
 

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readGeneratedArtifact, writeConnectorArtifacts } from "../../cli/echo/connectors.js";
+import { getMcpCliEntryPath } from "../../cli/echo/package-assets.js";
 
 const tempDirs: string[] = [];
 
@@ -22,6 +23,7 @@ describe("echo connector generation", () => {
   it("writes ready artifacts for all supported AI agent targets", () => {
     const outputDir = createTempDir();
     const generated = writeConnectorArtifacts(outputDir);
+    const mcpEntryPath = getMcpCliEntryPath();
 
     expect(generated.bundles.map((bundle) => bundle.id)).toEqual([
       "cursor",
@@ -32,13 +34,16 @@ describe("echo connector generation", () => {
     ]);
 
     expect(existsSync(generated.readmePath)).toBe(true);
-    expect(readGeneratedArtifact(join(outputDir, "cursor.mcp.json"))).toContain('"command": "echoclaw-mcp"');
+    expect(readGeneratedArtifact(join(outputDir, "cursor.mcp.json"))).toContain(`"command": "${process.execPath}"`);
+    expect(readGeneratedArtifact(join(outputDir, "cursor.mcp.json"))).toContain(`"${mcpEntryPath}"`);
     expect(readGeneratedArtifact(join(outputDir, "claude.add-json.txt"))).toContain(
       "claude mcp add-json --scope local echoclaw",
     );
     expect(readGeneratedArtifact(join(outputDir, "codex.add.txt"))).toContain(
-      "codex mcp add echoclaw -- echoclaw-mcp",
+      "codex mcp add echoclaw --",
     );
+    expect(readGeneratedArtifact(join(outputDir, "codex.add.txt"))).toContain(process.execPath);
+    expect(readGeneratedArtifact(join(outputDir, "codex.add.txt"))).toContain(mcpEntryPath);
     expect(readGeneratedArtifact(join(outputDir, "openclaw.set.txt"))).toContain(
       "openclaw mcp set echoclaw",
     );
