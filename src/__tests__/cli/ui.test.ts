@@ -52,9 +52,13 @@ describe("echo connector UI rendering", () => {
     expect(writeStderr).toHaveBeenCalledWith(
       "After the MCP is connected, paste this directly into your AI agent chat.",
     );
-    expect(output).toContain("RUN IN SHELL");
-    expect(output).toContain("PASTE INTO AI");
+    expect(output).not.toContain("RUN IN SHELL");
+    expect(output).not.toContain("PASTE INTO AI");
     expect(output).toContain("Use the connected EchoClaw MCP in read-only mode first.");
     expect(output).toContain("Read docs://overview.");
+    expect(output).not.toContain("| RUN IN SHELL |");
+    expect(output).not.toContain("| PASTE INTO AI |");
+    expect(output).not.toContain("| Use the connected EchoClaw MCP in read-only mode first.");
+    expect(output).not.toContain("+---");
   });
 });

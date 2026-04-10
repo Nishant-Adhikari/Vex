@@ -31,18 +31,11 @@ function bold(text: string): string {
   return color(text, ANSI.bold);
 }
 
-function renderCalloutBlock(title: string, content: string, ansi: string): void {
+function renderCalloutBlock(content: string, ansi: string): void {
   const lines = content.split("\n");
-  const width = Math.max(title.length, ...lines.map((line) => line.length));
-  const border = `+${"-".repeat(width + 2)}+`;
-
-  writeStderr(color(border, ansi));
-  writeStderr(color(`| ${title.padEnd(width)} |`, ansi));
-  writeStderr(color(border, ansi));
   for (const line of lines) {
-    writeStderr(color(`| ${line.padEnd(width)} |`, ansi));
+    writeStderr(color(line, ansi));
   }
-  writeStderr(color(border, ansi));
 }
 
 export function assertInteractiveLauncher(): void {
@@ -240,13 +233,13 @@ export function renderConnectorDetails(bundle: ConnectorBundle, artifactBaseDir:
     writeStderr(
       "Paste this into your shell. You can run it in this same terminal after echoclaw echo exits, or open a second terminal if you prefer.",
     );
-    renderCalloutBlock("RUN IN SHELL", bundle.commandPreview, ANSI.cyan);
+    renderCalloutBlock(bundle.commandPreview, ANSI.cyan);
   }
 
   writeBlankLine();
   writeStderr(bold("Paste Into AI"));
   writeStderr("After the MCP is connected, paste this directly into your AI agent chat.");
-  renderCalloutBlock("PASTE INTO AI", bundle.quickstartPrompt, ANSI.green);
+  renderCalloutBlock(bundle.quickstartPrompt, ANSI.green);
 
   writeBlankLine();
   writeStderr(bold("Generated artifacts"));
