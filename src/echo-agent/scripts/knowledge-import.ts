@@ -24,12 +24,13 @@ import type { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { runMigrations } from "@echo-agent/db/migrate.js";
 import { closePool } from "@echo-agent/db/client.js";
-import { findByContentHash, insertEntry } from "@echo-agent/db/repos/knowledge.js";
-import { embedDocument } from "@echo-agent/embeddings/client.js";
 import { loadEmbeddingConfig } from "@echo-agent/embeddings/config.js";
-import { computeContentHash } from "@echo-agent/knowledge/content-hash.js";
-import type { KnowledgeStatus } from "@echo-agent/knowledge/policy.js";
 import { assertSchemaUpToDate } from "./_preflight.js";
+import {
+  type ImportedRow,
+  type ManifestVersion,
+} from "./knowledge-import/validators.js";
+import { processRow } from "./knowledge-import/row-pipeline.js";
 import logger from "@utils/logger.js";
 
 export interface ImportReport {
@@ -37,148 +38,6 @@ export interface ImportReport {
   skipped_duplicate: number;
   failed: number;
   total: number;
-}
-
-interface ImportedRow {
-  kind: string;
-  title: string;
-  summary: string;
-  content_md: string;
-  tags?: string[];
-  source_refs?: Record<string, unknown>;
-  confidence?: number | null;
-  status?: string;
-  pinned?: boolean;
-  valid_from?: string;
-  valid_until?: string | null;
-  // content_hash is read but ignored — recomputed locally
-  content_hash?: string;
-  created_at?: string;
-  updated_at?: string;
-  // ── v2 provenance fields (undefined on v1 input; optional on v2)
-  source_surface?: string;
-  source_session?: string | null;
-  // ── v2 lifecycle fields (undefined on v1 input)
-  supersedes_content_hash?: string | null;
-  status_reason?: string | null;
-  change_summary?: string | null;
-  what_failed?: string | null;
-}
-
-type ManifestVersion = 1 | 2;
-
-function isStringArray(v: unknown): v is string[] {
-  return Array.isArray(v) && v.every((x) => typeof x === "string");
-}
-
-function isKnowledgeStatus(s: unknown): s is KnowledgeStatus {
-  return (
-    s === "active" || s === "superseded" || s === "invalidated" || s === "archived"
-  );
-}
-
-// ── Fail-loud audit field validators ─────────────────────────────
-//
-// Missing fields (undefined / null) are OK and map to defaults via SQL
-// COALESCE in insertEntry. Present-but-bad values throw — and are caught
-// by the per-row try/catch, counted as `failed`, and surfaced in the report.
-// Silently coercing garbage to NOW() / 'active' would falsify history exactly
-// where the importer should be most strict.
-
-function requireValidStatusOrUndefined(
-  s: unknown,
-  lineNumber: number,
-): KnowledgeStatus | undefined {
-  if (s === undefined || s === null) return undefined;
-  if (typeof s !== "string") {
-    throw new Error(`line ${lineNumber}: status must be a string, got ${typeof s}`);
-  }
-  if (!isKnowledgeStatus(s)) {
-    throw new Error(
-      `line ${lineNumber}: status="${s}" is not a valid KnowledgeStatus ` +
-        `(active|superseded|invalidated|archived)`,
-    );
-  }
-  return s;
-}
-
-function requireValidDateOrUndefined(
-  s: unknown,
-  field: string,
-  lineNumber: number,
-): Date | undefined {
-  if (s === undefined || s === null) return undefined;
-  if (typeof s !== "string") {
-    throw new Error(`line ${lineNumber}: ${field} must be a string ISO date, got ${typeof s}`);
-  }
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) {
-    throw new Error(`line ${lineNumber}: ${field}="${s}" is not a parseable ISO date`);
-  }
-  return d;
-}
-
-function requireValidValidUntil(s: unknown, lineNumber: number): Date | null {
-  // Special-case: explicit null is meaningful (evergreen / pinned).
-  if (s === null || s === undefined) return null;
-  if (typeof s !== "string") {
-    throw new Error(
-      `line ${lineNumber}: valid_until must be a string ISO date or null, got ${typeof s}`,
-    );
-  }
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) {
-    throw new Error(`line ${lineNumber}: valid_until="${s}" is not a parseable ISO date`);
-  }
-  return d;
-}
-
-function requireOptionalStringOrNull(
-  s: unknown,
-  field: string,
-  lineNumber: number,
-): string | null {
-  if (s === undefined || s === null) return null;
-  if (typeof s !== "string") {
-    throw new Error(`line ${lineNumber}: ${field} must be a string or null, got ${typeof s}`);
-  }
-  return s;
-}
-
-/** sha256 hex format — 64 hex chars. Rejects tampered / non-hex strings. */
-function requireValidHashOrNull(
-  s: unknown,
-  field: string,
-  lineNumber: number,
-): string | null {
-  if (s === undefined || s === null) return null;
-  if (typeof s !== "string") {
-    throw new Error(`line ${lineNumber}: ${field} must be a string or null, got ${typeof s}`);
-  }
-  if (!/^[a-f0-9]{64}$/.test(s)) {
-    throw new Error(`line ${lineNumber}: ${field}="${s}" is not a valid sha256 hex`);
-  }
-  return s;
-}
-
-/**
- * source_surface enum — only `echo_agent` or `mcp_local` are valid. Absence is
- * OK (maps to undefined → default `echo_agent` via COALESCE in insertEntry).
- */
-function requireValidSourceSurfaceOrUndefined(
-  s: unknown,
-  lineNumber: number,
-): "echo_agent" | "mcp_local" | undefined {
-  if (s === undefined || s === null) return undefined;
-  if (typeof s !== "string") {
-    throw new Error(`line ${lineNumber}: source_surface must be a string, got ${typeof s}`);
-  }
-  if (s !== "echo_agent" && s !== "mcp_local") {
-    throw new Error(
-      `line ${lineNumber}: source_surface="${s}" is not valid (expected echo_agent | mcp_local)`,
-    );
-  }
-  return s;
 }
 
 /**
@@ -263,109 +122,10 @@ export async function importKnowledge(source: AsyncIterable<string>): Promise<Im
     }
 
     try {
-      // Validate audit fields BEFORE any expensive work. Throws are caught
-      // here and surface as report.failed — silent coercion would falsify
-      // history exactly where the importer should be most strict.
-      const status = requireValidStatusOrUndefined(row.status, lineNumber);
-      const validFrom = requireValidDateOrUndefined(row.valid_from, "valid_from", lineNumber);
-      const validUntil = requireValidValidUntil(row.valid_until, lineNumber);
-      const createdAt = requireValidDateOrUndefined(row.created_at, "created_at", lineNumber);
-      const updatedAt = requireValidDateOrUndefined(row.updated_at, "updated_at", lineNumber);
-
-      // v2 lifecycle fields — validated even on v1 manifests (defensive: if a
-      // v1 backup accidentally carries them, catch format errors). When absent
-      // they map to null and the DB defaults (or NULL) apply.
-      const statusReason = requireOptionalStringOrNull(row.status_reason, "status_reason", lineNumber);
-      const changeSummary = requireOptionalStringOrNull(row.change_summary, "change_summary", lineNumber);
-      const whatFailed = requireOptionalStringOrNull(row.what_failed, "what_failed", lineNumber);
-      const supersedesContentHash = requireValidHashOrNull(
-        row.supersedes_content_hash,
-        "supersedes_content_hash",
-        lineNumber,
-      );
-
-      // v2 provenance fields — optional on both v1 and v2. Missing maps to
-      // insertEntry defaults ('echo_agent' / NULL). Present-but-bad rejects.
-      const sourceSurface = requireValidSourceSurfaceOrUndefined(row.source_surface, lineNumber);
-      const sourceSession = requireOptionalStringOrNull(row.source_session, "source_session", lineNumber);
-
-      // Recompute content_hash locally — never trust the file's hash. A
-      // tampered/corrupted hash in the backup is therefore a no-op.
-      const contentHash = computeContentHash({
-        kind: row.kind,
-        title: row.title,
-        summary: row.summary,
-        contentMd: row.content_md,
-      });
-
-      // Short-circuit on content_hash BEFORE embedding. Re-importing a
-      // healthy backup must not require a working provider — re-running on
-      // the same backup is a no-op (zero embed calls).
-      const existing = await findByContentHash(contentHash);
-      if (existing) {
-        report.skipped_duplicate++;
-        continue;
-      }
-
-      // Resolve lineage FK: export carries predecessor's content_hash (stable
-      // cross-DB), we map it back to a local id. Export order is id ASC so the
-      // predecessor is guaranteed to already exist when we reach its successor.
-      // Missing predecessor is fail-loud — silently NULLing the FK would lose
-      // lineage for this successor and degrade the backup to v1 semantics.
-      let supersedesId: number | null = null;
-      if (supersedesContentHash !== null) {
-        const predecessor = await findByContentHash(supersedesContentHash);
-        if (!predecessor) {
-          throw new Error(
-            `supersedes_content_hash=${supersedesContentHash} does not resolve to any existing entry ` +
-              `(expected predecessor to appear earlier in the export)`,
-          );
-        }
-        supersedesId = predecessor.id;
-      }
-
-      const { embedding, providerModel } = await embedDocument(row.title, row.summary, config);
-
-      const { inserted } = await insertEntry({
-        kind: row.kind,
-        title: row.title,
-        summary: row.summary,
-        contentMd: row.content_md,
-        tags: isStringArray(row.tags) ? row.tags : [],
-        sourceRefs:
-          row.source_refs && typeof row.source_refs === "object" && !Array.isArray(row.source_refs)
-            ? (row.source_refs as Record<string, unknown>)
-            : {},
-        confidence: typeof row.confidence === "number" ? row.confidence : null,
-        pinned: row.pinned === true,
-        validUntil,
-        contentHash,
-        // Honest provenance: stamp the model the provider actually reported
-        // for THIS row, NOT the requested config.model.
-        embeddingModel: providerModel,
-        embeddingDim: embedding.length,
-        embedding,
-        // ── audit roundtrip
-        status,
-        validFrom,
-        createdAt,
-        updatedAt,
-        // ── lifecycle roundtrip (v2). On v1 input these are all null.
-        supersedesId,
-        statusReason,
-        changeSummary,
-        whatFailed,
-        // ── provenance roundtrip (v2). Undefined → insertEntry defaults apply
-        // ('echo_agent' / NULL); explicit values preserve the original writer.
-        sourceSurface,
-        sourceSession: sourceSession ?? undefined,
-      });
-
-      if (inserted) {
+      const outcome = await processRow(row, lineNumber, config);
+      if (outcome === "inserted") {
         report.inserted++;
       } else {
-        // Race condition: someone else wrote the same hash between our
-        // findByContentHash check and the INSERT. CTE upsert caught it.
         report.skipped_duplicate++;
       }
     } catch (err) {
