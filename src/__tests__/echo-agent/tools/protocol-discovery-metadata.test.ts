@@ -28,9 +28,12 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     expect(clobOrderbook!.whyMatched).toContain("canonicalSummary");
   });
 
-  it("metadata exampleIntents from facet hints appear in whyMatched", () => {
+  it("per-tool metadata aliases (not inherited from facet) appear as 'metadata' in whyMatched", () => {
+    // echobook.comments.get has explicit discovery.aliases: ["0g comments", "echobook comments"].
+    // These are NOT in navigation strings → should appear as "metadata" tag.
+    // Inherited exampleIntents (from facet.hints) ARE in navigation → deduped out.
     const result = discoverProtocolCapabilities({
-      query: "comment thread",
+      query: "0g comments",
       namespace: "echobook",
       includeMutating: true,
       limit: 50,

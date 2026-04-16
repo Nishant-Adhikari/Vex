@@ -70,7 +70,10 @@ async function routeToolCall(
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
     };
     const result = discoverProtocolCapabilities(discoveryRequest);
-    logDiscoveryTelemetry({ request: discoveryRequest, result, discoveryRunId: newDiscoveryRunId() });
+    logDiscoveryTelemetry({
+      request: discoveryRequest, result, discoveryRunId: newDiscoveryRunId(),
+      sourceSurface: context.sourceSurface, sourceSession: context.sourceSession,
+    });
     return {
       success: result.success,
       output: JSON.stringify(result, null, 2),

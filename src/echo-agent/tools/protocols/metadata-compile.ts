@@ -62,19 +62,20 @@ function deriveOperation(manifest: ProtocolToolManifest): Operation[] {
 
 export function compileToolDiscoveryMetadata(
   manifest: ProtocolToolManifest,
-  namespaceNav: ProtocolNamespaceNavigation,
+  namespaceNav: ProtocolNamespaceNavigation | undefined,
 ): ToolDiscoveryMetadata {
-  const facets = matchFacets(namespaceNav.facets, manifest.toolId);
+  const facets = namespaceNav ? matchFacets(namespaceNav.facets, manifest.toolId) : [];
   const override = manifest.discovery ?? {};
 
   const facetHints = facets.flatMap((f) => [...f.hints]);
   const paramKeywords = manifest.params.map((p) => p.key);
+  const inheritedEcosystems = namespaceNav ? [...GROUP_ECOSYSTEMS[namespaceNav.groupId]] : undefined;
 
   const inherited: ToolDiscoveryMetadata = {
-    aliases: [...namespaceNav.aliases],
+    aliases: namespaceNav ? [...namespaceNav.aliases] : undefined,
     exampleIntents: facetHints.length > 0 ? facetHints : undefined,
     paramKeywords: paramKeywords.length > 0 ? paramKeywords : undefined,
-    ecosystems: [...GROUP_ECOSYSTEMS[namespaceNav.groupId]],
+    ecosystems: inheritedEcosystems,
     sourceClass: NAMESPACE_SOURCE_CLASS[manifest.namespace],
     sideEffectLevel: manifest.mutating ? "high" : "none",
     operation: deriveOperation(manifest),

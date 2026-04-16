@@ -8,6 +8,7 @@ import {
   buildDiscoverNamespaceDescription,
   getDiscoveryStringsForTool,
   getMatchingFacetsForTool,
+  maybeGetProtocolNamespaceNavigation,
   getProtocolNamespaceNavigation,
 } from "./descriptions.js";
 import { compileToolDiscoveryMetadata } from "./metadata-compile.js";
@@ -34,7 +35,7 @@ function computeBiasCoverage(): { preferredFor: boolean; avoidFor: boolean } {
   let preferredCount = 0;
   let avoidCount = 0;
   for (const manifest of PROTOCOL_TOOLS) {
-    const meta = compileToolDiscoveryMetadata(manifest, getProtocolNamespaceNavigation(manifest.namespace));
+    const meta = compileToolDiscoveryMetadata(manifest, maybeGetProtocolNamespaceNavigation(manifest.namespace));
     if (meta.preferredFor && meta.preferredFor.length > 0) preferredCount++;
     if (meta.avoidFor && meta.avoidFor.length > 0) avoidCount++;
   }
@@ -79,19 +80,17 @@ function tokenize(value: string): string[] {
 }
 
 function buildSearchFields(manifest: ProtocolToolManifest): WeightedSearchField[] {
-  const navigationFields = getDiscoveryStringsForTool(manifest.namespace, manifest.toolId)
-    .map((value) => ({ value, weight: 4, tag: "navigation" }));
-  const navigationAliasSet = new Set(
-    getProtocolNamespaceNavigation(manifest.namespace).aliases.map((a) => a.toLowerCase()),
-  );
+  const namespaceNavigation = maybeGetProtocolNamespaceNavigation(manifest.namespace);
+  const navStrings = getDiscoveryStringsForTool(manifest.namespace, manifest.toolId);
+  const navigationFields = navStrings.map((value) => ({ value, weight: 4, tag: "navigation" }));
+  const navAliasSet = new Set((namespaceNavigation?.aliases ?? []).map((a) => a.toLowerCase()));
+  const navStringSet = new Set(navStrings.map((s) => s.toLowerCase()));
   const paramFields = manifest.params.flatMap((param) => [
     { value: param.key, weight: 6, tag: "params" },
     { value: param.description, weight: 6, tag: "params" },
   ]);
-
-  const metadata = compileToolDiscoveryMetadata(manifest, getProtocolNamespaceNavigation(manifest.namespace));
-  const metadataFields = buildMetadataFields(metadata, navigationAliasSet);
-
+  const metadata = compileToolDiscoveryMetadata(manifest, namespaceNavigation);
+  const metadataFields = buildMetadataFields(metadata, navAliasSet, navStringSet);
   return [
     { value: manifest.toolId, weight: 8, tag: "toolId" },
     { value: manifest.namespace, weight: 5, tag: "namespace" },
@@ -105,7 +104,8 @@ function buildSearchFields(manifest: ProtocolToolManifest): WeightedSearchField[
 
 function buildMetadataFields(
   metadata: ToolDiscoveryMetadata,
-  navigationAliasSet: Set<string>,
+  navAliasSet: Set<string>,
+  navStringSet: Set<string>,
 ): WeightedSearchField[] {
   const fields: WeightedSearchField[] = [];
   if (metadata.canonicalSummary) {
@@ -113,24 +113,26 @@ function buildMetadataFields(
   }
   if (metadata.aliases) {
     for (const alias of metadata.aliases) {
-      if (!navigationAliasSet.has(alias.toLowerCase())) {
+      if (!navAliasSet.has(alias.toLowerCase())) {
         fields.push({ value: alias, weight: 5, tag: "metadata" });
       }
     }
   }
   if (metadata.exampleIntents) {
     for (const intent of metadata.exampleIntents) {
-      fields.push({ value: intent, weight: 6, tag: "metadata" });
+      if (!navStringSet.has(intent.toLowerCase())) {
+        fields.push({ value: intent, weight: 6, tag: "metadata" });
+      }
     }
   }
   return fields;
 }
 
-// Weight 3: shared across namespace, lower than per-tool params (6) to avoid oversteering.
 function buildExampleQueryFields(manifest: ProtocolToolManifest): WeightedSearchField[] {
   const matchingFacets = getMatchingFacetsForTool(manifest.namespace, manifest.toolId);
   if (matchingFacets.length === 0) return [];
-  const namespaceMetadata = getProtocolNamespaceNavigation(manifest.namespace);
+  const namespaceMetadata = maybeGetProtocolNamespaceNavigation(manifest.namespace);
+  if (!namespaceMetadata) return [];
   return namespaceMetadata.exampleQueries.map((value) => ({
     value, weight: 3, tag: "exampleQueries",
   }));
@@ -183,7 +185,7 @@ function applyBiasAdjustment(
   score: number,
   whyMatched: Set<string>,
 ): number {
-  const metadata = compileToolDiscoveryMetadata(manifest, getProtocolNamespaceNavigation(manifest.namespace));
+  const metadata = compileToolDiscoveryMetadata(manifest, maybeGetProtocolNamespaceNavigation(manifest.namespace));
   const querySet = new Set(queryTokens);
 
   if (biasFieldCoverage.preferredFor && metadata.preferredFor) {

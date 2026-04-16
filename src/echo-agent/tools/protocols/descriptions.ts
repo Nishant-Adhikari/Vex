@@ -34,6 +34,10 @@ export const NAMESPACE_EXAMPLES: Record<ProtocolNamespace, readonly string[]> = 
   NAVIGATION_LIST.map((metadata) => [metadata.namespace, metadata.exampleQueries]),
 ) as Record<ProtocolNamespace, readonly string[]>;
 
+export function maybeGetProtocolNamespaceNavigation(namespace: string): ProtocolNamespaceNavigation | undefined {
+  return PROTOCOL_NAMESPACE_NAVIGATION[namespace as ProtocolNamespace];
+}
+
 export function getProtocolNamespaceNavigation(namespace: ProtocolNamespace): ProtocolNamespaceNavigation {
   return PROTOCOL_NAMESPACE_NAVIGATION[namespace];
 }
@@ -63,13 +67,16 @@ export function getMatchingFacetsForTool(
   namespace: ProtocolNamespace,
   toolId: string,
 ): ProtocolNavigationFacet[] {
-  return getProtocolNamespaceNavigation(namespace).facets.filter((facet) =>
+  const metadata = maybeGetProtocolNamespaceNavigation(namespace);
+  if (!metadata) return [];
+  return metadata.facets.filter((facet) =>
     facet.toolPrefixes.some((prefix) => toolId === prefix || toolId.startsWith(`${prefix}.`)),
   );
 }
 
 export function getDiscoveryStringsForTool(namespace: ProtocolNamespace, toolId: string): string[] {
-  const metadata = getProtocolNamespaceNavigation(namespace);
+  const metadata = maybeGetProtocolNamespaceNavigation(namespace);
+  if (!metadata) return [namespace];
   const strings = [
     metadata.namespace,
     ...metadata.aliases,

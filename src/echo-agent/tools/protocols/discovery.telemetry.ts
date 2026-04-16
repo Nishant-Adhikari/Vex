@@ -53,9 +53,13 @@ export interface DiscoveryTelemetryInput {
   request: ProtocolDiscoveryRequest;
   result: ProtocolDiscoveryResult;
   discoveryRunId: string;
+  /** Calling surface — "echo_agent" | "mcp_local" | undefined (defaults to "echo_agent"). */
+  sourceSurface?: string;
+  /** Session ID of the calling surface — enables grouping discoveries within one MCP session. */
+  sourceSession?: string;
 }
 
-export function logDiscoveryTelemetry({ request, result, discoveryRunId }: DiscoveryTelemetryInput): void {
+export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceSurface, sourceSession }: DiscoveryTelemetryInput): void {
   const privacyMode = resolvePrivacyMode();
   const safeQuery = sanitizeQuery(request.query, privacyMode);
   const matchedToolIds = result.tools.slice(0, MATCHED_TOOL_IDS_LIMIT).map((t) => t.toolId);
@@ -63,6 +67,8 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId }: Disco
 
   const fields = {
     discoveryRunId,
+    sourceSurface: sourceSurface ?? "echo_agent",
+    sourceSession,
     query: safeQuery,
     queryPrivacy: privacyMode,
     namespace: typeof request.namespace === "string" ? request.namespace : undefined,
