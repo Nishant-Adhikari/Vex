@@ -14,6 +14,7 @@ import type { InternalToolContext } from "./internal/types.js";
 import { isInternalTool, isToolBlockedForRole } from "./registry.js";
 import { discoverProtocolCapabilities } from "./protocols/runtime.js";
 import { executeProtocolTool } from "./protocols/runtime.js";
+import { logDiscoveryTelemetry, newDiscoveryRunId } from "./protocols/discovery.telemetry.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -61,13 +62,15 @@ async function routeToolCall(
 ): Promise<ToolResult> {
   // Protocol meta-tools
   if (call.name === "discover_tools") {
-    const result = discoverProtocolCapabilities({
+    const discoveryRequest = {
       query: typeof call.args.query === "string" ? call.args.query : undefined,
       namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
       includeMutating: call.args.includeMutating === true,
       includeDeclared: call.args.includeDeclared === true,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
-    });
+    };
+    const result = discoverProtocolCapabilities(discoveryRequest);
+    logDiscoveryTelemetry({ request: discoveryRequest, result, discoveryRunId: newDiscoveryRunId() });
     return {
       success: result.success,
       output: JSON.stringify(result, null, 2),

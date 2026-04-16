@@ -14,6 +14,10 @@ export const POSTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "period", type: "string", description: "Time period for top sort: day, week, or all." },
     ],
     exampleParams: { sort: "hot", limit: 20 },
+    discovery: {
+      canonicalSummary: "Browse the 0G EchoBook social feed — hot, new, or top posts.",
+      ecosystems: ["0g"],
+    },
   },
   {
     toolId: "echobook.feed.following",
@@ -28,6 +32,7 @@ export const POSTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "period", type: "string", description: "Time period for top sort." },
     ],
     exampleParams: { sort: "new", limit: 20 },
+    discovery: { ecosystems: ["0g"] },
   },
   {
     toolId: "echobook.post.get",
@@ -39,6 +44,7 @@ export const POSTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "id", type: "number", required: true, description: "Post ID." },
     ],
     exampleParams: { id: 42 },
+    discovery: { ecosystems: ["0g"] },
   },
   {
     toolId: "echobook.post.create",
@@ -53,6 +59,7 @@ export const POSTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "imageUrl", type: "string", description: "Optional image URL." },
     ],
     exampleParams: { submoltSlug: "trading", content: "Bullish on 0G", title: "Market analysis" },
+    discovery: { ecosystems: ["0g"] },
   },
   {
     toolId: "echobook.post.delete",
@@ -91,5 +98,6 @@ export const POSTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "cursor", type: "string", description: "Pagination cursor." },
     ],
     exampleParams: { q: "0G token" },
+    discovery: { ecosystems: ["0g"] },
   },
 ];

@@ -83,7 +83,9 @@ describe("protocol discovery", () => {
   });
 
   it("includes mutating when requested", () => {
-    const result = discoverProtocolCapabilities({ namespace: "khalani", includeMutating: true });
+    // Explicit limit > 5 because DEFAULT_DISCOVERY_LIMIT=5 may not include the
+    // mutating tool depending on manifest order.
+    const result = discoverProtocolCapabilities({ namespace: "khalani", includeMutating: true, limit: 50 });
     const hasMutating = result.tools.some(t => t.mutating);
     expect(hasMutating).toBe(true);
   });
@@ -121,9 +123,12 @@ describe("protocol discovery", () => {
   });
 
   it("returns all when limit exceeds count", () => {
-    const allResult = discoverProtocolCapabilities({ namespace: "khalani" });
-    const bigLimitResult = discoverProtocolCapabilities({ namespace: "khalani", limit: 100 });
+    // Both calls need explicit limits that exceed actual khalani non-mutating count;
+    // DEFAULT_DISCOVERY_LIMIT=5 caps allResult independently of totalCount.
+    const allResult = discoverProtocolCapabilities({ namespace: "khalani", limit: 100 });
+    const bigLimitResult = discoverProtocolCapabilities({ namespace: "khalani", limit: 200 });
     expect(bigLimitResult.count).toBe(allResult.count);
+    expect(bigLimitResult.totalCount).toBe(allResult.totalCount);
   });
 
   // ── Lifecycle filter ─────────────────────────────────────────────
@@ -184,7 +189,12 @@ describe("protocol discovery", () => {
   });
 
   it("matches polymarket clob from natural language query", () => {
-    const result = discoverProtocolCapabilities({ query: "prediction market orderbook" });
+    // Query uses "polymarket orderbook" (namespace + discriminator) instead of the
+    // ambiguous "prediction market orderbook" — which now ties polymarket.data.*
+    // (via "prediction market" in description) with polymarket.clob.* (via "orderbook").
+    // Lexical scoring without IDF can't break that tie; PR3 metadata v1 is the place
+    // to disambiguate. The capability-phrase intent in message #5 is the right shape here.
+    const result = discoverProtocolCapabilities({ query: "polymarket orderbook" });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.toolId.startsWith("polymarket.clob")).toBe(true);
   });

@@ -89,6 +89,8 @@ export function buildDirectToolRoutingLines(): string[] {
   return [
     `- Direct internal tools are already surfaced individually in \`tools/list\` and \`docs://tools\`. Use them by real name: ${guide.directToolPatterns.join(", ")}.`,
     "- Protocol tools are NOT surfaced individually. Pick a namespace from `docs://protocols`, read `docs://protocols/{namespace}`, then use `discover_tools` and `execute_tool`.",
+    "- `discover_tools` returns `score` and `whyMatched` per tool — use them to disambiguate when more than one result has a similar score.",
+    "- Query `discover_tools` with a short English capability phrase (e.g. 'bridge usdc to base', 'swap on solana'). Translate the user's intent to English first.",
     "- Do not scan every namespace by default. Start from the user's intent and the namespace `Use when` hints.",
   ];
 }

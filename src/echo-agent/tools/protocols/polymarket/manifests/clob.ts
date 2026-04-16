@@ -13,6 +13,10 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID (outcome token asset ID)." },
     ],
     exampleParams: { tokenId: "71321..." },
+    discovery: {
+      canonicalSummary: "Full prediction market orderbook with bids, asks, tick size, and last trade price.",
+      preferredFor: ["orderbook", "bids asks", "clob book", "market depth"],
+    },
   },
   {
     toolId: "polymarket.clob.orderbooks",
@@ -265,6 +269,10 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: {},
     requiresEnv: "POLYMARKET_API_KEY",
+    discovery: {
+      preferredFor: ["order status", "my orders", "open orders", "cancel order"],
+      avoidFor: ["orderbook", "market depth"],
+    },
   },
   {
     toolId: "polymarket.clob.order",

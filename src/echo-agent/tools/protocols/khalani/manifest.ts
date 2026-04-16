@@ -156,5 +156,9 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       amount: "100000000",
     },
+    discovery: {
+      canonicalSummary: "Execute a cross-chain bridge transfer across 40+ EVM and Solana chains.",
+      preferredFor: ["cross-chain bridge", "bridge funds", "bridge tokens", "cross chain transfer"],
+    },
   },
 ];

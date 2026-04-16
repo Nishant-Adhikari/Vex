@@ -11,6 +11,11 @@ export const COMMENTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "postId", type: "number", required: true, description: "Post ID." },
     ],
     exampleParams: { postId: 42 },
+    discovery: {
+      canonicalSummary: "Fetch threaded comments on an EchoBook post with depth, votes, and author info.",
+      aliases: ["0g comments", "echobook comments"],
+      ecosystems: ["0g"],
+    },
   },
   {
     toolId: "echobook.comment.create",
@@ -24,6 +29,7 @@ export const COMMENTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "parentId", type: "number", description: "Parent comment ID for threaded reply." },
     ],
     exampleParams: { postId: 42, content: "Great analysis!" },
+    discovery: { ecosystems: ["0g"] },
   },
   {
     toolId: "echobook.comment.delete",
@@ -35,5 +41,6 @@ export const COMMENTS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "id", type: "number", required: true, description: "Comment ID to delete." },
     ],
     exampleParams: { id: 123 },
+    discovery: { ecosystems: ["0g"] },
   },
 ];

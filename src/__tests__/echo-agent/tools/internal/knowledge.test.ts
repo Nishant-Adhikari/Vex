@@ -1,8 +1,8 @@
 /**
  * Dedicated unit tests for knowledge_* handlers.
  *
- * Coverage matrix per handler is intentional — dispatcher.test.ts covers routing
- * and a few headline cases through dispatchTool, but the most risky paths
+ * Coverage matrix per handler is intentional — the dispatcher-knowledge-*.test.ts
+ * files cover routing and headline cases through dispatchTool, but the most risky paths
  * (TTL bounds, embedding format, pinned semantics, kind validation, source_refs
  * serialization, fail-loud contracts) need direct asserts on the handler shape.
  *

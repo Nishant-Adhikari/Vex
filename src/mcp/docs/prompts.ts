@@ -28,9 +28,10 @@ export function registerWorkflowPrompts(server: McpServer): void {
             type: "text" as const,
             text:
               "## Trade workflow\n\n" +
-              "1. Use `discover_tools` to search for relevant protocol capabilities. Filter by " +
+              "1. Use `discover_tools` with a short English capability phrase. Filter by " +
               "namespace (e.g. `solana`, `polymarket`, `kyberswap`) when you know it; otherwise " +
-              "search by free-text intent (`bridge usdc`, `swap on solana`).\n" +
+              "search by intent (`bridge usdc to base`, `swap on solana`, `prediction market orderbook`, " +
+              "`wallet token balances`). Results include `score` and `whyMatched` to help disambiguate.\n" +
               "2. Inspect the returned `params` schema and `exampleParams` for the chosen toolId.\n" +
               "3. For mutations, call the read-side / preview tool first if it exists " +
               "(e.g. `wallet_send_prepare` before `wallet_send_confirm`, `dryRun:true` for protocol tools).\n" +

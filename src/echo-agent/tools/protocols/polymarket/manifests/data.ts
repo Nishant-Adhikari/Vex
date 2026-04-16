@@ -23,6 +23,10 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "title", type: "string", description: "Filter by title substring." },
     ],
     exampleParams: { user: "0x1234..." },
+    discovery: {
+      preferredFor: ["open positions", "my positions", "unrealized pnl"],
+      avoidFor: ["orderbook", "clob"],
+    },
   },
   {
     toolId: "polymarket.data.closedPositions",
@@ -41,6 +45,10 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "sortDirection", type: "string", description: "ASC or DESC." },
     ],
     exampleParams: { user: "0x1234..." },
+    discovery: {
+      preferredFor: ["closed positions", "realized pnl", "settled markets"],
+      avoidFor: ["orderbook"],
+    },
   },
   {
     toolId: "polymarket.data.activity",

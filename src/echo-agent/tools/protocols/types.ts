@@ -30,6 +30,22 @@ export type ProtocolNamespace =
 
 export type ToolLifecycle = "active" | "declared";
 
+// ── Discovery metadata (optional per-tool enrichment) ───────────
+
+export interface ToolDiscoveryMetadata {
+  canonicalSummary?: string;
+  aliases?: string[];
+  exampleIntents?: string[];
+  paramKeywords?: string[];
+  operation?: ("research" | "verify" | "quote" | "execute" | "monitor")[];
+  resourceTypes?: string[];
+  ecosystems?: string[];
+  sourceClass?: "specialized_market" | "general_web" | "social" | "protocol_native" | "onchain_verification";
+  sideEffectLevel?: "none" | "low" | "high";
+  preferredFor?: string[];
+  avoidFor?: string[];
+}
+
 // ── Manifest (declarative tool definition) ───────────────────────
 
 export interface ProtocolParamDef {
@@ -56,6 +72,8 @@ export interface ProtocolToolManifest {
   exampleParams: Record<string, unknown>;
   /** ENV var required for this tool. If set and ENV is empty, tool is hidden from discovery and blocked in execute. */
   requiresEnv?: string;
+  /** Optional discovery metadata for improved retrieval — filled incrementally per tool. */
+  discovery?: ToolDiscoveryMetadata;
 }
 
 // ── Protocol handler (what executes the tool) ────────────────────
@@ -90,6 +108,13 @@ export interface ProtocolDiscoveryItem {
   mutating: boolean;
   params: ProtocolParamDef[];
   exampleParams: Record<string, unknown>;
+  /** Retrieval score for this match (0 when no query, >0 for ranked matches). */
+  score: number;
+  /**
+   * Field tags that contributed to the score, e.g. ["description", "params", "navigation"].
+   * Useful for the LLM to disambiguate between similarly-scored shortlists.
+   */
+  whyMatched: string[];
 }
 
 export interface ProtocolDiscoveryResult {
