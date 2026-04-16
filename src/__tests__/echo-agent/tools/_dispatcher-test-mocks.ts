@@ -78,7 +78,7 @@ export const mockKnowledgeInsert = vi.fn().mockResolvedValue({
 // the duplicate path override this.
 export const mockKnowledgeFindByContentHash = vi.fn().mockResolvedValue(null);
 export const mockKnowledgeGetById = vi.fn().mockResolvedValue(null);
-export const mockKnowledgeUpdateStatus = vi.fn().mockResolvedValue(true);
+export const mockKnowledgeUpdateStatus = vi.fn().mockResolvedValue({ ok: true });
 export const mockKnowledgeRecallTopK = vi.fn().mockResolvedValue([]);
 export const mockKnowledgeListActive = vi.fn().mockResolvedValue([]);
 export const mockKnowledgeListKinds = vi.fn().mockResolvedValue([]);

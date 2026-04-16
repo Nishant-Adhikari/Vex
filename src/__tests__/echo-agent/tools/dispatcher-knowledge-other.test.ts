@@ -153,6 +153,7 @@ describe("dispatcher — knowledge_write / get / update_status", () => {
 
   it("knowledge_update_status with reason forwards it to repo", async () => {
     mockKnowledgeUpdateStatus.mockClear();
+    mockKnowledgeUpdateStatus.mockResolvedValueOnce({ ok: true });
     const result = await dispatchTool(
       {
         name: "knowledge_update_status",
@@ -163,6 +164,26 @@ describe("dispatcher — knowledge_write / get / update_status", () => {
     );
     expect(result.success).toBe(true);
     expect(mockKnowledgeUpdateStatus).toHaveBeenCalledWith(1, "archived", "not relevant anymore");
+  });
+
+  it("knowledge_update_status rejects non-active target with actionable message", async () => {
+    mockKnowledgeUpdateStatus.mockClear();
+    mockKnowledgeUpdateStatus.mockResolvedValueOnce({
+      ok: false,
+      reason: "not_active",
+      currentStatus: "superseded",
+    });
+    const result = await dispatchTool(
+      {
+        name: "knowledge_update_status",
+        args: { id: 7, status: "archived", reason: "cleanup" },
+        toolCallId: "call_ks_3",
+      },
+      baseContext,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not active");
+    expect(result.output).toContain("superseded");
   });
 
   it("routes knowledge_supersede to handler with embed + supersedeEntry call", async () => {

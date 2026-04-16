@@ -12,12 +12,12 @@
  *   1. assertExplicitDbUrl — ECHO_AGENT_DB_URL must be set (no silent fallback
  *      to echo_agent_test). Operators backing up the wrong DB is a real
  *      data-loss scenario.
- *   2. assertSchemaUpToDate — knowledge_entries.content_hash column must
- *      exist. migrate.ts is strictly additive and won't re-apply the edited
- *      001_initial.sql, so a developer who pulled this branch on top of an
- *      old persistent dev volume gets a stale schema. We catch this at the
- *      script boundary with an explicit wipe instruction instead of leaking
- *      a low-level SQL `column does not exist` error.
+ *   2. assertSchemaUpToDate — knowledge_entries.supersedes_id column must
+ *      exist (added by 006_knowledge_lifecycle.sql). migrate.ts is strictly
+ *      forward-only, so this column is the canary for "runMigrations has been
+ *      run against this volume on a build that includes 006". We check the
+ *      most recently added column rather than an old one so future migrations
+ *      can just update the canary instead of rewriting the guard logic.
  */
 
 import { queryOne } from "@echo-agent/db/client.js";
@@ -43,28 +43,29 @@ export function assertExplicitDbUrl(commandName: string): void {
 }
 
 /**
- * Verifies that the schema includes the R1 portability columns/tables.
+ * Verifies that the schema includes the most recently added lifecycle column.
  * Run AFTER runMigrations() so a fresh DB gets the schema applied; if it's
- * still missing, the operator pulled this branch on top of an old volume.
+ * still missing after migrations, something went wrong applying 006.
  */
 export async function assertSchemaUpToDate(): Promise<void> {
   const row = await queryOne<{ exists: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM information_schema.columns
-       WHERE table_name = 'knowledge_entries' AND column_name = 'content_hash'
+       WHERE table_name = 'knowledge_entries' AND column_name = 'supersedes_id'
      ) AS exists`,
   );
   if (!row?.exists) {
     process.stderr.write(
-      `knowledge_entries.content_hash column missing — your DB was created\n` +
-        `with an older schema. migrate.ts is strictly additive and will not\n` +
-        `re-apply the edited 001_initial.sql.\n\n` +
-        `Wipe and recreate the volume:\n` +
+      `knowledge_entries.supersedes_id column missing — migration 006_knowledge_lifecycle.sql\n` +
+        `has not been applied to this DB. runMigrations should have picked it up\n` +
+        `automatically on startup; if it did not, check the migration logs and\n` +
+        `verify that the migrations directory is being read correctly.\n\n` +
+        `If you are on an older build and need a clean wipe:\n` +
         `  docker compose -f docker/echo-agent/docker-compose.dev.yml down -v\n` +
         `  docker compose -f docker/echo-agent/docker-compose.dev.yml up -d\n\n` +
-        `WARNING: this destroys all local data. If you need to preserve it,\n` +
-        `use 'pg_dump' MANUALLY first — knowledge-export will not work on\n` +
-        `the old schema.\n`,
+        `WARNING: this destroys all local data. Use 'pg_dump' MANUALLY first\n` +
+        `if you need to preserve it — knowledge-export cannot run on a schema\n` +
+        `missing the lifecycle columns.\n`,
     );
     process.exit(2);
   }

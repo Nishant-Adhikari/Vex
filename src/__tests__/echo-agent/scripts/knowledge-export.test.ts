@@ -275,6 +275,34 @@ describe("exportKnowledge", () => {
     expect(row.supersedes_content_hash).toBeNull();
   });
 
+  it("emits provenance fields (source_surface + source_session) verbatim", async () => {
+    mockQuery.mockResolvedValueOnce([{ embedding_model: "x" }]);
+    mockStreamAllForExport.mockReturnValueOnce(
+      asyncIterableOf([
+        makeEntry({
+          id: 5,
+          sourceSurface: "mcp_local",
+          sourceSession: "mcp-stdio-abc123",
+        }),
+      ]),
+    );
+    const sink = new CapturingSink();
+    await exportKnowledge(sink);
+    const row = JSON.parse(sink.jsonlLines[1]!);
+    expect(row.source_surface).toBe("mcp_local");
+    expect(row.source_session).toBe("mcp-stdio-abc123");
+  });
+
+  it("echo_agent default provenance survives roundtrip unchanged", async () => {
+    mockQuery.mockResolvedValueOnce([{ embedding_model: "x" }]);
+    mockStreamAllForExport.mockReturnValueOnce(asyncIterableOf([makeEntry()]));
+    const sink = new CapturingSink();
+    await exportKnowledge(sink);
+    const row = JSON.parse(sink.jsonlLines[1]!);
+    expect(row.source_surface).toBe("echo_agent");
+    expect(row.source_session).toBeNull();
+  });
+
   it("returns the count of entries written (manifest is not counted)", async () => {
     mockQuery.mockResolvedValueOnce([{ embedding_model: "x" }]);
     mockStreamAllForExport.mockReturnValueOnce(

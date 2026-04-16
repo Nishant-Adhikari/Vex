@@ -154,7 +154,7 @@ beforeEach(() => {
     cacheKey: "rcl-test-key",
     expiresAt: "2026-04-06T12:15:00Z",
   });
-  mockUpdateStatus.mockResolvedValue(true);
+  mockUpdateStatus.mockResolvedValue({ ok: true });
   mockLoadEmbeddingConfig.mockReturnValue({
     baseUrl: "http://localhost:12434/engines/llama.cpp/v1",
     model: "ai/embeddinggemma:300M-Q8_0",
@@ -833,12 +833,42 @@ describe("handleKnowledgeUpdateStatus", () => {
   });
 
   it("returns failure when entry not found in DB", async () => {
-    mockUpdateStatus.mockResolvedValueOnce(false);
+    mockUpdateStatus.mockResolvedValueOnce({ ok: false, reason: "not_found" });
     const result = await handleKnowledgeUpdateStatus(
       { id: 999, status: "archived" },
       makeTestContext(),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("not found");
+  });
+
+  it("returns actionable failure when entry is not active (superseded)", async () => {
+    mockUpdateStatus.mockResolvedValueOnce({
+      ok: false,
+      reason: "not_active",
+      currentStatus: "superseded",
+    });
+    const result = await handleKnowledgeUpdateStatus(
+      { id: 1, status: "archived", reason: "cleanup" },
+      makeTestContext(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not active");
+    expect(result.output).toContain("superseded");
+    expect(result.output).toContain("archived");
+  });
+
+  it("returns actionable failure when entry is already invalidated", async () => {
+    mockUpdateStatus.mockResolvedValueOnce({
+      ok: false,
+      reason: "not_active",
+      currentStatus: "invalidated",
+    });
+    const result = await handleKnowledgeUpdateStatus(
+      { id: 2, status: "archived" },
+      makeTestContext(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("invalidated");
   });
 });

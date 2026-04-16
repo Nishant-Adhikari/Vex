@@ -365,31 +365,57 @@ export async function findByContentHash(hash: string): Promise<KnowledgeEntry | 
 // ── Update status ────────────────────────────────────────────────
 
 /**
+ * Discriminated outcome of `updateStatus`.
+ *
+ * The previous boolean return could not distinguish "row didn't exist" from
+ * "row exists but wasn't active" — after introducing the superseded lifecycle,
+ * that distinction matters: blindly overwriting a row's status violates the
+ * invariant that each row transitions from active at most once.
+ */
+export type UpdateStatusResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "not_active"; currentStatus: KnowledgeStatus };
+
+/**
  * Update an entry's status to `invalidated` or `archived` and optionally persist
- * a human-readable `reason` to `status_reason`.
+ * a human-readable `reason` to `status_reason`. Guarded on `status = 'active'`
+ * so that superseded / invalidated / archived rows cannot be re-stamped.
  *
  * Passing `reason = undefined` (the default) leaves the existing `status_reason`
  * untouched — callers that omit reason do NOT wipe a previously-stored reason.
  * Pass an explicit `null` to clear it.
+ *
+ * On zero-rows-affected, performs a single follow-up SELECT to distinguish
+ * "entry does not exist" from "entry exists but is no longer active". Callers
+ * (the tool handler) map this to user-facing failure messages.
  */
 export async function updateStatus(
   id: number,
   status: UpdatableKnowledgeStatus,
   reason?: string | null,
-): Promise<boolean> {
-  if (!Number.isFinite(id) || id <= 0) return false;
-  if (reason === undefined) {
-    const rowCount = await execute(
-      "UPDATE knowledge_entries SET status = $1, updated_at = NOW() WHERE id = $2",
-      [status, id],
-    );
-    return rowCount === 1;
-  }
-  const rowCount = await execute(
-    "UPDATE knowledge_entries SET status = $1, status_reason = $2, updated_at = NOW() WHERE id = $3",
-    [status, reason, id],
+): Promise<UpdateStatusResult> {
+  if (!Number.isFinite(id) || id <= 0) return { ok: false, reason: "not_found" };
+
+  const rowCount = reason === undefined
+    ? await execute(
+        "UPDATE knowledge_entries SET status = $1, updated_at = NOW() WHERE id = $2 AND status = 'active'",
+        [status, id],
+      )
+    : await execute(
+        "UPDATE knowledge_entries SET status = $1, status_reason = $2, updated_at = NOW() WHERE id = $3 AND status = 'active'",
+        [status, reason, id],
+      );
+  if (rowCount === 1) return { ok: true };
+
+  // Disambiguate: either the row doesn't exist, or it exists with a non-active
+  // status. One extra indexed lookup by primary key.
+  const row = await queryOne<{ status: string }>(
+    "SELECT status FROM knowledge_entries WHERE id = $1",
+    [id],
   );
-  return rowCount === 1;
+  if (!row) return { ok: false, reason: "not_found" };
+  return { ok: false, reason: "not_active", currentStatus: row.status as KnowledgeStatus };
 }
 
 // ── Update embedding (re-embed in place) ─────────────────────────

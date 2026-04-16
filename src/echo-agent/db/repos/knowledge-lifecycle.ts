@@ -319,15 +319,33 @@ export async function supersedeEntry(input: SupersedeInput): Promise<SupersedeRe
     await client.query("ROLLBACK").catch(() => {
       // ROLLBACK failures are non-actionable; the original error is what matters.
     });
-    // Detect race-lost partial unique violation (another concurrent tx won).
-    // This is belt-and-braces — our FOR UPDATE + in-tx re-check should catch it.
+    // Race-lost UNIQUE violations: discriminate by constraint name rather than
+    // assuming every 23505 is the supersede lineage. knowledge_entries has two
+    // UNIQUE indexes — idx_ke_supersedes_id (partial, enforces single-successor
+    // lineage) and idx_ke_content_hash (global content identity). Our in-tx
+    // pre-checks should handle both, but a concurrent writer can still slip in
+    // between our SELECTs and the INSERT; surface the right error so the caller
+    // doesn't get told "already superseded" when it's really a content collision.
     if (err instanceof pg.DatabaseError && err.code === "23505") {
-      throw new SupersedeError(
-        "predecessor_already_superseded",
-        input.previousId,
-        `entry ${input.previousId} was concurrently superseded by another writer`,
-        { pgConstraint: err.constraint ?? null },
-      );
+      const constraint = err.constraint ?? "";
+      if (constraint === "idx_ke_supersedes_id") {
+        throw new SupersedeError(
+          "predecessor_already_superseded",
+          input.previousId,
+          `entry ${input.previousId} was concurrently superseded by another writer`,
+          { pgConstraint: constraint },
+        );
+      }
+      if (constraint === "idx_ke_content_hash") {
+        throw new SupersedeError(
+          "content_hash_collision",
+          input.previousId,
+          `another writer concurrently inserted the same content (content_hash conflict)`,
+          { pgConstraint: constraint },
+        );
+      }
+      // Unknown UNIQUE violation — don't mask it behind a SupersedeError, the
+      // caller can't act on a false diagnosis. Rethrow the original pg error.
     }
     throw err;
   } finally {

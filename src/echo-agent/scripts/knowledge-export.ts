@@ -37,9 +37,12 @@ import { assertSchemaUpToDate } from "./_preflight.js";
 import logger from "@utils/logger.js";
 
 /**
- * Export schema v2 — adds lifecycle lineage fields:
+ * Export schema v2 — lifecycle lineage + provenance:
  *   supersedes_content_hash — stable cross-DB link to predecessor (not local id).
  *   status_reason / change_summary / what_failed — lifecycle audit text.
+ *   source_surface / source_session — provenance (which surface wrote this entry:
+ *     echo_agent = mission loop / chat / scripts, mcp_local = production MCP).
+ *     Carried so audit trails survive backup/restore across machines.
  *
  * Streaming order (by id ASC) guarantees every predecessor is emitted before its
  * successor, so the importer's content_hash-based resolution always finds the
@@ -58,6 +61,8 @@ export const EXPORT_SCHEMA_FIELDS = [
   "valid_from",
   "valid_until",
   "content_hash",
+  "source_surface",
+  "source_session",
   "supersedes_content_hash",
   "status_reason",
   "change_summary",
@@ -89,6 +94,8 @@ export interface ExportedRow {
   valid_from: string;
   valid_until: string | null;
   content_hash: string;
+  source_surface: "echo_agent" | "mcp_local";
+  source_session: string | null;
   supersedes_content_hash: string | null;
   status_reason: string | null;
   change_summary: string | null;
@@ -111,6 +118,8 @@ function entryToExportRow(e: KnowledgeEntryForExport): ExportedRow {
     valid_from: e.validFrom,
     valid_until: e.validUntil,
     content_hash: e.contentHash,
+    source_surface: e.sourceSurface,
+    source_session: e.sourceSession,
     supersedes_content_hash: e.supersedesContentHash,
     status_reason: e.statusReason,
     change_summary: e.changeSummary,

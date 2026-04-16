@@ -265,13 +265,14 @@ describe("knowledge repo", () => {
   // ── updateStatus ─────────────────────────────────────────────
 
   describe("updateStatus", () => {
-    it("issues UPDATE with new status and id (no reason)", async () => {
+    it("issues UPDATE guarded by status='active' (no reason) and returns { ok: true } on match", async () => {
       mockExecute.mockResolvedValueOnce(1);
       const result = await updateStatus(42, "invalidated");
-      expect(result).toBe(true);
+      expect(result).toEqual({ ok: true });
       const [sql, params] = mockExecute.mock.calls[0];
       expect(sql).toContain("UPDATE knowledge_entries");
       expect(sql).toContain("SET status = $1");
+      expect(sql).toContain("WHERE id = $2 AND status = 'active'");
       expect(sql).not.toContain("status_reason");
       expect(params).toEqual(["invalidated", 42]);
     });
@@ -279,9 +280,10 @@ describe("knowledge repo", () => {
     it("persists reason to status_reason when provided", async () => {
       mockExecute.mockResolvedValueOnce(1);
       const result = await updateStatus(42, "invalidated", "contradicted by Apr 12 data");
-      expect(result).toBe(true);
+      expect(result).toEqual({ ok: true });
       const [sql, params] = mockExecute.mock.calls[0];
       expect(sql).toContain("status_reason = $2");
+      expect(sql).toContain("WHERE id = $3 AND status = 'active'");
       expect(params).toEqual(["invalidated", "contradicted by Apr 12 data", 42]);
     });
 
@@ -293,9 +295,34 @@ describe("knowledge repo", () => {
       expect(params).toEqual(["archived", null, 42]);
     });
 
-    it("returns false when no rows affected", async () => {
+    it("zero-rows + no row exists → { ok: false, reason: not_found }", async () => {
       mockExecute.mockResolvedValueOnce(0);
-      expect(await updateStatus(99, "archived")).toBe(false);
+      mockQueryOne.mockResolvedValueOnce(null);
+      const result = await updateStatus(99, "archived");
+      expect(result).toEqual({ ok: false, reason: "not_found" });
+    });
+
+    it("zero-rows + row exists with non-active status → { ok: false, reason: not_active, currentStatus }", async () => {
+      mockExecute.mockResolvedValueOnce(0);
+      mockQueryOne.mockResolvedValueOnce({ status: "superseded" });
+      const result = await updateStatus(42, "archived", "historical cleanup");
+      expect(result).toEqual({
+        ok: false,
+        reason: "not_active",
+        currentStatus: "superseded",
+      });
+      // Follow-up SELECT was issued once to disambiguate
+      expect(mockQueryOne).toHaveBeenCalledTimes(1);
+      const [disambigSql, disambigParams] = mockQueryOne.mock.calls[0];
+      expect(disambigSql).toContain("SELECT status FROM knowledge_entries WHERE id = $1");
+      expect(disambigParams).toEqual([42]);
+    });
+
+    it("invalid id short-circuits to { ok: false, reason: not_found } without DB call", async () => {
+      const result = await updateStatus(0, "archived");
+      expect(result).toEqual({ ok: false, reason: "not_found" });
+      expect(mockExecute).not.toHaveBeenCalled();
+      expect(mockQueryOne).not.toHaveBeenCalled();
     });
   });
 

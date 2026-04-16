@@ -291,6 +291,53 @@ describe("supersedeEntry — concurrency belt-and-braces", () => {
     expect(se.details.pgConstraint).toBe("idx_ke_supersedes_id");
   });
 
+  it("race-lost 23505 on content_hash constraint → mapped to content_hash_collision", async () => {
+    const dbErr = new pg.DatabaseError("duplicate key value violates unique constraint", 0, "error");
+    // @ts-expect-error — write-only
+    dbErr.code = "23505";
+    // @ts-expect-error — write-only
+    dbErr.constraint = "idx_ke_content_hash";
+
+    queryScript.push(
+      { sqlMatch: "BEGIN" },
+      { sqlMatch: "FOR UPDATE", rows: [activePredRow] },
+      { sqlMatch: /WHERE content_hash = \$1/, rows: [] },
+      { sqlMatch: /WHERE supersedes_id = \$1/, rows: [] },
+      { sqlMatch: "INSERT INTO knowledge_entries", throw: dbErr },
+      { sqlMatch: "ROLLBACK" },
+    );
+
+    const err = await supersedeEntry(makeInput()).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(SupersedeError);
+    const se = err as InstanceType<typeof SupersedeError>;
+    expect(se.code).toBe("content_hash_collision");
+    expect(se.details.pgConstraint).toBe("idx_ke_content_hash");
+    // Verify the message does NOT say "superseded" — that would be the #2 audit bug.
+    expect(se.message).not.toMatch(/superseded/i);
+  });
+
+  it("23505 with unknown constraint name → rethrown verbatim (not masked as SupersedeError)", async () => {
+    const dbErr = new pg.DatabaseError("duplicate key value violates unique constraint", 0, "error");
+    // @ts-expect-error — write-only
+    dbErr.code = "23505";
+    // @ts-expect-error — write-only
+    dbErr.constraint = "some_future_constraint";
+
+    queryScript.push(
+      { sqlMatch: "BEGIN" },
+      { sqlMatch: "FOR UPDATE", rows: [activePredRow] },
+      { sqlMatch: /WHERE content_hash = \$1/, rows: [] },
+      { sqlMatch: /WHERE supersedes_id = \$1/, rows: [] },
+      { sqlMatch: "INSERT INTO knowledge_entries", throw: dbErr },
+      { sqlMatch: "ROLLBACK" },
+    );
+
+    const err = await supersedeEntry(makeInput()).catch((e: Error) => e);
+    // Unknown UNIQUE — don't lie. Rethrow the original pg error as-is.
+    expect(err).toBe(dbErr);
+    expect(err).not.toBeInstanceOf(SupersedeError);
+  });
+
   it("non-23505 DB error is rethrown as-is (not swallowed)", async () => {
     const dbErr = new Error("connection terminated unexpectedly");
     queryScript.push(

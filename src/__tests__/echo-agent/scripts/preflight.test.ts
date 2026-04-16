@@ -103,19 +103,21 @@ describe("assertSchemaUpToDate", () => {
     stderrSpy.mockRestore();
   });
 
-  it("is a no-op when content_hash column exists", async () => {
+  it("is a no-op when supersedes_id column exists", async () => {
     mockQueryOne.mockResolvedValueOnce({ exists: true });
     await expect(assertSchemaUpToDate()).resolves.toBeUndefined();
     expect(exitSpy).not.toHaveBeenCalled();
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 
-  it("exits with code 2 + wipe instruction when content_hash column is missing", async () => {
+  it("exits with code 2 + points at 006 when supersedes_id column is missing", async () => {
     mockQueryOne.mockResolvedValueOnce({ exists: false });
     await expect(assertSchemaUpToDate()).rejects.toThrow("__exit__");
     expect(exitSpy).toHaveBeenCalledWith(2);
     const stderrCall = stderrSpy.mock.calls[0]?.[0] as string;
-    expect(stderrCall).toContain("knowledge_entries.content_hash column missing");
+    expect(stderrCall).toContain("knowledge_entries.supersedes_id column missing");
+    expect(stderrCall).toContain("006_knowledge_lifecycle.sql");
+    // Wipe instructions are still included as a last-resort fallback.
     expect(stderrCall).toContain("docker compose");
     expect(stderrCall).toContain("down -v");
   });
@@ -133,6 +135,6 @@ describe("assertSchemaUpToDate", () => {
     const sql = mockQueryOne.mock.calls[0]?.[0] as string;
     expect(sql).toContain("information_schema.columns");
     expect(sql).toContain("knowledge_entries");
-    expect(sql).toContain("content_hash");
+    expect(sql).toContain("supersedes_id");
   });
 });

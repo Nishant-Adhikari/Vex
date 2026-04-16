@@ -55,6 +55,9 @@ interface ImportedRow {
   content_hash?: string;
   created_at?: string;
   updated_at?: string;
+  // ── v2 provenance fields (undefined on v1 input; optional on v2)
+  source_surface?: string;
+  source_session?: string | null;
   // ── v2 lifecycle fields (undefined on v1 input)
   supersedes_content_hash?: string | null;
   status_reason?: string | null;
@@ -154,6 +157,26 @@ function requireValidHashOrNull(
   }
   if (!/^[a-f0-9]{64}$/.test(s)) {
     throw new Error(`line ${lineNumber}: ${field}="${s}" is not a valid sha256 hex`);
+  }
+  return s;
+}
+
+/**
+ * source_surface enum — only `echo_agent` or `mcp_local` are valid. Absence is
+ * OK (maps to undefined → default `echo_agent` via COALESCE in insertEntry).
+ */
+function requireValidSourceSurfaceOrUndefined(
+  s: unknown,
+  lineNumber: number,
+): "echo_agent" | "mcp_local" | undefined {
+  if (s === undefined || s === null) return undefined;
+  if (typeof s !== "string") {
+    throw new Error(`line ${lineNumber}: source_surface must be a string, got ${typeof s}`);
+  }
+  if (s !== "echo_agent" && s !== "mcp_local") {
+    throw new Error(
+      `line ${lineNumber}: source_surface="${s}" is not valid (expected echo_agent | mcp_local)`,
+    );
   }
   return s;
 }
@@ -261,6 +284,11 @@ export async function importKnowledge(source: AsyncIterable<string>): Promise<Im
         lineNumber,
       );
 
+      // v2 provenance fields — optional on both v1 and v2. Missing maps to
+      // insertEntry defaults ('echo_agent' / NULL). Present-but-bad rejects.
+      const sourceSurface = requireValidSourceSurfaceOrUndefined(row.source_surface, lineNumber);
+      const sourceSession = requireOptionalStringOrNull(row.source_session, "source_session", lineNumber);
+
       // Recompute content_hash locally — never trust the file's hash. A
       // tampered/corrupted hash in the backup is therefore a no-op.
       const contentHash = computeContentHash({
@@ -327,6 +355,10 @@ export async function importKnowledge(source: AsyncIterable<string>): Promise<Im
         statusReason,
         changeSummary,
         whatFailed,
+        // ── provenance roundtrip (v2). Undefined → insertEntry defaults apply
+        // ('echo_agent' / NULL); explicit values preserve the original writer.
+        sourceSurface,
+        sourceSession: sourceSession ?? undefined,
       });
 
       if (inserted) {
