@@ -63,6 +63,7 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
       missionRunId,
       isSubagent,
       loadedDocuments: new Map(), // Populated by caller
+      memoryScopeKey: session.memoryScopeKey ?? sessionId,
     },
     messages,
     summary: session.summary ?? null,

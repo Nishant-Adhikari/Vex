@@ -26,12 +26,32 @@ vi.mock("@echo-agent/tools/dispatcher.js", () => ({
   dispatchTool: (...a: unknown[]) => mockDispatchTool(...a),
 }));
 
+const mockGetSessionForLoop = vi.fn().mockResolvedValue({ tokenCount: 0 });
+
 vi.mock("@echo-agent/db/repos/sessions.js", () => ({
   updateTokenCount: vi.fn(),
-  checkpointSession: vi.fn(),
-  archiveMessages: vi.fn(),
-  getSession: vi.fn().mockResolvedValue({ tokenCount: 0 }),
+  setRollingSummary: vi.fn(),
+  archivePrefix: vi.fn(),
+  forkToolMessageToArchive: vi.fn(),
+  setMemoryScopeKey: vi.fn(),
+  getSession: (...a: unknown[]) => mockGetSessionForLoop(...a),
 }));
+
+const mockExecuteCheckpoint = vi.fn().mockResolvedValue({
+  mode: "prefix",
+  summary: "new rolling summary",
+  episodeIds: [],
+});
+
+vi.mock("@echo-agent/engine/core/checkpoint.js", async () => {
+  const actual = await vi.importActual<typeof import("../../../../echo-agent/engine/core/checkpoint.js")>(
+    "@echo-agent/engine/core/checkpoint.js",
+  );
+  return {
+    ...actual,
+    executeCheckpoint: (...a: unknown[]) => mockExecuteCheckpoint(...a),
+  };
+});
 
 vi.mock("@echo-agent/db/repos/approvals.js", () => ({
   enqueue: vi.fn(),
@@ -68,6 +88,7 @@ describe("turn-loop", () => {
       missionRunId: null,
       isSubagent: false,
       loadedDocuments: new Map<string, string>(),
+      memoryScopeKey: "session-1",
       ...overrides,
     };
   }
@@ -477,6 +498,45 @@ describe("turn-loop", () => {
 
       expect(result.stopReason).toBe("waiting_for_parent");
       expect(result.text).toBe("Request sent to parent");
+    });
+  });
+
+  // ── Checkpoint gating ──────────────────────────────────────
+
+  describe("checkpoint gate", () => {
+    it("fires executeCheckpoint after a tool-only batch when token count exceeds threshold", async () => {
+      mockGetSessionForLoop.mockResolvedValue({ tokenCount: 120_000 });
+
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "web_search", arguments: { query: "x" } }] },
+        { content: "wrapped up" },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: "huge-output" });
+
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      // Must have fired at least once on the tool-only batch branch (before the
+      // text-response branch would have fired it again).
+      expect(mockExecuteCheckpoint).toHaveBeenCalled();
+      const [[sessionId, scopeKey]] = mockExecuteCheckpoint.mock.calls;
+      expect(sessionId).toBe("session-1");
+      expect(scopeKey).toBe("session-1");
+    });
+
+    it("does not fire executeCheckpoint when token count is below threshold", async () => {
+      mockGetSessionForLoop.mockResolvedValue({ tokenCount: 1_000 });
+
+      const provider = makeProvider([{ content: "done" }]);
+
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(mockExecuteCheckpoint).not.toHaveBeenCalled();
     });
   });
 

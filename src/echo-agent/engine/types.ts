@@ -125,6 +125,13 @@ export interface EngineContext {
   missionRunId: string | null;
   isSubagent: boolean;
   loadedDocuments: Map<string, string>;
+  /**
+   * Semantic memory scope — the identity that `session_episodes` recall groups
+   * on. Distinct from the coarse `sessions.scope` (chat/mcp/subagent). Default
+   * in `hydrate` is the session id; subagents inherit the parent's scope so
+   * their checkpoints contribute to the parent's memory.
+   */
+  memoryScopeKey: string;
 }
 
 // ── Turn result ─────────────────────────────────────────────────

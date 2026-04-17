@@ -85,6 +85,35 @@ export async function runTurnLoop(
   // Mutable copy of messages for turn history
   const liveMessages = [...messages];
 
+  /**
+   * Evaluate the checkpoint trigger against the DB-authoritative token count
+   * and run `executeCheckpoint` if we're over the threshold. Returns `true`
+   * when the checkpoint fired so text-response branches can `continue` the
+   * loop instead of returning early.
+   */
+  async function maybeRunCheckpoint(): Promise<boolean> {
+    const freshSession = await sessionsRepo.getSession(context.sessionId);
+    currentTokenCount = freshSession?.tokenCount ?? currentTokenCount;
+    if (!shouldCheckpoint(currentTokenCount, loopConfig.contextLimit)) return false;
+
+    const result = await executeCheckpoint(
+      context.sessionId, context.memoryScopeKey, provider, config,
+    );
+
+    if (result.summary) {
+      currentSummary = result.summary;
+    }
+
+    if (context.missionRunId && result.mode !== "noop") {
+      await missionRunsRepo.setLastCheckpoint(context.missionRunId);
+    }
+
+    liveMessages.length = 0;
+    const freshMessages = await messagesRepo.getLiveMessages(context.sessionId);
+    liveMessages.push(...freshMessages);
+    return true;
+  }
+
   for (let iteration = 0; iteration < loopConfig.maxIterations; iteration++) {
     // Check abort signal
     if (abortSignal?.aborted) {
@@ -114,10 +143,6 @@ export async function runTurnLoop(
     const turnResult = await executeTurn(
       context, liveMessages, currentSummary, provider, config, tools, promptOptions,
     );
-
-    // Read cumulative token count from DB (updated by turn.ts → updateTokenCount)
-    const freshSession = await sessionsRepo.getSession(context.sessionId);
-    currentTokenCount = freshSession?.tokenCount ?? currentTokenCount;
 
     // ── Handle tool calls ─────────────────────────────────────
     // Deferred save: collect dispatched calls + results, then save the
@@ -227,7 +252,9 @@ export async function runTurnLoop(
         return { text: batchStopOutput ?? lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason, stopPayload: batchStopPayload };
       }
 
-      // Normal batch complete — continue to next turn
+      // Normal batch complete — evaluate checkpoint on tool-only paths too
+      // (long tool outputs pump the context and text-only gating misses them).
+      await maybeRunCheckpoint();
       continue;
     }
 
@@ -245,22 +272,7 @@ export async function runTurnLoop(
       });
 
       // Check checkpoint
-      if (shouldCheckpoint(currentTokenCount, loopConfig.contextLimit)) {
-        const newSummary = await executeCheckpoint(
-          context.sessionId, liveMessages, provider, config,
-        );
-
-        // Update summary for subsequent turns in this loop
-        currentSummary = newSummary;
-
-        if (context.missionRunId) {
-          await missionRunsRepo.setLastCheckpoint(context.missionRunId);
-        }
-
-        // Reload messages after checkpoint (archived old ones)
-        liveMessages.length = 0;
-        const freshMessages = await messagesRepo.getLiveMessages(context.sessionId);
-        liveMessages.push(...freshMessages);
+      if (await maybeRunCheckpoint()) {
         continue;
       }
 

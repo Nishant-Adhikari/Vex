@@ -51,6 +51,13 @@ export async function handleSubagentSpawn(
   await subagentsRepo.insert({ id: subagentId, name, task, allowTrades, maxIterations });
   await sessionsRepo.createSession(childSessionId);
   await sessionsRepo.setScope(childSessionId, "subagent");
+  // Memory scope: subagents are delegates of the parent, so their checkpoints
+  // contribute to the parent's episode pool by default (inherit). Isolated
+  // scope (child session id) is reserved for a future opt-in — don't expose
+  // it through the tool schema until there's a concrete need.
+  const parentSession = await sessionsRepo.getSession(context.sessionId);
+  const inheritedScope = parentSession?.memoryScopeKey ?? context.sessionId;
+  await sessionsRepo.setMemoryScopeKey(childSessionId, inheritedScope);
   await sessionLinksRepo.linkSessions(context.sessionId, childSessionId, "subagent", subagentId);
 
   logger.info("subagent.spawned", { id: subagentId, name, childSessionId, allowTrades, maxIterations });

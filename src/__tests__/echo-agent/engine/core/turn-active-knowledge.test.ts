@@ -37,6 +37,17 @@ vi.mock("@echo-agent/db/repos/knowledge.js", () => ({
   listKnownKinds: (...a: unknown[]) => mockListKinds(...a),
 }));
 
+vi.mock("@echo-agent/db/repos/session-episodes.js", () => ({
+  recallTopK: vi.fn().mockResolvedValue([]),
+  insertEpisodes: vi.fn(),
+  listRecentBySession: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@echo-agent/embeddings/client.js", () => ({
+  embedDocument: vi.fn(),
+  embedQuery: vi.fn().mockResolvedValue({ embedding: [0], providerModel: "test" }),
+}));
+
 vi.mock("@echo-agent/db/client.js", () => ({
   execute: vi.fn(),
   query: vi.fn().mockResolvedValue([]),
@@ -59,6 +70,7 @@ function makeContext() {
     missionRunId: null,
     isSubagent: false,
     loadedDocuments: new Map<string, string>(),
+    memoryScopeKey: "session-1",
   };
 }
 

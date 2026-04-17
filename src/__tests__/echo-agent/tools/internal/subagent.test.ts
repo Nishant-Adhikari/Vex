@@ -16,10 +16,14 @@ vi.mock("@echo-agent/db/repos/subagents.js", () => ({
 
 const mockCreateSession = vi.fn().mockResolvedValue(undefined);
 const mockSetScope = vi.fn().mockResolvedValue(undefined);
+const mockGetSessionForSubagent = vi.fn().mockResolvedValue(null);
+const mockSetMemoryScopeKeyForSubagent = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@echo-agent/db/repos/sessions.js", () => ({
   createSession: (...args: unknown[]) => mockCreateSession(...args),
   setScope: (...args: unknown[]) => mockSetScope(...args),
+  getSession: (...args: unknown[]) => mockGetSessionForSubagent(...args),
+  setMemoryScopeKey: (...args: unknown[]) => mockSetMemoryScopeKeyForSubagent(...args),
 }));
 
 const mockLinkSessions = vi.fn().mockResolvedValue({ id: 1 });

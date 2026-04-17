@@ -10,15 +10,21 @@ import type { InferenceProvider, InferenceConfig, InferenceResponse, ProviderMes
 import type { Message } from "@echo-agent/db/repos/messages.js";
 import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
 import { formatActiveKnowledgeBlock } from "../prompts/knowledge.js";
+import { formatSessionEpisodeRecallBlock } from "../prompts/session-memory.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
 import * as usageRepo from "@echo-agent/db/repos/usage.js";
 import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
 import * as knowledgeRepo from "@echo-agent/db/repos/knowledge.js";
+import * as episodesRepo from "@echo-agent/db/repos/session-episodes.js";
+import { embedQuery } from "@echo-agent/embeddings/client.js";
 import {
   ACTIVE_KNOWLEDGE_ENTRY_LIMIT,
   KNOWN_KINDS_LIMIT,
 } from "@echo-agent/knowledge/policy.js";
 import logger from "@utils/logger.js";
+
+const SESSION_EPISODE_RECALL_TOPK = 5;
+const SESSION_EPISODE_RECALL_MIN_SIMILARITY = 0.25;
 
 export interface SingleTurnResult {
   /** Text content from model — null when only tool calls. */
@@ -67,12 +73,25 @@ export async function executeTurn(
     });
   }
 
+  // Pre-fetch session episode recall. We embed the last user input and search
+  // by this session's memory scope. Failure is non-fatal — an empty block just
+  // omits the system message.
+  const sessionEpisodeRecallBlock = await fetchSessionEpisodeRecallBlock(
+    context.memoryScopeKey,
+    existingMessages,
+  );
+
   // Build prompt
   const promptLayers = buildPromptStack(context, { ...promptOptions, activeKnowledgeBlock });
   const systemPrompt = promptLayers.join("\n\n---\n\n");
 
   // Convert to provider format
-  const providerMessages = buildProviderMessages(systemPrompt, summary, existingMessages);
+  const providerMessages = buildProviderMessages(
+    systemPrompt,
+    summary,
+    sessionEpisodeRecallBlock,
+    existingMessages,
+  );
 
   // Inference
   const response = await provider.chatCompletion(providerMessages, tools, config);
@@ -108,9 +127,45 @@ export async function executeTurn(
 
 // ── Helpers ─────────────────────────────────────────────────────
 
+async function fetchSessionEpisodeRecallBlock(
+  memoryScopeKey: string,
+  existingMessages: readonly Message[],
+): Promise<string> {
+  const lastUserInput = findLastUserInput(existingMessages);
+  if (!lastUserInput) return "";
+
+  try {
+    const { embedding, providerModel } = await embedQuery(lastUserInput);
+    const hits = await episodesRepo.recallTopK(embedding, {
+      memoryScopeKey,
+      embeddingModel: providerModel,
+      embeddingDim: embedding.length,
+      topK: SESSION_EPISODE_RECALL_TOPK,
+      minSimilarity: SESSION_EPISODE_RECALL_MIN_SIMILARITY,
+    });
+    return formatSessionEpisodeRecallBlock(hits);
+  } catch (err) {
+    logger.warn("turn.session_episode_recall.fetch_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return "";
+  }
+}
+
+function findLastUserInput(messages: readonly Message[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "user" && m.content.trim().length > 0) {
+      return m.content;
+    }
+  }
+  return null;
+}
+
 function buildProviderMessages(
   systemPrompt: string,
   summary: string | null,
+  episodeRecallBlock: string,
   messages: Message[],
 ): ProviderMessage[] {
   const result: ProviderMessage[] = [];
@@ -121,6 +176,11 @@ function buildProviderMessages(
   // Compaction summary (if checkpoint happened)
   if (summary) {
     result.push({ role: "system", content: `[Previous conversation summary]\n${summary}` });
+  }
+
+  // Session episode recall (if non-empty)
+  if (episodeRecallBlock.length > 0) {
+    result.push({ role: "system", content: episodeRecallBlock });
   }
 
   // Message history

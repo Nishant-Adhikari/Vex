@@ -27,6 +27,17 @@ vi.mock("@echo-agent/db/client.js", () => ({
   queryOne: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("@echo-agent/db/repos/session-episodes.js", () => ({
+  recallTopK: vi.fn().mockResolvedValue([]),
+  insertEpisodes: vi.fn(),
+  listRecentBySession: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@echo-agent/embeddings/client.js", () => ({
+  embedDocument: vi.fn(),
+  embedQuery: vi.fn().mockResolvedValue({ embedding: [0], providerModel: "test" }),
+}));
+
 // Mock the protocols prompt to avoid loading all manifests
 vi.mock("@echo-agent/tools/protocols/catalog.js", () => ({
   PROTOCOL_TOOLS: [],
@@ -49,6 +60,7 @@ describe("turn", () => {
       missionRunId: null,
       isSubagent: false,
       loadedDocuments: new Map<string, string>(),
+      memoryScopeKey: "session-1",
     };
   }
 
@@ -151,5 +163,57 @@ describe("turn", () => {
     const userMsg = providerMessages.find((m: any) => m.content === "Check balance");
     expect(userMsg).toBeTruthy();
     expect(userMsg.role).toBe("user");
+  });
+
+  it("injects session episode recall as its own system block AFTER the summary and BEFORE history", async () => {
+    const episodesMod = await import("@echo-agent/db/repos/session-episodes.js");
+    (episodesMod.recallTopK as any).mockResolvedValue([
+      {
+        similarity: 0.9,
+        episode: {
+          id: 5,
+          sessionId: "prev-session",
+          memoryScopeKey: "session-1",
+          episodeKind: "decision",
+          summaryEn: "Earlier decision to hold SOL",
+          facts: {},
+          decisions: {},
+          openLoops: {},
+          entities: [],
+          toolOutcomes: {},
+          sourceSurface: "echo_agent",
+          sourceSession: "prev-session",
+          sourceStartMessageId: 1,
+          sourceEndMessageId: 2,
+          episodeHash: "h".repeat(64),
+          embeddingModel: "test",
+          embeddingDim: 1,
+          createdAt: "2026-04-01T00:00:00Z",
+        },
+      },
+    ]);
+
+    const provider = makeProvider({ content: "OK" });
+    const messages = [
+      { role: "user" as const, content: "What did I decide?", timestamp: "2026-04-01T10:00:00Z" },
+    ];
+    await executeTurn(
+      makeContext(), messages, "Previous session summary", provider as any, makeConfig() as any, [],
+    );
+
+    const [providerMessages] = provider.chatCompletion.mock.calls[0];
+    const systemBlocks = providerMessages.filter((m: any) => m.role === "system");
+    // At minimum: main system prompt, summary, recall.
+    expect(systemBlocks.length).toBeGreaterThanOrEqual(3);
+    const summaryIdx = providerMessages.findIndex((m: any) =>
+      typeof m.content === "string" && m.content.includes("Previous conversation summary"),
+    );
+    const recallIdx = providerMessages.findIndex((m: any) =>
+      typeof m.content === "string" && m.content.includes("[Session episode recall]"),
+    );
+    const firstUserIdx = providerMessages.findIndex((m: any) => m.role === "user");
+    expect(summaryIdx).toBeGreaterThan(-1);
+    expect(recallIdx).toBeGreaterThan(summaryIdx);
+    expect(firstUserIdx).toBeGreaterThan(recallIdx);
   });
 });

@@ -193,6 +193,8 @@ vi.mock("@echo-agent/db/repos/subagents.js", () => ({
 vi.mock("@echo-agent/db/repos/sessions.js", () => ({
   createSession: vi.fn().mockResolvedValue(undefined),
   setScope: vi.fn().mockResolvedValue(undefined),
+  getSession: vi.fn().mockResolvedValue(null),
+  setMemoryScopeKey: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@echo-agent/db/repos/session-links.js", () => ({
