@@ -79,7 +79,9 @@ export function formatActiveKnowledgeBlock(
   }
 
   lines.push(
-    "Use `knowledge_recall <query>` for older entries, `knowledge_get <id>` for full text.",
+    "Use `knowledge_recall <query>` for active semantic recall, `knowledge_get <id>` for full text of one entry, " +
+      "`knowledge_lineage <id>` to trace the version chain (root → head, with headId/headStatus), " +
+      "`knowledge_history` to browse historical entries (defaults to non-active).",
   );
 
   return lines.join("\n");

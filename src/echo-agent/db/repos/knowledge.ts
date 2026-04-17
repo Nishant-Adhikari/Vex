@@ -21,3 +21,4 @@ export * from "./knowledge/recall.js";
 export * from "./knowledge/hot-context.js";
 export * from "./knowledge/export.js";
 export * from "./knowledge/reembed.js";
+export * from "./knowledge/lineage.js";

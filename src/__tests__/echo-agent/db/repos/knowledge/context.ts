@@ -44,6 +44,8 @@ export interface SuiteCtx {
   streamRowsForReembed: typeof KnowledgeRepo.streamRowsForReembed;
   findRowsWithDimNotMatching: typeof KnowledgeRepo.findRowsWithDimNotMatching;
   isRuntimeActive: typeof KnowledgeRepo.isRuntimeActive;
+  getLineageChain: typeof KnowledgeRepo.getLineageChain;
+  listHistory: typeof KnowledgeRepo.listHistory;
   // Mocks — `@echo-agent/db/client.js`
   mockExecute: Mock;
   mockQueryOne: Mock;

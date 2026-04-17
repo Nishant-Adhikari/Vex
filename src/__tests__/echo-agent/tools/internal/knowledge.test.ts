@@ -18,6 +18,8 @@ import { recallSuite } from "./knowledge/recall-suite.js";
 import { recallOverflowSuite } from "./knowledge/recall-overflow-suite.js";
 import { getSuite } from "./knowledge/get-suite.js";
 import { updateStatusSuite } from "./knowledge/update-status-suite.js";
+import { lineageSuite } from "./knowledge/lineage-suite.js";
+import { historySuite } from "./knowledge/history-suite.js";
 
 const TEST_DIM = 768;
 const TEST_PROVIDER_MODEL = "ai/embeddinggemma:300M-Q8_0";
@@ -31,6 +33,8 @@ const mockUpdateStatus = vi.fn();
 const mockRecallTopK = vi.fn();
 const mockListActive = vi.fn().mockResolvedValue([]);
 const mockListKinds = vi.fn().mockResolvedValue([]);
+const mockGetLineageChain = vi.fn();
+const mockListHistory = vi.fn().mockResolvedValue([]);
 
 vi.mock("@echo-agent/db/repos/knowledge.js", () => ({
   insertEntry: (...args: unknown[]) => mockInsertEntry(...args),
@@ -40,6 +44,8 @@ vi.mock("@echo-agent/db/repos/knowledge.js", () => ({
   recallTopK: (...args: unknown[]) => mockRecallTopK(...args),
   listActiveForHotContext: (...args: unknown[]) => mockListActive(...args),
   listKnownKinds: (...args: unknown[]) => mockListKinds(...args),
+  getLineageChain: (...args: unknown[]) => mockGetLineageChain(...args),
+  listHistory: (...args: unknown[]) => mockListHistory(...args),
 }));
 
 const mockCacheWrite = vi.fn();
@@ -85,6 +91,8 @@ const {
   handleKnowledgeRecallOverflow,
   handleKnowledgeGet,
   handleKnowledgeUpdateStatus,
+  handleKnowledgeLineage,
+  handleKnowledgeHistory,
 } = await import("@echo-agent/tools/internal/knowledge.js");
 
 import { makeTestContext } from "../_test-context.js";
@@ -178,12 +186,16 @@ describe("internal/knowledge handlers", () => {
     handleKnowledgeRecallOverflow,
     handleKnowledgeGet,
     handleKnowledgeUpdateStatus,
+    handleKnowledgeLineage,
+    handleKnowledgeHistory,
     makeTestContext,
     mockInsertEntry,
     mockFindByContentHash,
     mockGetById,
     mockUpdateStatus,
     mockRecallTopK,
+    mockGetLineageChain,
+    mockListHistory,
     mockCacheWrite,
     mockCacheRead,
     mockCacheCleanup,
@@ -204,4 +216,6 @@ describe("internal/knowledge handlers", () => {
   recallOverflowSuite(ctx);
   getSuite(ctx);
   updateStatusSuite(ctx);
+  lineageSuite(ctx);
+  historySuite(ctx);
 });

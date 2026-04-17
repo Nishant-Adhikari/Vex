@@ -107,5 +107,9 @@ The \`knowledge_*\` tools are your canonical, retrievable memory. Treat them dif
    - \`knowledge_supersede\` → "same topic, new version." Old entry becomes \`superseded\`, new one is active. History preserved + reason + what_failed.
    - \`knowledge_update_status\` with \`invalidated\` → "this fact was wrong and there is no replacement." Use when you lost confidence in it and don't have a successor.
    - \`knowledge_update_status\` with \`archived\` → "still correct but no longer relevant to current work." Moves it out of recall without implying it was wrong.
-   \`superseded\`, \`invalidated\`, and \`archived\` are all hidden from \`knowledge_recall\` and Active Knowledge but remain retrievable by id via \`knowledge_get\`.`;
+   \`superseded\`, \`invalidated\`, and \`archived\` are all hidden from \`knowledge_recall\` and Active Knowledge but remain retrievable by id via \`knowledge_get\`.
+
+7. **History browse — \`knowledge_recall\` is ACTIVE-ONLY by design.** Do not try to surface superseded/invalidated/archived entries through it. Instead:
+   - \`knowledge_lineage(id)\` → full version chain (root → head) from any id in the chain. Returns ordered metadata + \`headId\` + \`headStatus\` so you can immediately tell whether the chain is still active or terminated.
+   - \`knowledge_history({kind?, status?, limit?})\` → metadata-only browse of historical entries. Defaults to non-active (superseded ∪ invalidated ∪ archived); pass \`status='active'\` only when you explicitly want active entries by exact filter (semantic search remains \`knowledge_recall\`).`;
 }

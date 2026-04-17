@@ -79,8 +79,9 @@ describe("requiresEnv filtering", () => {
     it("knowledge_* tools have NO requiresEnv field (visible always, fail loud at runtime)", () => {
       const all = getAllTools();
       const knowledgeTools = all.filter(t => t.name.startsWith("knowledge_"));
-      // 5 original (write / recall / recall_overflow / get / update_status) + 1 supersede.
-      expect(knowledgeTools.length).toBe(6);
+      // 6 lifecycle/recall tools (write / recall / recall_overflow / get /
+      // update_status / supersede) + 2 read-only browse (lineage / history).
+      expect(knowledgeTools.length).toBe(8);
       for (const tool of knowledgeTools) {
         expect(tool.requiresEnv).toBeUndefined();
       }

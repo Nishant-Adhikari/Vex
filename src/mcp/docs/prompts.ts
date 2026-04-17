@@ -93,7 +93,11 @@ export function registerWorkflowPrompts(server: McpServer): void {
               "- `superseded` → \"same topic, new version\" (via `knowledge_supersede`).\n" +
               "- `invalidated` (via `knowledge_update_status`) → \"this fact was wrong and no replacement exists yet.\"\n" +
               "- `archived` (via `knowledge_update_status`) → \"still correct but no longer relevant to current work.\"\n" +
-              "All three are hidden from recall but remain fetchable by id.\n",
+              "All three are hidden from recall but remain fetchable by id.\n\n" +
+              "## History browse\n\n" +
+              "`knowledge_recall` is ACTIVE-ONLY by design — do not use it to search supersede history.\n" +
+              "- `knowledge_lineage(id)` — full version chain from any id, returns `headId` + `headStatus`.\n" +
+              "- `knowledge_history({kind?, status?, limit?})` — metadata-only browse, defaults to non-active.\n",
           },
         },
       ],

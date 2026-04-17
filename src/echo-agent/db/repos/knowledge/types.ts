@@ -271,3 +271,71 @@ export function vectorLiteral(v: readonly number[]): string {
 export function toIsoOrNull(d: Date | undefined): string | null {
   return d ? d.toISOString() : null;
 }
+
+// ── Lineage / history (read-only browse) ─────────────────────────
+
+/**
+ * Compact lineage node — one entry in a version chain. Excludes embedding,
+ * content_md, content_hash and source_refs because lineage browse must stay
+ * cheap even for long chains. Use `getById` (or `knowledge_get`) when you
+ * need the full entry.
+ */
+export interface KnowledgeLineageItem {
+  id: number;
+  kind: string;
+  title: string;
+  status: KnowledgeStatus;
+  /** FK to predecessor in this chain, or null for the root. */
+  supersedesId: number | null;
+  /** "why" for any non-active transition (set on superseded/invalidated/archived rows). */
+  statusReason: string | null;
+  /** Successor-only: what's different about this node vs its predecessor. */
+  changeSummary: string | null;
+  /** Successor-only: evidence that invalidated the predecessor. */
+  whatFailed: string | null;
+  validFrom: string;
+  validUntil: string | null;
+  updatedAt: string;
+}
+
+/**
+ * Result of `getLineageChain(id)` — the full ordered chain with head metadata.
+ *
+ * `chain` is ordered root → head, regardless of where `requestedId` sits.
+ * `headId` is the id of the last entry in the chain (no successor exists);
+ * `headStatus` lets the caller tell at a glance whether the chain is still
+ * active or terminated on invalidated/archived without a follow-up fetch.
+ */
+export interface KnowledgeLineageResult {
+  /** The id originally requested (may be root, middle, or head). */
+  requestedId: number;
+  /** Last-in-chain id — the entry no other row supersedes. */
+  headId: number;
+  /** Status of the head node. */
+  headStatus: KnowledgeStatus;
+  /** Ordered chain root → head. Length ≥ 1. */
+  chain: KnowledgeLineageItem[];
+}
+
+/** Status filter set accepted by `listHistory`. Keep in sync with the tool's enum. */
+export type HistoryStatus = KnowledgeStatus;
+
+export interface ListHistoryFilters {
+  /**
+   * Optional status filter. When omitted, the repo returns only NON-ACTIVE
+   * rows (superseded ∪ invalidated ∪ archived) — `active` browsing is opt-in
+   * via this parameter. Tool description carries the same wording.
+   */
+  status?: HistoryStatus;
+  /** Optional free-form snake_case kind filter. */
+  kind?: string;
+  /** Required — caller-clamped limit (handler clamps to [1,100]). */
+  limit: number;
+}
+
+/**
+ * One row in `listHistory` output. Same compact shape as a lineage node so
+ * downstream UIs / agent reasoning can treat them uniformly. No content_md
+ * — list browse is metadata-only.
+ */
+export type KnowledgeHistoryListItem = KnowledgeLineageItem;

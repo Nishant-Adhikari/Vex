@@ -70,6 +70,8 @@ describe("registry", () => {
     "knowledge_get",
     "knowledge_update_status",
     "knowledge_supersede",
+    "knowledge_lineage",
+    "knowledge_history",
     "schedule_create",
     "schedule_remove",
     "subagent_spawn",
@@ -218,6 +220,8 @@ describe("registry", () => {
       expect(names).toContain("wallet_send_prepare");
       expect(names).toContain("wallet_send_confirm");
       expect(names).toContain("knowledge_write");
+      expect(names).toContain("knowledge_lineage");
+      expect(names).toContain("knowledge_history");
       expect(names).toContain("portfolio_inspect");
     });
 

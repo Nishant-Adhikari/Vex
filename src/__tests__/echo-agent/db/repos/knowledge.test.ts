@@ -17,6 +17,7 @@ import { recallSuite } from "./knowledge/recall-suite.js";
 import { hotContextSuite } from "./knowledge/hot-context-suite.js";
 import { exportSuite } from "./knowledge/export-suite.js";
 import { reembedSuite } from "./knowledge/reembed-suite.js";
+import { lineageSuite } from "./knowledge/lineage-suite.js";
 
 const mockExecute = vi.fn().mockResolvedValue(0);
 const mockQueryOne = vi.fn().mockResolvedValue(null);
@@ -41,6 +42,8 @@ const {
   streamRowsForReembed,
   findRowsWithDimNotMatching,
   isRuntimeActive,
+  getLineageChain,
+  listHistory,
 } = await import("@echo-agent/db/repos/knowledge.js");
 
 const SAMPLE_HASH = "0".repeat(64);
@@ -113,6 +116,8 @@ describe("knowledge repo", () => {
     streamRowsForReembed,
     findRowsWithDimNotMatching,
     isRuntimeActive,
+    getLineageChain,
+    listHistory,
     mockExecute,
     mockQueryOne,
     mockQuery,
@@ -127,4 +132,5 @@ describe("knowledge repo", () => {
   hotContextSuite(ctx);
   exportSuite(ctx);
   reembedSuite(ctx);
+  lineageSuite(ctx);
 });

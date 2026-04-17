@@ -127,4 +127,14 @@ describe("formatActiveKnowledgeBlock", () => {
     );
     expect(result).not.toContain("expires");
   });
+
+  // ── Footer guidance ──────────────────────────────────────────
+
+  it("footer mentions all four read-side tools (recall, get, lineage, history)", () => {
+    const result = formatActiveKnowledgeBlock([entry({})], []);
+    expect(result).toContain("knowledge_recall");
+    expect(result).toContain("knowledge_get");
+    expect(result).toContain("knowledge_lineage");
+    expect(result).toContain("knowledge_history");
+  });
 });

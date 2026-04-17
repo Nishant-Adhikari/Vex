@@ -14,6 +14,8 @@ import type {
   handleKnowledgeRecallOverflow,
   handleKnowledgeGet,
   handleKnowledgeUpdateStatus,
+  handleKnowledgeLineage,
+  handleKnowledgeHistory,
 } from "@echo-agent/tools/internal/knowledge.js";
 import type { makeTestContext } from "../../_test-context.js";
 
@@ -24,6 +26,8 @@ export interface SuiteCtx {
   handleKnowledgeRecallOverflow: typeof handleKnowledgeRecallOverflow;
   handleKnowledgeGet: typeof handleKnowledgeGet;
   handleKnowledgeUpdateStatus: typeof handleKnowledgeUpdateStatus;
+  handleKnowledgeLineage: typeof handleKnowledgeLineage;
+  handleKnowledgeHistory: typeof handleKnowledgeHistory;
   // Engine context factory
   makeTestContext: typeof makeTestContext;
   // Mocks — DB repos
@@ -32,6 +36,8 @@ export interface SuiteCtx {
   mockGetById: Mock;
   mockUpdateStatus: Mock;
   mockRecallTopK: Mock;
+  mockGetLineageChain: Mock;
+  mockListHistory: Mock;
   mockCacheWrite: Mock;
   mockCacheRead: Mock;
   mockCacheCleanup: Mock;

@@ -174,6 +174,14 @@ async function routeInternalTool(
       const { handleKnowledgeSupersede } = await import("./internal/knowledge.js");
       return handleKnowledgeSupersede(call.args, context);
     }
+    case "knowledge_lineage": {
+      const { handleKnowledgeLineage } = await import("./internal/knowledge.js");
+      return handleKnowledgeLineage(call.args, context);
+    }
+    case "knowledge_history": {
+      const { handleKnowledgeHistory } = await import("./internal/knowledge.js");
+      return handleKnowledgeHistory(call.args, context);
+    }
 
     // Scheduling
     case "schedule_create": {

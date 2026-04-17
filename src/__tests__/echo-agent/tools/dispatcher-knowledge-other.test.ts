@@ -6,6 +6,8 @@ import {
   mockKnowledgeGetById,
   mockKnowledgeUpdateStatus,
   mockKnowledgeSupersede,
+  mockKnowledgeGetLineageChain,
+  mockKnowledgeListHistory,
 } from "./_dispatcher-test-mocks.js";
 import { makeTestContext } from "./_test-context.js";
 
@@ -184,6 +186,80 @@ describe("dispatcher — knowledge_write / get / update_status", () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain("not active");
     expect(result.output).toContain("superseded");
+  });
+
+  it("knowledge_lineage routes to handler and forwards id", async () => {
+    mockKnowledgeGetLineageChain.mockClear();
+    mockKnowledgeGetLineageChain.mockResolvedValueOnce({
+      requestedId: 7,
+      headId: 9,
+      headStatus: "active",
+      chain: [
+        { id: 7, kind: "risk_rule", title: "v1", status: "superseded", supersedesId: null, statusReason: null, changeSummary: null, whatFailed: null, validFrom: "2026-04-01T00:00:00Z", validUntil: null, updatedAt: "2026-04-02T00:00:00Z" },
+        { id: 9, kind: "risk_rule", title: "v2", status: "active", supersedesId: 7, statusReason: null, changeSummary: "tighter", whatFailed: null, validFrom: "2026-04-02T00:00:00Z", validUntil: null, updatedAt: "2026-04-05T00:00:00Z" },
+      ],
+    });
+    const result = await dispatchTool(
+      { name: "knowledge_lineage", args: { id: 7 }, toolCallId: "call_kl_1" },
+      baseContext,
+    );
+    expect(result.success).toBe(true);
+    expect(mockKnowledgeGetLineageChain).toHaveBeenCalledWith(7);
+    const parsed = JSON.parse(result.output);
+    expect(parsed.headId).toBe(9);
+    expect(parsed.chainLength).toBe(2);
+  });
+
+  it("knowledge_lineage fails on unknown id", async () => {
+    mockKnowledgeGetLineageChain.mockResolvedValueOnce(null);
+    const result = await dispatchTool(
+      { name: "knowledge_lineage", args: { id: 999 }, toolCallId: "call_kl_2" },
+      baseContext,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not found");
+  });
+
+  it("knowledge_history routes to handler and forwards filters", async () => {
+    mockKnowledgeListHistory.mockClear();
+    mockKnowledgeListHistory.mockResolvedValueOnce([
+      { id: 1, kind: "risk_rule", title: "v1", status: "superseded", supersedesId: null, statusReason: null, changeSummary: null, whatFailed: null, validFrom: "2026-04-01T00:00:00Z", validUntil: null, updatedAt: "2026-04-02T00:00:00Z" },
+    ]);
+    const result = await dispatchTool(
+      { name: "knowledge_history", args: { kind: "risk_rule", status: "superseded", limit: 5 }, toolCallId: "call_kh_1" },
+      baseContext,
+    );
+    expect(result.success).toBe(true);
+    expect(mockKnowledgeListHistory).toHaveBeenCalledTimes(1);
+    const filters = mockKnowledgeListHistory.mock.calls[0]![0];
+    expect(filters).toEqual({ kind: "risk_rule", status: "superseded", limit: 5 });
+    const parsed = JSON.parse(result.output);
+    expect(parsed.count).toBe(1);
+  });
+
+  it("knowledge_history default (no params) forwards undefined kind/status with sentinel limit", async () => {
+    mockKnowledgeListHistory.mockClear();
+    mockKnowledgeListHistory.mockResolvedValueOnce([]);
+    const result = await dispatchTool(
+      { name: "knowledge_history", args: {}, toolCallId: "call_kh_2" },
+      baseContext,
+    );
+    expect(result.success).toBe(true);
+    const filters = mockKnowledgeListHistory.mock.calls[0]![0];
+    expect(filters.kind).toBeUndefined();
+    expect(filters.status).toBeUndefined();
+    expect(filters.limit).toBe(0);
+  });
+
+  it("knowledge_history rejects invalid status before hitting repo", async () => {
+    mockKnowledgeListHistory.mockClear();
+    const result = await dispatchTool(
+      { name: "knowledge_history", args: { status: "garbage" }, toolCallId: "call_kh_3" },
+      baseContext,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Invalid status");
+    expect(mockKnowledgeListHistory).not.toHaveBeenCalled();
   });
 
   it("routes knowledge_supersede to handler with embed + supersedeEntry call", async () => {

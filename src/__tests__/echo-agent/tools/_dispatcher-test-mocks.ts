@@ -82,6 +82,8 @@ export const mockKnowledgeUpdateStatus = vi.fn().mockResolvedValue({ ok: true })
 export const mockKnowledgeRecallTopK = vi.fn().mockResolvedValue([]);
 export const mockKnowledgeListActive = vi.fn().mockResolvedValue([]);
 export const mockKnowledgeListKinds = vi.fn().mockResolvedValue([]);
+export const mockKnowledgeGetLineageChain = vi.fn().mockResolvedValue(null);
+export const mockKnowledgeListHistory = vi.fn().mockResolvedValue([]);
 
 vi.mock("@echo-agent/db/repos/knowledge.js", () => ({
   insertEntry: (...args: unknown[]) => mockKnowledgeInsert(...args),
@@ -91,6 +93,8 @@ vi.mock("@echo-agent/db/repos/knowledge.js", () => ({
   recallTopK: (...args: unknown[]) => mockKnowledgeRecallTopK(...args),
   listActiveForHotContext: (...args: unknown[]) => mockKnowledgeListActive(...args),
   listKnownKinds: (...args: unknown[]) => mockKnowledgeListKinds(...args),
+  getLineageChain: (...args: unknown[]) => mockKnowledgeGetLineageChain(...args),
+  listHistory: (...args: unknown[]) => mockKnowledgeListHistory(...args),
 }));
 
 // knowledge_supersede repo — lazy-imported by the handler. Tests override

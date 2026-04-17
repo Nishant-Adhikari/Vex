@@ -14,3 +14,5 @@ export { handleKnowledgeRecall, handleKnowledgeRecallOverflow } from "./knowledg
 export { handleKnowledgeGet } from "./knowledge/get.js";
 export { handleKnowledgeUpdateStatus } from "./knowledge/update-status.js";
 export { handleKnowledgeSupersede } from "./knowledge/supersede.js";
+export { handleKnowledgeLineage } from "./knowledge/lineage.js";
+export { handleKnowledgeHistory } from "./knowledge/history.js";
