@@ -1,57 +1,39 @@
 /**
- * episode → knowledge promotion pipeline (PR4 Fase IV, minimal v1).
+ * episode → knowledge promotion pipeline — public orchestrator.
  *
  * Elevates repeated session episodes into the canonical `knowledge_entries`
- * layer so they survive session deletion and cross-session recall. This is
- * the only path that translates session-language content into English
- * (knowledge layer stays English-only) — translation does NOT happen on
- * per-turn recall.
+ * layer so they survive session deletion and cross-session recall. The
+ * orchestrator here composes the per-stage modules split out in PR2:
  *
- * Decision flow for each candidate:
+ *   - `promotion/eligibility.ts` — candidate listing + cluster-signal gate.
+ *   - `promotion/translation.ts` — non-EN → English on the way into canonical.
+ *   - `promotion/persist.ts`     — the single lease-gated `insertEntry`.
  *
- *   1. Scope-local candidate check (`listPromotable`): kind in
+ * Decision flow for each candidate (unchanged from pre-split):
+ *
+ *   1. Scope-local candidate list (eligibility): kind in
  *      {decision, preference, lesson, fact}, has `source_end_message_id`,
  *      not already promoted.
  *   2. Cluster signal: require ≥ `PROMOTION_MIN_SIMILAR` OTHER episodes in
  *      the same scope + kind with cosine ≥ `PROMOTION_SIMILARITY_THRESHOLD`.
- *      A one-off assertion does not promote; a repeated observation does.
- *   3. Language gate (must-fix #1 of plan v4): read the source session's
- *      `memory_language_code`. No text heuristic — we only promote when the
- *      language contract is known:
- *        - `en` → insert as-is (skip translate).
- *        - known non-EN code → translate episode payload to English via
- *          `provider.chatCompletionSimple`; skip candidate on translate fail.
- *        - `null` / `und` → skip with `language_unknown` reason (we refuse
- *          to guess; knowledge layer must stay English-clean).
- *   4. INSERT through `withLeaseSharedLock` → `insertEntry` so promotion
- *      respects the maintenance lease. Three idempotency layers catch
- *      duplicates: `source_episode_id` UNIQUE + `source_episode_hash`
- *      UNIQUE + existing `content_hash` UNIQUE.
+ *   3. Language gate: read `sessions.memory_language_code`. `en` inserts
+ *      as-is; a known non-EN code goes through translation; `null` / `und`
+ *      skips with `language_unknown` (fail-closed).
+ *   4. Re-embed against the English payload, then INSERT through
+ *      `withLeaseSharedLock`. Three idempotency layers catch duplicates.
  *
- * Best-effort: errors never crash the caller (turn-loop). Skip reasons are
- * surfaced via `logger.warn` with structured fields so an operator can
+ * Best-effort: errors never crash the caller (turn-loop). Skip reasons
+ * surface via `logger.warn` with structured fields so an operator can
  * count `language_unknown` / `translation_failed` / `not_enough_similar`
- * over time.
+ * / `maintenance_active` over time.
  */
 
-import { createHash } from "node:crypto";
 import pg from "pg";
 
-import { getPool } from "@echo-agent/db/client.js";
 import type { KnowledgeEntry } from "@echo-agent/db/repos/knowledge.js";
-import * as knowledgeRepo from "@echo-agent/db/repos/knowledge.js";
-import {
-  MaintenanceActiveError,
-  withLeaseSharedLock,
-} from "@echo-agent/db/repos/maintenance-lease.js";
-import * as sessionLinksRepo from "@echo-agent/db/repos/session-links.js";
+import { MaintenanceActiveError } from "@echo-agent/db/repos/maintenance-lease.js";
+import type { PromotionCandidate } from "@echo-agent/db/repos/session-episodes.js";
 import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
-import {
-  countSimilar,
-  listPromotable,
-  type EpisodeKind,
-  type PromotionCandidate,
-} from "@echo-agent/db/repos/session-episodes.js";
 import { embedDocument } from "@echo-agent/embeddings/client.js";
 import { loadEmbeddingConfig } from "@echo-agent/embeddings/config.js";
 import type {
@@ -60,19 +42,12 @@ import type {
 } from "@echo-agent/inference/types.js";
 import logger from "@utils/logger.js";
 
-// ── Tunables ────────────────────────────────────────────────────────
-
-const DEFAULT_SIMILARITY_THRESHOLD = 0.85;
-const DEFAULT_MIN_SIMILAR = 2;
-const DEFAULT_MAX_CANDIDATES = 20;
-const PROMOTION_VERSION = 1;
-
-function envNumber(key: string, fallback: number): number {
-  const raw = process.env[key];
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+import {
+  hasEnoughSimilar,
+  listPromotionCandidates,
+} from "./promotion/eligibility.js";
+import { persistPromotedEntry } from "./promotion/persist.js";
+import { translateEpisodeToEnglish } from "./promotion/translation.js";
 
 // ── Public result shape ─────────────────────────────────────────────
 
@@ -122,10 +97,7 @@ export async function runPromotionForSession(
     skipped: {},
   };
 
-  const candidates = await listPromotable(
-    scopeKey,
-    envNumber("PROMOTION_MAX_CANDIDATES", DEFAULT_MAX_CANDIDATES),
-  );
+  const candidates = await listPromotionCandidates(scopeKey);
   report.considered = candidates.length;
   if (candidates.length === 0) {
     logger.info("promotion.run.no_candidates", { sessionId, scopeKey });
@@ -179,27 +151,14 @@ async function promoteEpisode(
   provider: InferenceProvider,
   config: InferenceConfig,
 ): Promise<PromotionOutcome> {
-  // Invariant: listPromotable already filters on source_end_message_id; this
-  // is a belt-and-braces check for callers that might skip the helper later.
+  // Invariant: `listPromotionCandidates` already filters on
+  // `source_end_message_id`; this is a belt-and-braces guard.
   if (candidate.sourceEndMessageId === null) {
     return { code: "skipped", reason: "invariant_violated" };
   }
 
   // Cluster signal — promote only when the same kind recurs in the scope.
-  const threshold = envNumber(
-    "PROMOTION_SIMILARITY_THRESHOLD",
-    DEFAULT_SIMILARITY_THRESHOLD,
-  );
-  const minSimilar = envNumber("PROMOTION_MIN_SIMILAR", DEFAULT_MIN_SIMILAR);
-  const similar = await countSimilar(
-    candidate.id,
-    candidate.memoryScopeKey,
-    candidate.episodeKind,
-    candidate.embedding,
-    candidate.embeddingModel,
-    threshold,
-  );
-  if (similar < minSimilar) {
+  if (!(await hasEnoughSimilar(candidate))) {
     return { code: "skipped", reason: "not_enough_similar" };
   }
 
@@ -234,9 +193,9 @@ async function promoteEpisode(
     }
   }
 
-  // Re-embed against the English payload so recall filters stay clean. If
-  // embeddings are down, skip this candidate — we'd rather wait than
-  // insert with the session-language embedding into the English layer.
+  // Re-embed against the English payload so recall filters stay clean.
+  // If embeddings are down we skip — we'd rather wait than insert with
+  // the session-language embedding into the English layer.
   let embedding: number[];
   let providerModel: string;
   let embeddingDim: number;
@@ -258,51 +217,21 @@ async function promoteEpisode(
     return { code: "skipped", reason: "embedding_unavailable" };
   }
 
-  // Subagent provenance (plan v4.2 upgrade). Post-PR3 subagent episodes
-  // live in their own `memory_scope_key`; the attribution path from
-  // `knowledge_entries` back to the parent session runs through
-  // `source_refs.parent_session_id`.
-  const parentSessionId = await resolveParentSessionId(sourceSessionId);
-
-  const contentMd = englishSummary;
-  const contentHash = sha256(
-    `${candidate.episodeKind}\n${englishTitle.trim()}\n${englishSummary.trim()}`,
-  );
-  const sourceRefs: Record<string, unknown> = {
-    source_episode_id: candidate.id,
-    source_session: sourceSessionId,
-    ...(parentSessionId ? { parent_session_id: parentSessionId } : {}),
-  };
-
-  // All three idempotency layers (source_episode_id / source_episode_hash /
-  // content_hash) can reject the insert. On any of them, we return the
-  // "already_promoted" outcome so the caller logs it and moves on.
+  // Persist under the maintenance-lease SHARE lock. All three idempotency
+  // layers (source_episode_id / source_episode_hash / content_hash) can
+  // reject; surface each as a stable `already_promoted` outcome.
   try {
-    const { entry, inserted } = await withLeaseSharedLock(getPool(), (tx) =>
-      knowledgeRepo.insertEntry(
-        {
-          kind: mapEpisodeKindToKnowledgeKind(candidate.episodeKind),
-          title: englishTitle,
-          summary: englishSummary,
-          contentMd,
-          tags: [],
-          sourceRefs,
-          confidence: null,
-          pinned: false,
-          validUntil: null,
-          contentHash,
-          embeddingModel: providerModel,
-          embeddingDim,
-          embedding,
-          sourceSurface: "echo_agent",
-          sourceSession: sourceSessionId,
-          sourceEpisodeId: candidate.id,
-          sourceEpisodeHash: candidate.episodeHash,
-          promotionVersion: PROMOTION_VERSION,
-        },
-        tx,
-      ),
-    );
+    const { entry, inserted } = await persistPromotedEntry({
+      episodeId: candidate.id,
+      episodeKind: candidate.episodeKind,
+      episodeHash: candidate.episodeHash,
+      sourceSessionId,
+      englishTitle,
+      englishSummary,
+      embedding,
+      embeddingModel: providerModel,
+      embeddingDim,
+    });
     if (!inserted) {
       return { code: "already_promoted", reason: "content_hash" };
     }
@@ -321,8 +250,7 @@ async function promoteEpisode(
     }
     if (err instanceof MaintenanceActiveError) {
       // Maintenance running — defer; don't poison the pipeline with a
-      // partial promotion batch. Skip this candidate; next checkpoint's
-      // pipeline will try again. Reported under a dedicated reason so
+      // partial promotion batch. Reported under a dedicated reason so
       // operators can distinguish reembed contention from a real
       // embed-sidecar outage in `report.skipped`.
       logger.warn("promotion.maintenance_active", {
@@ -333,123 +261,4 @@ async function promoteEpisode(
     }
     throw err;
   }
-}
-
-// ── Translation ─────────────────────────────────────────────────────
-
-/**
- * Translate an episode's title + summary to English via the same provider
- * the engine uses. Returns both fields trimmed. Throws on provider error
- * or empty content.
- */
-async function translateEpisodeToEnglish(
-  title: string,
-  summary: string,
-  langCode: string,
-  provider: InferenceProvider,
-  config: InferenceConfig,
-): Promise<{ title: string; summary: string }> {
-  const systemPrompt = `You are a translation tool. Translate the input from ${humanLangName(langCode)} to English. Output ONLY a valid JSON object with exactly two fields: "title" (<= 100 chars) and "summary" (the translated body). No preamble, no markdown fences, no commentary. Preserve proper nouns, numbers, tickers, chain/protocol names, and transaction hashes verbatim.`;
-  const userPayload = JSON.stringify({ title, summary });
-
-  const { content } = await provider.chatCompletionSimple(
-    [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPayload },
-    ],
-    config,
-  );
-
-  const parsed = parseTranslationResponse(content);
-  if (parsed === null) {
-    throw new Error(
-      `translation failed: provider returned malformed JSON (preview: ${(content ?? "").slice(0, 120)})`,
-    );
-  }
-  const translatedTitle = parsed.title.trim();
-  const translatedSummary = parsed.summary.trim();
-  if (translatedSummary.length === 0) {
-    throw new Error("translation failed: empty summary");
-  }
-  return { title: translatedTitle, summary: translatedSummary };
-}
-
-function parseTranslationResponse(
-  raw: string | null,
-): { title: string; summary: string } | null {
-  if (!raw) return null;
-  const stripped = stripCodeFence(raw.trim());
-  const firstBrace = stripped.indexOf("{");
-  const lastBrace = stripped.lastIndexOf("}");
-  if (firstBrace === -1 || lastBrace <= firstBrace) return null;
-  try {
-    const obj = JSON.parse(stripped.slice(firstBrace, lastBrace + 1)) as {
-      title?: unknown;
-      summary?: unknown;
-    };
-    const title = typeof obj.title === "string" ? obj.title : "";
-    const summary = typeof obj.summary === "string" ? obj.summary : "";
-    if (!summary) return null;
-    return { title, summary };
-  } catch {
-    return null;
-  }
-}
-
-function stripCodeFence(s: string): string {
-  const match = s.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return match ? match[1]!.trim() : s;
-}
-
-function humanLangName(code: string): string {
-  const primary = code.split("-")[0]!;
-  const map: Record<string, string> = {
-    pl: "Polish",
-    fr: "French",
-    zh: "Chinese",
-    vi: "Vietnamese",
-    es: "Spanish",
-    de: "German",
-    it: "Italian",
-    pt: "Portuguese",
-    ja: "Japanese",
-    ko: "Korean",
-    ru: "Russian",
-    ar: "Arabic",
-    nl: "Dutch",
-    uk: "Ukrainian",
-    tr: "Turkish",
-  };
-  return map[primary] ?? `the language with code "${code}"`;
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-async function resolveParentSessionId(
-  sourceSessionId: string,
-): Promise<string | null> {
-  try {
-    const parent = await sessionLinksRepo.getParentSession(sourceSessionId);
-    return parent?.parentSessionId ?? null;
-  } catch (err) {
-    // Attribution is best-effort; a missing parent_session_id does not
-    // block the promotion itself.
-    logger.warn("promotion.parent_lookup_failed", {
-      sourceSessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-}
-
-/**
- * Episode kinds are a closed taxonomy; knowledge_entries.kind is free-form
- * text but tooling expects human labels. Map 1:1 for now.
- */
-function mapEpisodeKindToKnowledgeKind(kind: EpisodeKind): string {
-  return kind;
-}
-
-function sha256(input: string): string {
-  return createHash("sha256").update(input).digest("hex");
 }
