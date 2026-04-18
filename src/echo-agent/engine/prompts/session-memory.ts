@@ -61,9 +61,14 @@ export function formatSessionEpisodeRecallBlock(
 
 function formatHit(hit: RecallHit, summaryTruncate: number): string {
   const { episode, similarity } = hit;
-  const truncated = truncate(episode.summaryEn, summaryTruncate);
+  // Prefer the LLM-generated title (PR2, post-migration 008) as a short
+  // header; fall back to the truncated summary alone for legacy rows where
+  // title was left empty. Keeping both avoids an unbalanced render when the
+  // title is missing.
+  const truncated = truncate(episode.summaryText, summaryTruncate);
+  const header = episode.title.trim().length > 0 ? `${episode.title}: ` : "";
   const session = episode.sourceSession ?? "—";
-  return `- [${episode.episodeKind}] ${truncated} (session:${session}, sim:${similarity.toFixed(2)})`;
+  return `- [${episode.episodeKind}] ${header}${truncated} (session:${session}, sim:${similarity.toFixed(2)})`;
 }
 
 function truncate(s: string, max: number): string {

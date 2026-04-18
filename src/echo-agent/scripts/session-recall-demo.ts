@@ -43,7 +43,12 @@ import {
   type EpisodeKind,
   type NewEpisode,
 } from "@echo-agent/db/repos/session-episodes.js";
-import { createSession, setMemoryScopeKey } from "@echo-agent/db/repos/sessions.js";
+import {
+  createSession,
+  getMemoryLanguageCode,
+  setMemoryLanguageCode,
+  setMemoryScopeKey,
+} from "@echo-agent/db/repos/sessions.js";
 import { embedDocument, embedQuery } from "@echo-agent/embeddings/client.js";
 import { loadEmbeddingConfig } from "@echo-agent/embeddings/config.js";
 import { computeEpisodeHash } from "@echo-agent/engine/checkpoint/extract.js";
@@ -56,7 +61,7 @@ interface DemoEpisode {
   topic: string;
   /** Short title (≤100 chars) — simulates the LLM-generated title PR2 introduces. */
   title: string;
-  /** Body — this is what goes into summary_en (the column). Post-PR2 it's `summary_text`. */
+  /** Body — stored in session_episodes.summary_text (post-migration 008). */
   summary: string;
   /** Arbitrary structured facts — mirrors what extractEpisodes returns. */
   facts?: Record<string, unknown>;
@@ -64,11 +69,20 @@ interface DemoEpisode {
 }
 
 /**
- * 10 episodes across a simulated PL session about DeFi trading.
- * Mix of types (decision/fact/preference/lesson/tool_result_summary) and
- * languages (8 PL + 2 EN — the EN ones simulate legacy or imported memory).
+ * 20 episodes across a simulated multilingual DeFi session.
+ *
+ * Shape goals:
+ *   - All six episode kinds covered at least once (decision, fact, preference,
+ *     open_loop, tool_result_summary, lesson).
+ *   - Five languages (PL, EN, FR, ZH, VI) living in the same memory scope —
+ *     mirrors the post-PR2 invariant that session memory is multilingual.
+ *   - Two near-duplicate topic pairs (same theme, different language) to
+ *     exercise cross-lingual collision behaviour under recall.
+ *   - One deliberately off-topic episode (news, no DeFi content) so queries
+ *     that shouldn't match anything have something to NOT match.
  */
 const EPISODES: readonly DemoEpisode[] = [
+  // ── Polish core (8) ─────────────────────────────────────────────
   {
     kind: "fact",
     topic: "balance_solana",
@@ -137,6 +151,19 @@ const EPISODES: readonly DemoEpisode[] = [
     facts: { amountSol: 2, protocol: "Jito", apy: 6.7 },
     entities: ["SOL", "Jito", "Marinade"],
   },
+
+  // ── Open loop (Polish) — pending user action ────────────────────
+  {
+    kind: "open_loop",
+    topic: "pending_bridge_decision",
+    title: "Otwarta pętla: czekanie na lepszy kurs bridge ETH→Arbitrum",
+    summary:
+      "User odłożył decyzję o zbridżowaniu 0.5 ETH z mainnet na Arbitrum przez Stargate bo spread wyniósł 0.8%. Czeka na spadek poniżej 0.3% — alert ustawiony. Żadnej transakcji nie wykonano; stan mainnet/Arbitrum saldo bez zmian.",
+    facts: { amountEth: 0.5, alertThresholdPct: 0.3, viaProtocol: "Stargate" },
+    entities: ["ETH", "Arbitrum", "Stargate"],
+  },
+
+  // ── Polish data (cont.) ─────────────────────────────────────────
   {
     kind: "fact",
     topic: "btc_price_check",
@@ -146,7 +173,8 @@ const EPISODES: readonly DemoEpisode[] = [
     facts: { priceUsd: 63200.5, volumeBtc: 18500 },
     entities: ["BTC", "Coinbase"],
   },
-  // Two English episodes to simulate legacy / imported memory in the same scope.
+
+  // ── Legacy EN corpus (3) — simulates imported / older-session memory
   {
     kind: "preference",
     topic: "chain_preference_l2",
@@ -156,54 +184,229 @@ const EPISODES: readonly DemoEpisode[] = [
     facts: { threshold: 500, preferred: ["Base", "Arbitrum", "Optimism"] },
     entities: ["Base", "Arbitrum", "Optimism", "Ethereum"],
   },
+  {
+    kind: "lesson",
+    topic: "mev_sandwich_risk",
+    title: "Lesson: sandwich attack risk on public mempool swaps",
+    summary:
+      "User lost approximately 1.8% on a 3000 USDC→ETH swap routed through public mempool — classic sandwich attack. Agent recommended Jito bundles or private RPC for future mainnet swaps above 1k USD. User agreed.",
+    facts: { lossPct: 1.8, swapUsd: 3000, mitigation: "private_rpc_or_jito_bundle" },
+    entities: ["USDC", "ETH", "Jito"],
+  },
+  {
+    kind: "tool_result_summary",
+    topic: "aave_borrow_rate_check",
+    title: "Aave v3 USDC borrow rate snapshot",
+    summary:
+      "Agent pulled Aave v3 USDC borrow rates: variable 5.4% APR, stable 7.1% APR. Health factor for user's current position (collateral 1.2 ETH, borrow 1500 USDC) stood at 2.14 — safely above liquidation threshold of 1.05.",
+    facts: { variableApr: 5.4, stableApr: 7.1, healthFactor: 2.14 },
+    entities: ["Aave", "USDC", "ETH"],
+  },
+
+  // ── French (2) — multilingual session memory
+  {
+    kind: "decision",
+    topic: "fr_limit_order_jup",
+    title: "Décision: ordre limite USDC→SOL à 180 USD",
+    summary:
+      "L'utilisateur a placé un ordre limite pour vendre 500 USDC contre SOL sur Jupiter Perps si le prix SOL tombe à 180 USD. Ordre valide 30 jours. Motivation: accumuler SOL en cas de correction avant le prochain airdrop.",
+    facts: { triggerPriceUsd: 180, amountUsdc: 500, validityDays: 30 },
+    entities: ["USDC", "SOL", "Jupiter"],
+  },
+  {
+    kind: "fact",
+    topic: "fr_farming_yield",
+    title: "Rendement farming LP USDC/USDT sur Orca",
+    summary:
+      "L'agent a rapporté un rendement actuel de 12.4% APR sur le pool de liquidité USDC/USDT sur Orca Whirlpool. Incentivation par SOL + ORCA rewards. Range concentrated 0.99-1.01 USD. Position ouverte par l'utilisateur: 2000 USD.",
+    facts: { aprPct: 12.4, liquidityUsd: 2000, range: "0.99-1.01" },
+    entities: ["USDC", "USDT", "Orca", "SOL", "ORCA"],
+  },
+
+  // ── Chinese (2) — cross-lingual probe candidates
+  {
+    kind: "preference",
+    topic: "zh_stable_allocation",
+    title: "用户偏好：稳定币配置 40% USDC / 30% USDT / 30% DAI",
+    summary:
+      "用户明确说明稳定币储备的目标配置为 40% USDC、30% USDT、30% DAI。代理每周检查并在偏离超过 5 个百分点时提醒。理由：分散协议风险（Circle、Tether、MakerDAO）。",
+    facts: { usdcPct: 40, usdtPct: 30, daiPct: 30, rebalanceDriftPct: 5 },
+    entities: ["USDC", "USDT", "DAI"],
+  },
+  {
+    kind: "decision",
+    topic: "zh_avoid_new_token",
+    title: "决定：不参与新代币 XYZ 空投",
+    summary:
+      "在审核代币 XYZ 的合约后，用户决定跳过此次空投。原因：合约未审计、流动性仅 15k USD、代币分配 60% 给团队无锁定。代理已将 XYZ 加入黑名单以防未来误触发。",
+    facts: { tokenSymbol: "XYZ", liquidityUsd: 15000, teamAllocationPct: 60 },
+    entities: ["XYZ"],
+  },
+
+  // ── Vietnamese (1) — fifth language for full multilingual proof
+  {
+    kind: "open_loop",
+    topic: "vi_staking_eval",
+    title: "Chưa quyết định: stake MATIC trên Lido vs restake với EigenLayer",
+    summary:
+      "Người dùng đang đánh giá hai lựa chọn cho 5000 MATIC: stake trên Lido (APR ~4.2%) hoặc restake qua EigenLayer (APR ~4.7% + điểm thưởng AVS). Chưa quyết định vì rủi ro slashing trong EigenLayer chưa rõ ràng. Quyết định hoãn đến tuần sau.",
+    facts: { amountMatic: 5000, lidoApr: 4.2, eigenlayerApr: 4.7 },
+    entities: ["MATIC", "Lido", "EigenLayer"],
+  },
+
+  // ── Off-topic filler — should NOT match DeFi queries
+  {
+    kind: "fact",
+    topic: "off_topic_news",
+    title: "News: SpaceX Starship test flight scheduled for Friday",
+    summary:
+      "User briefly mentioned reading that SpaceX Starship IFT-5 is scheduled for Friday at the Boca Chica launch site, with first-stage catch attempt planned. Agent noted it but flagged it as unrelated to the current trading session.",
+    entities: ["SpaceX", "Starship"],
+  },
 ];
 
 // ── Demo queries ─────────────────────────────────────────────────────
 
 interface DemoQuery {
   label: string;
-  language: "pl" | "en" | "mixed";
+  /** Display tag — free-form (matches BenchmarkPair.lang codes + "mixed"). */
+  language: "pl" | "en" | "fr" | "zh" | "vi" | "mixed";
   text: string;
   /** Expected best-hit topic — for operator sanity-check. */
   expectedTopic: string;
 }
 
 const QUERIES: readonly DemoQuery[] = [
+  // ── Baseline PL → PL same-language hits ───────────────────────
   {
-    label: "Q1 — PL slippage preference",
+    label: "Q01 — PL: slippage preference",
     language: "pl",
     text: "jakie mam ustawione slippage na DEX-ach",
     expectedTopic: "slippage_tolerance",
   },
   {
-    label: "Q2 — PL balance check history",
+    label: "Q02 — PL: Solana USDC balance history",
     language: "pl",
     text: "ile miałem USDC na Solanie ostatnio",
     expectedTopic: "balance_solana",
   },
   {
-    label: "Q3 — PL ETH hold rationale",
+    label: "Q03 — PL: ETH hold rationale",
     language: "pl",
     text: "dlaczego trzymałem ETH mimo spadku",
     expectedTopic: "hold_eth",
   },
   {
-    label: "Q4 — EN gas costs (should match PL lesson)",
-    language: "en",
-    text: "what are gas fees for Layer 2 trading",
-    expectedTopic: "gas_base_vs_mainnet",
+    label: "Q04 — PL: staking decision",
+    language: "pl",
+    text: "gdzie stakowałem SOL",
+    expectedTopic: "stake_sol",
   },
   {
-    label: "Q5 — mixed: PL query for EN-stored legacy episode",
+    label: "Q05 — PL: pending bridge decision (open loop)",
+    language: "pl",
+    text: "czekam aż spread na bridge do arbitrum spadnie",
+    expectedTopic: "pending_bridge_decision",
+  },
+
+  // ── Cross-lingual: non-English query against legacy EN corpus ─
+  {
+    label: "Q06 — PL query → EN-stored L2 preference (cross-lingual)",
     language: "mixed",
     text: "czy preferuję L2 dla małych swapów",
     expectedTopic: "chain_preference_l2",
   },
   {
-    label: "Q6 — PL staking decision",
+    label: "Q07 — PL query → EN-stored MEV lesson (cross-lingual)",
+    language: "mixed",
+    text: "straciłem na sandwich attacku na mainnet",
+    expectedTopic: "mev_sandwich_risk",
+  },
+
+  // ── EN query → non-English corpus ────────────────────────────
+  {
+    label: "Q08 — EN query → PL gas lesson (cross-lingual)",
+    language: "en",
+    text: "what are gas fees for Layer 2 trading",
+    expectedTopic: "gas_base_vs_mainnet",
+  },
+  {
+    label: "Q09 — EN query → FR farming yield episode",
+    language: "en",
+    text: "what's the APR on USDC/USDT pool on Orca",
+    expectedTopic: "fr_farming_yield",
+  },
+
+  // ── French / Chinese / Vietnamese same-language probes ───────
+  {
+    label: "Q10 — FR: limit order decision",
+    language: "fr",
+    text: "quel était mon ordre limite sur SOL",
+    expectedTopic: "fr_limit_order_jup",
+  },
+  {
+    label: "Q11 — ZH: stablecoin allocation preference",
+    language: "zh",
+    text: "我的稳定币配置比例是多少",
+    expectedTopic: "zh_stable_allocation",
+  },
+  {
+    label: "Q12 — ZH: avoid new token decision",
+    language: "zh",
+    text: "为什么跳过 XYZ 空投",
+    expectedTopic: "zh_avoid_new_token",
+  },
+  {
+    label: "Q13 — VI: MATIC staking evaluation (open loop)",
+    language: "vi",
+    text: "tôi đang cân nhắc stake MATIC ở đâu",
+    expectedTopic: "vi_staking_eval",
+  },
+
+  // ── Cross-lingual far-pair — FR query against ZH episode ─────
+  {
+    label: "Q14 — FR query → ZH stablecoin allocation (cross-lingual)",
+    language: "fr",
+    text: "quelle est ma répartition entre USDC et USDT",
+    expectedTopic: "zh_stable_allocation",
+  },
+
+  // ── Disambiguation: query could match two topics — which wins?
+  {
+    label: "Q15 — PL: approve/spending history (overlap w/ swap_jupiter + approve_usdc_raydium)",
     language: "pl",
-    text: "gdzie stakowałem SOL",
-    expectedTopic: "stake_sol",
+    text: "kiedy dawałem approve na USDC",
+    expectedTopic: "approve_usdc_raydium",
+  },
+
+  // ── Specific entity ──────────────────────────────────────────
+  {
+    label: "Q16 — PL: BTC price snapshot",
+    language: "pl",
+    text: "jaka była cena bitcoina",
+    expectedTopic: "btc_price_check",
+  },
+  {
+    label: "Q17 — EN: Aave health factor check",
+    language: "en",
+    text: "what is my Aave health factor on the USDC borrow",
+    expectedTopic: "aave_borrow_rate_check",
+  },
+
+  // ── Off-topic probe — no DeFi episode should land on top ─────
+  {
+    label: "Q18 — PL off-topic: should NOT match DeFi episodes (SpaceX filler present)",
+    language: "pl",
+    text: "kiedy leci starship",
+    expectedTopic: "off_topic_news",
+  },
+
+  // ── Generic query — many mid-sim hits; operator inspects spread
+  {
+    label: "Q19 — PL very generic: 'what did I do with USDC' — diffuse hit",
+    language: "pl",
+    text: "co robiłem z USDC w tej sesji",
+    expectedTopic: "swap_jupiter", // arbitrary; diffuse queries rarely have a clean top-1
   },
 ];
 
@@ -228,6 +431,14 @@ async function runDemo(): Promise<void> {
   await createSession(sessionId);
   await setMemoryScopeKey(sessionId, scopeKey);
 
+  // Seed the memory language contract. In production this is written by the
+  // first checkpoint's `session_language_inferred`; here we set it explicitly
+  // so the rest of the script can read it back and demonstrate the full
+  // PR2 contract without depending on a real LLM call.
+  await setMemoryLanguageCode(sessionId, "pl");
+  const persistedCode = await getMemoryLanguageCode(sessionId);
+  logger.info("demo.language_code.persisted", { sessionId, code: persistedCode });
+
   // ── Insert phase ────────────────────────────────────────────────
   const rows: NewEpisode[] = [];
   for (let i = 0; i < EPISODES.length; i++) {
@@ -237,7 +448,8 @@ async function runDemo(): Promise<void> {
       sessionId,
       memoryScopeKey: scopeKey,
       episodeKind: ep.kind,
-      summaryEn: ep.summary,
+      title: ep.title,
+      summaryText: ep.summary,
       facts: ep.facts ?? {},
       decisions: {},
       openLoops: {},
@@ -263,12 +475,18 @@ async function runDemo(): Promise<void> {
   logger.info("demo.inserted", { count: inserted.length });
 
   // ── Recall phase ────────────────────────────────────────────────
-  console.log("\n" + "=".repeat(70));
-  console.log(`Session id: ${sessionId}`);
-  console.log(`Model:      ${config.model}`);
-  console.log(`Scope key:  ${scopeKey}`);
-  console.log(`Episodes inserted: ${inserted.length}`);
-  console.log("=".repeat(70));
+  console.log("\n" + "=".repeat(72));
+  console.log(`Session id:           ${sessionId}`);
+  console.log(`Model:                ${config.model}`);
+  console.log(`Scope key:            ${scopeKey}`);
+  console.log(`memory_language_code: ${persistedCode ?? "(unset)"}`);
+  console.log(`Episodes inserted:    ${inserted.length}`);
+  console.log(`Queries:              ${QUERIES.length}`);
+  console.log("=".repeat(72));
+
+  let hit1 = 0;
+  let hit3 = 0;
+  const lowSimFlags: string[] = [];
 
   for (const q of QUERIES) {
     const { embedding, providerModel } = await embedQuery(q.text, config);
@@ -280,34 +498,62 @@ async function runDemo(): Promise<void> {
       minSimilarity: 0,
     });
 
-    console.log("\n" + "-".repeat(70));
-    console.log(`${q.label}  [${q.language}]`);
-    console.log(`Query: "${q.text}"`);
-    console.log(`Expected best-hit topic: ${q.expectedTopic}`);
+    console.log("\n" + "-".repeat(72));
+    console.log(`${q.label}  [lang=${q.language}]`);
+    console.log(`  query:    "${q.text}"`);
+    console.log(`  expected: ${q.expectedTopic}`);
     console.log("");
+
     if (hits.length === 0) {
-      console.log("  (no hits)");
+      console.log("  (no hits above minSimilarity=0)");
       continue;
     }
+
+    const topHit = hits[0]!;
+    const topTopic = EPISODES.find(e => e.summary === topHit.episode.summaryText)?.topic ?? "?";
+    if (topTopic === q.expectedTopic) hit1++;
+    if (hits.some(h => {
+      const t = EPISODES.find(e => e.summary === h.episode.summaryText)?.topic ?? "?";
+      return t === q.expectedTopic;
+    })) hit3++;
+
+    // Flag diffuse/weak matches the operator should eyeball.
+    if (topHit.similarity < 0.45) lowSimFlags.push(`${q.label} (top sim ${topHit.similarity.toFixed(3)})`);
+
     hits.forEach((h, idx) => {
-      const topic = EPISODES.find(e => e.summary === h.episode.summaryEn)?.topic ?? "?";
+      const topic = EPISODES.find(e => e.summary === h.episode.summaryText)?.topic ?? "?";
       const correct = topic === q.expectedTopic ? " ✓" : "  ";
+      const title = h.episode.title || "(no title)";
       console.log(
-        `  #${idx + 1}${correct} similarity=${h.similarity.toFixed(3)}  kind=${h.episode.episodeKind.padEnd(20)}  topic=${topic}`,
+        `  #${idx + 1}${correct} sim=${h.similarity.toFixed(3)}  kind=${h.episode.episodeKind.padEnd(20)}  topic=${topic}`,
       );
-      const truncated = h.episode.summaryEn.length > 110
-        ? h.episode.summaryEn.slice(0, 107) + "..."
-        : h.episode.summaryEn;
-      console.log(`       ${truncated}`);
+      console.log(`        title: ${title}`);
+      const truncated = h.episode.summaryText.length > 140
+        ? h.episode.summaryText.slice(0, 137) + "..."
+        : h.episode.summaryText;
+      console.log(`        summary: ${truncated}`);
     });
   }
 
-  console.log("\n" + "=".repeat(70));
+  // ── Aggregate summary ───────────────────────────────────────────
+  const total = QUERIES.length;
+  console.log("\n" + "=".repeat(72));
+  console.log("AGGREGATE");
+  console.log(`  Recall@1: ${hit1}/${total} (${((hit1 / total) * 100).toFixed(1)}%)`);
+  console.log(`  Recall@3: ${hit3}/${total} (${((hit3 / total) * 100).toFixed(1)}%)`);
+  if (lowSimFlags.length > 0) {
+    console.log(`  Diffuse / weak top-1 (<0.45):`);
+    for (const f of lowSimFlags) console.log(`    - ${f}`);
+  } else {
+    console.log(`  Diffuse / weak top-1 (<0.45): none`);
+  }
+  console.log("=".repeat(72));
   console.log("Inspect in DB:");
-  console.log(`  psql $ECHO_AGENT_DB_URL -c "SELECT id, episode_kind, summary_en FROM session_episodes WHERE session_id = '${sessionId}' ORDER BY id;"`);
+  console.log(`  psql $ECHO_AGENT_DB_URL -c "SELECT id, episode_kind, title, summary_text FROM session_episodes WHERE session_id = '${sessionId}' ORDER BY id;"`);
+  console.log("  psql $ECHO_AGENT_DB_URL -c \"SELECT id, memory_scope_key, memory_language_code FROM sessions WHERE id = '" + sessionId + "';\"");
   console.log("Drop the demo session (CASCADE removes episodes):");
   console.log(`  psql $ECHO_AGENT_DB_URL -c "DELETE FROM sessions WHERE id = '${sessionId}';"`);
-  console.log("=".repeat(70));
+  console.log("=".repeat(72));
 }
 
 // ── CLI entry ────────────────────────────────────────────────────────

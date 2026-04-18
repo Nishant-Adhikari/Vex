@@ -49,10 +49,26 @@ vi.mock("@echo-agent/embeddings/client.js", () => ({
   embedQuery: vi.fn(),
 }));
 
+// Fake pool + client so checkpoint.ts can call getPool().connect() for the
+// Phase II atomic write transaction. Each tx.query() just records BEGIN /
+// COMMIT / ROLLBACK — the actual writes go through the mocked repos above
+// which ignore their optional PoolClient arg.
+const mockTxQuery = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
+const mockTxRelease = vi.fn();
+const mockPoolConnect = vi.fn().mockImplementation(async () => ({
+  query: mockTxQuery,
+  release: mockTxRelease,
+}));
+const fakePool = { connect: mockPoolConnect };
+
 vi.mock("@echo-agent/db/client.js", () => ({
+  getPool: () => fakePool,
   execute: vi.fn(),
   query: vi.fn().mockResolvedValue([]),
   queryOne: vi.fn().mockResolvedValue(null),
+  queryWith: vi.fn().mockResolvedValue([]),
+  queryOneWith: vi.fn().mockResolvedValue(null),
+  executeWith: vi.fn(),
 }));
 
 const {
@@ -171,7 +187,7 @@ describe("executeCheckpoint: prefix mode", () => {
       episodes: [
         {
           episode_kind: "fact",
-          summary_en: "fact A about X",
+          summary_text: "fact A about X",
           facts: { topic: "X" },
           decisions: {},
           open_loops: {},
@@ -180,7 +196,7 @@ describe("executeCheckpoint: prefix mode", () => {
         },
         {
           episode_kind: "decision",
-          summary_en: "chose option Y",
+          summary_text: "chose option Y",
           facts: {},
           decisions: { choice: "Y" },
           open_loops: {},
@@ -194,7 +210,11 @@ describe("executeCheckpoint: prefix mode", () => {
 
     expect(result.mode).toBe("prefix");
     expect(result.summary).toBe("merged rolling summary");
-    expect(mockSetRollingSummary).toHaveBeenCalledWith("session-1", "merged rolling summary");
+    expect(mockSetRollingSummary).toHaveBeenCalledTimes(1);
+    // Phase II passes a tx client as the 3rd arg — assert positionally.
+    const [rsSessionId, rsSummary] = mockSetRollingSummary.mock.calls[0];
+    expect(rsSessionId).toBe("session-1");
+    expect(rsSummary).toBe("merged rolling summary");
     expect(mockArchivePrefix).toHaveBeenCalledTimes(1);
     const [, cutoffId, tailLen] = mockArchivePrefix.mock.calls[0];
     expect(typeof cutoffId).toBe("number");
@@ -240,7 +260,7 @@ describe("executeCheckpoint: prefix mode", () => {
       episodes: [
         {
           episode_kind: "fact",
-          summary_en: "a",
+          summary_text: "a",
           facts: {},
           decisions: {},
           open_loops: {},
@@ -306,7 +326,7 @@ describe("executeCheckpoint: giant_tool mode", () => {
       episodes: [
         {
           episode_kind: "decision",
-          summary_en: "decide Y",
+          summary_text: "decide Y",
           facts: {},
           decisions: {},
           open_loops: {},
@@ -315,7 +335,7 @@ describe("executeCheckpoint: giant_tool mode", () => {
         },
         {
           episode_kind: "fact",
-          summary_en: "fact Z",
+          summary_text: "fact Z",
           facts: {},
           decisions: {},
           open_loops: {},
@@ -324,7 +344,7 @@ describe("executeCheckpoint: giant_tool mode", () => {
         },
         {
           episode_kind: "tool_result_summary",
-          summary_en: "tool output summary",
+          summary_text: "tool output summary",
           facts: {},
           decisions: {},
           open_loops: {},

@@ -3,6 +3,18 @@
  *
  * Own pool, own connection string (ECHO_AGENT_DB_URL).
  * Does NOT share pool with legacy src/agent/db/client.ts.
+ *
+ * Helpers come in two flavors:
+ *   - `queryWith` / `queryOneWith` / `executeWith` accept an explicit
+ *     `Executor` (Pool | PoolClient). Callers running inside a transaction
+ *     (e.g. checkpoint.ts Phase II, PR4 maintenance-lease writers) pass their
+ *     own `PoolClient` so statements join the same tx.
+ *   - `query` / `queryOne` / `execute` are thin wrappers that delegate to the
+ *     `*With` variant using `getPool()` as the executor. They exist for the
+ *     ~hundreds of non-tx call sites that just need a pool-backed query.
+ *
+ * Zero behavioral change for existing callers — wrappers match the previous
+ * signatures exactly. New tx-aware callers opt into `*With` explicitly.
  */
 
 import pg from "pg";
@@ -33,28 +45,66 @@ export function getPool(): pg.Pool {
   return pool;
 }
 
-/** Run a query and return all rows typed as T. */
+/**
+ * Executor abstraction — either the shared pool or a specific `PoolClient`
+ * that belongs to an open transaction. Both expose the same `.query()`
+ * method shape, so tx-aware helpers can accept either.
+ */
+export type Executor = pg.Pool | pg.PoolClient;
+
+// ── tx-aware helpers (primary API) ──────────────────────────────────
+
+/** Run a query on the given executor and return all rows typed as T. */
+export async function queryWith<T extends pg.QueryResultRow>(
+  exec: Executor,
+  sql: string,
+  params?: unknown[],
+): Promise<T[]> {
+  const result = await exec.query<T>(sql, params);
+  return result.rows;
+}
+
+/** Run a query on the given executor and return the first row, or null. */
+export async function queryOneWith<T extends pg.QueryResultRow>(
+  exec: Executor,
+  sql: string,
+  params?: unknown[],
+): Promise<T | null> {
+  const result = await exec.query<T>(sql, params);
+  return result.rows[0] ?? null;
+}
+
+/** Run a mutation on the given executor and return affected row count. */
+export async function executeWith(
+  exec: Executor,
+  sql: string,
+  params?: unknown[],
+): Promise<number> {
+  const result = await exec.query(sql, params);
+  return result.rowCount ?? 0;
+}
+
+// ── Thin wrappers (backward-compatible) ─────────────────────────────
+
+/** Run a query on the shared pool and return all rows typed as T. */
 export async function query<T extends pg.QueryResultRow>(
   sql: string,
   params?: unknown[],
 ): Promise<T[]> {
-  const result = await getPool().query<T>(sql, params);
-  return result.rows;
+  return queryWith<T>(getPool(), sql, params);
 }
 
-/** Run a query and return the first row, or null. */
+/** Run a query on the shared pool and return the first row, or null. */
 export async function queryOne<T extends pg.QueryResultRow>(
   sql: string,
   params?: unknown[],
 ): Promise<T | null> {
-  const result = await getPool().query<T>(sql, params);
-  return result.rows[0] ?? null;
+  return queryOneWith<T>(getPool(), sql, params);
 }
 
-/** Run a mutation and return affected row count. */
+/** Run a mutation on the shared pool and return affected row count. */
 export async function execute(sql: string, params?: unknown[]): Promise<number> {
-  const result = await getPool().query(sql, params);
-  return result.rowCount ?? 0;
+  return executeWith(getPool(), sql, params);
 }
 
 /** Graceful shutdown — drain the pool. */

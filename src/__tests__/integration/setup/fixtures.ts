@@ -121,8 +121,8 @@ export function randVector(dim: number, seed = "seed"): number[] {
  * here so integration tests can construct episode rows that either collide
  * with (dedupe proof) or diverge from (two-row proof) a prior row.
  */
-export function episodeHash(kind: string, summaryEn: string): string {
-  return createHash("sha256").update(kind).update("\n").update(summaryEn).digest("hex");
+export function episodeHash(kind: string, summaryText: string): string {
+  return createHash("sha256").update(kind).update("\n").update(summaryText).digest("hex");
 }
 
 /** Live embedding call — fails loudly if the endpoint is down. */

@@ -11,7 +11,8 @@ function makeHit(overrides: Partial<RecallHit["episode"]> = {}, similarity = 0.8
       sessionId: "session-X",
       memoryScopeKey: "scope-1",
       episodeKind: "decision",
-      summaryEn: "User decided to hold SOL through the next rebalance.",
+      title: "",
+      summaryText: "User decided to hold SOL through the next rebalance.",
       facts: {},
       decisions: {},
       openLoops: {},
@@ -44,7 +45,7 @@ describe("session-memory", () => {
 
   it("caps the number of items to maxItems", () => {
     const hits = Array.from({ length: 12 }, (_, i) =>
-      makeHit({ id: i + 1, summaryEn: `fact number ${i + 1}` }, 0.9),
+      makeHit({ id: i + 1, summaryText: `fact number ${i + 1}` }, 0.9),
     );
     const block = formatSessionEpisodeRecallBlock(hits, { maxItems: 3 });
     const matches = block.match(/^- /gm) ?? [];
@@ -53,7 +54,7 @@ describe("session-memory", () => {
 
   it("truncates long summaries with an ellipsis", () => {
     const long = "x".repeat(500);
-    const block = formatSessionEpisodeRecallBlock([makeHit({ summaryEn: long })], {
+    const block = formatSessionEpisodeRecallBlock([makeHit({ summaryText: long })], {
       summaryTruncate: 60,
     });
     expect(block).toContain("…");
@@ -62,7 +63,7 @@ describe("session-memory", () => {
 
   it("drops the block entirely when nothing fits under totalCharsCap", () => {
     const hits = Array.from({ length: 5 }, (_, i) =>
-      makeHit({ id: i + 1, summaryEn: "A".repeat(200) }, 0.9),
+      makeHit({ id: i + 1, summaryText: "A".repeat(200) }, 0.9),
     );
     const block = formatSessionEpisodeRecallBlock(hits, { totalCharsCap: 10 });
     expect(block).toBe("");

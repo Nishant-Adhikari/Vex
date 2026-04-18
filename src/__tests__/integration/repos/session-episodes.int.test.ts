@@ -30,19 +30,20 @@ import {
 function newEpisode(
   sessionId: string,
   overrides: Partial<NewEpisode> & {
-    summaryEn: string;
+    summaryText: string;
     embeddingDim: number;
     embeddingModel: string;
   },
 ): NewEpisode {
   const kind = overrides.episodeKind ?? "fact";
-  const hash = overrides.episodeHash ?? episodeHash(kind, overrides.summaryEn);
-  const seed = overrides.summaryEn + "|" + overrides.embeddingModel;
+  const hash = overrides.episodeHash ?? episodeHash(kind, overrides.summaryText);
+  const seed = overrides.summaryText + "|" + overrides.embeddingModel;
   return {
     sessionId,
     memoryScopeKey: overrides.memoryScopeKey ?? sessionId,
     episodeKind: kind,
-    summaryEn: overrides.summaryEn,
+    title: overrides.title ?? "",
+    summaryText: overrides.summaryText,
     facts: overrides.facts,
     decisions: overrides.decisions,
     openLoops: overrides.openLoops,
@@ -67,7 +68,7 @@ describe("session-episodes insertEpisodes dedupe (integration)", () => {
   it("drops the second row with same (session, source_end_message_id, episode_hash) when source_end_message_id IS NOT NULL", async () => {
     const sid = await makeSession(undefined, { memoryScopeKey: "scope-a" });
     const base = {
-      summaryEn: "Held SOL at 180.",
+      summaryText: "Held SOL at 180.",
       embeddingModel: "test-model",
       embeddingDim: 8,
       sourceEndMessageId: 42,
@@ -86,7 +87,7 @@ describe("session-episodes insertEpisodes dedupe (integration)", () => {
   it("keeps BOTH rows when source_end_message_id IS NULL (partial index does not apply)", async () => {
     const sid = await makeSession(undefined, { memoryScopeKey: "scope-a" });
     const base = {
-      summaryEn: "Prefers translating Polish to English before recall.",
+      summaryText: "Prefers translating Polish to English before recall.",
       embeddingModel: "test-model",
       embeddingDim: 8,
       sourceEndMessageId: null,
@@ -112,8 +113,8 @@ describe("session-episodes recallTopK filtering (integration)", () => {
     const sid = await makeSession(undefined, { memoryScopeKey: "scope-a" });
 
     await insertEpisodes([
-      newEpisode(sid, { summaryEn: "A", embeddingModel: "model-a", embeddingDim: 8, memoryScopeKey: "scope-a" }),
-      newEpisode(sid, { summaryEn: "B", embeddingModel: "model-b", embeddingDim: 8, memoryScopeKey: "scope-a" }),
+      newEpisode(sid, { summaryText: "A", embeddingModel: "model-a", embeddingDim: 8, memoryScopeKey: "scope-a" }),
+      newEpisode(sid, { summaryText: "B", embeddingModel: "model-b", embeddingDim: 8, memoryScopeKey: "scope-a" }),
     ]);
 
     const hits = await recallTopK(randVector(8, "query"), {
@@ -124,15 +125,15 @@ describe("session-episodes recallTopK filtering (integration)", () => {
     });
 
     expect(hits).toHaveLength(1);
-    expect(hits[0].episode.summaryEn).toBe("A");
+    expect(hits[0].episode.summaryText).toBe("A");
   });
 
   it("excludes rows with a different embedding_dim (protects pgvector from mixed-dim <=>)", async () => {
     const sid = await makeSession(undefined, { memoryScopeKey: "scope-a" });
 
     await insertEpisodes([
-      newEpisode(sid, { summaryEn: "small", embeddingModel: "model-a", embeddingDim: 8, memoryScopeKey: "scope-a" }),
-      newEpisode(sid, { summaryEn: "large", embeddingModel: "model-a", embeddingDim: 16, memoryScopeKey: "scope-a" }),
+      newEpisode(sid, { summaryText: "small", embeddingModel: "model-a", embeddingDim: 8, memoryScopeKey: "scope-a" }),
+      newEpisode(sid, { summaryText: "large", embeddingModel: "model-a", embeddingDim: 16, memoryScopeKey: "scope-a" }),
     ]);
 
     const hits = await recallTopK(randVector(8, "q"), {
@@ -143,7 +144,7 @@ describe("session-episodes recallTopK filtering (integration)", () => {
     });
 
     expect(hits).toHaveLength(1);
-    expect(hits[0].episode.summaryEn).toBe("small");
+    expect(hits[0].episode.summaryText).toBe("small");
   });
 
   it("excludes rows with a different memoryScopeKey", async () => {
@@ -151,8 +152,8 @@ describe("session-episodes recallTopK filtering (integration)", () => {
     const sidB = await makeSession(undefined, { memoryScopeKey: "scope-b" });
 
     await insertEpisodes([
-      newEpisode(sidA, { summaryEn: "A-row", embeddingModel: "model-x", embeddingDim: 8, memoryScopeKey: "scope-a" }),
-      newEpisode(sidB, { summaryEn: "B-row", embeddingModel: "model-x", embeddingDim: 8, memoryScopeKey: "scope-b" }),
+      newEpisode(sidA, { summaryText: "A-row", embeddingModel: "model-x", embeddingDim: 8, memoryScopeKey: "scope-a" }),
+      newEpisode(sidB, { summaryText: "B-row", embeddingModel: "model-x", embeddingDim: 8, memoryScopeKey: "scope-b" }),
     ]);
 
     const hits = await recallTopK(randVector(8, "q"), {
@@ -163,7 +164,7 @@ describe("session-episodes recallTopK filtering (integration)", () => {
     });
 
     expect(hits).toHaveLength(1);
-    expect(hits[0].episode.summaryEn).toBe("A-row");
+    expect(hits[0].episode.summaryText).toBe("A-row");
   });
 
   it("respects topK cap", async () => {
@@ -171,7 +172,7 @@ describe("session-episodes recallTopK filtering (integration)", () => {
     await insertEpisodes(
       Array.from({ length: 5 }, (_, i) =>
         newEpisode(sid, {
-          summaryEn: `row-${i}`,
+          summaryText: `row-${i}`,
           embeddingModel: "model-a",
           embeddingDim: 8,
           memoryScopeKey: "scope-k",
@@ -198,16 +199,16 @@ describe("session-episodes listRecentBySession (integration)", () => {
   it("returns rows DESC by created_at,id with limit honored", async () => {
     const sid = await makeSession(undefined, { memoryScopeKey: "scope-l" });
     await insertEpisodes([
-      newEpisode(sid, { summaryEn: "first", embeddingModel: "m", embeddingDim: 8, memoryScopeKey: "scope-l" }),
-      newEpisode(sid, { summaryEn: "second", embeddingModel: "m", embeddingDim: 8, memoryScopeKey: "scope-l" }),
-      newEpisode(sid, { summaryEn: "third", embeddingModel: "m", embeddingDim: 8, memoryScopeKey: "scope-l" }),
+      newEpisode(sid, { summaryText: "first", embeddingModel: "m", embeddingDim: 8, memoryScopeKey: "scope-l" }),
+      newEpisode(sid, { summaryText: "second", embeddingModel: "m", embeddingDim: 8, memoryScopeKey: "scope-l" }),
+      newEpisode(sid, { summaryText: "third", embeddingModel: "m", embeddingDim: 8, memoryScopeKey: "scope-l" }),
     ]);
 
     const recent = await listRecentBySession(sid, 2);
     expect(recent).toHaveLength(2);
     // Same NOW() for all three in a fast test run → tiebreaker is id DESC, so
     // the two most-recent inserted ids come back.
-    expect(recent[0].summaryEn).toBe("third");
-    expect(recent[1].summaryEn).toBe("second");
+    expect(recent[0].summaryText).toBe("third");
+    expect(recent[1].summaryText).toBe("second");
   });
 });

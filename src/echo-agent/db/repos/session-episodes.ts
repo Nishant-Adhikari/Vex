@@ -2,8 +2,8 @@
  * Session episodes repo — mid-term conversational memory store.
  *
  * Sits between `sessions.summary` (rolling per-session) and `knowledge_entries`
- * (canonical curated). Episodes are write-once; promotion to canonical knowledge
- * is a separate follow-up, not in this module.
+ * (canonical, cross-session, curated). Episodes are write-once; promotion to
+ * canonical knowledge is a separate follow-up (PR4 Fase IV), not in this module.
  *
  * Portability contract (mirrors `knowledge_entries`):
  *   - vector column has NO typmod; per-row `embedding_model` + `embedding_dim`
@@ -14,9 +14,25 @@
  *   - Dedupe index is partial (`WHERE source_end_message_id IS NOT NULL`), so
  *     callers MUST include the predicate in ON CONFLICT or Postgres won't match
  *     the index. See `src/echo-agent/db/repos/open-positions.ts:54` for prior art.
+ *
+ * Multilingual contract (PR2, migration 008):
+ *   - `summary_text` column (renamed from `summary_en`) carries text in the
+ *     session's language (see `sessions.memory_language_code`). Knowledge
+ *     entries remain English-only — translation happens at promotion.
+ *   - `title` column is an LLM-generated short title (≤ 100 chars, same
+ *     language as summary_text). It is NOT part of `episode_hash`, so a retry
+ *     producing a different title on the same summary still dedupes cleanly.
+ *
+ * Transaction coordination (PR2):
+ *   `insertEpisodes` accepts an optional `PoolClient`. When provided, it runs
+ *   inside the caller's transaction instead of opening its own. The
+ *   checkpoint atomic-write flow uses this to bundle episode inserts with
+ *   the rolling-summary update, the archive move, and the language-code
+ *   persist under one BEGIN/COMMIT.
  */
 
-import { getPool, query, queryOne } from "../client.js";
+import type { PoolClient } from "pg";
+import { getPool, query, queryOneWith } from "../client.js";
 import { vectorLiteral } from "./knowledge/types.js";
 
 // ── Domain types ────────────────────────────────────────────────
@@ -43,7 +59,10 @@ export interface SessionEpisode {
   sessionId: string;
   memoryScopeKey: string;
   episodeKind: EpisodeKind;
-  summaryEn: string;
+  /** LLM-generated episode title (≤100 chars), same language as summaryText. May be empty string for legacy rows. */
+  title: string;
+  /** Episode summary in the session's language (was `summaryEn` pre-PR2). */
+  summaryText: string;
   facts: Record<string, unknown>;
   decisions: Record<string, unknown>;
   openLoops: Record<string, unknown>;
@@ -63,7 +82,10 @@ export interface NewEpisode {
   sessionId: string;
   memoryScopeKey: string;
   episodeKind: EpisodeKind;
-  summaryEn: string;
+  /** LLM-generated title. Defaults to empty string when caller cannot provide one. */
+  title: string;
+  /** Summary text in the session's language. */
+  summaryText: string;
   facts?: Record<string, unknown>;
   decisions?: Record<string, unknown>;
   openLoops?: Record<string, unknown>;
@@ -100,7 +122,8 @@ interface SessionEpisodeRow {
   session_id: string;
   memory_scope_key: string;
   episode_kind: string;
-  summary_en: string;
+  title: string;
+  summary_text: string;
   facts_jsonb: Record<string, unknown> | null;
   decisions_jsonb: Record<string, unknown> | null;
   open_loops_jsonb: Record<string, unknown> | null;
@@ -126,7 +149,8 @@ function mapRow(r: SessionEpisodeRow): SessionEpisode {
     sessionId: r.session_id,
     memoryScopeKey: r.memory_scope_key,
     episodeKind: r.episode_kind as EpisodeKind,
-    summaryEn: r.summary_en,
+    title: r.title,
+    summaryText: r.summary_text,
     facts: r.facts_jsonb ?? {},
     decisions: r.decisions_jsonb ?? {},
     openLoops: r.open_loops_jsonb ?? {},
@@ -143,10 +167,20 @@ function mapRow(r: SessionEpisodeRow): SessionEpisode {
   };
 }
 
+// Single source of truth for the column list — keeps INSERT and SELECT
+// aligned so a column rename doesn't silently diverge.
+const EPISODE_COLUMNS = `
+  id, session_id, memory_scope_key, episode_kind, title, summary_text,
+  facts_jsonb, decisions_jsonb, open_loops_jsonb, entities, tool_outcomes_jsonb,
+  source_surface, source_session,
+  source_start_message_id, source_end_message_id,
+  episode_hash, embedding_model, embedding_dim, created_at
+`;
+
 // ── Insert ──────────────────────────────────────────────────────
 
 /**
- * Batch-insert episodes in a single transaction.
+ * Batch-insert episodes, optionally as part of the caller's transaction.
  *
  * Returns only the rows that were newly inserted (ON CONFLICT collisions are
  * dropped). The partial unique index predicate is mirrored in ON CONFLICT so
@@ -154,8 +188,15 @@ function mapRow(r: SessionEpisodeRow): SessionEpisode {
  *
  * Each row's `embedding.length` is validated against `embeddingDim` before any
  * SQL runs so the DB CHECK constraint never has to reject.
+ *
+ * When `client` is provided (PR2 atomic checkpoint write), the inserts run
+ * inside the caller's transaction — no BEGIN/COMMIT here. Otherwise opens
+ * its own transaction (legacy call sites).
  */
-export async function insertEpisodes(rows: readonly NewEpisode[]): Promise<SessionEpisode[]> {
+export async function insertEpisodes(
+  rows: readonly NewEpisode[],
+  client?: PoolClient,
+): Promise<SessionEpisode[]> {
   if (rows.length === 0) return [];
 
   for (const r of rows) {
@@ -167,65 +208,76 @@ export async function insertEpisodes(rows: readonly NewEpisode[]): Promise<Sessi
     }
   }
 
+  if (client) {
+    return runInserts(client, rows);
+  }
+
   const pool = getPool();
-  const client = await pool.connect();
+  const own = await pool.connect();
   try {
-    await client.query("BEGIN");
-    const inserted: SessionEpisode[] = [];
-
-    for (const r of rows) {
-      const result = await client.query<SessionEpisodeRow>(
-        `INSERT INTO session_episodes (
-           session_id, memory_scope_key, episode_kind, summary_en,
-           facts_jsonb, decisions_jsonb, open_loops_jsonb, entities, tool_outcomes_jsonb,
-           source_surface, source_session,
-           source_start_message_id, source_end_message_id,
-           episode_hash, embedding_model, embedding_dim, embedding
-         )
-         VALUES (
-           $1, $2, $3, $4,
-           $5, $6, $7, $8, $9,
-           COALESCE($10::text, 'echo_agent'), $11,
-           $12, $13,
-           $14, $15, $16, $17::vector
-         )
-         ON CONFLICT (session_id, source_end_message_id, episode_hash)
-           WHERE source_end_message_id IS NOT NULL
-           DO NOTHING
-         RETURNING *`,
-        [
-          r.sessionId,
-          r.memoryScopeKey,
-          r.episodeKind,
-          r.summaryEn,
-          JSON.stringify(r.facts ?? {}),
-          JSON.stringify(r.decisions ?? {}),
-          JSON.stringify(r.openLoops ?? {}),
-          r.entities ?? [],
-          JSON.stringify(r.toolOutcomes ?? {}),
-          r.sourceSurface ?? null,
-          r.sourceSession ?? null,
-          r.sourceStartMessageId,
-          r.sourceEndMessageId,
-          r.episodeHash,
-          r.embeddingModel,
-          r.embeddingDim,
-          vectorLiteral(r.embedding),
-        ],
-      );
-      if (result.rows[0]) inserted.push(mapRow(result.rows[0]));
-    }
-
-    await client.query("COMMIT");
+    await own.query("BEGIN");
+    const inserted = await runInserts(own, rows);
+    await own.query("COMMIT");
     return inserted;
   } catch (err) {
-    await client.query("ROLLBACK").catch(() => {
+    await own.query("ROLLBACK").catch(() => {
       // ROLLBACK failures are non-actionable; the original error is what matters.
     });
     throw err;
   } finally {
-    client.release();
+    own.release();
   }
+}
+
+async function runInserts(
+  tx: PoolClient,
+  rows: readonly NewEpisode[],
+): Promise<SessionEpisode[]> {
+  const inserted: SessionEpisode[] = [];
+  for (const r of rows) {
+    const result = await tx.query<SessionEpisodeRow>(
+      `INSERT INTO session_episodes (
+         session_id, memory_scope_key, episode_kind, title, summary_text,
+         facts_jsonb, decisions_jsonb, open_loops_jsonb, entities, tool_outcomes_jsonb,
+         source_surface, source_session,
+         source_start_message_id, source_end_message_id,
+         episode_hash, embedding_model, embedding_dim, embedding
+       )
+       VALUES (
+         $1, $2, $3, $4, $5,
+         $6, $7, $8, $9, $10,
+         COALESCE($11::text, 'echo_agent'), $12,
+         $13, $14,
+         $15, $16, $17, $18::vector
+       )
+       ON CONFLICT (session_id, source_end_message_id, episode_hash)
+         WHERE source_end_message_id IS NOT NULL
+         DO NOTHING
+       RETURNING ${EPISODE_COLUMNS}`,
+      [
+        r.sessionId,
+        r.memoryScopeKey,
+        r.episodeKind,
+        r.title,
+        r.summaryText,
+        JSON.stringify(r.facts ?? {}),
+        JSON.stringify(r.decisions ?? {}),
+        JSON.stringify(r.openLoops ?? {}),
+        r.entities ?? [],
+        JSON.stringify(r.toolOutcomes ?? {}),
+        r.sourceSurface ?? null,
+        r.sourceSession ?? null,
+        r.sourceStartMessageId,
+        r.sourceEndMessageId,
+        r.episodeHash,
+        r.embeddingModel,
+        r.embeddingDim,
+        vectorLiteral(r.embedding),
+      ],
+    );
+    if (result.rows[0]) inserted.push(mapRow(result.rows[0]));
+  }
+  return inserted;
 }
 
 // ── Recall ──────────────────────────────────────────────────────
@@ -251,11 +303,7 @@ export async function recallTopK(
 
   const rows = await query<SessionEpisodeRecallRow>(
     `SELECT
-       id, session_id, memory_scope_key, episode_kind, summary_en,
-       facts_jsonb, decisions_jsonb, open_loops_jsonb, entities, tool_outcomes_jsonb,
-       source_surface, source_session,
-       source_start_message_id, source_end_message_id,
-       episode_hash, embedding_model, embedding_dim, created_at,
+       ${EPISODE_COLUMNS},
        (embedding <=> $1::vector) AS cosine_distance
      FROM session_episodes
      WHERE memory_scope_key = $2
@@ -289,7 +337,8 @@ export async function listRecentBySession(
   limit = 50,
 ): Promise<SessionEpisode[]> {
   const rows = await query<SessionEpisodeRow>(
-    `SELECT * FROM session_episodes
+    `SELECT ${EPISODE_COLUMNS}
+     FROM session_episodes
      WHERE session_id = $1
      ORDER BY created_at DESC, id DESC
      LIMIT $2`,
@@ -300,8 +349,9 @@ export async function listRecentBySession(
 
 export async function getById(id: number): Promise<SessionEpisode | null> {
   if (!Number.isFinite(id) || id <= 0) return null;
-  const row = await queryOne<SessionEpisodeRow>(
-    "SELECT * FROM session_episodes WHERE id = $1",
+  const row = await queryOneWith<SessionEpisodeRow>(
+    getPool(),
+    `SELECT ${EPISODE_COLUMNS} FROM session_episodes WHERE id = $1`,
     [id],
   );
   return row ? mapRow(row) : null;

@@ -1,5 +1,5 @@
 /**
- * Sessions repo — session lifecycle, compaction, scope.
+ * Sessions repo — session lifecycle, compaction, scope, memory language.
  *
  * Compaction model (post-session-episodes rollout):
  *   - `setRollingSummary` updates only the summary text.
@@ -12,12 +12,32 @@
  *     the live row's `content` with a short placeholder. Used when a bloated
  *     tool output in the tail is the sole source of context pressure.
  *
- * The legacy full-archive helpers (`checkpointSession` / `archiveMessages`) were
- * removed — they reset `message_count = 0` even under partial archive, which
- * broke the session invariant once a tail was left live.
+ * Transaction coordination (PR2, post-migration 008):
+ *   `setRollingSummary`, `setMemoryLanguageCode`, and `archivePrefix` accept
+ *   an optional `PoolClient`. When provided, they run inside the caller's
+ *   transaction instead of opening their own. `executeCheckpoint` uses this
+ *   to atomically apply the whole write phase (language_code + summary +
+ *   episodes + archive) under a single BEGIN/COMMIT — a crash rolls back the
+ *   entire set together.
+ *
+ * Memory language contract (PR2, migration 008):
+ *   `sessions.memory_language_code` holds a per-session language marker set
+ *   once by the first checkpoint. Values are 2-3 lowercase letters, optional
+ *   "-REGION" suffix (e.g. "en", "pl", "fr", "zh", "vi", "pt-BR"), or the
+ *   literal "und" for mixed/unclear. Validation is at the code boundary
+ *   (`setMemoryLanguageCode`) — no DB CHECK so adding a language later does
+ *   not require a migration.
  */
 
-import { getPool, query, queryOne, execute } from "../client.js";
+import type { PoolClient } from "pg";
+import {
+  executeWith,
+  getPool,
+  query,
+  queryOne,
+  queryOneWith,
+  type Executor,
+} from "../client.js";
 
 interface SessionRow {
   id: string;
@@ -29,6 +49,7 @@ interface SessionRow {
   message_count: number;
   token_count: number;
   memory_scope_key: string | null;
+  memory_language_code: string | null;
 }
 
 export interface Session {
@@ -41,7 +62,21 @@ export interface Session {
   messageCount: number;
   tokenCount: number;
   memoryScopeKey: string | null;
+  memoryLanguageCode: string | null;
 }
+
+/**
+ * Acceptable shape for `sessions.memory_language_code`:
+ *   - 2-3 lowercase letters, optional "-REGION" suffix (e.g. "en", "pl",
+ *     "fr", "zh", "vi", "pt-BR"),
+ *   - or the literal "und" for mixed/unclear.
+ *
+ * Validation lives at the code boundary (this file's
+ * {@link setMemoryLanguageCode}); `knowledge_entries` and `session_episodes`
+ * do not own this schema. Adding a language later does not require a DB
+ * migration — just new prompt cases in `extract.ts` / `merge.ts`.
+ */
+export const LANG_CODE_RE = /^([a-z]{2,3}(-[A-Z]{2})?|und)$/;
 
 function mapRow(r: SessionRow): Session {
   return {
@@ -54,11 +89,16 @@ function mapRow(r: SessionRow): Session {
     messageCount: r.message_count,
     tokenCount: r.token_count,
     memoryScopeKey: r.memory_scope_key,
+    memoryLanguageCode: r.memory_language_code,
   };
 }
 
 export async function createSession(id: string): Promise<void> {
-  await execute("INSERT INTO sessions (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", [id]);
+  await executeWith(
+    getPool(),
+    "INSERT INTO sessions (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
+    [id],
+  );
 }
 
 /**
@@ -71,7 +111,8 @@ export async function createSession(id: string): Promise<void> {
  * sessions stay open until compaction.
  */
 export async function endSession(id: string): Promise<void> {
-  await execute(
+  await executeWith(
+    getPool(),
     "UPDATE sessions SET ended_at = NOW() WHERE id = $1 AND ended_at IS NULL",
     [id],
   );
@@ -83,7 +124,7 @@ export async function getSession(id: string): Promise<Session | null> {
 }
 
 export async function setScope(id: string, scope: string): Promise<void> {
-  await execute("UPDATE sessions SET scope = $1 WHERE id = $2", [scope, id]);
+  await executeWith(getPool(), "UPDATE sessions SET scope = $1 WHERE id = $2", [scope, id]);
 }
 
 /**
@@ -91,11 +132,13 @@ export async function setScope(id: string, scope: string): Promise<void> {
  *
  * Separate from `scope` (which is coarse: `chat` / `mcp` / `subagent`). The
  * scope key is the identity that episodic recall groups on — typically the
- * session id itself, but subagents inherit the parent's scope so their
- * checkpoints contribute to the parent's memory.
+ * session id itself (isolated default for subagents post-PR3), but subagents
+ * spawned with `scope_strategy: "shared"` inherit the parent's scope so
+ * their checkpoints contribute to the parent's memory.
  */
 export async function setMemoryScopeKey(id: string, memoryScopeKey: string): Promise<void> {
-  await execute(
+  await executeWith(
+    getPool(),
     "UPDATE sessions SET memory_scope_key = $2 WHERE id = $1",
     [id, memoryScopeKey],
   );
@@ -103,23 +146,90 @@ export async function setMemoryScopeKey(id: string, memoryScopeKey: string): Pro
 
 /** SET token count — latest prompt size for checkpoint pressure evaluation. Not cumulative. */
 export async function updateTokenCount(id: string, tokenCount: number): Promise<void> {
-  await execute("UPDATE sessions SET token_count = $2 WHERE id = $1", [id, tokenCount]);
+  await executeWith(
+    getPool(),
+    "UPDATE sessions SET token_count = $2 WHERE id = $1",
+    [id, tokenCount],
+  );
 }
 
 /**
  * Persist the rolling session summary. Does NOT touch `token_count` or
  * `message_count`; those are partial-archive concerns and live on
  * `archivePrefix`.
+ *
+ * When `client` is provided, this runs inside the caller's transaction.
+ * `executeCheckpoint` uses this to group summary + episodes + archive under
+ * a single atomic write.
  */
-export async function setRollingSummary(id: string, summary: string): Promise<void> {
-  await execute("UPDATE sessions SET summary = $2 WHERE id = $1", [id, summary]);
+export async function setRollingSummary(
+  id: string,
+  summary: string,
+  client?: PoolClient,
+): Promise<void> {
+  const exec: Executor = client ?? getPool();
+  await executeWith(exec, "UPDATE sessions SET summary = $2 WHERE id = $1", [id, summary]);
+}
+
+/**
+ * Read the per-session memory language marker.
+ *
+ * Returns null when the session has not yet been checkpointed — the first
+ * checkpoint infers and persists a value via {@link setMemoryLanguageCode}.
+ */
+export async function getMemoryLanguageCode(id: string): Promise<string | null> {
+  const row = await queryOneWith<{ memory_language_code: string | null }>(
+    getPool(),
+    "SELECT memory_language_code FROM sessions WHERE id = $1",
+    [id],
+  );
+  return row?.memory_language_code ?? null;
+}
+
+/**
+ * Persist the per-session memory language marker.
+ *
+ * Validates `code` against {@link LANG_CODE_RE} and throws on invalid input
+ * — callers should never pass raw untrusted values here. The intent is that
+ * the LLM's `session_language_inferred` field is the only source of truth,
+ * and it is validated at this boundary.
+ *
+ * The UPDATE is guarded by `WHERE memory_language_code IS NULL` so a session
+ * that already has a persisted value is not silently overwritten by a later
+ * checkpoint — this honours the v5 invariant "raz ustawiony kod zostaje do
+ * końca sesji". Callers that need to intentionally change the value must
+ * first NULL it out (deferred UX; not supported via this function in v1).
+ *
+ * When `client` is provided, runs inside the caller's transaction.
+ */
+export async function setMemoryLanguageCode(
+  id: string,
+  code: string,
+  client?: PoolClient,
+): Promise<void> {
+  if (!LANG_CODE_RE.test(code)) {
+    throw new Error(
+      `setMemoryLanguageCode: invalid code "${code}" — expected ^([a-z]{2,3}(-[A-Z]{2})?|und)$`,
+    );
+  }
+  const exec: Executor = client ?? getPool();
+  await executeWith(
+    exec,
+    "UPDATE sessions SET memory_language_code = $2 WHERE id = $1 AND memory_language_code IS NULL",
+    [id, code],
+  );
 }
 
 /**
  * Partial archive — move messages with `id <= cutoffMessageId` into
  * `messages_archive` and set the live `message_count` to `remainingCount`
- * (i.e. the tail length that stays). Atomic via explicit transaction so a
- * crash mid-way cannot leave messages deleted without their archive copy.
+ * (i.e. the tail length that stays).
+ *
+ * When called without `client`, opens its own transaction (standalone call
+ * sites — e.g. forced compaction). When called WITH `client`, it runs as
+ * part of the caller's existing transaction (the PR2 atomic checkpoint
+ * write phase). Either way the combined "delete from messages + insert
+ * into messages_archive + update sessions.message_count" stays atomic.
  *
  * Column parity between `messages` and `messages_archive` is required by
  * migration 002; this helper relies on that invariant.
@@ -128,40 +238,54 @@ export async function archivePrefix(
   sessionId: string,
   cutoffMessageId: number,
   remainingCount: number,
+  client?: PoolClient,
 ): Promise<void> {
+  if (client) {
+    await runArchivePrefixStatements(client, sessionId, cutoffMessageId, remainingCount);
+    return;
+  }
   const pool = getPool();
-  const client = await pool.connect();
+  const own = await pool.connect();
   try {
-    await client.query("BEGIN");
-    // ON CONFLICT (id) DO NOTHING handles the giant-tool fork/copy case:
-    // forkToolMessageToArchive already copied the pre-placeholder payload into
-    // messages_archive under the same id, so when the (now placeholder) row
-    // later ages into a normal prefix and gets moved here, we must NOT collide
-    // with the already-archived full payload. Dropping the placeholder insert
-    // is correct — archive already holds the canonical content.
-    await client.query(
-      `WITH moved AS (
-         DELETE FROM messages
-         WHERE session_id = $1 AND id <= $2
-         RETURNING *
-       )
-       INSERT INTO messages_archive SELECT * FROM moved
-       ON CONFLICT (id) DO NOTHING`,
-      [sessionId, cutoffMessageId],
-    );
-    await client.query(
-      "UPDATE sessions SET message_count = $2 WHERE id = $1",
-      [sessionId, remainingCount],
-    );
-    await client.query("COMMIT");
+    await own.query("BEGIN");
+    await runArchivePrefixStatements(own, sessionId, cutoffMessageId, remainingCount);
+    await own.query("COMMIT");
   } catch (err) {
-    await client.query("ROLLBACK").catch(() => {
+    await own.query("ROLLBACK").catch(() => {
       // ROLLBACK failures are non-actionable; the original error is what matters.
     });
     throw err;
   } finally {
-    client.release();
+    own.release();
   }
+}
+
+async function runArchivePrefixStatements(
+  tx: PoolClient,
+  sessionId: string,
+  cutoffMessageId: number,
+  remainingCount: number,
+): Promise<void> {
+  // ON CONFLICT (id) DO NOTHING handles the giant-tool fork/copy case:
+  // forkToolMessageToArchive already copied the pre-placeholder payload into
+  // messages_archive under the same id, so when the (now placeholder) row
+  // later ages into a normal prefix and gets moved here, we must NOT collide
+  // with the already-archived full payload. Dropping the placeholder insert
+  // is correct — archive already holds the canonical content.
+  await tx.query(
+    `WITH moved AS (
+       DELETE FROM messages
+       WHERE session_id = $1 AND id <= $2
+       RETURNING *
+     )
+     INSERT INTO messages_archive SELECT * FROM moved
+     ON CONFLICT (id) DO NOTHING`,
+    [sessionId, cutoffMessageId],
+  );
+  await tx.query(
+    "UPDATE sessions SET message_count = $2 WHERE id = $1",
+    [sessionId, remainingCount],
+  );
 }
 
 /**
@@ -177,38 +301,57 @@ export async function archivePrefix(
 export async function forkToolMessageToArchive(
   messageId: number,
   placeholderContent: string,
+  client?: PoolClient,
 ): Promise<void> {
+  if (client) {
+    await runForkToolStatements(client, messageId, placeholderContent);
+    return;
+  }
   const pool = getPool();
-  const client = await pool.connect();
+  const own = await pool.connect();
   try {
-    await client.query("BEGIN");
-    // ON CONFLICT (id) DO NOTHING makes this retry-safe: if a crash between
-    // the archive insert and the live UPDATE retries the whole fork, we'd
-    // otherwise trip the unique index `LIKE INCLUDING INDEXES` copied from
-    // `messages.id`'s PK.
-    await client.query(
-      `INSERT INTO messages_archive SELECT * FROM messages WHERE id = $1
-       ON CONFLICT (id) DO NOTHING`,
-      [messageId],
-    );
-    await client.query(
-      "UPDATE messages SET content = $2 WHERE id = $1",
-      [messageId, placeholderContent],
-    );
-    await client.query("COMMIT");
+    await own.query("BEGIN");
+    await runForkToolStatements(own, messageId, placeholderContent);
+    await own.query("COMMIT");
   } catch (err) {
-    await client.query("ROLLBACK").catch(() => {
+    await own.query("ROLLBACK").catch(() => {
       // ROLLBACK failures are non-actionable; the original error is what matters.
     });
     throw err;
   } finally {
-    client.release();
+    own.release();
   }
+}
+
+async function runForkToolStatements(
+  tx: PoolClient,
+  messageId: number,
+  placeholderContent: string,
+): Promise<void> {
+  // ON CONFLICT (id) DO NOTHING makes this retry-safe: if a crash between
+  // the archive insert and the live UPDATE retries the whole fork, we'd
+  // otherwise trip the unique index `LIKE INCLUDING INDEXES` copied from
+  // `messages.id`'s PK.
+  await tx.query(
+    `INSERT INTO messages_archive SELECT * FROM messages WHERE id = $1
+     ON CONFLICT (id) DO NOTHING`,
+    [messageId],
+  );
+  await tx.query(
+    "UPDATE messages SET content = $2 WHERE id = $1",
+    [messageId, placeholderContent],
+  );
 }
 
 export async function listSessions(scope?: string, limit = 50): Promise<Session[]> {
   const rows = scope
-    ? await query<SessionRow>("SELECT * FROM sessions WHERE scope = $1 ORDER BY started_at DESC LIMIT $2", [scope, limit])
-    : await query<SessionRow>("SELECT * FROM sessions ORDER BY started_at DESC LIMIT $1", [limit]);
+    ? await query<SessionRow>(
+        "SELECT * FROM sessions WHERE scope = $1 ORDER BY started_at DESC LIMIT $2",
+        [scope, limit],
+      )
+    : await query<SessionRow>(
+        "SELECT * FROM sessions ORDER BY started_at DESC LIMIT $1",
+        [limit],
+      );
   return rows.map(mapRow);
 }

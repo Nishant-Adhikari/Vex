@@ -5,6 +5,13 @@
  * compaction call so nothing said before the current prefix is dropped on the
  * floor. The prompt instructs the model to MERGE, not replace — preserving
  * decisions, tool outcomes, and pending actions across successive checkpoints.
+ *
+ * Multilingual contract (PR2, post-migration 008):
+ *   The summary is produced in the session's language, not forced English.
+ *   The caller passes the persisted `sessions.memory_language_code` as
+ *   `currentCode`; the prompt pins the output language. For the very first
+ *   checkpoint (`currentCode === null`) or sessions marked `"und"`, the
+ *   summarizer picks the dominant language of the archived prefix.
  */
 
 import type { InferenceProvider, InferenceConfig } from "@echo-agent/inference/types.js";
@@ -18,12 +25,13 @@ export async function summarizePrefix(
   previousSummary: string | null,
   provider: InferenceProvider,
   config: InferenceConfig,
+  currentCode: string | null,
 ): Promise<string> {
   if (prefix.length === 0) {
     throw new Error("summarizePrefix: prefix must be non-empty");
   }
 
-  const compactionPrompt = buildCompactionPrompt(prefix, previousSummary);
+  const compactionPrompt = buildCompactionPrompt(prefix, previousSummary, currentCode);
   const { content: summary } = await provider.chatCompletionSimple(
     [{ role: "system", content: compactionPrompt }],
     config,
@@ -41,6 +49,7 @@ export async function summarizePrefix(
 function buildCompactionPrompt(
   prefix: readonly MessageWithId[],
   previousSummary: string | null,
+  currentCode: string | null,
 ): string {
   const conversation = prefix
     .map((m) => `[${m.role}]: ${m.content.slice(0, PER_MESSAGE_CHAR_CAP)}`)
@@ -57,8 +66,43 @@ function buildCompactionPrompt(
 - Important data points (balances, prices, positions)
 - Any pending actions or next steps
 
-Drop superseded details. Do not re-output the previous summary verbatim — integrate it. Output plain text, no preamble. Output in English — if the archived conversation uses another language, translate to English; never mirror the source language.
+Drop superseded details. Do not re-output the previous summary verbatim — integrate it. Output plain text, no preamble.
+
+${buildLanguageDirective(currentCode)}
 
 ${previousBlock}Archived prefix:
 ${conversation}`;
+}
+
+function buildLanguageDirective(currentCode: string | null): string {
+  if (currentCode === null || currentCode === "und") {
+    return "Output in the dominant language of the archived conversation — preserve the user's language naturally. If the previous summary (above) is in a different language than the archived prefix, align the merged output with the archived prefix's language.";
+  }
+  const languageName = languageNameFor(currentCode);
+  return `Output in ${languageName}. Preserve this language across the entire summary — do not translate out of ${languageName}. If the previous summary or archived prefix mixes other languages, normalise to ${languageName}.`;
+}
+
+function languageNameFor(code: string): string {
+  const primary = code.split("-")[0]!;
+  const map: Record<string, string> = {
+    en: "English",
+    pl: "Polish",
+    fr: "French",
+    zh: "Chinese",
+    vi: "Vietnamese",
+    es: "Spanish",
+    de: "German",
+    it: "Italian",
+    pt: "Portuguese",
+    ja: "Japanese",
+    ko: "Korean",
+    ru: "Russian",
+    ar: "Arabic",
+    nl: "Dutch",
+    uk: "Ukrainian",
+    tr: "Turkish",
+  };
+  const name = map[primary];
+  if (!name) return `the language with code "${code}"`;
+  return code.includes("-") ? `${name} (${code})` : name;
 }
