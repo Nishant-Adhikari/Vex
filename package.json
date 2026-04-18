@@ -33,7 +33,8 @@
     "knowledge-export": "tsx src/echo-agent/scripts/knowledge-export.ts",
     "knowledge-import": "tsx src/echo-agent/scripts/knowledge-import.ts",
     "knowledge-reembed": "tsx src/echo-agent/scripts/knowledge-reembed.ts",
-    "benchmark-cross-lingual": "tsx src/echo-agent/scripts/cross-lingual-benchmark.ts"
+    "benchmark-cross-lingual": "tsx src/echo-agent/scripts/cross-lingual-benchmark.ts",
+    "check-checkpoint-compliance": "tsx src/echo-agent/scripts/checkpoint-compliance-check.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-ts-sdk": "^1.2.1",
