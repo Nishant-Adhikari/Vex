@@ -411,7 +411,10 @@ export async function listPromotable(
        AND k.id IS NULL
      ORDER BY e.created_at DESC, e.id DESC
      LIMIT $3`,
-    [memoryScopeKey, PROMOTABLE_KINDS as unknown as string[], limit],
+    // pg accepts `readonly string[]` for `text[]` params; the spread keeps
+    // the literal types in the `PROMOTABLE_KINDS` const visible to TS
+    // without an `as unknown as` cast.
+    [memoryScopeKey, [...PROMOTABLE_KINDS], limit],
   );
   return rows.map(r => ({
     ...mapRow(r),

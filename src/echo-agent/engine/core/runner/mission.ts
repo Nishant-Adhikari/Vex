@@ -246,7 +246,7 @@ export async function resumeMissionRun(
     },
   };
 
-  const tools = toToolDefinitions(getOpenAITools(run.loopMode as "full" | "restricted" | "off"));
+  const tools = toToolDefinitions(getOpenAITools(run.loopMode));
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,
@@ -254,7 +254,7 @@ export async function resumeMissionRun(
   };
 
   const result = await runTurnLoop(
-    { ...hydrated.context, missionRunId: runId, loopMode: run.loopMode as any, sessionKind: "mission" },
+    { ...hydrated.context, missionRunId: runId, loopMode: run.loopMode, sessionKind: "mission" },
     hydrated.messages,
     hydrated.summary,
     hydrated.tokenCount,

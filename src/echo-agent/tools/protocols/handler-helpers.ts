@@ -3,9 +3,36 @@
  *
  * str/num/ok/fail are used identically in all 13 handler files.
  * Consolidating here per Team Standards §2.3 (stop on repetition, 3+ = extract).
+ *
+ * `enumField` is re-exported from `tools/internal/types.ts` where it already
+ * exists — same helper, one source of truth. Post-PR1 the protocol runtime
+ * validates `ProtocolParamDef.type` (string/number/boolean) at the
+ * execute_tool boundary, so by the time a handler calls `enumField` the
+ * value is guaranteed to be a string (or missing); the helper narrows it
+ * further to the SDK-expected enum set.
  */
 
 import type { ToolResult } from "../types.js";
+
+export { enumField } from "../internal/types.js";
+
+/**
+ * Widen an SDK response value to `ToolResult.data`'s open
+ * `Record<string, unknown>` shape. The runtime value is structurally
+ * compatible — the double-cast exists only because TypeScript rejects
+ * `typed-object → Record<string, unknown>` for interfaces without an
+ * index signature. Centralising it here keeps handlers that pass through
+ * a typed SDK result to one acknowledged unsafe line instead of
+ * scattering `as unknown as` around the handler files.
+ *
+ * Use this ONLY when you are intentionally exposing an SDK response
+ * directly as `ToolResult.data`. Prefer constructing a plain object
+ * literal (`data: { count, items }`) when the output already wraps the
+ * response.
+ */
+export function toResultData(value: unknown): Record<string, unknown> {
+  return value as Record<string, unknown>;
+}
 
 /** Safe string accessor from params. */
 export function str(p: Record<string, unknown>, k: string): string {

@@ -11,7 +11,7 @@ import { requireEvmWallet, requireSolanaWallet } from "@tools/wallet/multi-auth.
 import { prepareQuoteRequest } from "@tools/khalani/request.js";
 
 import type { ProtocolHandler } from "../../types.js";
-import { str } from "../../handler-helpers.js";
+import { str, toResultData } from "../../handler-helpers.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
@@ -78,7 +78,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     return {
       success: true,
       output: JSON.stringify(result, null, 2),
-      data: result as unknown as Record<string, unknown>,
+      data: toResultData(result),
     };
   },
 
@@ -167,7 +167,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     return {
       success: true,
       output: JSON.stringify(order, null, 2),
-      data: order as unknown as Record<string, unknown>,
+      data: toResultData(order),
     };
   },
 };

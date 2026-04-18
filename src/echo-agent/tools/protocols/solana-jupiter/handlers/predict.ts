@@ -18,16 +18,24 @@ import {
 import { JUPITER_PREDICTION_USDC_MINT } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
 
 import type { ProtocolHandler } from "../../types.js";
-import { str, num, ok, fail } from "../../handler-helpers.js";
+import { str, num, ok, fail, enumField } from "../../handler-helpers.js";
 import { walletAddress, walletSecret } from "./core.js";
+
+// ── SDK enum mirrors ──────────────────────────────────────────────
+// Source: `JupiterPredictionCategory` + `JupiterPredictionFilter` in
+// `@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/types/base.ts`.
+const PREDICT_CATEGORY = [
+  "all", "crypto", "sports", "politics", "esports", "culture", "economics", "tech",
+] as const;
+const PREDICT_FILTER = ["new", "live", "trending"] as const;
 
 // ── Handler map ──────────────────────────────────────────────────
 
 export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.events": async (p) => {
     const result = await getJupiterPredictionEvents({
-      category: (str(p, "category") || undefined) as any,
-      filter: (str(p, "filter") || undefined) as any,
+      category: enumField(p, "category", PREDICT_CATEGORY),
+      filter: enumField(p, "filter", PREDICT_FILTER),
       includeMarkets: true,
     });
     return ok(result);

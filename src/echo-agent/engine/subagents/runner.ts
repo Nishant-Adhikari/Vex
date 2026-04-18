@@ -104,7 +104,7 @@ export async function runSubagentEngine(
   const openAITools = getOpenAITools(effectiveLoopMode, "subagent");
   const tools: ToolDefinition[] = openAITools.map(t => ({
     type: "function" as const,
-    function: { name: t.function.name, description: t.function.description, parameters: t.function.parameters as unknown as Record<string, unknown> },
+    function: { name: t.function.name, description: t.function.description, parameters: t.function.parameters },
   }));
 
   // Use ENV-backed subagent config, with subagent.maxIterations as override

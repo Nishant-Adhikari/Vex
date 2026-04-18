@@ -7,8 +7,9 @@ import type { ToolDefinition } from "@echo-agent/inference/types.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
 
 /**
- * Convert OpenAITool[] to ToolDefinition[].
- * Structurally compatible at runtime — JsonSchema is a subset of Record<string, unknown>.
+ * Convert OpenAITool[] to ToolDefinition[]. Type-level identity after
+ * `ToolDefinition.function.parameters` was narrowed from
+ * `Record<string, unknown>` to `JsonSchema` (PR3) — no cast needed.
  */
 export function toToolDefinitions(openAITools: ReturnType<typeof getOpenAITools>): ToolDefinition[] {
   return openAITools.map(t => ({
@@ -16,7 +17,7 @@ export function toToolDefinitions(openAITools: ReturnType<typeof getOpenAITools>
     function: {
       name: t.function.name,
       description: t.function.description,
-      parameters: t.function.parameters as unknown as Record<string, unknown>,
+      parameters: t.function.parameters,
     },
   }));
 }

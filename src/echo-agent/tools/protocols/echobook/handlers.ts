@@ -16,7 +16,14 @@ import { getNotifications, getUnreadCount, markRead } from "@tools/echobook/noti
 import { getMyPoints, getLeaderboard, getPointsEvents } from "@tools/echobook/points.js";
 import { submitTradeProof, getTradeProof } from "@tools/echobook/tradeProof.js";
 import type { ProtocolHandler } from "../types.js";
-import { str, num, ok, fail } from "../handler-helpers.js";
+import { str, num, ok, fail, enumField } from "../handler-helpers.js";
+
+// ── SDK enum mirrors ──────────────────────────────────────────────
+// Source of truth: `FeedOptions` in `@tools/echobook/posts.ts`. Mirroring
+// here keeps the runtime boundary explicit — an SDK enum drift would
+// require an update in both places simultaneously.
+const FEED_SORTS = ["hot", "new", "top"] as const;
+const FEED_PERIODS = ["day", "week", "all"] as const;
 
 // ── Handler map ──────────────────────────────────────────────────
 
@@ -25,20 +32,20 @@ export const ECHOBOOK_HANDLERS: Record<string, ProtocolHandler> = {
 
   "echobook.feed": async (p) => {
     const result = await getFeed({
-      sort: (str(p, "sort") || undefined) as any,
+      sort: enumField(p, "sort", FEED_SORTS),
       limit: num(p, "limit"),
       cursor: str(p, "cursor") || undefined,
-      period: (str(p, "period") || undefined) as any,
+      period: enumField(p, "period", FEED_PERIODS),
     });
     return ok(result);
   },
 
   "echobook.feed.following": async (p) => {
     const result = await getFollowingFeed({
-      sort: (str(p, "sort") || undefined) as any,
+      sort: enumField(p, "sort", FEED_SORTS),
       limit: num(p, "limit"),
       cursor: str(p, "cursor") || undefined,
-      period: (str(p, "period") || undefined) as any,
+      period: enumField(p, "period", FEED_PERIODS),
     });
     return ok(result);
   },

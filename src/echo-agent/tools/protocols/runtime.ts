@@ -44,7 +44,7 @@ export async function executeProtocolTool(
 
   // Validate params — presence (required) and runtime type (§1f).
   // Pre-PR1 runtime only checked `required`; that left handlers defending
-  // against bad types with `as any` casts on SDK enum params. Rejecting the
+  // against bad types with `as-any` casts on SDK enum params. Rejecting the
   // call here gives the LLM a clear error instead of silently coercing via
   // `str()` / `num()` readers inside each handler.
   const params = request.params ?? {};

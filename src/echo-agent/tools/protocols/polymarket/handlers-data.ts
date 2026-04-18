@@ -5,7 +5,17 @@
 
 import { getPolyDataClient } from "@tools/polymarket/data/client.js";
 import type { ProtocolHandler } from "../types.js";
-import { str, num, bool, ok, fail } from "../handler-helpers.js";
+import { str, num, bool, ok, fail, enumField } from "../handler-helpers.js";
+
+// ── SDK enum mirrors ──────────────────────────────────────────────
+// Kept here (not derived from manifests) because the SDK type is the
+// source of truth — a manifest description drifting from the SDK would
+// silently over-accept values that SDK would later reject at HTTP layer.
+const POSITIONS_SORT_BY = ["CURRENT", "INITIAL", "TOKENS", "CASHPNL", "PERCENTPNL", "TITLE", "RESOLVING", "PRICE", "AVGPRICE"] as const;
+const CLOSED_POSITIONS_SORT_BY = ["REALIZEDPNL", "TITLE", "PRICE", "AVGPRICE", "TIMESTAMP"] as const;
+const ACTIVITY_SORT_BY = ["TIMESTAMP", "TOKENS", "CASH"] as const;
+const SORT_DIRECTION = ["ASC", "DESC"] as const;
+const TRADES_FILTER_TYPE = ["CASH", "TOKENS"] as const;
 
 
 export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
@@ -23,8 +33,8 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       mergeable: bool(p, "mergeable"),
       limit: num(p, "limit"),
       offset: num(p, "offset"),
-      sortBy: (str(p, "sortBy") || undefined) as any,
-      sortDirection: (str(p, "sortDirection") || undefined) as any,
+      sortBy: enumField(p, "sortBy", POSITIONS_SORT_BY),
+      sortDirection: enumField(p, "sortDirection", SORT_DIRECTION),
       title: str(p, "title") || undefined,
     });
     return ok({ count: positions.length, positions });
@@ -40,8 +50,8 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       title: str(p, "title") || undefined,
       limit: num(p, "limit"),
       offset: num(p, "offset"),
-      sortBy: (str(p, "sortBy") || undefined) as any,
-      sortDirection: (str(p, "sortDirection") || undefined) as any,
+      sortBy: enumField(p, "sortBy", CLOSED_POSITIONS_SORT_BY),
+      sortDirection: enumField(p, "sortDirection", SORT_DIRECTION),
     });
     return ok({ count: positions.length, positions });
   },
@@ -59,8 +69,8 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       end: num(p, "end"),
       limit: num(p, "limit"),
       offset: num(p, "offset"),
-      sortBy: (str(p, "sortBy") || undefined) as any,
-      sortDirection: (str(p, "sortDirection") || undefined) as any,
+      sortBy: enumField(p, "sortBy", ACTIVITY_SORT_BY),
+      sortDirection: enumField(p, "sortDirection", SORT_DIRECTION),
     });
     return ok({ count: activity.length, activity });
   },
@@ -72,7 +82,7 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       eventId: num(p, "eventId"),
       side: str(p, "side") || undefined,
       takerOnly: bool(p, "takerOnly"),
-      filterType: (str(p, "filterType") || undefined) as any,
+      filterType: enumField(p, "filterType", TRADES_FILTER_TYPE),
       filterAmount: num(p, "filterAmount"),
       limit: num(p, "limit"),
       offset: num(p, "offset"),

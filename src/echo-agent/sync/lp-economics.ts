@@ -10,6 +10,26 @@ import type { LpLegInsert } from "@echo-agent/db/repos/lp-events.js";
 import logger from "@utils/logger.js";
 
 /**
+ * Shape of the `tokens` payload inside a ZaaS `protocolFee` action. The
+ * upstream ZaaS GraphQL response carries this array but the client-side
+ * `ZapAction.protocolFee` type declares only a narrower surface — we reach
+ * through the boundary here with a single cast + runtime guard. A proper
+ * Zod parse of the zap-details response is a separate follow-up tracked
+ * in `src/echo-agent/AUDIT_INVENTORY.md`.
+ */
+interface ProtocolFeeTokens {
+  tokens?: Array<{ address?: string; amount?: string; amountUsd?: string }>;
+}
+
+function readProtocolFeeTokens(
+  protocolFee: NonNullable<ZapAction["protocolFee"]>,
+): ProtocolFeeTokens["tokens"] {
+  // allow: GraphQL response field not exposed on upstream SDK type
+  const candidate = (protocolFee as unknown as ProtocolFeeTokens).tokens;
+  return Array.isArray(candidate) ? candidate : undefined;
+}
+
+/**
  * Extract LP cashflow legs from ZaaS zapDetails.
  *
  * For zap-in: addLiquidity → deposit, protocolFee → fee, refund → refund
@@ -61,9 +81,8 @@ export function extractLpLegs(
     }
 
     if (type === "ACTION_TYPE_PROTOCOL_FEE" && zapAction.protocolFee) {
-      // Protocol fee legs
-      const fee = zapAction.protocolFee;
-      const tokens = (fee as unknown as { tokens?: Array<{ address: string; amount: string; amountUsd?: string }> }).tokens;
+      // Protocol fee legs.
+      const tokens = readProtocolFeeTokens(zapAction.protocolFee);
       if (tokens) {
         for (const token of tokens) {
           if (!token.address || !token.amount || token.amount === "0") continue;
@@ -109,7 +128,7 @@ export function extractFeeCollectedUsd(zapDetails: ZapDetails | undefined): stri
   let totalFee = 0;
   for (const action of zapDetails.actions) {
     if (action.type === "ACTION_TYPE_PROTOCOL_FEE" && action.protocolFee) {
-      const tokens = (action.protocolFee as unknown as { tokens?: Array<{ amountUsd?: string }> }).tokens;
+      const tokens = readProtocolFeeTokens(action.protocolFee);
       if (tokens) {
         for (const t of tokens) {
           if (t.amountUsd) totalFee += parseFloat(t.amountUsd);

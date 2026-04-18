@@ -5,6 +5,8 @@
  * Every provider (OpenRouter, 0G Compute) maps to these types.
  */
 
+import type { JsonSchema } from "../tools/types.js";
+
 // ── Provider config (loaded once at startup) ─────────────────────
 
 export interface InferenceConfig {
@@ -168,7 +170,13 @@ export interface ToolDefinition {
   function: {
     name: string;
     description: string;
-    parameters: Record<string, unknown>;
+    /**
+     * OpenAI-compatible JSON Schema. Strictly typed via `JsonSchema` rather
+     * than `Record<string, unknown>` so engine-side `toToolDefinitions`
+     * and subagent runner don't need `as unknown as Record<...>` casts.
+     * Providers pass this through to the upstream API unchanged.
+     */
+    parameters: JsonSchema;
   };
 }
 

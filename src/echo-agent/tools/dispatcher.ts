@@ -18,6 +18,7 @@ import { isInternalTool, isToolBlockedForRole } from "./registry.js";
 import { discoverProtocolCapabilities } from "./protocols/runtime.js";
 import { executeProtocolTool } from "./protocols/runtime.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "./protocols/discovery.telemetry.js";
+import { toResultData } from "./protocols/handler-helpers.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -79,7 +80,7 @@ async function routeToolCall(
     return {
       success: result.success,
       output: JSON.stringify(result, null, 2),
-      data: result as unknown as Record<string, unknown>,
+      data: toResultData(result),
     };
   }
 

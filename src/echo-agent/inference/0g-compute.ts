@@ -280,6 +280,10 @@ export class ZeroGComputeProvider implements InferenceProvider {
     }
 
     const contentForAuth = JSON.stringify(body.messages);
+    // allow: broker SDK returns `Record<string, unknown>` but the runtime
+    // values are the HMAC header strings the 0G Compute API expects. A
+    // typed SDK would remove this; tracked as follow-up in
+    // `src/echo-agent/AUDIT_INVENTORY.md` (provider adapter rewrite).
     const authHeaders = await broker.inference.getRequestHeaders(
       state.activeProvider,
       contentForAuth,

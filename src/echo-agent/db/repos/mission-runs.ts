@@ -5,6 +5,7 @@
  * Run status is the source of truth for per-run state (not runtime_state).
  */
 
+import type { LoopMode } from "../../engine/types.js";
 import { query, queryOne, execute } from "../client.js";
 
 // ── Types ───────────────────────────────────────────────────────
@@ -14,7 +15,7 @@ export interface MissionRun {
   missionId: string;
   sessionId: string;
   status: string;
-  loopMode: string;
+  loopMode: LoopMode;
   startedAt: string;
   endedAt: string | null;
   lastCheckpointAt: string | null;
@@ -24,13 +25,24 @@ export interface MissionRun {
   iterationCount: number;
 }
 
+// DB stores `loop_mode` as TEXT without a CHECK constraint. Narrow at the
+// repo boundary so callers get a typed domain value and never need `as any`.
+// Unknown values fall back to the safest mode ("off") rather than throwing —
+// a mission with a typo in loop_mode should degrade, not crash the loop.
+const ALLOWED_LOOP_MODES = ["off", "restricted", "full"] as const;
+
+function coerceLoopMode(raw: unknown): LoopMode {
+  if (typeof raw !== "string") return "off";
+  return (ALLOWED_LOOP_MODES as readonly string[]).includes(raw) ? (raw as LoopMode) : "off";
+}
+
 function mapRow(r: Record<string, unknown>): MissionRun {
   return {
     id: r.id as string,
     missionId: r.mission_id as string,
     sessionId: r.session_id as string,
     status: r.status as string,
-    loopMode: r.loop_mode as string,
+    loopMode: coerceLoopMode(r.loop_mode),
     startedAt: (r.started_at instanceof Date ? r.started_at.toISOString() : r.started_at as string),
     endedAt: r.ended_at ? (r.ended_at instanceof Date ? r.ended_at.toISOString() : r.ended_at as string) : null,
     lastCheckpointAt: r.last_checkpoint_at ? (r.last_checkpoint_at instanceof Date ? r.last_checkpoint_at.toISOString() : r.last_checkpoint_at as string) : null,
