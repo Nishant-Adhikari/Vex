@@ -1,5 +1,11 @@
 /**
- * Replay projections — one-time correction tool.
+ * Replay projections — operator-only correction + e2e harness tool.
+ *
+ * NOT part of the normal runtime path. Current consumers (post-PR2 audit):
+ *   - `src/echo-agent/e2e/core/replay-check.ts` — e2e smoke that verifies
+ *     `replayProjections()` produces an identical snapshot to the live path.
+ *   - Operators running this by hand against a DB after W3 handler fixes
+ *     are deployed (truthful one-shot backfill from the audit trail).
  *
  * Reads immutable audit trail (protocol_executions + protocol_capture_items),
  * truncates projection tables, and re-runs activity population with
@@ -10,7 +16,6 @@
  *            proj_lp_events, proj_lp_event_legs.
  *
  * Idempotent: can run multiple times with same result.
- * Run once after W3 handler fixes are deployed.
  */
 
 import { query, execute } from "@echo-agent/db/client.js";
