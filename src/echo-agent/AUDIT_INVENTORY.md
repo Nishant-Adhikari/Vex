@@ -1,8 +1,11 @@
 # Echo-Agent Audit Inventory
 
-Status: draft for milestone `echo-agent audit` (PR1–PR5).
+Status: post-milestone state (`echo-agent audit` PR1–PR6).
 Generated: 2026-04-18 (post-PR4 `77b9c20`).
-Source of truth for classification decisions across the milestone. Each subsequent PR references rows by `path`.
+Updated: 2026-04-19 (post-PR5 `0c8c185`, refreshed in PR6 follow-up).
+Source of truth for the classification decisions taken across the milestone.
+§1 (assets) + §3 (hotspots) reflect the final post-PR5 state; §4 (follow-ups)
+tracks items intentionally deferred beyond this milestone.
 
 Classification vocabulary:
 
@@ -50,24 +53,26 @@ src/echo-agent/scripts/
   demos/        # session-recall-demo
 ```
 
-## 3. Runtime hotspots (exceed team-agreed 300/400 LOC threshold)
+## 3. Runtime hotspots (team-agreed 300/400 LOC threshold) — post-milestone state
 
-Counted toward LOC limit. Post-PR4 state.
+Counted toward runtime LOC limit. Pre-milestone LOC is shown in the first
+column for historical reference; post-milestone state is in the "Outcome"
+column with the actual current LOC (as of 2026-04-19).
 
-| Path | LOC | Status | Planned action |
-|------|-----|--------|----------------|
-| `src/echo-agent/db/repos/session-episodes.ts` | 482 | runtime — **HARD limit** | Split in PR2 §2b (types / crud / recall / promotion-queries + barrel). |
-| `src/echo-agent/knowledge/promotion.ts` | 455 | runtime — **HARD limit** (PR4 addition) | Split in PR2 §2a (eligibility / translation / persist / orchestrator + barrel). |
-| `src/echo-agent/db/repos/knowledge-lifecycle.ts` | 387 | runtime — near soft | Split in PR2 §2c (errors / types / supersede + barrel). |
-| `src/echo-agent/inference/openrouter.ts` | 370 | runtime adapter | Keep; PR4 adds adapter-level tests. Not split. |
-| `src/echo-agent/engine/checkpoint/extract.ts` | 361 | runtime | Keep; extract prompt is cohesive. Not split. |
-| `src/echo-agent/db/repos/sessions.ts` | 357 | runtime | Keep; cohesive repo. Not split. |
-| `src/echo-agent/engine/core/checkpoint.ts` | 352 | runtime — NON-GOAL §7.10 | Keep; Phase I/II invariant load-bearing. |
-| `src/echo-agent/tools/protocols/0g/jaine/handlers/swap.ts` | 351 | runtime | Keep; cohesive swap handler. |
-| `src/echo-agent/tools/protocols/polymarket/handlers-clob.ts` | 351 | runtime | Keep; cohesive CLOB handler. |
-| `src/echo-agent/engine/core/turn-loop.ts` | 333 | runtime — critical invariant | Keep; PR4 adds promotion-hook test. |
-| `src/echo-agent/tools/protocols/echobook/handlers.ts` | 301 | runtime | Split in PR2 §2d (per-domain handler files + barrel). |
-| `src/echo-agent/tools/protocols/discovery.ts` | 300 | runtime | Keep (at soft limit); PR1 removes `includeDeclared` internal branch → drops below. |
+| Path | Pre-PR LOC | Post-PR LOC | Outcome |
+|------|-----------|-------------|---------|
+| `src/echo-agent/db/repos/session-episodes.ts` | 482 | 41 | **DONE (PR2).** Barrel over `session-episodes/{types,crud,recall,promotion-queries}.ts` — biggest submodule 167 LOC. |
+| `src/echo-agent/knowledge/promotion.ts` | 455 | 264 | **DONE (PR2).** Orchestrator only; pipeline in `promotion/{eligibility,translation,persist}.ts` — biggest submodule 128 LOC. |
+| `src/echo-agent/db/repos/knowledge-lifecycle.ts` | 387 | 94 | **DONE (PR2).** Barrel over `knowledge-lifecycle/{errors,types,supersede}.ts` — biggest submodule 210 LOC. |
+| `src/echo-agent/inference/openrouter.ts` | 370 | 370 | **Kept.** Adapter; mapping tests deferred to follow-up (§4). |
+| `src/echo-agent/engine/checkpoint/extract.ts` | 361 | 361 | **Kept.** Extraction prompt is cohesive. |
+| `src/echo-agent/db/repos/sessions.ts` | 357 | 357 | **Kept.** Cohesive repo; tx-aware helpers added in PR2 of `vex_simplified_gate`. |
+| `src/echo-agent/engine/core/checkpoint.ts` | 352 | 352 | **Kept.** Phase I/II invariant load-bearing; non-goal this milestone. |
+| `src/echo-agent/tools/protocols/0g/jaine/handlers/swap.ts` | 351 | 351 | **Kept.** Cohesive swap handler. |
+| `src/echo-agent/tools/protocols/polymarket/handlers-clob.ts` | 351 | 351 | **Kept.** Cohesive CLOB handler. |
+| `src/echo-agent/engine/core/turn-loop.ts` | 333 | 333 | **Kept.** Promotion-hook pinned by `turn-loop-promotion.test.ts` (PR4). |
+| `src/echo-agent/tools/protocols/echobook/handlers.ts` | 301 | 37 | **DONE (PR2).** Barrel over `handlers/{posts,comments,profile,social,submolts,notifications,points,trade-proof}.ts` — biggest submodule 85 LOC. |
+| `src/echo-agent/tools/protocols/discovery.ts` | 300 | ~295 | **Kept.** `includeDeclared` branch removed in PR1 dropped a few lines. |
 
 ## 4. Follow-up tickets (extracted from plan non-goals §7 + PR-time deferrals)
 
@@ -80,10 +85,10 @@ provide structural coverage:
   already cover selection, retry, config, and cost shape. What remains (response
   parse, HMAC signature, tool-call delta accumulation) is highly SDK-shaped and
   would be a maintenance burden without integration-level payloads.
-- `sync/replay.ts` unit tests. The module is zero-ref runtime today — it will
-  move to `scripts/ops/replay-projections.ts` in PR5 with an operator-only
-  comment. A test there would need DB mocking + MUTATION_MATRIX fixture work
-  that is disproportionate to the risk.
+- `sync/replay.ts` unit tests. §1 decided to KEEP in-place (e2e consumer), so
+  a dedicated unit suite would need DB + MUTATION_MATRIX fixture work that is
+  disproportionate to the risk. The e2e harness at `e2e/core/replay-check.ts`
+  provides structural coverage today.
 
 Other follow-ups:
 
@@ -110,6 +115,19 @@ Imports from `@echo-agent/*` into `src/mcp/`:
 | `PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST`, `PROTOCOL_NAMESPACE_ALLOWLIST`, `NAMESPACE_DEFAULTS`, `PROTOCOL_TOOLS`, `isAdvertisedProtocolNamespace`, `isKnownProtocolNamespace`, `isProtocolToolAvailable`, `countAvailableToolsForNamespace`, `getMissingEnvForNamespace`, `getProtocolHandler`, `getProtocolManifest`, `NamespaceDefault` | `tools/protocols/catalog.ts` | PR1 (re-exports preserved; internal implementation = per-namespace registry + Map lookup). |
 | `ProtocolNamespace`, `ProtocolToolManifest`, `ProtocolHandler`, `ToolLifecycle` | `tools/protocols/types.ts` | PR1 (`ToolLifecycle = "active" | "declared"` → `ToolLifecycle = "active"` after `declared` removal; if any external consumer uses `"declared"`, that's a breaking change — mitigated by grep in PR1). |
 | `InternalToolContext` | `tools/internal/types.ts` | stable. |
-| `runMigrations`, `getPool`, embedding config, `sessionsRepo.*` | misc | stable. |
+| `runMigrations`, `getPool`, embedding config, `sessionsRepo.*` | misc | PR6 added typed exports check to `mcp-contract.test.ts` §"non-tools MCP surface". |
 
-Enforcement: `src/__tests__/echo-agent/tools/mcp-contract.test.ts` (Krok 0.2).
+Enforcement (post-PR6):
+- Protocol + tool surface: `src/__tests__/echo-agent/tools/mcp-contract.test.ts`
+  — now covers `tools/*` imports AND the non-tools MCP surface
+  (`runMigrations`, `getPool`, embedding config constants + loader,
+  `sessionsRepo.{createSession,setScope,endSession}`). Primary structural gate.
+- Production profile filtering: `src/__tests__/mcp/surface/profile.test.ts`
+  — asserts `getProductionMcpTools` hides subagent / MCP-excluded entries.
+- Registry projection for docs: `src/__tests__/mcp/docs/registry-projection.test.ts`
+  — asserts the per-namespace projection MCP exposes to docs consumers.
+- Cross-module type checking: `pnpm exec tsc --noEmit` (required in CI).
+
+No single test "closes the topic" — these four layers together protect the
+MCP surface. If a refactor silently renames or removes any of the 13 listed
+symbols, the structural tests fail before the MCP bridge even boots.

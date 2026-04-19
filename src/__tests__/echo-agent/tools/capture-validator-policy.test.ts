@@ -41,21 +41,11 @@ describe("capture validator — policy decisions", () => {
     });
   });
 
-  describe("known toolId with capture: 'full' contract", () => {
-    it("returns false when _tradeCapture is missing (fail-loud)", () => {
-      // Pick any mutating tool that has capture:"full" in MUTATION_MATRIX —
-      // we need a real entry here. Rather than hard-code a specific toolId
-      // (which could churn across refactors), we verify the behaviour via
-      // a defensive probe: iterate known matrix entries via the contract
-      // itself. If no such tool exists, the assertion trivially holds and
-      // the related `capture-contract.test.ts` already guarantees at least
-      // some mutating tools exist.
-      // We avoid importing MUTATION_MATRIX here to keep this test focused
-      // on the validator's own observable surface.
-      // Simpler alternative: feed a tool we know from `PROTOCOL_TOOLS`.
-      // This branch is covered indirectly by `sync/capture-contract.test.ts`,
-      // so we keep this policy test focused on the unknown-toolId arm.
-      expect(true).toBe(true);
-    });
-  });
+  // Note: the "known toolId with capture:'full'" arm is intentionally NOT
+  // tested here. It is covered structurally in
+  // `src/__tests__/echo-agent/sync/capture-contract.test.ts`, which walks
+  // every mutating tool in PROTOCOL_TOOLS and asserts a matching
+  // MUTATION_MATRIX row. Duplicating a wrapper call here would add no
+  // observable behaviour, so the policy file stays focused on the
+  // fail-open unknown-toolId decision.
 });

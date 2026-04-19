@@ -19,6 +19,14 @@
 
 import { describe, it, expect } from "vitest";
 
+import { runMigrations } from "@echo-agent/db/migrate.js";
+import { getPool } from "@echo-agent/db/client.js";
+import {
+  loadEmbeddingConfig,
+  MIN_EMBEDDING_DIM,
+  MAX_EMBEDDING_DIM,
+} from "@echo-agent/embeddings/config.js";
+import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
 import { dispatchTool } from "@echo-agent/tools/dispatcher.js";
 import {
   getProductionMcpTools,
@@ -221,6 +229,36 @@ describe("MCP contract — echo-agent public surface", () => {
       // If the type disappears, this file fails to compile.
       const _ctx: Partial<InternalToolContext> = {};
       expect(_ctx).toBeDefined();
+    });
+  });
+
+  describe("non-tools MCP surface", () => {
+    // MCP also consumes `runMigrations` (bootstrap), `getPool` (health),
+    // embedding config (health + knowledge), and `sessionsRepo.*`
+    // (session lifecycle). `mcp-contract.test.ts` is the single source
+    // of truth for those imports too — pre-PR6 this file only covered
+    // `tools/*`, which was an overclaim in AUDIT_INVENTORY.md §5.
+
+    it("db/migrate exports runMigrations as a function", () => {
+      expect(typeof runMigrations).toBe("function");
+    });
+
+    it("db/client exports getPool as a function", () => {
+      expect(typeof getPool).toBe("function");
+    });
+
+    it("embeddings/config exports loadEmbeddingConfig + MIN/MAX dim constants", () => {
+      expect(typeof loadEmbeddingConfig).toBe("function");
+      expect(typeof MIN_EMBEDDING_DIM).toBe("number");
+      expect(typeof MAX_EMBEDDING_DIM).toBe("number");
+      expect(MIN_EMBEDDING_DIM).toBeLessThan(MAX_EMBEDDING_DIM);
+    });
+
+    it("sessions repo exports the functions MCP's session lifecycle uses", () => {
+      // Consumers: src/mcp/sessions.ts (createSession, setScope, endSession).
+      expect(typeof sessionsRepo.createSession).toBe("function");
+      expect(typeof sessionsRepo.setScope).toBe("function");
+      expect(typeof sessionsRepo.endSession).toBe("function");
     });
   });
 

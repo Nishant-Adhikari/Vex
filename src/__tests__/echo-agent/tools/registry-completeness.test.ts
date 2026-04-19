@@ -24,6 +24,8 @@ import {
   isAdvertisedProtocolNamespace,
   isKnownProtocolNamespace,
 } from "@echo-agent/tools/protocols/catalog.js";
+import { INTERNAL_TOOL_LOADERS } from "@echo-agent/tools/dispatcher.js";
+import { getAllTools } from "@echo-agent/tools/registry.js";
 
 describe("registry completeness", () => {
   it("every manifest has a handler and every handler has a manifest", () => {
@@ -120,6 +122,55 @@ describe("registry completeness", () => {
       // We don't assert a specific number here because navigation state can
       // change; we just assert the helper is callable.
       expect(NAMESPACE_DEFAULTS[ns]).toBeDefined();
+    }
+  });
+});
+
+// ── Internal tool loaders ─────────────────────────────────────────────
+//
+// `tools/dispatcher.ts::INTERNAL_TOOL_LOADERS` is the table-driven lazy
+// loader map that replaces the pre-PR1 25-case switch. Adding a new
+// internal tool to `tools/registry.ts` without also adding a loader row
+// silently returns `Unknown internal tool: X` at runtime — these asserts
+// surface the mismatch at test time instead.
+//
+// Meta-tools `discover_tools` and `execute_tool` intentionally live
+// outside `INTERNAL_TOOL_LOADERS` (they are dispatched directly in
+// `routeToolCall` before the internal-tool fallback), so they are
+// excluded from the symmetry check.
+
+const META_TOOL_NAMES = new Set(["discover_tools", "execute_tool"]);
+
+describe("dispatcher INTERNAL_TOOL_LOADERS completeness", () => {
+  it("every kind='internal' ToolDef (except meta-tools) has an INTERNAL_TOOL_LOADERS entry", () => {
+    const expected = getAllTools()
+      .filter((t) => t.kind === "internal")
+      .map((t) => t.name)
+      .filter((n) => !META_TOOL_NAMES.has(n));
+    const loaders = new Set(Object.keys(INTERNAL_TOOL_LOADERS));
+    const missing = expected.filter((n) => !loaders.has(n));
+    expect(missing, "internal tools declared in registry without a dispatcher loader").toEqual([]);
+  });
+
+  it("every INTERNAL_TOOL_LOADERS key has a matching kind='internal' ToolDef", () => {
+    const internalNames = new Set(
+      getAllTools()
+        .filter((t) => t.kind === "internal")
+        .map((t) => t.name),
+    );
+    const orphans = Object.keys(INTERNAL_TOOL_LOADERS).filter((k) => !internalNames.has(k));
+    expect(orphans, "INTERNAL_TOOL_LOADERS entries with no corresponding ToolDef").toEqual([]);
+  });
+
+  it("no INTERNAL_TOOL_LOADERS entry shadows a meta-tool name", () => {
+    const loaders = Object.keys(INTERNAL_TOOL_LOADERS);
+    const shadowed = loaders.filter((k) => META_TOOL_NAMES.has(k));
+    expect(shadowed, "meta-tools must stay out of INTERNAL_TOOL_LOADERS").toEqual([]);
+  });
+
+  it("every INTERNAL_TOOL_LOADERS value is a function (loader factory)", () => {
+    for (const [name, loader] of Object.entries(INTERNAL_TOOL_LOADERS)) {
+      expect(typeof loader, `loader for ${name} should be a function`).toBe("function");
     }
   });
 });

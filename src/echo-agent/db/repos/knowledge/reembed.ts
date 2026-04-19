@@ -2,9 +2,18 @@
  * Knowledge repo — reembed support (in-place vector update + batch streams).
  *
  * Used by `scripts/knowledge-reembed` when the embedding model changes but
- * the dim stays the same. Includes safety prechecks (mixed-dim detection +
- * runtime-active soft lock) so the script can refuse to run when it would
- * leave the DB in an inconsistent state.
+ * the dim stays the same. Includes a mixed-dim precheck
+ * (`findRowsWithDimNotMatching`) so the script can refuse to run when the
+ * DB would end up with vectors of incompatible dimensions.
+ *
+ * Writer-side safety comes from the `maintenance_leases` authoritative
+ * write gate — see `src/echo-agent/db/repos/maintenance-lease.ts`. While
+ * reembed holds the lease via `acquireReembedLease`, every other writer
+ * (`insertEntry`, `supersedeEntry`, promotion inserts, knowledge-import)
+ * runs under `withLeaseSharedLock` and fails fast with
+ * `MaintenanceActiveError`. The old `runtime_state.active` flag is no
+ * longer a gate — it is kept purely as an observability signal for
+ * CLI / UI status (see `scripts/knowledge-reembed.ts` --help).
  */
 
 import { query, queryOne, execute } from "../../client.js";
