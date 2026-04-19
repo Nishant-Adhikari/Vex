@@ -107,7 +107,7 @@ describe("mission-runs repo", () => {
       const [sql] = mockQueryOne.mock.calls[0];
       expect(sql).toContain("running");
       expect(sql).toContain("paused_approval");
-      expect(sql).toContain("paused_checkpoint");
+      expect(sql).not.toContain("paused_checkpoint");
     });
 
     it("returns null when no active run", async () => {

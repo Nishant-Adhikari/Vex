@@ -73,7 +73,7 @@ export async function updateStatus(
   stopReason?: string,
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
 ): Promise<void> {
-  const ended = (status !== "running" && status !== "paused_approval" && status !== "paused_checkpoint")
+  const ended = (status !== "running" && status !== "paused_approval")
     ? "NOW()" : "ended_at";
   await execute(
     `UPDATE mission_runs SET status = $1, stop_reason = COALESCE($2, stop_reason),
@@ -106,7 +106,7 @@ export async function incrementIterations(id: string): Promise<number> {
 
 export async function getActiveRun(missionId: string): Promise<MissionRun | null> {
   const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM mission_runs WHERE mission_id = $1 AND status IN ('running', 'paused_approval', 'paused_checkpoint') ORDER BY started_at DESC LIMIT 1",
+    "SELECT * FROM mission_runs WHERE mission_id = $1 AND status IN ('running', 'paused_approval') ORDER BY started_at DESC LIMIT 1",
     [missionId],
   );
   return row ? mapRow(row) : null;

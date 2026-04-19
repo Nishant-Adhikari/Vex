@@ -204,7 +204,7 @@ describe("runner", () => {
     it("resumes run and enters loop", async () => {
       mockGetRun.mockResolvedValueOnce({
         id: "run-1", missionId: "mission-1", sessionId: "session-1",
-        loopMode: "restricted", status: "paused_checkpoint", iterationCount: 5,
+        loopMode: "restricted", status: "running", iterationCount: 5,
       });
       mockGetMission.mockResolvedValueOnce({
         id: "mission-1", rootSessionId: "session-1", status: "running",

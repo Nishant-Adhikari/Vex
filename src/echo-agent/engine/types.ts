@@ -25,7 +25,6 @@ export type MissionStatus =
 export type MissionRunStatus =
   | "running"
   | "paused_approval"
-  | "paused_checkpoint"
   | "completed"
   | "failed"
   | "stopped";

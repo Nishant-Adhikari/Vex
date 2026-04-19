@@ -48,8 +48,8 @@ describe("engine types", () => {
 
   describe("MissionRunStatus", () => {
     it("covers run states including pause reasons", () => {
-      const values: MissionRunStatus[] = ["running", "paused_approval", "paused_checkpoint", "completed", "failed", "stopped"];
-      expect(values).toHaveLength(6);
+      const values: MissionRunStatus[] = ["running", "paused_approval", "completed", "failed", "stopped"];
+      expect(values).toHaveLength(5);
     });
   });
 
