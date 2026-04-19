@@ -6,50 +6,7 @@ const { dispatchTool } = await import("../../../echo-agent/tools/dispatcher.js")
 
 const baseContext = makeTestContext();
 
-describe("dispatcher — schedule, subagent, wallet, unknown, no-stubs", () => {
-  // ── Schedule ─────────────────────────────────────────────────────
-
-  it("schedule_create validates cron", async () => {
-    const result = await dispatchTool(
-      { name: "schedule_create", args: { name: "test", cron: "invalid-cron", type: "wake_agent" }, toolCallId: "call_12b" },
-      baseContext,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("Invalid cron");
-  });
-
-  it("schedule_create rejects cli_execute", async () => {
-    const result = await dispatchTool(
-      { name: "schedule_create", args: { name: "test", cron: "* * * * *", type: "cli_execute" }, toolCallId: "call_12c" },
-      baseContext,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("Invalid task type");
-  });
-
-  it("schedule_create with wake_agent succeeds", async () => {
-    const result = await dispatchTool(
-      { name: "schedule_create", args: { name: "wake test", cron: "0 * * * *", type: "wake_agent", payload: { prompt: "check markets" } }, toolCallId: "call_12d" },
-      baseContext,
-    );
-
-    expect(result.success).toBe(true);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.type).toBe("wake_agent");
-    expect(parsed.taskId).toMatch(/^task-/);
-  });
-
-  it("schedule_remove works", async () => {
-    const result = await dispatchTool(
-      { name: "schedule_remove", args: { id: "task-123" }, toolCallId: "call_12e" },
-      baseContext,
-    );
-
-    expect(result.success).toBe(true);
-  });
-
+describe("dispatcher — subagent, wallet, unknown, no-stubs", () => {
   // ── Subagent ─────────────────────────────────────────────────────
 
   it("subagent_spawn returns id", async () => {
@@ -127,8 +84,6 @@ describe("dispatcher — schedule, subagent, wallet, unknown, no-stubs", () => {
       { name: "knowledge_recall_overflow", args: { cacheKey: "rcl-test" } },
       { name: "knowledge_get", args: { id: 1 } },
       { name: "knowledge_update_status", args: { id: 1, status: "archived" } },
-      { name: "schedule_create", args: { name: "t", cron: "0 * * * *", type: "wake_agent", payload: { prompt: "hi" } } },
-      { name: "schedule_remove", args: { id: "task-1" } },
       { name: "subagent_spawn", args: { name: "EchoX", task: "t" } },
       { name: "subagent_status", args: {} },
       { name: "subagent_stop", args: { id: "sub-1" } },

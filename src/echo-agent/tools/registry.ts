@@ -20,7 +20,6 @@ import { PROTOCOL_TOOLS } from "./registry/protocol.js";
 import { WEB_TOOLS } from "./registry/web.js";
 import { DOCUMENT_TOOLS } from "./registry/documents.js";
 import { KNOWLEDGE_TOOLS } from "./registry/knowledge.js";
-import { SCHEDULING_TOOLS } from "./registry/scheduling.js";
 import { PORTFOLIO_TOOLS } from "./registry/portfolio.js";
 import { SETUP_TOOLS } from "./registry/setup.js";
 import { MISSION_TOOLS } from "./registry/mission.js";
@@ -35,7 +34,6 @@ const TOOLS: readonly ToolDef[] = [
   ...WEB_TOOLS,
   ...DOCUMENT_TOOLS,
   ...KNOWLEDGE_TOOLS,
-  ...SCHEDULING_TOOLS,
   ...PORTFOLIO_TOOLS,
   ...SETUP_TOOLS,
   ...MISSION_TOOLS,

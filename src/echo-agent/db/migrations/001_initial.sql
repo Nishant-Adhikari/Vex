@@ -204,36 +204,8 @@ CREATE TABLE runtime_cycles (
 CREATE INDEX idx_cycles_started ON runtime_cycles(started_at DESC);
 
 -- ══════════════════════════════════════════════════════════════════
--- C. Automation
+-- C. Subagents
 -- ══════════════════════════════════════════════════════════════════
-
--- Schedules (no cli_execute — tool_call, wake_agent, reminder, monitor, snapshot, backup)
-CREATE TABLE schedules (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT,
-  cron_expression TEXT NOT NULL,
-  task_type TEXT NOT NULL,
-  payload JSONB NOT NULL DEFAULT '{}',
-  enabled BOOLEAN DEFAULT TRUE,
-  loop_mode TEXT DEFAULT 'restricted',
-  last_run_at TIMESTAMPTZ,
-  run_count INTEGER DEFAULT 0,
-  last_result JSONB,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_schedules_enabled ON schedules(enabled);
-
--- Schedule runs (audit)
-CREATE TABLE schedule_runs (
-  id SERIAL PRIMARY KEY,
-  schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
-  started_at TIMESTAMPTZ DEFAULT NOW(),
-  ended_at TIMESTAMPTZ,
-  result JSONB,
-  error TEXT
-);
-CREATE INDEX idx_schedule_runs_schedule ON schedule_runs(schedule_id, started_at DESC);
 
 -- Subagents (no parent/session fields — session_links is canonical)
 CREATE TABLE subagents (

@@ -206,11 +206,6 @@ vi.mock("@echo-agent/db/client.js", () => ({
   execute: vi.fn(),
 }));
 
-vi.mock("@echo-agent/db/repos/schedules.js", () => ({
-  createSchedule: vi.fn().mockResolvedValue(undefined),
-  deleteSchedule: vi.fn().mockResolvedValue(true),
-}));
-
 vi.mock("@echo-agent/db/repos/subagents.js", () => ({
   insert: vi.fn().mockResolvedValue(undefined),
   getById: vi.fn().mockResolvedValue(null),

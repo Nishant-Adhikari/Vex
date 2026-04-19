@@ -81,7 +81,6 @@ ${namespaceGroups}
 ## What this server does NOT have
 
 - No \`subagent_*\` tools (production MCP runs without background subagents)
-- No \`schedule_*\` tools (cron lifecycle is owned by Echo Agent, not the host)
 - No \`mission_*\` tools (MCP has no mission concept — those live in Echo Agent)
 - No own approval queue (your MCP host's permission UX is the gate)
 - No persistent loop / mode (this is a tool server, not an agent)

@@ -72,8 +72,6 @@ describe("registry", () => {
     "knowledge_supersede",
     "knowledge_lineage",
     "knowledge_history",
-    "schedule_create",
-    "schedule_remove",
     "subagent_spawn",
     "subagent_status",
     "subagent_stop",
@@ -225,12 +223,6 @@ describe("registry", () => {
       expect(names).toContain("portfolio_inspect");
     });
 
-    it("excludes schedule_* tools (echo-agent runtime concept)", () => {
-      const names = getProductionMcpTools().map((t) => t.name);
-      expect(names).not.toContain("schedule_create");
-      expect(names).not.toContain("schedule_remove");
-    });
-
     it("excludes mission_stop (echo-agent runtime concept)", () => {
       const names = getProductionMcpTools().map((t) => t.name);
       expect(names).not.toContain("mission_stop");
@@ -243,10 +235,8 @@ describe("registry", () => {
       }
     });
 
-    it("schedule_* and mission_stop remain visible to Echo Agent (parent role, restricted mode)", () => {
+    it("mission_stop remains visible to Echo Agent (parent role, restricted mode)", () => {
       const names = getOpenAITools("restricted", "parent").map((t) => t.function.name);
-      expect(names).toContain("schedule_create");
-      expect(names).toContain("schedule_remove");
       expect(names).toContain("mission_stop");
     });
   });

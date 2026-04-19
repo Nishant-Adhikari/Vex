@@ -38,9 +38,6 @@ importers:
       fastify:
         specifier: ^5.8.4
         version: 5.8.4
-      node-cron:
-        specifier: ^4.2.1
-        version: 4.2.1
       pg:
         specifier: ^8.20.0
         version: 8.20.0
@@ -63,9 +60,6 @@ importers:
       '@types/node':
         specifier: ^22.19.15
         version: 22.19.17
-      '@types/node-cron':
-        specifier: ^3.0.11
-        version: 3.0.11
       '@types/pg':
         specifier: ^8.18.0
         version: 8.20.0
@@ -778,9 +772,6 @@ packages:
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
-
-  '@types/node-cron@3.0.11':
-    resolution: {integrity: sha512-0ikrnug3/IyneSHqCBeslAhlK2aBfYek1fGo4bP4QnZPmiqSGRK+Oy7ZMisLWkesffJvQ1cqAcBnJC+8+nxIAg==}
 
   '@types/node@12.20.55':
     resolution: {integrity: sha512-J8xLz7q2OFulZ2cyGTLE1TbbZcjpno7FaN6zdJNrgAdrJ+DZzh/uFR6YrTb4C+nXakvud8Q4+rbhoIWlYQbUFQ==}
@@ -2144,10 +2135,6 @@ packages:
 
   node-addon-api@3.2.1:
     resolution: {integrity: sha512-mmcei9JghVNDYydghQmeDX8KoAm0FAiYyIcUt/N4nhyAipB17pllZQDOJD2fotxABnt4Mdz+dKTO7eftLg4d0A==}
-
-  node-cron@4.2.1:
-    resolution: {integrity: sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg==}
-    engines: {node: '>=6.0.0'}
 
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
@@ -3957,8 +3944,6 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
-  '@types/node-cron@3.0.11': {}
-
   '@types/node@12.20.55': {}
 
   '@types/node@18.19.130':
@@ -5512,8 +5497,6 @@ snapshots:
   next-tick@1.1.0: {}
 
   node-addon-api@3.2.1: {}
-
-  node-cron@4.2.1: {}
 
   node-fetch@2.7.0:
     dependencies:

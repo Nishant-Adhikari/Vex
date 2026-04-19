@@ -63,9 +63,8 @@ describe("mcp docs — buildInstructions", () => {
     expect(text).toMatch(/no.*subagent|without.*subagent/i);
   });
 
-  it("explicitly states schedule_* and mission_* are not surfaced", () => {
+  it("explicitly states mission_* is not surfaced", () => {
     const text = buildInstructions();
-    expect(text).toMatch(/no.*schedule_/i);
     expect(text).toMatch(/no.*mission_/i);
   });
 

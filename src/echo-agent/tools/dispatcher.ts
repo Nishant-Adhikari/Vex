@@ -155,10 +155,6 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   knowledge_lineage: async () => (await import("./internal/knowledge.js")).handleKnowledgeLineage,
   knowledge_history: async () => (await import("./internal/knowledge.js")).handleKnowledgeHistory,
 
-  // Scheduling
-  schedule_create: async () => (await import("./internal/schedule.js")).handleScheduleCreate,
-  schedule_remove: async () => (await import("./internal/schedule.js")).handleScheduleRemove,
-
   // Portfolio
   portfolio_inspect: async () => (await import("./internal/portfolio-inspect.js")).handlePortfolioInspect,
 

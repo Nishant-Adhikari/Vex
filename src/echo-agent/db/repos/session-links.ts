@@ -2,7 +2,7 @@
  * Session links repo — canonical parent-child session relationships.
  *
  * Replaces parent_session_id on sessions/subagents.
- * Covers: subagent, scheduler, loop, handoff relationships.
+ * Covers: subagent, loop, handoff relationships.
  */
 
 import { query, queryOne, execute } from "../client.js";

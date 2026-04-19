@@ -47,7 +47,6 @@ const TOOL_GROUP_RULES: Array<{ group: string; match: (name: string) => boolean 
   { group: "Wallet",    match: (n) => n.startsWith("wallet_") },
   { group: "EVM",       match: (n) => n.startsWith("evm_") },
   { group: "Portfolio", match: (n) => n.startsWith("portfolio_") },
-  { group: "Schedule",  match: (n) => n.startsWith("schedule_") },
   { group: "Mission",   match: (n) => n.startsWith("mission_") },
   { group: "Setup",     match: (n) => n.endsWith("_setup") },
 ];
@@ -113,7 +112,7 @@ export function buildOverview(): OverviewDoc {
       "EchoClaw production MCP server — passive tool surface bridge over Echo Agent. " +
       "Exposes the host-relevant internal tools (knowledge, documents, wallet, portfolio, " +
       "web, EVM, setup) plus discover_tools / execute_tool for protocol capabilities. " +
-      "No subagents, no schedule_*, no mission_* — those are Echo Agent runtime concepts.",
+      "No subagents, no mission_* — those are Echo Agent runtime concepts.",
     surfaceSize: tools.length,
     protocolNamespaceCount: PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.length,
     embeddingModel: config?.model ?? "<unknown — EMBEDDING_MODEL not set>",
