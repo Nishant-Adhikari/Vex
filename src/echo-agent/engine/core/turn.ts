@@ -11,11 +11,14 @@ import type { Message } from "@echo-agent/db/repos/messages.js";
 import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
 import { formatActiveKnowledgeBlock } from "../prompts/knowledge.js";
 import { formatSessionEpisodeRecallBlock } from "../prompts/session-memory.js";
+import { effectiveRecallSeed, type LastEngineMessageHint } from "./recall-seed.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
 import * as usageRepo from "@echo-agent/db/repos/usage.js";
 import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
 import * as knowledgeRepo from "@echo-agent/db/repos/knowledge.js";
 import * as episodesRepo from "@echo-agent/db/repos/session-episodes.js";
+import * as checkpointHandoffsRepo from "@echo-agent/db/repos/checkpoint-handoffs.js";
+import * as missionsRepo from "@echo-agent/db/repos/missions.js";
 import { embedQuery } from "@echo-agent/embeddings/client.js";
 import {
   ACTIVE_KNOWLEDGE_ENTRY_LIMIT,
@@ -79,6 +82,7 @@ export async function executeTurn(
   // English first. Failure on either embed or DB recall is non-fatal — an
   // empty block just omits the system message.
   const sessionEpisodeRecallBlock = await fetchSessionEpisodeRecallBlock(
+    context,
     context.memoryScopeKey,
     existingMessages,
   );
@@ -130,14 +134,15 @@ export async function executeTurn(
 // ── Helpers ─────────────────────────────────────────────────────
 
 async function fetchSessionEpisodeRecallBlock(
+  context: EngineContext,
   memoryScopeKey: string,
   existingMessages: readonly Message[],
 ): Promise<string> {
-  const lastUserInput = findLastUserInput(existingMessages);
-  if (!lastUserInput) return "";
+  const seed = await resolveRecallSeed(context, existingMessages);
+  if (!seed || seed.trim().length === 0) return "";
 
   try {
-    const { embedding, providerModel } = await embedQuery(lastUserInput);
+    const { embedding, providerModel } = await embedQuery(seed);
     const hits = await episodesRepo.recallTopK(embedding, {
       memoryScopeKey,
       embeddingModel: providerModel,
@@ -154,12 +159,77 @@ async function fetchSessionEpisodeRecallBlock(
   }
 }
 
-function findLastUserInput(messages: readonly Message[]): string | null {
+async function resolveRecallSeed(
+  context: EngineContext,
+  existingMessages: readonly Message[],
+): Promise<string | null> {
+  // Surface the active handoff for the current generation (if any). PR-9
+  // populates this on warning/critical context pressure so the post-compact
+  // turn has a deliberate seed.
+  let activeHandoff = null;
+  let recentEpisodeTitles: string[] = [];
+  try {
+    const session = await sessionsRepo.getSession(context.sessionId);
+    if (session) {
+      activeHandoff = await checkpointHandoffsRepo.getActive(
+        context.sessionId,
+        session.checkpointGeneration + 1,
+      );
+    }
+    // Empty full-autonomous sessions fall back to recent episode titles.
+    if (context.sessionKind === "full_autonomous") {
+      const recent = await episodesRepo.listRecentBySession(context.sessionId, 3);
+      recentEpisodeTitles = recent
+        .map((ep) => ep.title.trim())
+        .filter((t) => t.length > 0);
+    }
+  } catch (err) {
+    logger.warn("turn.recall_seed.lookup_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Look backwards for the most recent engine-written message — a wake_due
+  // banner from PR-7 carries the model's original loop_defer reason.
+  const lastEngineMessage = findLastEngineMessageHint(existingMessages);
+
+  // Mission objective — light fetch so post-wake recall anchors to mission
+  // goal rather than drifting on mood.
+  let missionObjective: string | null = null;
+  if (context.missionId) {
+    try {
+      const mission = await missionsRepo.getMission(context.missionId);
+      missionObjective = mission?.goal ?? null;
+    } catch {
+      // Non-fatal — continue without the objective.
+    }
+  }
+
+  return effectiveRecallSeed({
+    sessionKind: context.sessionKind,
+    missionRunActive: context.missionRunId !== null,
+    messages: existingMessages,
+    missionObjective,
+    activeHandoff,
+    lastEngineMessage,
+    // open loops are not threaded through the engine context today — leave
+    // empty until PR-11's overflow handling / follow-up builder fills it.
+    openLoops: [],
+    recentEpisodeTitles,
+  });
+}
+
+function findLastEngineMessageHint(messages: readonly Message[]): LastEngineMessageHint | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === "user" && m.content.trim().length > 0) {
-      return m.content;
-    }
+    if (m.role !== "system") continue;
+    const metadata = m.metadata ?? null;
+    if (!metadata) continue;
+    const messageType = metadata.messageType ?? null;
+    if (!messageType) continue;
+    const payload = (metadata.payload ?? {}) as Record<string, unknown>;
+    const reason = typeof payload.reason === "string" ? payload.reason : null;
+    return { messageType, reason };
   }
   return null;
 }

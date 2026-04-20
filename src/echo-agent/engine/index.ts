@@ -10,6 +10,8 @@ export {
   processMissionSetupTurn,
   startMission,
   resumeMissionRun,
+  processFullAutonomousTurn,
+  resumeFullAutonomousSession,
 } from "./core/runner.js";
 
 export { approveAndResume } from "./core/resume.js";

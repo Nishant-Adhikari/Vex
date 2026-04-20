@@ -39,9 +39,17 @@ import { computeBand } from "./context-band.js";
 import { dispatchTool } from "@echo-agent/tools/dispatcher.js";
 import type { InternalToolContext } from "@echo-agent/tools/internal/types.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
+import type { MessageMetadata } from "@echo-agent/db/repos/messages.js";
 import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
 import * as missionRunsRepo from "@echo-agent/db/repos/mission-runs.js";
 import * as approvalsRepo from "@echo-agent/db/repos/approvals.js";
+import * as toolOutputBlobsRepo from "@echo-agent/db/repos/tool-output-blobs.js";
+import type { ToolOutputShapeKind } from "@echo-agent/db/repos/tool-output-blobs.js";
+import {
+  TOOL_OUTPUT_OVERFLOW_BYTES,
+  TOOL_OUTPUT_TTL_MIN,
+} from "@echo-agent/knowledge/policy.js";
+import logger from "@utils/logger.js";
 
 export interface TurnLoopConfig {
   maxIterations: number;
@@ -160,7 +168,7 @@ export async function runTurnLoop(
     // canonical batch prefix (only calls that actually entered dispatch).
     if (turnResult.toolCalls && turnResult.toolCalls.length > 0) {
       const executedCalls: ParsedToolCall[] = [];
-      const executedResults: Array<{ toolCallId: string; output: string }> = [];
+      const executedResults: Array<{ toolCallId: string; toolName: string; output: string }> = [];
       let batchStopReason: StopReason | null = null;
       let batchStopOutput: string | null = null;
       let batchStopPayload: { summary?: string; evidence?: Record<string, unknown> } | undefined;
@@ -209,7 +217,7 @@ export async function runTurnLoop(
 
         // Track executed call + result
         executedCalls.push(toolCall);
-        executedResults.push({ toolCallId: toolCall.id, output: result.output });
+        executedResults.push({ toolCallId: toolCall.id, toolName: toolCall.name, output: result.output });
 
         // ── Engine signals: result tracked, then stop ──
         if (result.engineSignal) {
@@ -254,16 +262,24 @@ export async function runTurnLoop(
         timestamp: new Date().toISOString(),
       });
 
-      // Save tool results (only for fully-executed, non-approval calls)
-      for (const { toolCallId, output } of executedResults) {
-        await messagesRepo.addMessage(
+      // Save tool results (only for fully-executed, non-approval calls).
+      // Oversized outputs are externalised into tool_output_blobs (PR-11) —
+      // transcript gets a short stub with `metadata.payload.blob_key` so
+      // archive-aware checkpoint and resume paths can keep the pointer alive.
+      for (const { toolCallId, toolName, output } of executedResults) {
+        const persisted = await persistToolResultWithOverflow(
           context.sessionId,
-          { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
-          { source: "tool", messageType: "tool_result", visibility: "internal" },
+          toolCallId,
+          toolName,
+          output,
         );
 
         liveMessages.push({
-          role: "tool", content: output, toolCallId, timestamp: new Date().toISOString(),
+          role: "tool",
+          content: persisted.content,
+          toolCallId,
+          timestamp: new Date().toISOString(),
+          metadata: persisted.metadata,
         });
       }
 
@@ -324,9 +340,12 @@ export async function runTurnLoop(
         continue;
       }
 
-      // Active mission RUN: text does NOT end the loop — add continue message.
-      // Mission SETUP (sessionKind=mission but no missionRunId) ends on text like chat.
-      if (context.missionRunId) {
+      // Active mission RUN or full-autonomous session: text does NOT end the
+      // loop — inject a continue marker so the next iteration has the
+      // protocol cue. Mission SETUP (`sessionKind=mission` but no
+      // missionRunId) ends on text like chat. Full autonomous never has a
+      // missionRunId but still needs to iterate.
+      if (context.missionRunId || context.sessionKind === "full_autonomous") {
         await messagesRepo.addEngineMessage(
           context.sessionId,
           "[Engine: continue — no stop condition met. Proceed with next action.]",
@@ -347,10 +366,127 @@ export async function runTurnLoop(
     }
   }
 
-  // If loop exhausted without explicit stop during active mission run
-  if (!stopReason && context.missionRunId) {
+  // If loop exhausted without explicit stop during active mission run or
+  // full-autonomous session, mark the run as iteration-limited so the
+  // caller can surface the timeout instead of silently succeeding.
+  if (!stopReason && (context.missionRunId || context.sessionKind === "full_autonomous")) {
     stopReason = "iteration_limit";
   }
 
   return { text: lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason };
+}
+
+// ── Overflow persistence (PR-11) ───────────────────────────────
+
+const TOOL_OUTPUT_PREVIEW_CHARS = 160;
+
+interface PersistedToolResult {
+  content: string;
+  metadata: MessageMetadata;
+}
+
+/**
+ * Persist a tool result — inline when the output is small, blob + stub when
+ * it exceeds `TOOL_OUTPUT_OVERFLOW_BYTES`. The returned `content` is always
+ * safe to push onto `liveMessages`; the caller does NOT need to distinguish
+ * the two paths.
+ *
+ * A blob write failure is non-fatal — we fall back to persisting the full
+ * output inline (loud warn so operators notice) rather than dropping the
+ * result, which would break the tool_call ↔ tool_result pair invariant.
+ */
+async function persistToolResultWithOverflow(
+  sessionId: string,
+  toolCallId: string,
+  toolName: string,
+  output: string,
+): Promise<PersistedToolResult> {
+  const bytes = Buffer.byteLength(output, "utf8");
+
+  if (bytes <= TOOL_OUTPUT_OVERFLOW_BYTES) {
+    const metadata: MessageMetadata = {
+      source: "tool",
+      messageType: "tool_result",
+      visibility: "internal",
+    };
+    await messagesRepo.addMessage(
+      sessionId,
+      { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
+      metadata,
+    );
+    return { content: output, metadata };
+  }
+
+  const shapeKind = classifyShape(output);
+  const blobKey = toolOutputBlobsRepo.generateBlobKey(sessionId, toolName, toolCallId);
+  const preview = output.slice(0, TOOL_OUTPUT_PREVIEW_CHARS).replace(/"/g, "'");
+  const stub =
+    `[tool_output_overflow blob_key=${blobKey} bytes=${bytes} shape=${shapeKind} ` +
+    `preview="${preview}"]. ` +
+    `Call \`tool_output_read(blob_key="${blobKey}")\` for the full payload.`;
+
+  let blobWritten = false;
+  try {
+    await toolOutputBlobsRepo.writeBlob(
+      blobKey,
+      sessionId,
+      { fullOutput: output, shapeKind, sizeBytes: bytes },
+      TOOL_OUTPUT_TTL_MIN * 60_000,
+    );
+    blobWritten = true;
+  } catch (err) {
+    logger.warn("turn.tool_output.blob_write_failed", {
+      sessionId,
+      toolCallId,
+      toolName,
+      sizeBytes: bytes,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  if (!blobWritten) {
+    // Fallback — persist the full output inline. Losing the result would
+    // break the tool_call/tool_result pair contract enforced by
+    // `selectArchivePrefix`.
+    const metadata: MessageMetadata = {
+      source: "tool",
+      messageType: "tool_result",
+      visibility: "internal",
+    };
+    await messagesRepo.addMessage(
+      sessionId,
+      { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
+      metadata,
+    );
+    return { content: output, metadata };
+  }
+
+  const metadata: MessageMetadata = {
+    source: "tool",
+    messageType: "tool_result",
+    visibility: "internal",
+    payload: {
+      overflow: true,
+      blobKey,
+      sizeBytes: bytes,
+      shapeKind,
+    },
+  };
+
+  await messagesRepo.addMessage(
+    sessionId,
+    { role: "tool", content: stub, toolCallId, timestamp: new Date().toISOString() },
+    metadata,
+  );
+
+  return { content: stub, metadata };
+}
+
+function classifyShape(output: string): ToolOutputShapeKind {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) return "text";
+  const first = trimmed[0];
+  if (first === "{") return "json";
+  if (first === "[") return "list";
+  return "text";
 }

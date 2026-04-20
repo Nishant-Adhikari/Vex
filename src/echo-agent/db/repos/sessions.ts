@@ -127,11 +127,21 @@ function mapRow(r: SessionRow): Session {
   };
 }
 
-export async function createSession(id: string): Promise<void> {
+/**
+ * Create a session row. `kind` is `"chat"` by default — callers that opt
+ * into the standalone full-autonomous runtime (PR-10) pass
+ * `{ kind: "full_autonomous" }` explicitly. `ON CONFLICT DO NOTHING` keeps
+ * the first-writer-wins semantics existing transports depend on.
+ */
+export async function createSession(
+  id: string,
+  options: { kind?: SessionKind } = {},
+): Promise<void> {
+  const kind: SessionKind = options.kind ?? "chat";
   await executeWith(
     getPool(),
-    "INSERT INTO sessions (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
-    [id],
+    "INSERT INTO sessions (id, kind) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+    [id, kind],
   );
 }
 

@@ -30,6 +30,28 @@ import type { ToolDef } from "../types.js";
 
 export const AUTONOMY_TOOLS: readonly ToolDef[] = [
   {
+    name: "tool_output_read",
+    kind: "internal",
+    mutating: false,
+    excludeFromMcp: true,
+    visibility: { hiddenInMissionSetup: true },
+    description:
+      "Retrieve the full payload of a previously-overflowed tool output. " +
+      "When a tool returns more than ~16 KiB, the engine stores the full output off-prompt and leaves a short stub with `blob_key=<key>` in the transcript. " +
+      "Pass that `blob_key` here to get the full payload (only within the current session, and only before the TTL expires).",
+    parameters: {
+      type: "object",
+      properties: {
+        blob_key: {
+          type: "string",
+          description:
+            "The exact blob key shown in the overflow stub (format: `tob-<yyyymmdd>-<16hex>`).",
+        },
+      },
+      required: ["blob_key"],
+    },
+  },
+  {
     name: "checkpoint_handoff_prepare",
     kind: "internal",
     mutating: true,

@@ -258,16 +258,22 @@ function buildProductionDeps(): WakeDeps {
       // Lazy dynamic import so wake/executor.ts doesn't introduce a circular
       // dependency through the engine barrel. The ESM runtime caches the
       // promise after the first resolve, so there's no per-tick cost.
-      const engine = await import("@echo-agent/engine/index.js");
+      const [engine, blobRefresh, missionRuns] = await Promise.all([
+        import("@echo-agent/engine/index.js"),
+        import("./blob-refresh.js"),
+        import("@echo-agent/db/repos/mission-runs.js"),
+      ]);
+      const run = await missionRuns.getRun(runId);
+      if (run) await blobRefresh.refreshBlobTtlForRecentMessages(run.sessionId);
       await engine.resumeMissionRun(runId);
     },
-    resumeFullAutonomousSession: async (_sessionId) => {
-      // PR-10 lands the real runner; until then the executor refuses to
-      // spin the model for full_autonomous wakes so we don't start an
-      // engine loop without a matching entry point.
-      throw new Error(
-        "wake.executor: full_autonomous resume is unavailable until PR-10",
-      );
+    resumeFullAutonomousSession: async (sessionId) => {
+      const [engine, blobRefresh] = await Promise.all([
+        import("@echo-agent/engine/index.js"),
+        import("./blob-refresh.js"),
+      ]);
+      await blobRefresh.refreshBlobTtlForRecentMessages(sessionId);
+      await engine.resumeFullAutonomousSession(sessionId);
     },
   };
 }

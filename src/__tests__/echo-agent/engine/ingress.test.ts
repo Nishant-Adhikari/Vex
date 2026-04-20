@@ -19,6 +19,7 @@ const mockGetActiveMission = vi.fn();
 const mockAddMessage = vi.fn();
 const mockProcessChatTurn = vi.fn();
 const mockProcessMissionSetupTurn = vi.fn();
+const mockProcessFullAutonomousTurn = vi.fn();
 const mockResumeMissionRun = vi.fn();
 
 vi.mock("@echo-agent/db/repos/loop-wake.js", () => ({
@@ -45,6 +46,7 @@ vi.mock("@echo-agent/db/repos/messages.js", () => ({
 vi.mock("../../../echo-agent/engine/core/runner.js", () => ({
   processChatTurn: (...a: unknown[]) => mockProcessChatTurn(...a),
   processMissionSetupTurn: (...a: unknown[]) => mockProcessMissionSetupTurn(...a),
+  processFullAutonomousTurn: (...a: unknown[]) => mockProcessFullAutonomousTurn(...a),
   resumeMissionRun: (...a: unknown[]) => mockResumeMissionRun(...a),
 }));
 
@@ -53,12 +55,14 @@ const { routeUserMessage } = await import("../../../echo-agent/engine/ingress.js
 const chatResult = { text: "hi", toolCallsMade: 0, pendingApprovals: [], stopReason: null, missionStatus: null };
 const setupResult = { ...chatResult, missionStatus: "draft" as const };
 const resumeResult = { text: null, toolCallsMade: 2, pendingApprovals: [], stopReason: null, missionStatus: "running" as const };
+const fullAutoResult = { text: "full-auto", toolCallsMade: 0, pendingApprovals: [], stopReason: null, missionStatus: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockCancelForSession.mockResolvedValue(0);
   mockProcessChatTurn.mockResolvedValue(chatResult);
   mockProcessMissionSetupTurn.mockResolvedValue(setupResult);
+  mockProcessFullAutonomousTurn.mockResolvedValue(fullAutoResult);
   mockResumeMissionRun.mockResolvedValue(resumeResult);
 });
 
@@ -115,15 +119,16 @@ describe("ingress.routeUserMessage", () => {
     expect(mockProcessChatTurn).not.toHaveBeenCalled();
   });
 
-  it("falls through to processChatTurn for full_autonomous sessions until PR-10 lands", async () => {
+  it("routes full_autonomous sessions to processFullAutonomousTurn", async () => {
     mockGetActiveRunBySession.mockResolvedValue(null);
     mockGetSession.mockResolvedValue({ id: "s1", kind: "full_autonomous" });
     mockGetActiveMission.mockResolvedValue(null);
 
     const result = await routeUserMessage("s1", "hello");
 
-    expect(result).toBe(chatResult);
-    expect(mockProcessChatTurn).toHaveBeenCalledWith("s1", "hello");
+    expect(result).toBe(fullAutoResult);
+    expect(mockProcessFullAutonomousTurn).toHaveBeenCalledWith("s1", "hello");
+    expect(mockProcessChatTurn).not.toHaveBeenCalled();
   });
 
   it("routes to mission-setup when a draft mission exists and there is no run", async () => {

@@ -8,7 +8,17 @@
 
 // ── Session axes ────────────────────────────────────────────────
 
-export type SessionKind = "chat" | "mission";
+/**
+ * Engine-level session discriminator.
+ *
+ * `"chat"` and `"mission"` are the classic routing targets. `"full_autonomous"`
+ * (PR-10) unlocks the standalone full-autonomous runner — a session that
+ * loops on `loop_defer` + wake without needing an owning mission. The
+ * session-level `kind` column on `sessions` is the source of truth; this
+ * type is propagated through `EngineContext` and `InternalToolContext` so
+ * tool visibility and prompt shaping can branch on it.
+ */
+export type SessionKind = "chat" | "mission" | "full_autonomous";
 
 export type LoopMode = "off" | "restricted" | "full";
 

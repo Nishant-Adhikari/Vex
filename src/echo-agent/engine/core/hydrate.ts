@@ -52,7 +52,20 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
     }
   }
 
-  const sessionKind: SessionKind = mission ? "mission" : "chat";
+  // Priority:
+  //   1. Active mission → sessionKind="mission" + loopMode from run.
+  //   2. Otherwise session.kind from DB (`chat` by default, `full_autonomous`
+  //      when the session was created with that kind — PR-10). Full autonomous
+  //      runs in `loopMode: "full"` so `loop_defer` is visible in the toolset.
+  const sessionKind: SessionKind = mission
+    ? "mission"
+    : session.kind === "full_autonomous"
+      ? "full_autonomous"
+      : "chat";
+
+  if (!mission && session.kind === "full_autonomous") {
+    loopMode = "full";
+  }
 
   return {
     context: {

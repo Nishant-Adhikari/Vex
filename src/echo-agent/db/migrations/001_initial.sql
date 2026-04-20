@@ -145,9 +145,20 @@ CREATE TABLE sessions (
   compacted BOOLEAN DEFAULT FALSE,
   message_count INTEGER DEFAULT 0,
   token_count INTEGER DEFAULT 0,
-  checkpoint_generation INTEGER NOT NULL DEFAULT 0
+  checkpoint_generation INTEGER NOT NULL DEFAULT 0,
+  -- PR-10 (wake roadmap): session-level runtime discriminator. `'chat'` (default)
+  -- keeps the existing chat / mission-setup / mission-run routing matrix;
+  -- `'full_autonomous'` unlocks the standalone full-autonomous runner — no
+  -- mission, engine loops on `loop_defer` + wake executor indefinitely.
+  -- `loop_mode` stays on `mission_runs` because it describes the MODE of a
+  -- specific run, not the SHAPE of the session.
+  kind TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'full_autonomous'))
 );
 CREATE INDEX idx_sessions_scope ON sessions(scope, started_at DESC);
+-- Partial index — only sessions opted into full_autonomous routing need to
+-- be enumerated (most sessions are chat; skipping the bulk default keeps the
+-- index compact).
+CREATE INDEX idx_sessions_kind ON sessions(kind) WHERE kind <> 'chat';
 
 -- Messages
 CREATE TABLE messages (

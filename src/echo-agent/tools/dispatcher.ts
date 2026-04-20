@@ -167,6 +167,7 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Autonomy primitives — mission/full-autonomous wake
   loop_defer: async () => (await import("./internal/loop-defer.js")).handleLoopDefer,
   checkpoint_handoff_prepare: async () => (await import("./internal/checkpoint-handoff.js")).handleCheckpointHandoffPrepare,
+  tool_output_read: async () => (await import("./internal/tool-output-read.js")).handleToolOutputRead,
 
   // Subagents
   subagent_spawn: async () => (await import("./internal/subagent.js")).handleSubagentSpawn,

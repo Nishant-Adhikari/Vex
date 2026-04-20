@@ -22,12 +22,18 @@
  */
 
 import type { TurnResult } from "./types.js";
-import { processChatTurn, processMissionSetupTurn, resumeMissionRun } from "./core/runner.js";
+import {
+  processChatTurn,
+  processMissionSetupTurn,
+  processFullAutonomousTurn,
+  resumeMissionRun,
+} from "./core/runner.js";
 import * as loopWakeRepo from "@echo-agent/db/repos/loop-wake.js";
 import * as missionRunsRepo from "@echo-agent/db/repos/mission-runs.js";
 import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
 import * as missionsRepo from "@echo-agent/db/repos/missions.js";
+import { refreshBlobTtlForRecentMessages } from "./wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -73,16 +79,12 @@ export async function routeUserMessage(
     };
   }
 
-  // No active run — route by session kind. PR-10 replaces the fallback
-  // branch with the real `processFullAutonomousTurn`; until then a
-  // full_autonomous session still falls back to chat so existing deployments
-  // don't break before PR-10 lands.
+  // No active run — route by session kind.
   const session = await sessionsRepo.getSession(sessionId);
   const kind = session?.kind ?? "chat";
 
   if (kind === "full_autonomous") {
-    logger.warn("ingress.full_autonomous_stub_chat", { sessionId });
-    return processChatTurn(sessionId, userInput);
+    return processFullAutonomousTurn(sessionId, userInput);
   }
 
   // Chat or mission-setup. Mission-setup is distinguished by the presence of
@@ -115,6 +117,10 @@ async function resumeMissionRunWithPreempt(
       payload: { preempt: "wake" },
     },
   );
+
+  // Refresh blob TTLs BEFORE the next turn spins up so recent overflow
+  // pointers survive the pause. Non-fatal on failure.
+  await refreshBlobTtlForRecentMessages(sessionId);
 
   logger.info("ingress.preempt_resume", { sessionId, runId });
   return resumeMissionRun(runId);

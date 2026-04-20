@@ -97,6 +97,15 @@ function findLargestToolMessage(
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role !== "tool") continue;
+    // PR-11 overflow rows have already externalised the real payload into
+    // `tool_output_blobs`; their `content` is a short stub, and the giant-
+    // tool fallback's whole point is to rescue the large verbatim body from
+    // the live tail. Skipping them here means the checkpoint keeps looking
+    // for a genuinely bloated live row, or falls through to `noop` when
+    // nothing else is compactable.
+    if (m.metadata?.payload && (m.metadata.payload as Record<string, unknown>).overflow === true) {
+      continue;
+    }
     if (!best || m.content.length > best.message.content.length) {
       best = { message: m, index: i };
     }

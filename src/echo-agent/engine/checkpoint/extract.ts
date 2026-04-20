@@ -136,6 +136,11 @@ export async function extractEpisodes(
     return { episodes: [], sessionLanguageInferred: "" };
   }
 
+  // PR-11: Collect blob_keys from overflow rows in the prefix so episode
+  // recall still resolves full tool payloads after compaction. The LLM may
+  // not emit these in `tool_outcomes` naturally — we merge them in post.
+  const overflowBlobKeys = collectOverflowBlobKeys(prefix);
+
   const episodes: ExtractedEpisode[] = result.data.episodes.map((ep) => {
     const summaryText = ep.summary_text.trim();
     const titleTrimmed = (ep.title ?? "").trim();
@@ -148,6 +153,7 @@ export async function extractEpisodes(
     // Truncate defensively in case the LLM ignored the ≤100 cap. Zod's
     // max(500) above is a sanity gate; this is the domain cap.
     const title = titleTrimmed.slice(0, TITLE_MAX_CHARS);
+    const toolOutcomes = mergeOverflowBlobKeys(ep.tool_outcomes, ep.episode_kind, overflowBlobKeys);
     return {
       episodeKind: ep.episode_kind,
       title,
@@ -156,7 +162,7 @@ export async function extractEpisodes(
       decisions: ep.decisions,
       openLoops: ep.open_loops,
       entities: ep.entities,
-      toolOutcomes: ep.tool_outcomes,
+      toolOutcomes,
       // Hash input is kind + summaryText ONLY — title is metadata and must
       // not destabilise dedupe when the LLM produces a different title on
       // retry against the same summary.
@@ -358,4 +364,41 @@ function toResultCandidate(raw: unknown): unknown {
     return { session_language_inferred: "", episodes: raw };
   }
   return { session_language_inferred: "", episodes: [] };
+}
+
+// ── Overflow blob propagation (PR-11) ──────────────────────────
+
+/**
+ * Scan the archived prefix for PR-11 overflow rows and collect every
+ * `blob_key` that lived there. Tool-result-summary episodes (and, as a
+ * fallback, the first episode) receive these keys under
+ * `tool_outcomes.overflow_blob_keys` so recall after compaction still
+ * points at the full payload.
+ */
+function collectOverflowBlobKeys(prefix: readonly MessageWithId[]): string[] {
+  const keys: string[] = [];
+  for (const m of prefix) {
+    if (m.role !== "tool") continue;
+    const payload = m.metadata?.payload as Record<string, unknown> | undefined;
+    if (!payload || payload.overflow !== true) continue;
+    const blobKey = typeof payload.blobKey === "string" ? payload.blobKey : null;
+    if (blobKey) keys.push(blobKey);
+  }
+  return keys;
+}
+
+function mergeOverflowBlobKeys(
+  toolOutcomes: Record<string, unknown>,
+  episodeKind: EpisodeKind,
+  blobKeys: readonly string[],
+): Record<string, unknown> {
+  if (blobKeys.length === 0) return toolOutcomes;
+  // Attach only to tool_result_summary episodes — those are the ones that
+  // canonically represent tool-call outcomes. Other episode kinds get the
+  // keys only when they are the sole episode (nothing else to carry them).
+  if (episodeKind !== "tool_result_summary") return toolOutcomes;
+  return {
+    ...toolOutcomes,
+    overflow_blob_keys: [...blobKeys],
+  };
 }

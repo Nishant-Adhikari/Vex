@@ -25,8 +25,8 @@ describe("engine types", () => {
 
   describe("SessionKind", () => {
     it("accepts valid values", () => {
-      const values: SessionKind[] = ["chat", "mission"];
-      expect(values).toHaveLength(2);
+      const values: SessionKind[] = ["chat", "mission", "full_autonomous"];
+      expect(values).toHaveLength(3);
     });
   });
 

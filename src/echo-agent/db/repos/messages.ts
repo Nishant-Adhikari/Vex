@@ -41,13 +41,13 @@ export interface Message {
    */
   id?: number;
   /**
-   * Engine-written metadata envelope (wake banners carry
-   * `{ kind: "wake_due", payload: {...} }`, overflow stubs carry
-   * `{ overflow: true, blobKey, sizeBytes, shapeKind }`). Only populated for
-   * messages produced by engine/wake/overflow paths; normal chat turns leave
-   * it `null`.
+   * Engine metadata. `messageType` / `source` / `visibility` come from the
+   * dedicated columns (set by the existing `addMessage` contract); `payload`
+   * is the free-form JSONB envelope introduced by PR-7 (wake banners carry
+   * `{ reason, dueAt }`; overflow stubs will carry `{ overflow, blobKey, … }`
+   * in PR-11). Every consumer MUST treat `payload` as untrusted.
    */
-  metadata?: Record<string, unknown> | null;
+  metadata?: MessageMetadata | null;
 }
 
 /** Message variant with a guaranteed id — returned by `getLiveMessagesWithId`. */
@@ -103,7 +103,7 @@ export async function addEngineMessage(
 /** Get live messages (not archived) for a session. Ordered by created_at + id for deterministic ordering. */
 export async function getLiveMessages(sessionId: string): Promise<Message[]> {
   const rows = await query<MessageRow>(
-    "SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
+    "SELECT id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
     [sessionId],
   );
   return rows.map(mapRowToMessage);
@@ -116,7 +116,7 @@ export async function getLiveMessages(sessionId: string): Promise<Message[]> {
  */
 export async function getLiveMessagesWithId(sessionId: string): Promise<MessageWithId[]> {
   const rows = await query<MessageRow>(
-    "SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
+    "SELECT id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
     [sessionId],
   );
   return rows.map((r) => ({ ...mapRowToMessage(r), id: r.id }));
@@ -134,11 +134,11 @@ export async function getLiveMessagesWithId(sessionId: string): Promise<MessageW
  */
 export async function getAllMessages(sessionId: string): Promise<Message[]> {
   const rows = await query<MessageRow>(
-    `SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata
+    `SELECT id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata
        FROM messages_archive
       WHERE session_id = $1
      UNION ALL
-     SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata
+     SELECT id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata
        FROM messages m
       WHERE m.session_id = $1
         AND NOT EXISTS (
@@ -158,8 +158,28 @@ function mapRowToMessage(r: MessageRow): Message {
     toolCalls: r.tool_calls as Message["toolCalls"],
     timestamp: r.created_at,
     id: r.id,
-    metadata: r.metadata ?? null,
+    metadata: assembleMessageMetadata(r),
   };
+}
+
+/**
+ * Assemble a `MessageMetadata` envelope from the dedicated columns
+ * (`source`, `message_type`, `visibility`, `origin_session_id`, `subagent_id`)
+ * + the JSONB `metadata` column (`payload`). Returns `null` when every
+ * field is empty so chat turns without engine metadata keep `metadata: null`.
+ */
+function assembleMessageMetadata(r: MessageRow): MessageMetadata | null {
+  const metadata: MessageMetadata = {};
+  if (r.source !== null) metadata.source = r.source;
+  if (r.message_type !== null) metadata.messageType = r.message_type;
+  if (r.visibility !== null) metadata.visibility = r.visibility;
+  if (r.origin_session_id !== null) metadata.originSessionId = r.origin_session_id;
+  if (r.subagent_id !== null) metadata.subagentId = r.subagent_id;
+  if (r.metadata !== null) metadata.payload = r.metadata;
+
+  // Defer to `null` when every field is empty so callers that test
+  // `metadata == null` keep working.
+  return Object.keys(metadata).length === 0 ? null : metadata;
 }
 
 // ── Archive prefix selection ────────────────────────────────────
