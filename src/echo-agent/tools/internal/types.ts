@@ -30,8 +30,25 @@ export interface InternalToolContext {
   /** Active mission run ID — for mission_stop guard */
   missionRunId: string | null;
   /**
+   * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
+   * their own preconditions without relying solely on the registry visibility
+   * filter (e.g. `loop_defer` handler in PR-5 rejects non-mission/non-full-autonomous
+   * calls even if the model somehow emits the tool name).
+   *
+   * PR-3 adds the field; `"full_autonomous"` is a real value only after PR-10
+   * introduces `sessions.kind`. Until then callers always pass `"chat"` or
+   * `"mission"`.
+   */
+  sessionKind: "chat" | "mission" | "full_autonomous";
+  /**
+   * Context-usage band at dispatch time — derived from the previous prompt's
+   * token count. Used by band-scoped handlers (`checkpoint_handoff_prepare`
+   * in PR-9) for defense-in-depth against calls outside their intended band.
+   */
+  contextUsageBand: "normal" | "warning" | "critical";
+  /**
    * Origin of the call. Used for knowledge provenance (knowledge_entries.source_surface).
-   * - undefined / "echo_agent": Echo Agent (mission loop, chat, scheduler, scripts) — default
+   * - undefined / "echo_agent": Echo Agent (mission loop, chat, scripts) — default
    * - "mcp_local": production MCP server (`src/mcp`)
    *
    * Defaulting to undefined means existing call sites stay unchanged; the knowledge

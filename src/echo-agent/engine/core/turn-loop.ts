@@ -35,6 +35,7 @@ import { executeTurn, saveAssistantMessage, type SingleTurnResult } from "./turn
 import type { ParsedToolCall } from "@echo-agent/inference/types.js";
 import { evaluateRuntimeStopConditions, type StopConditionContext } from "./stop-conditions.js";
 import { shouldCheckpoint, executeCheckpoint } from "./checkpoint.js";
+import { computeBand } from "./context-band.js";
 import { dispatchTool } from "@echo-agent/tools/dispatcher.js";
 import type { InternalToolContext } from "@echo-agent/tools/internal/types.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
@@ -174,6 +175,8 @@ export async function runTurnLoop(
           approved: false,
           role: context.isSubagent ? "subagent" : "parent",
           missionRunId: context.missionRunId,
+          sessionKind: context.sessionKind,
+          contextUsageBand: computeBand(currentTokenCount, loopConfig.contextLimit),
         };
 
         const result = await dispatchTool(

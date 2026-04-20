@@ -101,7 +101,13 @@ export async function runSubagentEngine(
     },
   };
 
-  const openAITools = getOpenAITools(effectiveLoopMode, "subagent");
+  const openAITools = getOpenAITools({
+    chatMode: effectiveLoopMode,
+    role: "subagent",
+    sessionKind: "chat", // subagents run in isolated chat-like sessions
+    missionRunActive: false,
+    contextUsageBand: "normal",
+  });
   const tools: ToolDefinition[] = openAITools.map(t => ({
     type: "function" as const,
     function: { name: t.function.name, description: t.function.description, parameters: t.function.parameters },

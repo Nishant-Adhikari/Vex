@@ -13,8 +13,46 @@
  * No memory_manage / memory_update — replaced by knowledge_* (canonical agent memory layer).
  */
 
-import type { ToolDef, OpenAITool } from "./types.js";
+import type { ToolDef, ToolVisibility, OpenAITool } from "./types.js";
 import { toOpenAITools } from "./types.js";
+import type { ContextUsageBand } from "@echo-agent/engine/core/context-band.js";
+
+/**
+ * Session-aware context for tool surface projection. Built by engine runners
+ * before every provider call so `getOpenAITools` can gate session-scoped
+ * tools (loop_defer, checkpoint_handoff_prepare, tool_output_read — all
+ * added by later PRs).
+ *
+ * `contextUsageBand` is derived from `sessions.token_count` via
+ * `computeBand()` — it lags by one turn (previous prompt size) and callers
+ * are expected to recompute per turn rather than cache.
+ */
+export interface ToolVisibilityContext {
+  chatMode: "full" | "restricted" | "off";
+  role: "parent" | "subagent";
+  sessionKind: "chat" | "mission" | "full_autonomous";
+  /** True iff `missionRunId !== null`. Mission setup is `false` even when sessionKind="mission". */
+  missionRunActive: boolean;
+  contextUsageBand: ContextUsageBand;
+}
+
+/**
+ * Convenience constructor for `ToolVisibilityContext` — chat-session
+ * defaults with optional overrides. Primarily used by tests to avoid
+ * inlining a 5-field object at every call site.
+ */
+export function defaultVisibilityContext(
+  overrides: Partial<ToolVisibilityContext> = {},
+): ToolVisibilityContext {
+  return {
+    chatMode: "off",
+    role: "parent",
+    sessionKind: "chat",
+    missionRunActive: false,
+    contextUsageBand: "normal",
+    ...overrides,
+  };
+}
 
 import { PROTOCOL_TOOLS } from "./registry/protocol.js";
 import { WEB_TOOLS } from "./registry/web.js";
@@ -62,17 +100,57 @@ export function getAllTools(): readonly ToolDef[] {
   return TOOLS;
 }
 
-/** Get tools as OpenAI format, filtering by mode, ENV availability, and role. */
-export function getOpenAITools(
-  chatMode: "full" | "restricted" | "off" = "off",
-  role: "parent" | "subagent" = "parent",
-): OpenAITool[] {
+/**
+ * Get tools as OpenAI format, filtered for the given session context.
+ *
+ * Filter chain (in order):
+ *   1. `requiresEnv` / `showOnlyWhenEnvMissing` — env-var gates (unchanged).
+ *   2. `proactive` — hidden when `chatMode === "off"` (unchanged).
+ *   3. `excludeRoles` — hard role gate (unchanged).
+ *   4. `visibility` — session-aware gates (new in PR-3). When a ToolDef has
+ *      no `visibility`, it's visible unconditionally at this step. Existing
+ *      tools don't set it → zero behaviour change until PR-5/9/11 add tools
+ *      with real gates.
+ */
+export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
   const filtered = TOOLS
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
-    .filter(t => chatMode === "off" ? !t.proactive : true)
-    .filter(t => !t.excludeRoles?.includes(role));
+    .filter(t => ctx.chatMode === "off" ? !t.proactive : true)
+    .filter(t => !t.excludeRoles?.includes(ctx.role))
+    .filter(t => passesVisibility(t.visibility, ctx));
   return toOpenAITools(filtered);
+}
+
+function passesVisibility(
+  v: ToolVisibility | undefined,
+  ctx: ToolVisibilityContext,
+): boolean {
+  if (!v) return true;
+
+  // Band gate. `band: "warning"` = visible at warning OR critical.
+  // `band: "critical"` = visible only at critical.
+  if (v.band === "warning" && ctx.contextUsageBand === "normal") return false;
+  if (v.band === "critical" && ctx.contextUsageBand !== "critical") return false;
+
+  // Mission active run gate — satisfied by either an active mission run
+  // or a standalone full_autonomous session. Keeps loop_defer (PR-5)
+  // available in both runtimes without a second flag.
+  if (v.requiresMissionActiveRun
+      && !ctx.missionRunActive
+      && ctx.sessionKind !== "full_autonomous") {
+    return false;
+  }
+
+  if (v.requiresFullAutonomous && ctx.sessionKind !== "full_autonomous") return false;
+  if (v.hiddenInChat && ctx.sessionKind === "chat") return false;
+  if (v.hiddenInMissionSetup
+      && ctx.sessionKind === "mission"
+      && !ctx.missionRunActive) {
+    return false;
+  }
+
+  return true;
 }
 
 /**

@@ -42,6 +42,8 @@ export function makeProductionContext(sessionId: string): InternalToolContext {
     approved: true,              // dispatcher gate bypass — NOT an approval statement
     role: "parent",              // hides child-only subagent tools via registry filter
     missionRunId: null,          // MCP is not a mission run
+    sessionKind: "chat",         // MCP is a passive tool surface, never a mission/autonomous runtime
+    contextUsageBand: "normal",  // no turn loop → no accumulating pressure to surface
     sourceSurface: "mcp_local",  // knowledge provenance tag
     sourceSession: sessionId,
   };

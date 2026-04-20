@@ -12,6 +12,7 @@ import { applyMissionPatch, createMissionDraft, getMissionSetupState } from "../
 import { parseModelMissionOutput } from "../../mission/patch-parser.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools } from "@echo-agent/tools/registry.js";
+import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@echo-agent/inference/registry.js";
 import * as missionsRepo from "@echo-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@echo-agent/db/repos/mission-runs.js";
@@ -70,7 +71,13 @@ export async function processMissionSetupTurn(
     missionRunId: null,
   };
 
-  const tools = toToolDefinitions(getOpenAITools("off"));
+  const tools = toToolDefinitions(getOpenAITools({
+    chatMode: "off",
+    role: "parent",
+    sessionKind: "mission",
+    missionRunActive: false, // setup — no run yet
+    contextUsageBand: "normal",
+  }));
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,
@@ -174,7 +181,13 @@ export async function startMission(
     },
   };
 
-  const tools = toToolDefinitions(getOpenAITools(loopMode));
+  const tools = toToolDefinitions(getOpenAITools({
+    chatMode: loopMode,
+    role: "parent",
+    sessionKind: "mission",
+    missionRunActive: true,
+    contextUsageBand: "normal", // fresh start — no prior pressure
+  }));
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,
@@ -246,7 +259,17 @@ export async function resumeMissionRun(
     },
   };
 
-  const tools = toToolDefinitions(getOpenAITools(run.loopMode));
+  // Resume — compute the band from the lagging token count so warning-band
+  // tools (PR-9) are visible if the previous turn already pushed the window
+  // past 80%. Turn-loop recomputes per iteration for dispatch context.
+  const resumeBand = computeBand(hydrated.tokenCount, config.contextLimit);
+  const tools = toToolDefinitions(getOpenAITools({
+    chatMode: run.loopMode,
+    role: "parent",
+    sessionKind: "mission",
+    missionRunActive: true,
+    contextUsageBand: resumeBand,
+  }));
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,

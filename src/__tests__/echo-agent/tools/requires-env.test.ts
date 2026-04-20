@@ -5,7 +5,7 @@ vi.mock("@tools/0g-compute/readiness.js", () => ({
   loadComputeState: () => null,
 }));
 
-const { getOpenAITools, getAllTools } = await import(
+const { getOpenAITools, getAllTools, defaultVisibilityContext } = await import(
   "../../../echo-agent/tools/registry.js"
 );
 const { discoverProtocolCapabilities } = await import(
@@ -31,33 +31,33 @@ describe("requiresEnv filtering", () => {
 
   describe("internal tools (registry)", () => {
     it("hides web_search when TAVILY_API_KEY not set", () => {
-      const tools = getOpenAITools("off");
+      const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebSearch = tools.some(t => t.function.name === "web_search");
       expect(hasWebSearch).toBe(false);
     });
 
     it("hides web_fetch when TAVILY_API_KEY not set", () => {
-      const tools = getOpenAITools("off");
+      const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebFetch = tools.some(t => t.function.name === "web_fetch");
       expect(hasWebFetch).toBe(false);
     });
 
     it("shows web_search when TAVILY_API_KEY is set", () => {
       process.env.TAVILY_API_KEY = "tvly-test-key-12345678";
-      const tools = getOpenAITools("off");
+      const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebSearch = tools.some(t => t.function.name === "web_search");
       expect(hasWebSearch).toBe(true);
     });
 
     it("shows web_fetch when TAVILY_API_KEY is set", () => {
       process.env.TAVILY_API_KEY = "tvly-test-key-12345678";
-      const tools = getOpenAITools("off");
+      const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebFetch = tools.some(t => t.function.name === "web_fetch");
       expect(hasWebFetch).toBe(true);
     });
 
     it("non-ENV tools always present regardless of ENV state", () => {
-      const tools = getOpenAITools("off");
+      const tools = getOpenAITools(defaultVisibilityContext());
       const hasDiscover = tools.some(t => t.function.name === "discover_tools");
       const hasFileRead = tools.some(t => t.function.name === "document_read");
       expect(hasDiscover).toBe(true);
@@ -66,7 +66,7 @@ describe("requiresEnv filtering", () => {
 
     it("all knowledge_* tools are visible without EMBEDDING_BASE_URL (decision #10: no requiresEnv)", () => {
       delete process.env.EMBEDDING_BASE_URL;
-      const tools = getOpenAITools("off");
+      const tools = getOpenAITools(defaultVisibilityContext());
       const names = tools.map(t => t.function.name);
       expect(names).toContain("knowledge_write");
       expect(names).toContain("knowledge_recall");

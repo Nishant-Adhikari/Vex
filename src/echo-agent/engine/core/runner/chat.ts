@@ -44,7 +44,13 @@ export async function processChatTurn(
   // Force chat semantics — even if session has a mission attached
   const chatContext = { ...hydrated.context, sessionKind: "chat" as const, loopMode: "off" as const };
 
-  const tools = toToolDefinitions(getOpenAITools("off"));
+  const tools = toToolDefinitions(getOpenAITools({
+    chatMode: "off",
+    role: "parent",
+    sessionKind: "chat",
+    missionRunActive: false,
+    contextUsageBand: "normal",
+  }));
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,

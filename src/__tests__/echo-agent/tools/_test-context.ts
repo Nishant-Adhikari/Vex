@@ -8,6 +8,8 @@ export function makeTestContext(overrides?: Partial<InternalToolContext>): Inter
     approved: false,
     role: "parent",
     missionRunId: null,
+    sessionKind: "chat",
+    contextUsageBand: "normal",
     ...overrides,
   };
 }

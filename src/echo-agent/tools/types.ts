@@ -8,6 +8,38 @@
 
 // ── Tool definition (what LLM sees) ─────────────────────────────
 
+/**
+ * Session-aware visibility rules for a tool. Orthogonal to `requiresEnv`,
+ * `proactive`, and `excludeRoles` (those stay as-is). When omitted, the tool
+ * is visible under the existing filter chain only — no session-context gating.
+ *
+ * Evaluated inside `getOpenAITools` against a `ToolVisibilityContext`. Handler
+ * code SHOULD still defense-in-depth its own preconditions in `InternalToolContext`
+ * (PR-3 extended that too with `sessionKind` + `contextUsageBand`) — the
+ * visibility filter only controls what the LLM sees, not what it can be made
+ * to attempt.
+ */
+export interface ToolVisibility {
+  /**
+   * Minimum context-usage band at which the tool becomes visible.
+   * `"warning"` → visible when band is `warning` OR `critical`.
+   * `"critical"` → visible only when band is `critical`.
+   * Undefined → visible in all bands.
+   */
+  band?: "warning" | "critical";
+  /**
+   * True → require a mission active run (`missionRunActive === true`) OR
+   * a standalone `full_autonomous` session. Used by `loop_defer` in PR-5.
+   */
+  requiresMissionActiveRun?: boolean;
+  /** True → require `sessionKind === "full_autonomous"` specifically. */
+  requiresFullAutonomous?: boolean;
+  /** True → hide in `sessionKind === "chat"` sessions. */
+  hiddenInChat?: boolean;
+  /** True → hide during mission setup (`sessionKind === "mission"` and no active run). */
+  hiddenInMissionSetup?: boolean;
+}
+
 export interface ToolDef {
   /** Unique tool name — used by LLM in tool_calls */
   name: string;
@@ -30,11 +62,17 @@ export interface ToolDef {
   /**
    * Hide this tool from the production MCP surface (`getProductionMcpTools`).
    * Use for tools that only make sense inside the Echo Agent runtime — e.g.
-   * `schedule_*` (cron is owned by the agent, not the host) or `mission_stop`
-   * (only valid mid-mission, MCP has no mission concept). Echo Agent still
-   * sees and dispatches them; MCP / docs / instructions never advertise them.
+   * `mission_stop` (only valid mid-mission, MCP has no mission concept).
+   * Echo Agent still sees and dispatches them; MCP / docs / instructions
+   * never advertise them.
    */
   excludeFromMcp?: boolean;
+  /**
+   * Session-aware visibility rules. When omitted, the tool is subject only
+   * to the existing filter chain (requiresEnv, proactive, excludeRoles).
+   * See `ToolVisibility` for the individual gates.
+   */
+  visibility?: ToolVisibility;
 }
 
 export interface JsonSchema {
