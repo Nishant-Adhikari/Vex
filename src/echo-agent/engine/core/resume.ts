@@ -12,6 +12,7 @@ import { dispatchTool } from "@echo-agent/tools/dispatcher.js";
 import type { InternalToolContext } from "@echo-agent/tools/internal/types.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
 import { hydrateEngineSession } from "./hydrate.js";
+import { refreshBlobTtlForRecentMessages } from "@echo-agent/engine/wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -34,6 +35,14 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
   if (!sessionId) {
     throw new Error(`Approval ${approvalId} has no associated session`);
   }
+
+  // Refresh tool_output_blob TTLs before dispatching the approved tool. A
+  // long paused_approval window could otherwise leave blobs referenced by
+  // recent messages expired, and the dispatched tool (or a follow-up turn)
+  // may need to read them. Idempotent; the mission branch below re-enters
+  // `resumeMissionRun` which refreshes again — cheap no-op. Covers the
+  // chat-approval branch too, which doesn't delegate to a runner.
+  await refreshBlobTtlForRecentMessages(sessionId);
 
   // approval.toolCall is the JSONB object stored at enqueue time
   // approval.toolCallId is the tool_call_id column (round-trip identifier)

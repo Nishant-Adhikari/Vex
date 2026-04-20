@@ -8,6 +8,7 @@ const mockAddMessage = vi.fn();
 const mockUpdateRunStatus = vi.fn();
 const mockHydrate = vi.fn();
 const mockResumeMissionRun = vi.fn();
+const mockRefreshBlobTtl = vi.fn();
 
 vi.mock("@echo-agent/db/repos/approvals.js", () => ({
   approve: (...a: unknown[]) => mockApprove(...a),
@@ -50,6 +51,10 @@ vi.mock("@echo-agent/db/repos/session-links.js", () => ({
   getParentSession: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("@echo-agent/engine/wake/blob-refresh.js", () => ({
+  refreshBlobTtlForRecentMessages: (...a: unknown[]) => mockRefreshBlobTtl(...a),
+}));
+
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -65,6 +70,7 @@ const { approveAndResume } = await import("../../../../echo-agent/engine/core/re
 describe("resume", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRefreshBlobTtl.mockResolvedValue(0);
     mockResumeMissionRun.mockResolvedValue({
       text: "Resumed execution", toolCallsMade: 3, pendingApprovals: [],
       stopReason: null, missionStatus: "running",
@@ -167,6 +173,28 @@ describe("resume", () => {
 
       const [, , metadata] = mockAddMessage.mock.calls[0];
       expect(metadata.visibility).toBe("internal");
+    });
+
+    it("refreshes blob TTLs before dispatching the approved tool (G-1)", async () => {
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-1",
+        toolCall: { command: "execute_tool", args: {} },
+        sessionId: "session-1",
+        toolCallId: "call-1",
+        chatMode: "restricted",
+        pendingContext: null,
+      });
+      mockDispatchTool.mockResolvedValueOnce({ success: true, output: "ok" });
+      mockHydrate.mockResolvedValueOnce({
+        context: { sessionId: "session-1", missionRunId: null },
+      });
+
+      await approveAndResume("approval-1");
+
+      expect(mockRefreshBlobTtl).toHaveBeenCalledWith("session-1");
+      const refreshOrder = mockRefreshBlobTtl.mock.invocationCallOrder[0]!;
+      const dispatchOrder = mockDispatchTool.mock.invocationCallOrder[0]!;
+      expect(refreshOrder).toBeLessThan(dispatchOrder);
     });
 
     it("extracts toolCallId from pendingContext when column is null", async () => {

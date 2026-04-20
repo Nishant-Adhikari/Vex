@@ -106,13 +106,12 @@ export function getAllTools(): readonly ToolDef[] {
  * Get tools as OpenAI format, filtered for the given session context.
  *
  * Filter chain (in order):
- *   1. `requiresEnv` / `showOnlyWhenEnvMissing` — env-var gates (unchanged).
- *   2. `proactive` — hidden when `chatMode === "off"` (unchanged).
- *   3. `excludeRoles` — hard role gate (unchanged).
- *   4. `visibility` — session-aware gates (new in PR-3). When a ToolDef has
- *      no `visibility`, it's visible unconditionally at this step. Existing
- *      tools don't set it → zero behaviour change until PR-5/9/11 add tools
- *      with real gates.
+ *   1. `requiresEnv` / `showOnlyWhenEnvMissing` — env-var gates.
+ *   2. `proactive` — hidden when `chatMode === "off"`.
+ *   3. `excludeRoles` — hard role gate.
+ *   4. `visibility` — session-aware gates (band / mission-active / full-auto
+ *      / chat-hidden / mission-setup-hidden). When a ToolDef has no
+ *      `visibility`, it's visible unconditionally at this step.
  */
 export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
   const filtered = TOOLS

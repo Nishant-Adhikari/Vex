@@ -1,9 +1,8 @@
 /**
  * `loop_defer` handler — writes a pending wake row and emits the
- * `defer_until` engine signal. Turn-loop integration (translating the
- * signal into a `paused_wake` mission status and tearing down the batch)
- * lands in PR-6; executor resume lands in PR-7. This PR only delivers the
- * tool surface + persistence side.
+ * `defer_until` engine signal. Turn-loop consumes the signal to tear down
+ * the current batch and flip the mission run (or full-autonomous session)
+ * to `paused_wake`; the wake executor then resumes at `due_at`.
  *
  * Validation is layered:
  *   1. Zod schema — argument shape, bounds, and the XOR between

@@ -507,6 +507,16 @@ export function __resetCheckpointCooldownForTests(): void {
 }
 
 /**
+ * Read the forced-pass cooldown deadline for a session. Test-only — lets a
+ * unit test assert that the cooldown was (or was not) stamped by a single
+ * `executeCheckpoint` call without having to drive a second call past the
+ * `noopCooldownUntil` gate.
+ */
+export function __getForcedPassCooldownForTests(sessionId: string): number | undefined {
+  return forcedPassCooldownUntil.get(sessionId);
+}
+
+/**
  * Reset the in-memory serialization map. Test-only hatch so a failed test
  * can't leak a stuck promise across test cases.
  */
@@ -557,8 +567,6 @@ async function maybeRunForcedHandoffPass(
     return;
   }
 
-  forcedPassCooldownUntil.set(sessionId, Date.now() + FORCED_HANDOFF_COOLDOWN_MS);
-
   const modelWroteHandoff = await runForcedHandoffPass(
     sessionId,
     targetGeneration,
@@ -571,8 +579,20 @@ async function maybeRunForcedHandoffPass(
   // call, or the inline call may have errored silently. `effectiveRecallSeed`
   // depends on a non-empty `preferred_recall_query`, so fall back to a
   // deterministic DB-based payload when the model didn't land one.
+  let fallbackWroteHandoff = false;
   if (!modelWroteHandoff) {
-    await writeDeterministicFallbackHandoff(sessionId, targetGeneration);
+    fallbackWroteHandoff = await writeDeterministicFallbackHandoff(sessionId, targetGeneration);
+  }
+
+  // Cooldown is stamped only after a handoff has actually landed. If the
+  // model pass returned false AND the deterministic fallback also failed
+  // (double transient failure — e.g. chatCompletion 5xx plus a DB blip in
+  // the fallback insert), we leave the cooldown unset so the next
+  // checkpoint is free to retry immediately. Stamping unconditionally
+  // would silently block the session for 60s with no handoff row, while
+  // `effectiveRecallSeed` depends on one being present.
+  if (modelWroteHandoff || fallbackWroteHandoff) {
+    forcedPassCooldownUntil.set(sessionId, Date.now() + FORCED_HANDOFF_COOLDOWN_MS);
   }
 }
 
@@ -696,7 +716,7 @@ function buildForcedPassMessages(
 async function writeDeterministicFallbackHandoff(
   sessionId: string,
   targetGeneration: number,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const recent = await episodesRepo.listRecentBySession(sessionId, 5);
     const payload = buildDeterministicFallbackPayload(recent);
@@ -707,15 +727,19 @@ async function writeDeterministicFallbackHandoff(
       entityCount: payload.importantEntities.length,
       openLoopCount: payload.openLoops.length,
     });
+    return true;
   } catch (err) {
     // A failed fallback is non-fatal — the checkpoint proceeds and the post-
-    // compact recall falls back to `findLastUserInput`. Logging loud so we
-    // can spot the pattern if it recurs.
+    // compact recall falls back to `findLastUserInput`. Caller uses the
+    // returned flag to decide whether the forced-pass cooldown should start
+    // (only stamp when SOMETHING landed; otherwise the next checkpoint is
+    // free to retry immediately).
     logger.error("checkpoint.forced_pass.fallback_failed", {
       sessionId,
       targetGeneration,
       error: err instanceof Error ? err.message : String(err),
     });
+    return false;
   }
 }
 

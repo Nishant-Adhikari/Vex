@@ -97,8 +97,12 @@ vi.mock("@echo-agent/engine/checkpoint/extract.js", () => ({
   computeEpisodeHash: vi.fn().mockReturnValue("hash"),
 }));
 
-const { executeCheckpoint, __resetCheckpointCooldownForTests, __resetCheckpointMutexForTests } =
-  await import("../../../../echo-agent/engine/core/checkpoint.js");
+const {
+  executeCheckpoint,
+  __resetCheckpointCooldownForTests,
+  __resetCheckpointMutexForTests,
+  __getForcedPassCooldownForTests,
+} = await import("../../../../echo-agent/engine/core/checkpoint.js");
 
 function makeSession(overrides: Record<string, unknown> = {}) {
   return {
@@ -262,5 +266,42 @@ describe("Phase 0 forced handoff pass", () => {
 
     expect(mockProviderChatCompletion).not.toHaveBeenCalled();
     expect(mockWriteHandoff).not.toHaveBeenCalled();
+  });
+
+  it("does NOT set the cooldown when BOTH forced pass and deterministic fallback fail (D-5)", async () => {
+    // Transient provider failure — `runForcedHandoffPass` catches and
+    // returns false, so fallback path fires next.
+    mockGetSession.mockResolvedValue(makeSession({ tokenCount: 950 }));
+    mockProviderChatCompletion.mockRejectedValue(new Error("upstream 502"));
+    // Deterministic fallback also fails — `writeDeterministicFallbackHandoff`
+    // logs and returns false without throwing (non-fatal contract).
+    mockWriteHandoff.mockRejectedValue(new Error("db blip"));
+
+    await executeCheckpoint("sess-1", "sess-1", makeProvider(), config);
+
+    expect(mockProviderChatCompletion).toHaveBeenCalledTimes(1);
+    expect(mockWriteHandoff).toHaveBeenCalledTimes(1);
+    // Neither path landed a handoff → cooldown MUST stay unset so the
+    // next checkpoint retries Phase 0 immediately.
+    expect(__getForcedPassCooldownForTests("sess-1")).toBeUndefined();
+  });
+
+  it("sets the cooldown once the deterministic fallback lands a handoff (D-5 happy path)", async () => {
+    mockGetSession.mockResolvedValue(makeSession({ tokenCount: 950 }));
+    mockProviderChatCompletion.mockRejectedValue(new Error("upstream 502"));
+    mockListRecentEpisodes.mockResolvedValue([
+      { id: 1, title: "kickoff", entities: ["wallet-A"], openLoops: {} },
+    ]);
+
+    const before = Date.now();
+    await executeCheckpoint("sess-1", "sess-1", makeProvider(), config);
+
+    expect(mockProviderChatCompletion).toHaveBeenCalledTimes(1);
+    expect(mockWriteHandoff).toHaveBeenCalledTimes(1);
+    // Provider failed, fallback landed → cooldown stamped so the next
+    // checkpoint skips Phase 0 until the window elapses.
+    const cooldownUntil = __getForcedPassCooldownForTests("sess-1");
+    expect(cooldownUntil).toBeDefined();
+    expect(cooldownUntil!).toBeGreaterThan(before);
   });
 });

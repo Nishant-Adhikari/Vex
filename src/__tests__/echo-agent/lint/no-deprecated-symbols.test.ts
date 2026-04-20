@@ -13,6 +13,11 @@
  *   - Auto-promotion (PR-2): `runPromotionForSession`, `promotion_version`,
  *     `source_episode_id`, `source_episode_hash`, `cluster_hash`.
  *   - Dead status (PR-0): `paused_checkpoint`.
+ *   - Comment rot from the wake rollout: phrases like `"lands in PR-"`,
+ *     `"stub today"`, `"zero behaviour change until PR-"`. Those tags are
+ *     meaningful only while a PR series is still open — after merge they
+ *     become historical drift that misleads readers. Banning them
+ *     structurally stops the rot from sneaking back in.
  *
  * Scope: runtime files under `src/echo-agent/` (mirrors the no-any-policy
  * scope). Tests / e2e / scripts are excluded — they may legitimately
@@ -45,6 +50,12 @@ const FORBIDDEN_IDENTIFIERS = [
   "cluster_hash",
   // PR-0 — dead status
   "paused_checkpoint",
+  // Post-rollout comment rot — phrases that only make sense while a PR
+  // series is open. Banning them keeps stale forward-references out of
+  // runtime after the PRs land.
+  "lands in PR-",
+  "stub today",
+  "zero behaviour change until PR-",
 ] as const;
 
 const EXCLUDED_SUBPATHS = [

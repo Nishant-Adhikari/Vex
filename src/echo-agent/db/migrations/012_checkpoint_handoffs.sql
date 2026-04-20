@@ -41,9 +41,5 @@ CREATE UNIQUE INDEX uniq_handoff_active
   ON checkpoint_handoffs (session_id, target_checkpoint_generation)
   WHERE status = 'active';
 
-CREATE INDEX idx_handoff_session_active
-  ON checkpoint_handoffs (session_id, target_checkpoint_generation)
-  WHERE status = 'active';
-
 COMMENT ON TABLE checkpoint_handoffs IS
   'Pre-checkpoint handoffs — active row feeds post-compact recall seed (PR-10). Phase II of executeCheckpoint consumes the row for the freshly-bumped generation inside the same tx.';
