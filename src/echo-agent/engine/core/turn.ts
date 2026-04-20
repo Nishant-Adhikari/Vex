@@ -163,25 +163,44 @@ async function resolveRecallSeed(
   context: EngineContext,
   existingMessages: readonly Message[],
 ): Promise<string | null> {
-  // Surface the active handoff for the current generation (if any). PR-9
-  // populates this on warning/critical context pressure so the post-compact
-  // turn has a deliberate seed.
-  let activeHandoff = null;
+  // Surface the handoff for the CURRENT generation (if any). The handoff
+  // for `session.checkpointGeneration` is the one that seeded / will seed
+  // this turn: pre-checkpoint it lives as `active` (written by
+  // checkpoint_handoff_prepare or Phase 0), post-checkpoint it sits as
+  // `consumed` after Phase II flipped it atomically with the generation
+  // bump. `getLatestForTarget` returns either — filtering on `status='active'`
+  // alone would miss the post-compact read and the whole contract collapses
+  // into fallback-seed (M-1 from the audit).
+  let handoff = null;
   let recentEpisodeTitles: string[] = [];
+  let recentOpenLoops: string[] = [];
   try {
     const session = await sessionsRepo.getSession(context.sessionId);
     if (session) {
-      activeHandoff = await checkpointHandoffsRepo.getActive(
+      handoff = await checkpointHandoffsRepo.getLatestForTarget(
         context.sessionId,
-        session.checkpointGeneration + 1,
+        session.checkpointGeneration,
       );
     }
-    // Empty full-autonomous sessions fall back to recent episode titles.
-    if (context.sessionKind === "full_autonomous") {
+    // Pull a small slice of recent episodes for two fallback paths:
+    //   1. full-autonomous empty-session seed → recentEpisodeTitles.
+    //   2. mission / full-autonomous open loops when no handoff is present —
+    //      the last 3 episodes tend to carry the live workstream.
+    if (context.sessionKind !== "chat") {
       const recent = await episodesRepo.listRecentBySession(context.sessionId, 3);
       recentEpisodeTitles = recent
         .map((ep) => ep.title.trim())
         .filter((t) => t.length > 0);
+      const loops = new Set<string>();
+      for (const ep of recent) {
+        for (const [key, value] of Object.entries(ep.openLoops ?? {})) {
+          const detail = typeof value === "string" ? value : JSON.stringify(value);
+          loops.add(`${key}: ${detail}`.slice(0, 200));
+          if (loops.size >= 10) break;
+        }
+        if (loops.size >= 10) break;
+      }
+      recentOpenLoops = [...loops];
     }
   } catch (err) {
     logger.warn("turn.recall_seed.lookup_failed", {
@@ -205,16 +224,19 @@ async function resolveRecallSeed(
     }
   }
 
+  // open_loops priority: handoff > recent episodes. The handoff is the
+  // model's own hand-picked list; episodes are the automatic fallback.
+  const handoffOpenLoops = handoff?.payload.openLoops ?? [];
+  const openLoops = handoffOpenLoops.length > 0 ? handoffOpenLoops : recentOpenLoops;
+
   return effectiveRecallSeed({
     sessionKind: context.sessionKind,
     missionRunActive: context.missionRunId !== null,
     messages: existingMessages,
     missionObjective,
-    activeHandoff,
+    activeHandoff: handoff,
     lastEngineMessage,
-    // open loops are not threaded through the engine context today — leave
-    // empty until PR-11's overflow handling / follow-up builder fills it.
-    openLoops: [],
+    openLoops,
     recentEpisodeTitles,
   });
 }

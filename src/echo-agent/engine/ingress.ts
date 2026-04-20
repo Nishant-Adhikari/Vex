@@ -11,14 +11,9 @@
  *          turn instead of a scheduled wake.
  *        - `running` / `paused_approval` mission run → persist the message
  *          as an interrupt; resume is driven by the approval flow, not here.
- *        - `full_autonomous` session without a mission run → stub today,
- *          routed to `processFullAutonomousTurn` in PR-10.
+ *        - `full_autonomous` session without a mission run →
+ *          `processFullAutonomousTurn`.
  *        - Everything else → `processChatTurn` (chat / mission-setup).
- *
- * PR-7 lands the skeleton (preempt + mission-run branching). PR-10 completes
- * the matrix by introducing `sessions.kind = 'full_autonomous'` and the
- * standalone full-autonomous runner. The shape of `routeUserMessage` is
- * already final so callers don't churn when PR-10 fills in the branch.
  */
 
 import type { TurnResult } from "./types.js";
@@ -33,7 +28,6 @@ import * as missionRunsRepo from "@echo-agent/db/repos/mission-runs.js";
 import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
 import * as missionsRepo from "@echo-agent/db/repos/missions.js";
-import { refreshBlobTtlForRecentMessages } from "./wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -118,10 +112,10 @@ async function resumeMissionRunWithPreempt(
     },
   );
 
-  // Refresh blob TTLs BEFORE the next turn spins up so recent overflow
-  // pointers survive the pause. Non-fatal on failure.
-  await refreshBlobTtlForRecentMessages(sessionId);
-
   logger.info("ingress.preempt_resume", { sessionId, runId });
+  // `resumeMissionRun` refreshes tool_output_blob TTLs internally (PR-13
+  // S-2), so we don't double-call here. If that behaviour ever moves, the
+  // ingress path still has the opportunity to refresh before entering the
+  // runner — restore the call above.
   return resumeMissionRun(runId);
 }

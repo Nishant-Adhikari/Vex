@@ -293,20 +293,22 @@ export async function runTurnLoop(
         return { text: lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason: batchStopReason };
       }
       if (batchStopReason === "waiting_for_wake") {
-        // Flip the mission run into paused_wake so resume paths (PR-7
-        // executor, PR-10 ingress router) see the status atomically with
-        // the wake row that the handler already wrote.
-        if (context.missionRunId) {
-          await missionRunsRepo.updateStatus(context.missionRunId, "paused_wake", "waiting_for_wake");
-        }
-        // Checkpoint-before-wait: if the band is already critical when the
-        // agent defers, running a checkpoint NOW means the post-wake resume
-        // starts from a compacted prompt instead of hitting the forced
-        // pre-compact pass (PR-9) on the very first iteration after wake.
+        // Checkpoint-before-wait FIRST, status flip AFTER. Ordering matters:
+        // if we flipped to `paused_wake` before the checkpoint completes,
+        // the wake executor (claimDue re-check) and the ingress router
+        // (`routeUserMessage` preempt) would both see the run as ready to
+        // resume during a window when the checkpoint is still re-shaping
+        // the transcript. That window is closed by keeping the run in
+        // `running` until checkpoint finishes: a user preempt in that
+        // interval is routed as a plain interrupt, a concurrent wake claim
+        // hits `status != 'paused_wake'` and skips banner injection.
         const freshSession = await sessionsRepo.getSession(context.sessionId);
         const tokenCountAtWait = freshSession?.tokenCount ?? currentTokenCount;
         if (computeBand(tokenCountAtWait, loopConfig.contextLimit) === "critical") {
           await maybeRunCheckpoint();
+        }
+        if (context.missionRunId) {
+          await missionRunsRepo.updateStatus(context.missionRunId, "paused_wake", "waiting_for_wake");
         }
         stopReason = batchStopReason;
         return { text: batchStopOutput ?? lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason, stopPayload: batchStopPayload };

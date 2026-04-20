@@ -141,7 +141,7 @@ export async function extractEpisodes(
   // not emit these in `tool_outcomes` naturally — we merge them in post.
   const overflowBlobKeys = collectOverflowBlobKeys(prefix);
 
-  const episodes: ExtractedEpisode[] = result.data.episodes.map((ep) => {
+  const rawEpisodes: ExtractedEpisode[] = result.data.episodes.map((ep) => {
     const summaryText = ep.summary_text.trim();
     const titleTrimmed = (ep.title ?? "").trim();
     if (titleTrimmed.length === 0) {
@@ -153,7 +153,6 @@ export async function extractEpisodes(
     // Truncate defensively in case the LLM ignored the ≤100 cap. Zod's
     // max(500) above is a sanity gate; this is the domain cap.
     const title = titleTrimmed.slice(0, TITLE_MAX_CHARS);
-    const toolOutcomes = mergeOverflowBlobKeys(ep.tool_outcomes, ep.episode_kind, overflowBlobKeys);
     return {
       episodeKind: ep.episode_kind,
       title,
@@ -162,13 +161,18 @@ export async function extractEpisodes(
       decisions: ep.decisions,
       openLoops: ep.open_loops,
       entities: ep.entities,
-      toolOutcomes,
+      toolOutcomes: ep.tool_outcomes,
       // Hash input is kind + summaryText ONLY — title is metadata and must
       // not destabilise dedupe when the LLM produces a different title on
       // retry against the same summary.
       episodeHash: computeEpisodeHash(ep.episode_kind, summaryText),
     };
   });
+
+  // Propagate overflow blob_keys into the batch. Prefer tool_result_summary
+  // episodes (their canonical home); when none exists, fall back to the
+  // first episode so the pointer survives regardless of LLM output shape.
+  const episodes = propagateOverflowBlobKeys(rawEpisodes, overflowBlobKeys);
 
   // Validate the inferred language code at the boundary — if it doesn't
   // match the repo-wide regex, treat as absent so the caller skips the
@@ -387,18 +391,41 @@ function collectOverflowBlobKeys(prefix: readonly MessageWithId[]): string[] {
   return keys;
 }
 
-function mergeOverflowBlobKeys(
-  toolOutcomes: Record<string, unknown>,
-  episodeKind: EpisodeKind,
+/**
+ * Attach collected overflow `blob_keys` onto one episode in the batch so
+ * recall after compaction can still resolve the full tool payloads.
+ *
+ * Priority:
+ *   1. First `tool_result_summary` episode — canonical home for tool-call
+ *      outcomes; recall queries for tool state naturally land there.
+ *   2. First episode of any other kind — fallback when the LLM emitted no
+ *      `tool_result_summary` in this batch (we refuse to drop the blob_keys
+ *      silently; the pointer survives even if it lives on a `decision` or
+ *      `fact` row).
+ *   3. Empty batch — keys are discarded because no episode will persist.
+ *
+ * Returns a new array with the augmented episode replaced; other episodes
+ * are returned by reference unchanged.
+ */
+function propagateOverflowBlobKeys(
+  episodes: readonly ExtractedEpisode[],
   blobKeys: readonly string[],
-): Record<string, unknown> {
-  if (blobKeys.length === 0) return toolOutcomes;
-  // Attach only to tool_result_summary episodes — those are the ones that
-  // canonically represent tool-call outcomes. Other episode kinds get the
-  // keys only when they are the sole episode (nothing else to carry them).
-  if (episodeKind !== "tool_result_summary") return toolOutcomes;
-  return {
-    ...toolOutcomes,
-    overflow_blob_keys: [...blobKeys],
+): ExtractedEpisode[] {
+  if (blobKeys.length === 0 || episodes.length === 0) {
+    return [...episodes];
+  }
+
+  const targetIndex = episodes.findIndex((ep) => ep.episodeKind === "tool_result_summary");
+  const effectiveIndex = targetIndex >= 0 ? targetIndex : 0;
+  const target = episodes[effectiveIndex]!;
+
+  const augmented: ExtractedEpisode = {
+    ...target,
+    toolOutcomes: {
+      ...target.toolOutcomes,
+      overflow_blob_keys: [...blobKeys],
+    },
   };
+
+  return episodes.map((ep, i) => (i === effectiveIndex ? augmented : ep));
 }

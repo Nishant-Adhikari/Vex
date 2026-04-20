@@ -52,20 +52,16 @@ interface SessionRow {
   memory_language_code: string | null;
   checkpoint_generation: number;
   /**
-   * PR-10 (wake roadmap) adds `sessions.kind TEXT DEFAULT 'chat'`. The type
-   * field is declared now so PR-7 (wake executor + ingress router) can read
-   * `session.kind` without an `as unknown as` cast. Until PR-10's migration
-   * lands, the column does not exist — `mapRow` tolerates the missing key
-   * and falls back to `"chat"`.
+   * Session-level runtime discriminator column. `mapRow` normalises
+   * unexpected values to `"chat"`.
    */
   kind?: string | null;
 }
 
 /**
- * Known values for `sessions.kind`. `"chat"` is the default; `"full_autonomous"`
- * becomes a real runtime surface in PR-10 (the standalone full-autonomous
- * runner) but the type is declared now so PR-7's wake executor + ingress
- * router stay cast-free.
+ * Known values for `sessions.kind`. `"chat"` is the default routing target
+ * (chat / mission-setup / mission-run). `"full_autonomous"` unlocks the
+ * standalone full-autonomous runner.
  */
 export type SessionKind = "chat" | "full_autonomous";
 
@@ -89,10 +85,9 @@ export interface Session {
    */
   checkpointGeneration: number;
   /**
-   * Session-level runtime discriminator. `"chat"` by default; `"full_autonomous"`
-   * activates the standalone full-autonomous routing path (PR-10). The column
-   * itself is added by PR-10's migration — today every row resolves to `"chat"`
-   * because `mapRow` defaults unknown values there.
+   * Session-level runtime discriminator. `"chat"` routes to chat / mission
+   * flows; `"full_autonomous"` activates the standalone full-autonomous
+   * runner (no mission, loops on `loop_defer` + wake executor).
    */
   kind: SessionKind;
 }
@@ -129,9 +124,9 @@ function mapRow(r: SessionRow): Session {
 
 /**
  * Create a session row. `kind` is `"chat"` by default — callers that opt
- * into the standalone full-autonomous runtime (PR-10) pass
- * `{ kind: "full_autonomous" }` explicitly. `ON CONFLICT DO NOTHING` keeps
- * the first-writer-wins semantics existing transports depend on.
+ * into the standalone full-autonomous runtime pass `{ kind: "full_autonomous" }`
+ * explicitly. `ON CONFLICT DO NOTHING` keeps the first-writer-wins
+ * semantics existing transports depend on.
  */
 export async function createSession(
   id: string,

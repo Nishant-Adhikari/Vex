@@ -163,6 +163,35 @@ export async function getActive(
 }
 
 /**
+ * Look up the latest non-superseded handoff for `(sessionId, targetGen)`.
+ * Matches either `active` (no checkpoint consumed it yet) or `consumed`
+ * (Phase II of the checkpoint consumed it and bumped the generation).
+ * `superseded` rows are intentionally excluded — their payload was replaced
+ * by a later write.
+ *
+ * The post-compact turn reads through this function because its target
+ * generation equals the CURRENT `sessions.checkpoint_generation` (the one
+ * just bumped), and that handoff is already in `consumed` state. A plain
+ * `getActive` would miss it and the recall seed would fall back to the last
+ * user input — defeating the whole point of PR-9.
+ */
+export async function getLatestForTarget(
+  sessionId: string,
+  targetGeneration: number,
+): Promise<CheckpointHandoff | null> {
+  const row = await queryOne<CheckpointHandoffRow>(
+    `SELECT * FROM checkpoint_handoffs
+     WHERE session_id = $1
+       AND target_checkpoint_generation = $2
+       AND status IN ('active', 'consumed')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [sessionId, targetGeneration],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
  * Flip an active handoff to `consumed` inside the caller's transaction.
  * Returns the row count so the caller can detect a lost race (row already
  * consumed or superseded between `getActive` and `consume`).

@@ -17,6 +17,7 @@ import { resolveProvider } from "@echo-agent/inference/registry.js";
 import * as missionsRepo from "@echo-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@echo-agent/db/repos/mission-runs.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
+import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
 
@@ -247,6 +248,12 @@ export async function resumeMissionRun(
 
   // Resume run
   await missionRunsRepo.updateStatus(runId, "running");
+
+  // Refresh tool_output_blob TTLs on the session's recent messages so a
+  // long paused_wake / paused_approval window doesn't leave the model with
+  // expired overflow pointers. Idempotent — callers that already refreshed
+  // (ingress preempt, wake executor) pay a cheap no-op. Non-fatal on error.
+  await refreshBlobTtlForRecentMessages(run.sessionId);
 
   const hydrated = await hydrateEngineSession(run.sessionId);
   if (!hydrated) throw new Error(`Session ${run.sessionId} not found`);

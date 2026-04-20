@@ -26,12 +26,13 @@ export async function summarizePrefix(
   provider: InferenceProvider,
   config: InferenceConfig,
   currentCode: string | null,
+  handoffPreserve: string | null = null,
 ): Promise<string> {
   if (prefix.length === 0) {
     throw new Error("summarizePrefix: prefix must be non-empty");
   }
 
-  const compactionPrompt = buildCompactionPrompt(prefix, previousSummary, currentCode);
+  const compactionPrompt = buildCompactionPrompt(prefix, previousSummary, currentCode, handoffPreserve);
   const { content: summary } = await provider.chatCompletionSimple(
     [{ role: "system", content: compactionPrompt }],
     config,
@@ -50,6 +51,7 @@ function buildCompactionPrompt(
   prefix: readonly MessageWithId[],
   previousSummary: string | null,
   currentCode: string | null,
+  handoffPreserve: string | null,
 ): string {
   const conversation = prefix
     .map((m) => `[${m.role}]: ${m.content.slice(0, PER_MESSAGE_CHAR_CAP)}`)
@@ -58,6 +60,15 @@ function buildCompactionPrompt(
   const previousBlock = previousSummary
     ? `Previous rolling summary (carry forward what's still relevant):\n${previousSummary}\n\n`
     : "";
+
+  // PR-9 handoff `preserve_md` — the agent's own note about what must
+  // survive compaction. Rendered as a hard-priority block above the
+  // previous-summary bullet so the LLM can't quietly drop it during the
+  // merge. Empty strings are skipped (no placeholder clutter).
+  const preserveBlock =
+    handoffPreserve && handoffPreserve.trim().length > 0
+      ? `Preserve MUST block (directly requested by the agent pre-compaction — do not drop any of this):\n${handoffPreserve.trim()}\n\n`
+      : "";
 
   return `You are a conversation summarizer. Produce a single rolling summary that MERGES the previous summary (if any) with the newly archived prefix below. Preserve across checkpoints:
 - Key decisions made
@@ -70,7 +81,7 @@ Drop superseded details. Do not re-output the previous summary verbatim — inte
 
 ${buildLanguageDirective(currentCode)}
 
-${previousBlock}Archived prefix:
+${preserveBlock}${previousBlock}Archived prefix:
 ${conversation}`;
 }
 

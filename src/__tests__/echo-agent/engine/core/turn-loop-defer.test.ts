@@ -388,4 +388,50 @@ describe("turn-loop — checkpoint-before-wait", () => {
     // Checkpoint-before-wait fired so resume starts compacted.
     expect(mockExecuteCheckpoint).toHaveBeenCalledTimes(1);
   });
+
+  it("runs checkpoint BEFORE flipping the run to paused_wake (PR-13 M-3)", async () => {
+    mockGetSessionForLoop.mockResolvedValue({ tokenCount: 120_000 });
+
+    mockDispatchTool.mockResolvedValueOnce({
+      success: true,
+      output: "deferred",
+      engineSignal: {
+        type: "defer_until",
+        reason: "pressure",
+        summary: "deferred",
+        dueAt: "2030-01-01T00:00:00.000Z",
+      },
+    });
+
+    const provider = makeProvider([
+      {
+        content: "Pausing under pressure.",
+        toolCalls: [{ id: "tc-1", name: "loop_defer", arguments: { after_ms: 10_000, reason: "pressure" } }],
+      },
+    ]);
+
+    await runTurnLoop(
+      makeContext(),
+      [],
+      null,
+      0,
+      provider as any,
+      makeConfig() as any,
+      [],
+      makeLoopConfig(),
+    );
+
+    // Both hooks were called once — this test asserts their RELATIVE order:
+    // checkpoint must have landed before updateStatus(paused_wake) so
+    // ingress / wake executor never see paused_wake during a running
+    // compaction (audit M-3).
+    const checkpointCall = mockExecuteCheckpoint.mock.invocationCallOrder[0];
+    const pausedWakeCall = mockUpdateStatus.mock.invocationCallOrder.find((_, idx) => {
+      const args = mockUpdateStatus.mock.calls[idx];
+      return args && args[1] === "paused_wake";
+    });
+    expect(checkpointCall).toBeDefined();
+    expect(pausedWakeCall).toBeDefined();
+    expect(checkpointCall).toBeLessThan(pausedWakeCall!);
+  });
 });

@@ -62,7 +62,7 @@ export interface WakeDeps {
   injectWakeBanner(sessionId: string, reason: string | null, dueAt: string): Promise<void>;
   /** Resume a mission run. */
   resumeMissionRun(runId: string): Promise<void>;
-  /** Resume a full_autonomous session (real runner lands in PR-10). */
+  /** Resume a full_autonomous session. */
   resumeFullAutonomousSession(sessionId: string): Promise<void>;
 }
 
@@ -236,11 +236,7 @@ function buildProductionDeps(): WakeDeps {
     updateMissionRunStatus: (runId, status) => missionRunsRepo.updateStatus(runId, status),
     getSessionKind: async (sessionId) => {
       const session = await sessionsRepo.getSession(sessionId);
-      if (!session) return null;
-      // Until PR-10's migration adds the `sessions.kind` column, `mapRow`
-      // resolves every row to `"chat"` — the executor correctly skips any
-      // full_autonomous wake that slips in during that window.
-      return session.kind;
+      return session?.kind ?? null;
     },
     injectWakeBanner: async (sessionId, reason, dueAt) => {
       await messagesRepo.addEngineMessage(
@@ -258,21 +254,14 @@ function buildProductionDeps(): WakeDeps {
       // Lazy dynamic import so wake/executor.ts doesn't introduce a circular
       // dependency through the engine barrel. The ESM runtime caches the
       // promise after the first resolve, so there's no per-tick cost.
-      const [engine, blobRefresh, missionRuns] = await Promise.all([
-        import("@echo-agent/engine/index.js"),
-        import("./blob-refresh.js"),
-        import("@echo-agent/db/repos/mission-runs.js"),
-      ]);
-      const run = await missionRuns.getRun(runId);
-      if (run) await blobRefresh.refreshBlobTtlForRecentMessages(run.sessionId);
+      // Blob TTL refresh is now done inside `resumeMissionRun` itself
+      // (PR-13 S-2) so every caller — wake executor, ingress preempt,
+      // approval resume — gets it idempotently.
+      const engine = await import("@echo-agent/engine/index.js");
       await engine.resumeMissionRun(runId);
     },
     resumeFullAutonomousSession: async (sessionId) => {
-      const [engine, blobRefresh] = await Promise.all([
-        import("@echo-agent/engine/index.js"),
-        import("./blob-refresh.js"),
-      ]);
-      await blobRefresh.refreshBlobTtlForRecentMessages(sessionId);
+      const engine = await import("@echo-agent/engine/index.js");
       await engine.resumeFullAutonomousSession(sessionId);
     },
   };

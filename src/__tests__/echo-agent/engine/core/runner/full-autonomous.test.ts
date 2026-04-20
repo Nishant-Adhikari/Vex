@@ -31,6 +31,10 @@ vi.mock("../../../../../echo-agent/engine/core/turn-loop.js", () => ({
 
 vi.mock("@echo-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
+  // `resumeMissionRun` / `resumeFullAutonomousSession` call
+  // refreshBlobTtlForRecentMessages which walks live messages — keep the
+  // mock deterministic.
+  getLiveMessages: vi.fn().mockResolvedValue([]),
 }));
 
 const { processFullAutonomousTurn, resumeFullAutonomousSession } = await import(

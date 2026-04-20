@@ -198,10 +198,20 @@ async function executeCheckpointInner(
   const sourceStartMessageId = input[0]?.id ?? null;
   const sourceEndMessageId = input[input.length - 1]?.id ?? null;
 
+  // Look up the pending handoff for THIS checkpoint's target generation.
+  // The handoff's `preserveMd` is the model's own note about what must
+  // survive compaction — surfacing it in the summary prompt is the
+  // contract promised by PR-9. Reading once here and threading through
+  // keeps us from double-querying in Phase II (where we still consume it).
+  const pendingHandoff = session
+    ? await checkpointHandoffsRepo.getActive(sessionId, session.checkpointGeneration + 1)
+    : null;
+  const handoffPreserve = pendingHandoff?.payload.preserveMd ?? null;
+
   // ── Phase I — remote (NO open transaction) ─────────────────────
   // Summary is load-bearing — a throw here aborts the whole checkpoint
   // before any DB write happens, so state is clean for the next retry.
-  const summary = await summarizePrefix(input, previousSummary, provider, config, currentCode);
+  const summary = await summarizePrefix(input, previousSummary, provider, config, currentCode, handoffPreserve);
 
   // Episodes are best-effort — schema-invalid or provider-fail returns empty.
   let extraction = await extractEpisodes(input, provider, config, currentCode);
@@ -392,31 +402,30 @@ async function runCheckpointWriteTx(args: {
     //     A handoff written for a STALE target_gen (writer saw old generation
     //     and lost the race) is left in `active` — it's visible to the next
     //     checkpoint and will either be consumed or superseded then.
-    try {
-      const active = await checkpointHandoffsRepo.getActive(args.sessionId, nextGen, tx);
-      if (active) {
-        const flipped = await checkpointHandoffsRepo.consume(active.id, tx);
-        if (flipped === 0) {
-          logger.warn("checkpoint.handoff.consume_raced", {
-            sessionId: args.sessionId,
-            handoffId: active.id,
-            targetGen: nextGen,
-          });
-        } else {
-          logger.info("checkpoint.handoff.consumed", {
-            sessionId: args.sessionId,
-            handoffId: active.id,
-            targetGen: nextGen,
-          });
-        }
+    //
+    //     Atomicity: any error here propagates and rolls back the whole
+    //     Phase II tx (generation bump + episodes + archive). A silent skip
+    //     would split the handoff lifecycle from the generation lifecycle,
+    //     leaving an `active` row pointing at a target that is already
+    //     compacted. Better to fail the checkpoint loud and retry than to
+    //     ship a half-applied state.
+    const active = await checkpointHandoffsRepo.getActive(args.sessionId, nextGen, tx);
+    if (active) {
+      const flipped = await checkpointHandoffsRepo.consume(active.id, tx);
+      if (flipped === 0) {
+        // The unique active row we just selected was flipped by a
+        // concurrent writer between the SELECT and the UPDATE. Our Phase II
+        // row lock on `sessions` prevents a parallel `executeCheckpoint` on
+        // the same session, but a concurrent `checkpoint_handoff_prepare`
+        // could supersede. Treat as data-integrity violation — roll back.
+        throw new Error(
+          `checkpoint.handoff.consume_raced: handoff ${active.id} for target_gen=${nextGen} flipped concurrently`,
+        );
       }
-    } catch (err) {
-      // Handoff consume is best-effort — a checkpoint that compacted
-      // correctly must not roll back because the handoff flip failed.
-      logger.warn("checkpoint.handoff.consume_failed", {
+      logger.info("checkpoint.handoff.consumed", {
         sessionId: args.sessionId,
+        handoffId: active.id,
         targetGen: nextGen,
-        error: err instanceof Error ? err.message : String(err),
       });
     }
 

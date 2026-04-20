@@ -23,6 +23,7 @@ import { getOpenAITools } from "@echo-agent/tools/registry.js";
 import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@echo-agent/inference/registry.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
+import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
 
@@ -67,6 +68,11 @@ async function runFullAutonomousLoop(
   config: NonNullable<Awaited<ReturnType<NonNullable<Awaited<ReturnType<typeof resolveProvider>>>["loadConfig"]>>>,
 ): Promise<TurnResult> {
   if (!provider) throw new Error("No inference provider available");
+
+  // Refresh tool_output_blob TTLs up front so overflow pointers in the
+  // session's tail are still resolvable after a long wait. See the
+  // mirror call in `resumeMissionRun` for rationale. Non-fatal on error.
+  await refreshBlobTtlForRecentMessages(sessionId);
 
   const hydrated = await hydrateEngineSession(sessionId);
   if (!hydrated) throw new Error(`Session ${sessionId} not found`);
