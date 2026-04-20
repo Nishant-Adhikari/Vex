@@ -117,14 +117,19 @@ export interface ToolResult {
  * - stop_mission: parent mission stop (business stop reason)
  * - wait_for_parent: child pauses for parent help (subagent_request_parent)
  * - complete_subagent: child finished task (subagent_report_complete)
+ * - defer_until: the agent wants to sleep until a wake time (loop_defer, PR-5).
+ *   PR-6 turn-loop integration flips the mission run to `paused_wake` after
+ *   the tool handler has written the `loop_wake_requests` row.
  */
 export interface EngineSignal {
-  type: "stop_mission" | "wait_for_parent" | "complete_subagent";
+  type: "stop_mission" | "wait_for_parent" | "complete_subagent" | "defer_until";
   reason: string;
   summary: string;
   evidence?: Record<string, unknown>;
   /** For wait_for_parent: the subagent message ID to track the request */
   messageId?: number;
+  /** For defer_until: ISO8601 timestamp when the wake executor should resume the session. */
+  dueAt?: string;
 }
 
 // ── OpenAI-compatible tool format (for inference providers) ──────

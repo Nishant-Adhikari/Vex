@@ -61,6 +61,7 @@ import { KNOWLEDGE_TOOLS } from "./registry/knowledge.js";
 import { PORTFOLIO_TOOLS } from "./registry/portfolio.js";
 import { SETUP_TOOLS } from "./registry/setup.js";
 import { MISSION_TOOLS } from "./registry/mission.js";
+import { AUTONOMY_TOOLS } from "./registry/autonomy.js";
 import { SUBAGENT_TOOLS } from "./registry/subagents.js";
 import { EVM_TOOLS } from "./registry/evm.js";
 import { WALLET_TOOLS } from "./registry/wallet.js";
@@ -75,6 +76,7 @@ const TOOLS: readonly ToolDef[] = [
   ...PORTFOLIO_TOOLS,
   ...SETUP_TOOLS,
   ...MISSION_TOOLS,
+  ...AUTONOMY_TOOLS,
   ...SUBAGENT_TOOLS,
   ...EVM_TOOLS,
   ...WALLET_TOOLS,

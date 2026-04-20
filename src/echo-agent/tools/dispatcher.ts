@@ -164,6 +164,9 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Mission
   mission_stop: async () => (await import("./internal/mission.js")).handleMissionStop,
 
+  // Autonomy primitives — mission/full-autonomous wake
+  loop_defer: async () => (await import("./internal/loop-defer.js")).handleLoopDefer,
+
   // Subagents
   subagent_spawn: async () => (await import("./internal/subagent.js")).handleSubagentSpawn,
   subagent_status: async () => (await import("./internal/subagent.js")).handleSubagentStatus,
