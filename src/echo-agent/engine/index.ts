@@ -16,4 +16,9 @@ export { approveAndResume } from "./core/resume.js";
 
 export { runSubagentEngine } from "./subagents/runner.js";
 
+export { routeUserMessage } from "./ingress.js";
+
+export { startWakeExecutor } from "./wake/executor.js";
+export type { WakeExecutorHandle, WakeDeps, ClaimedWake, ClaimedWakeOutcome } from "./wake/executor.js";
+
 export * from "./types.js";

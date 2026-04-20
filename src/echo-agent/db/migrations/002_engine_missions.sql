@@ -59,9 +59,14 @@ ALTER TABLE messages ADD COLUMN message_type TEXT DEFAULT 'chat';
 ALTER TABLE messages ADD COLUMN visibility TEXT DEFAULT 'user';
 ALTER TABLE messages ADD COLUMN origin_session_id TEXT;
 ALTER TABLE messages ADD COLUMN subagent_id TEXT;
+-- PR-7: free-form metadata envelope for engine-written messages (wake banners,
+-- overflow stubs, etc.). Shape is validated in code — keep schema open so new
+-- payload kinds don't require a migration.
+ALTER TABLE messages ADD COLUMN metadata JSONB;
 
 ALTER TABLE messages_archive ADD COLUMN source TEXT DEFAULT 'user';
 ALTER TABLE messages_archive ADD COLUMN message_type TEXT DEFAULT 'chat';
 ALTER TABLE messages_archive ADD COLUMN visibility TEXT DEFAULT 'user';
 ALTER TABLE messages_archive ADD COLUMN origin_session_id TEXT;
 ALTER TABLE messages_archive ADD COLUMN subagent_id TEXT;
+ALTER TABLE messages_archive ADD COLUMN metadata JSONB;

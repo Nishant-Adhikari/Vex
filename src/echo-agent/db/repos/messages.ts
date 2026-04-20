@@ -25,6 +25,7 @@ export interface MessageRow {
   visibility: string | null;
   origin_session_id: string | null;
   subagent_id: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export interface Message {
@@ -39,30 +40,48 @@ export interface Message {
    * undefined; never trust an undefined id for cutoff computation.
    */
   id?: number;
+  /**
+   * Engine-written metadata envelope (wake banners carry
+   * `{ kind: "wake_due", payload: {...} }`, overflow stubs carry
+   * `{ overflow: true, blobKey, sizeBytes, shapeKind }`). Only populated for
+   * messages produced by engine/wake/overflow paths; normal chat turns leave
+   * it `null`.
+   */
+  metadata?: Record<string, unknown> | null;
 }
 
 /** Message variant with a guaranteed id — returned by `getLiveMessagesWithId`. */
 export type MessageWithId = Message & { id: number };
 
-/** Engine metadata — all fields optional for backwards compatibility. */
+/**
+ * Engine metadata — all fields optional for backwards compatibility.
+ *
+ * `payload` (PR-7) is the free-form envelope persisted into the
+ * `messages.metadata` JSONB column. Shape is intentionally loose so new
+ * engine-written message kinds (wake banners, overflow stubs, …) can extend
+ * without a migration. Every producer MUST define its own shape in code and
+ * treat `payload` as untrusted when reading.
+ */
 export interface MessageMetadata {
   source?: string;
   messageType?: string;
   visibility?: string;
   originSessionId?: string;
   subagentId?: string;
+  payload?: Record<string, unknown>;
 }
 
 export async function addMessage(sessionId: string, msg: Message, metadata?: MessageMetadata): Promise<void> {
   await execute(
-    `INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)`,
     [
       sessionId, msg.role, msg.content, msg.toolCallId ?? null,
       msg.toolCalls ? JSON.stringify(msg.toolCalls) : null, msg.timestamp,
       metadata?.source ?? null, metadata?.messageType ?? null,
       metadata?.visibility ?? null, metadata?.originSessionId ?? null,
       metadata?.subagentId ?? null,
+      metadata?.payload ? JSON.stringify(metadata.payload) : null,
     ],
   );
   await execute("UPDATE sessions SET message_count = message_count + 1 WHERE id = $1", [sessionId]);
@@ -84,7 +103,7 @@ export async function addEngineMessage(
 /** Get live messages (not archived) for a session. Ordered by created_at + id for deterministic ordering. */
 export async function getLiveMessages(sessionId: string): Promise<Message[]> {
   const rows = await query<MessageRow>(
-    "SELECT id, role, content, tool_call_id, tool_calls, created_at FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
+    "SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
     [sessionId],
   );
   return rows.map(mapRowToMessage);
@@ -97,7 +116,7 @@ export async function getLiveMessages(sessionId: string): Promise<Message[]> {
  */
 export async function getLiveMessagesWithId(sessionId: string): Promise<MessageWithId[]> {
   const rows = await query<MessageRow>(
-    "SELECT id, role, content, tool_call_id, tool_calls, created_at FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
+    "SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
     [sessionId],
   );
   return rows.map((r) => ({ ...mapRowToMessage(r), id: r.id }));
@@ -115,11 +134,11 @@ export async function getLiveMessagesWithId(sessionId: string): Promise<MessageW
  */
 export async function getAllMessages(sessionId: string): Promise<Message[]> {
   const rows = await query<MessageRow>(
-    `SELECT id, role, content, tool_call_id, tool_calls, created_at
+    `SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata
        FROM messages_archive
       WHERE session_id = $1
      UNION ALL
-     SELECT id, role, content, tool_call_id, tool_calls, created_at
+     SELECT id, role, content, tool_call_id, tool_calls, created_at, metadata
        FROM messages m
       WHERE m.session_id = $1
         AND NOT EXISTS (
@@ -139,6 +158,7 @@ function mapRowToMessage(r: MessageRow): Message {
     toolCalls: r.tool_calls as Message["toolCalls"],
     timestamp: r.created_at,
     id: r.id,
+    metadata: r.metadata ?? null,
   };
 }
 

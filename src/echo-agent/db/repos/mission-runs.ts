@@ -112,6 +112,22 @@ export async function getActiveRun(missionId: string): Promise<MissionRun | null
   return row ? mapRow(row) : null;
 }
 
+/**
+ * Fetch the active run for a session (keyed by `session_id`, filtered to
+ * non-terminal statuses). Used by the PR-7 ingress router — user messages
+ * arrive with a session id, not a mission id, and the router needs to
+ * distinguish `running` / `paused_approval` / `paused_wake` from no active
+ * work at all. `getRunBySession` is intentionally statusless and unsuitable
+ * for routing decisions; `getActiveRun(missionId)` is keyed by mission id.
+ */
+export async function getActiveRunBySession(sessionId: string): Promise<MissionRun | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    "SELECT * FROM mission_runs WHERE session_id = $1 AND status IN ('running', 'paused_approval', 'paused_wake') ORDER BY started_at DESC LIMIT 1",
+    [sessionId],
+  );
+  return row ? mapRow(row) : null;
+}
+
 export async function getRun(id: string): Promise<MissionRun | null> {
   const row = await queryOne<Record<string, unknown>>(
     "SELECT * FROM mission_runs WHERE id = $1",

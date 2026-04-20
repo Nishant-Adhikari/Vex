@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 import { bootstrap } from "./bootstrap.js";
 import { startStdioTransport } from "./transports/stdio.js";
 import { startHttpTransport } from "./transports/http.js";
+import { startWakeExecutor, type WakeExecutorHandle } from "@echo-agent/engine/index.js";
 import logger from "@utils/logger.js";
 
 type Transport = "stdio" | "http";
@@ -57,11 +58,30 @@ export async function runMcpCli(argv: readonly string[] = process.argv.slice(2))
 
   logger.info("mcp.startup", { transport });
 
+  // Wake executor lives on the long-lived MCP process, NOT in
+  // `runBootstrapChecks` (which is also called by the CLI readiness check and
+  // would spin up a duplicate executor on every CLI invocation — see ADR 001).
+  let wakeExecutor: WakeExecutorHandle | null = null;
   if (transport === "stdio") {
     await startStdioTransport();
+    wakeExecutor = startWakeExecutor();
   } else {
     await startHttpTransport();
+    wakeExecutor = startWakeExecutor();
   }
+
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    logger.info("mcp.shutdown", { signal });
+    if (wakeExecutor) {
+      await wakeExecutor.stop();
+    }
+  };
+  process.once("SIGTERM", (signal) => {
+    void shutdown(signal);
+  });
+  process.once("SIGINT", (signal) => {
+    void shutdown(signal);
+  });
 }
 
 const isDirectInvocation = import.meta.url === pathToFileURL(realpathSync(process.argv[1]!)).href;
