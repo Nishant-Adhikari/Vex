@@ -12,6 +12,9 @@ import { describe, it, expect, vi } from "vitest";
 
 import { effectiveRecallSeed } from "../../../../echo-agent/engine/core/recall-seed.js";
 import type { CheckpointHandoff } from "../../../../echo-agent/db/repos/checkpoint-handoffs.js";
+import { extractEpisodes } from "../../../../echo-agent/engine/checkpoint/extract.js";
+import type { MessageWithId } from "../../../../echo-agent/db/repos/messages.js";
+import type { InferenceProvider, InferenceConfig } from "../../../../echo-agent/inference/types.js";
 
 function consumedHandoff(query: string): CheckpointHandoff {
   return {
@@ -41,11 +44,34 @@ describe("PR-13 M-1 — post-compact recall reads consumed handoff", () => {
     expect(seed).toBe("resume polymarket arb monitoring");
   });
 
-  it("getLatestForTarget is the right helper — issues SQL for (active, consumed) only", async () => {
-    // Structural assertion: verify the repo exposes the new function the
-    // turn-time read depends on. We don't hit the DB here — smoke import.
+  it("getLatestForTarget SQL filters to status IN ('active','consumed') and ORDER BY created_at DESC", async () => {
+    // Behavioural assertion: stub the pg pool with a query spy, call the
+    // repo function, and assert the SQL it actually issues. This guards
+    // against someone silently widening/narrowing the filter by editing
+    // the WHERE clause.
+    const queryOneMock = vi.fn().mockResolvedValue(null);
+    vi.doMock("../../../../echo-agent/db/client.js", () => ({
+      queryOne: queryOneMock,
+      getPool: vi.fn(),
+      queryOneWith: vi.fn(),
+      executeWith: vi.fn(),
+      execute: vi.fn(),
+      query: vi.fn(),
+    }));
+    vi.resetModules();
     const repo = await import("../../../../echo-agent/db/repos/checkpoint-handoffs.js");
-    expect(typeof repo.getLatestForTarget).toBe("function");
+
+    await repo.getLatestForTarget("s1", 5);
+
+    expect(queryOneMock).toHaveBeenCalledTimes(1);
+    const [sql, params] = queryOneMock.mock.calls[0]!;
+    expect(sql).toMatch(/status IN \('active', 'consumed'\)/);
+    expect(sql).toMatch(/ORDER BY created_at DESC/);
+    expect(sql).not.toMatch(/superseded/); // explicit exclusion invariant
+    expect(params).toEqual(["s1", 5]);
+
+    vi.doUnmock("../../../../echo-agent/db/client.js");
+    vi.resetModules();
   });
 });
 
@@ -151,21 +177,136 @@ describe("PR-13 S-1 — consume atomicity with generation bump", () => {
  * `tool_result_summary` episode.
  */
 describe("PR-13 S-4 — overflow blob_keys fall back to the first episode", () => {
-  it("attaches blob_keys to the first episode when no tool_result_summary exists", async () => {
-    // We can't easily test the internal propagateOverflowBlobKeys without
-    // exporting it; instead, construct an extraction scenario (prefix with
-    // one overflow row) and assert via the public extractEpisodes.
-    // Pure unit via behavior check: module-level smoke that the function's
-    // public contract (documented in code comment) holds. Skipped: true
-    // integration would require a provider mock — covered by the runtime
-    // test suite. Here we assert the comment+impl alignment by reading the
-    // source.
-    const { readFileSync } = await import("node:fs");
-    const src = readFileSync(
-      new URL("../../../../echo-agent/engine/checkpoint/extract.ts", import.meta.url),
-      "utf-8",
+  // Helper — build a provider whose `chatCompletionSimple` returns a
+  // hand-crafted episodes JSON. Only the fields touched by `extractEpisodes`
+  // need real values; rest of the provider interface is stubbed.
+  function makeExtractionProvider(episodes: Array<Record<string, unknown>>): InferenceProvider {
+    return {
+      id: "test",
+      displayName: "test",
+      loadConfig: vi.fn(),
+      chatCompletion: vi.fn(),
+      chatCompletionSimple: vi.fn().mockResolvedValue({
+        content: JSON.stringify({ session_language_inferred: "en", episodes }),
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      }),
+      chatCompletionStream: vi.fn(),
+      getBalance: vi.fn(),
+      calculateCost: vi.fn(),
+    } as unknown as InferenceProvider;
+  }
+
+  const config: InferenceConfig = {
+    provider: "test", model: "m", contextLimit: 1000, maxOutputTokens: 512,
+    inputPricePerM: 0, outputPricePerM: 0, priceCurrency: "USD",
+    cachePricePerM: null, reasoningPricePerM: null,
+  };
+
+  // Build an overflow-carrying prefix that the real `collectOverflowBlobKeys`
+  // will pick up: a tool row with `metadata.payload.overflow === true` and a
+  // `blobKey` string. Parent assistant row keeps the pair-integrity simple.
+  function overflowPrefix(blobKeys: string[]): MessageWithId[] {
+    const prefix: MessageWithId[] = [
+      {
+        id: 1, role: "assistant", content: "calling tool",
+        toolCalls: blobKeys.map((_, i) => ({ id: `tc-${i}`, command: "web_fetch", args: {} })),
+        timestamp: "2026-04-20T09:00:00.000Z",
+      },
+    ];
+    blobKeys.forEach((blobKey, i) => {
+      prefix.push({
+        id: 2 + i,
+        role: "tool",
+        content: `[tool_output_overflow blob_key=${blobKey}]`,
+        toolCallId: `tc-${i}`,
+        timestamp: "2026-04-20T09:00:01.000Z",
+        metadata: {
+          source: "tool",
+          messageType: "tool_result",
+          visibility: "internal",
+          payload: { overflow: true, blobKey, sizeBytes: 20000, shapeKind: "text" },
+        },
+      });
+    });
+    return prefix;
+  }
+
+  it("attaches blob_keys to a tool_result_summary episode when one exists", async () => {
+    const provider = makeExtractionProvider([
+      { episode_kind: "tool_result_summary", title: "fetch", summary_text: "fetched a big list" },
+      { episode_kind: "decision", title: "pick", summary_text: "chose option A" },
+    ]);
+
+    const result = await extractEpisodes(
+      overflowPrefix(["tob-20260420-aaaaaaaaaaaaaaaa", "tob-20260420-bbbbbbbbbbbbbbbb"]),
+      provider,
+      config,
+      "en",
     );
-    expect(src).toContain("propagateOverflowBlobKeys");
-    expect(src).toMatch(/fall back to the first episode|first episode/i);
+
+    expect(result.episodes).toHaveLength(2);
+    const summaryEp = result.episodes.find((ep) => ep.episodeKind === "tool_result_summary")!;
+    const decisionEp = result.episodes.find((ep) => ep.episodeKind === "decision")!;
+    expect(summaryEp.toolOutcomes.overflow_blob_keys).toEqual([
+      "tob-20260420-aaaaaaaaaaaaaaaa",
+      "tob-20260420-bbbbbbbbbbbbbbbb",
+    ]);
+    // Non-summary episodes must NOT receive the blob_keys — prevents dupe.
+    expect(decisionEp.toolOutcomes.overflow_blob_keys).toBeUndefined();
+  });
+
+  it("falls back to the first episode when no tool_result_summary exists", async () => {
+    const provider = makeExtractionProvider([
+      { episode_kind: "decision", title: "chose", summary_text: "picked strategy X" },
+      { episode_kind: "fact", title: "price", summary_text: "SOL at 150" },
+    ]);
+
+    const result = await extractEpisodes(
+      overflowPrefix(["tob-20260420-cccccccccccccccc"]),
+      provider,
+      config,
+      "en",
+    );
+
+    expect(result.episodes).toHaveLength(2);
+    expect(result.episodes[0]!.episodeKind).toBe("decision");
+    expect(result.episodes[0]!.toolOutcomes.overflow_blob_keys).toEqual([
+      "tob-20260420-cccccccccccccccc",
+    ]);
+    // The second episode must NOT receive the keys — fallback only targets
+    // the first episode.
+    expect(result.episodes[1]!.toolOutcomes.overflow_blob_keys).toBeUndefined();
+  });
+
+  it("drops blob_keys silently when the batch has zero episodes", async () => {
+    const provider = makeExtractionProvider([]);
+
+    const result = await extractEpisodes(
+      overflowPrefix(["tob-20260420-dddddddddddddddd"]),
+      provider,
+      config,
+      "en",
+    );
+
+    expect(result.episodes).toEqual([]);
+  });
+
+  it("is a no-op when the prefix has no overflow rows", async () => {
+    const provider = makeExtractionProvider([
+      { episode_kind: "tool_result_summary", title: "simple", summary_text: "no overflow here" },
+    ]);
+
+    // Pass a prefix without any metadata.payload.overflow → collector
+    // returns [] so propagate is a no-op.
+    const plainPrefix: MessageWithId[] = [
+      {
+        id: 1, role: "user", content: "hi",
+        timestamp: "2026-04-20T09:00:00.000Z",
+      },
+    ];
+
+    const result = await extractEpisodes(plainPrefix, provider, config, "en");
+
+    expect(result.episodes[0]!.toolOutcomes.overflow_blob_keys).toBeUndefined();
   });
 });

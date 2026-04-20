@@ -161,10 +161,11 @@ function passesVisibility(
  * Reuses the canonical env / showOnlyWhenEnvMissing / role filtering used
  * everywhere else. The MCP server is a passive bridge — it surfaces the
  * `parent`-role view of tools (no subagent child-only tools), drops anything
- * marked `excludeFromMcp` (e.g. `schedule_*`, `mission_stop` — runtime
- * concepts owned by Echo Agent, not the MCP host), and hard-excludes any
- * name starting with `subagent_` as defense in depth (today these are
- * already filtered by `excludeRoles: ["subagent"]` for child-only ones, but
+ * marked `excludeFromMcp` (e.g. `mission_stop`, `loop_defer`,
+ * `checkpoint_handoff_prepare`, `tool_output_read` — Echo Agent runtime
+ * concepts that the MCP host cannot drive), and hard-excludes any name
+ * starting with `subagent_` as defense in depth (today these are already
+ * filtered by `excludeRoles: ["subagent"]` for child-only ones, but
  * parent-spawn tools like subagent_spawn / subagent_status / subagent_stop /
  * subagent_reply are NOT role-filtered out — they belong to parent. We do
  * NOT want them in MCP regardless of role).
@@ -177,7 +178,7 @@ export function getProductionMcpTools(): readonly ToolDef[] {
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => !t.excludeRoles?.includes("parent")) // none today, defensive
-    .filter(t => !t.excludeFromMcp)                   // schedule_*, mission_stop — echo-agent only
+    .filter(t => !t.excludeFromMcp)                   // mission_stop + autonomy internals — echo-agent only
     .filter(t => !t.name.startsWith("subagent_"));    // hard guard for `full-minus-subagents`
 }
 
