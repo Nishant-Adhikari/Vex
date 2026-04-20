@@ -68,7 +68,31 @@ function formatHit(hit: RecallHit, summaryTruncate: number): string {
   const truncated = truncate(episode.summaryText, summaryTruncate);
   const header = episode.title.trim().length > 0 ? `${episode.title}: ` : "";
   const session = episode.sourceSession ?? "—";
-  return `- [${episode.episodeKind}] ${header}${truncated} (session:${session}, sim:${similarity.toFixed(2)})`;
+  // PR-8: surface recency so the model can distinguish fresh vs stale context
+  // at a glance. `gen:N` = checkpoint generation stamp; null on legacy rows.
+  // `created:YYYY-MM-DD` = ISO date slice (time-of-day is noisy for recall).
+  // `!= null` deliberately catches both null (row stamped pre-PR-8) and
+  // undefined (test fixtures that omit the field). The format string below
+  // would otherwise render `gen:undefined`.
+  const genFragment = episode.checkpointGeneration != null
+    ? `gen:${episode.checkpointGeneration}, `
+    : "";
+  const createdDate = formatIsoDate(episode.createdAt);
+  return `- [${episode.episodeKind}] ${header}${truncated} (session:${session}, ${genFragment}created:${createdDate}, sim:${similarity.toFixed(2)})`;
+}
+
+function formatIsoDate(iso: string): string {
+  // pg timestamptz arrives as an ISO8601 string; slice(0, 10) = YYYY-MM-DD.
+  // Defensive fallback keeps formatting lossless when the caller passes
+  // something unexpected (test fixtures, manual inserts).
+  if (iso.length >= 10 && iso.charAt(4) === "-" && iso.charAt(7) === "-") {
+    return iso.slice(0, 10);
+  }
+  const parsed = new Date(iso);
+  if (Number.isFinite(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return iso;
 }
 
 function truncate(s: string, max: number): string {

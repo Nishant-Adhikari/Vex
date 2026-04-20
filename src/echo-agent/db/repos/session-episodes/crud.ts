@@ -83,14 +83,16 @@ async function runInserts(
          facts_jsonb, decisions_jsonb, open_loops_jsonb, entities, tool_outcomes_jsonb,
          source_surface, source_session,
          source_start_message_id, source_end_message_id,
-         episode_hash, embedding_model, embedding_dim, embedding
+         episode_hash, embedding_model, embedding_dim, embedding,
+         checkpoint_generation
        )
        VALUES (
          $1, $2, $3, $4, $5,
          $6, $7, $8, $9, $10,
          COALESCE($11::text, 'echo_agent'), $12,
          $13, $14,
-         $15, $16, $17, $18::vector
+         $15, $16, $17, $18::vector,
+         $19
        )
        ON CONFLICT (session_id, source_end_message_id, episode_hash)
          WHERE source_end_message_id IS NOT NULL
@@ -115,6 +117,7 @@ async function runInserts(
         r.embeddingModel,
         r.embeddingDim,
         vectorLiteral(r.embedding),
+        r.checkpointGeneration ?? null,
       ],
     );
     if (result.rows[0]) inserted.push(mapRow(result.rows[0]));

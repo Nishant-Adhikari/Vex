@@ -25,6 +25,7 @@ function makeHit(overrides: Partial<RecallHit["episode"]> = {}, similarity = 0.8
       episodeHash: "h".repeat(64),
       embeddingModel: "test-model",
       embeddingDim: 4,
+      checkpointGeneration: null,
       createdAt: "2026-04-01T00:00:00Z",
       ...overrides,
     },
@@ -40,7 +41,24 @@ describe("session-memory", () => {
     const block = formatSessionEpisodeRecallBlock([makeHit()]);
     expect(block).toContain("[Session episode recall]");
     expect(block).toContain("- [decision]");
-    expect(block).toContain("(session:session-X, sim:0.80)");
+    // Legacy row with null checkpoint_generation — the `gen:N` fragment is
+    // omitted, but the ISO date slice still renders.
+    expect(block).toContain("(session:session-X, created:2026-04-01, sim:0.80)");
+  });
+
+  it("surfaces checkpoint_generation as `gen:N` when the episode carries one (PR-8)", () => {
+    const block = formatSessionEpisodeRecallBlock([
+      makeHit({ checkpointGeneration: 7 }),
+    ]);
+    expect(block).toContain("gen:7, created:2026-04-01, sim:0.80");
+  });
+
+  it("omits gen fragment for episodes with null generation (legacy rows)", () => {
+    const block = formatSessionEpisodeRecallBlock([
+      makeHit({ checkpointGeneration: null }),
+    ]);
+    expect(block).not.toContain("gen:");
+    expect(block).toContain("created:2026-04-01");
   });
 
   it("caps the number of items to maxItems", () => {

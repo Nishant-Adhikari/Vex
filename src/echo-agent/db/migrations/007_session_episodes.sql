@@ -36,6 +36,11 @@ CREATE TABLE IF NOT EXISTS session_episodes (
   embedding_model          TEXT NOT NULL,
   embedding_dim            INTEGER NOT NULL,
   embedding                vector NOT NULL,
+  -- Stamped by the Phase II checkpoint tx with `sessions.checkpoint_generation + 1`.
+  -- Null on legacy rows inserted before the generation bump rolled out; recall
+  -- surfaces `gen:N` only for non-null values. PR-9 also keys `checkpoint_handoffs.
+  -- target_checkpoint_generation` against this field via partial index below.
+  checkpoint_generation    INTEGER NULL,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT se_episode_kind_enum CHECK (
     episode_kind IN ('decision','fact','preference','open_loop','tool_result_summary','lesson')
@@ -52,6 +57,14 @@ CREATE INDEX IF NOT EXISTS idx_se_entities
   ON session_episodes USING GIN (entities);
 CREATE INDEX IF NOT EXISTS idx_se_model_dim
   ON session_episodes(embedding_model, embedding_dim);
+
+-- Partial index on (session_id, checkpoint_generation) for recall paths that
+-- want to filter by generation (PR-9 handoff consumption, future "show
+-- episodes from last checkpoint only" UX). Partial keeps it cheap on legacy /
+-- pre-PR8 rows whose generation is null.
+CREATE INDEX IF NOT EXISTS idx_se_generation
+  ON session_episodes(session_id, checkpoint_generation)
+  WHERE checkpoint_generation IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_se_dedupe
   ON session_episodes(session_id, source_end_message_id, episode_hash)

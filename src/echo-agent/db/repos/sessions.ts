@@ -50,6 +50,7 @@ interface SessionRow {
   token_count: number;
   memory_scope_key: string | null;
   memory_language_code: string | null;
+  checkpoint_generation: number;
 }
 
 export interface Session {
@@ -63,6 +64,14 @@ export interface Session {
   tokenCount: number;
   memoryScopeKey: string | null;
   memoryLanguageCode: string | null;
+  /**
+   * Monotonic counter bumped once per successful checkpoint (see
+   * `runCheckpointWriteTx`). Stamped on every episode written in that
+   * checkpoint's batch so recall can surface recency as `gen:N`. Starts at 0
+   * for a freshly-created session; the first checkpoint lands episodes at
+   * generation 1.
+   */
+  checkpointGeneration: number;
 }
 
 /**
@@ -90,6 +99,7 @@ function mapRow(r: SessionRow): Session {
     tokenCount: r.token_count,
     memoryScopeKey: r.memory_scope_key,
     memoryLanguageCode: r.memory_language_code,
+    checkpointGeneration: r.checkpoint_generation,
   };
 }
 

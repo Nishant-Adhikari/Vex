@@ -130,6 +130,12 @@ CREATE INDEX idx_recall_cache_expires ON recall_cache_entries(expires_at);
 -- ══════════════════════════════════════════════════════════════════
 
 -- Sessions (no parent_session_id — session_links is canonical)
+-- `checkpoint_generation` is a monotonic counter bumped inside the Phase II
+-- checkpoint tx (see `engine/core/checkpoint.ts:runCheckpointWriteTx` — the
+-- UPDATE sits after a `SELECT checkpoint_generation ... FOR UPDATE` so two
+-- concurrent checkpoints on the same session serialize). Stamped onto each
+-- batch of `session_episodes` so recall can surface recency (`gen:N`) and
+-- PR-9 can target handoffs at a specific generation.
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
   scope TEXT DEFAULT 'chat',
@@ -138,7 +144,8 @@ CREATE TABLE sessions (
   summary TEXT,
   compacted BOOLEAN DEFAULT FALSE,
   message_count INTEGER DEFAULT 0,
-  token_count INTEGER DEFAULT 0
+  token_count INTEGER DEFAULT 0,
+  checkpoint_generation INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_sessions_scope ON sessions(scope, started_at DESC);
 

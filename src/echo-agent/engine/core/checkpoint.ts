@@ -60,6 +60,42 @@ const TITLE_FALLBACK_CHARS = 120;
  */
 const noopCooldownUntil = new Map<string, number>();
 
+/**
+ * Per-session serialization for `executeCheckpoint`. Process-local mutex —
+ * single-process wake executor contract (see ADR-001) means this plus the
+ * `SELECT … FOR UPDATE` row lock inside Phase II is sufficient. Spanning
+ * both Phase I (remote LLM I/O, outside any tx) and Phase II (short tx) with
+ * a PG advisory *xact* lock would be wrong — xact locks release on COMMIT,
+ * which sits in the middle of the combined flow.
+ *
+ * Two callers racing on the same session queue up on this promise chain and
+ * run sequentially. Unrelated sessions are independent.
+ */
+const checkpointInFlight = new Map<string, Promise<void>>();
+
+async function withCheckpointMutex<T>(
+  sessionId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = checkpointInFlight.get(sessionId) ?? Promise.resolve();
+
+  let resolveCurrent!: () => void;
+  const current = new Promise<void>((r) => { resolveCurrent = r; });
+  const chained = prev.then(() => current);
+  checkpointInFlight.set(sessionId, chained);
+
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    resolveCurrent();
+    // Tail cleanup — only remove if no later caller has chained behind us.
+    if (checkpointInFlight.get(sessionId) === chained) {
+      checkpointInFlight.delete(sessionId);
+    }
+  }
+}
+
 // ── Public API ─────────────────────────────────────────────────
 
 export function shouldCheckpoint(tokenCount: number, contextLimit: number): boolean {
@@ -80,6 +116,17 @@ export interface CheckpointResult {
  * `shouldCheckpoint`). This function only decides HOW to compact.
  */
 export async function executeCheckpoint(
+  sessionId: string,
+  memoryScopeKey: string,
+  provider: InferenceProvider,
+  config: InferenceConfig,
+): Promise<CheckpointResult> {
+  return withCheckpointMutex(sessionId, () =>
+    executeCheckpointInner(sessionId, memoryScopeKey, provider, config),
+  );
+}
+
+async function executeCheckpointInner(
   sessionId: string,
   memoryScopeKey: string,
   provider: InferenceProvider,
@@ -265,17 +312,42 @@ async function runCheckpointWriteTx(args: {
     // 2. Rolling summary.
     await sessionsRepo.setRollingSummary(args.sessionId, args.summary, tx);
 
-    // 3. Episodes.
+    // 3. Generation bump — serialize concurrent checkpoints on the same
+    //    session via row lock. FOR UPDATE blocks a second executeCheckpoint
+    //    that skipped the in-process mutex (different process) until this tx
+    //    commits. Inside a single process the module-level mutex already
+    //    serializes callers; this row lock is the second line of defense for
+    //    multi-process deployments we don't have yet but don't want to break.
+    const genRow = await tx.query<{ checkpoint_generation: number }>(
+      "SELECT checkpoint_generation FROM sessions WHERE id = $1 FOR UPDATE",
+      [args.sessionId],
+    );
+    const currentGen = genRow.rows[0]?.checkpoint_generation ?? 0;
+    const nextGen = currentGen + 1;
+
+    // 4. Episodes — stamped with the new generation. Null-return (zero
+    //    embedded rows) still bumps the counter below: a checkpoint that
+    //    produces a summary + archive but no episodes is still a checkpoint.
+    const stampedRows = args.embeddedRows.map((r) => ({
+      ...r,
+      checkpointGeneration: nextGen,
+    }));
     const inserted =
-      args.embeddedRows.length > 0
-        ? await episodesRepo.insertEpisodes(args.embeddedRows, tx)
+      stampedRows.length > 0
+        ? await episodesRepo.insertEpisodes(stampedRows, tx)
         : [];
     const insertedEpisodes: InsertedEpisodeRef[] = inserted.map((r) => ({
       id: r.id,
       episodeKind: r.episodeKind,
     }));
 
-    // 4. Archive — branch on plan mode.
+    // 5. Persist the bumped counter.
+    await tx.query(
+      "UPDATE sessions SET checkpoint_generation = $2 WHERE id = $1",
+      [args.sessionId, nextGen],
+    );
+
+    // 6. Archive — branch on plan mode.
     if (args.plan.mode === "prefix") {
       await sessionsRepo.archivePrefix(
         args.sessionId,
@@ -349,4 +421,12 @@ function buildGiantToolPlaceholder(bloatedMessageId: number, episodeId: number |
  */
 export function __resetCheckpointCooldownForTests(): void {
   noopCooldownUntil.clear();
+}
+
+/**
+ * Reset the in-memory serialization map. Test-only hatch so a failed test
+ * can't leak a stuck promise across test cases.
+ */
+export function __resetCheckpointMutexForTests(): void {
+  checkpointInFlight.clear();
 }

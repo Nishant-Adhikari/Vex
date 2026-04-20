@@ -64,6 +64,13 @@ export interface SessionEpisode {
   episodeHash: string;
   embeddingModel: string;
   embeddingDim: number;
+  /**
+   * Generation stamp copied from `sessions.checkpoint_generation + 1` at insert
+   * time (see `runCheckpointWriteTx`). Surfaces recency in recall as `gen:N`.
+   * Null on legacy rows written before PR-8 rolled out — recall treats null as
+   * "unknown generation" and omits the suffix.
+   */
+  checkpointGeneration: number | null;
   createdAt: string;
 }
 
@@ -88,6 +95,13 @@ export interface NewEpisode {
   embeddingModel: string;
   embeddingDim: number;
   embedding: number[];
+  /**
+   * Generation stamp. Callers (today: only `runCheckpointWriteTx`) supply this
+   * after reading `sessions.checkpoint_generation FOR UPDATE` inside the same
+   * tx and computing `current + 1`. Leaving it undefined lands the row with
+   * NULL — acceptable for ad-hoc test fixtures, not for production checkpoint.
+   */
+  checkpointGeneration?: number | null;
 }
 
 export interface RecallFilters {
@@ -123,6 +137,7 @@ export interface SessionEpisodeRow {
   episode_hash: string;
   embedding_model: string;
   embedding_dim: number;
+  checkpoint_generation: number | null;
   created_at: string;
 }
 
@@ -150,6 +165,7 @@ export function mapRow(r: SessionEpisodeRow): SessionEpisode {
     episodeHash: r.episode_hash,
     embeddingModel: r.embedding_model,
     embeddingDim: r.embedding_dim,
+    checkpointGeneration: r.checkpoint_generation,
     createdAt: r.created_at,
   };
 }
@@ -163,5 +179,6 @@ export const EPISODE_COLUMNS = `
   facts_jsonb, decisions_jsonb, open_loops_jsonb, entities, tool_outcomes_jsonb,
   source_surface, source_session,
   source_start_message_id, source_end_message_id,
-  episode_hash, embedding_model, embedding_dim, created_at
+  episode_hash, embedding_model, embedding_dim,
+  checkpoint_generation, created_at
 `;
