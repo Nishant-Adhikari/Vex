@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   isBusinessStop,
   isRuntimePause,
+  isResumablePause,
   shouldTerminateRun,
   evaluateRuntimeStopConditions,
 } from "../../../../echo-agent/engine/core/stop-conditions.js";
@@ -34,7 +35,7 @@ describe("stop-conditions", () => {
   describe("isRuntimePause", () => {
     const runtimeReasons: StopReason[] = [
       "approval_required", "checkpoint_pause", "iteration_limit",
-      "timeout", "waiting_for_parent", "system_error",
+      "timeout", "waiting_for_parent", "waiting_for_wake", "system_error",
     ];
 
     for (const reason of runtimeReasons) {
@@ -46,6 +47,26 @@ describe("stop-conditions", () => {
     it("rejects business reasons", () => {
       expect(isRuntimePause("goal_reached")).toBe(false);
       expect(isRuntimePause("user_stopped")).toBe(false);
+    });
+  });
+
+  describe("isResumablePause (PR-6)", () => {
+    it("classifies the three resumable pauses as resumable", () => {
+      expect(isResumablePause("approval_required")).toBe(true);
+      expect(isResumablePause("waiting_for_wake")).toBe(true);
+      expect(isResumablePause("checkpoint_pause")).toBe(true);
+    });
+
+    it("rejects runtime pauses that require a fresh kick (not a resume)", () => {
+      expect(isResumablePause("iteration_limit")).toBe(false);
+      expect(isResumablePause("timeout")).toBe(false);
+      expect(isResumablePause("system_error")).toBe(false);
+      expect(isResumablePause("waiting_for_parent")).toBe(false);
+    });
+
+    it("rejects business stops (terminal, not resumable)", () => {
+      expect(isResumablePause("goal_reached")).toBe(false);
+      expect(isResumablePause("user_stopped")).toBe(false);
     });
   });
 

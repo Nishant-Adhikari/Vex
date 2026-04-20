@@ -25,6 +25,7 @@ export type MissionStatus =
 export type MissionRunStatus =
   | "running"
   | "paused_approval"
+  | "paused_wake"
   | "completed"
   | "failed"
   | "stopped";
@@ -45,6 +46,7 @@ export type RuntimeStopReason =
   | "iteration_limit"
   | "timeout"
   | "waiting_for_parent"
+  | "waiting_for_wake"
   | "system_error";
 
 export type StopReason = BusinessStopReason | RuntimeStopReason;

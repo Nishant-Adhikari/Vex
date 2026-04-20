@@ -225,6 +225,22 @@ export async function runTurnLoop(
             batchStopOutput = result.output;
             break; // remaining calls are NOT dispatched
           }
+          if (sig.type === "defer_until") {
+            // `loop_defer` handler already persisted the pending wake row.
+            // Turn-loop parks the mission run in `paused_wake` and exits.
+            // Evidence carries dueAt + reason so PR-7 executor / PR-10 ingress
+            // have the hints they need without re-reading the wake row.
+            batchStopReason = "waiting_for_wake";
+            batchStopOutput = result.output;
+            batchStopPayload = {
+              summary: sig.summary,
+              evidence: {
+                dueAt: sig.dueAt ?? null,
+                reason: sig.reason,
+              },
+            };
+            break; // remaining calls are NOT dispatched
+          }
         }
       }
 
@@ -259,6 +275,25 @@ export async function runTurnLoop(
       // Handle batch exit
       if (batchStopReason === "approval_required") {
         return { text: lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason: batchStopReason };
+      }
+      if (batchStopReason === "waiting_for_wake") {
+        // Flip the mission run into paused_wake so resume paths (PR-7
+        // executor, PR-10 ingress router) see the status atomically with
+        // the wake row that the handler already wrote.
+        if (context.missionRunId) {
+          await missionRunsRepo.updateStatus(context.missionRunId, "paused_wake", "waiting_for_wake");
+        }
+        // Checkpoint-before-wait: if the band is already critical when the
+        // agent defers, running a checkpoint NOW means the post-wake resume
+        // starts from a compacted prompt instead of hitting the forced
+        // pre-compact pass (PR-9) on the very first iteration after wake.
+        const freshSession = await sessionsRepo.getSession(context.sessionId);
+        const tokenCountAtWait = freshSession?.tokenCount ?? currentTokenCount;
+        if (computeBand(tokenCountAtWait, loopConfig.contextLimit) === "critical") {
+          await maybeRunCheckpoint();
+        }
+        stopReason = batchStopReason;
+        return { text: batchStopOutput ?? lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason, stopPayload: batchStopPayload };
       }
       if (batchStopReason) {
         stopReason = batchStopReason;

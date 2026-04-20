@@ -28,7 +28,22 @@ const RUNTIME_PAUSES = new Set<string>([
   "iteration_limit",
   "timeout",
   "waiting_for_parent",
+  "waiting_for_wake",
   "system_error",
+]);
+
+/**
+ * The subset of runtime pauses that allow a resume path: `approval_required`
+ * is resumed by operator approval, `waiting_for_wake` by the wake executor
+ * (PR-7), `checkpoint_pause` by the checkpoint auto-resume. `iteration_limit`,
+ * `timeout`, `system_error`, and `waiting_for_parent` are in RUNTIME_PAUSES
+ * (they stop a run without marking the mission as business-completed) but are
+ * NOT resumable — they represent terminated work the caller must re-kick.
+ */
+const RESUMABLE_STOPS = new Set<string>([
+  "approval_required",
+  "waiting_for_wake",
+  "checkpoint_pause",
 ]);
 
 export function isBusinessStop(reason: StopReason): reason is BusinessStopReason {
@@ -37,6 +52,16 @@ export function isBusinessStop(reason: StopReason): reason is BusinessStopReason
 
 export function isRuntimePause(reason: StopReason): reason is RuntimeStopReason {
   return RUNTIME_PAUSES.has(reason);
+}
+
+/**
+ * Whether this stop reason can lead to a resume (vs permanent termination
+ * or a re-kick requirement). Used by PR-7 ingress routing to decide
+ * whether a user message should resume an existing run or preempt a
+ * pending wake.
+ */
+export function isResumablePause(reason: StopReason): boolean {
+  return RESUMABLE_STOPS.has(reason);
 }
 
 /**
