@@ -8,13 +8,20 @@
 
 import type { ZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
 import type { Hex } from "viem";
-import { createBrokerFromKey } from "./sdk-bridge.cjs";
+import sdkBridge from "./sdk-bridge.cjs";
 import { withSuppressedConsole } from "./bridge.js";
 import { requireWalletAndKeystore } from "../wallet/auth.js";
 import { loadConfig } from "../../config/store.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { CHAIN } from "../../constants/chain.js";
 import logger from "../../utils/logger.js";
+
+// CJS interop: named `import { createBrokerFromKey } from "./sdk-bridge.cjs"` is
+// not reliably detected by Node's cjs-module-lexer when tsx transpiles the .cts
+// source on-the-fly. Default-import of a CJS module is always `module.exports`
+// under Node ESM — the lexer is bypassed entirely, so source-mode and dist-mode
+// behave the same.
+const { createBrokerFromKey } = sdkBridge;
 
 let cachedBroker: ZGComputeNetworkBroker | null = null;
 

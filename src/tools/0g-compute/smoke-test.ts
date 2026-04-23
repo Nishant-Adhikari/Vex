@@ -11,10 +11,13 @@
 import { parseArgs } from "node:util";
 import { formatUnits, getAddress } from "ethers";
 import { requireWalletAndKeystore } from "../wallet/auth.js";
-import { createBrokerFromKey } from "./sdk-bridge.cjs";
+import sdkBridge from "./sdk-bridge.cjs";
 import { withSuppressedConsole } from "./bridge.js";
 import { loadConfig } from "../../config/store.js";
 import logger from "../../utils/logger.js";
+
+// CJS interop — see broker-factory.ts for rationale (tsx + cjs-module-lexer).
+const { createBrokerFromKey } = sdkBridge;
 
 function normalizeAddress(raw: string): string {
   const trimmed = raw.trim();

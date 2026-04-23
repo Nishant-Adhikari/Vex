@@ -13,9 +13,11 @@ vi.mock("@tools/0g-compute/bridge.js", () => ({
 }));
 
 vi.mock("@tools/0g-storage/sdk-bridge.cjs", () => ({
-  storageUpload: mockUpload,
-  storageDownload: mockDownload,
-  storageGetFileInfo: mockGetFileInfo,
+  default: {
+    storageUpload: mockUpload,
+    storageDownload: mockDownload,
+    storageGetFileInfo: mockGetFileInfo,
+  },
 }));
 
 vi.mock("node:fs", async (importOriginal) => {

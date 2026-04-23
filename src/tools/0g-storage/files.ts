@@ -5,12 +5,15 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
-import { storageUpload, storageDownload, storageGetFileInfo } from "./sdk-bridge.cjs";
+import sdkBridge from "./sdk-bridge.cjs";
 import { withSuppressedConsole } from "../0g-compute/bridge.js";
 import { EchoError, ErrorCodes } from "../../errors.js";
 import { formatCost } from "./cost.js";
 import type { StorageClientConfig } from "./client.js";
 import type { UploadResult, DownloadResult, FileInfo } from "./types.js";
+
+// CJS interop — see 0g-compute/broker-factory.ts for rationale (tsx + cjs-module-lexer).
+const { storageUpload, storageDownload, storageGetFileInfo } = sdkBridge;
 
 function sha256File(filePath: string): string {
   const data = readFileSync(filePath);

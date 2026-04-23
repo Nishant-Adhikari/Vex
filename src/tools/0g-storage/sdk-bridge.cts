@@ -3,6 +3,15 @@
  * This eliminates the #private nominal type mismatch between ESM and CJS Wallet.
  *
  * All parameters are plain strings/primitives — no ethers types cross the ESM/CJS boundary.
+ *
+ * Consumer contract: ESM callers use a CJS-default-import + destructure —
+ *   `import sdkBridge from "./sdk-bridge.cjs"; const { storageUpload, ... } = sdkBridge;`
+ * Named `import { storageUpload } from "./sdk-bridge.cjs"` is NOT safe because
+ * Node's cjs-module-lexer does not reliably detect named exports when tsx
+ * transpiles `.cts` on-the-fly. Keep these as named exports — do NOT switch
+ * to `export default { ... }`; the dist build (`sdk-bridge.cjs`) still uses
+ * `exports.foo = foo`, and the ESM-side default synthesis picks it up via
+ * `module.exports`.
  */
 
 import { Wallet, JsonRpcProvider } from "ethers";
