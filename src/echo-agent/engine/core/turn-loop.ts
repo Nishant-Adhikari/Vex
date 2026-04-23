@@ -87,6 +87,11 @@ export async function runTurnLoop(
   let totalToolCalls = 0;
   const pendingApprovals: string[] = [];
   let stopReason: StopReason | null = null;
+  // Tracks whether the for-loop exited via natural text-break (chat / mission-setup).
+  // Used to distinguish "model finished cleanly" (break on text → stopReason stays
+  // null) from "loop exhausted without resolution" (for exits via `iteration <
+  // maxIterations` becoming false → iteration_limit fallback below).
+  let stoppedOnText = false;
   const startTime = Date.now();
   let currentTokenCount = tokenCount;
   let currentSummary = summary;
@@ -363,15 +368,18 @@ export async function runTurnLoop(
         continue;
       }
 
-      // Chat and mission setup: text ends the loop
+      // Chat and mission setup: text ends the loop cleanly.
+      stoppedOnText = true;
       break;
     }
   }
 
-  // If loop exhausted without explicit stop during active mission run or
-  // full-autonomous session, mark the run as iteration-limited so the
-  // caller can surface the timeout instead of silently succeeding.
-  if (!stopReason && (context.missionRunId || context.sessionKind === "full_autonomous")) {
+  // If the for-loop exhausted maxIterations without either an explicit stop OR
+  // a natural text-break (chat/setup), surface it as `iteration_limit` so every
+  // transport can see why. Chat/setup that ended on text keep stopReason=null
+  // (that's the "model replied, we're done" signal). Mission-run and
+  // full_autonomous never break on text, so they always fall through here.
+  if (!stopReason && !stoppedOnText) {
     stopReason = "iteration_limit";
   }
 

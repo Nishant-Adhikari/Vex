@@ -86,7 +86,10 @@ export async function processMissionSetupTurn(
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,
-    maxIterations: 5, // Setup can use a few tool calls for research
+    // Setup runs research tool-calls before applying mission patch; 15 fits
+    // 3-4 tool-call paths plus clarifying Q&A. Mission-run's
+    // DEFAULT_LOOP_CONFIG.maxIterations=50 still dominates actual execution.
+    maxIterations: 15,
     contextLimit: config.contextLimit,
   };
 

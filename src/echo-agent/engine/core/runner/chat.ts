@@ -54,7 +54,10 @@ export async function processChatTurn(
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,
-    maxIterations: 1, // Chat: single turn
+    // Chat iterates through tool-call rounds until the model emits a final text
+    // reply; turn-loop.ts:367 breaks on text for sessionKind="chat", so this cap
+    // only engages when the model loops on tool-calls without ever summarising.
+    maxIterations: 10,
     contextLimit: config.contextLimit,
   };
 
