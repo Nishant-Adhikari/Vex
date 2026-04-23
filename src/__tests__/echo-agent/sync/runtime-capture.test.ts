@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock 0G compute readiness
-vi.mock("@tools/0g-compute/readiness.js", () => ({
+vi.mock("@tools/0g-compute/compute-state.js", () => ({
   loadComputeState: () => null,
 }));
 

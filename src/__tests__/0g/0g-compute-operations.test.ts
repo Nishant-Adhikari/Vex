@@ -24,7 +24,7 @@ vi.mock("../../openclaw/config.js", () => ({
   patchOpenclawConfig: vi.fn(() => ({ status: "created", path: "/test", keysSet: [], keysSkipped: [] })),
 }));
 
-vi.mock("@tools/0g-compute/readiness.js", () => ({
+vi.mock("@tools/0g-compute/compute-state.js", () => ({
   saveComputeState: vi.fn(),
 }));
 

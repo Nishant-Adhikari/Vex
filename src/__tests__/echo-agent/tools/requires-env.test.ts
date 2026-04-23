@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// Mock 0G compute to avoid .cts loading
-vi.mock("@tools/0g-compute/readiness.js", () => ({
+vi.mock("@tools/0g-compute/compute-state.js", () => ({
   loadComputeState: () => null,
 }));
 

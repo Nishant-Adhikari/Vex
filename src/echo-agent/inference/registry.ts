@@ -10,7 +10,7 @@
 
 import type { InferenceProvider } from "./types.js";
 import { loadEnvConfig } from "./config.js";
-import { loadComputeState } from "@tools/0g-compute/readiness.js";
+import { loadComputeState } from "@tools/0g-compute/compute-state.js";
 import logger from "@utils/logger.js";
 
 // ── Lazy imports (avoid loading unused provider dependencies) ────

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// Mock 0G compute readiness to avoid loading .cts SDK bridge in vitest
-vi.mock("../../../tools/0g-compute/readiness.js", () => ({
+vi.mock("../../../tools/0g-compute/compute-state.js", () => ({
   loadComputeState: () => null,
 }));
 

@@ -89,7 +89,7 @@ vi.mock("@echo-agent/tools/protocols/catalog.js", () => ({
   } : undefined,
 }));
 
-vi.mock("@tools/0g-compute/readiness.js", () => ({ loadComputeState: () => null }));
+vi.mock("@tools/0g-compute/compute-state.js", () => ({ loadComputeState: () => null }));
 
 const { executeProtocolTool } = await import("../../../echo-agent/tools/protocols/runtime.js");
 

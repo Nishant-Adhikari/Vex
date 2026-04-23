@@ -10,7 +10,7 @@ const getRequestHeaders = vi.fn(async (_addr: string, _content: string) => ({
   "X-0g-Auth": "stub-hmac",
 }));
 
-vi.mock("../../../tools/0g-compute/readiness.js", () => ({
+vi.mock("../../../tools/0g-compute/compute-state.js", () => ({
   loadComputeState: () => computeState,
   saveComputeState: vi.fn(),
 }));

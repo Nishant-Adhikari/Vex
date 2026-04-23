@@ -37,7 +37,7 @@ import {
 import { retryWithBackoff, isRetryableError } from "./resilience.js";
 import { getAuthenticatedBroker } from "@tools/0g-compute/broker-factory.js";
 import { getServiceMetadata, listChatServices, getLedgerBalance, getSubAccountBalance } from "@tools/0g-compute/operations.js";
-import { loadComputeState } from "@tools/0g-compute/readiness.js";
+import { loadComputeState } from "@tools/0g-compute/compute-state.js";
 import { calculateProviderPricing, formatPricePerMTokens } from "@tools/0g-compute/pricing.js";
 import logger from "@utils/logger.js";
 import type { OpenAIResponse } from "./0g-compute/mappers.js";

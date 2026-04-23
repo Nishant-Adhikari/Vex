@@ -11,7 +11,7 @@ import { parseUnits } from "viem";
 import { withSuppressedConsole } from "./bridge.js";
 import { normalizeSubAccount, normalizeLedger, type NormalizedSubAccount, type NormalizedLedger } from "./account.js";
 import { calculateProviderPricing, formatPricePerMTokens, type ProviderPricing } from "./pricing.js";
-import { saveComputeState } from "./readiness.js";
+import { saveComputeState } from "./compute-state.js";
 import logger from "../../utils/logger.js";
 
 // ── Types ────────────────────────────────────────────────────────────
