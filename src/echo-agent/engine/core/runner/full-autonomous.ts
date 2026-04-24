@@ -23,9 +23,15 @@ import { getOpenAITools } from "@echo-agent/tools/registry.js";
 import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@echo-agent/inference/registry.js";
 import * as messagesRepo from "@echo-agent/db/repos/messages.js";
+import * as episodesRepo from "@echo-agent/db/repos/session-episodes.js";
 import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
+import type { FullAutonomousContext } from "../../prompts/full-autonomous.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
+
+const OPEN_LOOPS_CAP = 10;
+const RECENT_EPISODES_CAP = 3;
+const LOOP_DETAIL_MAX_CHARS = 200;
 
 export async function processFullAutonomousTurn(
   sessionId: string,
@@ -100,6 +106,8 @@ async function runFullAutonomousLoop(
     contextLimit: config.contextLimit,
   };
 
+  const fullAutonomousContext = await buildFullAutonomousContext(sessionId);
+
   const result = await runTurnLoop(
     { ...hydrated.context, sessionKind: "full_autonomous", loopMode: "full" },
     hydrated.messages,
@@ -109,6 +117,7 @@ async function runFullAutonomousLoop(
     config,
     tools,
     loopConfig,
+    { fullAutonomousContext },
   );
 
   return {
@@ -118,4 +127,41 @@ async function runFullAutonomousLoop(
     stopReason: result.stopReason,
     missionStatus: null,
   };
+}
+
+/**
+ * Build the `FullAutonomousContext` from recent session episodes. Shares the
+ * same data shape `resolveRecallSeed` in `turn.ts` extracts for seed fallback
+ * (`recentEpisodeTitles`, `openLoops`) — we just render it into the prompt
+ * instead of using it as a recall seed. Failure is non-fatal: returns an empty
+ * context so the prompt layer skips the "Where you left off" section.
+ */
+async function buildFullAutonomousContext(sessionId: string): Promise<FullAutonomousContext> {
+  try {
+    const recent = await episodesRepo.listRecentBySession(sessionId, RECENT_EPISODES_CAP);
+    const recentEpisodeTitles = recent
+      .map((ep) => ep.title.trim())
+      .filter((t) => t.length > 0);
+
+    const loops = new Set<string>();
+    for (const ep of recent) {
+      for (const [key, value] of Object.entries(ep.openLoops ?? {})) {
+        const detail = typeof value === "string" ? value : JSON.stringify(value);
+        loops.add(`${key}: ${detail}`.slice(0, LOOP_DETAIL_MAX_CHARS));
+        if (loops.size >= OPEN_LOOPS_CAP) break;
+      }
+      if (loops.size >= OPEN_LOOPS_CAP) break;
+    }
+
+    return {
+      recentEpisodeTitles,
+      openLoops: Array.from(loops),
+    };
+  } catch (err) {
+    logger.warn("engine.full_autonomous.context_fetch_failed", {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { recentEpisodeTitles: [], openLoops: [] };
+  }
 }

@@ -16,11 +16,13 @@ import { buildModePrompt } from "./mode.js";
 import { buildChatPrompt } from "./chat.js";
 import { buildMissionSetupPrompt, type MissionSetupContext } from "./mission-setup.js";
 import { buildMissionRunPrompt, type MissionRunContext } from "./mission-run.js";
+import { buildFullAutonomousPrompt, type FullAutonomousContext } from "./full-autonomous.js";
 import { buildSubagentPrompt, type SubagentContext } from "./subagent.js";
 
 export interface PromptStackOptions {
   missionSetupContext?: MissionSetupContext;
   missionRunContext?: MissionRunContext;
+  fullAutonomousContext?: FullAutonomousContext;
   subagentContext?: SubagentContext;
   /**
    * Pre-formatted Active Knowledge block (hot context entries + Known kinds).
@@ -68,6 +70,10 @@ export function buildPromptStack(
     layers.push(buildMissionRunPrompt(context, options.missionRunContext));
   }
 
+  if (context.sessionKind === "full_autonomous" && !context.missionRunId) {
+    layers.push(buildFullAutonomousPrompt(context, options.fullAutonomousContext));
+  }
+
   // ── SUBAGENT — override ───────────────────────────────────
   if (context.isSubagent) {
     layers.push(buildSubagentPrompt(context, options.subagentContext));
@@ -84,4 +90,5 @@ export { buildModePrompt } from "./mode.js";
 export { buildChatPrompt } from "./chat.js";
 export { buildMissionSetupPrompt, type MissionSetupContext } from "./mission-setup.js";
 export { buildMissionRunPrompt, type MissionRunContext } from "./mission-run.js";
+export { buildFullAutonomousPrompt, type FullAutonomousContext } from "./full-autonomous.js";
 export { buildSubagentPrompt, type SubagentContext } from "./subagent.js";

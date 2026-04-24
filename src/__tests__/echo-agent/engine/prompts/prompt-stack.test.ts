@@ -43,7 +43,9 @@ describe("prompt-stack", () => {
 
           // Base prompt markers
           expect(joined).toContain("# Identity");
-          expect(joined).toContain("Echo");
+          expect(joined).toContain("VEX");
+          expect(joined).toContain("# Your current aspect");
+          expect(joined).toContain("# Memory and self-learning");
 
           // Tool usage markers
           expect(joined).toContain("discover_tools");
@@ -206,6 +208,41 @@ describe("prompt-stack", () => {
       expect(joined).toContain("# Subagent Role");
     });
 
+    it("full_autonomous includes full-autonomous prompt layer", () => {
+      const stack = buildPromptStack(makeContext({ sessionKind: "full_autonomous", loopMode: "full" }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("# Full Autonomous Rhythm");
+      expect(joined).toContain("loop_defer");
+      expect(joined).not.toContain("# Chat Mode");
+      expect(joined).not.toContain("# Mission Setup");
+    });
+
+    it("full_autonomous with context shows where-you-left-off section", () => {
+      const stack = buildPromptStack(
+        makeContext({ sessionKind: "full_autonomous", loopMode: "full" }),
+        {
+          fullAutonomousContext: {
+            recentEpisodeTitles: ["Monitored TRUMP price", "Deferred until 09:00"],
+            openLoops: ["price_watch: TRUMP -8% since 6h"],
+            iterationCountInSession: 12,
+            wakeReason: "scheduled",
+          },
+        },
+      );
+      const joined = stack.join("\n");
+      expect(joined).toContain("Where you left off");
+      expect(joined).toContain("TRUMP");
+      expect(joined).toContain("Open loops");
+      expect(joined).toContain("Iterations accumulated");
+      expect(joined).toContain("Resumed by wake");
+    });
+
+    it("full_autonomous without context omits where-you-left-off section", () => {
+      const stack = buildPromptStack(makeContext({ sessionKind: "full_autonomous", loopMode: "full" }));
+      const joined = stack.join("\n");
+      expect(joined).not.toContain("Where you left off");
+    });
+
     it("mission setup with context shows draft state", () => {
       const stack = buildPromptStack(
         makeContext({ sessionKind: "mission" }),
@@ -317,6 +354,67 @@ describe("prompt-stack", () => {
       const joined = stack.join("\n");
       expect(joined).toContain("strategy.md");
       expect(joined).toContain("Buy low sell high");
+    });
+  });
+
+  // ── Dynamic aspect injection ────────────────────────────────
+
+  describe("base prompt — dynamic aspect", () => {
+    /**
+     * Aspect narration in base.ts is modal: only the currently active mode's
+     * aspect lands in the prompt. Prevents model from reading about modes it
+     * can't reach from this session.
+     */
+    it("CHAT aspect: only teacher/collaborator lines, no MISSION / FULL AUTONOMOUS narrative", () => {
+      const stack = buildPromptStack(makeContext({ sessionKind: "chat" }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("CHAT");
+      expect(joined).toContain("teacher and collaborator");
+      expect(joined).not.toContain("MISSION SETUP");
+      expect(joined).not.toContain("MISSION RUN");
+      expect(joined).not.toContain("FULL AUTONOMOUS");
+    });
+
+    it("MISSION SETUP aspect: planner lines, no CHAT / MISSION RUN narrative", () => {
+      const stack = buildPromptStack(makeContext({ sessionKind: "mission" }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("MISSION SETUP");
+      expect(joined).toContain("planner");
+      // CHAT aspect narrative absent — we only check the aspect-section label.
+      expect(joined).not.toContain("teacher and collaborator");
+      expect(joined).not.toContain("MISSION RUN");
+    });
+
+    it("MISSION RUN aspect: executor lines, no SETUP / CHAT narrative", () => {
+      const stack = buildPromptStack(makeContext({
+        sessionKind: "mission", missionId: "m-1", missionRunId: "run-1",
+      }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("MISSION RUN");
+      expect(joined).toContain("executor");
+      expect(joined).toContain("mission_stop");
+      expect(joined).not.toContain("teacher and collaborator");
+      expect(joined).not.toContain("planner");
+    });
+
+    it("FULL AUTONOMOUS aspect: rhythm lines, no mission narrative", () => {
+      const stack = buildPromptStack(makeContext({
+        sessionKind: "full_autonomous", loopMode: "full",
+      }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("FULL AUTONOMOUS");
+      expect(joined).toContain("continuous worker");
+      expect(joined).toContain("rhythm");
+      expect(joined).not.toContain("teacher and collaborator");
+      expect(joined).not.toContain("planner");
+    });
+
+    it("SUBAGENT aspect overrides sessionKind and narrates delegated task", () => {
+      const stack = buildPromptStack(makeContext({ isSubagent: true, sessionKind: "chat" }));
+      const joined = stack.join("\n");
+      expect(joined).toContain("SUBAGENT");
+      expect(joined).toContain("delegated");
+      expect(joined).not.toContain("teacher and collaborator");
     });
   });
 

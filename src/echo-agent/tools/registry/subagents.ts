@@ -27,6 +27,7 @@ export const SUBAGENT_TOOLS: readonly ToolDef[] = [
   },
   {
     name: "subagent_status", kind: "internal", mutating: false,
+    excludeRoles: ["subagent"],
     description: "Check status and results of spawned subagents. Shows pending requests for waiting subagents.",
     parameters: { type: "object", properties: {
       id: { type: "string", description: "Subagent ID (omit for all)" },
@@ -34,6 +35,7 @@ export const SUBAGENT_TOOLS: readonly ToolDef[] = [
   },
   {
     name: "subagent_stop", kind: "internal", mutating: false,
+    excludeRoles: ["subagent"],
     description: "Stop a running subagent. Partial results preserved.",
     parameters: { type: "object", properties: {
       id: { type: "string", description: "Subagent ID" },

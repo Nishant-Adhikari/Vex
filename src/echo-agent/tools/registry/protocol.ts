@@ -11,11 +11,20 @@ import { buildDiscoverNamespaceDescription } from "../protocols/descriptions.js"
 const EXECUTE_TOOL_PARAMS: JsonSchema = {
   type: "object",
   properties: {
-    toolId: { type: "string", description: "Protocol tool ID from discover_tools" },
-    params: { type: "object", description: "Tool parameters object" },
+    toolId: { type: "string", description: "Protocol tool ID from discover_tools (e.g. 'dexscreener.trending', 'kyberswap.swap.sell'). Must come from a discover_tools result in this session — never from memory, examples, or guesswork." },
+    params: { type: "object", description: "Parameters matching the tool's manifest (fields, types). Use the shape returned by discover_tools, not exampleParams (those illustrate format only)." },
   },
   required: ["toolId", "params"],
 };
+
+const EXECUTE_TOOL_DESCRIPTION = [
+  "Execute a discovered protocol tool.",
+  "Contract:",
+  "- `toolId` must come from `discover_tools` (same session). Knowledge recall may hint at which namespace or approach to try, but the authoritative toolId still comes from discover.",
+  "- `params` must match the tool's manifest schema — types, required fields, and value formats as returned by discover (not exampleParams).",
+  "- Mutating tools (check the `mutating` flag from discover) require approval in `restricted`/`off` loop modes; preview / dryRun variants bypass approval and are safe for iterative planning.",
+  "- On error, diagnose and adapt — do not retry the same call in a tight loop. Present the error and next step to the user or the mission loop.",
+].join(" ");
 
 export const PROTOCOL_TOOLS: readonly ToolDef[] = [
   {
@@ -30,7 +39,7 @@ export const PROTOCOL_TOOLS: readonly ToolDef[] = [
   },
   {
     name: "execute_tool", kind: "internal", mutating: false,
-    description: "Execute a discovered protocol tool by toolId with structured params. Mutating tools require approval in restricted/off mode.",
+    description: EXECUTE_TOOL_DESCRIPTION,
     parameters: EXECUTE_TOOL_PARAMS,
   },
 ];
