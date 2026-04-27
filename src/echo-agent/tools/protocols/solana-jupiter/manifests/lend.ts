@@ -10,6 +10,9 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     params: [],
     exampleParams: {},
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get Jupiter Lend Earn vault rates on Solana. Compare supply APY, reward APY, TVL, total supply, jlToken or fToken vault data and supported lending assets for yield opportunities.",
+    },
   },
   {
     toolId: "solana.lend.positions",
@@ -22,6 +25,9 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get Jupiter Lend Earn positions for a Solana wallet. Review supplied assets, vault balances, accrued earnings, rewards, exchange price, yield and active lending portfolio.",
+    },
   },
   {
     toolId: "solana.lend.deposit",
@@ -35,6 +41,9 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", amount: "1000000" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Deposit SPL tokens into Jupiter Lend Earn vault on Solana. Supply assets to earn lending yield, mint vault shares, enter Earn position and execute a mutating lending deposit transaction.",
+    },
   },
   {
     toolId: "solana.lend.withdraw",
@@ -48,5 +57,8 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", amount: "1000000" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Withdraw SPL tokens from Jupiter Lend Earn vault on Solana. Redeem vault shares, exit lending position, recover supplied assets and execute a mutating lending withdrawal transaction.",
+    },
   },
 ];

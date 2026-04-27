@@ -46,6 +46,95 @@ import {
 import logger from "@utils/logger.js";
 import { mapMessages, extractUsage, parseNonStreamingResponse, processToolCallDelta } from "./openrouter/mappers.js";
 
+// ── Error normalisation ─────────────────────────────────────────
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function asNumberOrString(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return asString(value);
+}
+
+function truncate(value: string, max = 800): string {
+  return value.length > max ? `${value.slice(0, max)}...` : value;
+}
+
+function stringifyMetadataValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseJsonObject(raw: unknown): Record<string, unknown> | null {
+  if (isRecord(raw)) return raw;
+  if (typeof raw !== "string" || raw.trim().length === 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function pickErrorObject(err: Record<string, unknown>): Record<string, unknown> | null {
+  if (isRecord(err.error)) return err.error;
+  const body = parseJsonObject(err.body);
+  return body && isRecord(body.error) ? body.error : null;
+}
+
+function formatMetadata(metadata: unknown): string | null {
+  if (!isRecord(metadata)) return null;
+
+  const preferredKeys = ["provider_name", "raw", "reason", "details"];
+  const selected: string[] = [];
+  for (const key of preferredKeys) {
+    if (metadata[key] !== undefined && metadata[key] !== null) {
+      selected.push(`${key}=${truncate(stringifyMetadataValue(metadata[key]), 400)}`);
+    }
+  }
+
+  if (selected.length > 0) return selected.join(" ");
+  return truncate(stringifyMetadataValue(metadata), 800);
+}
+
+function normalizeOpenRouterError(err: unknown, operation: string): Error {
+  const originalMessage = err instanceof Error ? err.message : String(err);
+
+  if (!isRecord(err)) {
+    return new Error(`OpenRouter ${operation} failed: ${originalMessage}`);
+  }
+
+  const errorObject = pickErrorObject(err);
+  const status = asNumberOrString(err.statusCode);
+  const code = errorObject ? asNumberOrString(errorObject.code) : null;
+  const providerMessage = errorObject ? asString(errorObject.message) : null;
+  const metadata = errorObject ? formatMetadata(errorObject.metadata) : null;
+  const body = !errorObject && err.body !== undefined
+    ? truncate(stringifyMetadataValue(err.body), 800)
+    : null;
+
+  const details = [
+    status ? `status=${status}` : null,
+    code ? `code=${code}` : null,
+    providerMessage ?? originalMessage,
+    metadata ? `metadata: ${metadata}` : null,
+    body ? `body: ${body}` : null,
+  ].filter((part): part is string => Boolean(part));
+
+  const normalized = new Error(`OpenRouter ${operation} failed: ${details.join(" | ")}`);
+  if (err instanceof Error && err.stack) normalized.stack = err.stack;
+  return normalized;
+}
+
 // ── Provider ─────────────────────────────────────────────────────
 
 export class OpenRouterProvider implements InferenceProvider {
@@ -165,9 +254,14 @@ export class OpenRouterProvider implements InferenceProvider {
   ): Promise<InferenceResponse> {
     const params = this.buildParams(messages, tools, config, false);
 
-    const response = await this.client.chat.send({
-      chatGenerationParams: params,
-    }) as ChatResponse;
+    let response: ChatResponse;
+    try {
+      response = await this.client.chat.send({
+        chatGenerationParams: params,
+      }) as ChatResponse;
+    } catch (err) {
+      throw normalizeOpenRouterError(err, "chat completion");
+    }
 
     return parseNonStreamingResponse(response);
   }
@@ -180,9 +274,14 @@ export class OpenRouterProvider implements InferenceProvider {
   ): Promise<{ content: string; usage: InferenceUsage }> {
     const params = this.buildParams(messages, [], config, false);
 
-    const response = await this.client.chat.send({
-      chatGenerationParams: params,
-    }) as ChatResponse;
+    let response: ChatResponse;
+    try {
+      response = await this.client.chat.send({
+        chatGenerationParams: params,
+      }) as ChatResponse;
+    } catch (err) {
+      throw normalizeOpenRouterError(err, "simple chat completion");
+    }
 
     const msg = response.choices?.[0]?.message;
     const content = typeof msg?.content === "string" ? msg.content : "";
@@ -202,9 +301,14 @@ export class OpenRouterProvider implements InferenceProvider {
   ): AsyncGenerator<StreamChunk> {
     const params = this.buildParams(messages, tools, config, true);
 
-    const stream = await this.client.chat.send({
-      chatGenerationParams: { ...params, stream: true },
-    }) as EventStream<ChatStreamingResponseChunk>;
+    let stream: EventStream<ChatStreamingResponseChunk>;
+    try {
+      stream = await this.client.chat.send({
+        chatGenerationParams: { ...params, stream: true },
+      }) as EventStream<ChatStreamingResponseChunk>;
+    } catch (err) {
+      throw normalizeOpenRouterError(err, "streaming chat completion");
+    }
 
     // Accumulate tool call deltas by index
     const toolCallAccumulator = new Map<number, {
@@ -367,4 +471,3 @@ export class OpenRouterProvider implements InferenceProvider {
     return params;
   }
 }
-

@@ -13,6 +13,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { category: "crypto", filter: "trending" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "List Jupiter prediction market events on Solana. Browse binary YES NO markets by crypto, sports, politics, esports, culture, economics and tech; filter trending, live or new prediction events with included markets.",
+    },
   },
   {
     toolId: "solana.predict.search",
@@ -25,6 +28,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { query: "bitcoin" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Search Jupiter prediction market events by keyword. Find binary YES NO markets, event questions, crypto predictions, sports predictions, politics markets and live prediction opportunities on Solana.",
+    },
   },
   {
     toolId: "solana.predict.market",
@@ -37,6 +43,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { marketId: "abc123" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get one Jupiter prediction market detail by market ID. Inspect YES and NO prices, probability, volume, status, payout, market metadata and trading conditions before buying or selling prediction shares.",
+    },
   },
   {
     toolId: "solana.predict.positions",
@@ -49,6 +58,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get all open Jupiter prediction positions for a Solana wallet. Review YES NO market exposure, unrealized PnL, position size, average price, payout and active prediction portfolio.",
+    },
   },
   {
     toolId: "solana.predict.history",
@@ -63,6 +75,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get Jupiter prediction trade history for a wallet. Review prediction market buys, sells, claims, realized PnL, closed positions, settlement history and paginated activity.",
+    },
   },
   {
     toolId: "solana.predict.buy",
@@ -77,6 +92,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { marketId: "abc123", side: "yes", amountUsdc: 10 },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Buy YES or NO shares in a Jupiter prediction market using USDC on Solana. Open a binary prediction position, trade event outcome, speculate on crypto, sports, politics or culture markets.",
+    },
   },
   {
     toolId: "solana.predict.sell",
@@ -89,6 +107,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { positionPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Sell or close a Jupiter prediction market position. Exit YES or NO shares, reduce exposure, close an open prediction position and receive USDC settlement on Solana.",
+    },
   },
   {
     toolId: "solana.predict.claim",
@@ -101,6 +122,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { positionPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Claim winnings from a resolved Jupiter prediction market position. Redeem payout for winning YES or NO shares, settle resolved prediction position and receive USDC proceeds.",
+    },
   },
   {
     toolId: "solana.predict.closeAll",
@@ -111,6 +135,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     params: [],
     exampleParams: {},
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Close all open Jupiter prediction positions for a wallet. Batch sell or claim prediction market positions, exit all YES NO exposure and settle the prediction portfolio.",
+    },
   },
   {
     toolId: "solana.predict.event",
@@ -123,6 +150,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { eventId: "abc123" },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get one Jupiter prediction event by event ID with all related markets. Inspect event-level prediction questions, market list, YES NO outcomes, status and category before selecting a specific market.",
+    },
   },
   {
     toolId: "solana.predict.position",
@@ -135,5 +165,8 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { positionPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get one Jupiter prediction position detail by position public key. Inspect open or resolved YES NO position, contracts, payout, market reference, claimability and position state.",
+    },
   },
 ];

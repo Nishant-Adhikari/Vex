@@ -8,6 +8,16 @@
 
 import type { ProtocolToolManifest } from "../types.js";
 
+const KHALANI_CHAINS =
+  "Abstract, Arbitrum, Avalanche, Base, Berachain, Blast, BNB Chain, BSC, BOB, Cronos, Ethereum, " +
+  "Flow, Gnosis, HyperEVM, Injective, Jovay, Ink, Katana, Lens, Linea, Lisk, Mantle, Mode, Monad, " +
+  "Neon, Optimism, Plasma, Polygon, Redstone, Scroll, Sei, Solana, Soneium, Sonic, Sophon, Story, " +
+  "Tron, Unichain, World Chain, Zero Gravity, 0G, Zilliqa, zkSync, Zora";
+
+function khalaniEmbeddingText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "khalani.chains.list",
@@ -19,6 +29,12 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "refresh", type: "boolean", description: "Force refresh chain cache." },
     ],
     exampleParams: {},
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `list Khalani supported chains; cross-chain network registry; EVM and Solana chain metadata; ` +
+        `chain ids and aliases; native currency; bridge-supported blockchains; supported routes universe; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.tokens.top",
@@ -30,6 +46,12 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases (e.g. '1,solana')." },
     ],
     exampleParams: { chainIds: "1,solana" },
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `list top tokens on Khalani supported chains; popular bridge assets; token discovery by chainIds; ` +
+        `top ERC20 and Solana tokens; stablecoins native tokens major assets; USDC ETH SOL WETH USDT; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.tokens.search",
@@ -42,6 +64,13 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
     ],
     exampleParams: { query: "USDC", chainIds: "1,8453" },
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `search token by symbol name or address across chains; canonical cross-chain token resolver; ` +
+        `find source token and destination token contract address before bridge quote or bridge execution; ` +
+        `resolve USDC ETH SOL WETH USDT on EVM and Solana; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.tokens.autocomplete",
@@ -55,6 +84,13 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "limit", type: "number", description: "Max results." },
     ],
     exampleParams: { keyword: "eth", limit: 5 },
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `semantic token autocomplete; parse natural language token amount and chain; 100 USDC on Ethereum; ` +
+        `$50 ETH on Base; receive token on destination chain; suggest next token chain amount slots; ` +
+        `cross-chain bridge form helper; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.tokens.balances",
@@ -68,6 +104,12 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
     ],
     exampleParams: { wallet: "eip155", chainIds: "1,8453" },
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `get wallet token balances across chains; portfolio balances for EVM or Solana wallet; balance with USD price; ` +
+        `check funds before bridge; find available source assets; USDC ETH SOL stablecoin balances; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.quote.get",
@@ -96,6 +138,13 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       toToken: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       amount: "1000000",
     },
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `get cross-chain bridge quote; quote token transfer from source chain to destination chain; ` +
+        `compare routes fillers and solvers; Hyperstream Across deBridge Glacis; exact input exact output; ` +
+        `amountOut ETA gas quote expiry deposit methods; read-only bridge preview; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.orders.list",
@@ -114,6 +163,13 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "txHashSearch", type: "string", description: "Search by transaction hash." },
     ],
     exampleParams: { wallet: "solana", limit: 20 },
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `list cross-chain bridge orders for wallet; bridge history; paginated order tracking; ` +
+        `filter by source chain destination chain order ids or transaction hash; ` +
+        `created deposited published filled refund pending refunded failed; EVM and Solana order status; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.orders.get",
@@ -125,6 +181,13 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "orderId", type: "string", required: true, description: "Khalani order ID." },
     ],
     exampleParams: { orderId: "order_abc123" },
+    discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `get single cross-chain bridge order by id; inspect bridge lifecycle; order status details; ` +
+        `deposit fill refund transactions; provider status; quoteId routeId fromChain toChain token amounts; ` +
+        `troubleshoot bridge order; ${KHALANI_CHAINS}`,
+      ),
+    },
   },
   {
     toolId: "khalani.bridge",
@@ -157,6 +220,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       amount: "100000000",
     },
     discovery: {
+      embeddingText: khalaniEmbeddingText(
+        `execute cross-chain bridge transfer; bridge tokens between EVM and Solana chains; ` +
+        `quote build deposit sign broadcast submit; Hyperstream intent route; ` +
+        `CONTRACT_CALL PERMIT2 TRANSFER deposit method; requires wallet approval; dry run bridge plan; ${KHALANI_CHAINS}`,
+      ),
       canonicalSummary: "Execute a cross-chain bridge transfer across 40+ EVM and Solana chains.",
       preferredFor: ["cross-chain bridge", "bridge funds", "bridge tokens", "cross chain transfer"],
     },

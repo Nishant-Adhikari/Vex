@@ -47,8 +47,14 @@ describe("dispatcher — protocol meta-tools", () => {
   });
 
   it("discover_tools respects query filter", async () => {
+    // Explicit limit > DEFAULT_DISCOVERY_LIMIT (5). The test asserts intent
+    // ("a tool with 'balance' in id/description exists in the result"), not
+    // a specific top-5 ranking. Disabling the 0G ecosystem (chainscan etc.)
+    // shifted the candidate pool, so a small limit could drop khalani's
+    // balance tool below the cap; bumping to 50 keeps the test robust to
+    // such ranking shifts.
     const result = await dispatchTool(
-      { name: "discover_tools", args: { query: "balance" }, toolCallId: "call_4" },
+      { name: "discover_tools", args: { query: "balance", limit: 50 }, toolCallId: "call_4" },
       baseContext,
     );
 

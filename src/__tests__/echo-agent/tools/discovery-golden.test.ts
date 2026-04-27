@@ -5,6 +5,12 @@
  * Fixtures stay English-only (message #5: model translates intent to English
  * before calling discover_tools). Polish pipeline lives in
  * discovery-pipeline.test.ts.
+ *
+ * NOTE: Fixtures whose `expectedAny` targets a 0G-ecosystem (jaine, slop,
+ * slop-app, chainscan) or EchoBook tool are marked `disabled: true` because
+ * those namespaces are currently unadvertised in discovery. Re-enable when
+ * the corresponding `advertised` flags flip back to `true` in
+ * src/echo-agent/tools/protocols/navigation/entries-0g.ts.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -16,6 +22,8 @@ interface GoldenFixture {
   k?: number;
   includeMutating?: boolean;
   notes?: string;
+  /** Skip while target namespace is unadvertised in discovery. */
+  disabled?: boolean;
 }
 
 const FIXTURES: readonly GoldenFixture[] = [
@@ -36,15 +44,15 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "trending meme tokens", expectedAny: ["dexscreener.trending", "dexscreener.boosts"] },
   { intent: "community takeover", expectedAny: ["dexscreener.communityTakeovers"] },
   { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pairs", "dexscreener.tokens"] },
-  { intent: "0g chain explorer", expectedAny: ["chainscan."] },
-  { intent: "0g block height", expectedAny: ["chainscan.block", "chainscan."] },
-  { intent: "0g account balance", expectedAny: ["chainscan.account"] },
-  { intent: "echobook comments thread", expectedAny: ["echobook.comments"], includeMutating: true },
-  { intent: "0g social feed", expectedAny: ["echobook.feed", "echobook."] },
-  { intent: "my slop tokens", expectedAny: ["slop.tokens.mine"] },
-  { intent: "slop profile image", expectedAny: ["slop-app."] },
-  { intent: "0g dex swap quote", expectedAny: ["jaine.swap"], includeMutating: true },
-  { intent: "wrap w0g", expectedAny: ["jaine.w0g"], includeMutating: true },
+  { intent: "0g chain explorer", expectedAny: ["chainscan."], disabled: true },
+  { intent: "0g block height", expectedAny: ["chainscan.block", "chainscan."], disabled: true },
+  { intent: "0g account balance", expectedAny: ["chainscan.account"], disabled: true },
+  { intent: "echobook comments thread", expectedAny: ["echobook.comments"], includeMutating: true, disabled: true },
+  { intent: "0g social feed", expectedAny: ["echobook.feed", "echobook."], disabled: true },
+  { intent: "my slop tokens", expectedAny: ["slop.tokens.mine"], disabled: true },
+  { intent: "slop profile image", expectedAny: ["slop-app."], disabled: true },
+  { intent: "0g dex swap quote", expectedAny: ["jaine.swap"], includeMutating: true, disabled: true },
+  { intent: "wrap w0g", expectedAny: ["jaine.w0g"], includeMutating: true, disabled: true },
 
   // ── ambiguous / cross-namespace ───────────────────────────────────
   { intent: "wallet token balances", expectedAny: ["khalani.tokens", "solana.tokens", "polymarket.data"] },
@@ -79,7 +87,8 @@ describe("discovery golden harness", () => {
 
   for (const fixture of FIXTURES) {
     const k = fixture.k ?? 3;
-    it(`top-${k} for "${fixture.intent}" contains expected`, () => {
+    const itFn = fixture.disabled ? it.skip : it;
+    itFn(`top-${k} for "${fixture.intent}" contains expected`, () => {
       const result = discoverProtocolCapabilities({
         query: fixture.intent,
         limit: k,
@@ -94,9 +103,12 @@ describe("discovery golden harness", () => {
   }
 
   it("baseline summary: top-3 recall across all fixtures", () => {
+    // Recall is computed only over enabled fixtures so the threshold remains
+    // meaningful while disabled-namespace fixtures are skipped above.
+    const activeFixtures = FIXTURES.filter((f) => !f.disabled);
     let hits = 0;
     const misses: string[] = [];
-    for (const fixture of FIXTURES) {
+    for (const fixture of activeFixtures) {
       const k = fixture.k ?? 3;
       const result = discoverProtocolCapabilities({
         query: fixture.intent,
@@ -110,11 +122,11 @@ describe("discovery golden harness", () => {
       if (hit) hits += 1;
       else misses.push(`${fixture.intent} -> got ${JSON.stringify(topIds)}`);
     }
-    const recall = hits / FIXTURES.length;
+    const recall = hits / activeFixtures.length;
     // PR4 floor: 70% (raised from 50% after PR1-3 consistently hit 100%).
     expect(
       recall,
-      `top-3 recall ${(recall * 100).toFixed(1)}% (${hits}/${FIXTURES.length}). misses:\n${misses.join("\n")}`,
+      `top-3 recall ${(recall * 100).toFixed(1)}% (${hits}/${activeFixtures.length}). misses:\n${misses.join("\n")}`,
     ).toBeGreaterThanOrEqual(0.7);
   });
 });

@@ -3,7 +3,7 @@ import type { ProtocolNamespaceNavigation } from "./types.js";
 export const ZERO_G_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] = [
   {
     namespace: "jaine",
-    advertised: true,
+    advertised: false,
     groupId: "0g-ecosystem",
     groupLabel: "0G Ecosystem",
     summary: "0G DEX for spot swaps, pool discovery, LP management, and wrap/unwrap flows.",
@@ -35,7 +35,7 @@ export const ZERO_G_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   },
   {
     namespace: "slop",
-    advertised: true,
+    advertised: false,
     groupId: "0g-ecosystem",
     groupLabel: "0G Ecosystem",
     summary: "0G bonding curve launchpad for token creation, curve pricing, trading, fees, and rewards.",
@@ -73,7 +73,7 @@ export const ZERO_G_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   },
   {
     namespace: "slop-app",
-    advertised: true,
+    advertised: false,
     groupId: "0g-ecosystem",
     groupLabel: "0G Ecosystem",
     summary: "Slop.money app APIs for profiles, image generation/upload, agent discovery, and chat.",
@@ -117,7 +117,7 @@ export const ZERO_G_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   },
   {
     namespace: "chainscan",
-    advertised: true,
+    advertised: false,
     groupId: "0g-ecosystem",
     groupLabel: "0G Ecosystem",
     summary: "0G-only explorer and token intel surface for transactions, contracts, decoding, and holder stats.",
@@ -155,7 +155,7 @@ export const ZERO_G_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   },
   {
     namespace: "echobook",
-    advertised: true,
+    advertised: false,
     groupId: "0g-ecosystem",
     groupLabel: "0G Ecosystem",
     summary: "EchoBook social trading surface for feeds, posts, comments, follows, notifications, points, and trade proofs.",

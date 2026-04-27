@@ -1,3 +1,10 @@
+/**
+ * NOTE: A subset of tests below is `.skip`ped because the 0G ecosystem
+ * (jaine, slop, slop-app, chainscan) and EchoBook namespaces are
+ * currently disabled from discovery. Re-enable when the corresponding
+ * `advertised` flags flip back to `true` in
+ * src/echo-agent/tools/protocols/navigation/entries-0g.ts.
+ */
 import { describe, it, expect } from "vitest";
 import {
   getToolDef,
@@ -143,7 +150,7 @@ describe("registry", () => {
     }
   });
 
-  it("discover_tools namespace description is generated from advertised namespaces", () => {
+  it.skip("discover_tools namespace description is generated from advertised namespaces", () => {
     const discover = getToolDef("discover_tools");
     const namespace = discover?.parameters.properties?.namespace;
     expect(namespace).toBeDefined();

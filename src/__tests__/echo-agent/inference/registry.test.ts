@@ -4,6 +4,13 @@ vi.mock("../../../tools/0g-compute/compute-state.js", () => ({
   loadComputeState: () => null,
 }));
 
+vi.mock("../../../echo-agent/inference/openrouter.js", () => ({
+  OpenRouterProvider: class {
+    readonly id = "openrouter";
+    readonly displayName = "OpenRouter";
+  },
+}));
+
 const { resolveProvider, getActiveProvider, resetProvider, switchProvider } = await import(
   "../../../echo-agent/inference/registry.js"
 );

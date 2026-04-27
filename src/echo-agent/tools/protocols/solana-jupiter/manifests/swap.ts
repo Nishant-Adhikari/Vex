@@ -15,6 +15,9 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { inputToken: "SOL", outputToken: "USDC", amount: 1.0, slippageBps: 50 },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Get a Solana token swap quote without execution. Quote SOL, USDC, JUP or any SPL token swap through Jupiter routing; compare output amount, route plan, price impact, slippage, Metis, JupiterZ RFQ, Dflow and OKX routers.",
+    },
   },
   {
     toolId: "solana.swap.execute",
@@ -30,5 +33,8 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { inputToken: "SOL", outputToken: "USDC", amount: 1.0 },
     requiresEnv: "JUPITER_API_KEY",
+    discovery: {
+      embeddingText: "Execute a Solana token swap through Jupiter Swap API V2 Meta-Aggregator using order and execute. Swap or buy SPL tokens on Solana with managed transaction landing, RTSE slippage, Jupiter Beam, MEV protection, Metis, JupiterZ RFQ, Dflow and OKX best price routing.",
+    },
   },
 ];

@@ -154,6 +154,7 @@ function scoreManifest(manifest: ProtocolToolManifest, rawQuery: string): { scor
     let fieldHit = false;
     if (normalizedField.includes(normalizedQuery)) {
       score += field.weight * 6;
+      for (const token of queryTokens) matchedTokens.add(token);
       fieldHit = true;
     }
 

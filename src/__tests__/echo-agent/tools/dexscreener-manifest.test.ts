@@ -170,4 +170,58 @@ describe("dexscreener manifest", () => {
       }
     }
   });
+
+  // ── Retrieval metadata ───────────────────────────────────────────
+
+  it("every tool has retrieval-only embedding text", () => {
+    for (const tool of DEXSCREENER_TOOLS) {
+      expect(
+        tool.discovery?.embeddingText,
+        `${tool.toolId} missing discovery.embeddingText`,
+      ).toBeTruthy();
+      expect(tool.discovery!.embeddingText!.length).toBeGreaterThan(80);
+    }
+  });
+
+  it("core market-data embeddings capture search, pair, token, and liquidity intent", () => {
+    const search = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.search")!;
+    const pairs = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.pairs")!;
+    const tokens = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokens")!;
+    const tokenPairs = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokenPairs")!;
+    expect(search.discovery?.embeddingText).toContain("token name");
+    expect(search.discovery?.embeddingText).toContain("contract address");
+    expect(pairs.discovery?.embeddingText).toContain("pair analytics");
+    expect(pairs.discovery?.embeddingText).toContain("liquidity");
+    expect(tokens.discovery?.embeddingText).toContain("Batch lookup");
+    expect(tokens.discovery?.embeddingText).toContain("portfolio pricing");
+    expect(tokenPairs.discovery?.embeddingText).toContain("all DEX pools");
+    expect(tokenPairs.discovery?.embeddingText).toContain("best liquidity discovery");
+  });
+
+  it("trend embeddings capture boosted, profile, community takeover, and unified trending intent", () => {
+    const profiles = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.profiles")!;
+    const boosts = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.boosts")!;
+    const topBoosts = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.boosts.top")!;
+    const communityTakeovers = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.communityTakeovers")!;
+    const trending = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.trending")!;
+    expect(profiles.discovery?.embeddingText).toContain("token profiles");
+    expect(profiles.discovery?.embeddingText).toContain("new token discovery");
+    expect(boosts.discovery?.embeddingText).toContain("latest boosted tokens");
+    expect(boosts.discovery?.embeddingText).toContain("paid boosts");
+    expect(topBoosts.discovery?.embeddingText).toContain("top boosted tokens");
+    expect(topBoosts.discovery?.embeddingText).toContain("marketing spend");
+    expect(communityTakeovers.discovery?.embeddingText).toContain("community takeover");
+    expect(communityTakeovers.discovery?.embeddingText).toContain("CTO");
+    expect(trending.discovery?.embeddingText).toContain("unified DEX Screener trending discovery");
+    expect(trending.discovery?.embeddingText).toContain("ranked deduplicated feed");
+  });
+
+  it("orders and ads embeddings capture paid promotion verification intent", () => {
+    const orders = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.orders")!;
+    const ads = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.ads")!;
+    expect(orders.discovery?.embeddingText).toContain("paid token orders");
+    expect(orders.discovery?.embeddingText).toContain("marketing legitimacy");
+    expect(ads.discovery?.embeddingText).toContain("ad placements");
+    expect(ads.discovery?.embeddingText).toContain("paid visibility");
+  });
 });

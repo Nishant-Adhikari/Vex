@@ -126,6 +126,50 @@ describe("khalani manifest", () => {
     }
   });
 
+  it("every tool has retrieval-only embedding text", () => {
+    for (const tool of KHALANI_TOOLS) {
+      expect(
+        tool.discovery?.embeddingText,
+        `${tool.toolId} missing discovery.embeddingText`,
+      ).toBeTruthy();
+      expect(tool.discovery!.embeddingText!.length).toBeGreaterThan(80);
+      expect(tool.discovery!.embeddingText).toContain("Solana");
+    }
+  });
+
+  it("quote embedding text captures bridge quote routes and fillers", () => {
+    const quote = KHALANI_TOOLS.find(t => t.toolId === "khalani.quote.get")!;
+    expect(quote.discovery?.embeddingText).toContain("cross-chain bridge quote");
+    expect(quote.discovery?.embeddingText).toContain("Hyperstream");
+    expect(quote.discovery?.embeddingText).toContain("Across");
+  });
+
+  it("bridge embedding text captures execution and deposit methods", () => {
+    const bridge = KHALANI_TOOLS.find(t => t.toolId === "khalani.bridge")!;
+    expect(bridge.discovery?.embeddingText).toContain("execute cross-chain bridge transfer");
+    expect(bridge.discovery?.embeddingText).toContain("CONTRACT_CALL");
+    expect(bridge.discovery?.embeddingText).toContain("PERMIT2");
+    expect(bridge.discovery?.embeddingText).toContain("TRANSFER");
+  });
+
+  it("token resolver embeddings distinguish search, autocomplete, and balances", () => {
+    const search = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.search")!;
+    const autocomplete = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.autocomplete")!;
+    const balances = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.balances")!;
+    expect(search.discovery?.embeddingText).toContain("canonical cross-chain token resolver");
+    expect(autocomplete.discovery?.embeddingText).toContain("semantic token autocomplete");
+    expect(balances.discovery?.embeddingText).toContain("wallet token balances");
+  });
+
+  it("order embeddings capture lifecycle and transaction lookup intent", () => {
+    const list = KHALANI_TOOLS.find(t => t.toolId === "khalani.orders.list")!;
+    const get = KHALANI_TOOLS.find(t => t.toolId === "khalani.orders.get")!;
+    expect(list.discovery?.embeddingText).toContain("created deposited published filled refund pending refunded failed");
+    expect(list.discovery?.embeddingText).toContain("transaction hash");
+    expect(get.discovery?.embeddingText).toContain("deposit fill refund transactions");
+    expect(get.discovery?.embeddingText).toContain("provider status");
+  });
+
   // ── Example params ───────────────────────────────────────────────
 
   it("khalani.bridge has example params", () => {

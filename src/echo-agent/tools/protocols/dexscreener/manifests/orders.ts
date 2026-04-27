@@ -12,6 +12,11 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenAddress", type: "string", required: true, description: "Token contract address." },
     ],
     exampleParams: { chainId: "solana", tokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+    discovery: {
+      embeddingText:
+        "Check DEX Screener paid token orders for a chain and token address. " +
+        "Verify token promotion orders, ad payments, boost order status, payment timestamp, marketing legitimacy and campaign history.",
+    },
   },
   {
     toolId: "dexscreener.ads",
@@ -21,5 +26,9 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [],
     exampleParams: {},
+    discovery: {
+      embeddingText:
+        "Get latest DEX Screener ad placements. Monitor token advertisements, promoted campaigns, ad type, duration, impressions, paid visibility and platform-wide marketing activity.",
+    },
   },
 ];

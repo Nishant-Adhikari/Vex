@@ -1,3 +1,10 @@
+/**
+ * NOTE: A subset of tests below is `.skip`ped because the 0G ecosystem
+ * (jaine, slop, slop-app, chainscan) and EchoBook namespaces are
+ * currently disabled from discovery. Re-enable when the corresponding
+ * `advertised` flags flip back to `true` in
+ * src/echo-agent/tools/protocols/navigation/entries-0g.ts.
+ */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { discoverProtocolCapabilities } from "../../../echo-agent/tools/protocols/runtime.js";
 
@@ -28,7 +35,7 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     expect(clobOrderbook!.whyMatched).toContain("canonicalSummary");
   });
 
-  it("per-tool metadata aliases (not inherited from facet) appear as 'metadata' in whyMatched", () => {
+  it.skip("per-tool metadata aliases (not inherited from facet) appear as 'metadata' in whyMatched", () => {
     // echobook.comments.get has explicit discovery.aliases: ["0g comments", "echobook comments"].
     // These are NOT in navigation strings → should appear as "metadata" tag.
     // Inherited exampleIntents (from facet.hints) ARE in navigation → deduped out.

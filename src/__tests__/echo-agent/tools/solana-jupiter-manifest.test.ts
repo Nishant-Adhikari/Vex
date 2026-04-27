@@ -149,4 +149,60 @@ describe("solana-jupiter manifest", () => {
       }
     }
   });
+
+  it("every tool has non-empty discovery.embeddingText", () => {
+    for (const tool of SOLANA_JUPITER_TOOLS) {
+      expect(tool.discovery?.embeddingText, `${tool.toolId} missing discovery.embeddingText`).toBeTruthy();
+      expect(tool.discovery!.embeddingText!.length).toBeGreaterThan(80);
+    }
+  });
+
+  it("swap embeddings stay Solana and Jupiter specific", () => {
+    const quote = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.quote")!;
+    const execute = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.execute")!;
+    for (const tool of [quote, execute]) {
+      expect(tool.discovery!.embeddingText).toContain("Solana");
+      expect(tool.discovery!.embeddingText).toContain("Jupiter");
+      expect(tool.discovery!.embeddingText).toContain("Metis");
+      expect(tool.discovery!.embeddingText).toContain("JupiterZ");
+      expect(tool.discovery!.embeddingText).toContain("Dflow");
+      expect(tool.discovery!.embeddingText).toContain("OKX");
+    }
+  });
+
+  it("core embeddings mention tokens and prices", () => {
+    const prices = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.prices")!;
+    const search = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.tokens.search")!;
+    const trending = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.tokens.trending")!;
+    expect(prices.discovery!.embeddingText).toContain("Price API");
+    expect(prices.discovery!.embeddingText).toContain("mint");
+    expect(search.discovery!.embeddingText).toContain("Tokens API");
+    expect(search.discovery!.embeddingText).toContain("mint address");
+    expect(trending.discovery!.embeddingText).toContain("top trending");
+    expect(trending.discovery!.embeddingText).toContain("SPL tokens");
+  });
+
+  it("lend embeddings mention Jupiter Lend Earn semantics", () => {
+    const rates = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.rates")!;
+    const deposit = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.deposit")!;
+    const withdraw = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.withdraw")!;
+    expect(rates.discovery!.embeddingText).toContain("Jupiter Lend Earn");
+    expect(rates.discovery!.embeddingText).toContain("APY");
+    expect(deposit.discovery!.embeddingText).toContain("vault");
+    expect(deposit.discovery!.embeddingText).toContain("deposit transaction");
+    expect(withdraw.discovery!.embeddingText).toContain("vault");
+    expect(withdraw.discovery!.embeddingText).toContain("withdrawal transaction");
+  });
+
+  it("prediction embeddings mention YES NO markets and portfolio intent", () => {
+    const buy = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.buy")!;
+    const positions = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.positions")!;
+    const history = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.history")!;
+    expect(buy.discovery!.embeddingText).toContain("YES");
+    expect(buy.discovery!.embeddingText).toContain("NO");
+    expect(buy.discovery!.embeddingText).toContain("USDC");
+    expect(positions.discovery!.embeddingText).toContain("portfolio");
+    expect(history.discovery!.embeddingText).toContain("realized PnL");
+    expect(history.discovery!.embeddingText).toContain("settlement history");
+  });
 });

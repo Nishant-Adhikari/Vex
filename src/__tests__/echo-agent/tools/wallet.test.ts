@@ -14,6 +14,19 @@ vi.mock("@tools/wallet/family.js", () => ({
   },
 }));
 
+vi.mock("viem", () => ({
+  getAddress: (address: string) => address,
+  parseUnits: (value: string, decimals: number) => {
+    const [rawWhole, rawFraction = ""] = value.split(".");
+    const negative = rawWhole.startsWith("-");
+    const whole = negative ? rawWhole.slice(1) : rawWhole;
+    const fraction = rawFraction.padEnd(decimals, "0").slice(0, decimals);
+    const digits = `${whole || "0"}${fraction}`.replace(/^0+(?=\d)/, "");
+    const amount = BigInt(digits || "0");
+    return negative ? -amount : amount;
+  },
+}));
+
 const MOCK_CHAIN = {
   id: 16661, name: "0G", type: "eip155" as const,
   nativeCurrency: { name: "0G", symbol: "0G", decimals: 18 },

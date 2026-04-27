@@ -1,4 +1,5 @@
 import type { ProtocolToolManifest } from "../../types.js";
+import { KYBER_ZAP_CHAINS, kyberEmbeddingText } from "../discovery-text.js";
 
 export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
   {
@@ -21,6 +22,15 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "dryRun", type: "boolean", description: "Preview route without executing." },
     ],
     exampleParams: { chain: "ethereum", dex: "DEX_UNISWAPV3", pool: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640", tokenIn: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", amountIn: "1000000000", slippageBps: 100 },
+    discovery: {
+      embeddingText: kyberEmbeddingText(
+        `add liquidity on EVM chains; zap into LP position; provide liquidity with one token; ` +
+        `create or increase concentrated liquidity position; pool address; ticks; Uniswap V3 PancakeSwap QuickSwap Aerodrome Kodiak; ${KYBER_ZAP_CHAINS}`,
+      ),
+      aliases: ["zap in", "add liquidity", "LP position", "provide liquidity", "dodaj płynność", "zwiększ płynność"],
+      exampleIntents: ["add liquidity with one token", "zap into LP on base", "create concentrated liquidity position"],
+      preferredFor: ["add liquidity", "zap in", "create LP position", "increase LP position"],
+    },
   },
   {
     toolId: "kyberswap.zap.out",
@@ -40,6 +50,15 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "dryRun", type: "boolean", description: "Preview route without executing." },
     ],
     exampleParams: { chain: "ethereum", dex: "DEX_UNISWAPV3", pool: "0x88e6...", positionRef: "12345", tokenOut: "0xA0b8..." },
+    discovery: {
+      embeddingText: kyberEmbeddingText(
+        `remove liquidity on EVM chains; zap out LP position; withdraw concentrated liquidity; ` +
+        `convert LP position to single output token; collect fees; tokenOut; ${KYBER_ZAP_CHAINS}`,
+      ),
+      aliases: ["zap out", "remove liquidity", "withdraw LP", "collect fees", "usuń płynność", "wycofaj płynność"],
+      exampleIntents: ["remove liquidity to USDC", "zap out LP position", "withdraw concentrated liquidity"],
+      preferredFor: ["remove liquidity", "zap out", "close LP position", "withdraw LP"],
+    },
   },
   {
     toolId: "kyberswap.zap.migrate",
@@ -62,6 +81,15 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "dryRun", type: "boolean", description: "Preview route without executing." },
     ],
     exampleParams: { chain: "ethereum", dexFrom: "DEX_UNISWAPV3", dexTo: "DEX_PANCAKESWAPV3", poolFrom: "0xaaa...", poolTo: "0xbbb...", sourcePositionRef: "12345" },
+    discovery: {
+      embeddingText: kyberEmbeddingText(
+        `migrate liquidity position on EVM chains; move LP from one pool or DEX to another; zap migrate; ` +
+        `remove liquidity and add liquidity in one transaction; rebalance concentrated liquidity; ${KYBER_ZAP_CHAINS}`,
+      ),
+      aliases: ["zap migrate", "migrate LP", "move liquidity", "rebalance liquidity", "przenieś płynność"],
+      exampleIntents: ["migrate LP to another pool", "move liquidity position", "rebalance concentrated liquidity"],
+      preferredFor: ["migrate liquidity", "move LP", "rebalance LP position"],
+    },
   },
   {
     toolId: "kyberswap.zap.list",
@@ -73,5 +101,13 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias (e.g. polygon, ethereum, base, arbitrum)." },
     ],
     exampleParams: { chain: "polygon" },
+    discovery: {
+      embeddingText: kyberEmbeddingText(
+        `list supported ZaaS DEX protocols for zap; DEX ids; DEX_UNISWAPV3 DEX_PANCAKESWAPV3 DEX_QUICKSWAPV3ALGEBRA; ` +
+        `supported zap dexes per chain; ${KYBER_ZAP_CHAINS}`,
+      ),
+      aliases: ["zap dex list", "DEX ids", "supported zap protocols", "ZaaS dexes"],
+      exampleIntents: ["list zap DEX ids", "what DEX ids can I use for zap", "supported liquidity protocols"],
+    },
   },
 ];

@@ -9,6 +9,11 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [],
     exampleParams: {},
+    discovery: {
+      embeddingText:
+        "Get latest DEX Screener token profiles. Discover newly listed or recently visible token projects with profile page, icon, header, description, websites, socials and links. " +
+        "Useful for new token discovery.",
+    },
   },
   {
     toolId: "dexscreener.boosts",
@@ -18,6 +23,10 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [],
     exampleParams: {},
+    discovery: {
+      embeddingText:
+        "Get latest boosted tokens on DEX Screener. Find newly promoted tokens, paid boosts, boost amount, campaign visibility, token marketing activity and recently boosted meme coins or launches.",
+    },
   },
   {
     toolId: "dexscreener.boosts.top",
@@ -27,6 +36,11 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [],
     exampleParams: {},
+    discovery: {
+      embeddingText:
+        "Get top boosted tokens on DEX Screener ranked by active or total boost amount. " +
+        "Find most promoted tokens, strongest paid visibility, marketing spend, trending boosted coins and high attention projects.",
+    },
   },
   {
     toolId: "dexscreener.communityTakeovers",
@@ -36,6 +50,10 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     params: [],
     exampleParams: {},
+    discovery: {
+      embeddingText:
+        "Get latest DEX Screener community takeover tokens. Find CTO events, community reclaimed tokens, community-run meme coins, takeover signals, claim dates and tokens with renewed social attention.",
+    },
   },
   {
     toolId: "dexscreener.trending",
@@ -47,5 +65,9 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "limit", type: "number", description: "Max results to return." },
     ],
     exampleParams: { limit: 20 },
+    discovery: {
+      embeddingText:
+        "Get unified DEX Screener trending discovery. Find trending tokens, boosted tokens, token profiles, promoted coins, meme coins, new launches and attention signals in one ranked deduplicated feed.",
+    },
   },
 ];

@@ -1,3 +1,10 @@
+/**
+ * NOTE: A subset of tests below is `.skip`ped because the 0G ecosystem
+ * (jaine, slop, slop-app, chainscan) and EchoBook namespaces are
+ * currently disabled from discovery. Re-enable when the corresponding
+ * `advertised` flags flip back to `true` in
+ * src/echo-agent/tools/protocols/navigation/entries-0g.ts.
+ */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { discoverProtocolCapabilities } from "../../../echo-agent/tools/protocols/runtime.js";
 import {
@@ -58,7 +65,7 @@ describe("protocol discovery", () => {
     expect(result.warnings.length).toBeGreaterThan(0);
   });
 
-  it("returns echobook tools when filtering by echobook namespace", () => {
+  it.skip("returns echobook tools when filtering by echobook namespace", () => {
     const result = discoverProtocolCapabilities({ namespace: "echobook", limit: 50 });
     expect(result.count).toBeGreaterThan(0);
     for (const tool of result.tools) {
@@ -182,7 +189,7 @@ describe("protocol discovery", () => {
     expect(bridge!.mutating).toBe(true);
   });
 
-  it("matches alias query for 0g explorer to chainscan", () => {
+  it.skip("matches alias query for 0g explorer to chainscan", () => {
     const result = discoverProtocolCapabilities({ query: "0g explorer" });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.namespace).toBe("chainscan");
@@ -205,7 +212,7 @@ describe("protocol discovery", () => {
     expect(result.tools[0]?.toolId).toBe("dexscreener.communityTakeovers");
   });
 
-  it("matches profile image query to slop app tools", () => {
+  it.skip("matches profile image query to slop app tools", () => {
     const result = discoverProtocolCapabilities({ query: "profile image" });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.namespace).toBe("slop-app");
@@ -252,7 +259,7 @@ describe("protocol discovery", () => {
 
   // ── Facet-driven discovery (audit follow-up) ─────────────────────
 
-  it("matches echobook comment tools via facet hints", () => {
+  it.skip("matches echobook comment tools via facet hints", () => {
     const result = discoverProtocolCapabilities({
       query: "comment thread",
       namespace: "echobook",
@@ -264,7 +271,7 @@ describe("protocol discovery", () => {
     expect(ids).toContain("echobook.comments.get");
   });
 
-  it("matches slop.tokens.mine via 'my tokens' facet hint", () => {
+  it.skip("matches slop.tokens.mine via 'my tokens' facet hint", () => {
     const result = discoverProtocolCapabilities({
       query: "my tokens",
       namespace: "slop",

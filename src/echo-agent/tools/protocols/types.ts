@@ -43,6 +43,8 @@ export type ToolLifecycle = "active";
 
 export interface ToolDiscoveryMetadata {
   canonicalSummary?: string;
+  /** Retrieval-only semantic text embedded for dense tool discovery. */
+  embeddingText?: string;
   aliases?: string[];
   exampleIntents?: string[];
   paramKeywords?: string[];

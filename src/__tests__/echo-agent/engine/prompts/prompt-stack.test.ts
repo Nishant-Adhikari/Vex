@@ -1,3 +1,10 @@
+/**
+ * NOTE: A subset of tests below is `.skip`ped because the 0G ecosystem
+ * (jaine, slop, slop-app, chainscan) and EchoBook namespaces are
+ * currently disabled from discovery. Re-enable when the corresponding
+ * `advertised` flags flip back to `true` in
+ * src/echo-agent/tools/protocols/navigation/entries-0g.ts.
+ */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import type { EngineContext, LoopMode, SessionKind } from "../../../../echo-agent/engine/types.js";
@@ -73,15 +80,21 @@ describe("prompt-stack", () => {
     it("contains all active namespaces from catalog", () => {
       const prompt = buildProtocolsPrompt();
 
-      // Group actual tools by namespace to find which ones have tools
-      const namespacesWithTools = new Set(PROTOCOL_TOOLS.map(t => t.namespace));
+      // Only advertised namespaces appear in the prompt — non-advertised
+      // ones (e.g. reserved or temporarily disabled) are filtered out by
+      // `buildProtocolsPrompt` via `PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST`.
+      const advertisedNamespacesWithTools = new Set(
+        PROTOCOL_TOOLS
+          .filter(t => (PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).includes(t.namespace))
+          .map(t => t.namespace),
+      );
 
-      for (const ns of namespacesWithTools) {
+      for (const ns of advertisedNamespacesWithTools) {
         expect(prompt).toContain(`## ${ns}`);
       }
     });
 
-    it("renders explicit product groups instead of heuristic families", () => {
+    it.skip("renders explicit product groups instead of heuristic families", () => {
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("### 0G Ecosystem");
       expect(prompt).toContain("### Cross-chain");
@@ -91,9 +104,13 @@ describe("prompt-stack", () => {
     it("marks namespaces with mutating tools", () => {
       const prompt = buildProtocolsPrompt();
 
-      // Check that namespaces with mutating tools are marked
+      // Only advertised namespaces are rendered into the prompt — apply the
+      // same filter when collecting "namespaces with mutating tools".
       const namespacesWithMutating = new Set(
-        PROTOCOL_TOOLS.filter(t => t.mutating).map(t => t.namespace),
+        PROTOCOL_TOOLS
+          .filter(t => t.mutating)
+          .filter(t => (PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).includes(t.namespace))
+          .map(t => t.namespace),
       );
 
       for (const ns of namespacesWithMutating) {
@@ -105,8 +122,12 @@ describe("prompt-stack", () => {
 
     it("is not hardcoded — count changes with catalog", () => {
       const prompt = buildProtocolsPrompt();
-      // The total count in the prompt should match the actual catalog
-      expect(prompt).toContain(String(PROTOCOL_TOOLS.length));
+      // The total count rendered in the prompt is the advertised tool count
+      // (see `buildProtocolsPrompt`), not the full catalog size.
+      const advertisedToolCount = PROTOCOL_TOOLS.filter((tool) =>
+        (PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).includes(tool.namespace),
+      ).length;
+      expect(prompt).toContain(String(advertisedToolCount));
     });
   });
 
@@ -457,7 +478,7 @@ describe("prompt-stack", () => {
       expect(kyberSection).not.toContain("kyberswap.tokens.search");
     });
 
-    it("chainscan is described as 0G-only in protocols", () => {
+    it.skip("chainscan is described as 0G-only in protocols", () => {
       const prompt = buildProtocolsPrompt();
       const chainscanSection = prompt.split("## chainscan")[1]?.split("##")[0] ?? "";
       expect(chainscanSection).toContain("0G-only");
@@ -471,7 +492,7 @@ describe("prompt-stack", () => {
       expect(polymarketSection).toContain("CLOB trading");
     });
 
-    it("echobook section renders 'Feeds, posts, and comments' path label", () => {
+    it.skip("echobook section renders 'Feeds, posts, and comments' path label", () => {
       const prompt = buildProtocolsPrompt();
       const echobookSection = prompt.split("## echobook")[1]?.split("##")[0] ?? "";
       expect(echobookSection).toContain("Feeds, posts, and comments");
