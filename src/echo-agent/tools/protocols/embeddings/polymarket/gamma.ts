@@ -17,9 +17,9 @@ export const POLYMARKET_GAMMA_DISCOVERY = {
     canonicalSummary:
       "Browse events on a Polymarket prediction market on Polygon — paginated, filterable by tag, status, liquidity, volume, date range.",
     embeddingText: embeddingText(
-      `Browse events on Polymarket — a prediction market on Polygon — paginated and filterable by tag, status, liquidity, volume, start/end date, featured / archived / create-your-own-market flags, and recurrence. Each event carries its nested markets with current YES/NO prices, volume, and liquidity. ` +
-      `Use this when the user wants to discover trending prediction markets, scan polymarket events by category, find what's hot this week, list elections / sports / crypto markets, or screen events by liquidity or volume thresholds. ` +
-      `Example queries: browse trending polymarket events, what prediction markets are hot, list election markets on polymarket, top crypto prediction events, polymarket events with at least 100k liquidity, sports events ending this week. ` +
+      `Browse events on Polymarket, a prediction market on Polygon, paginated and filterable by tag, status, liquidity, volume, date range, featured or archived flags, and recurrence. Each event includes nested markets with current YES/NO prices, volume, and liquidity. ` +
+      `Use this when the user wants to discover trending prediction markets, scan events by category, list elections, sports, or crypto events, or screen by liquidity and volume. ` +
+      `Example queries: browse trending polymarket events, what prediction markets are hot, list election markets, top crypto prediction events, sports events ending this week. ` +
       `Read-only.`,
     ),
     aliases: [
@@ -105,10 +105,10 @@ export const POLYMARKET_GAMMA_DISCOVERY = {
     canonicalSummary:
       "Browse markets within a Polymarket prediction market on Polygon — paginated, filterable by status, liquidity, volume, date range, sports, tag, with prices and CLOB token IDs.",
     embeddingText: embeddingText(
-      `Browse markets on Polymarket — a prediction market on Polygon — paginated and filterable by status, liquidity, volume, date range, sports game / market type, condition ID, CLOB token ID, question ID, and tag. Each row carries the YES/NO prices, clobTokenIds, condition ID, and tag metadata needed before placing a CLOB order. ` +
-      `Use this when the user wants to screen prediction markets, find liquid markets to bet on, list markets by sport / category, look up markets by condition id, or pull clobTokenIds for downstream order placement. ` +
-      `Example queries: browse polymarket markets, screen markets with at least 50k liquidity, list NBA moneyline markets, find markets by condition id, pull clobTokenIds for these markets, sports markets ending today. ` +
-      `Read-only — does not place a bet.`,
+      `Browse markets on Polymarket, a prediction market on Polygon, paginated and filterable by status, liquidity, volume, date range, sports game, market type, condition ID, question ID, and tag. Rows include YES/NO prices, clobTokenIds, condition IDs, and tag metadata needed before placing an order. ` +
+      `Use this when the user wants to screen prediction markets, find liquid markets to bet on, list markets by sport or category, look up markets by condition id, or pull token IDs for order placement. ` +
+      `Example queries: browse polymarket markets, screen markets with 50k liquidity, list NBA moneyline markets, sports markets ending today. ` +
+      `Read-only.`,
     ),
     aliases: [
       "prediction market", "polymarket",

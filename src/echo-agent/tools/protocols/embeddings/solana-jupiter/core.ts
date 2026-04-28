@@ -12,11 +12,16 @@ import { SOLANA_CHAINS } from "../../solana-jupiter/discovery-text.js";
 
 export const SOLANA_CORE_DISCOVERY = {
   "solana.prices": {
+    canonicalSummary:
+      "Jupiter price lookup for Solana SPL token mints, returning real-time USD prices.",
     embeddingText: embeddingText(
       `Get real-time USD prices for Solana SPL token mints — SOL, USDC, JUP, BONK, memecoins, LSTs, or any mint. ` +
       `Use this when the user wants the current price of one or more solana tokens, value their portfolio, or monitor price movements on Solana. ` +
       `Example queries: what's sol price now, current price of bonk, usd price for these spl mints, value my solana portfolio, price for this memecoin, sol token price.`,
     ),
+    aliases: ["jupiter price lookup", "solana price lookup", "token price lookup", "current token price"],
+    exampleIntents: ["jupiter price lookup", "current price of bonk", "usd price for solana mint"],
+    preferredFor: ["price lookup", "token prices", "current usd price"],
     chains: SOLANA_CHAINS,
   },
 

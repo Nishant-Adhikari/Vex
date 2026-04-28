@@ -58,12 +58,24 @@ export const KHALANI_MAIN_DISCOVERY = {
   },
 
   "khalani.quote.get": {
+    canonicalSummary:
+      "Preview a bridge quote for a token amount using source chain ID, destination chain ID, and token addresses.",
     embeddingText: embeddingText(
       `Preview a cross-chain bridge — get expected output amount, routes, ETA, and gas cost before executing. ` +
       `Use this when the user wants to know what they'd receive when bridging, compare bridge routes, check ETA before transferring, or simulate a cross-chain transfer. ` +
       `Example queries: how much usdc would I get bridging from eth to solana, preview bridge from base to arbitrum, what's the eta to bridge, compare bridge routes, simulate cross-chain transfer. ` +
       `Read-only — does not execute.`,
     ),
+    aliases: [
+      "bridge quote", "route quote", "quote amount",
+      "amount in smallest units", "source chain id", "destination chain id",
+    ],
+    exampleIntents: [
+      "quote bridge amount by chain id",
+      "amount in smallest units from chain id to chain id",
+      "preview route with source and destination chain ids",
+    ],
+    preferredFor: ["bridge quote", "quote amount", "preview route"],
     chains: KHALANI_CHAINS,
   },
 

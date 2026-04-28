@@ -116,6 +116,9 @@ function buildMetadataFields(
   if (metadata.canonicalSummary) {
     fields.push({ value: metadata.canonicalSummary, weight: 7, tag: "canonicalSummary" });
   }
+  if (metadata.embeddingText) {
+    fields.push({ value: metadata.embeddingText, weight: 4, tag: "embeddingText" });
+  }
   if (metadata.aliases) {
     for (const alias of metadata.aliases) {
       if (!navAliasSet.has(alias.toLowerCase())) {
@@ -144,11 +147,9 @@ function buildMetadataFields(
 function buildExampleQueryFields(manifest: ProtocolToolManifest): WeightedSearchField[] {
   const matchingFacets = getMatchingFacetsForTool(manifest.namespace, manifest.toolId);
   if (matchingFacets.length === 0) return [];
-  const namespaceMetadata = maybeGetProtocolNamespaceNavigation(manifest.namespace);
-  if (!namespaceMetadata) return [];
-  return namespaceMetadata.exampleQueries.map((value) => ({
-    value, weight: 3, tag: "exampleQueries",
-  }));
+  return matchingFacets.flatMap((facet) =>
+    facet.hints.map((value) => ({ value, weight: 3, tag: "exampleQueries" })),
+  );
 }
 
 function scoreManifest(manifest: ProtocolToolManifest, rawQuery: string): { score: number; whyMatched: string[] } {

@@ -309,10 +309,10 @@ export const POLYMARKET_CLOB_DISCOVERY = {
     canonicalSummary:
       "Place a YES/NO buy order on a Polymarket prediction-market outcome — Polygon CLOB, EIP-712 signed in pUSD.",
     embeddingText: embeddingText(
-      `Buy YES or NO outcome shares on Polymarket — a prediction market on Polygon — by submitting an EIP-712 signed CLOB order in pUSD. ` +
-      `Use this when the user wants to bet yes or no on an outcome, place a prediction trade, take a position, ape into a market, or open a YES/NO position with a limit or market price. Supports GTC, FOK, GTD and FAK order types, post-only and marketable limit orders. ` +
-      `Example queries: bet yes on the election, buy yes shares at 0.65, place a no bet on this market, ape into trump 2028, take the yes side on bitcoin 100k, open a prediction position. ` +
-      `Submitted as an EIP-712 signed order to the CLOB; pUSD is the collateral.`,
+      `Buy YES or NO outcome shares on Polymarket, a prediction market on Polygon, using a gasless CLOB order paid in pUSD. ` +
+      `Use this when the user wants to bet yes or no, place a prediction trade, take a position, ape into a market, or open a YES/NO position with a limit or market price. ` +
+      `Example queries: bet yes on the election, buy yes shares at 0.65, place a no bet, ape into trump 2028, take the yes side on bitcoin 100k. ` +
+      `pUSD is the collateral.`,
     ),
     aliases: [
       "prediction market", "polymarket",
@@ -336,10 +336,10 @@ export const POLYMARKET_CLOB_DISCOVERY = {
     canonicalSummary:
       "Place a YES/NO sell order on a Polymarket prediction-market outcome — Polygon CLOB, EIP-712 signed.",
     embeddingText: embeddingText(
-      `Sell YES or NO outcome shares on Polymarket — a prediction market on Polygon — by submitting an EIP-712 signed CLOB order. Pays out in pUSD on fill. ` +
-      `Use this when the user wants to exit a position, take profit on a yes share or no share, dump a bet before resolution, sell shares back into the book at a limit or market price, or close out a prediction trade. Supports GTC, FOK, GTD and FAK order types. ` +
-      `Example queries: sell my yes shares, exit this polymarket position, take profit on this prediction trade, dump no shares at 0.4, close my polymarket bet, get out of this market. ` +
-      `Submitted as an EIP-712 signed order to the CLOB; settles in pUSD.`,
+      `Sell YES or NO outcome shares on Polymarket, a prediction market on Polygon, using a gasless CLOB order that pays out in pUSD when filled. ` +
+      `Use this when the user wants to exit a position, take profit, dump a bet before resolution, sell shares at a limit or market price, or close a prediction trade. ` +
+      `Example queries: sell my yes shares, exit this polymarket position, take profit on this prediction trade, dump no shares at 0.4, close my polymarket bet. ` +
+      `Settles in pUSD.`,
     ),
     aliases: [
       "prediction market", "polymarket",

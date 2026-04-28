@@ -79,11 +79,6 @@ export function getDiscoveryStringsForTool(namespace: ProtocolNamespace, toolId:
   if (!metadata) return [namespace];
   const strings = [
     metadata.namespace,
-    ...metadata.aliases,
-    metadata.summary,
-    metadata.whenToUse,
-    metadata.preferInstead ?? "",
-    ...metadata.discoveryHints,
   ];
   for (const facet of getMatchingFacetsForTool(namespace, toolId)) {
     strings.push(facet.label, facet.summary, ...facet.hints);

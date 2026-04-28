@@ -161,10 +161,10 @@ export const POLYMARKET_REWARDS_DISCOVERY = {
     canonicalSummary:
       "Browse your Polymarket prediction-market liquidity-rewards dashboard on Polygon — earnings combined with market configs, searchable and sortable.",
     embeddingText: embeddingText(
-      `Browse your full liquidity-rewards dashboard on Polymarket — a prediction market on Polygon — combining your per-market earnings with each market's reward config (rate per day, competitiveness, min size, max spread), with search, tag filter, sort by rate / competitiveness / volume, and pagination. ` +
-      `Use this when the user wants the full polymarket lp dashboard, my reward markets sorted by rate, search my reward markets by question, see earnings alongside market configs, or paginate through every market they've maker'd on. ` +
+      `Browse your liquidity-rewards dashboard on Polymarket, a prediction market on Polygon, combining per-market earnings with each market's reward config, search, tag filters, sorting, and pagination. ` +
+      `Use this when the user wants the full polymarket LP dashboard, reward markets sorted by rate or competitiveness, earnings next to market configs, or every market they have made liquidity on. ` +
       `Example queries: my polymarket reward dashboard, my lp markets sorted by rate per day, search my reward markets by question, my reward markets by competitiveness, full polymarket lp overview. ` +
-      `Authenticated — requires POLYMARKET_API_KEY; scoped to your wallet.`,
+      `Authenticated; scoped to your wallet.`,
     ),
     aliases: [
       "prediction market", "polymarket",

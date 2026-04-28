@@ -35,10 +35,10 @@ export const POLYMARKET_BRIDGE_DISCOVERY = {
     canonicalSummary:
       "Create a deposit address to fund your Polymarket prediction market account on Polygon from another chain.",
     embeddingText: embeddingText(
-      `Create a deposit address to fund your Polymarket account on Polygon from Ethereum, Solana, Base, Arbitrum, BNB Chain, Bitcoin, HyperEVM and other supported chains — returns EVM, Solana, and/or BTC deposit addresses you then send pUSD or other supported assets to. ` +
-      `Use this when the user wants to fund their polymarket account, top up their balance for betting, deposit usdc into polymarket, send btc into polymarket, or get a deposit address before transferring funds. ` +
-      `Example queries: fund my polymarket account, deposit usdc into polymarket, send btc to polymarket, polymarket deposit address, top up for betting, get me an inbound bridge address. ` +
-      `Creates the address only — the user still has to send funds from their source chain.`,
+      `Create a deposit address to fund your Polymarket account on Polygon from Ethereum, Solana, Base, Arbitrum, Bitcoin, HyperEVM, or another supported chain. ` +
+      `Use this when the user wants to top up for betting, deposit USDC or BTC into Polymarket, bridge funds in, or get an inbound address before transferring. ` +
+      `Example queries: fund my polymarket account, deposit usdc into polymarket, send btc to polymarket, polymarket deposit address, top up for betting. ` +
+      `Creates the address only; the user still sends funds from the source chain.`,
     ),
     aliases: [
       "prediction market", "polymarket",
