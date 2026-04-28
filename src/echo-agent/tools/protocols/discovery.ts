@@ -66,11 +66,16 @@ interface WeightedSearchField {
 }
 
 function normalizeText(value: string): string {
+  // Order matters: camelCase split must run BEFORE lowercase (its regex
+  // looks for `[a-z0-9][A-Z]`), and lowercase must run BEFORE the token
+  // split (TOKEN_SPLIT_RE = `[^a-z0-9]+` would otherwise strip uppercase
+  // letters, turning "Plasma" → " lasma" → "lasma" and silently breaking
+  // recall on every title-case proper noun like chain names).
   return value
     .replace(CAMEL_CASE_RE, "$1 $2")
+    .toLowerCase()
     .replace(TOKEN_SPLIT_RE, " ")
-    .trim()
-    .toLowerCase();
+    .trim();
 }
 
 function tokenize(value: string): string[] {
@@ -123,6 +128,14 @@ function buildMetadataFields(
       if (!navStringSet.has(intent.toLowerCase())) {
         fields.push({ value: intent, weight: 6, tag: "metadata" });
       }
+    }
+  }
+  if (metadata.chains) {
+    for (const chain of metadata.chains) {
+      // Weight 3 — below aliases (5) and description (6). Chain alone never
+      // outranks intent-relevant tools, but chain + intent both matching
+      // tips the ranking toward the right chain-supporting tool.
+      fields.push({ value: chain, weight: 3, tag: "chains" });
     }
   }
   return fields;
@@ -264,14 +277,16 @@ export function discoverProtocolCapabilities(
 
   const query = typeof request.query === "string" ? request.query.trim() : "";
   // Availability is strictly `isProtocolToolAvailable` (lifecycle + env).
-  // Pre-PR1 a `request.includeDeclared` branch relaxed the lifecycle half,
-  // but `ToolLifecycle` is narrowed to `"active"` only (see types.ts) so
-  // there is nothing left to include/exclude — the flag was removed from
-  // the public schema in PR1.
+  // The mutating filter that used to live here was cosmetic — the real
+  // safety gate lives at execute time (`runtime.ts`:
+  // `manifest.mutating && !context.approved && context.loopMode !== "full"
+  // && !isPreviewExecution`). Hiding mutating tools from discovery only
+  // prevented the agent from finding them and triggering the proper
+  // approval flow, so the filter (and the `includeMutating` request flag)
+  // were removed.
   const filteredTools = PROTOCOL_TOOLS
     .filter((manifest) => isAdvertisedProtocolNamespace(manifest.namespace))
     .filter((manifest) => resolvedNamespace ? manifest.namespace === resolvedNamespace : true)
-    .filter((manifest) => request.includeMutating ? true : !manifest.mutating)
     .filter((manifest) => isProtocolToolAvailable(manifest));
 
   const scoredTools: ScoredManifest[] = query.length === 0

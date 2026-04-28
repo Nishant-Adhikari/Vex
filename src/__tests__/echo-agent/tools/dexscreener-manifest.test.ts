@@ -183,19 +183,25 @@ describe("dexscreener manifest", () => {
     }
   });
 
+  // Note: assertions check intent-level content the agent-style refactor
+  // preserves. Implementation-detail phrases ("pair analytics", "Batch
+  // lookup", "marketing legitimacy", "unified DEX Screener trending
+  // discovery") were API-doc jargon and were intentionally replaced with
+  // user-intent phrasing in the new passages.
+
   it("core market-data embeddings capture search, pair, token, and liquidity intent", () => {
     const search = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.search")!;
     const pairs = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.pairs")!;
     const tokens = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokens")!;
     const tokenPairs = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokenPairs")!;
-    expect(search.discovery?.embeddingText).toContain("token name");
+    expect(search.discovery?.embeddingText).toContain("Search trading pairs");
     expect(search.discovery?.embeddingText).toContain("contract address");
-    expect(pairs.discovery?.embeddingText).toContain("pair analytics");
+    expect(pairs.discovery?.embeddingText).toContain("Full analytics");
     expect(pairs.discovery?.embeddingText).toContain("liquidity");
-    expect(tokens.discovery?.embeddingText).toContain("Batch lookup");
-    expect(tokens.discovery?.embeddingText).toContain("portfolio pricing");
-    expect(tokenPairs.discovery?.embeddingText).toContain("all DEX pools");
-    expect(tokenPairs.discovery?.embeddingText).toContain("best liquidity discovery");
+    expect(tokens.discovery?.embeddingText).toContain("up to 30 token contract addresses");
+    expect(tokens.discovery?.embeddingText?.toLowerCase()).toContain("batch pricing");
+    expect(tokenPairs.discovery?.embeddingText).toContain("every pool");
+    expect(tokenPairs.discovery?.embeddingText).toContain("most liquidity");
   });
 
   it("trend embeddings capture boosted, profile, community takeover, and unified trending intent", () => {
@@ -204,24 +210,24 @@ describe("dexscreener manifest", () => {
     const topBoosts = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.boosts.top")!;
     const communityTakeovers = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.communityTakeovers")!;
     const trending = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.trending")!;
-    expect(profiles.discovery?.embeddingText).toContain("token profiles");
-    expect(profiles.discovery?.embeddingText).toContain("new token discovery");
-    expect(boosts.discovery?.embeddingText).toContain("latest boosted tokens");
-    expect(boosts.discovery?.embeddingText).toContain("paid boosts");
-    expect(topBoosts.discovery?.embeddingText).toContain("top boosted tokens");
-    expect(topBoosts.discovery?.embeddingText).toContain("marketing spend");
+    expect(profiles.discovery?.embeddingText).toContain("latest token profiles");
+    expect(profiles.discovery?.embeddingText?.toLowerCase()).toContain("newly listed");
+    expect(boosts.discovery?.embeddingText).toContain("latest tokens that received paid boosts");
+    expect(boosts.discovery?.embeddingText?.toLowerCase()).toContain("promoted");
+    expect(topBoosts.discovery?.embeddingText).toContain("most active boosts");
+    expect(topBoosts.discovery?.embeddingText?.toLowerCase()).toContain("ranked by total boost amount");
     expect(communityTakeovers.discovery?.embeddingText).toContain("community takeover");
     expect(communityTakeovers.discovery?.embeddingText).toContain("CTO");
-    expect(trending.discovery?.embeddingText).toContain("unified DEX Screener trending discovery");
-    expect(trending.discovery?.embeddingText).toContain("ranked deduplicated feed");
+    expect(trending.discovery?.embeddingText?.toLowerCase()).toContain("unified ranked feed");
+    expect(trending.discovery?.embeddingText?.toLowerCase()).toContain("trending");
   });
 
   it("orders and ads embeddings capture paid promotion verification intent", () => {
     const orders = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.orders")!;
     const ads = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.ads")!;
-    expect(orders.discovery?.embeddingText).toContain("paid token orders");
-    expect(orders.discovery?.embeddingText).toContain("marketing legitimacy");
+    expect(orders.discovery?.embeddingText).toContain("paid promotional orders");
+    expect(orders.discovery?.embeddingText?.toLowerCase()).toContain("marketing");
     expect(ads.discovery?.embeddingText).toContain("ad placements");
-    expect(ads.discovery?.embeddingText).toContain("paid visibility");
+    expect(ads.discovery?.embeddingText?.toLowerCase()).toContain("visibility");
   });
 });

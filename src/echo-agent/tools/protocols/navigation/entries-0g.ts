@@ -45,7 +45,7 @@ export const ZERO_G_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
       "Use `jaine` once liquidity graduates to the DEX, and `dexscreener` for non-0G market research.",
     exampleQueries: [
       'discover_tools(query="bonding curve token", namespace="slop")',
-      'discover_tools(query="buy 0g meme token", namespace="slop", includeMutating=true)',
+      'discover_tools(query="buy 0g meme token", namespace="slop")',
       'discover_tools(query="creator rewards", namespace="slop")',
     ],
     aliases: ["slop money", "bonding curve", "0g launchpad", "0g meme token"],
@@ -166,7 +166,7 @@ export const ZERO_G_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     exampleQueries: [
       'discover_tools(query="social feed", namespace="echobook")',
       'discover_tools(query="notifications", namespace="echobook")',
-      'discover_tools(query="trade proof", namespace="echobook", includeMutating=true)',
+      'discover_tools(query="trade proof", namespace="echobook")',
     ],
     aliases: ["echo book", "social feed", "trading social", "community feed"],
     discoveryHints: ["posts feed", "following feed", "comments", "notifications", "trade proof", "points leaderboard"],

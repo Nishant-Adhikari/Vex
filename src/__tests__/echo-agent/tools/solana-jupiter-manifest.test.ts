@@ -157,26 +157,36 @@ describe("solana-jupiter manifest", () => {
     }
   });
 
-  it("swap embeddings stay Solana and Jupiter specific", () => {
+  // Note: assertions below check intent-level content the agent-style
+  // refactor preserves (e.g. "Solana", "swap", "earn yield", "YES", "NO").
+  // Implementation-detail strings ("Price API", "Tokens API", "deposit
+  // transaction", "settlement history") are intentionally absent in the
+  // refactored passages — they were API-doc jargon, not user intent.
+  // Router names (Metis/JupiterZ/Dflow/OKX) are kept in execute only,
+  // since the user-facing "preview" intent doesn't need router model names.
+
+  it("swap embeddings stay Solana-anchored; execute names the routers", () => {
     const quote = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.quote")!;
     const execute = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.execute")!;
     for (const tool of [quote, execute]) {
       expect(tool.discovery!.embeddingText).toContain("Solana");
-      expect(tool.discovery!.embeddingText).toContain("Jupiter");
-      expect(tool.discovery!.embeddingText).toContain("Metis");
-      expect(tool.discovery!.embeddingText).toContain("JupiterZ");
-      expect(tool.discovery!.embeddingText).toContain("Dflow");
-      expect(tool.discovery!.embeddingText).toContain("OKX");
+      expect(tool.discovery!.embeddingText?.toLowerCase()).toContain("swap");
     }
+    // execute-only: routers belong to the execute path
+    expect(execute.discovery!.embeddingText).toContain("Jupiter");
+    expect(execute.discovery!.embeddingText).toContain("Metis");
+    expect(execute.discovery!.embeddingText).toContain("JupiterZ");
+    expect(execute.discovery!.embeddingText).toContain("Dflow");
+    expect(execute.discovery!.embeddingText).toContain("OKX");
   });
 
   it("core embeddings mention tokens and prices", () => {
     const prices = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.prices")!;
     const search = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.tokens.search")!;
     const trending = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.tokens.trending")!;
-    expect(prices.discovery!.embeddingText).toContain("Price API");
+    expect(prices.discovery!.embeddingText).toContain("USD prices");
     expect(prices.discovery!.embeddingText).toContain("mint");
-    expect(search.discovery!.embeddingText).toContain("Tokens API");
+    expect(search.discovery!.embeddingText).toContain("SPL token");
     expect(search.discovery!.embeddingText).toContain("mint address");
     expect(trending.discovery!.embeddingText).toContain("top trending");
     expect(trending.discovery!.embeddingText).toContain("SPL tokens");
@@ -189,9 +199,9 @@ describe("solana-jupiter manifest", () => {
     expect(rates.discovery!.embeddingText).toContain("Jupiter Lend Earn");
     expect(rates.discovery!.embeddingText).toContain("APY");
     expect(deposit.discovery!.embeddingText).toContain("vault");
-    expect(deposit.discovery!.embeddingText).toContain("deposit transaction");
+    expect(deposit.discovery!.embeddingText).toContain("earn yield");
     expect(withdraw.discovery!.embeddingText).toContain("vault");
-    expect(withdraw.discovery!.embeddingText).toContain("withdrawal transaction");
+    expect(withdraw.discovery!.embeddingText?.toLowerCase()).toContain("withdraw");
   });
 
   it("prediction embeddings mention YES NO markets and portfolio intent", () => {
@@ -200,9 +210,9 @@ describe("solana-jupiter manifest", () => {
     const history = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.history")!;
     expect(buy.discovery!.embeddingText).toContain("YES");
     expect(buy.discovery!.embeddingText).toContain("NO");
-    expect(buy.discovery!.embeddingText).toContain("USDC");
-    expect(positions.discovery!.embeddingText).toContain("portfolio");
+    expect(buy.discovery!.embeddingText?.toLowerCase()).toContain("bet");
+    expect(positions.discovery!.embeddingText?.toLowerCase()).toContain("open prediction");
     expect(history.discovery!.embeddingText).toContain("realized PnL");
-    expect(history.discovery!.embeddingText).toContain("settlement history");
+    expect(history.discovery!.embeddingText?.toLowerCase()).toContain("past prediction");
   });
 });

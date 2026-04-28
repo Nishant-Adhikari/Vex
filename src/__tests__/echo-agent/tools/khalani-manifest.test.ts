@@ -127,47 +127,64 @@ describe("khalani manifest", () => {
   });
 
   it("every tool has retrieval-only embedding text", () => {
+    // Note: pre-refactor every passage interpolated the full chain string
+    // (which contained "Solana"), so the per-tool "contains Solana" check
+    // was incidentally satisfied. After moving the chain enumeration to
+    // the structured `chains` field, only passages whose user intent
+    // actually involves Solana name it explicitly. We assert the full
+    // chain set contains "Solana" via the `chains` field instead.
     for (const tool of KHALANI_TOOLS) {
       expect(
         tool.discovery?.embeddingText,
         `${tool.toolId} missing discovery.embeddingText`,
       ).toBeTruthy();
       expect(tool.discovery!.embeddingText!.length).toBeGreaterThan(80);
-      expect(tool.discovery!.embeddingText).toContain("Solana");
+      expect(tool.discovery?.chains, `${tool.toolId} missing discovery.chains`).toBeDefined();
+      expect(tool.discovery!.chains!).toContain("Solana");
     }
   });
 
-  it("quote embedding text captures bridge quote routes and fillers", () => {
+  // Note: assertions below check intent-level content the agent-style
+  // refactor preserves. Implementation-detail phrases ("Hyperstream",
+  // "Across", "CONTRACT_CALL/PERMIT2/TRANSFER", "canonical cross-chain
+  // token resolver", lifecycle status enums) were API-doc jargon and
+  // were intentionally replaced with user-intent phrasing in the new
+  // passages. The deposit-method tokens still appear in `description`/
+  // `params` for power-user lexical exact-match.
+
+  it("quote embedding text captures bridge preview intent", () => {
     const quote = KHALANI_TOOLS.find(t => t.toolId === "khalani.quote.get")!;
-    expect(quote.discovery?.embeddingText).toContain("cross-chain bridge quote");
-    expect(quote.discovery?.embeddingText).toContain("Hyperstream");
-    expect(quote.discovery?.embeddingText).toContain("Across");
+    expect(quote.discovery?.embeddingText?.toLowerCase()).toContain("preview a cross-chain bridge");
+    expect(quote.discovery?.embeddingText?.toLowerCase()).toContain("compare bridge routes");
+    expect(quote.discovery?.embeddingText?.toLowerCase()).toContain("read-only");
   });
 
-  it("bridge embedding text captures execution and deposit methods", () => {
+  it("bridge embedding text captures cross-chain transfer intent", () => {
     const bridge = KHALANI_TOOLS.find(t => t.toolId === "khalani.bridge")!;
-    expect(bridge.discovery?.embeddingText).toContain("execute cross-chain bridge transfer");
-    expect(bridge.discovery?.embeddingText).toContain("CONTRACT_CALL");
-    expect(bridge.discovery?.embeddingText).toContain("PERMIT2");
-    expect(bridge.discovery?.embeddingText).toContain("TRANSFER");
+    expect(bridge.discovery?.embeddingText).toContain("Move tokens between blockchains");
+    expect(bridge.discovery?.embeddingText?.toLowerCase()).toContain("bridge funds");
+    expect(bridge.discovery?.embeddingText?.toLowerCase()).toContain("cross-chain transfer");
   });
 
   it("token resolver embeddings distinguish search, autocomplete, and balances", () => {
     const search = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.search")!;
     const autocomplete = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.autocomplete")!;
     const balances = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.balances")!;
-    expect(search.discovery?.embeddingText).toContain("canonical cross-chain token resolver");
-    expect(autocomplete.discovery?.embeddingText).toContain("semantic token autocomplete");
-    expect(balances.discovery?.embeddingText).toContain("wallet token balances");
+    expect(search.discovery?.embeddingText).toContain("Look up a token");
+    expect(search.discovery?.embeddingText?.toLowerCase()).toContain("cross-chain resolver");
+    expect(autocomplete.discovery?.embeddingText).toContain("Parse natural-language token");
+    expect(autocomplete.discovery?.embeddingText?.toLowerCase()).toContain("auto-fill");
+    expect(balances.discovery?.embeddingText?.toLowerCase()).toContain("wallet's token balances");
+    expect(balances.discovery?.embeddingText?.toLowerCase()).toContain("portfolio");
   });
 
   it("order embeddings capture lifecycle and transaction lookup intent", () => {
     const list = KHALANI_TOOLS.find(t => t.toolId === "khalani.orders.list")!;
     const get = KHALANI_TOOLS.find(t => t.toolId === "khalani.orders.get")!;
-    expect(list.discovery?.embeddingText).toContain("created deposited published filled refund pending refunded failed");
+    expect(list.discovery?.embeddingText?.toLowerCase()).toContain("bridge history");
     expect(list.discovery?.embeddingText).toContain("transaction hash");
-    expect(get.discovery?.embeddingText).toContain("deposit fill refund transactions");
-    expect(get.discovery?.embeddingText).toContain("provider status");
+    expect(get.discovery?.embeddingText?.toLowerCase()).toContain("full lifecycle details");
+    expect(get.discovery?.embeddingText?.toLowerCase()).toContain("troubleshoot");
   });
 
   // ── Example params ───────────────────────────────────────────────

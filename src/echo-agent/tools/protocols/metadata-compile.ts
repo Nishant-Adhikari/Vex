@@ -109,7 +109,18 @@ function mergeMetadata(
     }
   }
 
+  // `chains` is `readonly string[]`; merge by deduped concatenation when both
+  // sides supply values (rare — chains are typically declared per-manifest).
+  if (override.chains !== undefined && base.chains !== undefined) {
+    result.chains = dedupeStrings([...base.chains, ...override.chains]);
+  } else if (override.chains !== undefined) {
+    result.chains = override.chains;
+  } else if (base.chains !== undefined) {
+    result.chains = base.chains;
+  }
+
   result.canonicalSummary = override.canonicalSummary ?? base.canonicalSummary;
+  result.embeddingText = override.embeddingText ?? base.embeddingText;
   result.operation = override.operation ?? base.operation;
   result.sourceClass = override.sourceClass ?? base.sourceClass;
   result.sideEffectLevel = override.sideEffectLevel ?? base.sideEffectLevel;

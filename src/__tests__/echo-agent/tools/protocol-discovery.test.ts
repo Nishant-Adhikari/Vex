@@ -81,20 +81,24 @@ describe("protocol discovery", () => {
     }
   });
 
-  // ── Mutating filter ──────────────────────────────────────────────
+  // ── Mutating tools — surfaced by default ─────────────────────────
+  // Pre-refactor a discovery-side `includeMutating` filter hid mutating
+  // tools by default. That filter was cosmetic — the real safety gate
+  // lives at execute time (`runtime.ts`: mutating + !approved + !full
+  // loopMode → pendingApproval). Hiding mutating tools at discovery
+  // prevented agents from finding them, so the filter was removed.
+  // Mutating tools now appear in discover_tools with the `mutating`
+  // flag visible per item.
 
-  it("excludes mutating by default", () => {
-    const result = discoverProtocolCapabilities({ namespace: "khalani" });
-    const hasMutating = result.tools.some(t => t.mutating);
-    expect(hasMutating).toBe(false);
-  });
-
-  it("includes mutating when requested", () => {
-    // Explicit limit > 5 because DEFAULT_DISCOVERY_LIMIT=5 may not include the
-    // mutating tool depending on manifest order.
-    const result = discoverProtocolCapabilities({ namespace: "khalani", includeMutating: true, limit: 50 });
+  it("surfaces mutating tools by default — includes khalani.bridge", () => {
+    // Explicit limit > 5 because DEFAULT_DISCOVERY_LIMIT=5 may not include
+    // the mutating tool depending on manifest order.
+    const result = discoverProtocolCapabilities({ namespace: "khalani", limit: 50 });
     const hasMutating = result.tools.some(t => t.mutating);
     expect(hasMutating).toBe(true);
+    const bridge = result.tools.find(t => t.toolId === "khalani.bridge");
+    expect(bridge).toBeDefined();
+    expect(bridge!.mutating).toBe(true);
   });
 
   // ── Query matching ───────────────────────────────────────────────
@@ -111,7 +115,7 @@ describe("protocol discovery", () => {
   });
 
   it("matches case-insensitively", () => {
-    const result = discoverProtocolCapabilities({ query: "BRIDGE", includeMutating: true });
+    const result = discoverProtocolCapabilities({ query: "BRIDGE" });
     expect(result.count).toBeGreaterThan(0);
   });
 
@@ -130,7 +134,7 @@ describe("protocol discovery", () => {
   });
 
   it("returns all when limit exceeds count", () => {
-    // Both calls need explicit limits that exceed actual khalani non-mutating count;
+    // Both calls need explicit limits that exceed actual khalani tool count;
     // DEFAULT_DISCOVERY_LIMIT=5 caps allResult independently of totalCount.
     const allResult = discoverProtocolCapabilities({ namespace: "khalani", limit: 100 });
     const bigLimitResult = discoverProtocolCapabilities({ namespace: "khalani", limit: 200 });
@@ -177,11 +181,10 @@ describe("protocol discovery", () => {
     }
   });
 
-  it("combines namespace + mutating + query", () => {
+  it("combines namespace + query — mutating tools surfaced", () => {
     const result = discoverProtocolCapabilities({
       namespace: "khalani",
       query: "bridge",
-      includeMutating: true,
     });
     expect(result.count).toBeGreaterThanOrEqual(1);
     const bridge = result.tools.find(t => t.toolId === "khalani.bridge");
@@ -224,7 +227,7 @@ describe("protocol discovery", () => {
     // Run a few diverse queries — every result must belong to advertised set.
     const queries = ["", "bridge", "swap", "token", "0g", "market"];
     for (const query of queries) {
-      const result = discoverProtocolCapabilities({ query, includeMutating: true, limit: 200 });
+      const result = discoverProtocolCapabilities({ query, limit: 200 });
       for (const tool of result.tools) {
         expect(PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).toContain(tool.namespace);
       }
@@ -241,7 +244,7 @@ describe("protocol discovery", () => {
   });
 
   it("returns env-gated tools when their requiresEnv is present", () => {
-    const result = discoverProtocolCapabilities({ namespace: "solana", includeMutating: true, limit: 100 });
+    const result = discoverProtocolCapabilities({ namespace: "solana", limit: 100 });
     expect(result.count).toBeGreaterThan(0);
   });
 
@@ -250,7 +253,6 @@ describe("protocol discovery", () => {
     const result = discoverProtocolCapabilities({
       namespace: "polymarket",
       query: "buy yes",
-      includeMutating: true,
       limit: 100,
     });
     // The mutating clob.buy tool requires POLYMARKET_API_KEY → must be hidden.
@@ -263,7 +265,6 @@ describe("protocol discovery", () => {
     const result = discoverProtocolCapabilities({
       query: "comment thread",
       namespace: "echobook",
-      includeMutating: true,
       limit: 50,
     });
     expect(result.success).toBe(true);

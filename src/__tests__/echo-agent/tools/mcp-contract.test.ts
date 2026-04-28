@@ -281,14 +281,18 @@ describe("MCP contract — echo-agent public surface", () => {
       expect(discover!.parameters.properties.includeDeclared).toBeUndefined();
     });
 
-    it("discover_tools schema still advertises query/namespace/includeMutating/limit", () => {
+    it("discover_tools schema advertises query/namespace/limit (no includeMutating)", () => {
+      // The cosmetic `includeMutating` discovery flag was removed — the
+      // real safety gate is at execute time (`runtime.ts`). Schema must
+      // not advertise it; old MCP clients passing it get silent strip
+      // via Zod default-parsing (no breaking error).
       const mcpTools = getProductionMcpTools();
       const discover = mcpTools.find((t) => t.name === "discover_tools");
       const props = discover!.parameters.properties;
       expect(props.query).toBeDefined();
       expect(props.namespace).toBeDefined();
-      expect(props.includeMutating).toBeDefined();
       expect(props.limit).toBeDefined();
+      expect(props.includeMutating).toBeUndefined();
     });
   });
 });

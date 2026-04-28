@@ -42,7 +42,6 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     const result = discoverProtocolCapabilities({
       query: "0g comments",
       namespace: "echobook",
-      includeMutating: true,
       limit: 50,
     });
     expect(result.success).toBe(true);
@@ -70,7 +69,6 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     const result = discoverProtocolCapabilities({
       query: "swap",
       namespace: "kyberswap",
-      includeMutating: true,
       limit: 50,
     });
     expect(result.success).toBe(true);

@@ -173,4 +173,29 @@ describe("compileToolDiscoveryMetadata", () => {
     expect(result.sourceClass).toBe("social");
     expect(result.canonicalSummary).toBeUndefined();
   });
+
+  it("embeddingText from discovery passes through compile", () => {
+    // Future vector lane reads passages via compileToolDiscoveryMetadata —
+    // any consumer using compiled metadata MUST see the per-tool passage.
+    // Regression test for a silent merge bug that would have dropped all
+    // 61 manifest passages.
+    const passage = "Browse echobook posts and threads. Use this when the user wants to read the social feed. Example queries: show me the feed, what's new on echobook.";
+    const manifest = makeManifest({
+      discovery: { embeddingText: passage },
+    });
+    const result = compileToolDiscoveryMetadata(manifest, MOCK_NAV);
+
+    expect(result.embeddingText).toBe(passage);
+  });
+
+  it("chains from discovery passes through compile", () => {
+    // Lexical recall on rare chain names (Plasma, Etherlink, Berachain)
+    // depends on `chains` reaching `buildSearchFields` after compile.
+    const manifest = makeManifest({
+      discovery: { chains: ["Ethereum", "Plasma", "Berachain"] },
+    });
+    const result = compileToolDiscoveryMetadata(manifest, MOCK_NAV);
+
+    expect(result.chains).toEqual(["Ethereum", "Plasma", "Berachain"]);
+  });
 });

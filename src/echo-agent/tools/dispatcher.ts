@@ -69,7 +69,6 @@ async function routeToolCall(
     const discoveryRequest = {
       query: typeof call.args.query === "string" ? call.args.query : undefined,
       namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
-      includeMutating: call.args.includeMutating === true,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
     };
     const result = discoverProtocolCapabilities(discoveryRequest);

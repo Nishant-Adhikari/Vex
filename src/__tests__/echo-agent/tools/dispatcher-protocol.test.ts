@@ -24,7 +24,7 @@ describe("dispatcher — protocol meta-tools", () => {
   it("discover_tools returns khalani tools with params", async () => {
     const result = await dispatchTool(
       // Explicit limit needed since DEFAULT_DISCOVERY_LIMIT=5 may not include khalani.bridge.
-      { name: "discover_tools", args: { namespace: "khalani", includeMutating: true, limit: 50 }, toolCallId: "call_2" },
+      { name: "discover_tools", args: { namespace: "khalani", limit: 50 }, toolCallId: "call_2" },
       baseContext,
     );
 
@@ -35,15 +35,22 @@ describe("dispatcher — protocol meta-tools", () => {
     expect(bridge.params.length).toBeGreaterThan(0);
   });
 
-  it("discover_tools filters mutating by default", async () => {
+  it("discover_tools surfaces mutating tools by default — execute-time gate handles approval", async () => {
+    // Pre-refactor a discovery-side `includeMutating` filter hid mutating
+    // tools by default. That filter was cosmetic — the real safety gate
+    // lives at execute time (`runtime.ts`: mutating + !approved + !full
+    // loopMode → pendingApproval). Hiding mutating tools at discovery
+    // prevented the agent from finding them, so the filter was removed.
+    // Mutating tools now appear in discover_tools with the `mutating`
+    // flag visible per item; agents handle approval at execute time.
     const result = await dispatchTool(
-      { name: "discover_tools", args: { namespace: "khalani" }, toolCallId: "call_3" },
+      { name: "discover_tools", args: { namespace: "khalani", limit: 50 }, toolCallId: "call_3" },
       baseContext,
     );
 
     const parsed = JSON.parse(result.output);
     const hasMutating = parsed.tools.some((t: { mutating: boolean }) => t.mutating);
-    expect(hasMutating).toBe(false);
+    expect(hasMutating).toBe(true);
   });
 
   it("discover_tools respects query filter", async () => {

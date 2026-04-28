@@ -100,7 +100,6 @@ describe("requiresEnv filtering", () => {
     it("hides ALL solana tools when JUPITER_API_KEY not set", () => {
       const result = discoverProtocolCapabilities({
         namespace: "solana",
-        includeMutating: true,
       });
       expect(result.count).toBe(0);
     });
@@ -109,7 +108,6 @@ describe("requiresEnv filtering", () => {
       process.env.JUPITER_API_KEY = "test-jupiter-key";
       const result = discoverProtocolCapabilities({
         namespace: "solana",
-        includeMutating: true,
         limit: 100,
       });
       expect(result.count).toBe(20);
@@ -121,9 +119,9 @@ describe("requiresEnv filtering", () => {
     });
 
     it("total tool count is higher with JUPITER_API_KEY", () => {
-      const without = discoverProtocolCapabilities({ includeMutating: true, limit: 300 });
+      const without = discoverProtocolCapabilities({ limit: 300 });
       process.env.JUPITER_API_KEY = "test-key";
-      const withKey = discoverProtocolCapabilities({ includeMutating: true, limit: 300 });
+      const withKey = discoverProtocolCapabilities({ limit: 300 });
       expect(withKey.totalCount).toBe(without.totalCount + 20);
     });
   });

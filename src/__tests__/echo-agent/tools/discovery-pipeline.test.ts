@@ -23,7 +23,6 @@ interface PipelineFixture {
   polishIntent: string;
   translatedEnglish: string;
   expectedAny: readonly string[];
-  includeMutating?: boolean;
   /** Skip while target ranking depends on 0G ecosystem being advertised. */
   disabled?: boolean;
 }
@@ -33,7 +32,6 @@ const PIPELINE_FIXTURES: readonly PipelineFixture[] = [
     polishIntent: "zamień sol na usdc",
     translatedEnglish: "swap sol to usdc on solana",
     expectedAny: ["solana.swap"],
-    includeMutating: true,
     disabled: true,
   },
   {
@@ -45,7 +43,6 @@ const PIPELINE_FIXTURES: readonly PipelineFixture[] = [
     polishIntent: "most usdc na base",
     translatedEnglish: "bridge usdc to base",
     expectedAny: ["khalani.bridge", "khalani.quote"],
-    includeMutating: true,
   },
   {
     polishIntent: "szukaj tokenów na solanie",
@@ -91,7 +88,6 @@ describe("discovery pipeline — Polish intent → English query → discover_to
       const result = discoverProtocolCapabilities({
         query: englishQuery,
         limit: 3,
-        includeMutating: fixture.includeMutating ?? false,
       });
 
       // Step 3: verify expected tool appears in top-3

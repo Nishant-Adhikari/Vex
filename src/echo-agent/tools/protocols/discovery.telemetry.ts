@@ -72,7 +72,6 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
     query: safeQuery,
     queryPrivacy: privacyMode,
     namespace: typeof request.namespace === "string" ? request.namespace : undefined,
-    includeMutating: request.includeMutating === true,
     limit: typeof request.limit === "number" ? request.limit : undefined,
     count: result.count,
     totalCount: result.totalCount,

@@ -55,6 +55,13 @@ export interface ToolDiscoveryMetadata {
   sideEffectLevel?: "none" | "low" | "high";
   preferredFor?: string[];
   avoidFor?: string[];
+  /**
+   * Chains where this tool operates — used as a low-weight lexical search
+   * field so queries like "swap on plasma" or "bridge to monad" recall the
+   * right tool even when the chain is not enumerated in the description or
+   * embedding text.
+   */
+  chains?: readonly string[];
 }
 
 // ── Manifest (declarative tool definition) ───────────────────────
@@ -106,7 +113,6 @@ export interface ProtocolExecutionContext {
 export interface ProtocolDiscoveryRequest {
   query?: string;
   namespace?: string;
-  includeMutating?: boolean;
   limit?: number;
 }
 
