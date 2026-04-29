@@ -8,7 +8,7 @@
  * foreign key violation if the MCP session id is not registered in the
  * `sessions` table first.
  *
- * The E2E harness (`src/echo-agent/e2e/mcp/tools.ts`) gets away without this
+ * The E2E harness (`src/vex-agent/e2e/mcp/tools.ts`) gets away without this
  * because most of its scenarios use read-only knowledge_* and wallet_read
  * paths that never touch FK-referenced columns. The production MCP server
  * exposes the full `wallet_*`, `polymarket_setup`, mutation protocol path
@@ -26,7 +26,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import * as sessionsRepo from "@echo-agent/db/repos/sessions.js";
+import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import logger from "@utils/logger.js";
 
 export type McpTransport = "stdio" | "http";

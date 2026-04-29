@@ -8,7 +8,7 @@ import {
   validateStatsPagination,
   validateTag,
 } from "@tools/chainscan/validation.js";
-import { EchoError } from "../../errors.js";
+import { VexError } from "../../errors.js";
 
 describe("chainscan validation", () => {
   describe("validateAddress", () => {
@@ -23,12 +23,12 @@ describe("chainscan validation", () => {
     });
 
     it("should throw on invalid address", () => {
-      expect(() => validateAddress("0xinvalid")).toThrow(EchoError);
+      expect(() => validateAddress("0xinvalid")).toThrow(VexError);
       expect(() => validateAddress("0xinvalid")).toThrow(/Invalid address/);
     });
 
     it("should throw on empty string", () => {
-      expect(() => validateAddress("")).toThrow(EchoError);
+      expect(() => validateAddress("")).toThrow(VexError);
       expect(() => validateAddress("")).toThrow(/required/);
     });
 
@@ -49,20 +49,20 @@ describe("chainscan validation", () => {
     });
 
     it("should throw on missing 0x prefix", () => {
-      expect(() => validateTxHash("a".repeat(64))).toThrow(EchoError);
+      expect(() => validateTxHash("a".repeat(64))).toThrow(VexError);
     });
 
     it("should throw on wrong length", () => {
-      expect(() => validateTxHash("0x" + "a".repeat(63))).toThrow(EchoError);
-      expect(() => validateTxHash("0x" + "a".repeat(65))).toThrow(EchoError);
+      expect(() => validateTxHash("0x" + "a".repeat(63))).toThrow(VexError);
+      expect(() => validateTxHash("0x" + "a".repeat(65))).toThrow(VexError);
     });
 
     it("should throw on invalid hex chars", () => {
-      expect(() => validateTxHash("0x" + "g".repeat(64))).toThrow(EchoError);
+      expect(() => validateTxHash("0x" + "g".repeat(64))).toThrow(VexError);
     });
 
     it("should throw on empty string", () => {
-      expect(() => validateTxHash("")).toThrow(EchoError);
+      expect(() => validateTxHash("")).toThrow(VexError);
       expect(() => validateTxHash("")).toThrow(/required/);
     });
   });
@@ -90,7 +90,7 @@ describe("chainscan validation", () => {
     });
 
     it("should throw on invalid address in batch", () => {
-      expect(() => validateAddressBatch([valid, "0xinvalid"], 5)).toThrow(EchoError);
+      expect(() => validateAddressBatch([valid, "0xinvalid"], 5)).toThrow(VexError);
     });
   });
 

@@ -4,7 +4,7 @@
 
 import { Connection, type Commitment, Keypair, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { loadConfig } from "../../../config/store.js";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { solanaExplorerUrl } from "./solana-validation.js";
 
 const DEFAULT_CONFIRM_TIMEOUT_MS = 60_000;
@@ -17,7 +17,7 @@ export function deserializeVersionedTx(input: Uint8Array | string): VersionedTra
     const bytes = typeof input === "string" ? Buffer.from(input, "base64") : input;
     return VersionedTransaction.deserialize(bytes);
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_TX_FAILED,
       `Failed to deserialize transaction: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -55,7 +55,7 @@ export async function sendSignedVersionedTx(
       maxRetries: sendMaxRetries,
     });
   } catch (err) {
-    const error = new EchoError(
+    const error = new VexError(
       ErrorCodes.SOLANA_TX_FAILED,
       `Failed to send transaction: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -80,7 +80,7 @@ export async function confirmVersionedTx(
 
     if (status) {
       if (status.err) {
-        throw new EchoError(
+        throw new VexError(
           ErrorCodes.SOLANA_TX_FAILED,
           `Transaction failed: ${JSON.stringify(status.err)}`,
           `Explorer: ${solanaExplorerUrl(signature)}`,
@@ -98,7 +98,7 @@ export async function confirmVersionedTx(
     await new Promise((resolve) => setTimeout(resolve, CONFIRM_POLL_INTERVAL_MS));
   }
 
-  const error = new EchoError(
+  const error = new VexError(
     ErrorCodes.SOLANA_TX_TIMEOUT,
     `Transaction confirmation timed out after ${timeoutMs}ms`,
     `Signature: ${signature}\nExplorer: ${solanaExplorerUrl(signature)}`,
@@ -133,7 +133,7 @@ export async function signAndSendVersionedTx(
       return await sendSignedVersionedTx(connection, tx, sendOptions);
     } catch (err) {
       lastError = err;
-      if (!(err instanceof EchoError) || !err.retryable || attempt >= networkRetries) {
+      if (!(err instanceof VexError) || !err.retryable || attempt >= networkRetries) {
         throw err;
       }
     }
@@ -150,7 +150,7 @@ export function signVersionedTx(
     tx.sign(signers);
     return tx;
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_TX_FAILED,
       `Failed to sign transaction: ${err instanceof Error ? err.message : String(err)}`,
     );

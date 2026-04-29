@@ -13,7 +13,7 @@ import { mapLimitOrderError } from "./errors.js";
 import { LIMIT_ORDER_TIMEOUT_MS } from "../constants.js";
 import { validateOrdersResponse, validateOperatorSignature, validateEncodedCalldata, validateTradingPairsResponse } from "./validation.js";
 import logger from "../../../utils/logger.js";
-import type { EchoError } from "../../../errors.js";
+import type { VexError } from "../../../errors.js";
 import type { LimitOrder, OperatorSignatureResponse, FillOrderRequest, FillBatchOrdersRequest, EncodedCalldata, TradingPair } from "./types.js";
 
 export class KyberLimitOrderTakerClient {
@@ -58,7 +58,7 @@ export class KyberLimitOrderTakerClient {
       logger.debug({ event: "kyberswap.limit_order_taker.request.success", path });
       return result;
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("KYBER_")) throw err;
+      if ((err as VexError).code?.startsWith("KYBER_")) throw err;
       mapKyberTransportError(err);
     }
   }

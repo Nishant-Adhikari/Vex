@@ -1,6 +1,6 @@
 import type { Address, Hex } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { requireKeystorePassword } from "../../utils/env.js";
 import { requireWalletAndKeystore } from "./auth.js";
 import { decryptSolanaSecretKey, deriveSolanaAddress, loadSolanaKeystore } from "./solana-keystore.js";
@@ -28,29 +28,29 @@ export function requireEvmWallet(): EvmWallet {
 export function requireSolanaWallet(): SolanaWallet {
   const cfg = loadConfig();
   if (!cfg.wallet.solanaAddress) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.WALLET_NOT_CONFIGURED,
       "No Solana wallet configured.",
-      "Run: echoclaw wallet create --chain solana",
+      "Run: vex wallet create --chain solana",
     );
   }
 
   const keystore = loadSolanaKeystore();
   if (!keystore) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_SOLANA_KEYSTORE_NOT_FOUND,
       "Solana keystore not found.",
-      "Run: echoclaw wallet create --chain solana",
+      "Run: vex wallet create --chain solana",
     );
   }
 
   const secretKey = decryptSolanaSecretKey(keystore, requireKeystorePassword());
   const derivedAddress = deriveSolanaAddress(secretKey);
   if (derivedAddress !== cfg.wallet.solanaAddress) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_ADDRESS_MISMATCH,
       "Configured Solana address does not match the keystore.",
-      "Run: echoclaw wallet ensure to refresh saved addresses.",
+      "Run: vex wallet ensure to refresh saved addresses.",
     );
   }
 

@@ -3,7 +3,7 @@
  * Preserves full wire responses and adds token-resolution helpers for Jupiter shelves.
  */
 
-import { EchoError, ErrorCodes } from "../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 import { cacheSolanaTokens, getCachedSolanaToken } from "../../shared/solana-token-cache.js";
 import { getWellKnownSolanaTokenByMint, getWellKnownSolanaTokenBySymbol } from "../../shared/solana-constants.js";
 import { looksLikeMintQuery } from "./validation.js";
@@ -134,7 +134,7 @@ export async function resolveJupiterTokens(queries: string[]): Promise<Map<strin
 export async function requireJupiterResolvedToken(query: string): Promise<TokenMetadata> {
   const token = await resolveJupiterToken(query);
   if (!token) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
       `Token not found: ${query}`,
       "Use a mint address or check the token symbol spelling.",

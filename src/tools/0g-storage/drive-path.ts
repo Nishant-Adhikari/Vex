@@ -2,7 +2,7 @@
  * Drive path normalization and validation.
  */
 
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 const MAX_PATH_LENGTH = 512;
 const MAX_SEGMENT_LENGTH = 255;
@@ -19,7 +19,7 @@ export function normalizePath(input: string): string {
 
 export function validatePath(input: string): void {
   if (input.length > MAX_PATH_LENGTH) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INVALID_PATH,
       `Path too long (${input.length} > ${MAX_PATH_LENGTH}).`,
       "Shorten the path to 512 characters or less."
@@ -27,7 +27,7 @@ export function validatePath(input: string): void {
   }
 
   if (DOT_SEGMENT.test(input)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INVALID_PATH,
       `Path contains '.' or '..' segments: ${input}`,
       "Use absolute virtual paths without relative segments."
@@ -35,7 +35,7 @@ export function validatePath(input: string): void {
   }
 
   if (!VALID_CHARS.test(input)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INVALID_PATH,
       `Path contains invalid characters: ${input}`,
       "Allowed: a-z A-Z 0-9 - _ . /"
@@ -45,7 +45,7 @@ export function validatePath(input: string): void {
   const segments = input.split("/").filter(Boolean);
   for (const seg of segments) {
     if (seg.length > MAX_SEGMENT_LENGTH) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.ZG_STORAGE_INVALID_PATH,
         `Segment too long: '${seg.slice(0, 50)}...' (${seg.length} > ${MAX_SEGMENT_LENGTH}).`,
         "Each path segment must be 255 characters or less."

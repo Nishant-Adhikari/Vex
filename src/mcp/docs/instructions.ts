@@ -42,9 +42,9 @@ export function buildInstructions(): string {
     .map((group) => `### ${group.label}\n${group.lines.join("\n")}`)
     .join("\n\n");
 
-  return `# EchoClaw MCP
+  return `# Vex MCP
 
-EchoClaw MCP is a passive tool surface bridge over the EchoClaw stack.
+Vex MCP is a passive tool surface bridge over the Vex stack.
 ${buildInstructionsSurfaceSummaryLine()}
 
 ## Start here
@@ -81,7 +81,7 @@ ${namespaceGroups}
 ## What this server does NOT have
 
 - No \`subagent_*\` tools (production MCP runs without background subagents)
-- No \`mission_*\` tools (MCP has no mission concept — those live in Echo Agent)
+- No \`mission_*\` tools (MCP has no mission concept — those live in Vex Agent)
 - No own approval queue (your MCP host's permission UX is the gate)
 - No persistent loop / mode (this is a tool server, not an agent)
 `;

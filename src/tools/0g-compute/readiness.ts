@@ -90,7 +90,7 @@ export async function checkComputeReadiness(): Promise<ReadinessResult> {
   } catch (err) {
     result.checks.wallet = fail(
       err instanceof Error ? err.message : "Wallet not configured",
-      "Run: echoclaw wallet create",
+      "Run: vex wallet create",
     );
     return result;
   }
@@ -115,7 +115,7 @@ export async function checkComputeReadiness(): Promise<ReadinessResult> {
   } catch {
     result.checks.ledger = fail(
       "No ledger found on-chain",
-      "Run: echoclaw 0g-compute ledger deposit <amount>",
+      "Run: vex 0g-compute ledger deposit <amount>",
     );
     return result;
   }
@@ -156,7 +156,7 @@ export async function checkComputeReadiness(): Promise<ReadinessResult> {
   if (!provider) {
     result.checks.subAccount = fail(
       "No active provider found",
-      "Run: echoclaw echo",
+      "Run: vex setup",
     );
     return result;
   }
@@ -191,7 +191,7 @@ export async function checkComputeReadiness(): Promise<ReadinessResult> {
     if (normalized.lockedOg < recommendedMin) {
       result.checks.subAccount = fail(
         `Locked: ${normalized.lockedOg.toFixed(4)} 0G (need ≥ ${recommendedMin.toFixed(1)} 0G)`,
-        "Run: echoclaw echo",
+        "Run: vex setup",
       );
       return result;
     }
@@ -200,7 +200,7 @@ export async function checkComputeReadiness(): Promise<ReadinessResult> {
   } catch {
     result.checks.subAccount = fail(
       "Could not read sub-account balance",
-      "Run: echoclaw echo",
+      "Run: vex setup",
     );
     return result;
   }
@@ -215,14 +215,14 @@ export async function checkComputeReadiness(): Promise<ReadinessResult> {
     } else {
       result.checks.ack = fail(
         "Provider signer not acknowledged",
-        "Run: echoclaw 0g-compute provider <addr> ack",
+        "Run: vex 0g-compute provider <addr> ack",
       );
       return result;
     }
   } catch {
     result.checks.ack = fail(
       "Could not verify ACK status",
-      "Run: echoclaw 0g-compute provider <addr> ack",
+      "Run: vex 0g-compute provider <addr> ack",
     );
     return result;
   }

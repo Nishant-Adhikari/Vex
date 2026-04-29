@@ -1,6 +1,6 @@
 /**
  * Canonical JSON: recursive sorting of object keys.
- * MUST be identical in slop-backend and echoclaw!
+ * MUST be identical in slop-backend and vex!
  *
  * This ensures consistent hash computation for query signing.
  */

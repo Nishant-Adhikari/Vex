@@ -2,7 +2,7 @@
  * PR-12 — MCP hiding freeze for autonomy internals.
  *
  * `loop_defer`, `checkpoint_handoff_prepare`, and `tool_output_read` are
- * Echo Agent runtime primitives. The MCP surface must not mention them in
+ * Vex Agent runtime primitives. The MCP surface must not mention them in
  * any form — not in `tools/list`, not in any `docs://*` resource, not in
  * `surface://manifest`, not in the initialize `instructions` preamble.
  *
@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { getProductionMcpTools } from "../../../echo-agent/tools/registry.js";
+import { getProductionMcpTools } from "../../../vex-agent/tools/registry.js";
 import { buildInstructions } from "../../../mcp/docs/instructions.js";
 import {
   buildOverview,

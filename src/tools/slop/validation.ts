@@ -2,13 +2,13 @@
  * Slop token validation — pure on-chain checks via viem.
  *
  * Canonical location: src/tools/slop/validation.ts
- * Used by: echo-agent handlers (direct), CLI commands (via re-export in commands/slop/helpers.ts)
+ * Used by: vex-agent handlers (direct), CLI commands (via re-export in commands/slop/helpers.ts)
  */
 
 import { parseUnits, type Address, type Hex } from "viem";
 import { getPublicClient } from "../wallet/client.js";
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { SLOP_TOKEN_ABI } from "./abi/token.js";
 import { SLOP_REGISTRY_ABI } from "./abi/registry.js";
 
@@ -16,12 +16,12 @@ export function parseUnitsSafe(value: string, decimals: number, name: string): b
   try {
     const result = parseUnits(value, decimals);
     if (result < 0n) {
-      throw new EchoError(ErrorCodes.INVALID_AMOUNT, `${name} must be >= 0`);
+      throw new VexError(ErrorCodes.INVALID_AMOUNT, `${name} must be >= 0`);
     }
     return result;
   } catch (err) {
-    if (err instanceof EchoError) throw err;
-    throw new EchoError(
+    if (err instanceof VexError) throw err;
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       "Must be a valid decimal number (e.g., 0.01, 100)"
@@ -31,14 +31,14 @@ export function parseUnitsSafe(value: string, decimals: number, name: string): b
 
 export function validateUserSalt(salt: string): Hex {
   if (!/^0x[0-9a-fA-F]{64}$/.test(salt)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       "Invalid userSalt format",
       "Must be 32 bytes hex (0x + 64 hex characters)"
     );
   }
   if (BigInt(salt) === 0n) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       "userSalt cannot be zero",
       "Provide a non-zero 32-byte hex value"
@@ -59,7 +59,7 @@ export async function validateOfficialToken(tokenAddr: Address): Promise<void> {
   });
 
   if (!isValid) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SLOP_TOKEN_NOT_OFFICIAL,
       "Not an official slop.money token",
       `Token ${tokenAddr} is not registered in TokenRegistry`
@@ -77,10 +77,10 @@ export async function checkNotGraduated(tokenAddr: Address): Promise<void> {
   });
 
   if (isGraduated) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SLOP_TOKEN_GRADUATED,
       "Token has graduated - bonding curve trading disabled",
-      "Use: echoclaw jaine swap to trade on the DEX"
+      "Use: vex jaine swap to trade on the DEX"
     );
   }
 }
@@ -95,7 +95,7 @@ export async function checkTradingEnabled(tokenAddr: Address): Promise<void> {
   });
 
   if (!isTradingEnabled) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SLOP_TRADE_DISABLED,
       "Trading is disabled for this token"
     );

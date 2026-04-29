@@ -1,0 +1,244 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// ── Mocks ─────────────────────────────────────────────────────
+
+const mockApprove = vi.fn();
+const mockDispatchTool = vi.fn();
+const mockAddMessage = vi.fn();
+const mockUpdateRunStatus = vi.fn();
+const mockHydrate = vi.fn();
+const mockResumeMissionRun = vi.fn();
+const mockRefreshBlobTtl = vi.fn();
+
+vi.mock("@vex-agent/db/repos/approvals.js", () => ({
+  approve: (...a: unknown[]) => mockApprove(...a),
+}));
+
+vi.mock("@vex-agent/tools/dispatcher.js", () => ({
+  dispatchTool: (...a: unknown[]) => mockDispatchTool(...a),
+}));
+
+vi.mock("@vex-agent/db/repos/messages.js", () => ({
+  addMessage: (...a: unknown[]) => mockAddMessage(...a),
+  addEngineMessage: vi.fn(),
+  getLiveMessages: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
+  updateStatus: (...a: unknown[]) => mockUpdateRunStatus(...a),
+  getRunBySession: vi.fn().mockResolvedValue(null),
+  // Used by the defensive abort guard added in `approveAndResume`. Default
+  // null means "no active run for the session", so the existing happy-path
+  // tests skip the guard.
+  getActiveRunBySession: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("../../../../vex-agent/engine/core/hydrate.js", () => ({
+  hydrateEngineSession: (...a: unknown[]) => mockHydrate(...a),
+}));
+
+// Mock runner — lazy imported by resume.ts for re-entering loop
+vi.mock("../../../../vex-agent/engine/core/runner.js", () => ({
+  resumeMissionRun: (...a: unknown[]) => mockResumeMissionRun(...a),
+}));
+
+vi.mock("@vex-agent/db/repos/sessions.js", () => ({
+  getSession: vi.fn(),
+  updateTokenCount: vi.fn(),
+}));
+
+vi.mock("@vex-agent/db/repos/missions.js", () => ({
+  getMissionBySession: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@vex-agent/db/repos/session-links.js", () => ({
+  getParentSession: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@vex-agent/engine/wake/blob-refresh.js", () => ({
+  refreshBlobTtlForRecentMessages: (...a: unknown[]) => mockRefreshBlobTtl(...a),
+}));
+
+vi.mock("@utils/logger.js", () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+vi.mock("@vex-agent/db/client.js", () => ({
+  execute: vi.fn(),
+  query: vi.fn().mockResolvedValue([]),
+  queryOne: vi.fn().mockResolvedValue(null),
+}));
+
+const { approveAndResume } = await import("../../../../vex-agent/engine/core/resume.js");
+
+describe("resume", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRefreshBlobTtl.mockResolvedValue(0);
+    mockResumeMissionRun.mockResolvedValue({
+      text: "Resumed execution", toolCallsMade: 3, pendingApprovals: [],
+      stopReason: null, missionStatus: "running",
+    });
+  });
+
+  describe("approveAndResume", () => {
+    it("throws if approval not found", async () => {
+      mockApprove.mockResolvedValueOnce(null);
+      await expect(approveAndResume("nonexistent")).rejects.toThrow("not found");
+    });
+
+    it("throws if approval has no session", async () => {
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-1",
+        toolCall: { command: "execute_tool", args: {} },
+        sessionId: null,
+        toolCallId: "call-1",
+        chatMode: "restricted",
+        pendingContext: null,
+      });
+      await expect(approveAndResume("approval-1")).rejects.toThrow("no associated session");
+    });
+
+    it("rejects approval when active mission run is terminal (defensive guard)", async () => {
+      const missionRunsModule = await import("@vex-agent/db/repos/mission-runs.js");
+      vi.mocked(missionRunsModule.getActiveRunBySession).mockResolvedValueOnce({
+        id: "run-cancelled",
+        status: "cancelled",
+      } as never);
+
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-late",
+        toolCall: { command: "execute_tool", args: { toolId: "solana.swap" } },
+        sessionId: "session-1",
+        toolCallId: "call-late",
+        chatMode: "restricted",
+        pendingContext: null,
+      });
+
+      await expect(approveAndResume("approval-late")).rejects.toThrow(/cancelled/);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("dispatches approved tool, saves result, and re-enters loop", async () => {
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-1",
+        toolCall: { command: "execute_tool", args: { toolId: "solana.swap" } },
+        sessionId: "session-1",
+        toolCallId: "call-1",
+        chatMode: "restricted",
+        pendingContext: { toolCallId: "call-1" },
+      });
+      mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Swap completed" });
+      mockHydrate.mockResolvedValueOnce({
+        context: { sessionId: "session-1", missionRunId: "run-1" },
+      });
+
+      const result = await approveAndResume("approval-1");
+
+      // Dispatched with approved=true
+      const [, toolContext] = mockDispatchTool.mock.calls[0];
+      expect(toolContext.approved).toBe(true);
+
+      // Tool result saved
+      expect(mockAddMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.objectContaining({ role: "tool", toolCallId: "call-1" }),
+        expect.objectContaining({ source: "tool" }),
+      );
+
+      // Run status set to running
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-1", "running");
+
+      // Re-entered loop via resumeMissionRun
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1");
+
+      // Returns TurnResult from resumed loop
+      expect(result.text).toBe("Resumed execution");
+      expect(result.missionStatus).toBe("running");
+    });
+
+    it("returns tool result as chat response when no mission", async () => {
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-1",
+        toolCall: { command: "execute_tool", args: {} },
+        sessionId: "session-1",
+        toolCallId: "call-1",
+        chatMode: "restricted",
+        pendingContext: null,
+      });
+      mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Tool OK" });
+      mockHydrate.mockResolvedValueOnce({
+        context: { sessionId: "session-1", missionRunId: null },
+      });
+
+      const result = await approveAndResume("approval-1");
+
+      expect(mockUpdateRunStatus).not.toHaveBeenCalled();
+      expect(mockResumeMissionRun).not.toHaveBeenCalled();
+      expect(result.text).toBe("Tool OK");
+      expect(result.toolCallsMade).toBe(1);
+    });
+
+    it("saves tool result with visibility internal (not user)", async () => {
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-1",
+        toolCall: { command: "execute_tool", args: { toolId: "solana.swap" } },
+        sessionId: "session-1",
+        toolCallId: "call-1",
+        chatMode: "restricted",
+        pendingContext: null,
+      });
+      mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Swap completed" });
+      mockHydrate.mockResolvedValueOnce({
+        context: { sessionId: "session-1", missionRunId: null },
+      });
+
+      await approveAndResume("approval-1");
+
+      const [, , metadata] = mockAddMessage.mock.calls[0];
+      expect(metadata.visibility).toBe("internal");
+    });
+
+    it("refreshes blob TTLs before dispatching the approved tool (G-1)", async () => {
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-1",
+        toolCall: { command: "execute_tool", args: {} },
+        sessionId: "session-1",
+        toolCallId: "call-1",
+        chatMode: "restricted",
+        pendingContext: null,
+      });
+      mockDispatchTool.mockResolvedValueOnce({ success: true, output: "ok" });
+      mockHydrate.mockResolvedValueOnce({
+        context: { sessionId: "session-1", missionRunId: null },
+      });
+
+      await approveAndResume("approval-1");
+
+      expect(mockRefreshBlobTtl).toHaveBeenCalledWith("session-1");
+      const refreshOrder = mockRefreshBlobTtl.mock.invocationCallOrder[0]!;
+      const dispatchOrder = mockDispatchTool.mock.invocationCallOrder[0]!;
+      expect(refreshOrder).toBeLessThan(dispatchOrder);
+    });
+
+    it("extracts toolCallId from pendingContext when column is null", async () => {
+      mockApprove.mockResolvedValueOnce({
+        id: "approval-1",
+        toolCall: { command: "execute_tool", args: { toolId: "khalani.bridge" } },
+        sessionId: "session-1",
+        toolCallId: null,
+        chatMode: "restricted",
+        pendingContext: { toolCallId: "call-from-context" },
+      });
+      mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Bridged" });
+      mockHydrate.mockResolvedValueOnce({
+        context: { sessionId: "session-1", missionRunId: null },
+      });
+
+      await approveAndResume("approval-1");
+
+      const [toolCallRequest] = mockDispatchTool.mock.calls[0];
+      expect(toolCallRequest.toolCallId).toBe("call-from-context");
+    });
+  });
+});

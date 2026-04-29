@@ -5,7 +5,7 @@ import { ERC20_EXTENDED_ABI } from "./abi/erc20.js";
 import { getPublicClient } from "../wallet/client.js";
 import { getSigningClient } from "../wallet/signingClient.js";
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 
 /**
@@ -31,7 +31,7 @@ export function validateSpender(spender: Address): void {
   );
 
   if (!isAllowed) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_SPENDER,
       `Spender ${spender} is not in allowlist`,
       `Allowed spenders: router (${allowed.router}), nft (${allowed.nft})`
@@ -154,7 +154,7 @@ export async function safeApprove(
       // Wait for reset tx to confirm
       await client.waitForTransactionReceipt({ hash: resetTxHash });
     } catch (err) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.APPROVAL_FAILED,
         `Failed to reset allowance: ${err instanceof Error ? err.message : err}`
       );
@@ -175,7 +175,7 @@ export async function safeApprove(
 
     return { txHash, resetTxHash };
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.APPROVAL_FAILED,
       `Failed to approve: ${err instanceof Error ? err.message : err}`
     );
@@ -205,7 +205,7 @@ export async function revokeApproval(
 
     return txHash;
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.APPROVAL_FAILED,
       `Failed to revoke approval: ${err instanceof Error ? err.message : err}`
     );

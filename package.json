@@ -1,7 +1,7 @@
 {
-  "name": "@echoclaw/echo",
-  "version": "1.0.15",
-  "description": "EchoClaw local MCP and agent launcher",
+  "name": "@vex/vex",
+  "version": "1.0.0",
+  "description": "Vex local MCP and agent launcher",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -11,13 +11,13 @@
   },
   "files": [
     "dist/**",
-    "src/echo-agent/db/migrations/**",
-    "docker/echo-agent/**",
-    "docker/echo-agent/.env.example"
+    "src/vex-agent/db/migrations/**",
+    "docker/vex-agent/**",
+    "docker/vex-agent/.env.example"
   ],
   "bin": {
-    "echoclaw": "dist/cli/index.js",
-    "echoclaw-mcp": "dist/mcp/index.js"
+    "vex": "dist/cli/index.js",
+    "vex-mcp": "dist/mcp/index.js"
   },
   "scripts": {
     "clean": "node scripts/clean-dist.cjs",
@@ -30,11 +30,11 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:all": "pnpm test && pnpm test:integration",
     "mcp": "tsx src/mcp/index.ts",
-    "knowledge-export": "tsx src/echo-agent/scripts/knowledge-export.ts",
-    "knowledge-import": "tsx src/echo-agent/scripts/knowledge-import.ts",
-    "knowledge-reembed": "tsx src/echo-agent/scripts/knowledge-reembed.ts",
-    "benchmark-cross-lingual": "tsx src/echo-agent/scripts/cross-lingual-benchmark.ts",
-    "check-checkpoint-compliance": "tsx src/echo-agent/scripts/checkpoint-compliance-check.ts"
+    "knowledge-export": "tsx src/vex-agent/scripts/knowledge-export.ts",
+    "knowledge-import": "tsx src/vex-agent/scripts/knowledge-import.ts",
+    "knowledge-reembed": "tsx src/vex-agent/scripts/knowledge-reembed.ts",
+    "benchmark-cross-lingual": "tsx src/vex-agent/scripts/cross-lingual-benchmark.ts",
+    "check-checkpoint-compliance": "tsx src/vex-agent/scripts/checkpoint-compliance-check.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-ts-sdk": "^1.2.1",
@@ -79,11 +79,11 @@
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
-    "url": "https://github.com/EchoClaw-Labs/EchoClaw.git"
+    "url": "https://github.com/Vex-Foundation/Vex.git"
   },
-  "homepage": "https://github.com/EchoClaw-Labs/EchoClaw",
+  "homepage": "https://github.com/Vex-Foundation/Vex",
   "bugs": {
-    "url": "https://github.com/EchoClaw-Labs/EchoClaw/issues"
+    "url": "https://github.com/Vex-Foundation/Vex/issues"
   },
   "packageManager": "pnpm@10.32.1"
 }

@@ -7,7 +7,7 @@ import { ErrorCodes } from "../../errors.js";
 const { testDir, testConfigFile, testKeystoreFile, testSolanaKeystoreFile } = vi.hoisted(() => {
   const { join } = require("node:path");
   const { tmpdir } = require("node:os");
-  const _testDir = join(tmpdir(), `echo-auth-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const _testDir = join(tmpdir(), `vex-auth-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   return {
     testDir: _testDir,
     testConfigFile: join(_testDir, "config.json"),

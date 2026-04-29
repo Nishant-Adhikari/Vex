@@ -76,7 +76,7 @@ describe("KyberAggregatorClient", () => {
         amountIn: "1000",
       });
       const options = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      expect(options.headers["X-Client-Id"]).toBe("EchoClaw");
+      expect(options.headers["X-Client-Id"]).toBe("Vex");
     });
 
     it("parses valid response", async () => {

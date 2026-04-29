@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Canonical counter for the EchoClaw protocol surface.
+ * Canonical counter for the Vex protocol surface.
  *
  * Single source of truth for the numbers cited in plans, RFCs, and
  * `agents_dm/discover-quality-baseline.md`. Resolves the historic 240 vs 258
@@ -9,8 +9,8 @@
  * Usage: `npx tsx scripts/count-protocol-tools.ts`
  */
 
-import { PROTOCOL_TOOLS, PROTOCOL_NAMESPACE_ALLOWLIST, PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST } from "../src/echo-agent/tools/protocols/catalog.js";
-import { getAllTools } from "../src/echo-agent/tools/registry.js";
+import { PROTOCOL_TOOLS, PROTOCOL_NAMESPACE_ALLOWLIST, PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST } from "../src/vex-agent/tools/protocols/catalog.js";
+import { getAllTools } from "../src/vex-agent/tools/registry.js";
 
 interface NamespaceCount {
   namespace: string;
@@ -45,7 +45,7 @@ function main(): void {
   const subagentTools = allTools.filter((t) => t.name.startsWith("subagent_"));
   const directInternal = allTools.length - metaTools.length;
 
-  console.log("# EchoClaw protocol surface — canonical counts\n");
+  console.log("# Vex protocol surface — canonical counts\n");
   console.log("## Protocol manifests\n");
   console.log(`- PROTOCOL_TOOLS array length:       ${PROTOCOL_TOOLS.length}`);
   console.log(`- Unique toolIds:                    ${uniqueToolIds.size}`);

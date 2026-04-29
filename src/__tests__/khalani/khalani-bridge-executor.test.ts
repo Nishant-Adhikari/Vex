@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { parseBigintish } from "@tools/khalani/bridge-executor.js";
 import type {
   ContractCallDepositPlan,

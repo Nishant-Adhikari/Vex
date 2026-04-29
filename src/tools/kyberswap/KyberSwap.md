@@ -26,11 +26,11 @@ All EVM-only. No Solana support in KyberSwap.
 
 | Service | Base URL | Auth |
 |---------|----------|------|
-| Aggregator | `https://aggregator-api.kyberswap.com` | `X-Client-Id: EchoClaw` |
-| Token API | `https://token-api.kyberswap.com` | `X-Client-Id: EchoClaw` |
+| Aggregator | `https://aggregator-api.kyberswap.com` | `X-Client-Id: Vex` |
+| Token API | `https://token-api.kyberswap.com` | `X-Client-Id: Vex` |
 | Common Service | `https://common-service.kyberswap.com` | None |
 | Limit Order | `https://limit-order.kyberswap.com` | None |
-| ZaaS | `https://zap-api.kyberswap.com` | `X-Client-Id: EchoClaw` (rate: 10 req/10s) |
+| ZaaS | `https://zap-api.kyberswap.com` | `X-Client-Id: Vex` (rate: 10 req/10s) |
 
 ---
 
@@ -494,7 +494,7 @@ kyberswap zap migrate
   [--slippage-bps <bps>] [--dry-run] [--yes]
 ```
 
-**Headless mode** (`ECHOCLAW_HEADLESS=1`): All commands output structured JSON via `writeJsonSuccess()`.
+**Headless mode** (`VEX_HEADLESS=1`): All commands output structured JSON via `writeJsonSuccess()`.
 **`--dry-run`**: Preview without executing (no wallet needed for quote-only commands).
 **`--yes`**: Required for any on-chain transaction or order creation.
 

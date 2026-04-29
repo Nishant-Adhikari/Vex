@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { validatePolySpender } from "@tools/polymarket/evm-utils.js";
 import { CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE } from "@tools/polymarket/constants.js";
-import { EchoError } from "../../errors.js";
+import { VexError } from "../../errors.js";
 
 describe("validatePolySpender", () => {
   it("accepts CTF_EXCHANGE", () => {
@@ -17,7 +17,7 @@ describe("validatePolySpender", () => {
   });
 
   it("throws for unknown address", () => {
-    expect(() => validatePolySpender("0x0000000000000000000000000000000000000001")).toThrow(EchoError);
+    expect(() => validatePolySpender("0x0000000000000000000000000000000000000001")).toThrow(VexError);
     expect(() => validatePolySpender("0x0000000000000000000000000000000000000001")).toThrow(/not a known Polymarket contract/);
   });
 });

@@ -10,7 +10,7 @@ import { mapPolyTransportError, mapPolyApiError } from "../errors.js";
 import { BRIDGE_BASE_URL, BRIDGE_TIMEOUT_MS } from "../constants.js";
 import { validateSupportedAssetsResponse, validateDepositResponse, validateQuoteResponse, validateTransactionsResponse } from "./validation.js";
 import logger from "../../../utils/logger.js";
-import type { EchoError } from "../../../errors.js";
+import type { VexError } from "../../../errors.js";
 import type { BridgeSupportedAsset, BridgeDepositResponse, BridgeQuoteRequest, BridgeQuoteResponse, BridgeTransaction } from "./types.js";
 
 export class PolyBridgeClient {
@@ -29,7 +29,7 @@ export class PolyBridgeClient {
       }
       return validator(await readJson(response));
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }
@@ -51,7 +51,7 @@ export class PolyBridgeClient {
       }
       return validator(await readJson(response));
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }

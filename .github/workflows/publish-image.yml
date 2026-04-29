@@ -1,4 +1,4 @@
-name: Publish Echo Agent Image
+name: Publish Vex Agent Image
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: false # DISABLED for the current CLI-only release; update later for echo-agent / VEX image publishing
+    if: false # DISABLED for the current CLI-only release; update later for vex-agent image publishing
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -41,11 +41,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/echo-agent/Dockerfile
+          file: docker/vex-agent/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/echoclaw-labs/echoclaw/echo-agent:${{ steps.meta.outputs.version }}
-            ghcr.io/echoclaw-labs/echoclaw/echo-agent:latest
+            ghcr.io/vex-foundation/vex/vex-agent:${{ steps.meta.outputs.version }}
+            ghcr.io/vex-foundation/vex/vex-agent:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

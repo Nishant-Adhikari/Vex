@@ -1,5 +1,5 @@
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import type {
   AutocompleteResponse,
@@ -38,14 +38,14 @@ interface RequestOptions {
 }
 
 function mapTransportError(err: unknown): never {
-  if (err instanceof EchoError && err.code.startsWith("KHALANI_")) {
+  if (err instanceof VexError && err.code.startsWith("KHALANI_")) {
     throw err;
   }
-  if (err instanceof EchoError && err.code === ErrorCodes.HTTP_TIMEOUT) {
-    throw new EchoError(ErrorCodes.KHALANI_TIMEOUT, err.message, err.hint);
+  if (err instanceof VexError && err.code === ErrorCodes.HTTP_TIMEOUT) {
+    throw new VexError(ErrorCodes.KHALANI_TIMEOUT, err.message, err.hint);
   }
-  if (err instanceof EchoError && err.code === ErrorCodes.HTTP_REQUEST_FAILED) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, err.message, err.hint);
+  if (err instanceof VexError && err.code === ErrorCodes.HTTP_REQUEST_FAILED) {
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, err.message, err.hint);
   }
   throw err;
 }
@@ -172,7 +172,7 @@ export class KhalaniClient {
       }
 
       if (!response.body) {
-        throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Khalani stream response did not include a body.");
+        throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Khalani stream response did not include a body.");
       }
 
       const reader = response.body.getReader();
@@ -192,7 +192,7 @@ export class KhalaniClient {
             try {
               parsed = JSON.parse(line);
             } catch {
-              throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani NDJSON line: ${line}`);
+              throw new VexError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani NDJSON line: ${line}`);
             }
             yield validateQuoteStreamRoute(parsed);
           }
@@ -206,7 +206,7 @@ export class KhalaniClient {
             try {
               parsed = JSON.parse(trailing);
             } catch {
-              throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani NDJSON line: ${trailing}`);
+              throw new VexError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani NDJSON line: ${trailing}`);
             }
             yield validateQuoteStreamRoute(parsed);
           }

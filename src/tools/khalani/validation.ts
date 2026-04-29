@@ -1,4 +1,4 @@
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { isRecord, createFieldValidators } from "../../utils/validation-helpers.js";
 import type {
   Approval,
@@ -32,12 +32,12 @@ function parseNativeCurrencyName(nativeCurrency: Record<string, unknown>): strin
 
 function parseChain(raw: unknown): KhalaniChain {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: chain must be an object");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: chain must be an object");
   }
 
   const type = asString(raw.type, "chain.type");
   if (type !== "eip155" && type !== "solana") {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: unsupported chain type ${type}`);
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: unsupported chain type ${type}`);
   }
 
   const nativeCurrency = isRecord(raw.nativeCurrency) ? raw.nativeCurrency : {};
@@ -60,7 +60,7 @@ function parseChain(raw: unknown): KhalaniChain {
 
 function parseToken(raw: unknown): KhalaniToken {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: token must be an object");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: token must be an object");
   }
 
   return {
@@ -111,7 +111,7 @@ function parseProviderStatus(raw: unknown): KhalaniProviderStatus | undefined {
 
 function parseOrder(raw: unknown): KhalaniOrder {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: order must be an object");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: order must be an object");
   }
 
   return {
@@ -155,34 +155,34 @@ export function parseKhalaniErrorBody(raw: unknown): KhalaniErrorBody | null {
 
 export function validateChainsResponse(raw: unknown): KhalaniChain[] {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected chains array");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected chains array");
   }
   return raw.map(parseChain);
 }
 
 export function validateTokensResponse(raw: unknown): KhalaniToken[] {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected token array");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected token array");
   }
   return raw.map(parseToken);
 }
 
 export function validateTokenSearchResponse(raw: unknown): TokenSearchResponse {
   if (!isRecord(raw) || !Array.isArray(raw.data)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected token search wrapper");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected token search wrapper");
   }
   return { data: raw.data.map(parseToken) };
 }
 
 export function validateAutocompleteResponse(raw: unknown): AutocompleteResponse {
   if (!isRecord(raw) || !Array.isArray(raw.data)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected autocomplete wrapper");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected autocomplete wrapper");
   }
 
   return {
     data: raw.data.map((entry) => {
       if (!isRecord(entry)) {
-        throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: autocomplete entry must be an object");
+        throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: autocomplete entry must be an object");
       }
       return {
         description: asString(entry.description, "autocomplete.description"),
@@ -199,14 +199,14 @@ export function validateAutocompleteResponse(raw: unknown): AutocompleteResponse
 
 export function validateQuoteResponse(raw: unknown): QuoteResponse {
   if (!isRecord(raw) || !Array.isArray(raw.routes)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected quote routes");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected quote routes");
   }
 
   return {
     quoteId: asString(raw.quoteId, "quote.quoteId"),
     routes: raw.routes.map((entry) => {
       if (!isRecord(entry) || !isRecord(entry.quote)) {
-        throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: route must include quote");
+        throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: route must include quote");
       }
       return {
         routeId: asString(entry.routeId, "route.routeId"),
@@ -230,7 +230,7 @@ export function validateQuoteResponse(raw: unknown): QuoteResponse {
 
 export function validateQuoteStreamRoute(raw: unknown): QuoteStreamRoute {
   if (!isRecord(raw) || !isRecord(raw.quote)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani stream response: expected route object");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani stream response: expected route object");
   }
 
   return {
@@ -254,7 +254,7 @@ export function validateQuoteStreamRoute(raw: unknown): QuoteStreamRoute {
 
 export function validateDepositPlan(raw: unknown): DepositPlan {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected deposit plan");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected deposit plan");
   }
 
   const kind = asString(raw.kind, "deposit.kind");
@@ -262,7 +262,7 @@ export function validateDepositPlan(raw: unknown): DepositPlan {
     const approvals = Array.isArray(raw.approvals)
       ? raw.approvals.map((item, idx): Approval => {
           if (!isRecord(item)) {
-            throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: approval[${idx}] must be an object`);
+            throw new VexError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: approval[${idx}] must be an object`);
           }
           const type = asString(item.type, `approval[${idx}].type`);
           if (type === "eip1193_request") {
@@ -284,14 +284,14 @@ export function validateDepositPlan(raw: unknown): DepositPlan {
               deposit: item.deposit === true ? true : undefined,
             };
           }
-          throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: unsupported approval type ${type}`);
+          throw new VexError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: unsupported approval type ${type}`);
         })
       : [];
     return { kind, approvals };
   }
   if (kind === "PERMIT2") {
     if (!isRecord(raw.permit) || !isRecord(raw.transferDetails)) {
-      throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: malformed PERMIT2 plan");
+      throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: malformed PERMIT2 plan");
     }
     return {
       kind,
@@ -311,12 +311,12 @@ export function validateDepositPlan(raw: unknown): DepositPlan {
     };
   }
 
-  throw new EchoError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: unsupported deposit kind ${kind}`);
+  throw new VexError(ErrorCodes.KHALANI_API_ERROR, `Invalid Khalani response: unsupported deposit kind ${kind}`);
 }
 
 export function validateSubmitResponse(raw: unknown): SubmitResponse {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected submit response");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected submit response");
   }
   return {
     orderId: asString(raw.orderId, "submit.orderId"),
@@ -326,7 +326,7 @@ export function validateSubmitResponse(raw: unknown): SubmitResponse {
 
 export function validateOrdersResponse(raw: unknown): OrdersResponse {
   if (!isRecord(raw) || !Array.isArray(raw.data)) {
-    throw new EchoError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected orders wrapper");
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected orders wrapper");
   }
   return {
     data: raw.data.map(parseOrder),

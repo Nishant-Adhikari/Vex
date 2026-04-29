@@ -2,7 +2,7 @@
  * Validation helpers for Jupiter Price API V3.
  */
 
-import { EchoError, ErrorCodes } from "../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 import { getJupiterHeaders, requireJupiterApiKey, type JupiterApiKeyOptions } from "../../shared/jupiter-auth.js";
 import { validateSolanaAddress } from "../../shared/solana-validation.js";
 import type { JupiterPriceRequestParams } from "./types.js";
@@ -28,7 +28,7 @@ export function getJupiterPriceHeaders(
 
 export function validateJupiterPriceMintList(mints: string[], fieldName = "ids"): string[] {
   if (mints.length === 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `${fieldName} must contain at least one mint address.`,
     );
@@ -36,7 +36,7 @@ export function validateJupiterPriceMintList(mints: string[], fieldName = "ids")
 
   const normalized = Array.from(new Set(mints.map((mint) => validateSolanaAddress(mint))));
   if (normalized.length > JUPITER_PRICE_MAX_IDS) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `${fieldName} supports at most ${JUPITER_PRICE_MAX_IDS} mint addresses.`,
     );

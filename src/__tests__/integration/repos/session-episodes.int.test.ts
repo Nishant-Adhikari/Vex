@@ -19,7 +19,7 @@ import {
   recallTopK,
   listRecentBySession,
   type NewEpisode,
-} from "@echo-agent/db/repos/session-episodes.js";
+} from "@vex-agent/db/repos/session-episodes.js";
 import {
   episodeHash,
   makeSession,
@@ -49,7 +49,7 @@ function newEpisode(
     openLoops: overrides.openLoops,
     entities: overrides.entities,
     toolOutcomes: overrides.toolOutcomes,
-    sourceSurface: overrides.sourceSurface ?? "echo_agent",
+    sourceSurface: overrides.sourceSurface ?? "vex_agent",
     sourceSession: overrides.sourceSession ?? null,
     sourceStartMessageId: overrides.sourceStartMessageId ?? null,
     sourceEndMessageId: overrides.sourceEndMessageId ?? null,

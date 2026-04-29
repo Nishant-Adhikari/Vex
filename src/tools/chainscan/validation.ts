@@ -1,5 +1,5 @@
 import { isAddress, getAddress, type Address } from "viem";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { CHAINSCAN_DEFAULTS } from "./constants.js";
 
 const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
@@ -15,14 +15,14 @@ const VALID_TAGS = new Set([
 
 export function validateAddress(input: string, label = "address"): Address {
   if (!input) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_ADDRESS,
       `${label} is required`,
       "Provide a valid Ethereum address (0x...)"
     );
   }
   if (!isAddress(input)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_ADDRESS,
       `Invalid ${label}: ${input}`,
       "Must be a valid Ethereum address (0x + 40 hex chars)"
@@ -33,14 +33,14 @@ export function validateAddress(input: string, label = "address"): Address {
 
 export function validateTxHash(input: string): string {
   if (!input) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       "Transaction hash is required",
       "Provide a valid tx hash (0x + 64 hex chars)"
     );
   }
   if (!TX_HASH_RE.test(input)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid transaction hash: ${input}`,
       "Must be 0x followed by 64 hex characters"
@@ -51,13 +51,13 @@ export function validateTxHash(input: string): string {
 
 export function validateAddressBatch(input: string[], maxSize: number): Address[] {
   if (!input.length) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_ADDRESS,
       "At least one address is required"
     );
   }
   if (input.length > maxSize) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_ADDRESS,
       `Too many addresses: ${input.length} (max ${maxSize})`,
       `Provide at most ${maxSize} addresses`
@@ -68,13 +68,13 @@ export function validateAddressBatch(input: string[], maxSize: number): Address[
 
 export function validateHashBatch(input: string[], maxSize: number): string[] {
   if (!input.length) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       "At least one hash is required"
     );
   }
   if (input.length > maxSize) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Too many hashes: ${input.length} (max ${maxSize})`,
       `Provide at most ${maxSize} hashes`
@@ -103,7 +103,7 @@ export function validatePagination(opts?: {
   const sort = opts?.sort ?? "desc";
 
   if (page < 1) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid page: ${page}`,
       "Page must be >= 1"
@@ -111,7 +111,7 @@ export function validatePagination(opts?: {
   }
 
   if (offset < 1 || offset > CHAINSCAN_DEFAULTS.MAX_PAGE_OFFSET) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid offset: ${offset}`,
       `Offset must be 1-${CHAINSCAN_DEFAULTS.MAX_PAGE_OFFSET}`
@@ -119,7 +119,7 @@ export function validatePagination(opts?: {
   }
 
   if (sort !== "asc" && sort !== "desc") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid sort: ${sort}`,
       'Sort must be "asc" or "desc"'
@@ -152,7 +152,7 @@ export function validateStatsPagination(opts?: {
   const sort = opts?.sort ?? "desc";
 
   if (skip < 0 || skip > CHAINSCAN_DEFAULTS.MAX_SKIP) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid skip: ${skip}`,
       `Skip must be 0-${CHAINSCAN_DEFAULTS.MAX_SKIP}`
@@ -160,7 +160,7 @@ export function validateStatsPagination(opts?: {
   }
 
   if (limit < 1 || limit > CHAINSCAN_DEFAULTS.MAX_STATS_LIMIT) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid limit: ${limit}`,
       `Limit must be 1-${CHAINSCAN_DEFAULTS.MAX_STATS_LIMIT}`
@@ -168,7 +168,7 @@ export function validateStatsPagination(opts?: {
   }
 
   if (sort !== "asc" && sort !== "desc") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid sort: ${sort}`,
       'Sort must be "asc" or "desc"'
@@ -184,7 +184,7 @@ export function validateStatsPagination(opts?: {
 export function validateTag(tag?: string): string {
   if (!tag) return "latest_state";
   if (!VALID_TAGS.has(tag)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid tag: ${tag}`,
       `Valid tags: ${[...VALID_TAGS].join(", ")}`

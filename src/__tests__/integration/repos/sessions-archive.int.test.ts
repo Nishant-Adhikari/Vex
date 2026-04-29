@@ -13,8 +13,8 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { archivePrefix, forkToolMessageToArchive } from "@echo-agent/db/repos/sessions.js";
-import { query } from "@echo-agent/db/client.js";
+import { archivePrefix, forkToolMessageToArchive } from "@vex-agent/db/repos/sessions.js";
+import { query } from "@vex-agent/db/client.js";
 import { insertMessage, makeSession, resetDb } from "../setup/fixtures.js";
 
 interface ArchiveRow {

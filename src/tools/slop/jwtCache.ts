@@ -1,13 +1,13 @@
 /**
  * JWT caching for slop.money auth.
- * Stores access + refresh tokens in ~/.config/echoclaw/slop-jwt.json
+ * Stores access + refresh tokens in ~/.config/vex/slop-jwt.json
  * Pattern: same as echobook/jwtCache.ts
  */
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { SLOP_JWT_FILE } from "../../config/paths.js";
 import { ensureConfigDir } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 
 export interface CachedSlopJwt {
@@ -85,7 +85,7 @@ export function saveCachedSlopJwt(
 
   // Validate JWT sub matches the wallet we're caching for
   if (accessPayload?.sub && accessPayload.sub.toLowerCase() !== walletAddress.toLowerCase()) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SLOP_AUTH_FAILED,
       "Token wallet mismatch",
       "Access token sub does not match wallet address"

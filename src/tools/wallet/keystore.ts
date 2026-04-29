@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import type { Hex } from "viem";
 import { KEYSTORE_FILE } from "../../config/paths.js";
 import { ensureConfigDir } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 
 export interface KeystoreV1 {
@@ -105,7 +105,7 @@ export function decryptSecretBytes(keystore: KeystoreV1, password: string): Uint
   try {
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   } catch (err) {
-    throw new EchoError(ErrorCodes.KEYSTORE_DECRYPT_FAILED, "Decryption failed: wrong password or corrupted keystore");
+    throw new VexError(ErrorCodes.KEYSTORE_DECRYPT_FAILED, "Decryption failed: wrong password or corrupted keystore");
   }
 }
 
@@ -149,7 +149,7 @@ export function saveKeystoreFile(path: string, keystore: KeystoreV1): void {
 
 function validateKeystoreShape(parsed: unknown, path: string): KeystoreV1 {
   if (parsed === null || typeof parsed !== "object") {
-    throw new EchoError(ErrorCodes.KEYSTORE_CORRUPT, `Keystore at ${path} is not a valid JSON object.`);
+    throw new VexError(ErrorCodes.KEYSTORE_CORRUPT, `Keystore at ${path} is not a valid JSON object.`);
   }
 
   const obj = parsed as Record<string, unknown>;
@@ -163,7 +163,7 @@ function validateKeystoreShape(parsed: unknown, path: string): KeystoreV1 {
 
   for (const [field, expectedType] of requiredFields) {
     if (!(field in obj) || typeof obj[field] !== expectedType) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.KEYSTORE_CORRUPT,
         `Keystore at ${path} is missing or has invalid field "${field}".`,
         "Re-import your private key or restore from backup.",
@@ -185,7 +185,7 @@ export function loadKeystoreFile(path: string): KeystoreV1 | null {
     parsed = JSON.parse(raw);
   } catch (err) {
     logger.error(`Failed to parse keystore ${path}: ${err}`);
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KEYSTORE_CORRUPT,
       `Keystore at ${path} contains invalid JSON.`,
       "Re-import your private key or restore from backup.",

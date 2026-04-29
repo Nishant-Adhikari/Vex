@@ -5,7 +5,7 @@
  * "0G Ecosystem" group label no longer appear in the MCP instructions
  * preamble. Re-enable when the corresponding `advertised` flags flip
  * back to `true` in
- * src/echo-agent/tools/protocols/navigation/entries-0g.ts.
+ * src/vex-agent/tools/protocols/navigation/entries-0g.ts.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { buildInstructions } from "../../../mcp/docs/instructions.js";
@@ -42,7 +42,7 @@ describe("mcp docs — buildInstructions", () => {
   it("returns a non-empty markdown preamble", () => {
     const text = buildInstructions();
     expect(text.length).toBeGreaterThan(200);
-    expect(text).toContain("# EchoClaw MCP");
+    expect(text).toContain("# Vex MCP");
   });
 
   it("mentions discover_tools and execute_tool meta-tools", () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { isRecord, createFieldValidators } from "@utils/validation-helpers.js";
-import { EchoError } from "../../errors.js";
+import { VexError } from "../../errors.js";
 
 describe("isRecord", () => {
   it("returns true for plain objects", () => {
@@ -35,22 +35,22 @@ describe("createFieldValidators", () => {
     });
 
     it("throws for empty string", () => {
-      expect(() => asString("", "field")).toThrow(EchoError);
+      expect(() => asString("", "field")).toThrow(VexError);
       expect(() => asString("", "field")).toThrow(/TestPrefix/);
       expect(() => asString("", "field")).toThrow(/field/);
     });
 
     it("throws for non-string", () => {
-      expect(() => asString(42, "field")).toThrow(EchoError);
-      expect(() => asString(null, "field")).toThrow(EchoError);
-      expect(() => asString(undefined, "field")).toThrow(EchoError);
+      expect(() => asString(42, "field")).toThrow(VexError);
+      expect(() => asString(null, "field")).toThrow(VexError);
+      expect(() => asString(undefined, "field")).toThrow(VexError);
     });
 
     it("uses correct error code", () => {
       try {
         asString(null, "test");
       } catch (err) {
-        expect((err as EchoError).code).toBe("TEST_ERROR");
+        expect((err as VexError).code).toBe("TEST_ERROR");
       }
     });
   });
@@ -63,12 +63,12 @@ describe("createFieldValidators", () => {
     });
 
     it("throws for NaN", () => {
-      expect(() => asNumber(NaN, "field")).toThrow(EchoError);
+      expect(() => asNumber(NaN, "field")).toThrow(VexError);
     });
 
     it("throws for non-number", () => {
-      expect(() => asNumber("42", "field")).toThrow(EchoError);
-      expect(() => asNumber(null, "field")).toThrow(EchoError);
+      expect(() => asNumber("42", "field")).toThrow(VexError);
+      expect(() => asNumber(null, "field")).toThrow(VexError);
     });
   });
 

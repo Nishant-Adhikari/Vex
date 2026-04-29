@@ -2,7 +2,7 @@
 /**
  * Production MCP — CLI entrypoint.
  *
- * Single binary `echoclaw-mcp` with two transports:
+ * Single binary `vex-mcp` with two transports:
  *   - default: stdio (for spawn-style hosts: Cursor, Claude Code, Codex)
  *   - opt-in: Streamable HTTP (URL-first hosts, debugging via curl / Inspector)
  *
@@ -26,7 +26,7 @@ import { pathToFileURL } from "node:url";
 import { bootstrap } from "./bootstrap.js";
 import { startStdioTransport } from "./transports/stdio.js";
 import { startHttpTransport } from "./transports/http.js";
-import { startWakeExecutor, type WakeExecutorHandle } from "@echo-agent/engine/index.js";
+import { startWakeExecutor, type WakeExecutorHandle } from "@vex-agent/engine/index.js";
 import logger from "@utils/logger.js";
 
 type Transport = "stdio" | "http";
@@ -50,7 +50,7 @@ export async function runMcpCli(argv: readonly string[] = process.argv.slice(2))
   try {
     transport = parseTransport(argv);
   } catch (err) {
-    process.stderr.write(`echoclaw-mcp: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`vex-mcp: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(2);
   }
 
@@ -93,7 +93,7 @@ if (isDirectInvocation) {
       stack: err instanceof Error ? err.stack : undefined,
     });
     process.stderr.write(
-      `echoclaw-mcp fatal: ${err instanceof Error ? err.message : String(err)}\n`,
+      `vex-mcp fatal: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   });

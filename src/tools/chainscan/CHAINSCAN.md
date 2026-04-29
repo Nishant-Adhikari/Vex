@@ -124,7 +124,7 @@ Spans: `24h`, `3d`, `7d`.
 |--------|-------------|
 | `config/store.ts` | `loadConfig()` — ChainScan base URL |
 | `utils/rateLimit.ts` | `TokenBucket`, `ConcurrencyLimiter` |
-| `errors.ts` | `EchoError` with domain-specific codes |
+| `errors.ts` | `VexError` with domain-specific codes |
 
 ---
 

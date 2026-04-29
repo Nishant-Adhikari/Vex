@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { isAddress, getAddress } from "viem";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 /**
  * Core tokens on 0G mainnet supported by Jaine DEX
@@ -29,7 +29,7 @@ export const CORE_TOKEN_SYMBOLS = Object.keys(CORE_TOKENS) as (keyof typeof CORE
  * @param tokenOrSymbol - Token symbol (e.g., "USDC") or address (0x...)
  * @param userAliases - Optional user-defined token aliases
  * @returns Checksummed address
- * @throws EchoError if token not found
+ * @throws VexError if token not found
  */
 export function resolveToken(
   tokenOrSymbol: string,
@@ -59,7 +59,7 @@ export function resolveToken(
     }
   }
 
-  throw new EchoError(
+  throw new VexError(
     ErrorCodes.TOKEN_NOT_FOUND,
     `Token not found: ${tokenOrSymbol}`,
     `Use a valid address or one of: ${CORE_TOKEN_SYMBOLS.join(", ")}`

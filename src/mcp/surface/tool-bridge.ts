@@ -3,12 +3,12 @@
  *
  * For each tool returned by `getProductionTools()`, register an individual
  * MCP tool on the supplied `McpServer`. The handler dispatches the call
- * through the canonical Echo Agent dispatcher (`dispatchTool`) using a
+ * through the canonical Vex Agent dispatcher (`dispatchTool`) using a
  * fresh `InternalToolContext` created by `makeProductionContext()`.
  *
  * No `echo_internal` god-tool: every internal tool surfaces by its real
  * registry name (`knowledge_write`, `wallet_read`, …) so the agent in
- * Cursor / Claude Code / Codex sees exactly the same contract Echo Agent
+ * Cursor / Claude Code / Codex sees exactly the same contract Vex Agent
  * uses internally.
  *
  * JsonSchema → Zod conversion is intentionally minimal: the registry's
@@ -20,8 +20,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { JsonSchema, ToolDef } from "@echo-agent/tools/types.js";
-import { dispatchTool } from "@echo-agent/tools/dispatcher.js";
+import type { JsonSchema, ToolDef } from "@vex-agent/tools/types.js";
+import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import { getProductionTools } from "./profile.js";
 import { makeProductionContext } from "../context.js";
 import logger from "@utils/logger.js";

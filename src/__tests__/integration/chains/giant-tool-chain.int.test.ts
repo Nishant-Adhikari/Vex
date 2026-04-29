@@ -18,13 +18,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { archivePrefix, forkToolMessageToArchive } from "@echo-agent/db/repos/sessions.js";
-import { getAllMessages } from "@echo-agent/db/repos/messages.js";
-import { execute, query } from "@echo-agent/db/client.js";
+import { archivePrefix, forkToolMessageToArchive } from "@vex-agent/db/repos/sessions.js";
+import { getAllMessages } from "@vex-agent/db/repos/messages.js";
+import { execute, query } from "@vex-agent/db/client.js";
 import {
   insertEpisodes,
   listRecentBySession,
-} from "@echo-agent/db/repos/session-episodes.js";
+} from "@vex-agent/db/repos/session-episodes.js";
 import {
   episodeHash,
   insertMessage,
@@ -68,7 +68,7 @@ describe("giant-tool → fork → episode → prefix-archive chain (integration)
         openLoops: {},
         entities: [],
         toolOutcomes: { tc_big: "ok" },
-        sourceSurface: "echo_agent",
+        sourceSurface: "vex_agent",
         sourceSession: null,
         sourceStartMessageId: giantId,
         sourceEndMessageId: giantId,

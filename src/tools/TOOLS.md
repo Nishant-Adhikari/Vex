@@ -1,6 +1,6 @@
 # Tools — Protocol Clients, Wallet, & Service Integrations
 
-> All protocol-specific SDK wrappers, API clients, and on-chain utilities. Each subfolder is a self-contained integration with its own types, validation, and client layer. Commands (`src/commands/`) delegate here for business logic; echo-agent tools (`src/echo-agent/tools/protocols/`) also consume these clients.
+> All protocol-specific SDK wrappers, API clients, and on-chain utilities. Each subfolder is a self-contained integration with its own types, validation, and client layer. Commands (`src/commands/`) delegate here for business logic; vex-agent tools (`src/vex-agent/tools/protocols/`) also consume these clients.
 >
 > **Last updated: 2026-03-31**
 >
@@ -37,7 +37,7 @@ Every protocol module follows the same layered pattern:
 ```
 types.ts          — Domain types (response shapes, enums, configs)
 validation.ts     — Runtime validators for external data (API responses)
-errors.ts         — HTTP/protocol error → EchoError mapping
+errors.ts         — HTTP/protocol error → VexError mapping
 client.ts         — API client (singleton, rate-limited, retry, timeout)
 constants.ts      — URLs, limits, addresses, fee tiers
 ```
@@ -82,4 +82,4 @@ Some modules extend this with:
 | `config/store.ts` | Every module (service URLs, contract addresses) |
 | `utils/http.ts` | Every REST client |
 | `utils/rateLimit.ts` | ChainScan, Jaine subgraph, KyberSwap |
-| `errors.ts` | Every module (EchoError with domain-specific codes) |
+| `errors.ts` | Every module (VexError with domain-specific codes) |

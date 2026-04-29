@@ -9,8 +9,8 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { archivePrefix, forkToolMessageToArchive } from "@echo-agent/db/repos/sessions.js";
-import { getAllMessages } from "@echo-agent/db/repos/messages.js";
+import { archivePrefix, forkToolMessageToArchive } from "@vex-agent/db/repos/sessions.js";
+import { getAllMessages } from "@vex-agent/db/repos/messages.js";
 import { insertMessage, makeSession, resetDb } from "../setup/fixtures.js";
 
 describe("getAllMessages (integration)", () => {

@@ -7,22 +7,22 @@ import { tmpdir } from "node:os";
 // Since autoBackup uses CONFIG_DIR and BACKUPS_DIR from paths.ts,
 // we mock the paths module to point to a temp directory.
 
-const TEST_DIR = join(tmpdir(), `echo-test-backup-${Date.now()}`);
+const TEST_DIR = join(tmpdir(), `vex-test-backup-${Date.now()}`);
 const MOCK_CONFIG_DIR = join(TEST_DIR, "config");
 const MOCK_BACKUPS_DIR = join(MOCK_CONFIG_DIR, "backups");
 
 vi.mock("@config/paths.js", () => ({
-  CONFIG_DIR: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config"),
-  CONFIG_FILE: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "config.json"),
-  KEYSTORE_FILE: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "keystore.json"),
-  BACKUPS_DIR: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "backups"),
-  INTENTS_DIR: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "intents"),
-  JWT_FILE: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "jwt.json"),
-  BOT_DIR: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "bot"),
-  BOT_ORDERS_FILE: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "bot", "orders.json"),
-  BOT_STATE_FILE: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "bot", "state.json"),
-  BOT_PID_FILE: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "bot", "bot.pid"),
-  BOT_SHUTDOWN_FILE: join(tmpdir(), `echo-test-backup-${Date.now()}`, "config", "bot", "bot.shutdown"),
+  CONFIG_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config"),
+  CONFIG_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "config.json"),
+  KEYSTORE_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "keystore.json"),
+  BACKUPS_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "backups"),
+  INTENTS_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "intents"),
+  JWT_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "jwt.json"),
+  BOT_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot"),
+  BOT_ORDERS_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "orders.json"),
+  BOT_STATE_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "state.json"),
+  BOT_PID_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "bot.pid"),
+  BOT_SHUTDOWN_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "bot.shutdown"),
 }));
 
 // Since the mock above uses Date.now() which will differ, let's use a different approach.

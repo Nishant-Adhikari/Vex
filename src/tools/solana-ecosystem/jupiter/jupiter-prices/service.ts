@@ -3,7 +3,7 @@
  * Preserves full wire responses and adds optional token-resolution helpers.
  */
 
-import { EchoError, ErrorCodes } from "../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 import { requireJupiterResolvedToken, resolveJupiterTokens } from "../jupiter-tokens/service.js";
 import { jupiterPrices, jupiterPricesByMint } from "./client.js";
 import type {
@@ -74,7 +74,7 @@ export async function getJupiterPricesForTokenQueries(
   const missingQuery = queries.find((query) => !resolvedTokens.has(query));
 
   if (missingQuery) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
       `Token not found: ${missingQuery}`,
       "Use a mint address or check the token symbol spelling.",

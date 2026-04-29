@@ -2,8 +2,8 @@
  * Production MCP — boot sequence.
  *
  * fail-fast pipeline executed before any transport is bound:
- *   1. loadProviderDotenv() — pulls the same `ENV_FILE` Echo Agent uses.
- *   2. validateRequiredEnv() — explicit ECHO_AGENT_DB_URL + EMBEDDING_* + JUPITER_API_KEY.
+ *   1. loadProviderDotenv() — pulls the same `ENV_FILE` Vex Agent uses.
+ *   2. validateRequiredEnv() — explicit VEX_DB_URL + EMBEDDING_* + JUPITER_API_KEY.
  *   3. runMigrations() — idempotent additive migration runner.
  *   4. probeAll() — DB ping + embeddings round-trip.
  *
@@ -12,13 +12,13 @@
  * after `bootstrap()` returns.
  */
 
-import { runMigrations } from "@echo-agent/db/migrate.js";
+import { runMigrations } from "@vex-agent/db/migrate.js";
 import { loadProviderDotenv } from "../providers/env-resolution.js";
 import { McpHealthError, probeAll } from "./runtime/health.js";
 import logger from "@utils/logger.js";
 
 export const REQUIRED_ENV = [
-  "ECHO_AGENT_DB_URL",
+  "VEX_DB_URL",
   "EMBEDDING_BASE_URL",
   "EMBEDDING_MODEL",
   "EMBEDDING_DIM",
@@ -42,7 +42,7 @@ export function validateRequiredEnv(): void {
   throw new McpBootstrapError(
     `Missing required env: ${missing.join(", ")}`,
     "Set them in your app .env (CONFIG_DIR/.env) or pass via the MCP host config. " +
-      "EchoClaw MCP shares the same env contract as Echo Agent — see docker/echo-agent/.env.example.",
+      "Vex MCP shares the same env contract as Vex Agent — see docker/vex-agent/.env.example.",
   );
 }
 
@@ -83,7 +83,7 @@ export async function runBootstrapChecks(): Promise<void> {
  * to stderr and exits the process with code 2 (no recovery is sensible).
  */
 export async function bootstrap(): Promise<void> {
-  // 1. Load provider-neutral .env from CONFIG_DIR/.env (same path Echo Agent reads).
+  // 1. Load provider-neutral .env from CONFIG_DIR/.env (same path Vex Agent reads).
   try {
     loadProviderDotenv();
   } catch (err) {

@@ -18,7 +18,7 @@ describe("mcp docs — registry projection", () => {
     "EMBEDDING_MODEL",
     "EMBEDDING_DIM",
     "EMBEDDING_PROVIDER",
-    "ECHO_AGENT_DB_URL",
+    "VEX_DB_URL",
   ] as const;
   const original: Record<string, string | undefined> = {};
 
@@ -47,9 +47,9 @@ describe("mcp docs — registry projection", () => {
   // ── Overview ────────────────────────────────────────────────────
 
   describe("buildOverview", () => {
-    it("returns name 'echoclaw-mcp' and a non-empty purpose string", () => {
+    it("returns name 'vex-mcp' and a non-empty purpose string", () => {
       const overview = buildOverview();
-      expect(overview.name).toBe("echoclaw-mcp");
+      expect(overview.name).toBe("vex-mcp");
       expect(overview.purpose.length).toBeGreaterThan(20);
     });
 
@@ -115,7 +115,7 @@ describe("mcp docs — registry projection", () => {
       }
     });
 
-    it("does not surface a Schedule or Mission group (echo-agent only)", () => {
+    it("does not surface a Schedule or Mission group (vex-agent only)", () => {
       const groups = buildToolGroups();
       const labels = groups.map((g) => g.group);
       expect(labels).not.toContain("Schedule");

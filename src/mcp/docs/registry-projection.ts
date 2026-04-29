@@ -15,7 +15,7 @@
 
 import {
   getProductionMcpTools,
-} from "@echo-agent/tools/registry.js";
+} from "@vex-agent/tools/registry.js";
 import {
   PROTOCOL_TOOLS,
   PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
@@ -23,14 +23,14 @@ import {
   countAvailableToolsForNamespace,
   getMissingEnvForNamespace,
   isProtocolToolAvailable,
-} from "@echo-agent/tools/protocols/catalog.js";
+} from "@vex-agent/tools/protocols/catalog.js";
 import {
   getGroupedAdvertisedProtocolNavigation,
   getProtocolNamespaceNavigation,
   getMatchingFacetsForTool,
-} from "@echo-agent/tools/protocols/descriptions.js";
-import { loadEmbeddingConfig } from "@echo-agent/embeddings/config.js";
-import type { ProtocolNamespace, ProtocolToolManifest } from "@echo-agent/tools/protocols/types.js";
+} from "@vex-agent/tools/protocols/descriptions.js";
+import { loadEmbeddingConfig } from "@vex-agent/embeddings/config.js";
+import type { ProtocolNamespace, ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 
 // ── Tool grouping (by capability family) ──────────────────────────
 
@@ -107,12 +107,12 @@ export function buildOverview(): OverviewDoc {
   const tools = getProductionMcpTools();
   const config = safeLoadEmbeddingConfig();
   return {
-    name: "echoclaw-mcp",
+    name: "vex-mcp",
     purpose:
-      "EchoClaw production MCP server — passive tool surface bridge over Echo Agent. " +
+      "Vex production MCP server — passive tool surface bridge over Vex Agent. " +
       "Exposes the host-relevant internal tools (knowledge, documents, wallet, portfolio, " +
       "web, EVM, setup) plus discover_tools / execute_tool for protocol capabilities. " +
-      "No subagents, no mission_* — those are Echo Agent runtime concepts.",
+      "No subagents, no mission_* — those are Vex Agent runtime concepts.",
     surfaceSize: tools.length,
     protocolNamespaceCount: PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.length,
     embeddingModel: config?.model ?? "<unknown — EMBEDDING_MODEL not set>",
@@ -255,7 +255,7 @@ export interface RuntimeEnvDoc {
 }
 
 const RUNTIME_ENV_KEYS = [
-  "ECHO_AGENT_DB_URL",
+  "VEX_DB_URL",
   "EMBEDDING_BASE_URL",
   "EMBEDDING_MODEL",
   "EMBEDDING_DIM",

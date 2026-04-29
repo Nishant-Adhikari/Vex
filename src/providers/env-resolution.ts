@@ -1,8 +1,8 @@
 /**
  * Provider-neutral env resolution.
  * 2-level password chain:
- *   1. process.env.ECHO_KEYSTORE_PASSWORD
- *   2. ~/.config/echoclaw/.env (app-specific)
+ *   1. process.env.VEX_KEYSTORE_PASSWORD
+ *   2. ~/.config/vex/.env (app-specific)
  */
 
 import { ENV_FILE } from "../config/paths.js";

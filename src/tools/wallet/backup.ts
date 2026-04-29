@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../../config/store.js";
 import { CONFIG_DIR, BACKUPS_DIR, SOLANA_KEYSTORE_FILE } from "../../config/paths.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 
 const MAX_BACKUPS = 20;
@@ -37,7 +37,7 @@ function getCLIVersion(): string {
 /**
  * Create a backup of keystore.json and/or config.json.
  * Returns backup path, or null if nothing to back up.
- * Throws EchoError(AUTO_BACKUP_FAILED) on write failure.
+ * Throws VexError(AUTO_BACKUP_FAILED) on write failure.
  */
 export async function autoBackup(): Promise<string | null> {
   const keystorePath = join(CONFIG_DIR, "keystore.json");
@@ -92,7 +92,7 @@ export async function autoBackup(): Promise<string | null> {
     logger.debug(`Auto-backup created at ${backupDir}`);
     return backupDir;
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.AUTO_BACKUP_FAILED,
       `Failed to create auto-backup: ${err instanceof Error ? err.message : String(err)}`,
       "Check permissions on the config directory."

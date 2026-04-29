@@ -4,7 +4,7 @@
  */
 
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { fetchJson, type FetchOptions } from "../../utils/http.js";
 import { requireAuth } from "./auth.js";
 
@@ -17,7 +17,7 @@ interface ApiResponse<T> {
 }
 
 function getBaseUrl(): string {
-  return loadConfig().services.echoApiUrl;
+  return loadConfig().services.vexApiUrl;
 }
 
 /**
@@ -95,7 +95,7 @@ export async function authDelete<T>(path: string, options?: FetchOptions): Promi
  */
 export function unwrap<T>(response: ApiResponse<T>, errorCode: string, context: string): T {
   if (!response.success || response.data === undefined) {
-    throw new EchoError(errorCode, response.error || `${context} failed`);
+    throw new VexError(errorCode, response.error || `${context} failed`);
   }
   return response.data;
 }

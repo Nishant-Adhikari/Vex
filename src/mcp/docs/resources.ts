@@ -25,7 +25,7 @@ export function registerDocsResources(server: McpServer): void {
     "docs-overview",
     "docs://overview",
     {
-      title: "EchoClaw MCP Overview",
+      title: "Vex MCP Overview",
       description: "Purpose, surface size, transport mode, runtime requirements",
       mimeType: "application/json",
     },

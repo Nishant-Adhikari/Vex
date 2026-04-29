@@ -9,7 +9,7 @@ import { mapPolyTransportError, mapPolyApiError } from "../errors.js";
 import { RELAYER_BASE_URL, RELAYER_TIMEOUT_MS } from "../constants.js";
 import { validateSubmitResponse, validateTransactionsResponse, validateNonceResponse, validateDeployedResponse, validateApiKeysResponse } from "./validation.js";
 import logger from "../../../utils/logger.js";
-import type { EchoError } from "../../../errors.js";
+import type { VexError } from "../../../errors.js";
 import type { RelayerSubmitRequest, RelayerSubmitResponse, RelayerTransaction, RelayerApiKey } from "./types.js";
 
 export class PolyRelayerClient {
@@ -28,7 +28,7 @@ export class PolyRelayerClient {
       }
       return validator(await readJson(response));
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }
@@ -50,7 +50,7 @@ export class PolyRelayerClient {
       }
       return validator(await readJson(response));
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }

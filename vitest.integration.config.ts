@@ -7,7 +7,7 @@ export default defineConfig({
       "@tools": resolve(__dirname, "src/tools"),
       "@utils": resolve(__dirname, "src/utils"),
       "@config": resolve(__dirname, "src/config"),
-      "@echo-agent": resolve(__dirname, "src/echo-agent"),
+      "@vex-agent": resolve(__dirname, "src/vex-agent"),
     },
   },
   test: {

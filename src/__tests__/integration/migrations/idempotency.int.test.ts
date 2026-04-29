@@ -8,13 +8,13 @@
 
 import { describe, it, expect } from "vitest";
 
-import { runMigrations } from "@echo-agent/db/migrate.js";
-import { query } from "@echo-agent/db/client.js";
+import { runMigrations } from "@vex-agent/db/migrate.js";
+import { query } from "@vex-agent/db/client.js";
 import { readdirSync } from "node:fs";
-import { getEchoAgentMigrationsDir } from "@utils/package-assets.js";
+import { getVexAgentMigrationsDir } from "@utils/package-assets.js";
 
 function countMigrationFiles(): number {
-  return readdirSync(getEchoAgentMigrationsDir()).filter(
+  return readdirSync(getVexAgentMigrationsDir()).filter(
     (f) => f.endsWith(".sql") && /^\d{3}_/.test(f),
   ).length;
 }

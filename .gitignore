@@ -22,7 +22,7 @@ Thumbs.db
 .mcp.e2e.json.example
 
 # E2E harness — internal test scaffolding, never published
-src/echo-agent/e2e/
+src/vex-agent/e2e/
 
 # Test coverage
 coverage/

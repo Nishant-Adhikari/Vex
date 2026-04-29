@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import { CONFIG_DIR, STORAGE_DRIVE_FILE } from "../../config/paths.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import type { DriveIndex, DriveEntry, DriveFileEntry, DriveDirEntry } from "./types.js";
 import { minimatch } from "../../utils/minimatch.js";
 import { ensurePath } from "./drive-path.js";
@@ -87,7 +87,7 @@ export function drivePut(
 ): void {
   const p = ensurePath(vpath);
   if (p.endsWith("/")) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INVALID_PATH,
       "File path must not end with /.",
       "Use 'drive mkdir' to create directories."
@@ -101,7 +101,7 @@ export function driveGet(index: DriveIndex, vpath: string): DriveEntry {
   const p = ensurePath(vpath);
   const entry = index.entries[p];
   if (!entry) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INDEX_NOT_FOUND,
       `Path not found in drive: ${p}`,
       "Use 'drive ls' to list available files."
@@ -122,7 +122,7 @@ export function driveRm(index: DriveIndex, vpath: string): string {
   const p = ensurePath(vpath);
   const entry = index.entries[p];
   if (!entry) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INDEX_NOT_FOUND,
       `Path not found in drive: ${p}`,
     );
@@ -148,14 +148,14 @@ export function driveMv(index: DriveIndex, from: string, to: string): void {
 
   const entry = index.entries[fromP];
   if (!entry) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INDEX_NOT_FOUND,
       `Source path not found: ${fromP}`,
     );
   }
 
   if (index.entries[toP]) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INDEX_CONFLICT,
       `Destination already exists: ${toP}`,
       "Remove the destination first or choose a different path."
@@ -337,7 +337,7 @@ export function serializeIndex(index: DriveIndex): string {
 export function deserializeIndex(raw: string): DriveIndex {
   const parsed = JSON.parse(raw) as DriveIndex;
   if (parsed.version !== 1) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_INDEX_NOT_FOUND,
       "Invalid drive index version.",
     );

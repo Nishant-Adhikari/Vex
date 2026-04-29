@@ -12,7 +12,7 @@ import {
 } from "@solana/spl-token";
 import { getSolanaConnection, signAndSendLegacyTx } from "./solana-transaction.js";
 import { solanaExplorerUrl, lamportsToSol } from "./solana-validation.js";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import type { TransferResult } from "./types.js";
 
 export async function burnSplToken(
@@ -29,7 +29,7 @@ export async function burnSplToken(
   });
 
   if (tokenAccounts.value.length === 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_TOKEN_NOT_FOUND,
       `No token account found for mint ${mint}`,
     );
@@ -40,7 +40,7 @@ export async function burnSplToken(
   const burnAmount = amount ?? accountInfo.amount;
 
   if (burnAmount === BigInt(0)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       "Token balance is zero, nothing to burn.",
     );

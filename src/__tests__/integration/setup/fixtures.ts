@@ -9,10 +9,10 @@
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { execute, query } from "@echo-agent/db/client.js";
-import { createSession, setMemoryScopeKey } from "@echo-agent/db/repos/sessions.js";
-import type { Message, MessageMetadata } from "@echo-agent/db/repos/messages.js";
-import { embedQuery } from "@echo-agent/embeddings/client.js";
+import { execute, query } from "@vex-agent/db/client.js";
+import { createSession, setMemoryScopeKey } from "@vex-agent/db/repos/sessions.js";
+import type { Message, MessageMetadata } from "@vex-agent/db/repos/messages.js";
+import { embedQuery } from "@vex-agent/embeddings/client.js";
 
 /**
  * Wipe every non-schema table + reset identity sequences. Keeps

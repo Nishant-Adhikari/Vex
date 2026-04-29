@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 // Temp directory for test files
-const testDir = join(tmpdir(), `echo-slop-jwt-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+const testDir = join(tmpdir(), `vex-slop-jwt-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const testJwtFile = join(testDir, "slop-jwt.json");
 
 vi.mock("@config/paths.js", () => ({

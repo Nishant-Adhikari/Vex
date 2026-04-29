@@ -1,17 +1,17 @@
 /**
  * Production MCP — `InternalToolContext` factory.
  *
- * The MCP server is a passive tool surface bridge over Echo Agent's existing
+ * The MCP server is a passive tool surface bridge over Vex Agent's existing
  * dispatcher / registry / repos. It is NOT an agent — it has no `loopMode`,
  * no autonomous loop, no own decision making. The fields below are inherited
- * from `InternalToolContext` (which was designed for Echo Agent's mission
+ * from `InternalToolContext` (which was designed for Vex Agent's mission
  * loop) and the values are chosen so that the dispatcher executes the tool
  * call directly, with no server-side gate.
  *
  * Concretely:
  *   - `loopMode: "full"` and `approved: true` are dispatcher gate bypass
  *     flags. They do NOT mean "MCP runs in full mode" — MCP has no modes.
- *     They mean "the dispatcher's mutation gate (designed for Echo Agent
+ *     They mean "the dispatcher's mutation gate (designed for Vex Agent
  *     mission loop) does not apply here". Gate decisions for MCP belong to
  *     the host MCP client (Claude Code / Cursor / Codex permission UX) and
  *     to the transport boundary (stdio process trust / HTTP bearer token).
@@ -28,11 +28,11 @@
  *   - `missionRunId: null` because MCP is not a mission run.
  *
  * If a future programmatic MCP client needs a server-side gate, that is a
- * separate architecture (a proxy MCP routing through Echo Agent mission
+ * separate architecture (a proxy MCP routing through Vex Agent mission
  * loop), NOT a parameter on this factory. v1 has no `requireApproval` knob.
  */
 
-import type { InternalToolContext } from "@echo-agent/tools/internal/types.js";
+import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 
 export function makeProductionContext(sessionId: string): InternalToolContext {
   return {

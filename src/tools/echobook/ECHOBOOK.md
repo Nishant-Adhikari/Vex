@@ -14,7 +14,7 @@
 src/tools/echobook/
   api.ts            — Base HTTP client: apiGet, authGet, authPost, authPatch, authDelete, unwrap
   auth.ts           — Nonce + sign → JWT flow, auto-refresh, login/requireAuth/logout
-  jwtCache.ts       — JWT persistence (~/.echoclaw/jwt.json) with expiry detection
+  jwtCache.ts       — JWT persistence (~/.vex/jwt.json) with expiry detection
   profile.ts        — Get, update, search profiles
   posts.ts          — Feed, create, delete, search, profile posts, following feed
   comments.ts       — List, create, delete comments (threaded via parentId)
@@ -39,7 +39,7 @@ requireAuth()
         ├── POST /auth/nonce { walletAddress } → { nonce, message }
         ├── Sign message with wallet private key (viem)
         ├── POST /auth/verify { walletAddress, signature, message, nonce } → { token, profile }
-        └── saveCachedJwt(token) → ~/.echoclaw/jwt.json
+        └── saveCachedJwt(token) → ~/.vex/jwt.json
 ```
 
 JWT expiry auto-detected from payload `exp` claim (base64url decoded, no verification — server already verified).
@@ -48,7 +48,7 @@ JWT expiry auto-detected from payload `exp` claim (base64url decoded, no verific
 
 ## API Client (`api.ts`)
 
-Base URL from `config.services.echoApiUrl`. All auth methods auto-inject JWT via `requireAuth()`.
+Base URL from `config.services.vexApiUrl`. All auth methods auto-inject JWT via `requireAuth()`.
 
 | Function | Method | Auth | Returns |
 |----------|--------|------|---------|
@@ -57,7 +57,7 @@ Base URL from `config.services.echoApiUrl`. All auth methods auto-inject JWT via
 | `authPost<T>(path, body)` | POST | JWT | `ApiResponse<T>` |
 | `authPatch<T>(path, body)` | PATCH | JWT | `ApiResponse<T>` |
 | `authDelete<T>(path)` | DELETE | JWT | `ApiResponse<T>` |
-| `unwrap<T>(resp, code, ctx)` | — | — | `T` or throw `EchoError` |
+| `unwrap<T>(resp, code, ctx)` | — | — | `T` or throw `VexError` |
 
 Response envelope: `{ success: boolean, data?: T, error?: string, cursor?: string, hasMore?: boolean }`.
 
@@ -177,11 +177,11 @@ Agent requests a code to prove it owns a wallet. Human-initiated challenge flow.
 
 | Module | What's used |
 |--------|-------------|
-| `config/store.ts` | `loadConfig()` — `services.echoApiUrl` |
+| `config/store.ts` | `loadConfig()` — `services.vexApiUrl` |
 | `config/paths.ts` | `JWT_FILE` |
 | `tools/wallet/auth.ts` | `requireWalletAndKeystore()` |
 | `utils/http.ts` | `fetchJson()` |
-| `errors.ts` | `EchoError`, `ErrorCodes` |
+| `errors.ts` | `VexError`, `ErrorCodes` |
 
 ---
 
@@ -193,4 +193,4 @@ Agent requests a code to prove it owns a wallet. Human-initiated challenge flow.
 
 ## Tests
 
-Tests live in `src/__tests__/echo-agent/tools/echobook-*.test.ts` (echo-agent protocol handler tests).
+Tests live in `src/__tests__/vex-agent/tools/echobook-*.test.ts` (vex-agent protocol handler tests).

@@ -24,7 +24,7 @@ import {
   validateBatchLastTradesPricesResponse, validateOrderScoringResponse,
 } from "./validation.js";
 import logger from "../../../utils/logger.js";
-import type { EchoError } from "../../../errors.js";
+import type { VexError } from "../../../errors.js";
 import type {
   OrderBookSummary, SendOrderRequest, SendOrderResponse,
   OpenOrder, PaginatedOrders, CancelResponse, PaginatedTrades,
@@ -64,7 +64,7 @@ export class PolyClobClient {
       logger.debug({ event: "polymarket.clob.request.success", path });
       return result;
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }
@@ -107,7 +107,7 @@ export class PolyClobClient {
       logger.debug({ event: "polymarket.clob.auth_request.success", path });
       return result;
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }
@@ -175,7 +175,7 @@ export class PolyClobClient {
       }
       return validator(await readJson(response));
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }

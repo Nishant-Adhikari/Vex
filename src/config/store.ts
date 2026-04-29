@@ -5,7 +5,7 @@ import { CHAIN, PROTOCOL, SLOP } from "../constants/chain.js";
 import { CONFIG_DIR, CONFIG_FILE } from "./paths.js";
 import logger from "../utils/logger.js";
 
-export interface EchoConfig {
+export interface VexConfig {
   version: 1;
   chain: {
     chainId: number;
@@ -38,7 +38,7 @@ export interface EchoConfig {
     backendApiUrl: string;
     proxyApiUrl: string;
     chatWsUrl: string;
-    echoApiUrl: string;
+    vexApiUrl: string;
     chainScanBaseUrl: string;
     khalaniApiUrl: string;
     dexScreenerApiUrl: string;
@@ -73,7 +73,7 @@ export interface EchoConfig {
   };
 }
 
-export function getDefaultConfig(): EchoConfig {
+export function getDefaultConfig(): VexConfig {
   return {
     version: 1,
     chain: {
@@ -114,7 +114,7 @@ export function getDefaultConfig(): EchoConfig {
       backendApiUrl: "https://be.slop.money/api",
       proxyApiUrl: "https://ai.slop.money/api",
       chatWsUrl: "https://ai.slop.money",
-      echoApiUrl: "https://backend.echoclaw.ai/api",
+      vexApiUrl: "https://backend.vexlabs.ai/api",
       chainScanBaseUrl: "https://chainscan.0g.ai/open",
       khalaniApiUrl: "https://api.hyperstream.dev",
       dexScreenerApiUrl: "https://api.dexscreener.com",
@@ -139,7 +139,7 @@ export function ensureConfigDir(): void {
   }
 }
 
-function parseClaudeConfig(raw: unknown): EchoConfig["claude"] | undefined {
+function parseClaudeConfig(raw: unknown): VexConfig["claude"] | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return undefined;
   }
@@ -162,7 +162,7 @@ function parseClaudeConfig(raw: unknown): EchoConfig["claude"] | undefined {
   };
 }
 
-export function loadConfig(): EchoConfig {
+export function loadConfig(): VexConfig {
   ensureConfigDir();
   const defaults = getDefaultConfig();
 
@@ -214,7 +214,7 @@ export function loadConfig(): EchoConfig {
         ...defaults.services,
         ...((parsed.services as Record<string, unknown> | undefined) ?? {}),
       },
-      ...(parsed.polymarket && typeof parsed.polymarket === "object" && !Array.isArray(parsed.polymarket) ? { polymarket: parsed.polymarket as EchoConfig["polymarket"] } : {}),
+      ...(parsed.polymarket && typeof parsed.polymarket === "object" && !Array.isArray(parsed.polymarket) ? { polymarket: parsed.polymarket as VexConfig["polymarket"] } : {}),
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
     };
   } catch (err) {
@@ -223,7 +223,7 @@ export function loadConfig(): EchoConfig {
   }
 }
 
-export function saveConfig(config: EchoConfig): void {
+export function saveConfig(config: VexConfig): void {
   ensureConfigDir();
 
   const dir = dirname(CONFIG_FILE);
@@ -259,18 +259,18 @@ export function configExists(): boolean {
  * only needs to mention the fields it wants to override. `wallet`, `claude`,
  * and `polymarket` follow the same rule.
  *
- * This is NOT a `DeepPartial<EchoConfig>` — we keep the nesting explicit at
+ * This is NOT a `DeepPartial<VexConfig>` — we keep the nesting explicit at
  * one level so the merge code stays simple and the call sites stay typed.
  */
-export type EchoConfigPatch = {
-  chain?: Partial<EchoConfig["chain"]>;
-  protocol?: Partial<EchoConfig["protocol"]>;
-  slop?: Partial<EchoConfig["slop"]>;
-  wallet?: Partial<EchoConfig["wallet"]>;
-  solana?: Partial<EchoConfig["solana"]>;
-  services?: Partial<EchoConfig["services"]>;
-  polymarket?: NonNullable<EchoConfig["polymarket"]>;
-  claude?: NonNullable<EchoConfig["claude"]>;
+export type VexConfigPatch = {
+  chain?: Partial<VexConfig["chain"]>;
+  protocol?: Partial<VexConfig["protocol"]>;
+  slop?: Partial<VexConfig["slop"]>;
+  wallet?: Partial<VexConfig["wallet"]>;
+  solana?: Partial<VexConfig["solana"]>;
+  services?: Partial<VexConfig["services"]>;
+  polymarket?: NonNullable<VexConfig["polymarket"]>;
+  claude?: NonNullable<VexConfig["claude"]>;
 };
 
 /**
@@ -281,9 +281,9 @@ export type EchoConfigPatch = {
  *
  * Returns the persisted config so the caller can refresh any cached view.
  */
-export function saveConfigPatch(patch: EchoConfigPatch): EchoConfig {
+export function saveConfigPatch(patch: VexConfigPatch): VexConfig {
   const current = loadConfig();
-  const next: EchoConfig = {
+  const next: VexConfig = {
     ...current,
     ...(patch.chain ? { chain: { ...current.chain, ...patch.chain } } : {}),
     ...(patch.protocol ? { protocol: { ...current.protocol, ...patch.protocol } } : {}),
@@ -292,7 +292,7 @@ export function saveConfigPatch(patch: EchoConfigPatch): EchoConfig {
     ...(patch.solana ? { solana: { ...current.solana, ...patch.solana } } : {}),
     ...(patch.services ? { services: { ...current.services, ...patch.services } } : {}),
     ...(patch.polymarket ? { polymarket: { ...(current.polymarket ?? {}), ...patch.polymarket } } : {}),
-    ...(patch.claude ? { claude: { ...(current.claude ?? {} as EchoConfig["claude"]), ...patch.claude } as EchoConfig["claude"] } : {}),
+    ...(patch.claude ? { claude: { ...(current.claude ?? {} as VexConfig["claude"]), ...patch.claude } as VexConfig["claude"] } : {}),
   };
   saveConfig(next);
   return next;

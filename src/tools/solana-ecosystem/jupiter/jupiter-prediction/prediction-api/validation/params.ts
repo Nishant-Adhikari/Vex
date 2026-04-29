@@ -37,7 +37,7 @@ import {
   PREDICTION_LEADERBOARD_PERIODS,
   PREDICTION_LEADERBOARD_METRICS,
 } from "./helpers.js";
-import { EchoError, ErrorCodes } from "../../../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../../../errors.js";
 
 export function validateJupiterPredictionEventsParams(
   params: JupiterPredictionEventsParams = {},
@@ -72,7 +72,7 @@ export function validateJupiterPredictionSearchEventsParams(
 ): JupiterPredictionSearchEventsParams {
   const query = assertNonEmptyString("query", params.query);
   if (query.length > 200) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `Invalid query length: ${query.length}`,
       "query must be between 1 and 200 characters.",

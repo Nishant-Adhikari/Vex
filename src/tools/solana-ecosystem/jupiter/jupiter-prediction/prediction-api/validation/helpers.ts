@@ -2,7 +2,7 @@
  * Validation constants and private helper functions for Jupiter Prediction.
  */
 
-import { EchoError, ErrorCodes } from "../../../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { validateSolanaAddress } from "../../../../shared/solana-validation.js";
 import type {
   JupiterPredictionCategory,
@@ -44,7 +44,7 @@ export const PREDICTION_LEADERBOARD_METRICS: JupiterPredictionLeaderboardMetric[
 export function assertNonEmptyString(name: string, value: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `${name} is required.`,
     );
@@ -60,7 +60,7 @@ export function assertIntegerInRange(
 ): void {
   if (!Number.isInteger(value) || value < min || (max != null && value > max)) {
     const range = max != null ? `between ${min} and ${max}` : `at least ${min}`;
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       `${name} must be an integer ${range}.`,
@@ -74,7 +74,7 @@ export function assertEnumValue<T extends string>(
   allowed: readonly T[],
 ): T {
   if (!allowed.includes(value)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `Invalid ${name}: ${value}`,
       `${name} must be one of: ${allowed.join(", ")}.`,
@@ -89,14 +89,14 @@ export function normalizePositiveIntegerString(
 ): string {
   const normalized = typeof value === "number" ? String(value) : value.trim();
   if (!/^\d+$/.test(normalized)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${String(value)}`,
       `${name} must be a base-10 integer string in smallest units.`,
     );
   }
   if (BigInt(normalized) <= 0n) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${normalized}`,
       `${name} must be greater than 0.`,
@@ -112,7 +112,7 @@ export function normalizeOptionalCsv(
   const parts = Array.isArray(value) ? value : value.split(",");
   const normalized = parts.map((part) => part.trim()).filter(Boolean);
   if (normalized.length === 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       "subcategory must include at least one non-empty value.",
     );

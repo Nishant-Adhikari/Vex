@@ -27,7 +27,7 @@ export interface CreateServerOptions {
 export function createMcpServerInstance(opts: CreateServerOptions): McpServer {
   const server = new McpServer(
     {
-      name: "echoclaw-mcp",
+      name: "vex-mcp",
       version: "1.0.0",
     },
     {

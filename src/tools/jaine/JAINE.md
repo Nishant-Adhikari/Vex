@@ -13,7 +13,7 @@
 ```
 src/tools/jaine/
   coreTokens.ts     — 12 core tokens on 0G mainnet, resolveToken(), getTokenSymbol()
-  paths.ts          — Jaine data dir (~/.echoclaw/jaine/), pool cache + token file paths
+  paths.ts          — Jaine data dir (~/.vex/jaine/), pool cache + token file paths
   pathEncoding.ts   — Uniswap V3 path encoding/decoding (token+fee bytes), formatPath()
   routing.ts        — BFS route finder + on-chain quoting (exactInput/exactOutput)
   poolCache.ts      — Pool discovery: on-chain factory scan + Goldsky subgraph sync, cache persistence
@@ -87,7 +87,7 @@ Two strategies for building the pool cache:
 | On-chain scan | `scanCorePools()` | Factory contract `getPool()` | Slow (N² × fee tiers) |
 | Subgraph sync | `syncPoolsFromSubgraph()` | Goldsky indexed data | Fast (single query, top 500 by TVL) |
 
-Cache stored in `~/.echoclaw/jaine/pools-cache.v1.json` (atomic write, version + chainId validated on load).
+Cache stored in `~/.vex/jaine/pools-cache.v1.json` (atomic write, version + chainId validated on load).
 
 Helper queries: `findPoolsForToken()`, `findPoolsBetweenTokens()`.
 
@@ -135,7 +135,7 @@ Goldsky-hosted Jaine V3 subgraph. Rate-limited (5 req/s, max 2 concurrent), retr
 
 ## User Tokens (`userTokens.ts`)
 
-Persistent custom aliases stored in `~/.echoclaw/jaine/tokens.json`. Merged with core tokens (user aliases take priority).
+Persistent custom aliases stored in `~/.vex/jaine/tokens.json`. Merged with core tokens (user aliases take priority).
 
 | Function | Purpose |
 |----------|---------|

@@ -17,7 +17,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { polygon } from "viem/chains";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { POLY_KNOWN_SPENDERS, POLYGON_RPC } from "./constants.js";
 import logger from "../../utils/logger.js";
 
@@ -69,7 +69,7 @@ export function getPolygonClients(privateKey: Hex): PolygonClients {
 
 export function validatePolySpender(address: Address): void {
   if (!POLY_KNOWN_SPENDERS.has(address.toLowerCase())) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_SPENDER,
       `Spender ${address} is not a known Polymarket contract`,
       "Known: CTF Exchange, Neg Risk CTF Exchange",

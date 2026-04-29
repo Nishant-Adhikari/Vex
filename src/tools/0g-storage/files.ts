@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import sdkBridge from "./sdk-bridge.cjs";
 import { withSuppressedConsole } from "../0g-compute/bridge.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { formatCost } from "./cost.js";
 import type { StorageClientConfig } from "./client.js";
 import type { UploadResult, DownloadResult, FileInfo } from "./types.js";
@@ -49,7 +49,7 @@ export async function uploadFile(
       cost,
     };
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_UPLOAD_FAILED,
       `Upload failed: ${err instanceof Error ? err.message : String(err)}`,
       "Check wallet balance and network connectivity."
@@ -68,7 +68,7 @@ export async function downloadFile(
   );
 
   if (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_DOWNLOAD_FAILED,
       `Download failed: ${err}`,
       "Check that the root hash is correct and the file exists on the network."
@@ -88,7 +88,7 @@ export async function getFileInfo(
   );
 
   if (!info) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.ZG_STORAGE_FILE_NOT_FOUND,
       "File info not found on any storage node.",
       opts.root

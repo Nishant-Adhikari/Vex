@@ -13,7 +13,7 @@
  *   9. Every workflow prompt registered by `registerWorkflowPrompts`
  *
  * Run:
- *   pnpm exec tsx src/mcp/scripts/dump-docs.ts             # → /tmp/echoclaw-mcp-docs.md
+ *   pnpm exec tsx src/mcp/scripts/dump-docs.ts             # → /tmp/vex-mcp-docs.md
  *   pnpm exec tsx src/mcp/scripts/dump-docs.ts --out PATH  # custom path
  *
  * Env-gating note
@@ -28,7 +28,7 @@
  *
  * The script does NOT touch the database or the embedding service. It
  * only reads in-memory registry projections, so it is safe to run with
- * `ECHO_AGENT_DB_URL` unset.
+ * `VEX_DB_URL` unset.
  */
 
 // MUST run before any registry import — manifests are filtered against
@@ -60,8 +60,8 @@ import {
 } from "../docs/registry-projection.js";
 import { buildInstructions } from "../docs/instructions.js";
 import { registerWorkflowPrompts } from "../docs/prompts.js";
-import { getProductionMcpTools } from "@echo-agent/tools/registry.js";
-import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST } from "@echo-agent/tools/protocols/catalog.js";
+import { getProductionMcpTools } from "@vex-agent/tools/registry.js";
+import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST } from "@vex-agent/tools/protocols/catalog.js";
 
 // ── Workflow prompt recorder ────────────────────────────────────
 //
@@ -117,7 +117,7 @@ function jsonBlock(value: unknown): string {
 const tools = getProductionMcpTools();
 const lines: string[] = [];
 
-lines.push("# EchoClaw MCP — model-facing documentation dump");
+lines.push("# Vex MCP — model-facing documentation dump");
 lines.push("");
 lines.push(`Generated at \`${new Date().toISOString()}\`.`);
 lines.push("");
@@ -239,7 +239,7 @@ function parseOutPath(argv: readonly string[]): string {
       return value;
     }
   }
-  return "/tmp/echoclaw-mcp-docs.md";
+  return "/tmp/vex-mcp-docs.md";
 }
 
 const outPath = parseOutPath(process.argv.slice(2));
@@ -248,7 +248,7 @@ const body = lines.join("\n");
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, body, "utf8");
 
-process.stdout.write(`echoclaw-mcp docs dumped to ${outPath}\n`);
+process.stdout.write(`vex-mcp docs dumped to ${outPath}\n`);
 process.stdout.write(`size: ${body.length} chars, ${lines.length} lines\n`);
 process.stdout.write(
   `tools: ${tools.length}, protocol namespaces: ${PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.length}, prompts: ${recordedPrompts.length}\n`,

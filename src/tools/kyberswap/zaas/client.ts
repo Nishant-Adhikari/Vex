@@ -15,7 +15,7 @@ import { mapZaasError } from "./errors.js";
 import { validateZapRouteResponse, validateZapBuildResponse } from "./validation.js";
 import { KYBER_CLIENT_ID, ZAAS_TIMEOUT_MS } from "../constants.js";
 import logger from "../../../utils/logger.js";
-import type { EchoError } from "../../../errors.js";
+import type { VexError } from "../../../errors.js";
 import type { KyberChainSlug } from "../types.js";
 import type {
   ZapInRouteParams,
@@ -79,7 +79,7 @@ export class KyberZaasClient {
       logger.debug({ event: "kyberswap.zaas.request.success", chain, path });
       return result;
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("KYBER_")) throw err;
+      if ((err as VexError).code?.startsWith("KYBER_")) throw err;
       mapKyberTransportError(err);
     }
   }

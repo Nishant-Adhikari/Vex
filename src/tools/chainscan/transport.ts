@@ -3,7 +3,7 @@
  * Rate limiting, retry logic, and raw API fetch functions.
  */
 
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { loadConfig } from "../../config/store.js";
 import logger from "../../utils/logger.js";
 import { TokenBucket, ConcurrencyLimiter } from "../../utils/rateLimit.js";
@@ -64,9 +64,9 @@ export async function fetchEtherscanApi<T>(params: Record<string, string>): Prom
         const res = await fetch(url.toString(), { signal: controller.signal });
         if (!res.ok) {
           if (res.status === 429) {
-            throw new EchoError(ErrorCodes.CHAINSCAN_RATE_LIMITED, `ChainScan HTTP 429`);
+            throw new VexError(ErrorCodes.CHAINSCAN_RATE_LIMITED, `ChainScan HTTP 429`);
           }
-          throw new EchoError(ErrorCodes.CHAINSCAN_API_ERROR, `ChainScan HTTP ${res.status}`);
+          throw new VexError(ErrorCodes.CHAINSCAN_API_ERROR, `ChainScan HTTP ${res.status}`);
         }
 
         const json = (await res.json()) as { status?: string; message?: string; result?: unknown };
@@ -75,7 +75,7 @@ export async function fetchEtherscanApi<T>(params: Record<string, string>): Prom
           if (json.message === "No transactions found" || json.result === null || json.message === "No records found") {
             return [] as unknown as T;
           }
-          throw new EchoError(
+          throw new VexError(
             ErrorCodes.CHAINSCAN_API_ERROR,
             json.message || "ChainScan API error",
             "Check the request parameters"
@@ -84,15 +84,15 @@ export async function fetchEtherscanApi<T>(params: Record<string, string>): Prom
 
         return json.result as T;
       } catch (err) {
-        if (err instanceof EchoError) throw err;
+        if (err instanceof VexError) throw err;
         if (err instanceof Error && err.name === "AbortError") {
-          throw new EchoError(
+          throw new VexError(
             ErrorCodes.CHAINSCAN_TIMEOUT,
             `ChainScan request timed out after ${CHAINSCAN_DEFAULTS.TIMEOUT_MS}ms`,
             "Try again or check network connectivity"
           );
         }
-        throw new EchoError(
+        throw new VexError(
           ErrorCodes.CHAINSCAN_API_ERROR,
           err instanceof Error ? err.message : "ChainScan request failed"
         );
@@ -127,9 +127,9 @@ export async function fetchCustomApi<T>(path: string, params: Record<string, str
         const res = await fetch(url.toString(), { signal: controller.signal });
         if (!res.ok) {
           if (res.status === 429) {
-            throw new EchoError(ErrorCodes.CHAINSCAN_RATE_LIMITED, `ChainScan HTTP 429`);
+            throw new VexError(ErrorCodes.CHAINSCAN_RATE_LIMITED, `ChainScan HTTP 429`);
           }
-          throw new EchoError(ErrorCodes.CHAINSCAN_API_ERROR, `ChainScan HTTP ${res.status}`);
+          throw new VexError(ErrorCodes.CHAINSCAN_API_ERROR, `ChainScan HTTP ${res.status}`);
         }
 
         const json = await res.json() as Record<string, unknown>;
@@ -156,21 +156,21 @@ export async function fetchCustomApi<T>(path: string, params: Record<string, str
           return json as unknown as T;
         }
 
-        throw new EchoError(
+        throw new VexError(
           ErrorCodes.CHAINSCAN_INVALID_RESPONSE,
           `Unexpected ChainScan response format`,
           `status=${String(json.status)}, message=${String(json.message)}`
         );
       } catch (err) {
-        if (err instanceof EchoError) throw err;
+        if (err instanceof VexError) throw err;
         if (err instanceof Error && err.name === "AbortError") {
-          throw new EchoError(
+          throw new VexError(
             ErrorCodes.CHAINSCAN_TIMEOUT,
             `ChainScan request timed out after ${CHAINSCAN_DEFAULTS.TIMEOUT_MS}ms`,
             "Try again or check network connectivity"
           );
         }
-        throw new EchoError(
+        throw new VexError(
           ErrorCodes.CHAINSCAN_API_ERROR,
           err instanceof Error ? err.message : "ChainScan request failed"
         );

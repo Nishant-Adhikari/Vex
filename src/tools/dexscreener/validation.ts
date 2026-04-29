@@ -2,10 +2,10 @@
  * Runtime validators for DexScreener API responses.
  *
  * Hand-written validators following the Khalani pattern.
- * Every function throws EchoError on invalid shapes.
+ * Every function throws VexError on invalid shapes.
  */
 
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { isRecord } from "../../utils/validation-helpers.js";
 import type {
   DexAd,
@@ -32,14 +32,14 @@ import type {
 
 function asString(value: unknown, field: string): string {
   if (typeof value !== "string") {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, `Invalid DexScreener response: expected string for ${field}`);
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, `Invalid DexScreener response: expected string for ${field}`);
   }
   return value;
 }
 
 function asNumber(value: unknown, field: string): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, `Invalid DexScreener response: expected number for ${field}`);
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, `Invalid DexScreener response: expected number for ${field}`);
   }
   return value;
 }
@@ -56,7 +56,7 @@ function asOptionalNumber(value: unknown): number | null {
 
 function parseBaseToken(raw: unknown): DexToken {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: baseToken must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: baseToken must be an object");
   }
   return {
     address: asString(raw.address, "baseToken.address"),
@@ -67,7 +67,7 @@ function parseBaseToken(raw: unknown): DexToken {
 
 function parseQuoteToken(raw: unknown): DexQuoteToken {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: quoteToken must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: quoteToken must be an object");
   }
   return {
     address: asOptionalString(raw.address),
@@ -142,7 +142,7 @@ function parseLabels(raw: unknown): string[] | null {
 
 function parsePair(raw: unknown): DexPair {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: pair must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: pair must be an object");
   }
 
   return {
@@ -171,7 +171,7 @@ function parsePair(raw: unknown): DexPair {
 
 export function validatePairsResponse(raw: unknown): PairsResponse {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected pairs response object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected pairs response object");
   }
   return {
     schemaVersion: typeof raw.schemaVersion === "string" ? raw.schemaVersion : "",
@@ -181,7 +181,7 @@ export function validatePairsResponse(raw: unknown): PairsResponse {
 
 export function validateSearchResponse(raw: unknown): SearchResponse {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected search response object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected search response object");
   }
   return {
     schemaVersion: typeof raw.schemaVersion === "string" ? raw.schemaVersion : "",
@@ -191,14 +191,14 @@ export function validateSearchResponse(raw: unknown): SearchResponse {
 
 export function validateTokensResponse(raw: unknown): TokensResponse {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected tokens array");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected tokens array");
   }
   return raw.map(parsePair);
 }
 
 export function validateTokensPairsResponse(raw: unknown): TokensPairsResponse {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected token-pairs array");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected token-pairs array");
   }
   return raw.map(parsePair);
 }
@@ -218,7 +218,7 @@ function parseLinks(raw: unknown): DexLink[] | null {
 
 function parseProfile(raw: unknown): DexTokenProfile {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: profile must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: profile must be an object");
   }
   return {
     url: asString(raw.url, "profile.url"),
@@ -233,7 +233,7 @@ function parseProfile(raw: unknown): DexTokenProfile {
 
 export function validateProfilesResponse(raw: unknown): DexTokenProfile[] {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected profiles array");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected profiles array");
   }
   return raw.map(parseProfile);
 }
@@ -242,7 +242,7 @@ export function validateProfilesResponse(raw: unknown): DexTokenProfile[] {
 
 function parseBoost(raw: unknown): DexBoost {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: boost must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: boost must be an object");
   }
   return {
     url: asString(raw.url, "boost.url"),
@@ -259,7 +259,7 @@ function parseBoost(raw: unknown): DexBoost {
 
 export function validateBoostsResponse(raw: unknown): DexBoost[] {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected boosts array");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected boosts array");
   }
   return raw.map(parseBoost);
 }
@@ -268,7 +268,7 @@ export function validateBoostsResponse(raw: unknown): DexBoost[] {
 
 function parseOrder(raw: unknown): DexOrder {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: order must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: order must be an object");
   }
   return {
     type: asString(raw.type, "order.type") as DexOrder["type"],
@@ -279,7 +279,7 @@ function parseOrder(raw: unknown): DexOrder {
 
 export function validateOrdersResponse(raw: unknown): DexOrder[] {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected orders array");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected orders array");
   }
   return raw.map(parseOrder);
 }
@@ -291,7 +291,7 @@ export function validateWsHandshake<T>(
   itemValidator: (item: unknown) => T,
 ): WsHandshake<T> {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener WS handshake: expected object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener WS handshake: expected object");
   }
   return {
     limit: typeof raw.limit === "number" ? raw.limit : 0,
@@ -311,7 +311,7 @@ export function validateWsBoost(raw: unknown): DexBoost {
 
 function parseCommunityTakeover(raw: unknown): DexCommunityTakeover {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: community takeover must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: community takeover must be an object");
   }
   return {
     url: asString(raw.url, "cto.url"),
@@ -327,7 +327,7 @@ function parseCommunityTakeover(raw: unknown): DexCommunityTakeover {
 
 export function validateCommunityTakeoversResponse(raw: unknown): DexCommunityTakeover[] {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected community takeovers array");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected community takeovers array");
   }
   return raw.map(parseCommunityTakeover);
 }
@@ -340,7 +340,7 @@ export function validateWsCommunityTakeover(raw: unknown): DexCommunityTakeover 
 
 function parseAd(raw: unknown): DexAd {
   if (!isRecord(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: ad must be an object");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: ad must be an object");
   }
   return {
     url: asString(raw.url, "ad.url"),
@@ -355,7 +355,7 @@ function parseAd(raw: unknown): DexAd {
 
 export function validateAdsResponse(raw: unknown): DexAd[] {
   if (!Array.isArray(raw)) {
-    throw new EchoError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected ads array");
+    throw new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected ads array");
   }
   return raw.map(parseAd);
 }

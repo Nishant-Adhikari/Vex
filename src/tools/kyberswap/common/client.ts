@@ -7,7 +7,7 @@
 import { loadConfig } from "../../../config/store.js";
 import { fetchWithTimeout, readJson } from "../../../utils/http.js";
 import { mapKyberTransportError } from "../errors.js";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { validateSupportedChainsResponse } from "./validation.js";
 import { COMMON_SERVICE_TIMEOUT_MS } from "../constants.js";
 import { setCachedDynamicChains, getCachedDynamicChains } from "../chains.js";
@@ -36,7 +36,7 @@ export class KyberCommonClient {
         const message = typeof raw === "object" && raw !== null && "message" in raw
           ? String((raw as Record<string, unknown>).message)
           : `HTTP ${response.status}`;
-        throw new EchoError(ErrorCodes.KYBER_API_ERROR, `KyberSwap Common Service error: ${message}`);
+        throw new VexError(ErrorCodes.KYBER_API_ERROR, `KyberSwap Common Service error: ${message}`);
       }
 
       const raw = await readJson(response);

@@ -19,7 +19,7 @@ import {
   validateSportsMetadataResponse, validateTeamsResponse,
 } from "./validation.js";
 import logger from "../../../utils/logger.js";
-import type { EchoError } from "../../../errors.js";
+import type { VexError } from "../../../errors.js";
 import type {
   GammaEvent, GammaMarket, GammaTag, GammaRelatedTag,
   GammaSeries, GammaComment, GammaProfile, GammaSportsMetadata,
@@ -58,7 +58,7 @@ export class PolyGammaClient {
       logger.debug({ event: "polymarket.gamma.request.success", path });
       return result;
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }

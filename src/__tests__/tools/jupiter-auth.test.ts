@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EchoError } from "../../errors.js";
+import { VexError } from "../../errors.js";
 
 vi.mock("../../config/store.js", () => ({
   loadConfig: () => ({
@@ -34,8 +34,8 @@ describe("shared Jupiter auth", () => {
       requireJupiterApiKey();
       throw new Error("Expected requireJupiterApiKey() to throw");
     } catch (error) {
-      expect(error).toBeInstanceOf(EchoError);
-      expect((error as EchoError).hint).toContain("CONFIG_DIR/.env");
+      expect(error).toBeInstanceOf(VexError);
+      expect((error as VexError).hint).toContain("CONFIG_DIR/.env");
     }
   });
 });

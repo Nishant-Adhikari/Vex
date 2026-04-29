@@ -26,26 +26,26 @@ function resolvePackageAsset(label: string, relativeCandidates: readonly string[
 }
 
 export function getDockerComposeDevPath(): string {
-  return resolvePackageAsset("docker/echo-agent/docker-compose.dev.yml", [
-    "docker/echo-agent/docker-compose.dev.yml",
+  return resolvePackageAsset("docker/vex-agent/docker-compose.dev.yml", [
+    "docker/vex-agent/docker-compose.dev.yml",
   ]);
 }
 
 export function getEnvExamplePath(): string {
-  return resolvePackageAsset("docker/echo-agent/.env.example", [
-    "docker/echo-agent/.env.example",
+  return resolvePackageAsset("docker/vex-agent/.env.example", [
+    "docker/vex-agent/.env.example",
   ]);
 }
 
-export function getEchoAgentMigrationsDir(): string {
-  return resolvePackageAsset("Echo Agent migrations directory", [
-    "dist/echo-agent/db/migrations",
-    "src/echo-agent/db/migrations",
+export function getVexAgentMigrationsDir(): string {
+  return resolvePackageAsset("Vex Agent migrations directory", [
+    "dist/vex-agent/db/migrations",
+    "src/vex-agent/db/migrations",
   ]);
 }
 
 export function getMcpCliEntryPath(): string {
-  return resolvePackageAsset("EchoClaw MCP CLI entrypoint", [
+  return resolvePackageAsset("Vex MCP CLI entrypoint", [
     "dist/mcp/index.js",
   ]);
 }

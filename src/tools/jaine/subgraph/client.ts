@@ -1,4 +1,4 @@
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { loadConfig } from "../../../config/store.js";
 import logger from "../../../utils/logger.js";
 import { TokenBucket, ConcurrencyLimiter } from "../../../utils/rateLimit.js";
@@ -30,7 +30,7 @@ function getSubgraphUrl(): string {
 }
 
 function isRetryable(err: unknown): boolean {
-  if (err instanceof EchoError) {
+  if (err instanceof VexError) {
     return err.code === ErrorCodes.SUBGRAPH_RATE_LIMITED ||
            err.code === ErrorCodes.SUBGRAPH_TIMEOUT ||
            err.code === ErrorCodes.SUBGRAPH_API_ERROR;
@@ -77,34 +77,34 @@ async function postGraphQL<T>(query: string, variables?: Record<string, unknown>
         });
 
         if (res.status === 429) {
-          throw new EchoError(ErrorCodes.SUBGRAPH_RATE_LIMITED, "Subgraph HTTP 429");
+          throw new VexError(ErrorCodes.SUBGRAPH_RATE_LIMITED, "Subgraph HTTP 429");
         }
         if (!res.ok) {
-          throw new EchoError(ErrorCodes.SUBGRAPH_API_ERROR, `Subgraph HTTP ${res.status}`);
+          throw new VexError(ErrorCodes.SUBGRAPH_API_ERROR, `Subgraph HTTP ${res.status}`);
         }
 
         const json = (await res.json()) as GraphQLResponse<T>;
 
         if (json.errors && json.errors.length > 0) {
           const msg = json.errors.map(e => e.message).join("; ");
-          throw new EchoError(ErrorCodes.SUBGRAPH_INVALID_RESPONSE, `GraphQL errors: ${msg}`);
+          throw new VexError(ErrorCodes.SUBGRAPH_INVALID_RESPONSE, `GraphQL errors: ${msg}`);
         }
 
         if (!json.data) {
-          throw new EchoError(ErrorCodes.SUBGRAPH_INVALID_RESPONSE, "Missing data in response");
+          throw new VexError(ErrorCodes.SUBGRAPH_INVALID_RESPONSE, "Missing data in response");
         }
 
         return json.data;
       } catch (err) {
-        if (err instanceof EchoError) throw err;
+        if (err instanceof VexError) throw err;
         if (err instanceof Error && err.name === "AbortError") {
-          throw new EchoError(
+          throw new VexError(
             ErrorCodes.SUBGRAPH_TIMEOUT,
             `Subgraph request timed out after ${SUBGRAPH_DEFAULTS.TIMEOUT_MS}ms`,
             "Try again or check network connectivity"
           );
         }
-        throw new EchoError(
+        throw new VexError(
           ErrorCodes.SUBGRAPH_API_ERROR,
           err instanceof Error ? err.message : "Subgraph request failed"
         );

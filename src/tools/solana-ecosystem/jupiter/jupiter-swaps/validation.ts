@@ -2,7 +2,7 @@
  * Validation and auth helpers for Jupiter Swap API V2.
  */
 
-import { EchoError, ErrorCodes } from "../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 import {
   requireJupiterApiKey as requireSharedJupiterApiKey,
   resolveJupiterApiKey as resolveSharedJupiterApiKey,
@@ -25,7 +25,7 @@ function assertNumberInRange(
   max: number,
 ): void {
   if (!Number.isFinite(value) || value < min || value > max) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       `${name} must be between ${min} and ${max}.`,
@@ -35,7 +35,7 @@ function assertNumberInRange(
 
 function assertPositiveIntegerString(name: string, value: string): void {
   if (!/^\d+$/.test(value)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       `${name} must be a base-10 integer string in smallest units.`,
@@ -43,7 +43,7 @@ function assertPositiveIntegerString(name: string, value: string): void {
   }
 
   if (BigInt(value) <= 0n) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       `${name} must be greater than 0.`,
@@ -58,7 +58,7 @@ function assertRequiredTogether(
   rightValue: unknown,
 ): void {
   if (Boolean(leftValue) !== Boolean(rightValue)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       `${leftName} and ${rightName} must be provided together.`,
     );
@@ -72,7 +72,7 @@ function assertMutuallyExclusive(
   rightValue: unknown,
 ): void {
   if (leftValue && rightValue) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       `${leftName} and ${rightName} are mutually exclusive.`,
     );
@@ -120,7 +120,7 @@ export function validateJupiterSwapOrderParams(params: JupiterSwapOrderParams): 
   if (params.payer) validateSolanaAddress(params.payer);
 
   if (params.swapMode && params.swapMode !== "ExactIn") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       `Unsupported swapMode: ${params.swapMode}`,
       "Jupiter Swap API V2 currently supports only ExactIn.",
@@ -130,10 +130,10 @@ export function validateJupiterSwapOrderParams(params: JupiterSwapOrderParams): 
   if (isDefined(params.slippageBps)) assertNumberInRange("slippageBps", params.slippageBps, 0, 10_000);
   if (isDefined(params.referralFee)) assertNumberInRange("referralFee", params.referralFee, 50, 255);
   if (isDefined(params.priorityFeeLamports) && params.priorityFeeLamports < 0) {
-    throw new EchoError(ErrorCodes.INVALID_AMOUNT, `Invalid priorityFeeLamports: ${params.priorityFeeLamports}`);
+    throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid priorityFeeLamports: ${params.priorityFeeLamports}`);
   }
   if (isDefined(params.jitoTipLamports) && params.jitoTipLamports < 0) {
-    throw new EchoError(ErrorCodes.INVALID_AMOUNT, `Invalid jitoTipLamports: ${params.jitoTipLamports}`);
+    throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid jitoTipLamports: ${params.jitoTipLamports}`);
   }
 
   assertRequiredTogether("referralAccount", params.referralAccount, "referralFee", params.referralFee);
@@ -146,7 +146,7 @@ export function validateJupiterSwapBuildParams(params: JupiterSwapBuildParams): 
   assertPositiveIntegerString("amount", params.amount);
 
   if (params.mode && params.mode !== "fast") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       `Unsupported build mode: ${params.mode}`,
       "Supported build mode: fast.",
@@ -173,7 +173,7 @@ export function validateJupiterSwapBuildParams(params: JupiterSwapBuildParams): 
     params.nativeDestinationAccount,
   );
   if ((params.platformFeeBps ?? 0) > 0 && !params.feeAccount) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       "feeAccount is required when platformFeeBps is positive.",
     );
@@ -182,13 +182,13 @@ export function validateJupiterSwapBuildParams(params: JupiterSwapBuildParams): 
 
 export function validateJupiterSwapExecuteRequest(request: JupiterSwapExecuteRequest): void {
   if (!request.signedTransaction.trim()) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       "signedTransaction is required for /execute.",
     );
   }
   if (!request.requestId.trim()) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       "requestId is required for /execute.",
     );

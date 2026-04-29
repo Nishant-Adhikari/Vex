@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 
 const mockQuery = vi.fn();
 const mockLoadEmbeddingConfig = vi.fn();
 const mockFetchWithTimeout = vi.fn();
 
-vi.mock("@echo-agent/db/client.js", () => ({
+vi.mock("@vex-agent/db/client.js", () => ({
   getPool: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
   }),
 }));
 
-vi.mock("@echo-agent/embeddings/config.js", () => ({
+vi.mock("@vex-agent/embeddings/config.js", () => ({
   EMBEDDING_REQUEST_TIMEOUT_MS: 30_000,
   loadEmbeddingConfig: (...args: unknown[]) => mockLoadEmbeddingConfig(...args),
 }));
@@ -55,7 +55,7 @@ describe("mcp runtime health", () => {
 
   it("wraps timeout failures as McpHealthError with fail-fast guidance", async () => {
     mockFetchWithTimeout.mockRejectedValue(
-      new EchoError(
+      new VexError(
         ErrorCodes.HTTP_TIMEOUT,
         "Request timed out after 30000ms",
         "Check network connectivity or try again later",

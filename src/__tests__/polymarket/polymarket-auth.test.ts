@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { signClobRequest, buildClobHeaders, requirePolyClobCredentials, hasPolyClobCredentials } from "@tools/polymarket/auth.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 describe("signClobRequest", () => {
   it("returns timestamp and base64 signature", () => {
@@ -57,7 +57,7 @@ describe("requirePolyClobCredentials", () => {
     delete process.env.POLYMARKET_API_KEY;
     delete process.env.POLYMARKET_API_SECRET;
     delete process.env.POLYMARKET_PASSPHRASE;
-    expect(() => requirePolyClobCredentials()).toThrow(EchoError);
+    expect(() => requirePolyClobCredentials()).toThrow(VexError);
     expect(() => requirePolyClobCredentials()).toThrow(/not configured/);
   });
 
@@ -65,7 +65,7 @@ describe("requirePolyClobCredentials", () => {
     process.env.POLYMARKET_API_KEY = "key";
     delete process.env.POLYMARKET_API_SECRET;
     delete process.env.POLYMARKET_PASSPHRASE;
-    expect(() => requirePolyClobCredentials()).toThrow(EchoError);
+    expect(() => requirePolyClobCredentials()).toThrow(VexError);
   });
 
   it("returns credentials when all env vars set", () => {

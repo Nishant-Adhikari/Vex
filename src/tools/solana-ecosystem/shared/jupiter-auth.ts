@@ -2,7 +2,7 @@
  * Shared Jupiter auth helpers for all Jupiter shelves.
  */
 
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 
 export interface JupiterApiKeyOptions {
   feature?: string;
@@ -21,7 +21,7 @@ export function requireJupiterApiKey(options: JupiterApiKeyOptions = {}): string
 
   const apiKey = resolveJupiterApiKey();
   if (!apiKey) {
-    throw new EchoError(
+    throw new VexError(
       errorCode,
       `JUPITER_API_KEY is required for ${feature}.`,
       "Generate a key at https://portal.jup.ag and set JUPITER_API_KEY in CONFIG_DIR/.env.",

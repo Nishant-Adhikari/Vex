@@ -1,8 +1,8 @@
-import { EchoError, ErrorCodes } from "../errors.js";
+import { VexError, ErrorCodes } from "../errors.js";
 import { readEnvValue } from "../providers/env-resolution.js";
 import { ENV_FILE } from "../config/paths.js";
 
-const ENV_KEY = "ECHO_KEYSTORE_PASSWORD";
+const ENV_KEY = "VEX_KEYSTORE_PASSWORD";
 
 /**
  * Sanitize env value: treat empty string and literal "undefined" as missing.
@@ -14,8 +14,8 @@ function sanitizeEnvValue(value: string | undefined): string | null {
 
 /**
  * Resolve keystore password with 2-level fallback chain:
- *   1. process.env.ECHO_KEYSTORE_PASSWORD (if non-empty, not "undefined")
- *   2. ~/.config/echoclaw/.env (app-specific)
+ *   1. process.env.VEX_KEYSTORE_PASSWORD (if non-empty, not "undefined")
+ *   2. ~/.config/vex/.env (app-specific)
  *
  * Resolved value is cached in process.env for subsequent calls.
  */
@@ -27,7 +27,7 @@ export function getKeystorePassword(): string | null {
     return envValue;
   }
 
-  // 2. Fallback: ~/.config/echoclaw/.env (app-specific)
+  // 2. Fallback: ~/.config/vex/.env (app-specific)
   const appFileValue = readEnvValue(ENV_KEY, ENV_FILE);
   if (appFileValue) {
     process.env[ENV_KEY] = appFileValue;
@@ -44,10 +44,10 @@ export function getKeystorePassword(): string | null {
 export function requireKeystorePassword(): string {
   const pw = getKeystorePassword();
   if (!pw) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KEYSTORE_PASSWORD_NOT_SET,
-      "ECHO_KEYSTORE_PASSWORD environment variable is required.",
-      "Run: echoclaw setup password --from-env  (then restart OpenClaw sessions)"
+      "VEX_KEYSTORE_PASSWORD environment variable is required.",
+      "Run: vex setup password --from-env  (then restart OpenClaw sessions)"
     );
   }
   return pw;

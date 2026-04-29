@@ -6,7 +6,7 @@ import type { Address } from "viem";
 
 // ── Client identification ───────────────────────────────────────────
 
-export const KYBER_CLIENT_ID = "EchoClaw";
+export const KYBER_CLIENT_ID = "Vex";
 
 // ── Native token (same on all EVM chains) ───────────────────────────
 

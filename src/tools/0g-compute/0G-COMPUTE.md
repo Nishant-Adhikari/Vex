@@ -34,7 +34,7 @@ src/tools/0g-compute/
   │
   ▼
 broker-factory.ts (cached, per-process singleton)
-  ├── Wallet key from Echo keystore
+  ├── Wallet key from Vex keystore
   ├── RPC URL from config
   └── ChainId verification (16661 = 0G Mainnet)
         │
@@ -70,7 +70,7 @@ Provider recovery chain (if not in compute-state.json):
 2. Ledger detail → first sub-account with lockedOg > 0
 3. OpenClaw config `baseUrl` → match against service endpoints
 
-State persisted in `~/.echoclaw/0g-compute/compute-state.json`.
+State persisted in `~/.vex/0g-compute/compute-state.json`.
 
 ---
 

@@ -6,7 +6,7 @@
  */
 
 import { createHmac } from "node:crypto";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import {
   ENV_POLYMARKET_API_KEY,
   ENV_POLYMARKET_API_SECRET,
@@ -80,10 +80,10 @@ export function requirePolyClobCredentials(): PolyClobCredentials {
   const passphrase = process.env[ENV_POLYMARKET_PASSPHRASE];
 
   if (!apiKey || !apiSecret || !passphrase) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.POLYMARKET_NOT_CONFIGURED,
       "Polymarket CLOB API key not configured",
-      "Run 'echoclaw polymarket setup --yes' to auto-generate API credentials.",
+      "Run 'vex polymarket setup --yes' to auto-generate API credentials.",
     );
   }
 

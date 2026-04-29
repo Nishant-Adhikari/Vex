@@ -2,8 +2,8 @@
  * Production MCP — startup health probes.
  *
  * Two probes, both must pass before the server binds a transport:
- *   1. DB ping  — `SELECT 1` over the shared echo-agent pool. Fails if
- *      ECHO_AGENT_DB_URL points at an unreachable / down Postgres.
+ *   1. DB ping  — `SELECT 1` over the shared vex-agent pool. Fails if
+ *      VEX_DB_URL points at an unreachable / down Postgres.
  *   2. Embeddings probe — POST {EMBEDDING_BASE_URL}/embeddings with a
  *      throwaway input, assert the returned vector length matches
  *      EMBEDDING_DIM. Fails if the model runner is not running, the model
@@ -16,11 +16,11 @@
  * MCP clients which usually do not surface server logs.
  */
 
-import { getPool } from "@echo-agent/db/client.js";
+import { getPool } from "@vex-agent/db/client.js";
 import {
   EMBEDDING_REQUEST_TIMEOUT_MS,
   loadEmbeddingConfig,
-} from "@echo-agent/embeddings/config.js";
+} from "@vex-agent/embeddings/config.js";
 import { fetchWithTimeout } from "@utils/http.js";
 import logger from "@utils/logger.js";
 
@@ -34,7 +34,7 @@ export class McpHealthError extends Error {
   }
 }
 
-/** Verify the echo-agent DB pool is reachable. */
+/** Verify the vex-agent DB pool is reachable. */
 export async function probeDb(): Promise<void> {
   try {
     const pool = getPool();
@@ -42,7 +42,7 @@ export async function probeDb(): Promise<void> {
     if (result.rows[0]?.ok !== 1) {
       throw new McpHealthError(
         "DB probe returned unexpected payload",
-        "Inspect ECHO_AGENT_DB_URL and the Postgres instance health.",
+        "Inspect VEX_DB_URL and the Postgres instance health.",
       );
     }
     logger.info("mcp.health.db_ok");
@@ -51,7 +51,7 @@ export async function probeDb(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     throw new McpHealthError(
       `DB probe failed: ${msg}`,
-      "Check that ECHO_AGENT_DB_URL points at a running pgvector Postgres (e.g. `make e2e-up`).",
+      "Check that VEX_DB_URL points at a running pgvector Postgres (e.g. `make e2e-up`).",
     );
   }
 }

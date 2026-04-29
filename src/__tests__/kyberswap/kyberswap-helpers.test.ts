@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resolveChain, resolveChainWithId, requireFeature } from "@tools/kyberswap/helpers.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 // Mock on-chain reads for resolveTokenMetadata address path
 vi.mock("../../tools/kyberswap/evm-utils.js", async (importOriginal) => {
@@ -58,8 +58,8 @@ describe("requireFeature", () => {
   });
 
   it("throws KYBER_UNSUPPORTED_CHAIN for unsupported feature", () => {
-    expect(() => requireFeature("mantle", "zaas")).toThrow(EchoError);
-    expect(() => requireFeature("megaeth", "zaas")).toThrow(EchoError);
+    expect(() => requireFeature("mantle", "zaas")).toThrow(VexError);
+    expect(() => requireFeature("megaeth", "zaas")).toThrow(VexError);
   });
 });
 

@@ -1,24 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { mapPolyTransportError, mapPolyApiError } from "@tools/polymarket/errors.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 describe("mapPolyTransportError", () => {
   it("re-throws POLYMARKET_ errors as-is", () => {
-    const err = new EchoError(ErrorCodes.POLYMARKET_RATE_LIMITED, "rate limited");
+    const err = new VexError(ErrorCodes.POLYMARKET_RATE_LIMITED, "rate limited");
     expect(() => mapPolyTransportError(err)).toThrow(err);
   });
 
   it("maps HTTP_TIMEOUT to POLYMARKET_TIMEOUT", () => {
-    const err = new EchoError(ErrorCodes.HTTP_TIMEOUT, "timed out");
+    const err = new VexError(ErrorCodes.HTTP_TIMEOUT, "timed out");
     expect(() => mapPolyTransportError(err)).toThrow(expect.objectContaining({ code: ErrorCodes.POLYMARKET_TIMEOUT }));
   });
 
   it("maps HTTP_REQUEST_FAILED to POLYMARKET_API_ERROR", () => {
-    const err = new EchoError(ErrorCodes.HTTP_REQUEST_FAILED, "failed");
+    const err = new VexError(ErrorCodes.HTTP_REQUEST_FAILED, "failed");
     expect(() => mapPolyTransportError(err)).toThrow(expect.objectContaining({ code: ErrorCodes.POLYMARKET_API_ERROR }));
   });
 
-  it("re-throws non-EchoError as-is", () => {
+  it("re-throws non-VexError as-is", () => {
     const err = new Error("network");
     expect(() => mapPolyTransportError(err)).toThrow(err);
   });

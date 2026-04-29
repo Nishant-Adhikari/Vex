@@ -4,7 +4,7 @@ import { loadConfig, saveConfig } from "../../config/store.js";
 import { encryptPrivateKey, saveKeystore, keystoreExists } from "./keystore.js";
 import { autoBackup } from "./backup.js";
 import { requireKeystorePassword } from "../../utils/env.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 export interface WalletCreateResult {
   address: Address;
@@ -21,7 +21,7 @@ export async function createWallet(opts: { force?: boolean } = {}): Promise<Wall
   const existed = keystoreExists();
 
   if (existed && !opts.force) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KEYSTORE_ALREADY_EXISTS,
       "Keystore already exists.",
       "Use --force to overwrite. Existing keystore will be backed up automatically."

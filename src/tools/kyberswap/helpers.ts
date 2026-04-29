@@ -4,7 +4,7 @@
  */
 
 import { isAddress, getAddress, type Address } from "viem";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { resolveChainSlug, slugToChainId, chainIdToSlug, getChainFeatures } from "./chains.js";
 import { NATIVE_TOKEN_ADDRESS } from "./constants.js";
 import { getKyberTokenApiClient } from "./token-api/client.js";
@@ -35,7 +35,7 @@ export function resolveChainWithId(chainInput: string): { slug: KyberChainSlug; 
 export function requireFeature(slug: KyberChainSlug, feature: "aggregator" | "limitOrder" | "zaas"): void {
   const features = getChainFeatures(slug);
   if (!features[feature]) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
       `Chain "${slug}" does not support KyberSwap ${feature}`,
     );
@@ -73,7 +73,7 @@ export async function resolveTokenAddress(input: string, chainId: number): Promi
   }
 
   if (tokens.length === 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
       `Token "${input}" not found on chain ${chainId}`,
       "Provide a token address or try a different symbol.",
@@ -119,7 +119,7 @@ export async function resolveTokenMetadata(input: string, chainId: number): Prom
   if (isAddress(input)) {
     const slug = chainIdToSlug(chainId);
     if (!slug) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.KYBER_TOKEN_NOT_FOUND,
         `Cannot resolve chain slug for chainId ${chainId}`,
       );
@@ -145,7 +145,7 @@ export async function resolveTokenMetadata(input: string, chainId: number): Prom
   }
 
   if (!match) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
       `Token "${input}" not found on chain ${chainId}`,
       "Provide a token address or try a different symbol.",
@@ -182,7 +182,7 @@ export async function resolveTokenMetadataStrict(input: string, chainId: number)
   }
 
   if (!isAddress(input)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
       `Token "${input}" is not a valid address. Resolve token addresses via khalani.tokens.search before calling mutating tools.`,
       "Pass the exact contract address, not a symbol or name.",
@@ -191,7 +191,7 @@ export async function resolveTokenMetadataStrict(input: string, chainId: number)
 
   const slug = chainIdToSlug(chainId);
   if (!slug) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
       `Cannot resolve chain slug for chainId ${chainId}`,
     );

@@ -4,7 +4,7 @@ const mockCreate = vi.fn().mockResolvedValue(undefined);
 const mockSetScope = vi.fn().mockResolvedValue(undefined);
 const mockEnd = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("@echo-agent/db/repos/sessions.js", () => ({
+vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   createSession: (...args: unknown[]) => mockCreate(...args),
   setScope: (...args: unknown[]) => mockSetScope(...args),
   endSession: (...args: unknown[]) => mockEnd(...args),

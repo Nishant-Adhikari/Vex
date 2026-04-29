@@ -16,7 +16,7 @@ import {
   createTransferCheckedInstruction,
   getMint,
 } from "@solana/spl-token";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { getSolanaConnection, signAndSendLegacyTx } from "./solana-transaction.js";
 import { solanaExplorerUrl, lamportsToSol } from "./solana-validation.js";
 import type { TransferResult } from "./types.js";
@@ -33,10 +33,10 @@ export async function sendSol(params: SendSolParams): Promise<TransferResult> {
 
   const balance = await connection.getBalance(params.from.publicKey);
   if (BigInt(balance) < params.lamports) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `Insufficient SOL balance: have ${lamportsToSol(BigInt(balance))} SOL, need ${lamportsToSol(params.lamports)} SOL`,
-      "Check balance with: echoclaw wallet balances --wallet solana",
+      "Check balance with: vex wallet balances --wallet solana",
     );
   }
 
@@ -74,7 +74,7 @@ export async function sendSplToken(params: SendSplTokenParams): Promise<Transfer
       toPubkey,
     );
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_TRANSFER_FAILED,
       `Failed to get/create recipient token account: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -87,18 +87,18 @@ export async function sendSplToken(params: SendSplTokenParams): Promise<Transfer
     const sourceAccount = await getAccount(connection, sourceAtaAddress);
     sourceBalance = sourceAccount.amount;
   } catch {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `You don't hold token ${params.mint}`,
-      "Check balance with: echoclaw wallet balances --wallet solana",
+      "Check balance with: vex wallet balances --wallet solana",
     );
   }
 
   if (sourceBalance < params.amount) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `Insufficient token balance for mint ${params.mint}`,
-      "Check balance with: echoclaw wallet balances --wallet solana",
+      "Check balance with: vex wallet balances --wallet solana",
     );
   }
 

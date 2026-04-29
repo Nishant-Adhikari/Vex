@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mapDexScreenerError, mapTransportError } from "@tools/dexscreener/errors.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 describe("mapDexScreenerError", () => {
   it("maps 429 to DEXSCREENER_RATE_LIMITED", () => {
@@ -52,12 +52,12 @@ describe("mapDexScreenerError", () => {
 
 describe("mapTransportError", () => {
   it("re-throws DEXSCREENER_* errors as-is", () => {
-    const original = new EchoError(ErrorCodes.DEXSCREENER_RATE_LIMITED, "rate limited");
+    const original = new VexError(ErrorCodes.DEXSCREENER_RATE_LIMITED, "rate limited");
     expect(() => mapTransportError(original)).toThrow(original);
   });
 
   it("maps HTTP_TIMEOUT to DEXSCREENER_TIMEOUT", () => {
-    const original = new EchoError(ErrorCodes.HTTP_TIMEOUT, "timed out");
+    const original = new VexError(ErrorCodes.HTTP_TIMEOUT, "timed out");
     try {
       mapTransportError(original);
     } catch (err) {
@@ -68,7 +68,7 @@ describe("mapTransportError", () => {
   });
 
   it("maps HTTP_REQUEST_FAILED to DEXSCREENER_API_ERROR", () => {
-    const original = new EchoError(ErrorCodes.HTTP_REQUEST_FAILED, "connection refused");
+    const original = new VexError(ErrorCodes.HTTP_REQUEST_FAILED, "connection refused");
     try {
       mapTransportError(original);
     } catch (err) {

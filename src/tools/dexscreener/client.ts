@@ -6,7 +6,7 @@
  */
 
 import { loadConfig } from "../../config/store.js";
-import { EchoError } from "../../errors.js";
+import { VexError } from "../../errors.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import { mapDexScreenerError, mapTransportError } from "./errors.js";
 import type {

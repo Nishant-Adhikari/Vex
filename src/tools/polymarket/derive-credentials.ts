@@ -2,7 +2,7 @@
  * Polymarket CLOB API credential derivation — canonical source of truth.
  *
  * Flow: wallet keystore → EIP-712 ClobAuth signature → derive/create API key → save to .env
- * Used by: echo-agent internal tool + CLI `echoclaw polymarket setup`
+ * Used by: vex-agent internal tool + CLI `vex polymarket setup`
  *
  * Auth: L1 EIP-712 typed data signature in request headers (POLY_ADDRESS, POLY_SIGNATURE,
  * POLY_TIMESTAMP, POLY_NONCE). NOT JSON body auth.
@@ -12,7 +12,7 @@
 
 import { requireWalletAndKeystore } from "../wallet/auth.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { writeAppEnvValue } from "../../providers/env-resolution.js";
 import { isRecord } from "../../utils/validation-helpers.js";
 import {
@@ -102,7 +102,7 @@ async function buildL1AuthHeaders(
  * 5. Save apiKey/secret/passphrase to .env via writeAppEnvValue
  * 6. Set process.env immediately for same-process use
  *
- * Throws EchoError on failure (network, auth, missing fields).
+ * Throws VexError on failure (network, auth, missing fields).
  */
 export async function deriveAndSavePolymarketCredentials(): Promise<DeriveResult> {
   const { privateKey } = requireWalletAndKeystore();
@@ -120,7 +120,7 @@ export async function deriveAndSavePolymarketCredentials(): Promise<DeriveResult
   }
 
   if (!creds) {
-    throw new EchoError(ErrorCodes.POLYMARKET_AUTH_FAILED, "Failed to derive or create API key");
+    throw new VexError(ErrorCodes.POLYMARKET_AUTH_FAILED, "Failed to derive or create API key");
   }
 
   // Save to .env
@@ -176,7 +176,7 @@ async function createApiKey(l1Headers: Record<string, string>): Promise<ApiCrede
     const errBody = await readJson(response).catch(() => null);
     const errMsg = isRecord(errBody) && typeof errBody.error === "string"
       ? errBody.error : `HTTP ${response.status}`;
-    throw new EchoError(ErrorCodes.POLYMARKET_AUTH_FAILED, `Failed to create API key: ${errMsg}`);
+    throw new VexError(ErrorCodes.POLYMARKET_AUTH_FAILED, `Failed to create API key: ${errMsg}`);
   }
 
   const data = await readJson(response);

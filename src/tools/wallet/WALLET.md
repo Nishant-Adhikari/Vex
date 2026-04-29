@@ -66,7 +66,7 @@ All using `node:crypto` — zero external dependencies.
 | `decryptPrivateKey(keystore, password)` | Decrypt → `0x`-prefixed Hex |
 | `encryptSecretBytes(bytes, password)` | Generic byte encryption (used by Solana) |
 | `decryptSecretBytes(keystore, password)` | Generic byte decryption |
-| `saveKeystore(keystore)` | Save to `~/.echoclaw/keystore.json` |
+| `saveKeystore(keystore)` | Save to `~/.vex/keystore.json` |
 | `loadKeystore()` | Load + validate shape |
 | `keystoreExists()` | Check existence |
 | `normalizePrivateKey(pk)` | Validate + normalize hex key |
@@ -92,7 +92,7 @@ Same encryption as EVM, but for 64-byte Solana secret keys.
 | `encryptSolanaSecretKey(key, password)` | Encrypt → KeystoreV1 |
 | `decryptSolanaSecretKey(keystore, password)` | Decrypt → 64-byte Uint8Array |
 | `deriveSolanaAddress(secretKey)` | Keypair → base58 public key |
-| `saveSolanaKeystore(keystore)` | Save to `~/.echoclaw/solana-keystore.json` |
+| `saveSolanaKeystore(keystore)` | Save to `~/.vex/solana-keystore.json` |
 
 ---
 

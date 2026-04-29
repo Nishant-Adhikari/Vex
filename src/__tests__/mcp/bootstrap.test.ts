@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { validateRequiredEnv } from "../../mcp/bootstrap.js";
 
 const ENV_KEYS = [
-  "ECHO_AGENT_DB_URL",
+  "VEX_DB_URL",
   "EMBEDDING_BASE_URL",
   "EMBEDDING_MODEL",
   "EMBEDDING_DIM",
@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function setRequiredBootstrapEnv(): void {
-  process.env.ECHO_AGENT_DB_URL = "postgresql://echo_agent:echo_agent@localhost:5777/echo_agent";
+  process.env.VEX_DB_URL = "postgresql://vex:vex@localhost:5777/vex";
   process.env.EMBEDDING_BASE_URL = "http://localhost:12434/engines/llama.cpp/v1";
   process.env.EMBEDDING_MODEL = "ai/embeddinggemma:300M-Q8_0";
   process.env.EMBEDDING_DIM = "768";

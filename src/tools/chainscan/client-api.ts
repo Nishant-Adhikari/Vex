@@ -3,7 +3,7 @@
  * Thin wrappers over fetchEtherscanApi / fetchCustomApi with input validation.
  */
 
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { CHAINSCAN_DEFAULTS } from "./constants.js";
 import {
   validateAddress,
@@ -187,7 +187,7 @@ export const chainscanClient = {
 
   decodeRaw(contracts: string[], inputs: string[]): Promise<ChainScanDecodedRaw[]> {
     if (contracts.length !== inputs.length) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.INVALID_AMOUNT,
         `contracts (${contracts.length}) and inputs (${inputs.length}) must have same length`
       );

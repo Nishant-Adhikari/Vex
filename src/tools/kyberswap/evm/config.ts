@@ -14,7 +14,7 @@ import {
   type Transport,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { slugToChainId } from "../chains.js";
 import type { KyberChainSlug } from "../types.js";
 
@@ -92,7 +92,7 @@ export function toViemChain(slug: KyberChainSlug): Chain {
   const chainId = slugToChainId(slug);
   const rpcUrl = DEFAULT_RPC[slug];
   if (!rpcUrl) {
-    throw new EchoError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `No RPC URL for chain: ${slug}`);
+    throw new VexError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `No RPC URL for chain: ${slug}`);
   }
   return {
     id: chainId,

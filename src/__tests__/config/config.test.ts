@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 // Mock the paths module before importing store
-const testDir = join(tmpdir(), `echo-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+const testDir = join(tmpdir(), `vex-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const testConfigFile = join(testDir, "config.json");
 const testKeystoreFile = join(testDir, "keystore.json");
 

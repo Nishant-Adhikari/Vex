@@ -1,6 +1,6 @@
 /**
  * JWT caching for EchoBook auth.
- * Stores JWT + expiry in ~/.config/echoclaw/jwt.json
+ * Stores JWT + expiry in ~/.config/vex/jwt.json
  * Auto-detects expiry from JWT payload (base64url-decoded).
  */
 

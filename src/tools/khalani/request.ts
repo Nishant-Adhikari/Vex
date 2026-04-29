@@ -3,7 +3,7 @@
  * Extracted from commands/khalani/request.ts for retained core.
  */
 
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { getCachedKhalaniChains, getChainFamily, resolveChainId } from "./chains.js";
 import type { QuoteRequest, TradeType } from "./types.js";
 import { formatChainFamily, normalizeAddressForFamily, resolveConfiguredAddress } from "./helpers.js";
@@ -41,7 +41,7 @@ export function resolveQuoteAddress(
   const fallback = resolveConfiguredAddress(family);
   const value = input ?? fallback;
   if (!value) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.WALLET_NOT_CONFIGURED,
       `No ${formatChainFamily(family)} ${fallbackRole} address available.`,
       `Pass --${fallbackRole === "refundTo" ? "refund-to" : fallbackRole} explicitly or configure the matching wallet first.`,
@@ -58,7 +58,7 @@ export function parseReferrerFeeBps(value: string | undefined): number | undefin
   if (!value) return undefined;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > 9999) {
-    throw new EchoError(ErrorCodes.INVALID_AMOUNT, "referrer-fee-bps must be an integer between 0 and 9999.");
+    throw new VexError(ErrorCodes.INVALID_AMOUNT, "referrer-fee-bps must be an integer between 0 and 9999.");
   }
   return parsed;
 }
@@ -68,16 +68,16 @@ export function parseAmountInSmallestUnits(value: string): string {
     try {
       const decimal = BigInt(value).toString();
       if (decimal === "0") {
-        throw new EchoError(ErrorCodes.INVALID_AMOUNT, "amount must be a positive value in smallest units.");
+        throw new VexError(ErrorCodes.INVALID_AMOUNT, "amount must be a positive value in smallest units.");
       }
       return decimal;
     } catch (err) {
-      if (err instanceof EchoError) throw err;
-      throw new EchoError(ErrorCodes.INVALID_AMOUNT, `Invalid hex amount: ${value}`);
+      if (err instanceof VexError) throw err;
+      throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid hex amount: ${value}`);
     }
   }
   if (!/^\d+$/.test(value) || value === "0") {
-    throw new EchoError(ErrorCodes.INVALID_AMOUNT, "amount must be a positive integer in smallest units (decimal or 0x hex).");
+    throw new VexError(ErrorCodes.INVALID_AMOUNT, "amount must be a positive integer in smallest units (decimal or 0x hex).");
   }
   return value;
 }

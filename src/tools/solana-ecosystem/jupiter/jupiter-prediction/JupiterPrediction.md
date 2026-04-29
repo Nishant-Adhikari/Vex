@@ -21,7 +21,7 @@ Local source-of-truth for the Jupiter Prediction shelf under `src/tools/solana-e
   - transaction request endpoints for create order, close position, close all positions, and claim position
   - local signing helpers for the transaction-returning endpoints
 - Explicitly deferred in this pass:
-  - legacy command and echo-agent rewiring
+  - legacy command and vex-agent rewiring
   - doc-only routes not backed by indexed OpenAPI, including follow/unfollow/followers/following
   - doc-only pending-order cancellation via `DELETE /orders`
 

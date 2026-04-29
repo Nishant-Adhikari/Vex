@@ -30,8 +30,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          PACKAGE="echoclaw/echo-agent"
-          ORG="echoclaw-labs"
+          PACKAGE="vex/vex-agent"
+          ORG="vex-foundation"
 
           VERSION_ROWS=$(gh api \
             -H "Accept: application/vnd.github+json" \

@@ -4,7 +4,7 @@
  */
 
 import { Keypair } from "@solana/web3.js";
-import { EchoError, ErrorCodes } from "../../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { signAndSendVersionedTx } from "../../../shared/solana-transaction.js";
 import { solanaExplorerUrl } from "../../../shared/solana-validation.js";
 import {
@@ -81,7 +81,7 @@ function requireTransaction(
   feature: string,
 ): string {
   if (!transaction) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `${feature} did not return an executable transaction.`,
     );

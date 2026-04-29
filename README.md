@@ -1,12 +1,12 @@
 <div align="center">
 
-# EchoClaw
+# Vex
 
 **A memory-first autonomous agent platform for on-chain execution.**
 
 Two products, one engine. A desktop agent that plans, remembers, and trades on its own, and a Model Context Protocol bridge that lets any compliant host (Claude Code, Cursor, Codex, or a custom client) drive the same stack from the outside.
 
-[Why EchoClaw](#why-echoclaw) · [Architecture](#architecture-at-a-glance) · [Memory](#memory-first-architecture) · [Autonomy](#autonomy-missions-wake-loops-subagents) · [Tool ecosystem](#tool-ecosystem) · [MCP bridge](#mcp-bridge) · [Operations](#operations) · [Distribution](#distribution)
+[Why Vex](#why-vex) · [Architecture](#architecture-at-a-glance) · [Memory](#memory-first-architecture) · [Autonomy](#autonomy-missions-wake-loops-subagents) · [Tool ecosystem](#tool-ecosystem) · [MCP bridge](#mcp-bridge) · [Operations](#operations) · [Distribution](#distribution)
 
 </div>
 
@@ -15,19 +15,19 @@ Two products, one engine. A desktop agent that plans, remembers, and trades on i
 
 ## What it is
 
-EchoClaw is a production grade agent runtime built around three axes that most LLM stacks leave as an afterthought.
+Vex is a production grade agent runtime built around three axes that most LLM stacks leave as an afterthought.
 
 1. **Canonical memory with disjoint contracts.** Knowledge the agent writes by hand is the source of truth. Session episodes are scoped recall helpers. Live transcripts compact themselves under pressure. The three layers never cross contaminate, and every compaction preserves a handoff so the next turn picks up where the previous one left off.
 2. **Wake driven autonomy, preempt symmetric.** The agent can pause itself until a future moment, be interrupted by a user in flight, or run entirely headless. In every case resume is atomic, the wake row is consumed exactly once, and the user message always wins the race.
 3. **Tool federation at scale.** A 32 tool agent surface (22 of them visible through MCP in a fully configured environment) federates to **240 protocol manifests** across 10 live on chain and social namespaces. A disciplined filter chain keeps the surface safe whether the operator is a human in a GUI, a remote Claude Code session, or a headless autonomous mission.
 
-The same TypeScript engine (`src/echo-agent/`) powers both products. The MCP bridge (`src/mcp/`) is a passive surface adapter on top. No feature lives only in one product.
+The same TypeScript engine (`src/vex-agent/`) powers both products. The MCP bridge (`src/mcp/`) is a passive surface adapter on top. No feature lives only in one product.
 
 ---
 
-## Why EchoClaw
+## Why Vex
 
-Most agent frameworks hand you a loop and a tool schema. EchoClaw hands you an opinionated memory architecture, a pause and resume protocol, and a filter chain that is the same whether the operator is a GUI user or a remote client.
+Most agent frameworks hand you a loop and a tool schema. Vex hands you an opinionated memory architecture, a pause and resume protocol, and a filter chain that is the same whether the operator is a GUI user or a remote client.
 
 **1. Disjoint memory contracts that the engine actually enforces.** Knowledge entries are written only through agent invoked tools, with a content hash idempotency guarantee. Session episodes are write once, inside the checkpoint transaction. Hot context (the last dozen active entries) is surfaced in every prompt without a tool call. No other agent framework we know of separates these three stores at the schema level.
 
@@ -35,7 +35,7 @@ Most agent frameworks hand you a loop and a tool schema. EchoClaw hands you an o
 
 **3. Preempt symmetric autonomy.** A user message and a wake signal are first class peers. The ingress router cancels any pending wake before saving a user message. The wake executor re checks run status and skips resume if the user beat it. The same session state machine handles both.
 
-| Axis | EchoClaw | Typical LangChain agent | AutoGPT style loop | CrewAI | Goose |
+| Axis | Vex | Typical LangChain agent | AutoGPT style loop | CrewAI | Goose |
 |---|---|---|---|---|---|
 | Canonical memory layer | Manual only, schema enforced | Free form, vector only | Free form notes | Shared memory, free form | Session based |
 | Compaction continuity | Structured handoff with forced pass fallback | Summarizer, no handoff | None, drops context | Limited summary | Conversation summary |
@@ -53,9 +53,9 @@ Most agent frameworks hand you a loop and a tool schema. EchoClaw hands you an o
 | Product | Shape | Audience | Install |
 |---|---|---|---|
 | **Vex** | Desktop agent for macOS, Windows, and Linux with integrated chat, mission control, and wallet UX. | End users, traders, researchers. | Native application. |
-| **EchoClaw MCP** | Local package exposing the engine over Model Context Protocol (stdio and HTTP). | Developers driving EchoClaw from Claude Code, Cursor, Codex, or a custom MCP host. | Installed through the EchoClaw distribution channel, registers the `echoclaw-mcp` binary with the chosen host. |
+| **Vex MCP** | Local package exposing the engine over Model Context Protocol (stdio and HTTP). | Developers driving Vex from Claude Code, Cursor, Codex, or a custom MCP host. | Installed through the Vex distribution channel, registers the `vex-mcp` binary with the chosen host. |
 
-Both products talk to the same local PostgreSQL with pgvector store, the same knowledge entries, the same live sessions. A mission started from the MCP side is resumable from Vex, and a knowledge entry written over MCP appears in Vex recall on the next turn.
+Both products talk to the same local PostgreSQL with pgvector store, the same knowledge entries, the same live sessions. A mission started from the MCP side is resumable from the Vex desktop app, and a knowledge entry written over MCP appears in desktop recall on the next turn.
 
 ---
 
@@ -63,27 +63,31 @@ Both products talk to the same local PostgreSQL with pgvector store, the same kn
 
 ### Run Vex (desktop)
 
-1. Install the Vex application for your OS from the EchoClaw distribution channel.
+1. Install the Vex application for your OS from the Vex distribution channel.
 2. On first launch Vex provisions a local PostgreSQL with pgvector instance and generates the HTTP token for the MCP bridge.
 3. Open a chat session, or draft a mission from the mission panel. No further setup needed.
 
 ### Wire the MCP bridge to a host
 
-1. Install the `@echoclaw/echo` package through the EchoClaw distribution channel. This registers the `echoclaw-mcp` binary on your PATH.
+1. Install the `@vex/vex` package through the Vex distribution channel. This registers the `vex-mcp` binary on your PATH.
 2. Add the server entry to your host configuration. For stdio transport the block is minimal:
 
    ```json
    {
      "mcpServers": {
-       "echoclaw": {
-         "command": "echoclaw-mcp",
+       "vex": {
+         "command": "vex-mcp",
          "args": []
        }
      }
    }
    ```
 
-3. Restart the host. On initialize, EchoClaw runs migrations, probes the database and the embedding service, then registers its 22 production tools. HTTP transport flips `MCP_TRANSPORT=http` and reads the Bearer token from `CONFIG_DIR/mcp-http-token`.
+3. Restart the host. On initialize, Vex runs migrations, probes the database and the embedding service, then registers its 22 production tools. HTTP transport flips `MCP_TRANSPORT=http` and reads the Bearer token from `CONFIG_DIR/mcp-http-token`.
+
+### Migrating from EchoClaw
+
+If you upgraded from a previous EchoClaw install, run `rm -rf ~/.config/echoclaw` and re-run `vex setup`. ENV variables changed (`ECHO_AGENT_DB_URL` → `VEX_DB_URL`, `ECHO_KEYSTORE_PASSWORD` → `VEX_KEYSTORE_PASSWORD`, `ECHO_CONFIG_DIR` → `VEX_CONFIG_DIR`). The Postgres role/database in `docker/vex-agent/` was renamed from `echo_agent` to `vex` — drop the old volume (`docker volume rm <stack>_echo-agent-db-data`) before bringing up the new compose stack.
 
 ---
 
@@ -96,7 +100,7 @@ flowchart LR
     MCP_CLIENT[Claude Code, Cursor, Codex, custom MCP clients]
   end
 
-  subgraph EchoClaw["EchoClaw runtime"]
+  subgraph Vex["Vex runtime"]
     INGRESS[routeUserMessage ingress router]
     TURNLOOP[Turn loop]
     CHECKPOINT[Checkpoint pipeline]
@@ -160,7 +164,7 @@ One host, one engine, one store. Transport and UI vary, the contract does not.
 
 ## Memory first architecture
 
-Every agent platform claims a memory layer. Most glue an embedding index onto a transcript and call it done. EchoClaw treats memory as three disjoint layers, each with a declared purpose, a retention policy, and a write path. On top of that a hot context block is surfaced on every turn, so the agent never has to query for the knowledge it just wrote.
+Every agent platform claims a memory layer. Most glue an embedding index onto a transcript and call it done. Vex treats memory as three disjoint layers, each with a declared purpose, a retention policy, and a write path. On top of that a hot context block is surfaced on every turn, so the agent never has to query for the knowledge it just wrote.
 
 ### Three layers, three contracts
 
@@ -260,7 +264,7 @@ Checkpoint also carries a noop cooldown (5 min) that throttles back to back atte
 
 ### Two thresholds, two mechanisms
 
-EchoClaw distinguishes two independent overflow scenarios.
+Vex distinguishes two independent overflow scenarios.
 
 - **Inline 16 KiB cap** applied on the turn loop for every tool result as it is being persisted. Anything over the cap goes to `tool_output_blobs` with a 15 minute TTL, and a stub message carries the `blob_key` and a preview so the transcript stays readable. If the blob write itself fails the engine falls back to inline persist, never dropping, because dropping would break the `tool_call` to `tool_result` pair invariant.
 - **Post hoc giant tool fallback** applied during checkpoint. If a single tool message already in the transcript exceeds 8000 characters and was not already externalized, the checkpoint plan forks that one message into the archive under its own placeholder, keeping the pair contract stable. Overflow rows (which are already externalized) are skipped to avoid double archiving.
@@ -285,7 +289,7 @@ On every turn the engine resolves the seed query for session episode recall usin
 
 ## Autonomy: missions, wake loops, subagents
 
-EchoClaw's runtime is a matrix of session kinds times loop modes, not a single agent loop. Each cell has explicit behavior for what ends the loop, what needs approval, and what tools are visible.
+Vex's runtime is a matrix of session kinds times loop modes, not a single agent loop. Each cell has explicit behavior for what ends the loop, what needs approval, and what tools are visible.
 
 | Session kind | Loop mode | Approval gate | Text ends loop | Tools unique to cell |
 |---|---|---|---|---|
@@ -411,7 +415,7 @@ The `session_links` table is a general graph. It stores subagent relationships t
 
 ## Tool ecosystem
 
-EchoClaw's surface is intentionally small at the agent level and deep underneath.
+Vex's surface is intentionally small at the agent level and deep underneath.
 
 - **32 agent level tools** register in the engine.
 - **22 of those** are visible through the MCP bridge in a fully configured environment. The exact number dips if `TAVILY_API_KEY` is unset (hides `web_search` and `web_fetch`) or rises by one if `POLYMARKET_API_KEY` is unset (shows `polymarket_setup` for one shot credential provisioning).
@@ -562,8 +566,8 @@ flowchart TB
 ```json
 {
   "mcpServers": {
-    "echoclaw": {
-      "command": "echoclaw-mcp",
+    "vex": {
+      "command": "vex-mcp",
       "args": []
     }
   }
@@ -580,11 +584,11 @@ Every document the host can read (`docs://overview`, `docs://tools`, `docs://pro
 
 ## Operations
 
-Production deployment is as important as product features. EchoClaw ships the pieces needed to keep the system healthy over time.
+Production deployment is as important as product features. Vex ships the pieces needed to keep the system healthy over time.
 
 ### Reembed pipeline
 
-Embeddings change. Models get deprecated, dimensions get bumped, research moves. EchoClaw treats this as a first class operation.
+Embeddings change. Models get deprecated, dimensions get bumped, research moves. Vex treats this as a first class operation.
 
 - Every knowledge entry carries its own `embedding_model` and `embedding_dim`. Mixed dim recall would crash pgvector, so readers always filter on both. Knowledge written with model A and model B can coexist in one table; only entries matching the current recall model are considered.
 - `knowledge-reembed` (`pnpm run knowledge-reembed`) walks rows whose embedding dim differs from the target, streams them through the embedding service, and updates the row in place under an exclusive `maintenance_leases` lease. While the lease is held, writers wait on a shared lock and fail fast if held too long. Same dim mismatch aborts the whole run to prevent silent corruption.
@@ -608,12 +612,12 @@ Embeddings change. Models get deprecated, dimensions get bumped, research moves.
 | `JUPITER_API_KEY` | Required for every Solana tool | n/a |
 | `POLYMARKET_API_KEY` | Required for CLOB trading and auth reads | n/a |
 | `TAVILY_API_KEY` | Required for `web_search` and `web_fetch` | n/a |
-| `ECHO_AGENT_DB_URL` | PostgreSQL connection string | n/a |
+| `VEX_DB_URL` | PostgreSQL connection string | n/a |
 | `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `EMBEDDING_PROVIDER` | Local or remote embedding service | n/a |
 
 ### E2E live test infrastructure
 
-The `src/echo-agent/e2e/` tree contains dated live test scenarios (`01-04-2026-tests`, `02-04-2026-tests`, `03-04-2026-tests`, `06-04-2026-tests`, and `2026-04` onward). Each run replays a realistic trading or research scenario against a live provider and a pgvector container, with database assertions, discovery smoke tests, preview smoke tests, and replay checks. These scenarios are the ground truth for whether a rollout kept the autonomy contract intact.
+The `src/vex-agent/e2e/` tree contains dated live test scenarios (`01-04-2026-tests`, `02-04-2026-tests`, `03-04-2026-tests`, `06-04-2026-tests`, and `2026-04` onward). Each run replays a realistic trading or research scenario against a live provider and a pgvector container, with database assertions, discovery smoke tests, preview smoke tests, and replay checks. These scenarios are the ground truth for whether a rollout kept the autonomy contract intact.
 
 ---
 
@@ -640,11 +644,11 @@ The `src/echo-agent/e2e/` tree contains dated live test scenarios (`01-04-2026-t
 
 Native binary for macOS, Windows, and Linux. Ships the engine, the knowledge store, and the GUI. Targeted at end users who want an autonomous on chain assistant that remembers what they are working on across sessions.
 
-### EchoClaw MCP package
+### Vex MCP package
 
-Installed through the EchoClaw distribution channel and registered with the user's MCP aware host. Exposes the `echoclaw-mcp` binary. Targeted at developers and power users who already work inside Claude Code, Cursor, Codex, or a custom MCP client and want the same autonomous capabilities alongside their existing workflow.
+Installed through the Vex distribution channel and registered with the user's MCP aware host. Exposes the `vex-mcp` binary. Targeted at developers and power users who already work inside Claude Code, Cursor, Codex, or a custom MCP client and want the same autonomous capabilities alongside their existing workflow.
 
-Both products share the same PostgreSQL store by default. A mission started in Vex is resumable from the MCP side. A knowledge entry written over MCP shows up in Vex recall immediately.
+Both products share the same PostgreSQL store by default. A mission started in the desktop app is resumable from the MCP side. A knowledge entry written over MCP shows up in desktop recall immediately.
 
 ---
 
@@ -675,7 +679,7 @@ Both products share the same PostgreSQL store by default. A mission started in V
 
 ```
 src/
-  echo-agent/             # Core engine: memory, turn loop, missions, subagents, tools, wake
+  vex-agent/              # Core engine: memory, turn loop, missions, subagents, tools, wake
     engine/               # Ingress, runners, turn loop, checkpoint pipeline, wake, subagents
     knowledge/            # Policy, ranking, content hash, recall payload
     tools/                # Tool registry, dispatcher, internal handlers, protocol manifests

@@ -1,23 +1,23 @@
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
-const APP_NAME = "echoclaw";
+const APP_NAME = "vex";
 
 function getConfigDir(): string {
   const plat = platform();
 
   if (plat === "win32") {
-    // Windows: %APPDATA%/echoclaw
+    // Windows: %APPDATA%/vex
     const appData = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
     return join(appData, APP_NAME);
   }
 
   if (plat === "darwin") {
-    // macOS: ~/Library/Application Support/echoclaw
+    // macOS: ~/Library/Application Support/vex
     return join(homedir(), "Library", "Application Support", APP_NAME);
   }
 
-  // Linux/Unix: ~/.config/echoclaw
+  // Linux/Unix: ~/.config/vex
   const xdgConfig = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
   return join(xdgConfig, APP_NAME);
 }

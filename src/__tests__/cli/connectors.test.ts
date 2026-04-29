@@ -4,19 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildMcpOnboardingGuide } from "../../mcp/docs/onboarding.js";
 
-const MOCK_MCP_ENTRY_PATH = "/tmp/echoclaw-test/dist/mcp/index.js";
+const MOCK_MCP_ENTRY_PATH = "/tmp/vex-test/dist/mcp/index.js";
 
-vi.mock("../../cli/echo/package-assets.js", () => ({
+vi.mock("../../cli/setup/package-assets.js", () => ({
   getMcpCliEntryPath: () => MOCK_MCP_ENTRY_PATH,
 }));
 
-const { readGeneratedArtifact, writeConnectorArtifacts } = await import("../../cli/echo/connectors.js");
-const { buildQuickstartPrompt } = await import("../../cli/echo/quickstart.js");
+const { readGeneratedArtifact, writeConnectorArtifacts } = await import("../../cli/setup/connectors.js");
+const { buildQuickstartPrompt } = await import("../../cli/setup/quickstart.js");
 
 const tempDirs: string[] = [];
 
 function createTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "echoclaw-connectors-"));
+  const dir = mkdtempSync(join(tmpdir(), "vex-connectors-"));
   tempDirs.push(dir);
   return dir;
 }
@@ -27,7 +27,7 @@ afterEach(() => {
   }
 });
 
-describe("echo connector generation", () => {
+describe("setup connector generation", () => {
   it("writes ready artifacts for all supported AI agent targets", () => {
     const outputDir = createTempDir();
     const generated = writeConnectorArtifacts(outputDir);
@@ -44,15 +44,15 @@ describe("echo connector generation", () => {
     expect(readGeneratedArtifact(join(outputDir, "cursor.mcp.json"))).toContain(`"command": "${process.execPath}"`);
     expect(readGeneratedArtifact(join(outputDir, "cursor.mcp.json"))).toContain(`"${MOCK_MCP_ENTRY_PATH}"`);
     expect(readGeneratedArtifact(join(outputDir, "claude.add-json.txt"))).toContain(
-      "claude mcp add-json --scope local echoclaw",
+      "claude mcp add-json --scope local vex",
     );
     expect(readGeneratedArtifact(join(outputDir, "codex.add.txt"))).toContain(
-      "codex mcp add echoclaw --",
+      "codex mcp add vex --",
     );
     expect(readGeneratedArtifact(join(outputDir, "codex.add.txt"))).toContain(process.execPath);
     expect(readGeneratedArtifact(join(outputDir, "codex.add.txt"))).toContain(MOCK_MCP_ENTRY_PATH);
     expect(readGeneratedArtifact(join(outputDir, "openclaw.set.txt"))).toContain(
-      "openclaw mcp set echoclaw",
+      "openclaw mcp set vex",
     );
     expect(readGeneratedArtifact(join(outputDir, "default-http.txt"))).toContain(
       "http://127.0.0.1:4203/mcp",
@@ -67,7 +67,7 @@ describe("echo connector generation", () => {
     const generated = writeConnectorArtifacts(outputDir);
     const readme = readFileSync(generated.readmePath, "utf-8");
 
-    expect(readme).toContain("# EchoClaw MCP connectors");
+    expect(readme).toContain("# Vex MCP connectors");
     expect(readme).toContain("## Cursor");
     expect(readme).toContain("## Claude Code");
     expect(readme).toContain("## Codex");
@@ -78,7 +78,7 @@ describe("echo connector generation", () => {
     expect(readme).toContain("Run In Shell");
     expect(readme).toContain("Paste Into AI");
     expect(readme).toContain(
-      "You can run it in this same terminal after `echoclaw echo` exits, or open a second terminal if you prefer.",
+      "You can run it in this same terminal after `vex setup` exits, or open a second terminal if you prefer.",
     );
     expect(readme).toContain(buildQuickstartPrompt());
   });

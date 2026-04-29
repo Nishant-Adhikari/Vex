@@ -7,12 +7,12 @@
 
 import { isAddress, getAddress } from "viem";
 import type { Address } from "viem";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 /** Validate and checksum an Ethereum address. */
 export function requireAddress(raw: string, label: string): Address {
   if (!isAddress(raw)) {
-    throw new EchoError(ErrorCodes.INVALID_ADDRESS, `Invalid ${label} address: ${raw}`);
+    throw new VexError(ErrorCodes.INVALID_ADDRESS, `Invalid ${label} address: ${raw}`);
   }
   return getAddress(raw) as Address;
 }
@@ -21,7 +21,7 @@ export function requireAddress(raw: string, label: string): Address {
 export function requirePositiveNumber(raw: string, label: string): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) {
-    throw new EchoError(ErrorCodes.INVALID_AMOUNT, `Invalid ${label}: ${raw} (must be > 0)`);
+    throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid ${label}: ${raw} (must be > 0)`);
   }
   return n;
 }
@@ -30,7 +30,7 @@ export function requirePositiveNumber(raw: string, label: string): number {
 export function requireTokenId(raw: string): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0 || n > 254) {
-    throw new EchoError(ErrorCodes.INVALID_AMOUNT, `Invalid token-id: ${raw} (must be 0-254)`);
+    throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid token-id: ${raw} (must be 0-254)`);
   }
   return n;
 }

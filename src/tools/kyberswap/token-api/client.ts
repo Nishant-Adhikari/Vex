@@ -7,7 +7,7 @@
 
 import { loadConfig } from "../../../config/store.js";
 import { fetchWithTimeout, readJson } from "../../../utils/http.js";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { mapKyberTransportError } from "../errors.js";
 import { validateTokenSearchResponse, validateHoneypotFotResponse } from "./validation.js";
 import { TOKEN_API_TIMEOUT_MS, KYBER_CLIENT_ID } from "../constants.js";
@@ -60,7 +60,7 @@ export class KyberTokenApiClient {
         const message = typeof raw === "object" && raw !== null && "message" in raw
           ? String((raw as Record<string, unknown>).message)
           : `HTTP ${response.status}`;
-        throw new EchoError(ErrorCodes.KYBER_TOKEN_SEARCH_FAILED, `Token search failed: ${message}`);
+        throw new VexError(ErrorCodes.KYBER_TOKEN_SEARCH_FAILED, `Token search failed: ${message}`);
       }
 
       const raw = await readJson(response);
@@ -69,7 +69,7 @@ export class KyberTokenApiClient {
       logger.debug({ event: "kyberswap.token_api.search.success", count: result.data.tokens.length });
       return result.data.tokens;
     } catch (err) {
-      if (err instanceof EchoError && err.code.startsWith("KYBER_")) throw err;
+      if (err instanceof VexError && err.code.startsWith("KYBER_")) throw err;
       mapKyberTransportError(err);
     }
   }
@@ -96,7 +96,7 @@ export class KyberTokenApiClient {
         const message = typeof raw === "object" && raw !== null && "message" in raw
           ? String((raw as Record<string, unknown>).message)
           : `HTTP ${response.status}`;
-        throw new EchoError(ErrorCodes.KYBER_HONEYPOT_CHECK_FAILED, `Honeypot check failed: ${message}`);
+        throw new VexError(ErrorCodes.KYBER_HONEYPOT_CHECK_FAILED, `Honeypot check failed: ${message}`);
       }
 
       const raw = await readJson(response);
@@ -105,7 +105,7 @@ export class KyberTokenApiClient {
       logger.debug({ event: "kyberswap.token_api.honeypot.success", chainId, address, isHoneypot: result.isHoneypot });
       return result;
     } catch (err) {
-      if (err instanceof EchoError && err.code.startsWith("KYBER_")) throw err;
+      if (err instanceof VexError && err.code.startsWith("KYBER_")) throw err;
       mapKyberTransportError(err);
     }
   }

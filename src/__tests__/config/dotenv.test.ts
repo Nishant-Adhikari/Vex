@@ -8,7 +8,7 @@ import {
   readDotenvFileValue,
 } from "@utils/dotenv.js";
 
-const TEST_DIR = join(tmpdir(), `echoclaw-dotenv-${Date.now()}`);
+const TEST_DIR = join(tmpdir(), `vex-dotenv-${Date.now()}`);
 const TEST_ENV = join(TEST_DIR, ".env");
 
 describe("utils/dotenv", () => {

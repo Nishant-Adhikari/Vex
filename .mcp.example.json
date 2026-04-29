@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "echoclaw": {
-      "command": "echoclaw-mcp"
+    "vex": {
+      "command": "vex-mcp"
     }
   }
 }

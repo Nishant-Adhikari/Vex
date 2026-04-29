@@ -2,7 +2,7 @@
  * Validation and auth helpers for Jupiter Lend Earn REST endpoints.
  */
 
-import { EchoError, ErrorCodes } from "../../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../../errors.js";
 import {
   requireJupiterApiKey as requireSharedJupiterApiKey,
   resolveJupiterApiKey as resolveSharedJupiterApiKey,
@@ -17,7 +17,7 @@ import type {
 
 function assertPositiveIntegerString(name: string, value: string): void {
   if (!/^\d+$/.test(value)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       `${name} must be a base-10 integer string in smallest units.`,
@@ -25,7 +25,7 @@ function assertPositiveIntegerString(name: string, value: string): void {
   }
 
   if (BigInt(value) <= 0n) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       `${name} must be greater than 0.`,
@@ -38,7 +38,7 @@ function validateAddressList(
   fieldName: string,
 ): string[] {
   if (!Array.isArray(values) || values.length === 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `${fieldName} must include at least one Solana address.`,
     );

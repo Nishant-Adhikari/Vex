@@ -13,7 +13,7 @@
 ```
 src/tools/slop/
   auth.ts         — JWT auth: login (nonce+sign+verify), refresh, cache check
-  jwtCache.ts     — JWT persistence (~/.echoclaw/slop-jwt.json), access+refresh with expiry
+  jwtCache.ts     — JWT persistence (~/.vex/slop-jwt.json), access+refresh with expiry
   quote.ts        — Pure bigint bonding curve math (mirrors BondingCurveLib.sol)
   abi/
     token.ts      — SlopToken ABI (buy/sell, reserves, balances, graduation, fees)
@@ -71,7 +71,7 @@ requireSlopAuth(privateKey, walletAddress, baseUrl)
 
 ### Cache
 
-File: `~/.echoclaw/slop-jwt.json`. Stores both access + refresh tokens with decoded expiry. Wallet mismatch → clear cache and re-login.
+File: `~/.vex/slop-jwt.json`. Stores both access + refresh tokens with decoded expiry. Wallet mismatch → clear cache and re-login.
 
 ---
 
@@ -96,7 +96,7 @@ Contract addresses from `config.slop.*` (see `config/store.ts`).
 | `utils/http.ts` | `fetchJson()` for auth API calls |
 | `config/paths.ts` | `SLOP_JWT_FILE` |
 | `config/store.ts` | `ensureConfigDir()` |
-| `errors.ts` | `EchoError`, `ErrorCodes` |
+| `errors.ts` | `VexError`, `ErrorCodes` |
 
 ---
 
@@ -105,7 +105,7 @@ Contract addresses from `config.slop.*` (see `config/store.ts`).
 - `bot/executor.ts` — `calculateTokensOut`, `calculateOgOut`, `calculatePartialFill`, `applySlippage` + ABIs for on-chain trades
 - `bot/notify.ts` — `requireSlopAuth` for chat notifications
 - `commands/slop/` — all CLI commands (token, trade, price, curve, fees, reward)
-- `echo-agent/tools/protocols/0g/slop/` — echo-agent protocol handlers
+- `vex-agent/tools/protocols/0g/slop/` — vex-agent protocol handlers
 
 ---
 

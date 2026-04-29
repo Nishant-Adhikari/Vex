@@ -1,4 +1,4 @@
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 export type WalletChain = "eip155" | "solana";
 
@@ -10,7 +10,7 @@ export function normalizeWalletChain(input?: string): WalletChain {
     return "solana";
   }
 
-  throw new EchoError(
+  throw new VexError(
     ErrorCodes.INVALID_ADDRESS,
     `Unsupported wallet chain: ${input}`,
     "Use --chain eip155 or --chain solana.",

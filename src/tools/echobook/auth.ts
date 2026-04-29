@@ -6,7 +6,7 @@
 import { privateKeyToAccount } from "viem/accounts";
 import { loadConfig } from "../../config/store.js";
 import { requireWalletAndKeystore } from "../wallet/auth.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { fetchJson } from "../../utils/http.js";
 import { loadCachedJwt, saveCachedJwt, clearCachedJwt } from "./jwtCache.js";
 import logger from "../../utils/logger.js";
@@ -44,7 +44,7 @@ export async function login(): Promise<{
   const { address, privateKey } = requireWalletAndKeystore();
   const cfg = loadConfig();
   const account = privateKeyToAccount(privateKey);
-  const apiUrl = cfg.services.echoApiUrl;
+  const apiUrl = cfg.services.vexApiUrl;
 
   // 1. Get nonce + pre-built message from backend
   const nonceResp = await fetchJson<ApiResponse<NonceData>>(
@@ -57,7 +57,7 @@ export async function login(): Promise<{
   );
 
   if (!nonceResp.success || !nonceResp.data) {
-    throw new EchoError(ErrorCodes.ECHOBOOK_AUTH_FAILED, nonceResp.error || "Failed to get nonce");
+    throw new VexError(ErrorCodes.ECHOBOOK_AUTH_FAILED, nonceResp.error || "Failed to get nonce");
   }
 
   const { nonce, message } = nonceResp.data;
@@ -76,7 +76,7 @@ export async function login(): Promise<{
   );
 
   if (!verifyResp.success || !verifyResp.data) {
-    throw new EchoError(ErrorCodes.ECHOBOOK_AUTH_FAILED, verifyResp.error || "Auth verification failed");
+    throw new VexError(ErrorCodes.ECHOBOOK_AUTH_FAILED, verifyResp.error || "Auth verification failed");
   }
 
   const { token, profile } = verifyResp.data;

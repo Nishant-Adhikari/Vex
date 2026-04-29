@@ -29,12 +29,12 @@ vi.mock("../../tools/wallet/solana-import.js", () => ({
   importSolanaWallet,
 }));
 
-vi.mock("../../cli/echo/status.js", () => ({
+vi.mock("../../cli/setup/status.js", () => ({
   getEvmWalletStatus,
   getSolanaWalletStatus,
 }));
 
-vi.mock("../../cli/echo/ui.js", () => ({
+vi.mock("../../cli/setup/ui.js", () => ({
   confirm,
   promptMenu,
   promptSecret,
@@ -45,7 +45,7 @@ vi.mock("../../utils/output.js", () => ({
   writeStderr,
 }));
 
-const { ensureWallets } = await import("../../cli/echo/wallets.js");
+const { ensureWallets } = await import("../../cli/setup/wallets.js");
 
 function walletStatus(
   kind: "evm" | "solana",

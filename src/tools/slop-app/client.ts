@@ -1,13 +1,13 @@
 /**
  * Slop App REST client — profile, image, agents query.
  *
- * Extracted from CLI commands for reuse by echo-agent handlers.
+ * Extracted from CLI commands for reuse by vex-agent handlers.
  * Singleton via getSlopAppClient().
  */
 
 import { loadConfig } from "../../config/store.js";
 import { fetchJson, fetchWithTimeout } from "../../utils/http.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { mapSlopAppError, mapSlopAppTransportError } from "./errors.js";
 import type {
   AgentQuery,
@@ -50,11 +50,11 @@ export class SlopAppClient {
         `${this.backendUrl}/profiles/${encodeURIComponent(address)}`,
       );
       if (!response.success || !response.data) {
-        throw new EchoError(ErrorCodes.PROFILE_NOT_FOUND, response.error || "Profile not found");
+        throw new VexError(ErrorCodes.PROFILE_NOT_FOUND, response.error || "Profile not found");
       }
       return response.data;
     } catch (err) {
-      if (err instanceof EchoError) throw err;
+      if (err instanceof VexError) throw err;
       mapSlopAppTransportError(err);
     }
   }
@@ -83,11 +83,11 @@ export class SlopAppClient {
         },
       );
       if (!response.success || !response.data) {
-        throw new EchoError(ErrorCodes.REGISTRATION_FAILED, response.error || "Registration failed");
+        throw new VexError(ErrorCodes.REGISTRATION_FAILED, response.error || "Registration failed");
       }
       return response.data;
     } catch (err) {
-      if (err instanceof EchoError) throw err;
+      if (err instanceof VexError) throw err;
       mapSlopAppTransportError(err);
     }
   }
@@ -111,11 +111,11 @@ export class SlopAppClient {
 
       const result = (await response.json()) as ImageUploadResponse;
       if (!result.success) {
-        throw new EchoError(ErrorCodes.IMAGE_UPLOAD_FAILED, result.error || "Upload failed");
+        throw new VexError(ErrorCodes.IMAGE_UPLOAD_FAILED, result.error || "Upload failed");
       }
       return result;
     } catch (err) {
-      if (err instanceof EchoError) throw err;
+      if (err instanceof VexError) throw err;
       mapSlopAppTransportError(err);
     }
   }
@@ -135,11 +135,11 @@ export class SlopAppClient {
         },
       );
       if (!response.success) {
-        throw new EchoError(ErrorCodes.IMAGE_GENERATION_FAILED, response.error || "Generation failed");
+        throw new VexError(ErrorCodes.IMAGE_GENERATION_FAILED, response.error || "Generation failed");
       }
       return response;
     } catch (err) {
-      if (err instanceof EchoError) throw err;
+      if (err instanceof VexError) throw err;
       mapSlopAppTransportError(err);
     }
   }
@@ -176,13 +176,13 @@ export class SlopAppClient {
         throw mapSlopAppError(response.status, body.error || `HTTP ${response.status}`);
       }
       if (!body.success) {
-        throw new EchoError(ErrorCodes.AGENT_QUERY_FAILED, body.error || "Query failed");
+        throw new VexError(ErrorCodes.AGENT_QUERY_FAILED, body.error || "Query failed");
       }
 
       const tokens = body.data || [];
       return { tokens, count: tokens.length, cached: body.cached ?? false };
     } catch (err) {
-      if (err instanceof EchoError) throw err;
+      if (err instanceof VexError) throw err;
       mapSlopAppTransportError(err);
     }
   }

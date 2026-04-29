@@ -38,7 +38,7 @@ All read-only. No wallet, signing, or API key needed.
 | `client.ts` | `DexScreenerClient` — 10 REST methods, singleton via `getDexScreenerClient()` |
 | `types.ts` | All TypeScript interfaces: `DexPair`, `DexTokenProfile`, `DexBoost`, `DexCommunityTakeover`, `DexAd`, `DexOrder`, `DexTrendingItem`, WS types |
 | `validation.ts` | Runtime validators for all API response shapes + WS handshake parsers |
-| `errors.ts` | `mapDexScreenerError()` + `mapTransportError()` — HTTP status to typed `EchoError` |
+| `errors.ts` | `mapDexScreenerError()` + `mapTransportError()` — HTTP status to typed `VexError` |
 | `ws-client.ts` | `DexScreenerStream` — EventEmitter WebSocket client with auto-reconnect (5 channels) |
 
 ### Commands (`src/commands/dexscreener/`)
@@ -327,7 +327,7 @@ dexscreener stream <type>
 
 **Stream types**: `profiles`, `boosts`, `boosts-top`, `community-takeovers`, `ads`
 
-**Headless mode** (`ECHOCLAW_HEADLESS=1`): All commands output structured JSON via `writeJsonSuccess()`.
+**Headless mode** (`VEX_HEADLESS=1`): All commands output structured JSON via `writeJsonSuccess()`.
 **`stream`**: Long-running foreground process. First line = handshake snapshot. Subsequent lines = incremental updates. Stop with SIGINT/SIGTERM.
 
 ---
@@ -379,7 +379,7 @@ For a trading agent, DexScreener provides the research layer:
    stream profiles --json            → new trending projects
 
 4. EXECUTE (via other modules)
-   → Solana tokens: echoclaw solana swap ...
-   → EVM tokens: echoclaw kyberswap swap sell ...
-   → Cross-chain: echoclaw khalani bridge ...
+   → Solana tokens: vex solana swap ...
+   → EVM tokens: vex kyberswap swap sell ...
+   → Cross-chain: vex khalani bridge ...
 ```

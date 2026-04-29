@@ -18,7 +18,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
     {
       title: "Trade workflow",
       description:
-        "Recommended pattern for executing protocol trades / mutations through EchoClaw MCP",
+        "Recommended pattern for executing protocol trades / mutations through Vex MCP",
     },
     () => ({
       messages: [
@@ -118,9 +118,9 @@ export function registerWorkflowPrompts(server: McpServer): void {
             type: "text" as const,
             text:
               "## Where the approval gate lives\n\n" +
-              "EchoClaw MCP is a passive tool surface — it does NOT add a server-side approval " +
+              "Vex MCP is a passive tool surface — it does NOT add a server-side approval " +
               "queue for mutations. The gate that decides whether a tool call runs is your host " +
-              "(Claude Code / Cursor / Codex permission UX). EchoClaw trusts whatever the host " +
+              "(Claude Code / Cursor / Codex permission UX). Vex trusts whatever the host " +
               "tells it to execute.\n\n" +
               "## Tool errors\n\n" +
               "Tool results may have `isError: true`. Read the text content for the failure reason. " +

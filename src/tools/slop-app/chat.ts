@@ -6,7 +6,7 @@
  */
 
 import { io, type Socket } from "socket.io-client";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import type { ChatMessage, ChatPostResult } from "./types.js";
 
 const CONNECT_TIMEOUT_MS = 30_000;
@@ -32,7 +32,7 @@ export function postChatMessage(
     let authenticated = false;
     const timeoutHandle = setTimeout(() => {
       socket.disconnect();
-      reject(new EchoError(ErrorCodes.HTTP_TIMEOUT, "Chat connection timed out"));
+      reject(new VexError(ErrorCodes.HTTP_TIMEOUT, "Chat connection timed out"));
     }, POST_TIMEOUT_MS);
 
     socket.on("connect", () => {
@@ -50,7 +50,7 @@ export function postChatMessage(
     socket.on("chat:auth_failed", (data: { error: string }) => {
       clearTimeout(timeoutHandle);
       socket.disconnect();
-      reject(new EchoError(ErrorCodes.CHAT_NOT_AUTHENTICATED, data.error || "Authentication failed"));
+      reject(new VexError(ErrorCodes.CHAT_NOT_AUTHENTICATED, data.error || "Authentication failed"));
     });
 
     socket.on("chat:new", (msg: { id: string; senderAddress: string | null; content: string; timestamp: number }) => {
@@ -65,19 +65,19 @@ export function postChatMessage(
     socket.on("chat:error", (data: { error: string }) => {
       clearTimeout(timeoutHandle);
       socket.disconnect();
-      reject(new EchoError(ErrorCodes.CHAT_SEND_FAILED, data.error || "Chat error"));
+      reject(new VexError(ErrorCodes.CHAT_SEND_FAILED, data.error || "Chat error"));
     });
 
     socket.on("connect_error", (err: Error) => {
       clearTimeout(timeoutHandle);
       socket.disconnect();
-      reject(new EchoError(ErrorCodes.HTTP_REQUEST_FAILED, `Connection failed: ${err.message}`));
+      reject(new VexError(ErrorCodes.HTTP_REQUEST_FAILED, `Connection failed: ${err.message}`));
     });
 
     socket.on("disconnect", (reason: string) => {
       if (!authenticated) {
         clearTimeout(timeoutHandle);
-        reject(new EchoError(ErrorCodes.CHAT_SEND_FAILED, `Disconnected: ${reason}`));
+        reject(new VexError(ErrorCodes.CHAT_SEND_FAILED, `Disconnected: ${reason}`));
       }
     });
   });
@@ -103,7 +103,7 @@ export function readChatHistory(
 
     const timeoutHandle = setTimeout(() => {
       socket.disconnect();
-      reject(new EchoError(ErrorCodes.HTTP_TIMEOUT, "Chat history request timed out"));
+      reject(new VexError(ErrorCodes.HTTP_TIMEOUT, "Chat history request timed out"));
     }, READ_TIMEOUT_MS);
 
     socket.on("chat:history", (messages: ChatMessage[]) => {
@@ -115,13 +115,13 @@ export function readChatHistory(
     socket.on("connect_error", (err: Error) => {
       clearTimeout(timeoutHandle);
       socket.disconnect();
-      reject(new EchoError(ErrorCodes.HTTP_REQUEST_FAILED, `Connection failed: ${err.message}`));
+      reject(new VexError(ErrorCodes.HTTP_REQUEST_FAILED, `Connection failed: ${err.message}`));
     });
 
     socket.on("chat:error", (data: { error: string }) => {
       clearTimeout(timeoutHandle);
       socket.disconnect();
-      reject(new EchoError(ErrorCodes.CHAT_SEND_FAILED, data.error || "Chat error"));
+      reject(new VexError(ErrorCodes.CHAT_SEND_FAILED, data.error || "Chat error"));
     });
   });
 }

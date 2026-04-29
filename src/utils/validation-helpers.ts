@@ -5,7 +5,7 @@
  * validators to avoid duplicating the same type-guard boilerplate.
  */
 
-import { EchoError } from "../errors.js";
+import { VexError } from "../errors.js";
 
 /** Type guard: value is a non-null, non-array object. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -28,14 +28,14 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function createFieldValidators(errorCode: string, prefix: string) {
   function asString(value: unknown, field: string): string {
     if (typeof value !== "string" || value.length === 0) {
-      throw new EchoError(errorCode, `Invalid ${prefix} response: missing ${field}`);
+      throw new VexError(errorCode, `Invalid ${prefix} response: missing ${field}`);
     }
     return value;
   }
 
   function asNumber(value: unknown, field: string): number {
     if (typeof value !== "number" || Number.isNaN(value)) {
-      throw new EchoError(errorCode, `Invalid ${prefix} response: missing ${field}`);
+      throw new VexError(errorCode, `Invalid ${prefix} response: missing ${field}`);
     }
     return value;
   }

@@ -5,7 +5,7 @@
 
 import { getAddress, isAddress } from "viem";
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { resolveChainId } from "./chains.js";
 import { isSolanaAddressLike } from "./validation.js";
 import type { ChainFamily, KhalaniChain } from "./types.js";
@@ -17,13 +17,13 @@ export function formatChainFamily(family: ChainFamily): string {
 export function normalizeAddressForFamily(address: string, family: ChainFamily, fieldName = "address"): string {
   if (family === "eip155") {
     if (!isAddress(address)) {
-      throw new EchoError(ErrorCodes.INVALID_ADDRESS, `Invalid EVM ${fieldName}: ${address}`);
+      throw new VexError(ErrorCodes.INVALID_ADDRESS, `Invalid EVM ${fieldName}: ${address}`);
     }
     return getAddress(address);
   }
 
   if (!isSolanaAddressLike(address)) {
-    throw new EchoError(ErrorCodes.INVALID_ADDRESS, `Invalid Solana ${fieldName}: ${address}`);
+    throw new VexError(ErrorCodes.INVALID_ADDRESS, `Invalid Solana ${fieldName}: ${address}`);
   }
   return address;
 }

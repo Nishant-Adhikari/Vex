@@ -11,7 +11,7 @@ import {
   type WalletClient,
   type Transport,
 } from "viem";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import logger from "../../../utils/logger.js";
 import { validateKyberSpender } from "./erc20.js";
 
@@ -99,7 +99,7 @@ export async function ensureErc721Approval(
     await publicClient.waitForTransactionReceipt({ hash: txHash });
     return txHash;
   } catch (err) {
-    throw new EchoError(ErrorCodes.APPROVAL_FAILED, `ERC-721 approve failed: ${err instanceof Error ? err.message : err}`);
+    throw new VexError(ErrorCodes.APPROVAL_FAILED, `ERC-721 approve failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -163,6 +163,6 @@ export async function ensureErc1155ApprovalForAll(
     await publicClient.waitForTransactionReceipt({ hash: txHash });
     return txHash;
   } catch (err) {
-    throw new EchoError(ErrorCodes.APPROVAL_FAILED, `ERC-1155 setApprovalForAll failed: ${err instanceof Error ? err.message : err}`);
+    throw new VexError(ErrorCodes.APPROVAL_FAILED, `ERC-1155 setApprovalForAll failed: ${err instanceof Error ? err.message : err}`);
   }
 }

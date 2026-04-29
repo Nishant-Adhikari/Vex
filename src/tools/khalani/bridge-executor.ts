@@ -5,7 +5,7 @@
 
 import { getAddress, type Address, type Hash, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { ERC20_ABI } from "../../constants/chain.js";
 import { getKhalaniClient } from "./client.js";
 import { getChainRpcUrl } from "./chains.js";
@@ -41,10 +41,10 @@ export function parseBigintish(value: unknown, field: string): bigint | undefine
     try {
       return BigInt(value);
     } catch {
-      throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, `Invalid bigint field in ${field}: ${value}`);
+      throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, `Invalid bigint field in ${field}: ${value}`);
     }
   }
-  throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, `Unsupported value for ${field}.`);
+  throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, `Unsupported value for ${field}.`);
 }
 
 function parseNumberish(value: unknown, field: string): number | undefined {
@@ -57,7 +57,7 @@ function parseNumberish(value: unknown, field: string): number | undefined {
       return parsed;
     }
   }
-  throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, `Unsupported numeric value for ${field}.`);
+  throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, `Unsupported numeric value for ${field}.`);
 }
 
 function parseChainIdValue(value: unknown): number | undefined {
@@ -68,7 +68,7 @@ function parseChainIdValue(value: unknown): number | undefined {
 
 function assertEvmApproval(approval: Approval): asserts approval is EvmApproval {
   if (approval.type !== "eip1193_request") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_DEPOSIT_FAILED,
       `Unexpected approval type ${approval.type}; expected eip1193_request.`,
     );
@@ -77,7 +77,7 @@ function assertEvmApproval(approval: Approval): asserts approval is EvmApproval 
 
 function assertSolanaApproval(approval: Approval): asserts approval is Extract<Approval, { type: "solana_sendTransaction" }> {
   if (approval.type !== "solana_sendTransaction") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_DEPOSIT_FAILED,
       `Unexpected approval type ${approval.type}; expected solana_sendTransaction.`,
     );
@@ -108,7 +108,7 @@ async function executeEvmApproval(
         : undefined,
     );
     if (requestedChainId != null && requestedChainId !== chain.id) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.CHAIN_MISMATCH,
         `Khalani requested chain switch to ${requestedChainId}, but the selected route uses ${chain.id}.`,
       );
@@ -117,7 +117,7 @@ async function executeEvmApproval(
   }
 
   if (approval.request.method !== "eth_sendTransaction") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_DEPOSIT_FAILED,
       `Unsupported EVM approval method: ${approval.request.method}`,
     );
@@ -127,11 +127,11 @@ async function executeEvmApproval(
     ? approval.request.params[0] as Eip1193TransactionRequest | undefined
     : undefined;
   if (!txRequest?.to) {
-    throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not provide an EVM transaction target.");
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not provide an EVM transaction target.");
   }
 
   if (txRequest.from && getAddress(txRequest.from) !== expectedAddress) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_ADDRESS_MISMATCH,
       `Approval sender ${txRequest.from} does not match the configured EVM wallet.`,
     );
@@ -185,11 +185,11 @@ export async function executeEvmContractCallPlan(
   }
 
   if (!hasDepositAction) {
-    throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not mark any EVM action with deposit=true.");
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not mark any EVM action with deposit=true.");
   }
 
   if (!depositTxHash) {
-    throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not yield a deposit transaction hash.");
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not yield a deposit transaction hash.");
   }
 
   const submitted = await getKhalaniClient().submitDeposit({ quoteId, routeId, txHash: depositTxHash });
@@ -218,11 +218,11 @@ export async function executeSolanaContractCallPlan(
   }
 
   if (!hasDepositAction) {
-    throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not mark any Solana action with deposit=true.");
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not mark any Solana action with deposit=true.");
   }
 
   if (!depositTxHash) {
-    throw new EchoError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not yield a Solana deposit transaction hash.");
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani did not yield a Solana deposit transaction hash.");
   }
 
   const submitted = await getKhalaniClient().submitDeposit({ quoteId, routeId, txHash: depositTxHash });
@@ -237,7 +237,7 @@ export async function executeTransferPlan(
   routeId: string,
 ): Promise<{ orderId: string; txHash: string }> {
   if (chain.type !== "eip155") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_DEPOSIT_FAILED,
       "Solana TRANSFER deposits are not implemented in v1.",
       "Retry with --deposit-method CONTRACT_CALL.",
@@ -277,7 +277,7 @@ export async function executeDepositPlan(
   routeId: string,
 ): Promise<{ orderId: string; txHash: string }> {
   if (plan.kind === "PERMIT2") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_PERMIT2_BLOCKED,
       "PERMIT2 live execution is intentionally blocked in v1.",
       "Use --dry-run to inspect the permit payload or retry with --deposit-method CONTRACT_CALL.",

@@ -9,8 +9,8 @@
  * the registry.
  */
 
-import { getProductionMcpTools } from "@echo-agent/tools/registry.js";
-import type { ToolDef } from "@echo-agent/tools/types.js";
+import { getProductionMcpTools } from "@vex-agent/tools/registry.js";
+import type { ToolDef } from "@vex-agent/tools/types.js";
 
 export function getProductionTools(): readonly ToolDef[] {
   return getProductionMcpTools();

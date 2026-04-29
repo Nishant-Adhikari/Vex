@@ -1,8 +1,8 @@
 /**
- * Structured error class for Echo CLI.
+ * Structured error class for Vex CLI.
  * Enables consistent JSON error output for automation.
  */
-export class EchoError extends Error {
+export class VexError extends Error {
   retryable?: boolean;
   externalName?: string;
 
@@ -12,7 +12,7 @@ export class EchoError extends Error {
     public readonly hint?: string
   ) {
     super(message);
-    this.name = "EchoError";
+    this.name = "VexError";
   }
 }
 
@@ -89,11 +89,11 @@ export const ErrorCodes = {
   AGENT_QUERY_TIMEOUT: "AGENT_QUERY_TIMEOUT",
   AGENT_QUERY_INVALID: "AGENT_QUERY_INVALID",
 
-  // Echo Agent daemon
+  // Vex Agent daemon
   AGENT_START_FAILED: "AGENT_START_FAILED",
   AGENT_NOT_RUNNING: "AGENT_NOT_RUNNING",
 
-  // Echo Agent runtime
+  // Vex Agent runtime
   AGENT_VALIDATION_ERROR: "AGENT_VALIDATION_ERROR",
   AGENT_INFERENCE_FAILED: "AGENT_INFERENCE_FAILED",
   AGENT_TOOL_EXECUTION_FAILED: "AGENT_TOOL_EXECUTION_FAILED",

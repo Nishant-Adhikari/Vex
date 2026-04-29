@@ -12,7 +12,7 @@ import sdkBridge from "./sdk-bridge.cjs";
 import { withSuppressedConsole } from "./bridge.js";
 import { requireWalletAndKeystore } from "../wallet/auth.js";
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { CHAIN } from "../../constants/chain.js";
 import logger from "../../utils/logger.js";
 
@@ -29,7 +29,7 @@ let cachedBroker: ZGComputeNetworkBroker | null = null;
  * Get or create an authenticated 0G Compute Network broker.
  * Cached per-process — the broker is reused for all commands in a single CLI invocation.
  *
- * If privateKey is not provided, reads from the Echo keystore.
+ * If privateKey is not provided, reads from the Vex keystore.
  */
 export async function getAuthenticatedBroker(privateKey?: Hex): Promise<ZGComputeNetworkBroker> {
   if (cachedBroker) return cachedBroker;
@@ -56,14 +56,14 @@ export async function getAuthenticatedBroker(privateKey?: Hex): Promise<ZGComput
       const json = (await res.json()) as { result?: string };
       const remoteChainId = json.result ? parseInt(json.result, 16) : undefined;
       if (remoteChainId !== undefined && remoteChainId !== CHAIN.chainId) {
-        throw new EchoError(
+        throw new VexError(
           ErrorCodes.CHAIN_MISMATCH,
           `RPC chainId mismatch: expected ${CHAIN.chainId} (${CHAIN.name}), got ${remoteChainId}`,
           `Check chain.rpcUrl in your config — it must point to ${CHAIN.name} (chainId ${CHAIN.chainId}).`
         );
       }
     } catch (err) {
-      if (err instanceof EchoError) throw err;
+      if (err instanceof VexError) throw err;
       logger.warn(`[0G Compute] Could not verify RPC chainId: ${err instanceof Error ? err.message : String(err)}`);
     }
 
@@ -71,8 +71,8 @@ export async function getAuthenticatedBroker(privateKey?: Hex): Promise<ZGComput
     logger.debug("[0G Compute] Broker initialized");
     return broker;
   } catch (err) {
-    if (err instanceof EchoError) throw err;
-    throw new EchoError(
+    if (err instanceof VexError) throw err;
+    throw new VexError(
       ErrorCodes.ZG_BROKER_INIT_FAILED,
       `Failed to initialize 0G Compute broker: ${err instanceof Error ? err.message : String(err)}`,
       "Check your network connection and wallet configuration."

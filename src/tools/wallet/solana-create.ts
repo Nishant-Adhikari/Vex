@@ -1,7 +1,7 @@
 import { Keypair } from "@solana/web3.js";
 import { loadConfig, saveConfig } from "../../config/store.js";
 import { autoBackup } from "./backup.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { requireKeystorePassword } from "../../utils/env.js";
 import { deriveSolanaAddress, encryptSolanaSecretKey, saveSolanaKeystore, solanaKeystoreExists } from "./solana-keystore.js";
 
@@ -14,7 +14,7 @@ export async function createSolanaWallet(opts: { force?: boolean } = {}): Promis
   const existed = solanaKeystoreExists();
 
   if (existed && !opts.force) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KEYSTORE_ALREADY_EXISTS,
       "Solana keystore already exists.",
       "Use --force to overwrite. Existing keystore will be backed up automatically.",

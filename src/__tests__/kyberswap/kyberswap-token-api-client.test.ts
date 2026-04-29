@@ -44,7 +44,7 @@ describe("KyberTokenApiClient", () => {
       });
       await client.searchTokens("1");
       const options = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1];
-      expect(options.headers["X-Client-Id"]).toBe("EchoClaw");
+      expect(options.headers["X-Client-Id"]).toBe("Vex");
     });
 
     it("returns parsed tokens", async () => {

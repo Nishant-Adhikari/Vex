@@ -3,13 +3,13 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  getEchoAgentMigrationsDir,
+  getVexAgentMigrationsDir,
   resolveRequiredPath,
 } from "@utils/package-assets.js";
 
 describe("utils/package-assets", () => {
   it("returns the first existing candidate path", () => {
-    const baseDir = join(tmpdir(), `echoclaw-package-assets-${Date.now()}`);
+    const baseDir = join(tmpdir(), `vex-package-assets-${Date.now()}`);
     const missingDir = join(baseDir, "missing");
     const existingDir = join(baseDir, "existing");
 
@@ -29,9 +29,9 @@ describe("utils/package-assets", () => {
   });
 
   it("resolves an existing migrations directory for the current package layout", () => {
-    const migrationsDir = getEchoAgentMigrationsDir();
+    const migrationsDir = getVexAgentMigrationsDir();
 
     expect(existsSync(migrationsDir)).toBe(true);
-    expect(migrationsDir.endsWith("echo-agent/db/migrations")).toBe(true);
+    expect(migrationsDir.endsWith("vex-agent/db/migrations")).toBe(true);
   });
 });

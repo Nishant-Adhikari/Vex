@@ -370,10 +370,10 @@ All USDC amounts use **fixed-math with 6 decimals** (USDC.e standard).
 
 ### Auto-Setup (recommended)
 
-`echoclaw polymarket setup --yes` does everything automatically:
+`vex polymarket setup --yes` does everything automatically:
 1. Signs L1 EIP-712 message with wallet
 2. Derives API credentials
-3. Saves to `~/.config/echoclaw/.env`
+3. Saves to `~/.config/vex/.env`
 
 ---
 
@@ -381,22 +381,22 @@ All USDC amounts use **fixed-math with 6 decimals** (USDC.e standard).
 
 ### Prerequisites
 
-1. **EVM wallet** configured in EchoClaw: `echoclaw wallet create` or `echoclaw wallet import <key>`
+1. **EVM wallet** configured in Vex: `vex wallet create` or `vex wallet import <key>`
 2. Wallet needs a small amount of MATIC on Polygon for gas (only if bridging/approving — trading itself is gasless via Relayer)
 
 ### One-command setup
 
 ```bash
-echoclaw polymarket setup --yes --json
+vex polymarket setup --yes --json
 ```
 
 This is all you need. The command:
-1. Loads your wallet from the EchoClaw keystore
+1. Loads your wallet from the Vex keystore
 2. Requests a nonce from `GET https://clob.polymarket.com/auth/nonce`
 3. Signs the nonce with your wallet private key (EIP-191 personal_sign)
 4. Derives API credentials via `POST https://clob.polymarket.com/auth/derive-api-key` with `{ address, nonce, signature, timestamp }`
 5. Receives `{ apiKey, secret, passphrase }` from Polymarket
-6. Saves all three to `~/.config/echoclaw/.env`
+6. Saves all three to `~/.config/vex/.env`
 
 **No Polymarket web UI needed.** The wallet IS the account — Polymarket uses your Polygon address as the identity. First API key derivation implicitly creates the account.
 
@@ -413,14 +413,14 @@ All three are required for trading. Market data endpoints (prices, orderbook, ev
 ### Re-generating credentials
 
 ```bash
-echoclaw polymarket setup --yes --force --json
+vex polymarket setup --yes --force --json
 ```
 
 `--force` overwrites existing credentials. Useful if keys were compromised or expired.
 
 ### Manual API key via raw API (reference)
 
-If not using EchoClaw CLI:
+If not using Vex CLI:
 
 ```bash
 # 1. Get nonce
@@ -445,7 +445,7 @@ curl -X POST https://clob.polymarket.com/auth/derive-api-key \
 
 ```bash
 # Check if credentials work
-echoclaw polymarket orders --json
+vex polymarket orders --json
 # Should return { success: true, ... } (empty orders list if no trades yet)
 ```
 

@@ -1,7 +1,7 @@
 import bs58 from "bs58";
 import { Keypair } from "@solana/web3.js";
 import { SOLANA_KEYSTORE_FILE } from "../../config/paths.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import {
   type KeystoreV1,
   decryptSecretBytes,
@@ -20,12 +20,12 @@ function parseJsonSecretKey(input: string): Uint8Array | null {
 
   const parsed = JSON.parse(input) as unknown;
   if (!Array.isArray(parsed) || parsed.length !== SOLANA_SECRET_KEY_LENGTH) {
-    throw new EchoError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana secret key JSON must contain ${SOLANA_SECRET_KEY_LENGTH} bytes`);
+    throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana secret key JSON must contain ${SOLANA_SECRET_KEY_LENGTH} bytes`);
   }
 
   const bytes = parsed.map((value) => {
     if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 255) {
-      throw new EchoError(ErrorCodes.INVALID_PRIVATE_KEY, "Solana secret key JSON must contain integers in range 0-255");
+      throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, "Solana secret key JSON must contain integers in range 0-255");
     }
     return value;
   });
@@ -36,7 +36,7 @@ function parseJsonSecretKey(input: string): Uint8Array | null {
 export function normalizeSolanaSecretKey(input: string): Uint8Array {
   const trimmed = input.trim();
   if (!trimmed) {
-    throw new EchoError(ErrorCodes.INVALID_PRIVATE_KEY, "Solana secret key cannot be empty");
+    throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, "Solana secret key cannot be empty");
   }
 
   const jsonBytes = parseJsonSecretKey(trimmed);
@@ -48,18 +48,18 @@ export function normalizeSolanaSecretKey(input: string): Uint8Array {
   try {
     decoded = bs58.decode(trimmed);
   } catch {
-    throw new EchoError(ErrorCodes.INVALID_PRIVATE_KEY, "Solana secret key must be base58 or JSON byte array");
+    throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, "Solana secret key must be base58 or JSON byte array");
   }
 
   if (decoded.length !== SOLANA_SECRET_KEY_LENGTH) {
-    throw new EchoError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana base58 secret key must decode to ${SOLANA_SECRET_KEY_LENGTH} bytes`);
+    throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana base58 secret key must decode to ${SOLANA_SECRET_KEY_LENGTH} bytes`);
   }
   return decoded;
 }
 
 export function encryptSolanaSecretKey(secretKey: Uint8Array, password: string): KeystoreV1 {
   if (secretKey.length !== SOLANA_SECRET_KEY_LENGTH) {
-    throw new EchoError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana secret key must be ${SOLANA_SECRET_KEY_LENGTH} bytes`);
+    throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana secret key must be ${SOLANA_SECRET_KEY_LENGTH} bytes`);
   }
   return encryptSecretBytes(secretKey, password);
 }
@@ -67,7 +67,7 @@ export function encryptSolanaSecretKey(secretKey: Uint8Array, password: string):
 export function decryptSolanaSecretKey(keystore: KeystoreV1, password: string): Uint8Array {
   const secretKey = decryptSecretBytes(keystore, password);
   if (secretKey.length !== SOLANA_SECRET_KEY_LENGTH) {
-    throw new EchoError(ErrorCodes.KEYSTORE_DECRYPT_FAILED, `Solana secret key must be ${SOLANA_SECRET_KEY_LENGTH} bytes after decrypt`);
+    throw new VexError(ErrorCodes.KEYSTORE_DECRYPT_FAILED, `Solana secret key must be ${SOLANA_SECRET_KEY_LENGTH} bytes after decrypt`);
   }
   return secretKey;
 }
@@ -78,7 +78,7 @@ export function deriveSolanaAddress(secretKey: Uint8Array): string {
 
 export function encodeSolanaSecretKey(secretKey: Uint8Array): string {
   if (secretKey.length !== SOLANA_SECRET_KEY_LENGTH) {
-    throw new EchoError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana secret key must be ${SOLANA_SECRET_KEY_LENGTH} bytes`);
+    throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana secret key must be ${SOLANA_SECRET_KEY_LENGTH} bytes`);
   }
   return bs58.encode(secretKey);
 }

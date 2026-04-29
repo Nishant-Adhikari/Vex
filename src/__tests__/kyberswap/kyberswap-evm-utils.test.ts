@@ -6,7 +6,7 @@ import {
   KS_ZAP_ROUTER_POSITION,
   KS_ZAP_ROUTER_PERMIT,
 } from "@tools/kyberswap/constants.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 describe("validateKyberSpender", () => {
   it("accepts MetaAggregationRouterV2", () => {
@@ -31,7 +31,7 @@ describe("validateKyberSpender", () => {
   });
 
   it("throws INVALID_SPENDER for unknown address", () => {
-    expect(() => validateKyberSpender("0x0000000000000000000000000000000000000001")).toThrow(EchoError);
+    expect(() => validateKyberSpender("0x0000000000000000000000000000000000000001")).toThrow(VexError);
     expect(() => validateKyberSpender("0x0000000000000000000000000000000000000001")).toThrow(/not a known KyberSwap contract/);
   });
 });
@@ -50,15 +50,15 @@ describe("verifyRouterAddress", () => {
     expect(() => verifyRouterAddress(
       "0x0000000000000000000000000000000000000001",
       META_AGGREGATION_ROUTER_V2,
-    )).toThrow(EchoError);
+    )).toThrow(VexError);
   });
 
   it("includes 'Do not approve' in hint", () => {
     try {
       verifyRouterAddress("0x0000000000000000000000000000000000000001", META_AGGREGATION_ROUTER_V2);
     } catch (err) {
-      expect((err as EchoError).code).toBe(ErrorCodes.KYBER_API_ERROR);
-      expect((err as EchoError).hint).toContain("Do not approve");
+      expect((err as VexError).code).toBe(ErrorCodes.KYBER_API_ERROR);
+      expect((err as VexError).hint).toContain("Do not approve");
     }
   });
 });

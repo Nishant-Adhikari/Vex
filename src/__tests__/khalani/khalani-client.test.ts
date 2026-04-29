@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KhalaniClient } from "@tools/khalani/client.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -65,7 +65,7 @@ describe("khalani client", () => {
       fromAddress: "0x3333333333333333333333333333333333333333",
     })).rejects.toMatchObject({
       code: ErrorCodes.KHALANI_QUOTE_EXPIRED,
-    } satisfies Partial<EchoError>);
+    } satisfies Partial<VexError>);
   });
 
   it("parses quote response and keeps deposit methods", async () => {

@@ -2,7 +2,7 @@
  * Validation helpers for Jupiter Token Content API.
  */
 
-import { EchoError, ErrorCodes } from "../../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { getJupiterHeaders, requireJupiterApiKey } from "../../../shared/jupiter-auth.js";
 import { validateSolanaAddress } from "../../../shared/solana-validation.js";
 import { normalizeMintList, validateJupiterMintList } from "../validation.js";
@@ -36,7 +36,7 @@ export function validateJupiterContentFeedParams(
   const mint = validateSolanaAddress(params.mint);
 
   if (params.page != null && (!Number.isInteger(params.page) || params.page < 1)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `Invalid content feed page: ${params.page}`,
       "page must be an integer greater than or equal to 1.",
@@ -44,7 +44,7 @@ export function validateJupiterContentFeedParams(
   }
 
   if (params.limit != null && (!Number.isInteger(params.limit) || params.limit < 1 || params.limit > 100)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `Invalid content feed limit: ${params.limit}`,
       "limit must be an integer between 1 and 100.",

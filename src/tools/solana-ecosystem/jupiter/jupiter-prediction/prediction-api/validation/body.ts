@@ -2,7 +2,7 @@
  * Auth helpers and request body validators for Jupiter Prediction API.
  */
 
-import { EchoError, ErrorCodes } from "../../../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import {
   requireJupiterApiKey as requireSharedJupiterApiKey,
   resolveJupiterApiKey as resolveSharedJupiterApiKey,
@@ -50,7 +50,7 @@ export function validateJupiterPredictionCreateOrderRequest(
   const ownerPubkey = normalizeOwnerPubkey(request.ownerPubkey);
 
   if (typeof request.isBuy !== "boolean") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       "isBuy is required.",
     );
@@ -58,21 +58,21 @@ export function validateJupiterPredictionCreateOrderRequest(
 
   if (request.isBuy) {
     if (typeof request.isYes !== "boolean") {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.HTTP_REQUEST_FAILED,
         "isYes is required for buy orders.",
       );
     }
 
     if (request.depositAmount == null) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.HTTP_REQUEST_FAILED,
         "depositAmount is required for buy orders.",
       );
     }
 
     if (!request.depositMint) {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.HTTP_REQUEST_FAILED,
         "depositMint is required for buy orders.",
       );
@@ -92,21 +92,21 @@ export function validateJupiterPredictionCreateOrderRequest(
   }
 
   if (request.positionPubkey == null) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       "positionPubkey is required for sell orders.",
     );
   }
 
   if (request.contracts == null) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       "contracts is required for sell orders.",
     );
   }
 
   if (request.depositAmount != null || request.depositMint != null) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       "depositAmount and depositMint are not supported for sell orders.",
     );

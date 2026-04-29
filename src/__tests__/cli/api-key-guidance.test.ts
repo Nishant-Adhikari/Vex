@@ -3,9 +3,9 @@ import {
   collectOptionalApiKeyGuidance,
   JUPITER_API_KEY_GUIDANCE,
   TAVILY_API_KEY_GUIDANCE,
-} from "../../cli/echo/api-key-guidance.js";
+} from "../../cli/setup/api-key-guidance.js";
 
-describe("echo API key guidance", () => {
+describe("setup API key guidance", () => {
   it("includes Jupiter portal instructions for the required key", () => {
     expect(JUPITER_API_KEY_GUIDANCE).toContain("https://developers.jup.ag/portal/api-keys");
     expect(JUPITER_API_KEY_GUIDANCE).toContain("Create a new API key.");

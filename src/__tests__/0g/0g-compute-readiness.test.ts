@@ -28,8 +28,8 @@ vi.mock("@tools/0g-compute/bridge.js", () => ({
 }));
 
 vi.mock("@tools/0g-compute/constants.js", () => ({
-  ZG_COMPUTE_DIR: "/tmp/test-echoclaw-0g-compute",
-  ZG_COMPUTE_STATE_FILE: "/tmp/test-echoclaw-0g-compute/compute-state.json",
+  ZG_COMPUTE_DIR: "/tmp/test-vex-0g-compute",
+  ZG_COMPUTE_STATE_FILE: "/tmp/test-vex-0g-compute/compute-state.json",
 }));
 
 vi.mock("@utils/logger.js", () => ({

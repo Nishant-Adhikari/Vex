@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { jsonSchemaToZodShape } from "../../../mcp/surface/tool-bridge.js";
-import type { JsonSchema } from "../../../echo-agent/tools/types.js";
+import type { JsonSchema } from "../../../vex-agent/tools/types.js";
 
 describe("mcp surface — JsonSchema → Zod walker", () => {
   it("handles a simple required string property", () => {

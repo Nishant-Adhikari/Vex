@@ -1,4 +1,4 @@
-# EchoClaw — Developer Makefile
+# Vex — Developer Makefile
 
 .PHONY: build test dev clean lint lint-all check e2e-up e2e-down e2e-smoke \
         knowledge-export knowledge-import knowledge-reembed
@@ -28,18 +28,18 @@ check: lint test
 # -- E2E Test stack (pgvector + Docker Model Runner) -------------------------
 #
 # Postgres on host port 5777 (was 5555). Embedding model + dim are config-driven
-# via EMBEDDING_MODEL / EMBEDDING_DIM env vars (source docker/echo-agent/.env).
+# via EMBEDDING_MODEL / EMBEDDING_DIM env vars (source docker/vex-agent/.env).
 # Requires Docker Engine >=4.40, Compose >=2.38.1, Docker Model Runner active.
 
 e2e-up:
-	docker compose -f docker/echo-agent/docker-compose.e2e.yml up -d
+	docker compose -f docker/vex-agent/docker-compose.e2e.yml up -d
 
 e2e-down:
-	docker compose -f docker/echo-agent/docker-compose.e2e.yml down
+	docker compose -f docker/vex-agent/docker-compose.e2e.yml down
 
 e2e-smoke:
 	@if [ -z "$$EMBEDDING_DIM" ] || [ -z "$$EMBEDDING_MODEL" ] || [ -z "$$EMBEDDING_BASE_URL" ]; then \
-	  echo "FAIL: EMBEDDING_DIM / EMBEDDING_MODEL / EMBEDDING_BASE_URL not set — source docker/echo-agent/.env first"; \
+	  echo "FAIL: EMBEDDING_DIM / EMBEDDING_MODEL / EMBEDDING_BASE_URL not set — source docker/vex-agent/.env first"; \
 	  exit 1; \
 	fi
 	@echo "Smoke-testing $$EMBEDDING_BASE_URL/embeddings (model=$$EMBEDDING_MODEL, expecting dim=$$EMBEDDING_DIM)…"
@@ -60,10 +60,10 @@ e2e-smoke:
 #   make knowledge-reembed ARGS="--dry-run"
 
 knowledge-export:
-	pnpm exec tsx src/echo-agent/scripts/knowledge-export.ts $(ARGS)
+	pnpm exec tsx src/vex-agent/scripts/knowledge-export.ts $(ARGS)
 
 knowledge-import:
-	pnpm exec tsx src/echo-agent/scripts/knowledge-import.ts $(ARGS)
+	pnpm exec tsx src/vex-agent/scripts/knowledge-import.ts $(ARGS)
 
 knowledge-reembed:
-	pnpm exec tsx src/echo-agent/scripts/knowledge-reembed.ts $(ARGS)
+	pnpm exec tsx src/vex-agent/scripts/knowledge-reembed.ts $(ARGS)

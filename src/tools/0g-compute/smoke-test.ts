@@ -1,9 +1,9 @@
 /**
  * 0G Compute SDK smoke-test — standalone script.
  *
- * Validates end-to-end: npm SDK + Echo wallet → list → ledger → API key → inference.
+ * Validates end-to-end: npm SDK + Vex wallet → list → ledger → API key → inference.
  * Run after `npm run build`:
- *   ECHO_KEYSTORE_PASSWORD=xxx node dist/0g-compute/smoke-test.js [--provider 0x...] [--dry-run]
+ *   VEX_KEYSTORE_PASSWORD=xxx node dist/0g-compute/smoke-test.js [--provider 0x...] [--dry-run]
  *
  * Default provider: 0x1B3AAe... (deepseek-chat-v3-0324, cheapest chatbot).
  */
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
     logger.info(`[smoke-test] Ledger found: ${JSON.stringify(ledger, (_k, v) => typeof v === "bigint" ? formatUnits(v, 18) + " 0G" : v)}`);
   } catch (err) {
     logger.warn(`[smoke-test] No ledger found: ${err instanceof Error ? err.message : String(err)}`);
-    logger.warn("[smoke-test] Hint: create ledger with `echoclaw 0g-compute ledger deposit <amount> --yes`");
+    logger.warn("[smoke-test] Hint: create ledger with `vex 0g-compute ledger deposit <amount> --yes`");
   }
 
   // 5. Check sub-account balance

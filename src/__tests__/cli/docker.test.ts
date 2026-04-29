@@ -3,7 +3,7 @@ import {
   isDockerMissing,
   isDockerModelPluginMissing,
   parseOsRelease,
-} from "../../cli/echo/docker.js";
+} from "../../cli/setup/docker.js";
 
 describe("docker launcher helpers", () => {
   it("parses Ubuntu os-release fields used by the installer", () => {

@@ -36,7 +36,7 @@ files.ts: upload/download (SDK via sdk-bridge.cjs)
 drive-index.ts: virtual path layer
   ├── Maps virtual paths (/docs/readme.md) → root hashes
   ├── Supports dirs, ls, tree, find, du, mv, rm
-  └── Persisted in ~/.echoclaw/storage-drive.json
+  └── Persisted in ~/.vex/storage-drive.json
 ```
 
 ---
@@ -91,7 +91,7 @@ Local JSON index over content-addressed 0G Storage blobs. Flat path keys, implic
 
 ### Persistence
 
-- File: `~/.echoclaw/storage-drive.json`
+- File: `~/.vex/storage-drive.json`
 - Atomic write (tmp + rename)
 - Version-checked on load (v1)
 
@@ -125,7 +125,7 @@ Local JSON index over content-addressed 0G Storage blobs. Flat path keys, implic
 | `config/store.ts` | `loadConfig()` — storage endpoints |
 | `config/paths.ts` | `STORAGE_DRIVE_FILE`, `CONFIG_DIR` |
 | `utils/minimatch.ts` | Glob matching for `driveFind` |
-| `errors.ts` | `EchoError`, `ErrorCodes` |
+| `errors.ts` | `VexError`, `ErrorCodes` |
 
 ---
 

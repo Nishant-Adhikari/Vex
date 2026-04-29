@@ -4,7 +4,7 @@
  */
 
 import { Keypair } from "@solana/web3.js";
-import { EchoError, ErrorCodes } from "../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 import { requireJupiterResolvedToken } from "../jupiter-tokens/service.js";
 import { deserializeVersionedTx, signVersionedTx } from "../../shared/solana-transaction.js";
 import { solanaExplorerUrl, tokenAmountToUi, uiToTokenAmount } from "../../shared/solana-validation.js";
@@ -103,7 +103,7 @@ function ensureExecutableOrder(raw: JupiterSwapOrderResponse): string {
   if (raw.transaction) return raw.transaction;
 
   const message = raw.errorMessage ?? raw.error ?? "No transaction returned from Jupiter /order.";
-  throw new EchoError(
+  throw new VexError(
     ErrorCodes.SOLANA_SWAP_FAILED,
     raw.errorCode != null ? `${message} (errorCode ${raw.errorCode})` : message,
   );
@@ -127,7 +127,7 @@ export async function getJupiterSwapQuote(
 
   if (raw.errorCode != null && raw.transaction === "") {
     const message = raw.errorMessage ?? raw.error ?? `Quote error code ${raw.errorCode}`;
-    throw new EchoError(ErrorCodes.SOLANA_QUOTE_FAILED, message);
+    throw new VexError(ErrorCodes.SOLANA_QUOTE_FAILED, message);
   }
 
   return { quote: summarizeOrder(raw, inputToken, outputToken), raw };
@@ -165,7 +165,7 @@ export async function executeJupiterSwap(
   const taker = keypair.publicKey.toBase58();
 
   if (opts.taker && opts.taker !== taker) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SIGNER_MISMATCH,
       `Swap taker mismatch: expected ${taker}, received ${opts.taker}.`,
     );
@@ -191,7 +191,7 @@ export async function executeJupiterSwap(
   });
 
   if (execute.status !== "Success") {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
       `Swap failed (code ${execute.code}): ${execute.error ?? "unknown error"}`,
     );

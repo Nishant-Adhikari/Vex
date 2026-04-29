@@ -1,4 +1,4 @@
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import type { ChainFamily, KhalaniChain } from "./types.js";
 import { getKhalaniClient } from "./client.js";
 
@@ -95,7 +95,7 @@ export function clearKhalaniChainsCache(): void {
 export function resolveChainId(input: string, chains?: KhalaniChain[]): number {
   const normalized = input.trim().toLowerCase();
   if (normalized.length === 0) {
-    throw new EchoError(ErrorCodes.KHALANI_UNSUPPORTED_CHAIN, "Chain value cannot be empty.");
+    throw new VexError(ErrorCodes.KHALANI_UNSUPPORTED_CHAIN, "Chain value cannot be empty.");
   }
   if (normalized in CHAIN_ALIASES) {
     return CHAIN_ALIASES[normalized];
@@ -114,17 +114,17 @@ export function resolveChainId(input: string, chains?: KhalaniChain[]): number {
     }
   }
 
-  throw new EchoError(
+  throw new VexError(
     ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
     `Unsupported chain: ${input}`,
-    "Run `echoclaw khalani chains --json` to inspect supported chains."
+    "Run `vex khalani chains --json` to inspect supported chains."
   );
 }
 
 export function getChain(chainId: number, chains: KhalaniChain[]): KhalaniChain {
   const chain = chains.find((entry) => entry.id === chainId);
   if (!chain) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
       `Chain ${chainId} is not in the current Khalani registry.`,
       "Refresh chains and retry."
@@ -140,7 +140,7 @@ export function getChainFamily(chainId: number, chains: KhalaniChain[]): ChainFa
 export function getChainRpcUrl(chainId: number, chains: KhalaniChain[]): string {
   const rpcUrl = getChain(chainId, chains).rpcUrls?.default?.http?.[0];
   if (!rpcUrl) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
       `Chain ${chainId} does not expose an RPC URL in Khalani metadata.`,
     );

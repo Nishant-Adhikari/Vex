@@ -28,7 +28,7 @@ const structuredFormat = winston.format.combine(
 export const logger = winston.createLogger({
   level: LOG_LEVEL,
   defaultMeta: {
-    service: "echo-agent",
+    service: "vex-agent",
   },
   format: shouldUseStructuredFormat() ? structuredFormat : colorizedFormat,
   transports: [

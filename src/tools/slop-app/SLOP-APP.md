@@ -13,7 +13,7 @@
 ```
 src/tools/slop-app/
   types.ts    — Domain types: Profile, Image, AgentQuery, ChatMessage, ApiResponse
-  errors.ts   — HTTP status → EchoError mapping (400, 401, 403, 429, 504)
+  errors.ts   — HTTP status → VexError mapping (400, 401, 403, 429, 504)
   client.ts   — SlopAppClient: profile, image, agents (REST, singleton)
   chat.ts     — Socket.IO chat: post message + read history (short-lived connections)
 ```
@@ -108,7 +108,7 @@ Socket.IO short-lived connections (connect → action → disconnect):
 | `socket.io-client` | Chat WS connections |
 | `config/store.ts` | `loadConfig()` — backend + proxy URLs |
 | `utils/http.ts` | `fetchJson()`, `fetchWithTimeout()` |
-| `errors.ts` | `EchoError`, `ErrorCodes` |
+| `errors.ts` | `VexError`, `ErrorCodes` |
 
 ---
 
@@ -120,4 +120,4 @@ Socket.IO short-lived connections (connect → action → disconnect):
 
 ## Tests
 
-Tests live in `src/__tests__/echo-agent/tools/slop-app-*.test.ts` (echo-agent protocol handler tests).
+Tests live in `src/__tests__/vex-agent/tools/slop-app-*.test.ts` (vex-agent protocol handler tests).

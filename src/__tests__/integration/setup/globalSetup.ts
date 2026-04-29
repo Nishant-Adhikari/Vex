@@ -2,13 +2,13 @@
  * Vitest globalSetup for integration tests.
  *
  * Spins up an ephemeral Postgres (pgvector) container via testcontainers,
- * wires `ECHO_AGENT_DB_URL`, and runs the full migration chain. The Gemma
+ * wires `VEX_DB_URL`, and runs the full migration chain. The Gemma
  * embeddings endpoint is NOT managed here — it's a Docker Desktop Model
  * Runner feature that must be running independently. A reachability probe
  * fails fast with an actionable message so tests don't hang on first embed.
  *
  * Dynamic imports are deliberate: the db client pool singleton reads
- * `ECHO_AGENT_DB_URL` on first `getPool()` call, so we MUST set the env var
+ * `VEX_DB_URL` on first `getPool()` call, so we MUST set the env var
  * BEFORE any repo module resolves `client.js`.
  */
 
@@ -22,9 +22,9 @@ const FALLBACK_EMBED_MODEL = "ai/embeddinggemma:300M-Q8_0";
 export async function setup(): Promise<void> {
   try {
     container = await new PostgreSqlContainer(PGVECTOR_IMAGE)
-      .withDatabase("echo_agent_test")
-      .withUsername("echo_agent")
-      .withPassword("echo_agent")
+      .withDatabase("vex_test")
+      .withUsername("vex")
+      .withPassword("vex")
       .start();
   } catch (err) {
     throw new Error(
@@ -33,17 +33,17 @@ export async function setup(): Promise<void> {
     );
   }
 
-  process.env.ECHO_AGENT_DB_URL = container.getConnectionUri();
+  process.env.VEX_DB_URL = container.getConnectionUri();
 
   await assertEmbeddingsReachable();
 
-  const { runMigrations } = await import("@echo-agent/db/migrate.js");
+  const { runMigrations } = await import("@vex-agent/db/migrate.js");
   await runMigrations();
 }
 
 export async function teardown(): Promise<void> {
   try {
-    const { closePool } = await import("@echo-agent/db/client.js");
+    const { closePool } = await import("@vex-agent/db/client.js");
     await closePool();
   } catch {
     // Best-effort — pool teardown errors shouldn't mask container.stop().
@@ -59,7 +59,7 @@ async function assertEmbeddingsReachable(): Promise<void> {
   if (!baseUrl) {
     throw new Error(
       "EMBEDDING_BASE_URL is not set. Integration suite needs a live embeddings endpoint. " +
-        "Start Gemma + proxy with: `pnpm echo docker dev` (requires Docker Model Runner).",
+        "Start Gemma + proxy with: `pnpm vex docker dev` (requires Docker Model Runner).",
     );
   }
   const model = process.env.EMBEDDING_MODEL ?? FALLBACK_EMBED_MODEL;
@@ -76,7 +76,7 @@ async function assertEmbeddingsReachable(): Promise<void> {
   } catch (err) {
     throw new Error(
       `Embeddings endpoint unreachable at ${baseUrl} (model=${model}). ` +
-        `Start it with: \`pnpm echo docker dev\`. ` +
+        `Start it with: \`pnpm vex docker dev\`. ` +
         `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
     );
   }

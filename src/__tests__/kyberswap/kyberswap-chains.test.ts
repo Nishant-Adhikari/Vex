@@ -10,7 +10,7 @@ import {
   getCachedDynamicChains,
   clearDynamicChainsCache,
 } from "@tools/kyberswap/chains.js";
-import { EchoError } from "../../errors.js";
+import { VexError } from "../../errors.js";
 
 describe("resolveChainSlug", () => {
   it("accepts exact slug", () => {
@@ -49,10 +49,10 @@ describe("resolveChainSlug", () => {
   });
 
   it("throws KYBER_UNSUPPORTED_CHAIN for unknown", () => {
-    expect(() => resolveChainSlug("solana")).toThrow(EchoError);
+    expect(() => resolveChainSlug("solana")).toThrow(VexError);
     expect(() => resolveChainSlug("solana")).toThrow(/Unsupported KyberSwap chain/);
-    expect(() => resolveChainSlug("")).toThrow(EchoError);
-    expect(() => resolveChainSlug("0g")).toThrow(EchoError);
+    expect(() => resolveChainSlug("")).toThrow(VexError);
+    expect(() => resolveChainSlug("0g")).toThrow(VexError);
   });
 });
 
@@ -80,7 +80,7 @@ describe("slugToChainId", () => {
   });
 
   it("throws for unknown slug", () => {
-    expect(() => slugToChainId("unknown" as any)).toThrow(EchoError);
+    expect(() => slugToChainId("unknown" as any)).toThrow(VexError);
   });
 });
 
@@ -106,7 +106,7 @@ describe("getChainFeatures", () => {
   });
 
   it("throws for unknown slug", () => {
-    expect(() => getChainFeatures("unknown" as any)).toThrow(EchoError);
+    expect(() => getChainFeatures("unknown" as any)).toThrow(VexError);
   });
 });
 

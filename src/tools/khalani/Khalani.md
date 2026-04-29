@@ -37,7 +37,7 @@ Supports both **EVM chains** (Ethereum, Arbitrum, Base, etc.) and **Solana**.
 | `client.ts` | `KhalaniClient` class — typed HTTP methods for all API endpoints, NDJSON streaming, singleton via `getKhalaniClient()` |
 | `types.ts` | All TypeScript interfaces: `QuoteRequest`, `QuoteRoute`, `DepositPlan`, `KhalaniOrder`, `KhalaniChain`, `KhalaniToken`, etc. |
 | `validation.ts` | Runtime validators for every API response shape — `unknown` → typed. Parses chains, tokens, orders, quotes, deposit plans, error bodies |
-| `errors.ts` | `mapKhalaniError(status, body)` — maps HTTP status + exception name to typed `EchoError` with retryable flag |
+| `errors.ts` | `mapKhalaniError(status, body)` — maps HTTP status + exception name to typed `VexError` with retryable flag |
 | `chains.ts` | Chain alias map (40+ entries), chain cache (24h TTL), `resolveChainId()`, `getChain()`, `getChainFamily()`, `getChainRpcUrl()` |
 | `evm-client.ts` | Dynamic viem wallet/public client creation from Khalani chain metadata + private key |
 | `solana-signer.ts` | `signSolanaTransaction()` and `signAndSendSolanaTransaction()` for Solana deposit execution |
@@ -390,7 +390,7 @@ khalani orders [address] [--wallet eip155|solana]
 khalani order <orderId>
 ```
 
-**Headless mode** (`ECHOCLAW_HEADLESS=1`): All commands output structured JSON via `writeJsonSuccess()`.
+**Headless mode** (`VEX_HEADLESS=1`): All commands output structured JSON via `writeJsonSuccess()`.
 **`--dry-run`** on bridge: builds the deposit plan without broadcasting. Returns plan details for inspection.
 **`--yes`** on bridge: required to execute (safety confirmation). Without it, throws `CONFIRMATION_REQUIRED`.
 

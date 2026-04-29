@@ -6,7 +6,7 @@ import { getTokenSymbol } from "./coreTokens.js";
 import { QUOTER_ABI } from "./abi/quoter.js";
 import { getPublicClient } from "../wallet/client.js";
 import { loadConfig } from "../../config/store.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 
 const DEFAULT_MAX_HOPS = 3;
@@ -221,10 +221,10 @@ export async function findBestRouteExactInput(
   const cache = options.cache !== undefined ? options.cache : loadPoolsCache();
 
   if (!cache || cache.pools.length === 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.NO_ROUTE_FOUND,
       "Pool cache is empty",
-      "Run: echoclaw jaine pools scan-core"
+      "Run: vex jaine pools scan-core"
     );
   }
 
@@ -293,10 +293,10 @@ export async function findBestRouteExactOutput(
   const cache = options.cache !== undefined ? options.cache : loadPoolsCache();
 
   if (!cache || cache.pools.length === 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.NO_ROUTE_FOUND,
       "Pool cache is empty",
-      "Run: echoclaw jaine pools scan-core"
+      "Run: vex jaine pools scan-core"
     );
   }
 

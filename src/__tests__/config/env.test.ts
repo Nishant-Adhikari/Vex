@@ -8,12 +8,12 @@ vi.mock("../../providers/env-resolution.js", () => ({
 
 vi.mock("@config/paths.js", async (importOriginal) => {
   const orig = await importOriginal<Record<string, unknown>>();
-  return { ...orig, ENV_FILE: "/mock/.config/echoclaw/.env" };
+  return { ...orig, ENV_FILE: "/mock/.config/vex/.env" };
 });
 
 const { getKeystorePassword, requireKeystorePassword } = await import("@utils/env.js");
 
-const ENV_KEY = "ECHO_KEYSTORE_PASSWORD";
+const ENV_KEY = "VEX_KEYSTORE_PASSWORD";
 
 describe("getKeystorePassword", () => {
   beforeEach(() => {
@@ -87,6 +87,6 @@ describe("requireKeystorePassword", () => {
   it("should throw KEYSTORE_PASSWORD_NOT_SET when no password found", () => {
     mockReadEnvValue.mockReturnValue(null);
 
-    expect(() => requireKeystorePassword()).toThrow("ECHO_KEYSTORE_PASSWORD");
+    expect(() => requireKeystorePassword()).toThrow("VEX_KEYSTORE_PASSWORD");
   });
 });

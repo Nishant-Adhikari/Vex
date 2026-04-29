@@ -4,14 +4,14 @@
 
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { loadConfig } from "../../../config/store.js";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 
 export function validateSolanaAddress(addr: string): string {
   try {
     const pubkey = new PublicKey(addr);
     return pubkey.toBase58();
   } catch {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INVALID_ADDRESS,
       `Invalid Solana address: ${addr}`,
       "Provide a valid base58-encoded Solana public key.",
@@ -25,7 +25,7 @@ export function tokenAmountToUi(rawAmount: string | bigint, decimals: number): n
 
 export function uiToTokenAmount(uiAmount: number, decimals: number): bigint {
   if (!Number.isFinite(uiAmount) || uiAmount <= 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid token amount: ${uiAmount}`,
       "Amount must be a positive finite number.",
@@ -42,14 +42,14 @@ export function looksLikeSolanaAddress(value: string): boolean {
 export function parseSolAmount(value: string): { lamports: bigint; ui: number } {
   const ui = Number(value);
   if (Number.isNaN(ui) || ui < 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `Invalid SOL amount: ${value}`,
       "Amount must be a non-negative number.",
     );
   }
   if (ui > 1_000_000_000) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `SOL amount too large: ${value}`,
     );
@@ -61,7 +61,7 @@ export function parseSolAmount(value: string): { lamports: bigint; ui: number } 
 export function parseSplAmount(value: string, decimals: number): { atomic: bigint; ui: number } {
   const ui = Number(value);
   if (Number.isNaN(ui) || ui < 0) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `Invalid token amount: ${value}`,
       "Amount must be a non-negative number.",

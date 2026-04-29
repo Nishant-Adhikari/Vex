@@ -5,7 +5,7 @@
 
 import { privateKeyToAccount } from "viem/accounts";
 import { fetchJson } from "../../utils/http.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import {
   loadCachedSlopJwt,
   saveCachedSlopJwt,
@@ -93,7 +93,7 @@ export async function slopLogin(
   );
 
   if (!nonceRes.success || !nonceRes.data) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SLOP_AUTH_FAILED,
       nonceRes.error || "Failed to get nonce",
       "Check backend availability"
@@ -119,7 +119,7 @@ export async function slopLogin(
   );
 
   if (!verifyRes.success || !verifyRes.data) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SLOP_AUTH_FAILED,
       verifyRes.error || "Login verification failed",
       "Check wallet address and signature"
@@ -152,7 +152,7 @@ export async function slopRefresh(
 
   if (!res.success || !res.data) {
     clearCachedSlopJwt();
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.SLOP_REFRESH_FAILED,
       res.error || "Token refresh failed",
       "Re-login required"

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ErrorCodes } from "../../errors.js";
 
-const runEchoCli = vi.fn();
+const runSetupCli = vi.fn();
 const runMcpCli = vi.fn();
 const suppressDep0040Warnings = vi.fn();
 
-vi.mock("../../cli/echo/index.js", () => ({
-  runEchoCli,
+vi.mock("../../cli/setup/index.js", () => ({
+  runSetupCli,
 }));
 
 vi.mock("../../cli/shared/warnings.js", () => ({
@@ -24,24 +24,24 @@ afterEach(() => {
 });
 
 describe("root CLI router", () => {
-  it("documents the echo and mcp entrypoints", () => {
+  it("documents the setup and mcp entrypoints", () => {
     const helpText = buildRootHelpText();
 
-    expect(helpText).toContain("echoclaw <command>");
-    expect(helpText).toContain("echo");
+    expect(helpText).toContain("vex <command>");
+    expect(helpText).toContain("setup");
     expect(helpText).toContain("mcp");
   });
 
-  it("does not advertise vex as an npm CLI surface", () => {
+  it("does not advertise echoclaw as an npm CLI surface", () => {
     const helpText = buildRootHelpText();
 
-    expect(helpText.toLowerCase()).not.toContain("vex");
+    expect(helpText.toLowerCase()).not.toContain("echoclaw");
   });
 
-  it("delegates echo arguments to the echo router", async () => {
-    await runRootCli(["echo", "connect"]);
+  it("delegates setup arguments to the setup router", async () => {
+    await runRootCli(["setup", "connect"]);
     expect(suppressDep0040Warnings).toHaveBeenCalledTimes(1);
-    expect(runEchoCli).toHaveBeenCalledWith(["connect"]);
+    expect(runSetupCli).toHaveBeenCalledWith(["connect"]);
   });
 
   it("delegates mcp arguments to the MCP runtime", async () => {
@@ -50,8 +50,8 @@ describe("root CLI router", () => {
     expect(runMcpCli).toHaveBeenCalledWith(["--transport", "stdio"]);
   });
 
-  it("rejects vex as an unknown command", async () => {
-    await expect(runRootCli(["vex"])).rejects.toMatchObject({
+  it("rejects echoclaw as an unknown command", async () => {
+    await expect(runRootCli(["echoclaw"])).rejects.toMatchObject({
       code: ErrorCodes.INTERACTIVE_COMMAND_NOT_SUPPORTED,
     });
   });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 // Use real fs for integration tests
-const testDir = join(tmpdir(), `echoclaw-env-test-${Date.now()}`);
+const testDir = join(tmpdir(), `vex-env-test-${Date.now()}`);
 const appEnvPath = join(testDir, "app", ".env");
 
 vi.mock("@config/paths.js", () => ({
@@ -86,8 +86,8 @@ describe("writeAppEnvValue", () => {
   });
 
   it("writes to app env", () => {
-    const result = writeAppEnvValue("ECHO_KEYSTORE_PASSWORD", "secret-pass");
+    const result = writeAppEnvValue("VEX_KEYSTORE_PASSWORD", "secret-pass");
     expect(result).toBe(appEnvPath);
-    expect(readEnvValue("ECHO_KEYSTORE_PASSWORD", appEnvPath)).toBe("secret-pass");
+    expect(readEnvValue("VEX_KEYSTORE_PASSWORD", appEnvPath)).toBe("secret-pass");
   });
 });

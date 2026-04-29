@@ -3,7 +3,7 @@
  */
 
 import type { KyberChainSlug, KyberChainId, KyberChainFeatures, KyberChainInfo } from "./types.js";
-import { EchoError, ErrorCodes } from "../../errors.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 // ── Static chain registry ───────────────────────────────────────────
 
@@ -76,7 +76,7 @@ export function resolveChainSlug(input: string): KyberChainSlug {
   const aliased = ALIASES[normalized] ?? normalized;
   const entry = slugMap.get(aliased);
   if (!entry) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
       `Unsupported KyberSwap chain: "${input}"`,
       `Supported: ${CHAINS.map((c) => c.slug).join(", ")}`,
@@ -94,7 +94,7 @@ export function chainIdToSlug(chainId: number): KyberChainSlug | undefined {
 export function slugToChainId(slug: KyberChainSlug): KyberChainId {
   const entry = slugMap.get(slug);
   if (!entry) {
-    throw new EchoError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `Unknown chain slug: ${slug}`);
+    throw new VexError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `Unknown chain slug: ${slug}`);
   }
   return entry.chainId;
 }
@@ -103,7 +103,7 @@ export function slugToChainId(slug: KyberChainSlug): KyberChainId {
 export function getChainFeatures(slug: KyberChainSlug): KyberChainFeatures {
   const entry = slugMap.get(slug);
   if (!entry) {
-    throw new EchoError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `Unknown chain slug: ${slug}`);
+    throw new VexError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `Unknown chain slug: ${slug}`);
   }
   return { ...entry };
 }

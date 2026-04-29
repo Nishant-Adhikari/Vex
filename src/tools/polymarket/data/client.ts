@@ -21,7 +21,7 @@ import {
   validateTradedResponse, validateMarketPositionsResponse,
 } from "./validation.js";
 import logger from "../../../utils/logger.js";
-import type { EchoError } from "../../../errors.js";
+import type { VexError } from "../../../errors.js";
 import type {
   DataPosition, DataClosedPosition, DataActivity, DataTrade,
   DataMetaHolder, DataOpenInterest, DataLiveVolume,
@@ -61,7 +61,7 @@ export class PolyDataClient {
       logger.debug({ event: "polymarket.data.request.success", path });
       return result;
     } catch (err) {
-      if ((err as EchoError).code?.startsWith("POLYMARKET_")) throw err;
+      if ((err as VexError).code?.startsWith("POLYMARKET_")) throw err;
       mapPolyTransportError(err);
     }
   }

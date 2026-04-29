@@ -2,7 +2,7 @@
  * HTTP utilities with timeout and error handling.
  */
 
-import { EchoError, ErrorCodes } from "../errors.js";
+import { VexError, ErrorCodes } from "../errors.js";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 
@@ -30,13 +30,13 @@ export async function fetchWithTimeout(
     return response;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new EchoError(
+      throw new VexError(
         ErrorCodes.HTTP_TIMEOUT,
         `Request timed out after ${timeoutMs}ms`,
         "Check network connectivity or try again later"
       );
     }
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       err instanceof Error ? err.message : "HTTP request failed",
       "Check network connectivity"
@@ -60,13 +60,13 @@ export async function parseJsonResponse<T>(response: Response): Promise<T> {
     } catch {
       // Ignore JSON parse errors for error response
     }
-    throw new EchoError(ErrorCodes.HTTP_REQUEST_FAILED, errorMessage);
+    throw new VexError(ErrorCodes.HTTP_REQUEST_FAILED, errorMessage);
   }
 
   try {
     return (await response.json()) as T;
   } catch {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       "Failed to parse JSON response"
     );

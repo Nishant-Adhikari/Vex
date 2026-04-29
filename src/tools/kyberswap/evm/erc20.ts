@@ -13,7 +13,7 @@ import {
   type WalletClient,
   type Transport,
 } from "viem";
-import { EchoError, ErrorCodes } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { KYBER_KNOWN_SPENDERS } from "../constants.js";
 import logger from "../../../utils/logger.js";
 import type { KyberChainSlug } from "../types.js";
@@ -49,7 +49,7 @@ export async function readErc20Metadata(slug: KyberChainSlug, address: Address):
       functionName: "decimals",
     });
   } catch (err) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
       `Cannot read decimals for ${address} on ${slug} — not a valid ERC-20 contract`,
       "Verify the token address and chain are correct.",
@@ -88,7 +88,7 @@ export async function readErc20Metadata(slug: KyberChainSlug, address: Address):
 /** Verify a spender address is in the KyberSwap known contracts allowlist. */
 export function validateKyberSpender(address: Address): void {
   if (!KYBER_KNOWN_SPENDERS.has(address.toLowerCase())) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.INVALID_SPENDER,
       `Spender ${address} is not a known KyberSwap contract`,
       `Known: MetaAggregationRouterV2, DSLOProtocol, KSZapRouterPosition, KSZapRouterPermit`,
@@ -99,7 +99,7 @@ export function validateKyberSpender(address: Address): void {
 /** Verify the router address from API response matches the expected constant. */
 export function verifyRouterAddress(actual: Address, expected: Address): void {
   if (getAddress(actual) !== getAddress(expected)) {
-    throw new EchoError(
+    throw new VexError(
       ErrorCodes.KYBER_API_ERROR,
       `Router address mismatch: API returned ${actual}, expected ${expected}`,
       "This may indicate an API issue. Do not approve or send transactions.",
@@ -164,7 +164,7 @@ export async function ensureKyberAllowance(
       });
       await publicClient.waitForTransactionReceipt({ hash: resetTxHash });
     } catch (err) {
-      throw new EchoError(ErrorCodes.APPROVAL_FAILED, `Failed to reset allowance: ${err instanceof Error ? err.message : err}`);
+      throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to reset allowance: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -182,7 +182,7 @@ export async function ensureKyberAllowance(
     await publicClient.waitForTransactionReceipt({ hash: txHash });
     return { txHash, resetTxHash };
   } catch (err) {
-    throw new EchoError(ErrorCodes.APPROVAL_FAILED, `Failed to approve: ${err instanceof Error ? err.message : err}`);
+    throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to approve: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -209,7 +209,7 @@ export async function sendKyberTransaction(
     await publicClient.waitForTransactionReceipt({ hash: txHash });
     return txHash;
   } catch (err) {
-    throw new EchoError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
+    throw new VexError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -242,6 +242,6 @@ export async function sendKyberTransactionWithReceipt(
       },
     };
   } catch (err) {
-    throw new EchoError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
+    throw new VexError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
   }
 }
