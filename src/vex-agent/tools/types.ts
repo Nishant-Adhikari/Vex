@@ -75,14 +75,36 @@ export interface ToolDef {
   visibility?: ToolVisibility;
 }
 
+/**
+ * Property value within a JsonSchema. Recursive — supports nested objects
+ * (`properties`/`required`/`additionalProperties`) and arrays (`items`).
+ *
+ * Phase 0 widened this from the original 3-field shape (`{type, description?, enum?}`)
+ * to support strict-mode requirements from OpenAI/Azure: `items` on arrays is
+ * mandatory, `additionalProperties: false` must be settable on nested objects.
+ * The full per-provider projection layer (Phase 1 of the long-term plan) builds
+ * on this baseline shape.
+ */
+export interface JsonSchemaProperty {
+  type: string;
+  description?: string;
+  enum?: string[];
+  /** Schema of array elements. Required by OpenAI strict + Azure when type === "array". */
+  items?: JsonSchemaProperty;
+  /** Nested-object property map. */
+  properties?: Record<string, JsonSchemaProperty>;
+  /** Required keys of a nested object. */
+  required?: string[];
+  /** When false on an object, rejects extra keys (OpenAI strict requirement). */
+  additionalProperties?: boolean;
+}
+
 export interface JsonSchema {
   type: "object";
-  properties: Record<string, {
-    type: string;
-    description?: string;
-    enum?: string[];
-  }>;
+  properties: Record<string, JsonSchemaProperty>;
   required?: string[];
+  /** Top-level strictness flag. Per-provider projection sets this defensively. */
+  additionalProperties?: boolean;
 }
 
 // ── Tool call (from engine to dispatcher) ────────────────────────

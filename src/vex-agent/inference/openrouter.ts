@@ -45,6 +45,7 @@ import {
 
 import logger from "@utils/logger.js";
 import { mapMessages, extractUsage, parseNonStreamingResponse, processToolCallDelta } from "./openrouter/mappers.js";
+import { normalizeToolSchemaForProvider } from "./schema-normalizer.js";
 
 // ── Error normalisation ─────────────────────────────────────────
 
@@ -457,12 +458,15 @@ export class OpenRouterProvider implements InferenceProvider {
     };
 
     if (tools.length > 0) {
+      // Phase 0 hotfix: normalize for provider strict mode (Azure via
+      // OpenRouter rejects bare arrays without `items`, OpenAI strict
+      // requires `additionalProperties: false`). See schema-normalizer.ts.
       params.tools = tools.map(t => ({
         type: "function" as const,
         function: {
           name: t.function.name,
           description: t.function.description,
-          parameters: t.function.parameters,
+          parameters: normalizeToolSchemaForProvider(t.function.parameters),
         },
       }));
       params.toolChoice = "auto";

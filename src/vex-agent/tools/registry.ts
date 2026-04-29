@@ -54,6 +54,7 @@ export function defaultVisibilityContext(
   };
 }
 
+import { VEX_TOOLS } from "./registry/vex.js";
 import { PROTOCOL_TOOLS } from "./registry/protocol.js";
 import { WEB_TOOLS } from "./registry/web.js";
 import { DOCUMENT_TOOLS } from "./registry/documents.js";
@@ -67,8 +68,11 @@ import { EVM_TOOLS } from "./registry/evm.js";
 import { WALLET_TOOLS } from "./registry/wallet.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
-// proactive selection. Keep this aligned with the historical layout.
+// proactive selection. `VEX_TOOLS` (self-documentation) come first so the
+// model has a one-call entry into the agent's product narrative before it
+// reaches for discover_tools.
 const TOOLS: readonly ToolDef[] = [
+  ...VEX_TOOLS,
   ...PROTOCOL_TOOLS,
   ...WEB_TOOLS,
   ...DOCUMENT_TOOLS,

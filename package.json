@@ -33,6 +33,7 @@
     "knowledge-export": "tsx src/vex-agent/scripts/knowledge-export.ts",
     "knowledge-import": "tsx src/vex-agent/scripts/knowledge-import.ts",
     "knowledge-reembed": "tsx src/vex-agent/scripts/knowledge-reembed.ts",
+    "tool-reembed": "tsx src/vex-agent/scripts/tool-reembed.ts",
     "benchmark-cross-lingual": "tsx src/vex-agent/scripts/cross-lingual-benchmark.ts",
     "check-checkpoint-compliance": "tsx src/vex-agent/scripts/checkpoint-compliance-check.ts"
   },

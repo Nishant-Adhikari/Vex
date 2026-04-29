@@ -12,11 +12,16 @@ import { KHALANI_CHAINS } from "../../khalani/discovery-text.js";
 
 export const KHALANI_MAIN_DISCOVERY = {
   "khalani.chains.list": {
+    canonicalSummary:
+      "List every Khalani-supported bridge chain (40+ EVM and Solana networks) with metadata.",
     embeddingText: embeddingText(
       `List every chain Khalani can bridge to or from — 40+ networks including Ethereum, Solana, Base, Arbitrum, BNB Chain, Polygon, Avalanche, Optimism, Linea, zkSync and others, both EVM and Solana. ` +
       `Use this when the user wants to know what chains the bridge supports, asks if a specific network can be bridged, or wants to see chain metadata before transferring. ` +
       `Example queries: what chains can I bridge to, list khalani supported networks, can I bridge to solana, what evm chains support bridging, supported bridge routes.`,
     ),
+    aliases: ["bridge chains", "supported bridge chains", "bridge networks", "supported bridge networks", "cross-chain networks"],
+    exampleIntents: ["list supported bridge chains", "what chains does the bridge support", "supported bridge networks"],
+    preferredFor: ["supported bridge chains", "bridge chain list", "what chains the bridge supports"],
     chains: KHALANI_CHAINS,
   },
 

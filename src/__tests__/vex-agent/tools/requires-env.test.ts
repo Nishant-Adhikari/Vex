@@ -29,33 +29,33 @@ describe("requiresEnv filtering", () => {
   // ── Internal tools (registry) ──────────────────────────────────
 
   describe("internal tools (registry)", () => {
-    it("hides web_search when TAVILY_API_KEY not set", () => {
+    it("hides web_search when TAVILY_API_KEY not set", async () => {
       const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebSearch = tools.some(t => t.function.name === "web_search");
       expect(hasWebSearch).toBe(false);
     });
 
-    it("hides web_fetch when TAVILY_API_KEY not set", () => {
+    it("hides web_fetch when TAVILY_API_KEY not set", async () => {
       const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebFetch = tools.some(t => t.function.name === "web_fetch");
       expect(hasWebFetch).toBe(false);
     });
 
-    it("shows web_search when TAVILY_API_KEY is set", () => {
+    it("shows web_search when TAVILY_API_KEY is set", async () => {
       process.env.TAVILY_API_KEY = "tvly-test-key-12345678";
       const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebSearch = tools.some(t => t.function.name === "web_search");
       expect(hasWebSearch).toBe(true);
     });
 
-    it("shows web_fetch when TAVILY_API_KEY is set", () => {
+    it("shows web_fetch when TAVILY_API_KEY is set", async () => {
       process.env.TAVILY_API_KEY = "tvly-test-key-12345678";
       const tools = getOpenAITools(defaultVisibilityContext());
       const hasWebFetch = tools.some(t => t.function.name === "web_fetch");
       expect(hasWebFetch).toBe(true);
     });
 
-    it("non-ENV tools always present regardless of ENV state", () => {
+    it("non-ENV tools always present regardless of ENV state", async () => {
       const tools = getOpenAITools(defaultVisibilityContext());
       const hasDiscover = tools.some(t => t.function.name === "discover_tools");
       const hasFileRead = tools.some(t => t.function.name === "document_read");
@@ -63,7 +63,7 @@ describe("requiresEnv filtering", () => {
       expect(hasFileRead).toBe(true);
     });
 
-    it("all knowledge_* tools are visible without EMBEDDING_BASE_URL (decision #10: no requiresEnv)", () => {
+    it("all knowledge_* tools are visible without EMBEDDING_BASE_URL (decision #10: no requiresEnv)", async () => {
       delete process.env.EMBEDDING_BASE_URL;
       const tools = getOpenAITools(defaultVisibilityContext());
       const names = tools.map(t => t.function.name);
@@ -75,7 +75,7 @@ describe("requiresEnv filtering", () => {
       expect(names).toContain("knowledge_supersede");
     });
 
-    it("knowledge_* tools have NO requiresEnv field (visible always, fail loud at runtime)", () => {
+    it("knowledge_* tools have NO requiresEnv field (visible always, fail loud at runtime)", async () => {
       const all = getAllTools();
       const knowledgeTools = all.filter(t => t.name.startsWith("knowledge_"));
       // 6 lifecycle/recall tools (write / recall / recall_overflow / get /
@@ -86,7 +86,7 @@ describe("requiresEnv filtering", () => {
       }
     });
 
-    it("getAllTools still returns all tools including ENV-gated ones", () => {
+    it("getAllTools still returns all tools including ENV-gated ones", async () => {
       const all = getAllTools();
       const webSearch = all.find(t => t.name === "web_search");
       expect(webSearch).toBeDefined();
@@ -97,31 +97,31 @@ describe("requiresEnv filtering", () => {
   // ── Protocol tools (discovery) ─────────────────────────────────
 
   describe("protocol discovery", () => {
-    it("hides ALL solana tools when JUPITER_API_KEY not set", () => {
-      const result = discoverProtocolCapabilities({
+    it("hides ALL solana tools when JUPITER_API_KEY not set", async () => {
+      const result = await discoverProtocolCapabilities({
         namespace: "solana",
       });
       expect(result.count).toBe(0);
     });
 
-    it("shows all 20 solana tools when JUPITER_API_KEY is set", () => {
+    it("shows all 20 solana tools when JUPITER_API_KEY is set", async () => {
       process.env.JUPITER_API_KEY = "test-jupiter-key";
-      const result = discoverProtocolCapabilities({
+      const result = await discoverProtocolCapabilities({
         namespace: "solana",
         limit: 100,
       });
       expect(result.count).toBe(20);
     });
 
-    it("khalani tools unaffected by JUPITER_API_KEY", () => {
-      const result = discoverProtocolCapabilities({ namespace: "khalani" });
+    it("khalani tools unaffected by JUPITER_API_KEY", async () => {
+      const result = await discoverProtocolCapabilities({ namespace: "khalani" });
       expect(result.count).toBeGreaterThan(0);
     });
 
-    it("total tool count is higher with JUPITER_API_KEY", () => {
-      const without = discoverProtocolCapabilities({ limit: 300 });
+    it("total tool count is higher with JUPITER_API_KEY", async () => {
+      const without = await discoverProtocolCapabilities({ limit: 300 });
       process.env.JUPITER_API_KEY = "test-key";
-      const withKey = discoverProtocolCapabilities({ limit: 300 });
+      const withKey = await discoverProtocolCapabilities({ limit: 300 });
       expect(withKey.totalCount).toBe(without.totalCount + 20);
     });
   });

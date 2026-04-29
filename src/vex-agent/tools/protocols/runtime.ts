@@ -12,6 +12,7 @@ import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution, validateCaptureContract } from "./capture-validator.js";
 import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js";
 import { MUTATION_MATRIX } from "./mutation-matrix.js";
+import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import logger from "@utils/logger.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
@@ -31,9 +32,27 @@ export async function executeProtocolTool(
   }
 
   // Note: `manifest.lifecycle` is always "active" after PR1 narrowed the
-  // ToolLifecycle union; no runtime lifecycle gate needed. If a future
-  // variant is added (e.g. "declared" / "experimental"), reintroduce the
-  // gate here *and* decide the discovery contract in tandem.
+  // ToolLifecycle union; no runtime lifecycle gate at the per-tool level.
+  // Per-namespace lifecycle is enforced below via `isExecutableNamespace`.
+
+  // Per-namespace lifecycle gate — `deprecated_hidden` namespaces refuse
+  // execution unless `VEX_ALLOW_DEPRECATED_PROTOCOLS=1`. `reserved` never
+  // execute. See `lifecycle.ts` and `embeddings/_DEPRECATED.md`.
+  if (!isExecutableNamespace(manifest.namespace)) {
+    const status = NAMESPACE_LIFECYCLE[manifest.namespace];
+    const hint = status === "deprecated_hidden"
+      ? "Set VEX_ALLOW_DEPRECATED_PROTOCOLS=1 to allow execution."
+      : "Reserved namespace has no executable handlers.";
+    logger.info("protocol.execute.namespace_blocked", {
+      toolId: request.toolId,
+      namespace: manifest.namespace,
+      lifecycle: status,
+    });
+    return {
+      success: false,
+      output: `Namespace "${manifest.namespace}" is ${status} and not executable. ${hint}`,
+    };
+  }
 
   if (manifest.requiresEnv && !process.env[manifest.requiresEnv]?.trim()) {
     return {

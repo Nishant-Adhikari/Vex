@@ -4,8 +4,9 @@
  * Registers all `docs://*`, `surface://manifest`, and `runtime://env`
  * resources on the supplied McpServer. Each resource read callback wraps
  * the relevant `registry-projection` function in an MCP envelope. The same
- * projection functions are used by `http-mirror.ts` so the two surfaces
- * can never drift.
+ * projection functions also back the `vex_introduction` /
+ * `vex_namespace_tools` internal tools (see B1), so resource and tool
+ * content cannot drift — single source of truth in `registry-projection.ts`.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

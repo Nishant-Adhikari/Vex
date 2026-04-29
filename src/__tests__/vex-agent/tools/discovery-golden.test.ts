@@ -96,8 +96,8 @@ describe("discovery golden harness", () => {
   for (const fixture of FIXTURES) {
     const k = fixture.k ?? 3;
     const itFn = fixture.disabled ? it.skip : it;
-    itFn(`top-${k} for "${fixture.intent}" contains expected`, () => {
-      const result = discoverProtocolCapabilities({
+    itFn(`top-${k} for "${fixture.intent}" contains expected`, async () => {
+      const result = await discoverProtocolCapabilities({
         query: fixture.intent,
         limit: k,
       });
@@ -122,8 +122,8 @@ describe("discovery golden harness", () => {
     { intent: "bridge to monad", expectedToolPrefix: "khalani.bridge", chain: "monad" },
     { intent: "lp on berachain", expectedToolPrefix: "kyberswap.zap", chain: "berachain" },
   ])("rare-chain '$chain' — top-5 contains $expectedToolPrefix tagged whyMatched: 'chains'",
-    ({ intent, expectedToolPrefix }) => {
-      const result = discoverProtocolCapabilities({ query: intent, limit: 5 });
+    async ({ intent, expectedToolPrefix }) => {
+      const result = await discoverProtocolCapabilities({ query: intent, limit: 5 });
       const expected = result.tools.find((t) => t.toolId.startsWith(expectedToolPrefix));
       expect(
         expected,
@@ -136,7 +136,7 @@ describe("discovery golden harness", () => {
     },
   );
 
-  it("baseline summary: top-3 recall across all fixtures", () => {
+  it("baseline summary: top-3 recall across all fixtures", async () => {
     // Recall is computed only over enabled fixtures so the threshold remains
     // meaningful while disabled-namespace fixtures are skipped above.
     const activeFixtures = FIXTURES.filter((f) => !f.disabled);
@@ -144,7 +144,7 @@ describe("discovery golden harness", () => {
     const misses: string[] = [];
     for (const fixture of activeFixtures) {
       const k = fixture.k ?? 3;
-      const result = discoverProtocolCapabilities({
+      const result = await discoverProtocolCapabilities({
         query: fixture.intent,
         limit: k,
       });

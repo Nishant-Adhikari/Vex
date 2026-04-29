@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { jsonSchemaToZodShape } from "../../../mcp/surface/tool-bridge.js";
+import { normalizeToolSchemaForProvider } from "../../../vex-agent/inference/schema-normalizer.js";
 import type { JsonSchema } from "../../../vex-agent/tools/types.js";
 
 describe("mcp surface — JsonSchema → Zod walker", () => {
@@ -64,15 +65,24 @@ describe("mcp surface — JsonSchema → Zod walker", () => {
     expect(() => obj.parse({ pinned: "yes" })).toThrow();
   });
 
-  it("handles array and object properties as opaque", () => {
-    const schema: JsonSchema = {
+  it("handles array and object properties as opaque (sanitized + walker pass-through)", () => {
+    // After Phase 0 hotfix, the schema-normalizer injects `items` on every
+    // bare array (Azure/OpenAI-strict requirement). The MCP tool-bridge
+    // walker still treats arrays as opaque (z.array(z.unknown())) and
+    // free-form objects as z.record(string, unknown) — adding `items`
+    // is a strict-mode bridge, not a walker contract change.
+    const raw: JsonSchema = {
       type: "object",
       properties: {
         tags: { type: "array" },
         source_refs: { type: "object" },
       },
     };
-    const shape = jsonSchemaToZodShape(schema);
+    const sanitized = normalizeToolSchemaForProvider(raw);
+    expect(sanitized.properties.tags?.items).toEqual({ type: "string" });
+    expect(sanitized.additionalProperties).toBe(false);
+
+    const shape = jsonSchemaToZodShape(sanitized);
     const obj = z.object(shape);
     expect(obj.parse({ tags: ["a", "b"], source_refs: { protocol: [1, 2] } })).toEqual({
       tags: ["a", "b"],

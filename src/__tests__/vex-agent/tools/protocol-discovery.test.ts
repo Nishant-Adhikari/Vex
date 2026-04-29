@@ -31,16 +31,16 @@ describe("protocol discovery", () => {
   });
   // ── Basic discovery ──────────────────────────────────────────────
 
-  it("returns tools with no filters", () => {
-    const result = discoverProtocolCapabilities({});
+  it("returns tools with no filters", async () => {
+    const result = await discoverProtocolCapabilities({});
     expect(result.success).toBe(true);
     expect(result.count).toBeGreaterThan(0);
     expect(result.totalCount).toBeGreaterThanOrEqual(result.count);
     expect(result.hasMore).toBe(result.totalCount > result.count);
   });
 
-  it("returns tools with toolId, description, params", () => {
-    const result = discoverProtocolCapabilities({});
+  it("returns tools with toolId, description, params", async () => {
+    const result = await discoverProtocolCapabilities({});
     for (const tool of result.tools) {
       expect(tool.toolId).toBeTruthy();
       expect(tool.description).toBeTruthy();
@@ -50,31 +50,31 @@ describe("protocol discovery", () => {
 
   // ── Namespace filter ─────────────────────────────────────────────
 
-  it("filters by khalani namespace", () => {
-    const result = discoverProtocolCapabilities({ namespace: "khalani" });
+  it("filters by khalani namespace", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "khalani" });
     expect(result.count).toBeGreaterThan(0);
     for (const tool of result.tools) {
       expect(tool.namespace).toBe("khalani");
     }
   });
 
-  it("rejects reserved hidden namespaces", () => {
-    const result = discoverProtocolCapabilities({ namespace: "0g-compute" });
+  it("rejects reserved hidden namespaces", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "0g-compute" });
     expect(result.success).toBe(false);
     expect(result.count).toBe(0);
     expect(result.warnings.length).toBeGreaterThan(0);
   });
 
-  it.skip("returns echobook tools when filtering by echobook namespace", () => {
-    const result = discoverProtocolCapabilities({ namespace: "echobook", limit: 50 });
+  it.skip("returns echobook tools when filtering by echobook namespace", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "echobook", limit: 50 });
     expect(result.count).toBeGreaterThan(0);
     for (const tool of result.tools) {
       expect(tool.namespace).toBe("echobook");
     }
   });
 
-  it("returns kyberswap tools when filtering by kyberswap namespace", () => {
-    const result = discoverProtocolCapabilities({ namespace: "kyberswap" });
+  it("returns kyberswap tools when filtering by kyberswap namespace", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "kyberswap" });
     expect(result.count).toBeGreaterThan(0);
     for (const tool of result.tools) {
       expect(tool.namespace).toBe("kyberswap");
@@ -90,10 +90,10 @@ describe("protocol discovery", () => {
   // Mutating tools now appear in discover_tools with the `mutating`
   // flag visible per item.
 
-  it("surfaces mutating tools by default — includes khalani.bridge", () => {
+  it("surfaces mutating tools by default — includes khalani.bridge", async () => {
     // Explicit limit > 5 because DEFAULT_DISCOVERY_LIMIT=5 may not include
     // the mutating tool depending on manifest order.
-    const result = discoverProtocolCapabilities({ namespace: "khalani", limit: 50 });
+    const result = await discoverProtocolCapabilities({ namespace: "khalani", limit: 50 });
     const hasMutating = result.tools.some(t => t.mutating);
     expect(hasMutating).toBe(true);
     const bridge = result.tools.find(t => t.toolId === "khalani.bridge");
@@ -103,49 +103,49 @@ describe("protocol discovery", () => {
 
   // ── Query matching ───────────────────────────────────────────────
 
-  it("matches by toolId substring", () => {
-    const result = discoverProtocolCapabilities({ query: "tokens.search" });
+  it("matches by toolId substring", async () => {
+    const result = await discoverProtocolCapabilities({ query: "tokens.search" });
     expect(result.count).toBeGreaterThan(0);
     expect(result.tools[0].toolId).toContain("tokens.search");
   });
 
-  it("matches by description keyword", () => {
-    const result = discoverProtocolCapabilities({ query: "balance" });
+  it("matches by description keyword", async () => {
+    const result = await discoverProtocolCapabilities({ query: "balance" });
     expect(result.count).toBeGreaterThan(0);
   });
 
-  it("matches case-insensitively", () => {
-    const result = discoverProtocolCapabilities({ query: "BRIDGE" });
+  it("matches case-insensitively", async () => {
+    const result = await discoverProtocolCapabilities({ query: "BRIDGE" });
     expect(result.count).toBeGreaterThan(0);
   });
 
-  it("returns empty for non-matching query", () => {
-    const result = discoverProtocolCapabilities({ query: "zzz_nonexistent_xyz" });
+  it("returns empty for non-matching query", async () => {
+    const result = await discoverProtocolCapabilities({ query: "zzz_nonexistent_xyz" });
     expect(result.count).toBe(0);
   });
 
   // ── Limit ────────────────────────────────────────────────────────
 
-  it("respects limit", () => {
-    const result = discoverProtocolCapabilities({ namespace: "khalani", limit: 3 });
+  it("respects limit", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "khalani", limit: 3 });
     expect(result.count).toBeLessThanOrEqual(3);
     expect(result.tools).toHaveLength(result.count);
     expect(result.totalCount).toBeGreaterThanOrEqual(result.count);
   });
 
-  it("returns all when limit exceeds count", () => {
+  it("returns all when limit exceeds count", async () => {
     // Both calls need explicit limits that exceed actual khalani tool count;
     // DEFAULT_DISCOVERY_LIMIT=5 caps allResult independently of totalCount.
-    const allResult = discoverProtocolCapabilities({ namespace: "khalani", limit: 100 });
-    const bigLimitResult = discoverProtocolCapabilities({ namespace: "khalani", limit: 200 });
+    const allResult = await discoverProtocolCapabilities({ namespace: "khalani", limit: 100 });
+    const bigLimitResult = await discoverProtocolCapabilities({ namespace: "khalani", limit: 200 });
     expect(bigLimitResult.count).toBe(allResult.count);
     expect(bigLimitResult.totalCount).toBe(allResult.totalCount);
   });
 
   // ── Lifecycle filter ─────────────────────────────────────────────
 
-  it("returns only active tools by default", () => {
-    const result = discoverProtocolCapabilities({});
+  it("returns only active tools by default", async () => {
+    const result = await discoverProtocolCapabilities({});
     for (const tool of result.tools) {
       expect(tool.lifecycle).toBe("active");
     }
@@ -153,15 +153,15 @@ describe("protocol discovery", () => {
 
   // ── Warnings ─────────────────────────────────────────────────────
 
-  it("does not advertise reserved namespaces in generic discovery results", () => {
-    const result = discoverProtocolCapabilities({});
+  it("does not advertise reserved namespaces in generic discovery results", async () => {
+    const result = await discoverProtocolCapabilities({});
     const namespaces = new Set(result.tools.map((tool) => tool.namespace));
     expect(namespaces.has("0g-compute")).toBe(false);
     expect(namespaces.has("0g-storage")).toBe(false);
   });
 
-  it("returns dexscreener tools when filtering by dexscreener namespace", () => {
-    const result = discoverProtocolCapabilities({ namespace: "dexscreener", limit: 50 });
+  it("returns dexscreener tools when filtering by dexscreener namespace", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "dexscreener", limit: 50 });
     expect(result.count).toBeGreaterThan(0);
     for (const tool of result.tools) {
       expect(tool.namespace).toBe("dexscreener");
@@ -170,8 +170,8 @@ describe("protocol discovery", () => {
 
   // ── Combined filters ─────────────────────────────────────────────
 
-  it("combines namespace + query", () => {
-    const result = discoverProtocolCapabilities({
+  it("combines namespace + query", async () => {
+    const result = await discoverProtocolCapabilities({
       namespace: "khalani",
       query: "order",
     });
@@ -181,8 +181,8 @@ describe("protocol discovery", () => {
     }
   });
 
-  it("combines namespace + query — mutating tools surfaced", () => {
-    const result = discoverProtocolCapabilities({
+  it("combines namespace + query — mutating tools surfaced", async () => {
+    const result = await discoverProtocolCapabilities({
       namespace: "khalani",
       query: "bridge",
     });
@@ -192,42 +192,42 @@ describe("protocol discovery", () => {
     expect(bridge!.mutating).toBe(true);
   });
 
-  it.skip("matches alias query for 0g explorer to chainscan", () => {
-    const result = discoverProtocolCapabilities({ query: "0g explorer" });
+  it.skip("matches alias query for 0g explorer to chainscan", async () => {
+    const result = await discoverProtocolCapabilities({ query: "0g explorer" });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.namespace).toBe("chainscan");
   });
 
-  it("matches polymarket clob from natural language query", () => {
+  it("matches polymarket clob from natural language query", async () => {
     // Query uses "polymarket orderbook" (namespace + discriminator) instead of the
     // ambiguous "prediction market orderbook" — which now ties polymarket.data.*
     // (via "prediction market" in description) with polymarket.clob.* (via "orderbook").
     // Lexical scoring without IDF can't break that tie; PR3 metadata v1 is the place
     // to disambiguate. The capability-phrase intent in message #5 is the right shape here.
-    const result = discoverProtocolCapabilities({ query: "polymarket orderbook" });
+    const result = await discoverProtocolCapabilities({ query: "polymarket orderbook" });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.toolId.startsWith("polymarket.clob")).toBe(true);
   });
 
-  it("matches community takeover query to dexscreener", () => {
-    const result = discoverProtocolCapabilities({ query: "community takeover" });
+  it("matches community takeover query to dexscreener", async () => {
+    const result = await discoverProtocolCapabilities({ query: "community takeover" });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.toolId).toBe("dexscreener.communityTakeovers");
   });
 
-  it.skip("matches profile image query to slop app tools", () => {
-    const result = discoverProtocolCapabilities({ query: "profile image" });
+  it.skip("matches profile image query to slop app tools", async () => {
+    const result = await discoverProtocolCapabilities({ query: "profile image" });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.namespace).toBe("slop-app");
   });
 
   // ── Defense in depth: reserved namespaces never leak ─────────────
 
-  it("free-text discovery only ever returns advertised namespaces", () => {
+  it("free-text discovery only ever returns advertised namespaces", async () => {
     // Run a few diverse queries — every result must belong to advertised set.
     const queries = ["", "bridge", "swap", "token", "0g", "market"];
     for (const query of queries) {
-      const result = discoverProtocolCapabilities({ query, limit: 200 });
+      const result = await discoverProtocolCapabilities({ query, limit: 200 });
       for (const tool of result.tools) {
         expect(PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).toContain(tool.namespace);
       }
@@ -236,21 +236,21 @@ describe("protocol discovery", () => {
 
   // ── Env-gating contract (audit follow-up) ────────────────────────
 
-  it("hides env-gated tools when their requiresEnv is missing", () => {
+  it("hides env-gated tools when their requiresEnv is missing", async () => {
     delete process.env.JUPITER_API_KEY;
-    const result = discoverProtocolCapabilities({ namespace: "solana", limit: 100 });
+    const result = await discoverProtocolCapabilities({ namespace: "solana", limit: 100 });
     // All solana tools require JUPITER_API_KEY → namespace returns nothing.
     expect(result.count).toBe(0);
   });
 
-  it("returns env-gated tools when their requiresEnv is present", () => {
-    const result = discoverProtocolCapabilities({ namespace: "solana", limit: 100 });
+  it("returns env-gated tools when their requiresEnv is present", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "solana", limit: 100 });
     expect(result.count).toBeGreaterThan(0);
   });
 
-  it("does not surface gated polymarket clob mutating tools when key missing", () => {
+  it("does not surface gated polymarket clob mutating tools when key missing", async () => {
     delete process.env.POLYMARKET_API_KEY;
-    const result = discoverProtocolCapabilities({
+    const result = await discoverProtocolCapabilities({
       namespace: "polymarket",
       query: "buy yes",
       limit: 100,
@@ -261,8 +261,8 @@ describe("protocol discovery", () => {
 
   // ── Facet-driven discovery (audit follow-up) ─────────────────────
 
-  it.skip("matches echobook comment tools via facet hints", () => {
-    const result = discoverProtocolCapabilities({
+  it.skip("matches echobook comment tools via facet hints", async () => {
+    const result = await discoverProtocolCapabilities({
       query: "comment thread",
       namespace: "echobook",
       limit: 50,
@@ -272,8 +272,8 @@ describe("protocol discovery", () => {
     expect(ids).toContain("echobook.comments.get");
   });
 
-  it.skip("matches slop.tokens.mine via 'my tokens' facet hint", () => {
-    const result = discoverProtocolCapabilities({
+  it.skip("matches slop.tokens.mine via 'my tokens' facet hint", async () => {
+    const result = await discoverProtocolCapabilities({
       query: "my tokens",
       namespace: "slop",
       limit: 50,

@@ -71,7 +71,7 @@ async function routeToolCall(
       namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
     };
-    const result = discoverProtocolCapabilities(discoveryRequest);
+    const result = await discoverProtocolCapabilities(discoveryRequest);
     logDiscoveryTelemetry({
       request: discoveryRequest, result, discoveryRunId: newDiscoveryRunId(),
       sourceSurface: context.sourceSurface, sourceSession: context.sourceSession,
@@ -134,6 +134,10 @@ type InternalHandler = (
 type InternalHandlerLoader = () => Promise<InternalHandler>;
 
 export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoader>> = {
+  // Self-documentation (Vex orientation tools)
+  vex_introduction: async () => (await import("./internal/vex-intro.js")).handleVexIntroduction,
+  vex_namespace_tools: async () => (await import("./internal/vex-namespace-tools.js")).handleVexNamespaceTools,
+
   // Web
   web_search: async () => (await import("./internal/web.js")).handleWebSearch,
   web_fetch: async () => (await import("./internal/web.js")).handleWebFetch,

@@ -16,9 +16,11 @@
  *     expects raw Node IncomingMessage / ServerResponse, which Fastify exposes
  *     as `request.raw` / `reply.raw`. We pass `request.body` for POSTs so the
  *     SDK does not have to re-parse what Fastify already parsed.
- *   - The HTTP docs mirror is mounted on the same Fastify instance via
- *     `mountHttpDocs(fastify)` so it inherits the same hooks (host validation
- *     + bearer).
+ *   - No HTTP docs mirror — `vex_introduction` and `vex_namespace_tools`
+ *     internal tools (B1) plus the existing MCP resources (`docs://*`,
+ *     `surface://manifest`, `runtime://env`) cover documentation. The
+ *     prior Fastify routes mounted by `mountHttpDocs` were retired in B2
+ *     (cleanup-light) — no Fastify-only HTTP endpoints in this server.
  *
  * Session lifecycle in v1: one Streamable HTTP transport + one McpServer per
  * MCP session. The MCP-side session id is assigned by the SDK and mapped 1:1
@@ -32,7 +34,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { randomUUID } from "node:crypto";
 import { createMcpServerInstance } from "../server/create-server.js";
 import { createMcpSession, endMcpSession } from "../sessions.js";
-import { mountHttpDocs } from "../docs/http-mirror.js";
 import { loadOrCreateHttpToken } from "../auth/token.js";
 import {
   classifyHttpSessionRequest,
@@ -102,8 +103,9 @@ export async function startHttpTransport(): Promise<void> {
     }
   });
 
-  // Mount docs mirror on the same instance — inherits hooks above.
-  mountHttpDocs(fastify);
+  // No HTTP docs mirror — see B2 (cleanup-light): documentation is served
+  // by MCP resources (`docs://*`) plus the `vex_introduction` /
+  // `vex_namespace_tools` internal tools.
 
   // Pass raw Node req/res to the SDK transport. The SDK does not understand
   // Fastify's request/reply abstractions; it expects Node primitives.

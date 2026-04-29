@@ -86,15 +86,19 @@ export interface NamespaceModule {
 }
 
 export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
+  // Active namespaces — discoverable, executable, embedded for hybrid retrieval.
   { namespace: "khalani", manifests: KHALANI_TOOLS, handlers: KHALANI_HANDLERS },
   { namespace: "solana", manifests: SOLANA_JUPITER_TOOLS, handlers: SOLANA_JUPITER_HANDLERS },
   { namespace: "kyberswap", manifests: KYBERSWAP_TOOLS, handlers: KYBERSWAP_HANDLERS },
   { namespace: "dexscreener", manifests: DEXSCREENER_TOOLS, handlers: DEXSCREENER_HANDLERS },
+  { namespace: "polymarket", manifests: POLYMARKET_TOOLS, handlers: POLYMARKET_HANDLERS },
+  // lifecycle: deprecated_hidden — see lifecycle.ts + embeddings/_DEPRECATED.md.
+  // Manifests stay registered (so existing references compile), but discovery
+  // hides them and execute_tool refuses unless VEX_ALLOW_DEPRECATED_PROTOCOLS=1.
   { namespace: "chainscan", manifests: CHAINSCAN_TOOLS, handlers: CHAINSCAN_HANDLERS },
   { namespace: "jaine", manifests: JAINE_TOOLS, handlers: JAINE_HANDLERS },
   { namespace: "slop", manifests: SLOP_TOOLS, handlers: SLOP_HANDLERS },
   { namespace: "echobook", manifests: ECHOBOOK_TOOLS, handlers: ECHOBOOK_HANDLERS },
-  { namespace: "polymarket", manifests: POLYMARKET_TOOLS, handlers: POLYMARKET_HANDLERS },
   { namespace: "slop-app", manifests: SLOP_APP_TOOLS, handlers: SLOP_APP_HANDLERS },
 ];
 

@@ -25,8 +25,8 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     }
   });
 
-  it("canonicalSummary from metadata contributes to scoring", () => {
-    const result = discoverProtocolCapabilities({
+  it("canonicalSummary from metadata contributes to scoring", async () => {
+    const result = await discoverProtocolCapabilities({
       query: "prediction market orderbook bids asks",
     });
     expect(result.success).toBe(true);
@@ -35,11 +35,11 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     expect(clobOrderbook!.whyMatched).toContain("canonicalSummary");
   });
 
-  it.skip("per-tool metadata aliases (not inherited from facet) appear as 'metadata' in whyMatched", () => {
+  it.skip("per-tool metadata aliases (not inherited from facet) appear as 'metadata' in whyMatched", async () => {
     // echobook.comments.get has explicit discovery.aliases: ["0g comments", "echobook comments"].
     // These are NOT in navigation strings → should appear as "metadata" tag.
     // Inherited exampleIntents (from facet.hints) ARE in navigation → deduped out.
-    const result = discoverProtocolCapabilities({
+    const result = await discoverProtocolCapabilities({
       query: "0g comments",
       namespace: "echobook",
       limit: 50,
@@ -50,8 +50,8 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     expect(commentTool!.whyMatched).toContain("metadata");
   });
 
-  it("prediction market orderbook ranks clob.orderbook above data.closedPositions", () => {
-    const result = discoverProtocolCapabilities({
+  it("prediction market orderbook ranks clob.orderbook above data.closedPositions", async () => {
+    const result = await discoverProtocolCapabilities({
       query: "prediction market orderbook",
       limit: 10,
     });
@@ -65,8 +65,8 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     }
   });
 
-  it("unfilled tools still score via inherited metadata fields", () => {
-    const result = discoverProtocolCapabilities({
+  it("unfilled tools still score via inherited metadata fields", async () => {
+    const result = await discoverProtocolCapabilities({
       query: "swap",
       namespace: "kyberswap",
       limit: 50,

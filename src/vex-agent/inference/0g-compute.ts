@@ -35,6 +35,7 @@ import {
 } from "./config.js";
 
 import { retryWithBackoff, isRetryableError } from "./resilience.js";
+import { normalizeToolSchemaForProvider } from "./schema-normalizer.js";
 import { getAuthenticatedBroker } from "@tools/0g-compute/broker-factory.js";
 import { getServiceMetadata, listChatServices, getLedgerBalance, getSubAccountBalance } from "@tools/0g-compute/operations.js";
 import { loadComputeState } from "@tools/0g-compute/compute-state.js";
@@ -283,7 +284,16 @@ export class ZeroGComputeProvider implements InferenceProvider {
     };
 
     if (tools.length > 0) {
-      body.tools = tools;
+      // Phase 0 hotfix: normalize for provider strict mode (bare arrays must
+      // have `items`, objects with `properties` get `additionalProperties: false`).
+      body.tools = tools.map(t => ({
+        type: "function" as const,
+        function: {
+          name: t.function.name,
+          description: t.function.description,
+          parameters: normalizeToolSchemaForProvider(t.function.parameters),
+        },
+      }));
       body.tool_choice = "auto";
     }
 

@@ -1,0 +1,16 @@
+{
+  "version": "v1-seed",
+  "mode": "lexical",
+  "VEX_RETRIEVAL_MODE": "lexical",
+  "datasetVersion": "v1-seed",
+  "capturedAt": "2026-04-29",
+  "notes": "A5 seed baseline for lexical-only discover_tools. Captured immediately after detaching `embeddingText` from the lexical lane (A3) and adding `vex_introduction` is NOT yet in the registry (registry change is B1, no impact on protocol discovery). Recall@5 in the polish cohort is the headline gap dense retrieval (Phase 4) is meant to close.",
+  "metrics": {
+    "overall": { "count": 51, "recall1": 0.314, "recall5": 0.510, "mrr5": 0.382 },
+    "perCohort": {
+      "single-namespace": { "count": 28, "recall1": 0.429, "recall5": 0.536, "mrr5": 0.464 },
+      "cross-namespace":  { "count": 6,  "recall1": 0.333, "recall5": 0.667, "mrr5": 0.458 },
+      "polish":           { "count": 17, "recall1": 0.118, "recall5": 0.412, "mrr5": 0.221 }
+    }
+  }
+}

@@ -67,6 +67,8 @@ ${buildDirectToolRoutingLines().join("\n")}
 
 ## Where to look for more
 
+- \`vex_introduction()\` — guided tour. Default returns the priority brief covering the five active protocol namespaces; pass \`topic\` ∈ {overview, querying, knowledge, namespaces} to focus on a single area. Same content as the resources below, but reachable through one tool call your model can dispatch.
+- \`vex_namespace_tools(namespace?)\` — drill into a single protocol namespace and list every tool with description, mutation flag, and example params.
 - \`docs://overview\` — surface size, runtime, embedding model
 - \`docs://tools\` — full internal tool catalog grouped by capability
 - \`docs://protocols\` — namespace routing with \`Use when\` guidance

@@ -80,12 +80,12 @@ describe("discovery pipeline — Polish intent → English query → discover_to
 
   for (const fixture of PIPELINE_FIXTURES) {
     const itFn = fixture.disabled ? it.skip : it;
-    itFn(`"${fixture.polishIntent}" → "${fixture.translatedEnglish}" → top-3 match`, () => {
+    itFn(`"${fixture.polishIntent}" → "${fixture.translatedEnglish}" → top-3 match`, async () => {
       // Step 1: mock translation (deterministic — no LLM)
       const englishQuery = fixture.translatedEnglish;
 
       // Step 2: call discover_tools with the English capability phrase
-      const result = discoverProtocolCapabilities({
+      const result = await discoverProtocolCapabilities({
         query: englishQuery,
         limit: 3,
       });

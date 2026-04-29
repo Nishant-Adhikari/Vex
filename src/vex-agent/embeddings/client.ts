@@ -47,6 +47,15 @@ import logger from "@utils/logger.js";
 // follow-up refactor; for now the mode enum lets consumers name their intent
 // so a later switch can key off it without touching call sites.
 
+/**
+ * Version tag for the formatter shape. Bump when the prompt prefix changes
+ * (e.g. swap of `title:|text:` Gemma format for a BGE-style query/passage
+ * scheme). Used as part of `tool_embeddings.content_hash` so a formatter
+ * change automatically invalidates every existing embedding row and forces
+ * a clean re-embed.
+ */
+export const FORMATTER_VERSION = "v1-gemma-title-text";
+
 /** Mode tag describing what's being embedded — used by callers and future formatters. */
 export type EmbedMode = "document" | "query" | "tool";
 

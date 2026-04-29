@@ -133,6 +133,24 @@ export interface ProtocolDiscoveryItem {
   whyMatched: string[];
 }
 
+/**
+ * Retrieval metadata attached to a discovery result. Surfaces which lane
+ * produced the ranking (lexical vs hybrid), whether the dense leg degraded,
+ * and the audit columns of the embedding used. Consumed by telemetry; the
+ * LLM never sees it directly.
+ */
+export interface ProtocolDiscoveryRetrievalMeta {
+  method: "lexical" | "hybrid";
+  /** True when the dense leg was attempted but failed (RRF fell back to lexical-only). */
+  denseFailed: boolean;
+  /** Provider-reported embedding model (only set when dense leg ran). */
+  embeddingModel?: string;
+  /** Provider-reported embedding dim (only set when dense leg ran). */
+  embeddingDim?: number;
+  /** Number of candidates before scoring (post env/advertised/lifecycle filters). */
+  candidateCount: number;
+}
+
 export interface ProtocolDiscoveryResult {
   success: boolean;
   /** Number of tools returned in this response (after limit is applied). */
@@ -143,6 +161,8 @@ export interface ProtocolDiscoveryResult {
   hasMore: boolean;
   tools: ProtocolDiscoveryItem[];
   warnings: string[];
+  /** Optional retrieval metadata for telemetry. */
+  retrieval?: ProtocolDiscoveryRetrievalMeta;
 }
 
 // ── Execute request ──────────────────────────────────────────────

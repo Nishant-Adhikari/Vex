@@ -15,6 +15,7 @@
 import { runMigrations } from "@vex-agent/db/migrate.js";
 import { loadProviderDotenv } from "../providers/env-resolution.js";
 import { McpHealthError, probeAll } from "./runtime/health.js";
+import { reembedAllTools } from "@vex-agent/tools/protocols/embeddings/reembed.js";
 import logger from "@utils/logger.js";
 
 export const REQUIRED_ENV = [
@@ -75,6 +76,16 @@ export async function runBootstrapChecks(): Promise<void> {
       err instanceof Error ? `Health probe failed: ${err.message}` : `Health probe failed: ${String(err)}`,
     );
   }
+
+  // Tool embeddings reembed — non-blocking. Bootstrap returns immediately;
+  // the run logs `tool_embeddings.reembed.completed` when finished. If the
+  // embedding service is unavailable, the catch keeps startup quiet and
+  // the dense leg of `discover_tools` degrades to lexical-only at runtime.
+  void reembedAllTools().catch((err) => {
+    logger.warn("mcp.bootstrap.reembed.failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 }
 
 /**
