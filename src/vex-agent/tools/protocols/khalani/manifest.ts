@@ -65,11 +65,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "khalani.tokens.balances",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Get token balances with USD prices for a wallet address across chains.",
+    description: "Get live token balances with USD prices for a wallet address across Khalani-supported chains. Multi-chain reads are scanned per chain for complete results.",
     mutating: false,
     params: [
       { key: "address", type: "string", description: "Wallet address (optional — uses configured wallet)." },
-      { key: "wallet", type: "string", description: "Wallet family: eip155 or solana (used if address not provided)." },
+      { key: "wallet", type: "string", description: "Wallet/address family: eip155 or solana (default: eip155)." },
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
     ],
     exampleParams: { wallet: "eip155", chainIds: "1,8453" },

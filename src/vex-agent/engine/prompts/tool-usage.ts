@@ -10,6 +10,16 @@ export function buildToolUsagePrompt(): string {
 
 You interact with protocols through two meta-tools:
 
+## Tool surfaces
+
+You have two ways to call tools:
+
+1. **Direct internal tools** — called by name. Examples: \`wallet_read\`, \`portfolio_inspect\`, \`khalani_tokens_search\`, \`web_search\`. Used for agent-level operations and curated read-only shortcuts to common protocol reads.
+
+2. **Protocol tools** — discovered through \`discover_tools\`, executed through \`execute_tool\` with a dotted \`toolId\` like \`khalani.bridge\` or \`kyberswap.swap.sell\`. The full multi-chain protocol surface lives here.
+
+For Khalani specifically: prefer the four direct aliases (\`khalani_chains_list\`, \`khalani_tokens_top\`, \`khalani_tokens_search\`, \`khalani_tokens_balances\`) for those four common read-only operations — they hit the same backend as the canonical \`khalani.*\` tools, with no discovery hop. For everything else in Khalani (quotes, orders, bridge execution), go through \`discover_tools\` → \`execute_tool\`.
+
 ## discover_tools
 Search for available tools by query and/or namespace.
 - Use natural language queries: "swap USDC to SOL", "bridge tokens to arbitrum", "check balances"
@@ -44,7 +54,7 @@ Execute a discovered tool by toolId with required params.
 
 Before ANY mutating tool that takes a token address, symbol, or mint:
 1. Resolve via a read tool FIRST:
-   - Primary: khalani.tokens.search (symbol/name → address per chain, cross-chain)
+   - Primary: khalani_tokens_search or khalani.tokens.search (symbol/name → address per chain, cross-chain)
    - EVM confirmation: kyberswap.tokens.search (verify token visible on target chain)
    - Solana: solana.tokens.search (verify mint on Solana)
 2. Use the address from the tool result — NOT from memory, knowledge, examples, or prior conversations
@@ -62,7 +72,7 @@ but cannot prove that an address came from a prior read tool call.
    For ERC-20 tokens (USDC, WETH, etc.), "all" means the full balance.
 
 2. **Fresh balance before each mutation**: After a successful swap/bridge/zap, always read
-   fresh balances (wallet_read or khalani.tokens.balances) before the next mutation.
+   fresh live balances via wallet_read, khalani_tokens_balances, or khalani.tokens.balances before the next mutation.
    Never chain multiple swaps based on estimated post-tx balances.
 
 3. **Quote before execute**: For every mutating DeFi tool that supports dryRun/preview,
@@ -91,7 +101,8 @@ Use \`portfolio_inspect\` to check your own state before making decisions:
 - \`portfolio_inspect(view="activity", namespace="solana")\` — recent trading activity
 - \`portfolio_inspect(view="executions")\` — execution audit log
 
-This reads from your own DB projections — faster and more reliable than re-querying protocols.
+This reads from your own DB projections for history, PnL, lots, and cached aggregates.
+For fresh per-token wallet balances, use wallet_read, khalani_tokens_balances, or khalani.tokens.balances.
 
 ## Knowledge Layer Rules
 

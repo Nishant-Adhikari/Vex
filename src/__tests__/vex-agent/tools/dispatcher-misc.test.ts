@@ -46,14 +46,26 @@ describe("dispatcher — subagent, wallet, unknown, no-stubs", () => {
 
   it("routes wallet_read to live handler (not stub)", async () => {
     const result = await dispatchTool(
-      { name: "wallet_read", args: { action: "address" }, toolCallId: "call_14" },
+      { name: "wallet_read", args: { wallet: "eip155" }, toolCallId: "call_14" },
       baseContext,
     );
 
     expect(result.success).toBe(true);
     const parsed = JSON.parse(result.output);
-    expect(parsed.chain).toBe("eip155");
-    expect(parsed.address).toBe("0x1234567890abcdef1234567890abcdef12345678");
+    expect(parsed.wallets[0].wallet).toBe("eip155");
+    expect(parsed.wallets[0].address).toBe("0x1234567890abcdef1234567890abcdef12345678");
+    expect(result.output).not.toContain("[STUB]");
+  });
+
+  it("routes Khalani internal read aliases through live handlers", async () => {
+    const result = await dispatchTool(
+      { name: "khalani_chains_list", args: {}, toolCallId: "call_14b" },
+      baseContext,
+    );
+
+    expect(result.success).toBe(true);
+    const parsed = JSON.parse(result.output);
+    expect(parsed.chains).toBeGreaterThan(0);
     expect(result.output).not.toContain("[STUB]");
   });
 

@@ -89,6 +89,10 @@ describe("registry", () => {
     "wallet_read",
     "wallet_send_prepare",
     "wallet_send_confirm",
+    "khalani_chains_list",
+    "khalani_tokens_top",
+    "khalani_tokens_search",
+    "khalani_tokens_balances",
   ];
 
   for (const name of EXPECTED_TOOLS) {
@@ -257,6 +261,7 @@ describe("registry", () => {
       expect(names).toContain("discover_tools");
       expect(names).toContain("execute_tool");
       expect(names).toContain("wallet_read");
+      expect(names).toContain("khalani_tokens_balances");
       expect(names).toContain("wallet_send_prepare");
       expect(names).toContain("wallet_send_confirm");
       expect(names).toContain("knowledge_write");

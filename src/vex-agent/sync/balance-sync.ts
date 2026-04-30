@@ -1,11 +1,11 @@
 /**
  * Balance sync — Khalani → proj_balances → proj_portfolio_snapshots.
  *
- * One Khalani call per wallet family returns native + altcoins with USD prices.
- * Transactional full-replace per chain — absent tokens are removed.
+ * Khalani balance reads are scanned per chain, then written transactionally per
+ * chain. Absent tokens are removed only for chains that were actually scanned.
  */
 
-import { getKhalaniClient } from "@tools/khalani/client.js";
+import { getTokenBalancesAcrossChains } from "@tools/khalani/balances.js";
 import { requireEvmWallet, requireSolanaWallet } from "@tools/wallet/multi-auth.js";
 import type { KhalaniToken, ChainFamily } from "@tools/khalani/types.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
@@ -51,9 +51,10 @@ export async function syncWalletBalances(
     return null;
   }
 
-  // Fetch from Khalani
-  const client = getKhalaniClient();
-  const tokens = await client.getTokenBalances(address, chainIds);
+  // Fetch from Khalani. Scanning per chain avoids incomplete multi-chain
+  // balance responses and lets cleanup distinguish "empty" from "not scanned".
+  const scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
+  const tokens = scan.tokens;
 
   // Group by chainId for transactional replace
   const byChain = new Map<number, BalanceRow[]>();
@@ -67,11 +68,11 @@ export async function syncWalletBalances(
   // Get previously known chains — if Khalani now returns nothing for a chain,
   // we must replace with empty to remove stale "ghost" balances
   const previousChains = await balancesRepo.getBalancesByChain(address);
-  const refreshedChainIds = new Set(byChain.keys());
+  const refreshedChainIds = new Set(scan.scannedChainIds);
   for (const prev of previousChains) {
-    // If we filtered by chainIds, only clean chains in the filter
-    if (chainIds && !chainIds.includes(prev.chainId)) continue;
-    if (!refreshedChainIds.has(prev.chainId)) {
+    // Only clean chains that the scanner actually refreshed successfully.
+    if (!refreshedChainIds.has(prev.chainId)) continue;
+    if (!byChain.has(prev.chainId)) {
       byChain.set(prev.chainId, []); // empty = delete all tokens for this chain
     }
   }
@@ -92,6 +93,7 @@ export async function syncWalletBalances(
     address: address.slice(0, 10) + "...",
     tokens: tokensUpdated,
     chains: byChain.size,
+    chainErrors: scan.chainErrors.length,
     totalUsd: totalUsd.toFixed(2),
   });
 

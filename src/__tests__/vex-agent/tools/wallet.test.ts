@@ -32,14 +32,27 @@ const MOCK_CHAIN = {
   nativeCurrency: { name: "0G", symbol: "0G", decimals: 18 },
   rpcUrls: { default: { http: ["https://rpc.0g.example.com"] } },
 };
+const MOCK_SOLANA_CHAIN = {
+  id: 20011000000, name: "Solana", type: "solana" as const,
+  nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 },
+  rpcUrls: { default: { http: ["https://api.mainnet-beta.solana.com"] } },
+};
 
 vi.mock("@tools/khalani/client.js", () => ({
   getKhalaniClient: () => ({
-    getTokenBalances: async (address: string, chainIds?: number[]) => [
-      { address: "native", chainId: 16661, symbol: "0G", decimals: 18, extensions: { balance: "5000000000000000000", price: { usd: "0.05" } } },
-      { address: "0xUSDC", chainId: 16661, symbol: "USDC", decimals: 6, extensions: { balance: "100000000", price: { usd: "1.00" } } },
-    ],
-    getChains: async () => [MOCK_CHAIN],
+    getTokenBalances: async (_address: string, chainIds?: number[]) => {
+      const chainId = chainIds?.[0] ?? 16661;
+      if (chainId === 20011000000) {
+        return [
+          { address: "So11111111111111111111111111111111111111112", chainId, symbol: "SOL", name: "Solana", decimals: 9, extensions: { balance: "2000000000", price: { usd: "100.00" } } },
+        ];
+      }
+      return [
+        { address: "native", chainId, symbol: "0G", name: "0G", decimals: 18, extensions: { balance: "5000000000000000000", price: { usd: "0.05" } } },
+        { address: "0xUSDC", chainId, symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "100000000", price: { usd: "1.00" } } },
+      ];
+    },
+    getChains: async () => [MOCK_CHAIN, MOCK_SOLANA_CHAIN],
   }),
 }));
 
@@ -49,6 +62,7 @@ const mockGetChain = vi.fn().mockReturnValue(MOCK_CHAIN);
 vi.mock("@tools/khalani/chains.js", () => ({
   resolveChainId: (...args: unknown[]) => mockResolveChainId(...args),
   getChain: (...args: unknown[]) => mockGetChain(...args),
+  getCachedKhalaniChains: async () => [MOCK_CHAIN, MOCK_SOLANA_CHAIN],
 }));
 
 const mockSendTransaction = vi.fn().mockResolvedValue("0xmockhash" as `0x${string}`);
@@ -102,78 +116,55 @@ import { makeTestContext } from "./_test-context.js";
 const baseContext = makeTestContext();
 
 describe("wallet_read", () => {
-  // ── address ────────────────────────────────────────────────────
+  // ── live snapshots ─────────────────────────────────────────────
 
-  it("returns EVM address by default", async () => {
-    const result = await handleWalletRead({ action: "address" }, baseContext);
+  it("returns live snapshots for all configured wallets by default", async () => {
+    const result = await handleWalletRead({}, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
-    expect(data.chain).toBe("eip155");
-    expect(data.address).toMatch(/^0x/);
+    expect(data.wallet).toBe("all");
+    expect(data.wallets).toHaveLength(2);
+    expect(data.wallets.map((wallet: { wallet: string }) => wallet.wallet)).toEqual(["eip155", "solana"]);
+    expect(data.totalUsd).toBeGreaterThan(0);
   });
 
-  it("returns EVM address when chain=eip155", async () => {
-    const result = await handleWalletRead({ action: "address", chain: "eip155" }, baseContext);
-    expect(result.success).toBe(true);
-    const data = JSON.parse(result.output);
-    expect(data.chain).toBe("eip155");
-  });
-
-  it("returns Solana address when chain=solana", async () => {
-    const result = await handleWalletRead({ action: "address", chain: "solana" }, baseContext);
-    expect(result.success).toBe(true);
-    const data = JSON.parse(result.output);
-    expect(data.chain).toBe("solana");
-    expect(data.address).toBeTruthy();
-  });
-
-  // ── balances ───────────────────────────────────────────────────
-
-  it("returns balances for all wallets by default", async () => {
-    const result = await handleWalletRead({ action: "balances" }, baseContext);
-    expect(result.success).toBe(true);
-    const data = JSON.parse(result.output);
-    expect(data.wallets).toBeInstanceOf(Array);
-    expect(data.wallets.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("returns balances for eip155 only", async () => {
-    const result = await handleWalletRead({ action: "balances", wallet: "eip155" }, baseContext);
+  it("returns EVM snapshot when wallet=eip155", async () => {
+    const result = await handleWalletRead({ wallet: "eip155" }, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.wallets).toHaveLength(1);
     expect(data.wallets[0].wallet).toBe("eip155");
+    expect(data.wallets[0].address).toMatch(/^0x/);
     expect(data.wallets[0].tokens.length).toBeGreaterThan(0);
   });
 
-  it("returns balances for solana only", async () => {
-    const result = await handleWalletRead({ action: "balances", wallet: "solana" }, baseContext);
+  it("returns Solana snapshot when wallet=solana", async () => {
+    const result = await handleWalletRead({ wallet: "solana" }, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.wallets).toHaveLength(1);
     expect(data.wallets[0].wallet).toBe("solana");
+    expect(data.wallets[0].address).toBeTruthy();
   });
 
-  it("balances include token data with prices", async () => {
-    const result = await handleWalletRead({ action: "balances", wallet: "eip155" }, baseContext);
+  it("snapshot includes token data with prices", async () => {
+    const result = await handleWalletRead({ wallet: "eip155" }, baseContext);
     const data = JSON.parse(result.output);
     const tokens = data.wallets[0].tokens;
-    expect(tokens[0].symbol).toBe("0G");
-    expect(tokens[0].extensions.price.usd).toBe("0.05");
+    expect(tokens.map((token: { symbol: string }) => token.symbol)).toContain("0G");
+    const zeroG = tokens.find((token: {
+      symbol: string;
+      extensions?: { price?: { usd?: string } };
+    }) => token.symbol === "0G");
+    expect(zeroG?.extensions?.price?.usd).toBe("0.05");
   });
 
   // ── errors ─────────────────────────────────────────────────────
 
-  it("fails on unknown action", async () => {
-    const result = await handleWalletRead({ action: "foo" }, baseContext);
+  it("fails on invalid wallet parameter", async () => {
+    const result = await handleWalletRead({ wallet: "bitcoin" }, baseContext);
     expect(result.success).toBe(false);
-    expect(result.output).toContain("Unknown wallet_read action");
-  });
-
-  it("fails when action is missing", async () => {
-    const result = await handleWalletRead({}, baseContext);
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("Unknown wallet_read action");
+    expect(result.output).toContain("wallet_read");
   });
 });
 

@@ -10,7 +10,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     whenToUse:
       "Use when the task crosses chains or needs a canonical multi-chain token resolver, wallet balances, bridge quote, or bridge execution flow.",
     preferInstead:
-      "Use `kyberswap` for EVM-only swaps/limit orders, `solana` for Solana-only swaps, and `jaine` for 0G-only DEX execution.",
+      "Use `kyberswap` for EVM-only swaps/limit orders and `solana` for Solana-only swaps.",
     exampleQueries: [
       'discover_tools(query="token search", namespace="khalani")',
       'discover_tools(query="bridge quote", namespace="khalani")',
@@ -187,7 +187,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     whenToUse:
       "Use when the user needs research/discovery rather than execution: search tokens, inspect pairs/liquidity, see trending projects, boosts, community takeovers, ads, or paid-order verification.",
     preferInstead:
-      "Use `kyberswap`, `solana`, `jaine`, or `slop` for execution after the research step.",
+      "Use `kyberswap`, `solana`, or `khalani` for execution after the research step.",
     exampleQueries: [
       'discover_tools(query="trending meme tokens", namespace="dexscreener")',
       'discover_tools(query="community takeover", namespace="dexscreener")',

@@ -136,8 +136,10 @@ export interface ProtocolDiscoveryItem {
 /**
  * Retrieval metadata attached to a discovery result. Surfaces whether the
  * response was an unranked catalog listing, dense-ranked, or lexical fallback,
- * plus the audit columns of the embedding used. Consumed by telemetry; the
- * LLM never sees it directly.
+ * plus audit columns of the embedding used. Surfaced to the LLM via
+ * dispatcher JSON serialization — model uses `method` and `denseFailed` to
+ * interpret weak matches (lexical fallback often signals embedding-sidecar
+ * issues, not query problems). Also consumed by telemetry.
  */
 export interface ProtocolDiscoveryRetrievalMeta {
   method: "catalog" | "dense" | "lexical";

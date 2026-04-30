@@ -3,8 +3,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Mocks ───────────────────────────────────────────────────────
 
 const mockGetTokenBalances = vi.fn().mockResolvedValue([]);
+const mockGetChains = vi.fn().mockResolvedValue([
+  { id: 1, name: "Ethereum", type: "eip155", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+  { id: 8453, name: "Base", type: "eip155", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+  { id: 20011000000, name: "Solana", type: "solana", nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 } },
+]);
 vi.mock("@tools/khalani/client.js", () => ({
-  getKhalaniClient: () => ({ getTokenBalances: mockGetTokenBalances }),
+  getKhalaniClient: () => ({
+    getChains: mockGetChains,
+    getTokenBalances: mockGetTokenBalances,
+  }),
 }));
 
 vi.mock("@tools/wallet/multi-auth.js", () => ({
@@ -37,6 +45,13 @@ const { syncWalletBalances, fullBalanceSync, selectiveBalanceSync } = await impo
 describe("balance-sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetTokenBalances.mockReset();
+    mockGetTokenBalances.mockResolvedValue([]);
+    mockGetChains.mockResolvedValue([
+      { id: 1, name: "Ethereum", type: "eip155", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+      { id: 8453, name: "Base", type: "eip155", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+      { id: 20011000000, name: "Solana", type: "solana", nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 } },
+    ]);
     mockGetBalancesByChain.mockResolvedValue([]);
     mockGetBalances.mockResolvedValue([]);
     mockGetTotalUsd.mockResolvedValue(0);
@@ -47,25 +62,36 @@ describe("balance-sync", () => {
 
   describe("syncWalletBalances", () => {
     it("calls Khalani and replaces per chain", async () => {
-      mockGetTokenBalances.mockResolvedValueOnce([
-        { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
-        { chainId: 1, address: "0xETH", symbol: "ETH", name: "Ethereum", decimals: 18, extensions: { balance: "1000000000000000000", price: { usd: "3000.0" } } },
-        { chainId: 8453, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "500000", price: { usd: "1.0" } } },
-      ]);
+      mockGetTokenBalances.mockImplementation(async (_address: string, chainIds?: number[]) => {
+        if (chainIds?.[0] === 1) {
+          return [
+            { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
+            { chainId: 1, address: "0xETH", symbol: "ETH", name: "Ethereum", decimals: 18, extensions: { balance: "1000000000000000000", price: { usd: "3000.0" } } },
+          ];
+        }
+        if (chainIds?.[0] === 8453) {
+          return [
+            { chainId: 8453, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "500000", price: { usd: "1.0" } } },
+          ];
+        }
+        return [];
+      });
 
       const result = await syncWalletBalances("eip155");
 
       expect(result).not.toBeNull();
       expect(result!.walletFamily).toBe("eip155");
-      expect(mockGetTokenBalances).toHaveBeenCalledWith("0xTestEvm", undefined);
+      expect(mockGetTokenBalances).toHaveBeenCalledWith("0xTestEvm", [1]);
+      expect(mockGetTokenBalances).toHaveBeenCalledWith("0xTestEvm", [8453]);
       // Two chains: 1 and 8453
       expect(mockReplaceBalances).toHaveBeenCalledTimes(2);
     });
 
-    it("passes chainIds filter to Khalani", async () => {
+    it("passes chainIds filter to Khalani as per-chain requests", async () => {
       mockGetTokenBalances.mockResolvedValueOnce([]);
       await syncWalletBalances("eip155", [1, 8453]);
-      expect(mockGetTokenBalances).toHaveBeenCalledWith("0xTestEvm", [1, 8453]);
+      expect(mockGetTokenBalances).toHaveBeenCalledWith("0xTestEvm", [1]);
+      expect(mockGetTokenBalances).toHaveBeenCalledWith("0xTestEvm", [8453]);
     });
 
     it("cleans stale chains when Khalani returns no tokens for previously known chain", async () => {
@@ -75,10 +101,15 @@ describe("balance-sync", () => {
         { chainId: 8453, totalUsd: 50, tokenCount: 1 },
       ]);
 
-      // Khalani now returns tokens only on chain 1
-      mockGetTokenBalances.mockResolvedValueOnce([
-        { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
-      ]);
+      // Khalani now returns tokens only on chain 1; chain 8453 scanned empty.
+      mockGetTokenBalances.mockImplementation(async (_address: string, chainIds?: number[]) => {
+        if (chainIds?.[0] === 1) {
+          return [
+            { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
+          ];
+        }
+        return [];
+      });
 
       await syncWalletBalances("eip155");
 
@@ -125,7 +156,7 @@ describe("balance-sync", () => {
     it("resolves solana hint correctly", async () => {
       mockGetTokenBalances.mockResolvedValueOnce([]);
       await selectiveBalanceSync("solana");
-      expect(mockGetTokenBalances).toHaveBeenCalledWith("TestSolana", undefined);
+      expect(mockGetTokenBalances).toHaveBeenCalledWith("TestSolana", [20011000000]);
     });
 
     it("does NOT create snapshot", async () => {

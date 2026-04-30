@@ -449,7 +449,8 @@ All 10 advertised namespaces are live in code. Two (`0g-compute`, `0g-storage`) 
 |---|---|---|---|
 | `discover_tools` | Semantic search over protocol manifests | No | English only query, filters by availability (lifecycle and env) |
 | `execute_tool` | Typed dispatch to a protocol manifest | Inherits | Mutations approval gated in restricted mode |
-| `wallet_read` | Address and balances across chain families | No | EIP 155 plus Solana, chain list from Khalani |
+| `wallet_read` | Live balances for configured Vex wallets | No | EIP 155 plus Solana, chain filters resolved through Khalani |
+| `khalani_chains_list`, `khalani_tokens_top`, `khalani_tokens_search`, `khalani_tokens_balances` | Direct Khalani read aliases | No | Shortcuts for common chain/token/balance reads; other Khalani tools stay behind discovery |
 | `wallet_send_prepare` | Prepare a native, ERC 20, ERC 721, or SPL send | No | Returns an intent id |
 | `wallet_send_confirm` | Broadcast the prepared intent | Yes | Approval gated in restricted mode |
 | `evm_read` | Receipts, metadata, balances | No | Any EVM chain in the Khalani registry |

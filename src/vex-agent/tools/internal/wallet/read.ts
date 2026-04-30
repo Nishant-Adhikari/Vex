@@ -1,79 +1,112 @@
 /**
- * Wallet read handler — address + multi-chain token balances.
+ * Wallet read handler — live balance snapshot for configured wallets.
  */
 
+import { z } from "zod";
 import { requireEvmWallet, requireSolanaWallet } from "@tools/wallet/multi-auth.js";
-import { normalizeWalletChain } from "@tools/wallet/family.js";
+import {
+  type BalanceChainSelection,
+  getSelectedChainIdsForFamily,
+  getTokenBalancesAcrossChains,
+  parseBalanceChainSelection,
+} from "@tools/khalani/balances.js";
+import type { ChainFamily } from "@tools/khalani/types.js";
 
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
-import { str } from "../types.js";
+import { fail, ok } from "../types.js";
 
-function parseChainIds(raw: string | undefined): number[] | undefined {
-  if (!raw) return undefined;
-  return raw.split(",").map(s => s.trim()).filter(Boolean).map(Number).filter(n => Number.isFinite(n) && n > 0);
+const WalletReadArgs = z.object({
+  wallet: z.enum(["eip155", "solana", "all"]).optional().default("all"),
+  chainIds: z.string().min(1, { message: "chainIds must be a non-empty comma-separated string" }).optional(),
+}).strict();
+
+interface WalletSnapshot {
+  wallet: ChainFamily;
+  address: string;
+  tokenCount: number;
+  totalUsd: number;
+  scannedChainIds: number[];
+  chainErrors: Array<{ chainId: number; chainName?: string; message: string }>;
+  tokens: unknown[];
 }
 
-function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
-}
-
-function fail(msg: string): ToolResult {
-  return { success: false, output: msg };
-}
-
-// ── wallet_read ─────────���────────────────────────────────────────
+// ── wallet_read ─────────────────────────────────────────────────
 
 export async function handleWalletRead(
   params: Record<string, unknown>,
   _context: InternalToolContext,
 ): Promise<ToolResult> {
-  const action = str(params, "action");
-
-  if (action === "address") {
-    const chain = normalizeWalletChain(str(params, "chain") || undefined);
-    if (chain === "solana") {
-      const wallet = requireSolanaWallet();
-      return ok({ chain: "solana", address: wallet.address });
-    }
-    const wallet = requireEvmWallet();
-    return ok({ chain: "eip155", address: wallet.address });
+  const parsed = WalletReadArgs.safeParse(params);
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    return fail(`wallet_read: ${firstIssue?.message ?? "invalid arguments"}`);
   }
 
-  if (action === "balances") {
-    const { getKhalaniClient } = await import("@tools/khalani/client.js");
-    const walletScope = str(params, "wallet") || "all";
-    const chainIds = parseChainIds(str(params, "chainIds"));
-    const results: Array<{ wallet: string; address: string; tokens: unknown[] }> = [];
+  let selection: BalanceChainSelection;
+  try {
+    selection = await parseBalanceChainSelection(parsed.data.chainIds);
+  } catch (err) {
+    return fail(`wallet_read: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const walletFamilies = requestedWalletFamilies(parsed.data.wallet);
+  const snapshots: WalletSnapshot[] = [];
+  const walletErrors: Array<{ wallet: ChainFamily; message: string }> = [];
 
-    if (walletScope === "eip155" || walletScope === "all") {
-      try {
-        const evmWallet = requireEvmWallet();
-        const tokens = await getKhalaniClient().getTokenBalances(evmWallet.address, chainIds);
-        results.push({ wallet: "eip155", address: evmWallet.address, tokens });
-      } catch (err) {
-        if (walletScope === "eip155") {
-          return fail(`EVM wallet error: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        // wallet=all — skip if EVM not configured
+  for (const family of walletFamilies) {
+    const chainIds = getSelectedChainIdsForFamily(selection, family);
+    if (selection.rawProvided && chainIds?.length === 0) {
+      if (parsed.data.wallet === family) {
+        return fail(`wallet_read: no ${family} chains matched chainIds="${parsed.data.chainIds}".`);
       }
+      continue;
     }
 
-    if (walletScope === "solana" || walletScope === "all") {
-      try {
-        const solWallet = requireSolanaWallet();
-        const tokens = await getKhalaniClient().getTokenBalances(solWallet.address, chainIds);
-        results.push({ wallet: "solana", address: solWallet.address, tokens });
-      } catch (err) {
-        if (walletScope === "solana") {
-          return fail(`Solana wallet error: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        // wallet=all — skip if Solana not configured
+    try {
+      const address = resolveConfiguredWalletAddress(family);
+      const scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
+      snapshots.push({
+        wallet: family,
+        address,
+        tokenCount: scan.tokens.length,
+        totalUsd: scan.totalUsd,
+        scannedChainIds: scan.scannedChainIds,
+        chainErrors: scan.chainErrors,
+        tokens: scan.tokens,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (parsed.data.wallet === family) {
+        return fail(`${family} wallet error: ${message}`);
       }
+      walletErrors.push({ wallet: family, message });
     }
-
-    return ok({ wallets: results });
   }
 
-  return fail(`Unknown wallet_read action: "${action}". Use: address, balances`);
+  if (snapshots.length === 0) {
+    return fail(`wallet_read: no requested wallet snapshots were available.${formatWalletErrors(walletErrors)}`);
+  }
+
+  return ok({
+    wallet: parsed.data.wallet,
+    walletCount: snapshots.length,
+    totalUsd: snapshots.reduce((sum, snapshot) => sum + snapshot.totalUsd, 0),
+    walletErrors,
+    wallets: snapshots,
+  });
+}
+
+function requestedWalletFamilies(wallet: "eip155" | "solana" | "all"): ChainFamily[] {
+  if (wallet === "all") return ["eip155", "solana"];
+  return [wallet];
+}
+
+function resolveConfiguredWalletAddress(family: ChainFamily): string {
+  if (family === "solana") return requireSolanaWallet().address;
+  return requireEvmWallet().address;
+}
+
+function formatWalletErrors(errors: Array<{ wallet: ChainFamily; message: string }>): string {
+  if (errors.length === 0) return "";
+  return ` Errors: ${errors.map((entry) => `${entry.wallet}: ${entry.message}`).join("; ")}`;
 }

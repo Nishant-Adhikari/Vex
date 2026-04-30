@@ -7,8 +7,15 @@ import {
   getCachedKhalaniChains,
   resolveChainId,
 } from "@tools/khalani/chains.js";
+import {
+  getSelectedChainIdsForFamily,
+  getTokenBalancesAcrossChains,
+  parseBalanceChainSelection,
+} from "@tools/khalani/balances.js";
 import { requireEvmWallet, requireSolanaWallet } from "@tools/wallet/multi-auth.js";
 import { prepareQuoteRequest } from "@tools/khalani/request.js";
+import { VexError, ErrorCodes } from "../../../../../errors.js";
+import type { ChainFamily } from "@tools/khalani/types.js";
 
 import type { ProtocolHandler } from "../../types.js";
 import { str, toResultData } from "../../handler-helpers.js";
@@ -23,11 +30,22 @@ export async function parseChainIds(raw: string | undefined): Promise<number[] |
   return parts.map(s => resolveChainId(s, chains));
 }
 
-export function resolveWalletAddress(params: Record<string, unknown>): string {
+export function resolveWalletFamily(params: Record<string, unknown>): ChainFamily {
+  const walletFamily = str(params, "wallet") || "eip155";
+  if (walletFamily === "eip155" || walletFamily === "solana") return walletFamily;
+  throw new VexError(
+    ErrorCodes.AGENT_VALIDATION_ERROR,
+    `Unsupported wallet family: ${walletFamily}. Use eip155 or solana.`,
+  );
+}
+
+export function resolveWalletAddress(
+  params: Record<string, unknown>,
+  walletFamily = resolveWalletFamily(params),
+): string {
   const explicit = str(params, "address");
   if (explicit) return explicit;
 
-  const walletFamily = str(params, "wallet") || "eip155";
   if (walletFamily === "solana") return requireSolanaWallet().address;
   return requireEvmWallet().address;
 }
@@ -83,13 +101,36 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "khalani.tokens.balances": async (params) => {
-    const address = resolveWalletAddress(params);
-    const chainIds = await parseChainIds(str(params, "chainIds"));
-    const tokens = await getKhalaniClient().getTokenBalances(address, chainIds);
+    const walletFamily = resolveWalletFamily(params);
+    const address = resolveWalletAddress(params, walletFamily);
+    const selection = await parseBalanceChainSelection(str(params, "chainIds"));
+    const chainIds = getSelectedChainIdsForFamily(selection, walletFamily);
+    if (selection.rawProvided && chainIds?.length === 0) {
+      return {
+        success: false,
+        output: `No ${walletFamily} chains matched chainIds="${str(params, "chainIds")}".`,
+      };
+    }
+    const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds });
     return {
       success: true,
-      output: JSON.stringify({ address, count: tokens.length, tokens }, null, 2),
-      data: { address, tokens },
+      output: JSON.stringify({
+        address,
+        wallet: walletFamily,
+        count: scan.tokens.length,
+        totalUsd: scan.totalUsd,
+        scannedChainIds: scan.scannedChainIds,
+        chainErrors: scan.chainErrors,
+        tokens: scan.tokens,
+      }, null, 2),
+      data: {
+        address,
+        wallet: walletFamily,
+        totalUsd: scan.totalUsd,
+        scannedChainIds: scan.scannedChainIds,
+        chainErrors: scan.chainErrors,
+        tokens: scan.tokens,
+      },
     };
   },
 

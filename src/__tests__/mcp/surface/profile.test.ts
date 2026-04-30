@@ -61,6 +61,7 @@ describe("mcp surface — getProductionTools", () => {
     process.env.TAVILY_API_KEY = "fake-key";
     const names = getProductionTools().map((t) => t.name);
     expect(names).toContain("wallet_read");
+    expect(names).toContain("khalani_tokens_balances");
     expect(names).toContain("wallet_send_prepare");
     expect(names).toContain("wallet_send_confirm");
   });

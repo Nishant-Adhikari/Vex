@@ -64,7 +64,7 @@ describe("runTool", () => {
     });
     mockDispatch.mockResolvedValueOnce({ success: true, output: "ok" });
 
-    const result = await runTool("sess-1", "wallet_read", { view: "balances" });
+    const result = await runTool("sess-1", "wallet_read", { wallet: "all" });
 
     expect(result).toEqual({ success: true, output: "ok" });
     expect(mockDispatch).toHaveBeenCalledTimes(1);
@@ -74,7 +74,7 @@ describe("runTool", () => {
       InternalToolContext,
     ];
     expect(callArg.name).toBe("wallet_read");
-    expect(callArg.args).toEqual({ view: "balances" });
+    expect(callArg.args).toEqual({ wallet: "all" });
     expect(callArg.toolCallId).toMatch(/^direct-/);
 
     expect(ctxArg.sessionId).toBe("sess-1");

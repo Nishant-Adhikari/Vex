@@ -56,6 +56,7 @@ export function defaultVisibilityContext(
 
 import { VEX_TOOLS } from "./registry/vex.js";
 import { PROTOCOL_TOOLS } from "./registry/protocol.js";
+import { KHALANI_INTERNAL_TOOLS } from "./registry/khalani.js";
 import { WEB_TOOLS } from "./registry/web.js";
 import { DOCUMENT_TOOLS } from "./registry/documents.js";
 import { KNOWLEDGE_TOOLS } from "./registry/knowledge.js";
@@ -74,6 +75,7 @@ import { WALLET_TOOLS } from "./registry/wallet.js";
 const TOOLS: readonly ToolDef[] = [
   ...VEX_TOOLS,
   ...PROTOCOL_TOOLS,
+  ...KHALANI_INTERNAL_TOOLS,
   ...WEB_TOOLS,
   ...DOCUMENT_TOOLS,
   ...KNOWLEDGE_TOOLS,

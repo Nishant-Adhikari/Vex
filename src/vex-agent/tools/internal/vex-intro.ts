@@ -113,7 +113,7 @@ function renderNamespaces(): string {
     lines.push(`| \`${ns.namespace}\`${lifecycleTag} | ${ns.activeToolCount} | ${ns.description}${envHint} |`);
   }
   lines.push("");
-  lines.push("Five namespaces (`chainscan`, `jaine`, `slop`, `echobook`, `slop-app`) are deprecated and excluded from discovery. See `embeddings/_DEPRECATED.md` in the source tree for rationale.");
+  lines.push("Five legacy namespaces are deprecated and excluded from discovery (`embeddings/_DEPRECATED.md` in the source tree lists them and explains why).");
   lines.push("");
   lines.push("Drill into a namespace: `vex_namespace_tools(namespace=\"<name>\")`.");
   return lines.join("\n");

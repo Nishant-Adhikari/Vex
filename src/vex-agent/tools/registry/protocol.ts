@@ -29,9 +29,15 @@ const EXECUTE_TOOL_DESCRIPTION = [
 export const PROTOCOL_TOOLS: readonly ToolDef[] = [
   {
     name: "discover_tools", kind: "internal", mutating: false,
-    description: "Search protocol capabilities using a short English capability phrase. Query should be a compact English intent like: 'buy token on solana', 'bridge usdc to base', 'prediction market orderbook', 'wallet token balances'. Returns the best matching protocol tools for use with execute_tool. Mutating tools (swap, bridge, buy, sell, deposit, etc.) are surfaced in results — the `mutating` flag on each item tells you which require approval at execute time.",
+    description: [
+      "Search advertised protocol tools by short English intent. Write what the user wants to do, including assets, chains, venue, or product hints when useful.",
+      "Protocol/product names are allowed in the query as hints: Khalani, KyberSwap, Jupiter, Polymarket, DexScreener. Do not invent dotted toolIds or internal implementation names; use only toolIds returned by this response.",
+      "Examples: 'estimate moving 250 USDC from Ethereum to Solana', 'use KyberSwap to preview a USDC to ETH swap on Base', 'use Jupiter to see USDC earn rates', 'show the orderbook for a yes no market', 'show trending meme coins on Solana'.",
+      "Optional namespace narrows search to one active namespace: khalani, kyberswap, solana, polymarket, dexscreener. Empty query returns an unranked catalog slice; prefer a refined intent query for normal use.",
+      "Results include toolId, mutating, score, whyMatched, params, exampleParams, warnings, hasMore, totalCount, and retrieval.method (dense|lexical|catalog). Use the returned toolId with execute_tool in the same session.",
+    ].join(" "),
     parameters: { type: "object", properties: {
-      query: { type: "string", description: "Short English capability phrase (e.g. 'bridge usdc to base', 'swap on solana', 'prediction market orderbook'). Translate the user's intent to English before calling — the retrieval surface is English-only." },
+      query: { type: "string", description: "Short English intent/capability phrase. Include protocol/product names when useful (Khalani, KyberSwap, Jupiter, Polymarket, DexScreener), but do not pass dotted tool IDs or internal implementation names." },
       namespace: { type: "string", description: buildDiscoverNamespaceDescription() },
       limit: { type: "number", description: "Max tools to return (default: 5)" },
     } },

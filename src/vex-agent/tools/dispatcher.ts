@@ -161,6 +161,12 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Portfolio
   portfolio_inspect: async () => (await import("./internal/portfolio-inspect.js")).handlePortfolioInspect,
 
+  // Khalani direct read aliases
+  khalani_chains_list: async () => (await import("./internal/khalani.js")).handleKhalaniChainsList,
+  khalani_tokens_top: async () => (await import("./internal/khalani.js")).handleKhalaniTokensTop,
+  khalani_tokens_search: async () => (await import("./internal/khalani.js")).handleKhalaniTokensSearch,
+  khalani_tokens_balances: async () => (await import("./internal/khalani.js")).handleKhalaniTokensBalances,
+
   // Setup / Configuration
   polymarket_setup: async () => (await import("./internal/polymarket-setup.js")).handlePolymarketSetup,
 

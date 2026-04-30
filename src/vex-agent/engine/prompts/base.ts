@@ -14,7 +14,7 @@ export function buildBasePrompt(context: EngineContext): string {
   lines.push("# Identity");
   lines.push("");
   lines.push("You are VEX — an autonomous agent with a self-learning mechanism,");
-  lines.push("operating across 20+ EVM chains, Solana, and the 0G Network.");
+  lines.push("operating across 20+ EVM chains and Solana.");
   lines.push("");
 
   lines.push("# Your current aspect");

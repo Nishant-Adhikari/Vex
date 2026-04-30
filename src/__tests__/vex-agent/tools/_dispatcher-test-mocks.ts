@@ -37,6 +37,32 @@ vi.mock("@tools/wallet/family.js", () => ({
   },
 }));
 
+const KHALANI_TEST_CHAINS = [
+  { id: 16661, name: "0G", type: "eip155" as const, nativeCurrency: { name: "0G", symbol: "0G", decimals: 18 } },
+  { id: 20011000000, name: "Solana", type: "solana" as const, nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 } },
+];
+
+vi.mock("@tools/khalani/client.js", () => ({
+  getKhalaniClient: () => ({
+    getChains: vi.fn().mockResolvedValue(KHALANI_TEST_CHAINS),
+    getTopTokens: vi.fn().mockResolvedValue([]),
+    searchTokens: vi.fn().mockResolvedValue({ data: [] }),
+    getTokenBalances: vi.fn().mockImplementation(async (_address: string, chainIds?: number[]) => {
+      const chainId = chainIds?.[0] ?? 16661;
+      return [
+        {
+          address: chainId === 20011000000 ? "So11111111111111111111111111111111111111112" : "native",
+          chainId,
+          symbol: chainId === 20011000000 ? "SOL" : "0G",
+          name: chainId === 20011000000 ? "Solana" : "0G",
+          decimals: chainId === 20011000000 ? 9 : 18,
+          extensions: { balance: "1000000000", price: { usd: "1.0" } },
+        },
+      ];
+    }),
+  }),
+}));
+
 // Mock vex-agent DB repos (no real DB in unit tests)
 vi.mock("@vex-agent/db/repos/search.js", () => ({
   getCached: vi.fn().mockResolvedValue(null),
