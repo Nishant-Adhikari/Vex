@@ -18,7 +18,12 @@ import { fail, ok } from "../types.js";
 
 const WalletReadArgs = z.object({
   wallet: z.enum(["eip155", "solana", "all"]).optional().default("all"),
-  chainIds: z.string().min(1, { message: "chainIds must be a non-empty comma-separated string" }).optional(),
+  // Empty / whitespace-only `chainIds` is treated as omission (scan all chains).
+  // LLMs and MCP-style serializers often emit `""` for "no value" — see plan PR-balance-toolkit.
+  chainIds: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().min(1, { message: "chainIds must be a non-empty comma-separated string" }).optional(),
+  ),
 }).strict();
 
 interface WalletSnapshot {

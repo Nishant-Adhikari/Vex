@@ -107,7 +107,7 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
       toolCallId,
       timestamp: new Date().toISOString(),
     },
-    { source: "tool", messageType: "tool_result", visibility: "internal" },
+    { source: "tool", messageType: "tool_result", visibility: "internal", payload: { success: result.success } },
   );
 
   // Resume mission run — re-enter turn loop

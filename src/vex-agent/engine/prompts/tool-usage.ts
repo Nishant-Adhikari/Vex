@@ -18,7 +18,7 @@ You have two ways to call tools:
 
 2. **Protocol tools** — discovered through \`discover_tools\`, executed through \`execute_tool\` with a dotted \`toolId\` like \`khalani.bridge\` or \`kyberswap.swap.sell\`. The full multi-chain protocol surface lives here.
 
-For Khalani specifically: prefer the four direct aliases (\`khalani_chains_list\`, \`khalani_tokens_top\`, \`khalani_tokens_search\`, \`khalani_tokens_balances\`) for those four common read-only operations — they hit the same backend as the canonical \`khalani.*\` tools, with no discovery hop. For everything else in Khalani (quotes, orders, bridge execution), go through \`discover_tools\` → \`execute_tool\`.
+For Khalani read-only shortcuts, use the direct aliases \`khalani_chains_list\`, \`khalani_tokens_top\`, \`khalani_tokens_search\`, and \`khalani_tokens_balances\` — they call the same backend as the canonical \`khalani.*\` protocol tools without a discovery hop. For your own balances across all wallet families in one call, use \`wallet_read\`. For everything else in Khalani (quotes, orders, bridge execution), go through \`discover_tools\` → \`execute_tool\`.
 
 ## discover_tools
 Search for available tools by query and/or namespace.
@@ -71,8 +71,9 @@ but cannot prove that an address came from a prior read tool call.
    "All" / "max" for native assets means "balance minus gas reserve", not 100%.
    For ERC-20 tokens (USDC, WETH, etc.), "all" means the full balance.
 
-2. **Fresh balance before each mutation**: After a successful swap/bridge/zap, always read
-   fresh live balances via wallet_read, khalani_tokens_balances, or khalani.tokens.balances before the next mutation.
+2. **Fresh balance before each mutation**: After a successful swap/bridge/zap, read fresh
+   live balances before the next mutation. Use \`wallet_read\` for your full wallet picture
+   in one call, or \`khalani_tokens_balances\` for a single family or a different address.
    Never chain multiple swaps based on estimated post-tx balances.
 
 3. **Quote before execute**: For every mutating DeFi tool that supports dryRun/preview,
@@ -102,7 +103,10 @@ Use \`portfolio_inspect\` to check your own state before making decisions:
 - \`portfolio_inspect(view="executions")\` — execution audit log
 
 This reads from your own DB projections for history, PnL, lots, and cached aggregates.
-For fresh per-token wallet balances, use wallet_read, khalani_tokens_balances, or khalani.tokens.balances.
+For fresh per-token live balances, use \`wallet_read\` for your EVM + Solana wallets in
+one call, or \`khalani_tokens_balances\` for one family / different address. The protocol
+tool \`khalani.tokens.balances\` is the same primitive reachable through \`discover_tools\`
+→ \`execute_tool\`.
 
 ## Knowledge Layer Rules
 

@@ -173,7 +173,7 @@ export async function runTurnLoop(
     // canonical batch prefix (only calls that actually entered dispatch).
     if (turnResult.toolCalls && turnResult.toolCalls.length > 0) {
       const executedCalls: ParsedToolCall[] = [];
-      const executedResults: Array<{ toolCallId: string; toolName: string; output: string }> = [];
+      const executedResults: Array<{ toolCallId: string; toolName: string; output: string; success: boolean }> = [];
       let batchStopReason: StopReason | null = null;
       let batchStopOutput: string | null = null;
       let batchStopPayload: { summary?: string; evidence?: Record<string, unknown> } | undefined;
@@ -222,7 +222,7 @@ export async function runTurnLoop(
 
         // Track executed call + result
         executedCalls.push(toolCall);
-        executedResults.push({ toolCallId: toolCall.id, toolName: toolCall.name, output: result.output });
+        executedResults.push({ toolCallId: toolCall.id, toolName: toolCall.name, output: result.output, success: result.success });
 
         // ── Engine signals: result tracked, then stop ──
         if (result.engineSignal) {
@@ -271,12 +271,13 @@ export async function runTurnLoop(
       // Oversized outputs are externalised into tool_output_blobs (PR-11) —
       // transcript gets a short stub with `metadata.payload.blob_key` so
       // archive-aware checkpoint and resume paths can keep the pointer alive.
-      for (const { toolCallId, toolName, output } of executedResults) {
+      for (const { toolCallId, toolName, output, success } of executedResults) {
         const persisted = await persistToolResultWithOverflow(
           context.sessionId,
           toolCallId,
           toolName,
           output,
+          success,
         );
 
         liveMessages.push({
@@ -410,6 +411,7 @@ async function persistToolResultWithOverflow(
   toolCallId: string,
   toolName: string,
   output: string,
+  success: boolean,
 ): Promise<PersistedToolResult> {
   const bytes = Buffer.byteLength(output, "utf8");
 
@@ -418,6 +420,7 @@ async function persistToolResultWithOverflow(
       source: "tool",
       messageType: "tool_result",
       visibility: "internal",
+      payload: { success },
     };
     await messagesRepo.addMessage(
       sessionId,
@@ -462,6 +465,7 @@ async function persistToolResultWithOverflow(
       source: "tool",
       messageType: "tool_result",
       visibility: "internal",
+      payload: { success },
     };
     await messagesRepo.addMessage(
       sessionId,
@@ -476,6 +480,7 @@ async function persistToolResultWithOverflow(
     messageType: "tool_result",
     visibility: "internal",
     payload: {
+      success,
       overflow: true,
       blobKey,
       sizeBytes: bytes,

@@ -10,10 +10,10 @@ import type { ToolDef } from "../types.js";
 export const WALLET_TOOLS: readonly ToolDef[] = [
   {
     name: "wallet_read", kind: "internal", mutating: false,
-    description: "Read live token balances for configured Vex wallets via Khalani. Defaults to both EVM (eip155) and Solana wallets; optional chainIds filters supported chains.",
+    description: "Read your token balances on each chain via Khalani. Defaults to your personal wallets — both EVM (`eip155`) and Solana — aggregated in one call. Pass `wallet` or `chainIds` only when you want to narrow the scan.",
     parameters: { type: "object", properties: {
-      wallet: { type: "string", enum: ["eip155", "solana", "all"], description: "Wallet scope to read. Defaults to all configured wallets." },
-      chainIds: { type: "string", description: "Optional comma-separated chain IDs or aliases to scan, e.g. 'ethereum,base,solana'." },
+      wallet: { type: "string", enum: ["eip155", "solana", "all"], description: "Which wallet family to read. Default 'all' aggregates your EVM + Solana wallets." },
+      chainIds: { type: "string", description: "Optional. Omit (or pass empty) to scan all supported chains. To restrict, pass comma-separated chain IDs/aliases like 'ethereum,base,solana'." },
     } },
   },
   {

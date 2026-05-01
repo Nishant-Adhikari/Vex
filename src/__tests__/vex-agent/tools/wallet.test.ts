@@ -128,6 +128,29 @@ describe("wallet_read", () => {
     expect(data.totalUsd).toBeGreaterThan(0);
   });
 
+  // Empty/whitespace `chainIds` is normalized to "scan all chains". MCP-style
+  // serializers and many LLM providers emit `""` for "no value" — the handler
+  // must treat that as omission, not a validation error.
+  it("treats empty chainIds string as omission (scans all chains)", async () => {
+    const omitted = await handleWalletRead({ wallet: "all" }, baseContext);
+    const empty = await handleWalletRead({ wallet: "all", chainIds: "" }, baseContext);
+    expect(empty.success).toBe(true);
+    expect(omitted.success).toBe(true);
+    const omittedData = JSON.parse(omitted.output);
+    const emptyData = JSON.parse(empty.output);
+    expect(emptyData.wallets).toHaveLength(omittedData.wallets.length);
+    expect(emptyData.wallets.map((w: { wallet: string }) => w.wallet)).toEqual(
+      omittedData.wallets.map((w: { wallet: string }) => w.wallet),
+    );
+  });
+
+  it("treats whitespace-only chainIds as omission", async () => {
+    const result = await handleWalletRead({ wallet: "all", chainIds: "   " }, baseContext);
+    expect(result.success).toBe(true);
+    const data = JSON.parse(result.output);
+    expect(data.wallets).toHaveLength(2);
+  });
+
   it("returns EVM snapshot when wallet=eip155", async () => {
     const result = await handleWalletRead({ wallet: "eip155" }, baseContext);
     expect(result.success).toBe(true);
