@@ -23,6 +23,7 @@
 
 import type { PoolClient } from "pg";
 import { getPool, queryOne, queryOneWith, execute } from "../client.js";
+import { nullableJsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ export async function enqueue(input: EnqueueInput): Promise<LoopWakeRequest | nu
       input.kind,
       input.dueAt.toISOString(),
       input.reason,
-      input.payload === null ? null : JSON.stringify(input.payload),
+      nullableJsonb(input.payload),
     ],
   );
   return row ? mapRow(row) : null;

@@ -25,7 +25,7 @@
  *   - `loadedDocuments` is unused (MCP has no document context tracking) but
  *     must be a real Map because some handlers (e.g. `knowledge_get`) call
  *     `.set()` on it.
- *   - `missionRunId: null` because MCP is not a mission run.
+ *   - `missionId: null` / `missionRunId: null` because MCP is not a mission.
  *
  * If a future programmatic MCP client needs a server-side gate, that is a
  * separate architecture (a proxy MCP routing through Vex Agent mission
@@ -42,6 +42,7 @@ export function makeProductionContext(sessionId: string): InternalToolContext {
     approved: true,              // dispatcher gate bypass — NOT an approval statement
     role: "parent",              // hides child-only subagent tools via registry filter
     missionRunId: null,          // MCP is not a mission run
+    missionId: null,             // MCP is not a mission setup context
     sessionKind: "chat",         // MCP is a passive tool surface, never a mission/autonomous runtime
     contextUsageBand: "normal",  // no turn loop → no accumulating pressure to surface
     sourceSurface: "mcp_local",  // knowledge provenance tag

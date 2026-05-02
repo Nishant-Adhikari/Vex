@@ -5,6 +5,7 @@
  */
 
 import { query, execute } from "../client.js";
+import { jsonb } from "../params.js";
 
 export interface InboxEvent {
   id: number;
@@ -30,8 +31,8 @@ function mapRow(row: Record<string, unknown>): InboxEvent {
 /** Publish an event to the inbox. */
 export async function publish(eventType: string, payload: Record<string, unknown> = {}): Promise<void> {
   await execute(
-    "INSERT INTO inbox_events (event_type, payload) VALUES ($1, $2)",
-    [eventType, JSON.stringify(payload)],
+    "INSERT INTO inbox_events (event_type, payload) VALUES ($1, $2::jsonb)",
+    [eventType, jsonb(payload)],
   );
 }
 

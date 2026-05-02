@@ -6,7 +6,7 @@
 
 Two products, one engine. A desktop agent that plans, remembers, and trades on its own, and a Model Context Protocol bridge that lets any compliant host (Claude Code, Cursor, Codex, or a custom client) drive the same stack from the outside.
 
-[Why Vex](#why-vex) · [Architecture](#architecture-at-a-glance) · [Memory](#memory-first-architecture) · [Autonomy](#autonomy-missions-wake-loops-subagents) · [Tool ecosystem](#tool-ecosystem) · [MCP bridge](#mcp-bridge) · [Operations](#operations) · [Distribution](#distribution)
+[Why Vex](#why-vex) · [Architecture](#architecture-at-a-glance) · [Memory](#memory-first-architecture) · [Autonomy](#autonomy-missions-wake-loops-subagents) · [Tool ecosystem](#tool-ecosystem) · [MCP bridge](#mcp-bridge) · [Operations](#operations) · [Roadmap](#roadmap) · [Distribution](#distribution)
 
 </div>
 
@@ -87,7 +87,7 @@ Both products talk to the same local PostgreSQL with pgvector store, the same kn
 
 ### Migrating from EchoClaw
 
-If you upgraded from a previous EchoClaw install, run `rm -rf ~/.config/echoclaw` and re-run `vex setup`. ENV variables changed (`ECHO_AGENT_DB_URL` → `VEX_DB_URL`, `ECHO_KEYSTORE_PASSWORD` → `VEX_KEYSTORE_PASSWORD`, `ECHO_CONFIG_DIR` → `VEX_CONFIG_DIR`). The Postgres role/database in `docker/vex-agent/` was renamed from `echo_agent` to `vex` — drop the old volume (`docker volume rm <stack>_echo-agent-db-data`) before bringing up the new compose stack.
+If you upgraded from a previous EchoClaw install, run `rm -rf ~/.config/echoclaw` and re-run `vex setup`. ENV variables changed (`ECHO_AGENT_DB_URL` to `VEX_DB_URL`, `ECHO_KEYSTORE_PASSWORD` to `VEX_KEYSTORE_PASSWORD`, `ECHO_CONFIG_DIR` to `VEX_CONFIG_DIR`). The Postgres role/database in `docker/vex-agent/` was renamed from `echo_agent` to `vex`. Drop the old volume (`docker volume rm <stack>_echo-agent-db-data`) before bringing up the new compose stack.
 
 ---
 
@@ -139,7 +139,7 @@ flowchart LR
   TURNLOOP --> CHECKPOINT
   TURNLOOP --> INFER
   TURNLOOP --> SUBAG
-  WAKE --> TURNLOOP
+  WAKE -.resume paused_wake.-> TURNLOOP
   TOOLS --> META --> MANIFESTS
   TOOLS --> WALLET
   TOOLS --> EVM
@@ -159,6 +159,8 @@ flowchart LR
 ```
 
 One host, one engine, one store. Transport and UI vary, the contract does not.
+
+A key invariant lives in `src/mcp/context.ts`: **the MCP server is not an agent.** It reuses the dispatcher with `loopMode: "full"` and `approved: true`, but those flags are dispatcher gate bypass markers, not autonomy or per call approval. Gate decisions for MCP belong to the host permission UX (Cursor, Claude Code, Codex) and to the transport boundary (stdio process trust, HTTP Bearer token).
 
 ---
 
@@ -488,6 +490,35 @@ All 10 advertised namespaces are live in code. Two (`0g-compute`, `0g-storage`) 
 | `lp_history` | Liquidity provisioning and withdrawals |
 | `orders` | Open and recent orders by venue |
 
+### Tool retrieval pipeline
+
+Tool federation is two layered. `discover_tools` finds the right manifest by free text, and `execute_tool` dispatches a single one by `toolId`. The first call is the hot path under load.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Caller as Agent or MCP
+  participant D as discoverProtocolCapabilities
+  participant E as embedQuery (EmbeddingGemma 768d)
+  participant V as tool_embeddings.searchByVector (pgvector cosine)
+  participant L as lexicalScore (fallback)
+  participant F as visibility filter
+
+  Caller->>D: query, namespace, limit (default 5)
+  D->>E: query text, formatter v1-gemma-title-text
+  E-->>D: embedding (768d, providerModel)
+  D->>V: searchByVector(embedding, k = max(catalog, candidates, 5))
+  V-->>D: hits ranked by similarity (1 - cosine_distance)
+  alt embedding fails or zero candidate hits
+    D->>L: query, candidates
+    L-->>D: lexical scored manifests (denseFailed = true)
+  end
+  D->>F: scored manifests, lifecycle, namespace
+  F-->>Caller: top K
+```
+
+There is no MMR rerank today. The pipeline is dense top K cosine plus a deterministic lexical fallback (`src/vex-agent/tools/protocols/dense-score.ts`). The fallback is engaged whenever `embedQuery` errors, the `searchByVector` call returns no candidate matches, or a row's `embedding_model` or `embedding_dim` mismatches the current request, and the result is tagged `denseFailed: true` so the eval harness can detect drift in production. Each row also stamps `embedding_model` and `embedding_dim` from the provider response (never from config), so cross model recall is filtered out. Embeddings are written with a deterministic `content_hash` that includes the formatter version (`v1-gemma-title-text`); changing the formatter or the model auto invalidates stale rows, and the next reembed run repopulates them. MMR is on the roadmap for the day diversity over near duplicate variants becomes a measurable problem (see [Roadmap](#roadmap)).
+
 ### Visibility contract
 
 ```mermaid
@@ -504,12 +535,22 @@ flowchart LR
   VIS -->|drop| OUT
   VIS -->|keep| AGENT[Visible to agent]
   AGENT --> MCP{MCP bridge?}
-  MCP -->|yes| MCPGATE{excludeFromMcp or name starts with subagent_?}
+  MCP -->|yes| MCPGATE{surface excludes mcp or name starts with subagent_?}
   MCPGATE -->|drop| HIDDENMCP[Hidden from MCP]
   MCPGATE -->|keep| PROD[In getProductionMcpTools]
 ```
 
 The chain is pure and static per call. Every pre dispatch projection uses the exact same predicate composition. Every MCP resource (`docs://tools`, `surface://manifest`, the HTTP mirror, the model facing instructions preamble) is generated by one projection module. Drift between what the host sees and what the engine can run is structurally impossible.
+
+`ToolDef.surface` (`src/vex-agent/tools/types.ts`) declares **advertising**, not execution.
+
+| `surface` value | Visible to | Examples |
+|---|---|---|
+| `"agent"` | Agent runtime only | `mission_stop`, `loop_defer`, `checkpoint_handoff_prepare`, `tool_output_read` |
+| `"mcp"` | MCP server only | `vex_introduction`, `vex_namespace_tools` (the agent already gets this content via system prompt) |
+| `"both"` or `undefined` | Both | knowledge CRUD, wallet read, web research, `discover_tools`, `execute_tool`, ... |
+
+The dispatcher will route a call for any registered tool name regardless of surface. The trust boundary is the surface (the LLM cannot ask for a tool it has not been told about), not the dispatcher.
 
 Tool registration order in the `TOOLS` array is load bearing. The LLM sees tools in that order, which subtly biases proactive selection. The order is not alphabetical, it reflects an intentional topology: protocol meta tools first, then web, documents, knowledge, portfolio, setup, mission, autonomy, subagents, EVM, wallet.
 
@@ -620,6 +661,27 @@ Embeddings change. Models get deprecated, dimensions get bumped, research moves.
 
 The `src/vex-agent/e2e/` tree contains dated live test scenarios (`01-04-2026-tests`, `02-04-2026-tests`, `03-04-2026-tests`, `06-04-2026-tests`, and `2026-04` onward). Each run replays a realistic trading or research scenario against a live provider and a pgvector container, with database assertions, discovery smoke tests, preview smoke tests, and replay checks. These scenarios are the ground truth for whether a rollout kept the autonomy contract intact.
 
+### Quality gates and retrieval eval
+
+`src/__tests__/eval/` carries a 200 query seed dataset (`v3-agent-200`) for tool discovery, exercising two awareness levels (blind, protocol-aware), four intent shapes (single, cross, compare, workflow), and 13 trading and research scenarios. The harness asserts retrieval gates on every captured baseline.
+
+Current dense baseline (`src/__tests__/eval/baselines/dense.json`):
+
+| Metric | Overall | Blind | Protocol aware | Floor |
+|---|---|---|---|---|
+| `Recall@5` | 0.975 | 0.960 | 0.990 | 0.95 / 0.94 / 0.98 |
+| `MRR@5` | 0.906 | 0.903 | 0.910 | 0.88 |
+| `Recall@1` | 0.860 | 0.860 | 0.860 | none |
+
+The dense baseline run also asserts that `denseFailed` is empty. A single fallback to lexical at gate time is treated as a regression. Run locally:
+
+```
+VEX_REAL_DENSE_EVAL=1   pnpm test:eval:dense
+VEX_REAL_LATENCY_EVAL=1 pnpm test:eval:latency
+```
+
+Both require Postgres with migration 010 applied, populated `tool_embeddings`, and a reachable embedding endpoint.
+
 ---
 
 ## Tech stack
@@ -643,7 +705,7 @@ The `src/vex-agent/e2e/` tree contains dated live test scenarios (`01-04-2026-te
 
 ### Vex desktop app
 
-Native binary for macOS, Windows, and Linux. Ships the engine, the knowledge store, and the GUI. Targeted at end users who want an autonomous on chain assistant that remembers what they are working on across sessions.
+Native binary for macOS, Windows, and Linux. Ships the engine, the knowledge store, and the GUI. Targeted at end users who want an autonomous on chain assistant that remembers what they are working on across sessions. The desktop UI shell is in development; until it lands, the same runtime is reachable through the CLI and the MCP bridge.
 
 ### Vex MCP package
 
@@ -689,7 +751,27 @@ src/
     embeddings/           # Embedding client
     scripts/              # Reembed, export, import, benchmarks, compliance checks
     e2e/                  # Live test scenarios with dated runs
+  __tests__/eval/         # Retrieval eval harness, seed dataset, captured baselines
   mcp/                    # MCP bridge: transports, bootstrap, docs surface, tool bridge
 docker/                   # PostgreSQL plus pgvector stack
 scripts/                  # Release and ops scripts
 ```
+
+---
+
+## Roadmap
+
+- **Vex desktop app shell.** Tauri or Electron, connecting to the same engine that backs `vex-mcp`. Same store, same missions, same recall.
+- **MMR rerank on top of dense retrieval.** Diversity aware top K. Holding off until the current `Recall@5 = 0.975` becomes a ceiling or near duplicate variants start crowding the top 5.
+- **Local pre prompt tokenizer.** Today the band is read from the provider's reported usage on the previous turn. A local tokenizer would let the engine project pressure pre prompt, so the warning band fires when the next prompt would cross 80%, not when the previous one did.
+- **More MCP host integrations.** Inspector workflows, GitHub Actions runners, IDE plugins.
+
+---
+
+## License and links
+
+- License: see `LICENSE` (`SEE LICENSE IN LICENSE` in `package.json`).
+- Repository: `https://github.com/Vex-Foundation/Vex`.
+- Issues: `https://github.com/Vex-Foundation/Vex/issues`.
+- npm: `@vex/vex` (Node `>= 22`).
+- MCP spec: `https://modelcontextprotocol.io/`.

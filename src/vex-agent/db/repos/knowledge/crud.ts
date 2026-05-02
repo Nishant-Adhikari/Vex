@@ -27,6 +27,7 @@ import {
   queryOneWith,
   type Executor,
 } from "../../client.js";
+import { jsonb } from "../../params.js";
 import type { UpdatableKnowledgeStatus, KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
 import {
   type InsertEntryInput,
@@ -85,7 +86,7 @@ export async function insertEntry(
          created_at, updated_at
        )
        VALUES (
-         $1, $2, $3, $4, $5, $6,
+         $1, $2, $3, $4, $5, $6::jsonb,
          $7, COALESCE($8::text, 'active'), $9, COALESCE($10::timestamptz, NOW()), $11,
          $12, $13, $14, $15::vector,
          COALESCE($16::text, 'vex_agent'), $17,
@@ -105,7 +106,7 @@ export async function insertEntry(
       input.summary,
       input.contentMd,
       input.tags,
-      JSON.stringify(input.sourceRefs),
+      jsonb(input.sourceRefs),
       input.confidence,
       input.status ?? null,
       input.pinned,

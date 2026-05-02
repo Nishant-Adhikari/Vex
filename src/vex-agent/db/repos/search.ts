@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { queryOne, execute } from "../client.js";
+import { jsonb } from "../params.js";
 
 const SEARCH_TTL_MS = 15 * 60 * 1000;
 const FETCH_TTL_MS = 60 * 60 * 1000;
@@ -42,9 +43,9 @@ export async function getCached(queryStr: string): Promise<SearchResult[] | null
 export async function cacheResult(queryStr: string, results: SearchResult[]): Promise<void> {
   const hash = hashQuery(queryStr);
   await execute(
-    `INSERT INTO search_cache (query_hash, query, results) VALUES ($1, $2, $3)
-     ON CONFLICT (query_hash) DO UPDATE SET results = $3, cached_at = NOW()`,
-    [hash, queryStr, JSON.stringify(results)],
+    `INSERT INTO search_cache (query_hash, query, results) VALUES ($1, $2, $3::jsonb)
+     ON CONFLICT (query_hash) DO UPDATE SET results = $3::jsonb, cached_at = NOW()`,
+    [hash, queryStr, jsonb(results)],
   );
 }
 

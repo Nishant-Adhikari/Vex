@@ -92,6 +92,7 @@ describe("registry", () => {
     "khalani_tokens_top",
     "khalani_tokens_search",
     "khalani_tokens_balances",
+    "mission_draft_update",
   ];
 
   for (const name of EXPECTED_TOOLS) {
@@ -218,6 +219,26 @@ describe("registry", () => {
       }));
       const names = tools.map(t => t.function.name);
       expect(names).not.toContain("mission_stop");
+    });
+
+    it("mission tools split setup and run surfaces", () => {
+      const setupNames = getOpenAITools(defaultVisibilityContext({
+        chatMode: "off",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: false,
+      })).map(t => t.function.name);
+      expect(setupNames).toContain("mission_draft_update");
+      expect(setupNames).not.toContain("mission_stop");
+
+      const runNames = getOpenAITools(defaultVisibilityContext({
+        chatMode: "restricted",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: true,
+      })).map(t => t.function.name);
+      expect(runNames).toContain("mission_stop");
+      expect(runNames).not.toContain("mission_draft_update");
     });
 
     it("subagent_status and subagent_stop are excluded for subagent role", () => {

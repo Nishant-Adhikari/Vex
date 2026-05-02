@@ -6,6 +6,7 @@
  */
 
 import { query, queryOne, execute, getPool } from "../client.js";
+import { jsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -147,8 +148,8 @@ export async function insertSnapshot(
 
   const row = await queryOne<{ id: number }>(
     `INSERT INTO proj_portfolio_snapshots (total_usd, positions, active_chains, pnl_vs_prev, pnl_pct_vs_prev, source)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [totalUsd, JSON.stringify(positions), activeChains, pnlVsPrev, pnlPctVsPrev, source],
+     VALUES ($1, $2::jsonb, $3, $4, $5, $6) RETURNING id`,
+    [totalUsd, jsonb(positions), activeChains, pnlVsPrev, pnlPctVsPrev, source],
   );
   return row?.id ?? 0;
 }

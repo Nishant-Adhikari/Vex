@@ -18,6 +18,7 @@ const mockGetRun = vi.fn();
 const mockGetActiveRunBySession = vi.fn();
 const mockUpdateRunStatus = vi.fn();
 const mockSetMissionStatus = vi.fn();
+const mockClearMissionApprovedAt = vi.fn();
 const mockCancelForSession = vi.fn();
 const mockGetPendingApprovals = vi.fn();
 const mockRejectApproval = vi.fn();
@@ -30,6 +31,7 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   setStatus: (...a: unknown[]) => mockSetMissionStatus(...a),
+  clearApprovedAt: (...a: unknown[]) => mockClearMissionApprovedAt(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
@@ -45,6 +47,7 @@ vi.mock("@vex-agent/db/repos/approvals.js", () => ({
 const {
   abortMissionRun,
   abortActiveMissionForSession,
+  stopActiveMissionForEdit,
   registerMissionRunAbortController,
   unregisterMissionRunAbortController,
   hasMissionRunAbortController,
@@ -56,6 +59,7 @@ describe("abortMissionRun", () => {
     mockGetActiveRunBySession.mockReset();
     mockUpdateRunStatus.mockReset();
     mockSetMissionStatus.mockReset();
+    mockClearMissionApprovedAt.mockReset();
     mockCancelForSession.mockReset();
     mockGetPendingApprovals.mockReset();
     mockRejectApproval.mockReset();
@@ -64,6 +68,7 @@ describe("abortMissionRun", () => {
     // Drop any controllers leaked between tests.
     if (hasMissionRunAbortController("run-1")) unregisterMissionRunAbortController("run-1");
     if (hasMissionRunAbortController("run-running")) unregisterMissionRunAbortController("run-running");
+    if (hasMissionRunAbortController("run-edit")) unregisterMissionRunAbortController("run-edit");
   });
 
   it("paused_approval with 2 pending approvals → cancelled, rejectedApprovals=2", async () => {
@@ -170,12 +175,71 @@ describe("abortMissionRun", () => {
   });
 });
 
+describe("stopActiveMissionForEdit", () => {
+  beforeEach(() => {
+    mockGetRun.mockReset();
+    mockGetActiveRunBySession.mockReset();
+    mockUpdateRunStatus.mockReset();
+    mockSetMissionStatus.mockReset();
+    mockClearMissionApprovedAt.mockReset();
+    mockCancelForSession.mockReset();
+    mockGetPendingApprovals.mockReset();
+    mockRejectApproval.mockReset();
+    mockCancelForSession.mockResolvedValue(0);
+    mockGetPendingApprovals.mockResolvedValue([]);
+    if (hasMissionRunAbortController("run-edit")) unregisterMissionRunAbortController("run-edit");
+  });
+
+  it("stops an active run for editing without cancelling the mission", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-edit" });
+    mockGetRun.mockResolvedValue({
+      id: "run-edit",
+      missionId: "mission-edit",
+      sessionId: "sess-edit",
+      status: "paused_wake",
+    });
+
+    const result = await stopActiveMissionForEdit("sess-edit");
+
+    expect(result?.stopped).toBe(true);
+    expect(result?.finalStatus).toBe("draft");
+    expect(mockCancelForSession).toHaveBeenCalledWith("sess-edit", "user_edit");
+    expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+      "run-edit",
+      "stopped",
+      "user_stopped",
+      { summary: "Mission stopped for operator edit" },
+    );
+    expect(mockClearMissionApprovedAt).toHaveBeenCalledWith("mission-edit");
+    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-edit", "draft");
+    expect(mockSetMissionStatus).not.toHaveBeenCalledWith("mission-edit", "cancelled");
+  });
+
+  it("signals a live running loop before returning the mission to draft", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-edit" });
+    mockGetRun.mockResolvedValue({
+      id: "run-edit",
+      missionId: "mission-edit",
+      sessionId: "sess-edit",
+      status: "running",
+    });
+    const controller = registerMissionRunAbortController("run-edit");
+
+    const result = await stopActiveMissionForEdit("sess-edit");
+
+    expect(result?.stopped).toBe(true);
+    expect(controller.signal.aborted).toBe(true);
+    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-edit", "draft");
+  });
+});
+
 describe("abortActiveMissionForSession", () => {
   beforeEach(() => {
     mockGetRun.mockReset();
     mockGetActiveRunBySession.mockReset();
     mockUpdateRunStatus.mockReset();
     mockSetMissionStatus.mockReset();
+    mockClearMissionApprovedAt.mockReset();
     mockCancelForSession.mockReset();
     mockGetPendingApprovals.mockReset();
     mockRejectApproval.mockReset();

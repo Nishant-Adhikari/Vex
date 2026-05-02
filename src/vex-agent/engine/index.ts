@@ -28,7 +28,8 @@ export type { WakeExecutorHandle, WakeDeps, ClaimedWake, ClaimedWakeOutcome } fr
 export {
   abortMissionRun,
   abortActiveMissionForSession,
+  stopActiveMissionForEdit,
 } from "./core/runner/abort.js";
-export type { AbortMissionRunResult } from "./core/runner/abort.js";
+export type { AbortMissionRunResult, StopMissionRunForEditResult } from "./core/runner/abort.js";
 
 export * from "./types.js";

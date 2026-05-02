@@ -18,6 +18,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { getPool, query, queryOne, execute } from "../client.js";
+import { jsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export async function writeBlob(
     `INSERT INTO tool_output_blobs (blob_key, session_id, payload, expires_at)
      VALUES ($1, $2, $3::jsonb, $4::timestamptz)
      RETURNING *`,
-    [blobKey, sessionId, JSON.stringify(payload), expiresAt.toISOString()],
+    [blobKey, sessionId, jsonb(payload), expiresAt.toISOString()],
   );
   if (!row) {
     throw new Error(`writeBlob: INSERT RETURNING produced no row for ${blobKey}`);

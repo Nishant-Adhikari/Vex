@@ -29,6 +29,8 @@ export interface InternalToolContext {
   role: "parent" | "subagent";
   /** Active mission run ID — for mission_stop guard */
   missionRunId: string | null;
+  /** Mission ID when the session is in mission setup or an active mission run. */
+  missionId: string | null;
   /**
    * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility

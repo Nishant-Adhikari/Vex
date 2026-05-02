@@ -88,6 +88,7 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
     approved: true,
     role: "parent", // Approval resume is always parent context
     missionRunId: null, // Will be populated from hydrated context if needed
+    missionId: null, // Will be populated by the resumed loop when needed
     // Approval resume dispatches a single tool call — band recomputation
     // happens at the next turn-loop iteration. Safe default for one-shot dispatch.
     sessionKind: "chat",

@@ -17,6 +17,7 @@ import type { InternalToolContext } from "../../tools/internal/types.js";
 import { dispatchTool } from "../../tools/dispatcher.js";
 import * as sessionsRepo from "../../db/repos/sessions.js";
 import * as missionRunsRepo from "../../db/repos/mission-runs.js";
+import * as missionsRepo from "../../db/repos/missions.js";
 import { computeBand } from "./context-band.js";
 import logger from "../../../utils/logger.js";
 
@@ -40,6 +41,13 @@ export async function runTool(
   }
 
   const activeRun = await missionRunsRepo.getActiveRunBySession(sessionId);
+  const mission = activeRun ? null : await missionsRepo.getActiveMission(sessionId);
+  const missionId = activeRun?.missionId ?? mission?.id ?? null;
+  const sessionKind = session.kind === "full_autonomous"
+    ? "full_autonomous"
+    : missionId
+      ? "mission"
+      : "chat";
 
   const context: InternalToolContext = {
     sessionId,
@@ -48,7 +56,8 @@ export async function runTool(
     approved: true,
     role: "parent",
     missionRunId: activeRun?.id ?? null,
-    sessionKind: session.kind === "full_autonomous" ? "full_autonomous" : "chat",
+    missionId,
+    sessionKind,
     contextUsageBand: computeBand(session.tokenCount, DEFAULT_CONTEXT_LIMIT),
     sourceSurface: "vex_agent",
   };

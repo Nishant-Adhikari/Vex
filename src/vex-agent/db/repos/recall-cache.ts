@@ -15,6 +15,7 @@
 
 import { createHash } from "node:crypto";
 import { queryOne, execute } from "../client.js";
+import { jsonb } from "../params.js";
 import { RECALL_CACHE_TTL_MIN } from "@vex-agent/knowledge/policy.js";
 import type { RankedRecallResult } from "@vex-agent/knowledge/ranking.js";
 
@@ -76,7 +77,7 @@ export async function writeCache(
      ON CONFLICT (cache_key) DO UPDATE
        SET payload = EXCLUDED.payload,
            expires_at = EXCLUDED.expires_at`,
-    [cacheKey, JSON.stringify(payload), expiresAtIso],
+    [cacheKey, jsonb(payload), expiresAtIso],
   );
 
   return { cacheKey, expiresAt: expiresAtIso };

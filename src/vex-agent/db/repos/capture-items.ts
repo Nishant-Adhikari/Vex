@@ -6,6 +6,7 @@
  */
 
 import { query, queryOne } from "../client.js";
+import { jsonb } from "../params.js";
 
 export interface CaptureItemInput {
   tradeCapture: Record<string, unknown>;
@@ -31,8 +32,8 @@ export async function recordCaptureItems(
     const item = items[i];
     const row = await queryOne<{ id: number }>(
       `INSERT INTO protocol_capture_items (execution_id, item_index, trade_capture, external_refs)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [executionId, i, JSON.stringify(item.tradeCapture), JSON.stringify(item.externalRefs)],
+       VALUES ($1, $2, $3::jsonb, $4::jsonb) RETURNING id`,
+      [executionId, i, jsonb(item.tradeCapture), jsonb(item.externalRefs)],
     );
     if (row) ids.push(row.id);
   }

@@ -163,6 +163,16 @@ function passesVisibility(
     return false;
   }
 
+  if (v.requiresMissionRun
+      && (ctx.sessionKind !== "mission" || !ctx.missionRunActive)) {
+    return false;
+  }
+
+  if (v.requiresMissionSetup
+      && (ctx.sessionKind !== "mission" || ctx.missionRunActive)) {
+    return false;
+  }
+
   if (v.requiresFullAutonomous && ctx.sessionKind !== "full_autonomous") return false;
   if (v.hiddenInChat && ctx.sessionKind === "chat") return false;
   if (v.hiddenInMissionSetup

@@ -8,7 +8,13 @@ import type { TurnLoopConfig } from "../turn-loop.js";
 import { runTurnLoop } from "../turn-loop.js";
 import { isReadyToStart } from "../../mission/validator.js";
 import { freezeDraft, draftToPromptContext } from "../../mission/mapper.js";
-import { applyMissionPatch, createMissionDraft, getMissionSetupState } from "../../mission/setup.js";
+import {
+  applyMissionPatch,
+  createMissionDraft,
+  formatMissionDraftNotReadyNotice,
+  getMissionSetupState,
+  textSuggestsMissionStart,
+} from "../../mission/setup.js";
 import { parseModelMissionOutput } from "../../mission/patch-parser.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools } from "@vex-agent/tools/registry.js";
@@ -21,6 +27,7 @@ import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
 import {
+  consumeMissionRunAbortIntent,
   registerMissionRunAbortController,
   unregisterMissionRunAbortController,
 } from "./abort.js";
@@ -120,12 +127,38 @@ export async function processMissionSetupTurn(
     }
   }
 
-  // Re-read mission status after potential patch
-  const mission = await missionsRepo.getMission(missionId);
-  const missionStatus = mission?.status as MissionStatus ?? "draft";
+  // Re-read mission status after potential patch. The DB state is the source
+  // of truth; prose in the assistant response is not allowed to imply that a
+  // mission can start unless the structured draft update made it ready.
+  const latestSetupState = await getMissionSetupState(missionId);
+  const missionStatus = (latestSetupState?.status ?? "draft") as MissionStatus;
+  let text = result.text;
+  if (
+    latestSetupState
+    && latestSetupState.status !== "ready"
+    && textSuggestsMissionStart(text)
+  ) {
+    const notice = formatMissionDraftNotReadyNotice(latestSetupState);
+    text = text ? `${text}\n\n${notice}` : notice;
+    await messagesRepo.addEngineMessage(
+      sessionId,
+      notice,
+      {
+        source: "engine",
+        messageType: "mission_setup",
+        visibility: "internal",
+        payload: {
+          missionId,
+          status: latestSetupState.status,
+          missingFields: latestSetupState.missingFields,
+          correction: "db_not_ready_start_suggestion",
+        },
+      },
+    );
+  }
 
   return {
-    text: result.text,
+    text,
     toolCallsMade: result.toolCallsMade,
     pendingApprovals: [],
     stopReason: null,
@@ -349,6 +382,13 @@ async function finalizeMissionRunStatus(
   const { shouldTerminateRun } = await import("../stop-conditions.js");
 
   if (shouldTerminateRun(stopReason)) {
+    if (stopReason === "user_stopped" && consumeMissionRunAbortIntent(runId) === "edit") {
+      await missionRunsRepo.updateStatus(runId, "stopped", stopReason, stopPayload);
+      await missionsRepo.clearApprovedAt(missionId);
+      await missionsRepo.setStatus(missionId, "draft");
+      return "draft";
+    }
+
     const status: MissionStatus = stopReason === "user_stopped" ? "cancelled" : "completed";
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);

@@ -7,6 +7,7 @@
 
 import type { LoopMode } from "../../engine/types.js";
 import { query, queryOne, execute } from "../client.js";
+import { nullableJsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -78,12 +79,12 @@ export async function updateStatus(
   await execute(
     `UPDATE mission_runs SET status = $1, stop_reason = COALESCE($2, stop_reason),
      stop_summary = COALESCE($3, stop_summary),
-     stop_evidence_json = COALESCE($4, stop_evidence_json),
+     stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
      ended_at = ${ended} WHERE id = $5`,
     [
       status, stopReason ?? null,
       stopPayload?.summary ?? null,
-      stopPayload?.evidence ? JSON.stringify(stopPayload.evidence) : null,
+      nullableJsonb(stopPayload?.evidence ?? null),
       id,
     ],
   );

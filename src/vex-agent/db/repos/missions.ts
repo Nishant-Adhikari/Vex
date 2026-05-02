@@ -7,6 +7,20 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { jsonb, jsonbPlaceholder } from "../params.js";
+
+const MISSION_DRAFT_COLUMN_KINDS = {
+  title: "scalar",
+  goal: "scalar",
+  constraints_json: "jsonb",
+  success_criteria_json: "jsonb",
+  stop_conditions_json: "jsonb",
+  risk_profile: "scalar",
+  capital_source_json: "jsonb",
+  allowed_protocols: "scalar",
+  allowed_chains: "scalar",
+  allowed_wallets: "scalar",
+} satisfies Record<keyof MissionDraftRow, "jsonb" | "scalar">;
 
 // ── Row types (DB shape) ────────────────────────────────────────
 
@@ -100,10 +114,11 @@ export async function updateDraft(id: string, fields: MissionDraftRow): Promise<
 
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined) continue;
-    const dbValue = (typeof value === "object" && value !== null && !Array.isArray(value))
-      ? JSON.stringify(value)
-      : value;
-    sets.push(`${key} = $${idx}`);
+    const columnKind = MISSION_DRAFT_COLUMN_KINDS[key as keyof MissionDraftRow];
+    if (!columnKind) continue;
+    const placeholder = columnKind === "jsonb" ? jsonbPlaceholder(idx) : `$${idx}`;
+    const dbValue = columnKind === "jsonb" ? jsonb(value) : value;
+    sets.push(`${key} = ${placeholder}`);
     params.push(dbValue);
     idx++;
   }
@@ -129,6 +144,13 @@ export async function setStatus(id: string, status: string): Promise<void> {
 export async function setApprovedAt(id: string): Promise<void> {
   await execute(
     "UPDATE missions SET approved_at = NOW(), updated_at = NOW() WHERE id = $1",
+    [id],
+  );
+}
+
+export async function clearApprovedAt(id: string): Promise<void> {
+  await execute(
+    "UPDATE missions SET approved_at = NULL, updated_at = NOW() WHERE id = $1",
     [id],
   );
 }

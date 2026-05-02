@@ -130,6 +130,7 @@ async function runForcedHandoffPass(
       approved: true,
       role: "parent",
       missionRunId: null,
+      missionId: null,
       sessionKind: "mission",
       contextUsageBand: "critical",
     });

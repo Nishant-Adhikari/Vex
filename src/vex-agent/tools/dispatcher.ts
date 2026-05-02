@@ -170,6 +170,7 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   polymarket_setup: async () => (await import("./internal/polymarket-setup.js")).handlePolymarketSetup,
 
   // Mission
+  mission_draft_update: async () => (await import("./internal/mission.js")).handleMissionDraftUpdate,
   mission_stop: async () => (await import("./internal/mission.js")).handleMissionStop,
 
   // Autonomy primitives — mission/full-autonomous wake

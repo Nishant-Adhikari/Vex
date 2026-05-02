@@ -24,6 +24,26 @@ export interface SetupResult {
   ready: boolean;
 }
 
+const START_SUGGESTION_PATTERN =
+  /(?:\/mission\s+(?:start|continue)|ready\s+to\s+start|mission\s+is\s+ready|all\s+required\s+fields|ready\s*=\s*true)/i;
+
+export function textSuggestsMissionStart(text: string | null): boolean {
+  if (!text) return false;
+  return START_SUGGESTION_PATTERN.test(text);
+}
+
+export function formatMissingMissionFields(missingFields: readonly string[]): string {
+  return missingFields.length > 0 ? missingFields.join(", ") : "none reported";
+}
+
+export function formatMissionDraftNotReadyNotice(setup: SetupResult): string {
+  return [
+    "Mission draft is not ready in the database.",
+    `DB status: ${setup.status}. Missing fields: ${formatMissingMissionFields(setup.missingFields)}.`,
+    "The model must save the complete draft with mission_draft_update before suggesting /mission start.",
+  ].join(" ");
+}
+
 /**
  * Create a new mission draft for a session.
  */
@@ -81,13 +101,18 @@ export async function applyMissionPatch(
   // Validate
   const validation = validateDraft(updated);
 
-  // Transition to ready if all fields populated
+  // Keep status aligned with validation. Edits can clear a previously-ready
+  // field, so a ready draft must fall back to draft until complete again.
+  let status = updated.status;
   if (validation.valid && updated.status === "draft") {
     await missionsRepo.setStatus(missionId, "ready");
+    status = "ready";
+  } else if (!validation.valid && updated.status === "ready") {
+    await missionsRepo.setStatus(missionId, "draft");
+    status = "draft";
   }
 
   const currentDraft = missionToDraft(updated);
-  const status = validation.valid ? "ready" : updated.status;
 
   return {
     missionId,

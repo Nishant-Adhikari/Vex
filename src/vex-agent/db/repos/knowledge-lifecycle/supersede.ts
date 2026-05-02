@@ -16,6 +16,7 @@
 
 import pg, { type PoolClient } from "pg";
 
+import { jsonb } from "../../params.js";
 import { SupersedeError } from "./errors.js";
 import {
   mapRowLocal,
@@ -122,7 +123,7 @@ export async function runSupersedeStatements(
          created_at, updated_at
        )
        VALUES (
-         $1, $2, $3, $4, $5, $6,
+         $1, $2, $3, $4, $5, $6::jsonb,
          $7, 'active', $8, NOW(), $9,
          $10, $11, $12, $13::vector,
          COALESCE($14::text, 'vex_agent'), $15,
@@ -136,7 +137,7 @@ export async function runSupersedeStatements(
         input.summary,
         input.contentMd,
         input.tags,
-        JSON.stringify(input.sourceRefs),
+        jsonb(input.sourceRefs),
         input.confidence,
         input.pinned,
         input.validUntil ? input.validUntil.toISOString() : null,

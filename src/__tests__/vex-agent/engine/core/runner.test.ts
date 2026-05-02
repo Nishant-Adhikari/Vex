@@ -4,9 +4,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockResolveProvider = vi.fn();
 const mockAddMessage = vi.fn();
+const mockAddEngineMessage = vi.fn();
 const mockHydrate = vi.fn();
 const mockRunTurnLoop = vi.fn();
 const mockGetMission = vi.fn();
+const mockCreateDraft = vi.fn();
+const mockUpdateDraft = vi.fn();
 const mockSetMissionStatus = vi.fn();
 const mockSetApprovedAt = vi.fn();
 const mockCreateRun = vi.fn();
@@ -19,7 +22,7 @@ vi.mock("@vex-agent/inference/registry.js", () => ({
 
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
-  addEngineMessage: vi.fn(),
+  addEngineMessage: (...a: unknown[]) => mockAddEngineMessage(...a),
   getLiveMessages: vi.fn().mockResolvedValue([]),
 }));
 
@@ -32,7 +35,9 @@ vi.mock("../../../../vex-agent/engine/core/turn-loop.js", () => ({
 }));
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
+  createDraft: (...a: unknown[]) => mockCreateDraft(...a),
   getMission: (...a: unknown[]) => mockGetMission(...a),
+  updateDraft: (...a: unknown[]) => mockUpdateDraft(...a),
   setStatus: (...a: unknown[]) => mockSetMissionStatus(...a),
   setApprovedAt: (...a: unknown[]) => mockSetApprovedAt(...a),
   getMissionBySession: vi.fn().mockResolvedValue(null),
@@ -77,6 +82,9 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 const { processChatTurn, startMission, resumeMissionRun } = await import(
   "../../../../vex-agent/engine/core/runner.js"
 );
+const { processMissionSetupTurn } = await import(
+  "../../../../vex-agent/engine/core/runner/mission.js"
+);
 
 function makeProvider() {
   return {
@@ -105,6 +113,28 @@ function makeHydratedSession(overrides = {}) {
     messages: [],
     summary: null,
     tokenCount: 0,
+  };
+}
+
+function makeMission(overrides = {}) {
+  return {
+    id: "mission-1",
+    rootSessionId: "session-1",
+    status: "draft",
+    title: null,
+    goal: null,
+    capitalSourceJson: {},
+    allowedWallets: [],
+    allowedChains: [],
+    allowedProtocols: [],
+    riskProfile: null,
+    successCriteriaJson: [],
+    stopConditionsJson: [],
+    constraintsJson: {},
+    createdAt: "2026-03-29",
+    updatedAt: "2026-03-29",
+    approvedAt: null,
+    ...overrides,
   };
 }
 
@@ -142,6 +172,47 @@ describe("runner", () => {
     it("throws if session not found", async () => {
       mockHydrate.mockResolvedValueOnce(null);
       await expect(processChatTurn("nonexistent", "Hi")).rejects.toThrow("not found");
+    });
+  });
+
+  // ── processMissionSetupTurn ────────────────────────────────
+
+  describe("processMissionSetupTurn", () => {
+    it("adds a DB-not-ready correction when setup text suggests starting a draft", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }))
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Ready to start? Reply /mission start.",
+        toolCallsMade: 1,
+        pendingApprovals: [],
+        stopReason: null,
+      });
+
+      const result = await processMissionSetupTurn("session-1", "ready");
+
+      expect(result.missionStatus).toBe("draft");
+      expect(result.text).toContain("Ready to start? Reply /mission start.");
+      expect(result.text).toContain("Mission draft is not ready in the database.");
+      expect(result.text).toContain("Missing fields:");
+      expect(mockAddEngineMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.stringContaining("Mission draft is not ready in the database."),
+        expect.objectContaining({
+          source: "engine",
+          messageType: "mission_setup",
+          visibility: "internal",
+          payload: expect.objectContaining({
+            missionId: "mission-1",
+            status: "draft",
+            correction: "db_not_ready_start_suggestion",
+          }),
+        }),
+      );
     });
   });
 

@@ -8,6 +8,7 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { nullableJsonb } from "../params.js";
 
 export type SubagentMessageType = "relay" | "request_parent" | "reply" | "report_complete";
 
@@ -37,9 +38,9 @@ export async function sendStructuredMessage(
 ): Promise<number> {
   const row = await queryOne<{ id: number }>(
     `INSERT INTO subagent_messages (subagent_id, direction, content, message_type, payload_json, reply_to_message_id)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6) RETURNING id`,
     [subagentId, direction, content, messageType,
-     payloadJson ? JSON.stringify(payloadJson) : null,
+     nullableJsonb(payloadJson ?? null),
      replyToMessageId ?? null],
   );
   return row?.id ?? 0;

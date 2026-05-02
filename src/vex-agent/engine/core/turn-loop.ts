@@ -161,6 +161,11 @@ export async function runTurnLoop(
       context, liveMessages, currentSummary, provider, config, tools, promptOptions,
     );
 
+    if (abortSignal?.aborted) {
+      stopReason = "user_stopped";
+      break;
+    }
+
     // ── Handle tool calls ─────────────────────────────────────
     // Deferred save: collect dispatched calls + results, then save the
     // canonical batch prefix (only calls that actually entered dispatch).
@@ -181,6 +186,7 @@ export async function runTurnLoop(
           approved: false,
           role: context.isSubagent ? "subagent" : "parent",
           missionRunId: context.missionRunId,
+          missionId: context.missionId,
           sessionKind: context.sessionKind,
           contextUsageBand: computeBand(currentTokenCount, loopConfig.contextLimit),
         };

@@ -34,6 +34,7 @@ function makeCtx(overrides: Partial<{ sessionId: string; contextUsageBand: "norm
     approved: false,
     role: "parent" as const,
     missionRunId: null,
+    missionId: null,
     sessionKind: "mission" as const,
     contextUsageBand: "warning" as const,
     ...overrides,

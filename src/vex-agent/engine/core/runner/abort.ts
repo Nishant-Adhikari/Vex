@@ -42,6 +42,7 @@ import logger from "@utils/logger.js";
 // ── In-process AbortController registry ─────────────────────────
 
 const controllers = new Map<string, AbortController>();
+const abortIntents = new Map<string, "edit">();
 
 /**
  * Hosts (`startMission`, `resumeMissionRun`) call this to obtain a controller
@@ -67,6 +68,12 @@ export function hasMissionRunAbortController(runId: string): boolean {
   return controllers.has(runId);
 }
 
+export function consumeMissionRunAbortIntent(runId: string): "edit" | null {
+  const intent = abortIntents.get(runId) ?? null;
+  abortIntents.delete(runId);
+  return intent;
+}
+
 // ── Public API ──────────────────────────────────────────────────
 
 export interface AbortMissionRunResult {
@@ -83,6 +90,12 @@ export interface AbortMissionRunResult {
    */
   finalStatus: MissionStatus;
   /** Number of pending approvals rejected as part of this abort. */
+  rejectedApprovals: number;
+}
+
+export interface StopMissionRunForEditResult {
+  stopped: boolean;
+  finalStatus: MissionStatus;
   rejectedApprovals: number;
 }
 
@@ -144,6 +157,72 @@ export async function abortActiveMissionForSession(
   const activeRun = await missionRunsRepo.getActiveRunBySession(sessionId);
   if (!activeRun) return null;
   return abortMissionRun(activeRun.id);
+}
+
+/**
+ * Stop the active run so the operator can edit the mission contract.
+ *
+ * This is intentionally distinct from `abortMissionRun`: the run is terminal,
+ * but the parent mission returns to `draft` instead of `cancelled`, so the
+ * operator can save an updated draft and start a fresh run.
+ */
+export async function stopActiveMissionForEdit(
+  sessionId: string,
+): Promise<StopMissionRunForEditResult | null> {
+  const activeRun = await missionRunsRepo.getActiveRunBySession(sessionId);
+  if (!activeRun) return null;
+  return stopMissionRunForEdit(activeRun.id);
+}
+
+export async function stopMissionRunForEdit(
+  runId: string,
+): Promise<StopMissionRunForEditResult> {
+  const run = await missionRunsRepo.getRun(runId);
+  if (!run) throw new Error(`Run ${runId} not found`);
+
+  const terminal = new Set(["completed", "failed", "stopped", "cancelled"]);
+  if (terminal.has(run.status)) {
+    return {
+      stopped: false,
+      finalStatus: run.status as MissionStatus,
+      rejectedApprovals: 0,
+    };
+  }
+
+  await loopWakeRepo.cancelForSession(run.sessionId, "user_edit");
+  const rejectedApprovals = await rejectPendingApprovalsForSession(run.sessionId);
+  if (rejectedApprovals > 0) {
+    logger.info("engine.mission.edit_rejected_approvals", {
+      runId,
+      sessionId: run.sessionId,
+      count: rejectedApprovals,
+    });
+  }
+
+  if (run.status === "running" && controllers.has(runId)) {
+    abortIntents.set(runId, "edit");
+    controllers.get(runId)!.abort();
+    logger.info("engine.mission.edit_abort_signaled", {
+      runId,
+      sessionId: run.sessionId,
+    });
+  }
+
+  await missionRunsRepo.updateStatus(
+    runId,
+    "stopped",
+    "user_stopped",
+    { summary: "Mission stopped for operator edit" },
+  );
+  await missionsRepo.clearApprovedAt(run.missionId);
+  await missionsRepo.setStatus(run.missionId, "draft");
+  logger.info("engine.mission.edit_finalized", {
+    runId,
+    sessionId: run.sessionId,
+    previousStatus: run.status,
+  });
+
+  return { stopped: true, finalStatus: "draft", rejectedApprovals };
 }
 
 // ── Internal helpers ────────────────────────────────────────────

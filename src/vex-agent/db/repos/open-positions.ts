@@ -6,6 +6,7 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { jsonb } from "../params.js";
 
 export interface Position {
   id: number;
@@ -50,10 +51,10 @@ export interface UpsertPositionRow {
 export async function upsertPosition(row: UpsertPositionRow): Promise<void> {
   await execute(
     `INSERT INTO proj_open_positions (namespace, position_type, chain, external_id, wallet_address, instrument_key, position_key, entry_price_usd, notional_usd, fee_usd, contracts, settlement_asset_key, data, status, opened_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, NOW())
      ON CONFLICT (namespace, position_type, external_id) WHERE external_id IS NOT NULL
      DO UPDATE SET status = COALESCE($14, proj_open_positions.status),
-       data = COALESCE($13, proj_open_positions.data),
+       data = COALESCE($13::jsonb, proj_open_positions.data),
        instrument_key = COALESCE($6, proj_open_positions.instrument_key),
        position_key = COALESCE($7, proj_open_positions.position_key),
        entry_price_usd = COALESCE($8, proj_open_positions.entry_price_usd),
@@ -66,7 +67,7 @@ export async function upsertPosition(row: UpsertPositionRow): Promise<void> {
      row.instrumentKey ?? null, row.positionKey ?? null, row.entryPriceUsd ?? null,
      row.notionalUsd ?? null, row.feeUsd ?? null,
      row.contracts ?? null, row.settlementAssetKey ?? null,
-     JSON.stringify(row.data ?? {}), row.status ?? "open"],
+     jsonb(row.data ?? {}), row.status ?? "open"],
   );
 }
 

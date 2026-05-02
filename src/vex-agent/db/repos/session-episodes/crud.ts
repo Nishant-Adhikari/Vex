@@ -12,6 +12,7 @@
 import type { PoolClient } from "pg";
 
 import { getPool, query, queryOneWith } from "../../client.js";
+import { jsonb } from "../../params.js";
 import { vectorLiteral } from "../knowledge/types.js";
 import {
   EPISODE_COLUMNS,
@@ -88,7 +89,7 @@ async function runInserts(
        )
        VALUES (
          $1, $2, $3, $4, $5,
-         $6, $7, $8, $9, $10,
+         $6::jsonb, $7::jsonb, $8::jsonb, $9, $10::jsonb,
          COALESCE($11::text, 'vex_agent'), $12,
          $13, $14,
          $15, $16, $17, $18::vector,
@@ -104,11 +105,11 @@ async function runInserts(
         r.episodeKind,
         r.title,
         r.summaryText,
-        JSON.stringify(r.facts ?? {}),
-        JSON.stringify(r.decisions ?? {}),
-        JSON.stringify(r.openLoops ?? {}),
+        jsonb(r.facts ?? {}),
+        jsonb(r.decisions ?? {}),
+        jsonb(r.openLoops ?? {}),
         r.entities ?? [],
-        JSON.stringify(r.toolOutcomes ?? {}),
+        jsonb(r.toolOutcomes ?? {}),
         r.sourceSurface ?? null,
         r.sourceSession ?? null,
         r.sourceStartMessageId,

@@ -30,6 +30,7 @@ function makeCtx(sessionId = "s1") {
     approved: false,
     role: "parent" as const,
     missionRunId: null,
+    missionId: null,
     sessionKind: "mission" as const,
     contextUsageBand: "normal" as const,
   };

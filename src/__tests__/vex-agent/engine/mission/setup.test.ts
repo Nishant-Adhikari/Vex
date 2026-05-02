@@ -161,6 +161,32 @@ describe("mission setup", () => {
       expect(mockSetStatus).not.toHaveBeenCalled();
     });
 
+    it("moves a ready draft back to draft when an edit makes it incomplete", async () => {
+      const readyMission = makeMission({
+        status: "ready",
+        title: "SOL DCA",
+        goal: "Accumulate 10 SOL",
+        capitalSourceJson: { type: "wallet", amount: "500 USDC" },
+        allowedWallets: ["solana"],
+        allowedChains: ["solana"],
+        allowedProtocols: ["solana"],
+        riskProfile: "conservative",
+        successCriteriaJson: ["Accumulated 10 SOL"],
+        stopConditionsJson: ["capital_depleted"],
+      });
+      mockGetMission.mockResolvedValueOnce(readyMission);
+      mockGetMission.mockResolvedValueOnce(makeMission({
+        ...readyMission,
+        goal: null,
+      }));
+
+      const result = await applyMissionPatch("mission-1", { goal: null });
+
+      expect(result.ready).toBe(false);
+      expect(result.status).toBe("draft");
+      expect(mockSetStatus).toHaveBeenCalledWith("mission-1", "draft");
+    });
+
     it("throws for nonexistent mission", async () => {
       mockGetMission.mockResolvedValueOnce(null);
       await expect(applyMissionPatch("nonexistent", {})).rejects.toThrow("not found");

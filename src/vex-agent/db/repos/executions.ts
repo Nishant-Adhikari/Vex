@@ -3,6 +3,7 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { jsonb, nullableJsonb } from "../params.js";
 
 export interface ExecutionRecord {
   id: number;
@@ -29,9 +30,9 @@ export async function recordExecution(
 ): Promise<number> {
   const row = await queryOne<{ id: number }>(
     `INSERT INTO protocol_executions (tool_id, namespace, session_id, params, result, success, trade_capture, external_refs, duration_ms)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-    [toolId, namespace, sessionId, JSON.stringify(params), JSON.stringify(result),
-     success, tradeCapture ? JSON.stringify(tradeCapture) : null, JSON.stringify(externalRefs), durationMs],
+     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9) RETURNING id`,
+    [toolId, namespace, sessionId, jsonb(params), jsonb(result),
+     success, nullableJsonb(tradeCapture), jsonb(externalRefs), durationMs],
   );
   return row?.id ?? 0;
 }

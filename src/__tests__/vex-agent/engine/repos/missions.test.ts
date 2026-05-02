@@ -62,18 +62,30 @@ describe("missions repo", () => {
       await updateDraft("mission-1", {
         constraints_json: { maxLoss: "10%" },
         capital_source_json: { type: "wallet", amount: "500 USDC" },
+        success_criteria_json: ["Goal met"],
+        stop_conditions_json: ["capital_depleted"],
       });
-      const [, params] = mockExecute.mock.calls[0];
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("constraints_json = $1::jsonb");
+      expect(sql).toContain("capital_source_json = $2::jsonb");
+      expect(sql).toContain("success_criteria_json = $3::jsonb");
+      expect(sql).toContain("stop_conditions_json = $4::jsonb");
       expect(params).toContainEqual('{"maxLoss":"10%"}');
       expect(params).toContainEqual('{"type":"wallet","amount":"500 USDC"}');
+      expect(params).toContainEqual('["Goal met"]');
+      expect(params).toContainEqual('["capital_depleted"]');
     });
 
-    it("handles array fields directly", async () => {
+    it("handles text array fields directly", async () => {
       await updateDraft("mission-1", {
         allowed_chains: ["solana", "ethereum"],
         allowed_protocols: ["solana"],
       });
-      const [, params] = mockExecute.mock.calls[0];
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("allowed_chains = $1");
+      expect(sql).toContain("allowed_protocols = $2");
+      expect(sql).not.toContain("allowed_chains = $1::jsonb");
+      expect(sql).not.toContain("allowed_protocols = $2::jsonb");
       expect(params).toContainEqual(["solana", "ethereum"]);
       expect(params).toContainEqual(["solana"]);
     });

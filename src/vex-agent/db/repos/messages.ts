@@ -12,6 +12,7 @@
  */
 
 import { query, execute } from "../client.js";
+import { nullableJsonb } from "../params.js";
 
 export interface MessageRow {
   id: number;
@@ -19,7 +20,7 @@ export interface MessageRow {
   content: string;
   tool_call_id: string | null;
   tool_calls: unknown;
-  created_at: string;
+  created_at: string | Date;
   source: string | null;
   message_type: string | null;
   visibility: string | null;
@@ -74,14 +75,14 @@ export interface MessageMetadata {
 export async function addMessage(sessionId: string, msg: Message, metadata?: MessageMetadata): Promise<void> {
   await execute(
     `INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)`,
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12::jsonb)`,
     [
       sessionId, msg.role, msg.content, msg.toolCallId ?? null,
-      msg.toolCalls ? JSON.stringify(msg.toolCalls) : null, msg.timestamp,
+      nullableJsonb(msg.toolCalls ?? null), msg.timestamp,
       metadata?.source ?? null, metadata?.messageType ?? null,
       metadata?.visibility ?? null, metadata?.originSessionId ?? null,
       metadata?.subagentId ?? null,
-      metadata?.payload ? JSON.stringify(metadata.payload) : null,
+      nullableJsonb(metadata?.payload ?? null),
     ],
   );
   await execute("UPDATE sessions SET message_count = message_count + 1 WHERE id = $1", [sessionId]);
@@ -156,10 +157,14 @@ function mapRowToMessage(r: MessageRow): Message {
     content: r.content,
     toolCallId: r.tool_call_id ?? undefined,
     toolCalls: r.tool_calls as Message["toolCalls"],
-    timestamp: r.created_at,
+    timestamp: toIsoTimestamp(r.created_at),
     id: r.id,
     metadata: assembleMessageMetadata(r),
   };
+}
+
+function toIsoTimestamp(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 /**

@@ -1,17 +1,101 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { makeTestContext } from "../_test-context.js";
+
+const mockApplyMissionPatch = vi.fn();
+const mockGetRunBySession = vi.fn();
+
+vi.mock("@vex-agent/engine/mission/setup.js", () => ({
+  applyMissionPatch: (...a: unknown[]) => mockApplyMissionPatch(...a),
+}));
+
+vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
+  getRunBySession: (...a: unknown[]) => mockGetRunBySession(...a),
+}));
 
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(), query: vi.fn().mockResolvedValue([]), queryOne: vi.fn().mockResolvedValue(null),
 }));
 
-const { handleMissionStop } = await import("../../../../vex-agent/tools/internal/mission.js");
+const { handleMissionDraftUpdate, handleMissionStop } = await import("../../../../vex-agent/tools/internal/mission.js");
 
 const baseContext = makeTestContext({
   sessionId: "session-1",
   loopMode: "restricted",
   missionRunId: "run-1",
+  missionId: "mission-1",
   sessionKind: "mission",
+});
+
+beforeEach(() => {
+  mockApplyMissionPatch.mockReset();
+  mockGetRunBySession.mockReset();
+  mockGetRunBySession.mockResolvedValue(null);
+});
+
+describe("mission_draft_update tool", () => {
+  it("applies a draft patch in mission setup", async () => {
+    mockApplyMissionPatch.mockResolvedValueOnce({
+      missionId: "mission-1",
+      status: "ready",
+      currentDraft: { title: "SOL Flip" },
+      missingFields: [],
+      ready: true,
+    });
+
+    const result = await handleMissionDraftUpdate(
+      { title: "SOL Flip", goal: "Double wallet value" },
+      { ...baseContext, missionRunId: null },
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockApplyMissionPatch).toHaveBeenCalledWith("mission-1", {
+      title: "SOL Flip",
+      goal: "Double wallet value",
+    });
+    expect(result.data).toEqual(expect.objectContaining({
+      ready: true,
+      nextCommand: "/mission start",
+    }));
+  });
+
+  it("returns /mission continue when a prior run exists", async () => {
+    mockApplyMissionPatch.mockResolvedValueOnce({
+      missionId: "mission-1",
+      status: "ready",
+      currentDraft: { title: "SOL Flip" },
+      missingFields: [],
+      ready: true,
+    });
+    mockGetRunBySession.mockResolvedValueOnce({ id: "run-prior" });
+
+    const result = await handleMissionDraftUpdate(
+      { title: "SOL Flip" },
+      { ...baseContext, missionRunId: null },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.nextCommand).toBe("/mission continue");
+  });
+
+  it("rejects outside mission setup", async () => {
+    const result = await handleMissionDraftUpdate(
+      { title: "SOL Flip" },
+      baseContext,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("only valid during mission setup or edit");
+  });
+
+  it("rejects invalid patch shape", async () => {
+    const result = await handleMissionDraftUpdate(
+      { allowedWallets: ["ok", ""] },
+      { ...baseContext, missionRunId: null },
+    );
+    expect(result.success).toBe(false);
+    expect(mockApplyMissionPatch).not.toHaveBeenCalledWith("mission-1", expect.objectContaining({
+      allowedWallets: expect.anything(),
+    }));
+  });
 });
 
 describe("mission_stop tool", () => {

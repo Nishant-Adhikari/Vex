@@ -32,6 +32,10 @@ export interface ToolVisibility {
    * a standalone `full_autonomous` session. Used by `loop_defer` in PR-5.
    */
   requiresMissionActiveRun?: boolean;
+  /** True → require an active mission run specifically. */
+  requiresMissionRun?: boolean;
+  /** True → require mission setup/edit (`sessionKind === "mission"` and no active run). */
+  requiresMissionSetup?: boolean;
   /** True → require `sessionKind === "full_autonomous"` specifically. */
   requiresFullAutonomous?: boolean;
   /** True → hide in `sessionKind === "chat"` sessions. */

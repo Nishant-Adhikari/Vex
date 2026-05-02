@@ -9,24 +9,32 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getActiveRunBySession: vi.fn(),
 }));
 
+vi.mock("@vex-agent/db/repos/missions.js", () => ({
+  getActiveMission: vi.fn(),
+}));
+
 vi.mock("@vex-agent/tools/dispatcher.js", () => ({
   dispatchTool: vi.fn(),
 }));
 
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
+import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import { runTool } from "@vex-agent/engine/core/run-tool.js";
 
 const mockGetSession = sessionsRepo.getSession as unknown as ReturnType<typeof vi.fn>;
 const mockGetActiveRun = missionRunsRepo.getActiveRunBySession as unknown as ReturnType<typeof vi.fn>;
+const mockGetActiveMission = missionsRepo.getActiveMission as unknown as ReturnType<typeof vi.fn>;
 const mockDispatch = dispatchTool as unknown as ReturnType<typeof vi.fn>;
 
 describe("runTool", () => {
   beforeEach(() => {
     mockGetSession.mockReset();
     mockGetActiveRun.mockReset();
+    mockGetActiveMission.mockReset();
     mockDispatch.mockReset();
+    mockGetActiveMission.mockResolvedValue(null);
   });
 
   it("throws when session does not exist", async () => {
@@ -80,9 +88,10 @@ describe("runTool", () => {
     expect(ctxArg.sessionId).toBe("sess-1");
     expect(ctxArg.role).toBe("parent");
     expect(ctxArg.approved).toBe(true);
-    expect(ctxArg.sessionKind).toBe("chat");
+    expect(ctxArg.sessionKind).toBe("mission");
     expect(ctxArg.loopMode).toBe("restricted");
     expect(ctxArg.missionRunId).toBe("run-1");
+    expect(ctxArg.missionId).toBe("m-1");
     expect(ctxArg.contextUsageBand).toBe("normal");
   });
 
@@ -112,6 +121,37 @@ describe("runTool", () => {
     ];
     expect(ctxArg.loopMode).toBe("off");
     expect(ctxArg.missionRunId).toBeNull();
+    expect(ctxArg.missionId).toBeNull();
     expect(ctxArg.sessionKind).toBe("full_autonomous");
+  });
+
+  it("uses mission setup context when a session has a draft but no active run", async () => {
+    mockGetSession.mockResolvedValueOnce({
+      id: "sess-3",
+      kind: "chat",
+      tokenCount: 0,
+      scope: "local_shell",
+      startedAt: "2026-01-01",
+      endedAt: null,
+      summary: null,
+      compacted: false,
+      messageCount: 0,
+      memoryScopeKey: "sess-3",
+      memoryLanguageCode: null,
+      checkpointGeneration: 0,
+    });
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    mockGetActiveMission.mockResolvedValueOnce({ id: "mission-3" });
+    mockDispatch.mockResolvedValueOnce({ success: true, output: "ok" });
+
+    await runTool("sess-3", "mission_draft_update", { title: "Edit" });
+
+    const [, ctxArg] = mockDispatch.mock.calls[0] as [
+      { name: string; args: Record<string, unknown>; toolCallId: string },
+      InternalToolContext,
+    ];
+    expect(ctxArg.sessionKind).toBe("mission");
+    expect(ctxArg.missionRunId).toBeNull();
+    expect(ctxArg.missionId).toBe("mission-3");
   });
 });

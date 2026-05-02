@@ -3,6 +3,7 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { jsonb } from "../params.js";
 
 export interface SyncJob {
   id: number;
@@ -60,8 +61,8 @@ export async function claimPendingRun(): Promise<SyncRun | null> {
 
 export async function completeRun(id: number, result: Record<string, unknown>, rowsAffected: number): Promise<void> {
   await execute(
-    "UPDATE protocol_sync_runs SET status = 'completed', ended_at = NOW(), result = $2, rows_affected = $3 WHERE id = $1",
-    [id, JSON.stringify(result), rowsAffected],
+    "UPDATE protocol_sync_runs SET status = 'completed', ended_at = NOW(), result = $2::jsonb, rows_affected = $3 WHERE id = $1",
+    [id, jsonb(result), rowsAffected],
   );
 }
 

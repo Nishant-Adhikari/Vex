@@ -11,6 +11,7 @@
 
 import type { PoolClient } from "pg";
 import { getPool, queryOne, queryOneWith } from "../client.js";
+import { jsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -129,7 +130,7 @@ async function runWriteHandoff(
        (session_id, target_checkpoint_generation, payload, status)
      VALUES ($1, $2, $3::jsonb, 'active')
      RETURNING *`,
-    [sessionId, targetGeneration, JSON.stringify(payload)],
+    [sessionId, targetGeneration, jsonb(payload)],
   );
   const row = result.rows[0];
   if (!row) {

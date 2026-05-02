@@ -6,6 +6,7 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { jsonb } from "../params.js";
 
 export interface ActivityRow {
   namespace: string;
@@ -51,7 +52,7 @@ export async function insertActivity(row: ActivityRow): Promise<number> {
       value_usd, input_value_usd, output_value_usd, fee_value_usd, unit_price_usd, valuation_source,
       benchmark_asset_key, settlement_asset_key, input_value_native, output_value_native,
       capture_status, position_key, instrument_key, external_refs, meta)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27::jsonb)
      RETURNING id`,
     [
       row.namespace, row.activityType, row.productType, row.tradeSide, row.chain,
@@ -60,7 +61,7 @@ export async function insertActivity(row: ActivityRow): Promise<number> {
       row.inputValueUsd, row.outputValueUsd, row.feeValueUsd, row.unitPriceUsd, row.valuationSource,
       row.benchmarkAssetKey, row.settlementAssetKey, row.inputValueNative, row.outputValueNative,
       row.captureStatus, row.positionKey,
-      row.instrumentKey, JSON.stringify(row.externalRefs), JSON.stringify(row.meta),
+      row.instrumentKey, jsonb(row.externalRefs), jsonb(row.meta),
     ],
   );
   return result?.id ?? 0;

@@ -3,6 +3,7 @@
  */
 
 import { query, queryOne, execute } from "../client.js";
+import { jsonb, nullableJsonb } from "../params.js";
 
 export interface ApprovalItem {
   id: string;
@@ -38,11 +39,11 @@ export async function enqueue(
   toolCallId?: string,
   chatMode?: string,
 ): Promise<void> {
-  const pendingContext = toolCallId ? JSON.stringify({ toolCallId }) : null;
+  const pendingContext = nullableJsonb(toolCallId ? { toolCallId } : null);
   await execute(
     `INSERT INTO approval_queue (id, tool_call, reasoning, status, session_id, tool_call_id, chat_mode, pending_context)
-     VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
-    [id, JSON.stringify(toolCall), reasoning, sessionId, toolCallId ?? null, chatMode ?? "restricted", pendingContext],
+     VALUES ($1, $2::jsonb, $3, 'pending', $4, $5, $6, $7::jsonb)`,
+    [id, jsonb(toolCall), reasoning, sessionId, toolCallId ?? null, chatMode ?? "restricted", pendingContext],
   );
 }
 
