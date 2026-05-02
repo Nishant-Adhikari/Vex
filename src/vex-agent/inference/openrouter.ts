@@ -19,7 +19,6 @@
 
 import { OpenRouter } from "@openrouter/sdk";
 import type { ChatResponse } from "@openrouter/sdk/models/chatresponse.js";
-import type { ChatGenerationParams } from "@openrouter/sdk/models/chatgenerationparams.js";
 import type { ChatStreamingResponseChunk } from "@openrouter/sdk/models/chatstreamingresponsechunk.js";
 import type { EventStream } from "@openrouter/sdk/lib/event-streams.js";
 
@@ -44,97 +43,9 @@ import {
 } from "./config.js";
 
 import logger from "@utils/logger.js";
-import { mapMessages, extractUsage, parseNonStreamingResponse, processToolCallDelta } from "./openrouter/mappers.js";
-import { normalizeToolSchemaForProvider } from "./schema-normalizer.js";
-
-// ── Error normalisation ─────────────────────────────────────────
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
-function asNumberOrString(value: unknown): string | null {
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return asString(value);
-}
-
-function truncate(value: string, max = 800): string {
-  return value.length > max ? `${value.slice(0, max)}...` : value;
-}
-
-function stringifyMetadataValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function parseJsonObject(raw: unknown): Record<string, unknown> | null {
-  if (isRecord(raw)) return raw;
-  if (typeof raw !== "string" || raw.trim().length === 0) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function pickErrorObject(err: Record<string, unknown>): Record<string, unknown> | null {
-  if (isRecord(err.error)) return err.error;
-  const body = parseJsonObject(err.body);
-  return body && isRecord(body.error) ? body.error : null;
-}
-
-function formatMetadata(metadata: unknown): string | null {
-  if (!isRecord(metadata)) return null;
-
-  const preferredKeys = ["provider_name", "raw", "reason", "details"];
-  const selected: string[] = [];
-  for (const key of preferredKeys) {
-    if (metadata[key] !== undefined && metadata[key] !== null) {
-      selected.push(`${key}=${truncate(stringifyMetadataValue(metadata[key]), 400)}`);
-    }
-  }
-
-  if (selected.length > 0) return selected.join(" ");
-  return truncate(stringifyMetadataValue(metadata), 800);
-}
-
-function normalizeOpenRouterError(err: unknown, operation: string): Error {
-  const originalMessage = err instanceof Error ? err.message : String(err);
-
-  if (!isRecord(err)) {
-    return new Error(`OpenRouter ${operation} failed: ${originalMessage}`);
-  }
-
-  const errorObject = pickErrorObject(err);
-  const status = asNumberOrString(err.statusCode);
-  const code = errorObject ? asNumberOrString(errorObject.code) : null;
-  const providerMessage = errorObject ? asString(errorObject.message) : null;
-  const metadata = errorObject ? formatMetadata(errorObject.metadata) : null;
-  const body = !errorObject && err.body !== undefined
-    ? truncate(stringifyMetadataValue(err.body), 800)
-    : null;
-
-  const details = [
-    status ? `status=${status}` : null,
-    code ? `code=${code}` : null,
-    providerMessage ?? originalMessage,
-    metadata ? `metadata: ${metadata}` : null,
-    body ? `body: ${body}` : null,
-  ].filter((part): part is string => Boolean(part));
-
-  const normalized = new Error(`OpenRouter ${operation} failed: ${details.join(" | ")}`);
-  if (err instanceof Error && err.stack) normalized.stack = err.stack;
-  return normalized;
-}
+import { normalizeOpenRouterError } from "./openrouter/errors.js";
+import { extractUsage, parseNonStreamingResponse, processToolCallDelta } from "./openrouter/mappers.js";
+import { buildOpenRouterParams } from "./openrouter/params.js";
 
 // ── Provider ─────────────────────────────────────────────────────
 
@@ -253,7 +164,7 @@ export class OpenRouterProvider implements InferenceProvider {
     tools: ToolDefinition[],
     config: InferenceConfig,
   ): Promise<InferenceResponse> {
-    const params = this.buildParams(messages, tools, config, false);
+    const params = buildOpenRouterParams(messages, tools, config, false);
 
     let response: ChatResponse;
     try {
@@ -273,7 +184,7 @@ export class OpenRouterProvider implements InferenceProvider {
     messages: ProviderMessage[],
     config: InferenceConfig,
   ): Promise<{ content: string; usage: InferenceUsage }> {
-    const params = this.buildParams(messages, [], config, false);
+    const params = buildOpenRouterParams(messages, [], config, false);
 
     let response: ChatResponse;
     try {
@@ -300,7 +211,7 @@ export class OpenRouterProvider implements InferenceProvider {
     tools: ToolDefinition[],
     config: InferenceConfig,
   ): AsyncGenerator<StreamChunk> {
-    const params = this.buildParams(messages, tools, config, true);
+    const params = buildOpenRouterParams(messages, tools, config, true);
 
     let stream: EventStream<ChatStreamingResponseChunk>;
     try {
@@ -441,37 +352,4 @@ export class OpenRouterProvider implements InferenceProvider {
     };
   }
 
-  // ── Private helpers ─────────────────────────────────────────────
-
-  private buildParams(
-    messages: ProviderMessage[],
-    tools: ToolDefinition[],
-    config: InferenceConfig,
-    stream: boolean,
-  ): ChatGenerationParams {
-    const params: ChatGenerationParams = {
-      model: config.model,
-      messages: mapMessages(messages),
-      maxTokens: config.maxOutputTokens,
-      ...(config.temperature !== undefined && { temperature: config.temperature }),
-      ...(stream && { stream: true }),
-    };
-
-    if (tools.length > 0) {
-      // Phase 0 hotfix: normalize for provider strict mode (Azure via
-      // OpenRouter rejects bare arrays without `items`, OpenAI strict
-      // requires `additionalProperties: false`). See schema-normalizer.ts.
-      params.tools = tools.map(t => ({
-        type: "function" as const,
-        function: {
-          name: t.function.name,
-          description: t.function.description,
-          parameters: normalizeToolSchemaForProvider(t.function.parameters),
-        },
-      }));
-      params.toolChoice = "auto";
-    }
-
-    return params;
-  }
 }
