@@ -27,6 +27,7 @@ import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import type { LoopWakeKind } from "@vex-agent/db/repos/loop-wake.js";
+import { currentDate } from "@vex-agent/engine/runtime-clock.js";
 
 const ONE_SECOND_MS = 1_000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
@@ -75,7 +76,7 @@ export async function handleLoopDefer(
   }
 
   // Compute absolute wake time from whichever input the model chose.
-  const now = Date.now();
+  const now = currentDate().getTime();
   const dueAtMs = after_ms !== undefined
     ? now + after_ms
     : Date.parse(wake_at!); // wake_at validated by Zod.datetime — never NaN here.

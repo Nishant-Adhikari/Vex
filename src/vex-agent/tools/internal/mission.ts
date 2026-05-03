@@ -13,7 +13,13 @@ import type { InternalToolContext } from "./types.js";
 import { str, fail } from "./types.js";
 import type { BusinessStopReason } from "@vex-agent/engine/types.js";
 import { applyMissionPatch } from "@vex-agent/engine/mission/setup.js";
+import {
+  authorizeMissionStopReason,
+  isModelMissionStopReason,
+  MODEL_MISSION_STOP_REASONS,
+} from "@vex-agent/engine/mission/stop-contract.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
+import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 
 const MAX_STRING_LENGTH = 2_000;
 const MAX_ARRAY_ITEMS = 50;
@@ -31,6 +37,7 @@ const MissionDraftUpdateArgs = z
     riskProfile: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     successCriteria: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     stopConditions: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
+    stopConditionsAccepted: z.boolean().nullable().optional(),
     deadline: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
   })
   .strict()
@@ -38,14 +45,6 @@ const MissionDraftUpdateArgs = z
     (value) => Object.values(value).some((v) => v !== undefined),
     { message: "Provide at least one mission draft field to update" },
   );
-
-const VALID_STOP_REASONS = new Set<string>([
-  "goal_reached",
-  "deadline_reached",
-  "capital_depleted",
-  "max_loss_hit",
-  "no_viable_opportunity",
-]);
 
 export async function handleMissionDraftUpdate(
   params: Record<string, unknown>,
@@ -104,8 +103,24 @@ export async function handleMissionStop(
   if (!reason) return fail("Missing required: reason");
   if (!summary) return fail("Missing required: summary");
 
-  if (!VALID_STOP_REASONS.has(reason)) {
-    return fail(`Invalid stop reason "${reason}". Must be one of: ${[...VALID_STOP_REASONS].join(", ")}`);
+  if (!isModelMissionStopReason(reason)) {
+    return fail(`Invalid stop reason "${reason}". Must be one of: ${MODEL_MISSION_STOP_REASONS.join(", ")}`);
+  }
+
+  if (reason !== "goal_reached" && reason !== "emergency_stop") {
+    if (!context.missionId) {
+      return fail("mission_stop requires an active mission contract");
+    }
+
+    const mission = await missionsRepo.getMission(context.missionId);
+    if (!mission) {
+      return fail(`mission_stop could not load mission contract ${context.missionId}`);
+    }
+
+    const authorization = authorizeMissionStopReason(mission, reason as BusinessStopReason);
+    if (!authorization.allowed) {
+      return fail(`mission_stop rejected: ${authorization.message ?? "reason is not allowed by the mission contract"}`);
+    }
   }
 
   const evidence = typeof params.evidence === "object" && params.evidence !== null

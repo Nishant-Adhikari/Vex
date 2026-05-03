@@ -59,9 +59,9 @@ describe("engine types", () => {
     it("covers all business stop reasons", () => {
       const values: BusinessStopReason[] = [
         "goal_reached", "deadline_reached", "capital_depleted",
-        "max_loss_hit", "no_viable_opportunity", "user_stopped",
+        "max_loss_hit", "no_viable_opportunity", "emergency_stop", "user_stopped",
       ];
-      expect(values).toHaveLength(6);
+      expect(values).toHaveLength(7);
     });
   });
 
@@ -125,9 +125,10 @@ describe("engine types", () => {
         riskProfile: null,
         successCriteria: null,
         stopConditions: null,
+        stopConditionsAccepted: null,
         deadline: null,
       };
-      expect(Object.keys(draft)).toHaveLength(11);
+      expect(Object.keys(draft)).toHaveLength(12);
     });
 
     it("accepts populated values", () => {
@@ -142,6 +143,7 @@ describe("engine types", () => {
         riskProfile: "conservative",
         successCriteria: ["Accumulated 10 SOL"],
         stopConditions: ["capital_depleted", "deadline_reached"],
+        stopConditionsAccepted: true,
         deadline: "2026-04-04",
       };
       expect(draft.title).toBe("SOL DCA Strategy");

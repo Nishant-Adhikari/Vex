@@ -138,6 +138,23 @@ function makeMission(overrides = {}) {
   };
 }
 
+function makeReadyMission(overrides = {}) {
+  return makeMission({
+    status: "ready",
+    title: "SOL DCA",
+    goal: "Accumulate 10 SOL",
+    capitalSourceJson: { type: "wallet", amount: "500 USDC" },
+    allowedWallets: ["solana"],
+    allowedChains: ["solana"],
+    allowedProtocols: ["solana"],
+    riskProfile: "conservative",
+    successCriteriaJson: ["Accumulated 10 SOL"],
+    stopConditionsJson: ["capital_depleted"],
+    constraintsJson: { stopConditionsAccepted: true },
+    ...overrides,
+  });
+}
+
 describe("runner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -220,24 +237,7 @@ describe("runner", () => {
 
   describe("startMission", () => {
     it("validates, freezes, creates run, and enters loop", async () => {
-      mockGetMission.mockResolvedValueOnce({
-        id: "mission-1",
-        rootSessionId: "session-1",
-        status: "ready",
-        title: "SOL DCA",
-        goal: "Accumulate 10 SOL",
-        capitalSourceJson: { type: "wallet", amount: "500 USDC" },
-        allowedWallets: ["solana"],
-        allowedChains: ["solana"],
-        allowedProtocols: ["solana"],
-        riskProfile: "conservative",
-        successCriteriaJson: ["Accumulated 10 SOL"],
-        stopConditionsJson: ["capital_depleted"],
-        constraintsJson: {},
-        createdAt: "2026-03-29",
-        updatedAt: "2026-03-29",
-        approvedAt: null,
-      });
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
       mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
       mockRunTurnLoop.mockResolvedValueOnce({
         text: "Starting mission...", toolCallsMade: 2, pendingApprovals: [], stopReason: null,
@@ -250,6 +250,77 @@ describe("runner", () => {
       expect(mockCreateRun).toHaveBeenCalled();
       expect(result.text).toBe("Starting mission...");
       expect(result.missionStatus).toBe("running");
+    });
+
+    it("marks only goal_reached as completed", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Done",
+        toolCallsMade: 1,
+        pendingApprovals: [],
+        stopReason: "goal_reached",
+        stopPayload: { summary: "Target hit" },
+      });
+
+      const result = await startMission("mission-1");
+
+      expect(result.missionStatus).toBe("completed");
+      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "completed");
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+        expect.any(String),
+        "completed",
+        "goal_reached",
+        { summary: "Target hit" },
+      );
+    });
+
+    it("marks accepted non-success stop reasons as failed", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission({
+        stopConditionsJson: ["no_viable_opportunity"],
+      }));
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "No viable setup",
+        toolCallsMade: 1,
+        pendingApprovals: [],
+        stopReason: "no_viable_opportunity",
+        stopPayload: { summary: "No viable setup" },
+      });
+
+      const result = await startMission("mission-1");
+
+      expect(result.missionStatus).toBe("failed");
+      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed");
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+        expect.any(String),
+        "failed",
+        "no_viable_opportunity",
+        { summary: "No viable setup" },
+      );
+    });
+
+    it("marks emergency stops as failed", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Emergency",
+        toolCallsMade: 1,
+        pendingApprovals: [],
+        stopReason: "emergency_stop",
+        stopPayload: { summary: "Wallet state cannot be verified" },
+      });
+
+      const result = await startMission("mission-1");
+
+      expect(result.missionStatus).toBe("failed");
+      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed");
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+        expect.any(String),
+        "failed",
+        "emergency_stop",
+        { summary: "Wallet state cannot be verified" },
+      );
     });
 
     it("throws if mission not found", async () => {

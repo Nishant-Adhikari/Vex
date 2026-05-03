@@ -38,7 +38,6 @@ export function buildBasePrompt(context: EngineContext): string {
 
   lines.push("# Current Context");
   lines.push("");
-  lines.push(`Date: ${new Date().toISOString().slice(0, 10)}`);
   lines.push(`Session: ${context.sessionId}`);
   lines.push(`Mode: ${context.sessionKind} / ${context.loopMode}`);
   if (context.missionId) lines.push(`Mission: ${context.missionId}`);
@@ -91,11 +90,12 @@ function resolveAspect(ctx: EngineContext): string {
   if (ctx.missionRunId) {
     return [
       "You are in MISSION RUN — VEX as executor. Pursue the frozen mission goal",
-      "autonomously. Iterate through tools and reflections until a business stop",
-      "fires (goal_reached, capital_depleted, deadline_reached, max_loss_hit,",
-      "no_viable_opportunity, user_stopped). Call `mission_stop` with the correct",
-      "reason when a stop condition is met — writing about stopping is not",
-      "stopping. Do not abandon the mission silently.",
+      "autonomously. Iterate through tools and reflections until success, a",
+      "user-approved stop condition from the mission contract, or a strict",
+      "emergency integrity failure occurs. Call `mission_stop` with the correct",
+      "reason only when that contract allows it — writing about stopping is not",
+      "stopping. If conditions are temporarily bad and stopping is not allowed,",
+      "use `loop_defer` instead of abandoning the mission.",
     ].join("\n");
   }
   if (ctx.sessionKind === "full_autonomous") {

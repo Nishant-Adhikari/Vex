@@ -82,12 +82,18 @@ export async function applyMissionPatch(
   const extracted = extractMissionPatch(rawModelOutput);
   if (extracted) {
     const sanitized = sanitizePatch(extracted);
+    if (sanitized.stopConditions !== undefined && sanitized.stopConditionsAccepted !== true) {
+      sanitized.stopConditionsAccepted = false;
+    }
     if (Object.keys(sanitized).length > 0) {
       const rowPatch = domainToRow(sanitized);
 
       // Merge capital_source_json with existing to avoid losing fields on partial update
       if (rowPatch.capital_source_json && mission.capitalSourceJson) {
         rowPatch.capital_source_json = { ...mission.capitalSourceJson, ...rowPatch.capital_source_json };
+      }
+      if (rowPatch.constraints_json && mission.constraintsJson) {
+        rowPatch.constraints_json = { ...mission.constraintsJson, ...rowPatch.constraints_json };
       }
 
       await missionsRepo.updateDraft(missionId, rowPatch);

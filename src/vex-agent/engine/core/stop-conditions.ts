@@ -19,6 +19,7 @@ const BUSINESS_STOPS = new Set<string>([
   "capital_depleted",
   "max_loss_hit",
   "no_viable_opportunity",
+  "emergency_stop",
   "user_stopped",
 ]);
 
@@ -37,8 +38,8 @@ const RUNTIME_PAUSES = new Set<string>([
  * is resumed by operator approval, `waiting_for_wake` by the wake executor
  * (PR-7), `checkpoint_pause` by the checkpoint auto-resume. `iteration_limit`,
  * `timeout`, `system_error`, and `waiting_for_parent` are in RUNTIME_PAUSES
- * (they stop a run without marking the mission as business-completed) but are
- * NOT resumable — they represent terminated work the caller must re-kick.
+ * (they stop a run without marking the mission goal as successful) but are NOT
+ * resumable — they represent terminated work the caller must re-kick.
  */
 const RESUMABLE_STOPS = new Set<string>([
   "approval_required",

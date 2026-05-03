@@ -3,6 +3,7 @@ import { makeTestContext } from "../_test-context.js";
 
 const mockApplyMissionPatch = vi.fn();
 const mockGetRunBySession = vi.fn();
+const mockGetMission = vi.fn();
 
 vi.mock("@vex-agent/engine/mission/setup.js", () => ({
   applyMissionPatch: (...a: unknown[]) => mockApplyMissionPatch(...a),
@@ -10,6 +11,10 @@ vi.mock("@vex-agent/engine/mission/setup.js", () => ({
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getRunBySession: (...a: unknown[]) => mockGetRunBySession(...a),
+}));
+
+vi.mock("@vex-agent/db/repos/missions.js", () => ({
+  getMission: (...a: unknown[]) => mockGetMission(...a),
 }));
 
 vi.mock("@vex-agent/db/client.js", () => ({
@@ -29,7 +34,19 @@ const baseContext = makeTestContext({
 beforeEach(() => {
   mockApplyMissionPatch.mockReset();
   mockGetRunBySession.mockReset();
+  mockGetMission.mockReset();
   mockGetRunBySession.mockResolvedValue(null);
+  mockGetMission.mockResolvedValue({
+    id: "mission-1",
+    status: "running",
+    stopConditionsJson: [
+      "deadline_reached",
+      "capital_depleted",
+      "max_loss_hit",
+      "no_viable_opportunity",
+    ],
+    constraintsJson: { stopConditionsAccepted: true },
+  });
 });
 
 describe("mission_draft_update tool", () => {
@@ -56,6 +73,26 @@ describe("mission_draft_update tool", () => {
       ready: true,
       nextCommand: "/mission start",
     }));
+  });
+
+  it("passes stop condition updates through the setup boundary", async () => {
+    mockApplyMissionPatch.mockResolvedValueOnce({
+      missionId: "mission-1",
+      status: "draft",
+      currentDraft: { stopConditions: ["capital_depleted"], stopConditionsAccepted: false },
+      missingFields: ["stopConditions"],
+      ready: false,
+    });
+
+    const result = await handleMissionDraftUpdate(
+      { stopConditions: ["capital_depleted"] },
+      { ...baseContext, missionRunId: null },
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockApplyMissionPatch).toHaveBeenCalledWith("mission-1", {
+      stopConditions: ["capital_depleted"],
+    });
   });
 
   it("returns /mission continue when a prior run exists", async () => {
@@ -112,7 +149,7 @@ describe("mission_stop tool", () => {
   });
 
   it("accepts all valid stop reasons", async () => {
-    const reasons = ["goal_reached", "deadline_reached", "capital_depleted", "max_loss_hit", "no_viable_opportunity"];
+    const reasons = ["goal_reached", "deadline_reached", "capital_depleted", "max_loss_hit", "no_viable_opportunity", "emergency_stop"];
     for (const reason of reasons) {
       const result = await handleMissionStop({ reason, summary: "test" }, baseContext);
       expect(result.success).toBe(true);
@@ -147,6 +184,35 @@ describe("mission_stop tool", () => {
       baseContext,
     );
     expect(result.engineSignal!.evidence).toEqual({ balanceUsd: 0.12 });
+  });
+
+  it("rejects unaccepted user-configurable stop reasons", async () => {
+    mockGetMission.mockResolvedValueOnce({
+      id: "mission-1",
+      status: "running",
+      stopConditionsJson: ["deadline_reached"],
+      constraintsJson: { stopConditionsAccepted: true },
+    });
+
+    const result = await handleMissionStop(
+      { reason: "no_viable_opportunity", summary: "No setup right now" },
+      baseContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not in the accepted mission stop conditions");
+  });
+
+  it("allows emergency_stop without a configured stop condition", async () => {
+    mockGetMission.mockReset();
+    const result = await handleMissionStop(
+      { reason: "emergency_stop", summary: "Wallet state cannot be verified" },
+      baseContext,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockGetMission).not.toHaveBeenCalled();
+    expect(result.engineSignal!.reason).toBe("emergency_stop");
   });
 
   it("rejects when no active mission run (missionRunId null)", async () => {

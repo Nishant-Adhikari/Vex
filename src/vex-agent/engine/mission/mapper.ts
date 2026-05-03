@@ -13,6 +13,7 @@ import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 /** Convert a DB Mission row to domain MissionDraft. */
 export function missionToDraft(m: Mission): MissionDraft {
   const src = m.capitalSourceJson as Record<string, unknown>;
+  const constraints = m.constraintsJson as Record<string, unknown>;
   return {
     title: m.title,
     goal: m.goal,
@@ -24,7 +25,10 @@ export function missionToDraft(m: Mission): MissionDraft {
     riskProfile: m.riskProfile,
     successCriteria: m.successCriteriaJson.length > 0 ? m.successCriteriaJson : null,
     stopConditions: m.stopConditionsJson.length > 0 ? m.stopConditionsJson : null,
-    deadline: (m.constraintsJson as Record<string, unknown>)?.deadline as string ?? null,
+    stopConditionsAccepted: typeof constraints.stopConditionsAccepted === "boolean"
+      ? constraints.stopConditionsAccepted
+      : null,
+    deadline: constraints?.deadline as string ?? null,
   };
 }
 
@@ -49,9 +53,14 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
     };
   }
 
-  // deadline → constraints_json
-  if (draft.deadline !== undefined) {
-    row.constraints_json = { deadline: draft.deadline };
+  // setup metadata → constraints_json
+  if (draft.deadline !== undefined || draft.stopConditionsAccepted !== undefined) {
+    row.constraints_json = {
+      ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
+      ...(draft.stopConditionsAccepted !== undefined
+        ? { stopConditionsAccepted: draft.stopConditionsAccepted === true }
+        : {}),
+    };
   }
 
   return row;

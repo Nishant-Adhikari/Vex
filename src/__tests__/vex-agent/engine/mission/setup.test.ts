@@ -119,6 +119,7 @@ describe("mission setup", () => {
         riskProfile: "conservative",
         successCriteriaJson: ["Accumulated 10 SOL"],
         stopConditionsJson: ["capital_depleted"],
+        constraintsJson: { stopConditionsAccepted: true },
       });
 
       mockGetMission.mockResolvedValueOnce(makeMission({
@@ -132,12 +133,48 @@ describe("mission setup", () => {
 
       const result = await applyMissionPatch("mission-1", {
         stopConditions: ["capital_depleted"],
+        stopConditionsAccepted: true,
       });
 
       expect(result.ready).toBe(true);
       expect(result.status).toBe("ready");
       expect(result.missingFields).toHaveLength(0);
       expect(mockSetStatus).toHaveBeenCalledWith("mission-1", "ready");
+    });
+
+    it("does not transition to ready when stop conditions are not user accepted", async () => {
+      const completeButUnacceptedMission = makeMission({
+        title: "SOL DCA",
+        goal: "Accumulate 10 SOL",
+        capitalSourceJson: { type: "wallet", amount: "500 USDC" },
+        allowedWallets: ["solana"],
+        allowedChains: ["solana"],
+        allowedProtocols: ["solana"],
+        riskProfile: "conservative",
+        successCriteriaJson: ["Accumulated 10 SOL"],
+        stopConditionsJson: ["capital_depleted"],
+        constraintsJson: { stopConditionsAccepted: false },
+      });
+
+      mockGetMission.mockResolvedValueOnce(makeMission({
+        ...completeButUnacceptedMission,
+        stopConditionsJson: [],
+        constraintsJson: {},
+      }));
+      mockGetMission.mockResolvedValueOnce(completeButUnacceptedMission);
+
+      const result = await applyMissionPatch("mission-1", {
+        stopConditions: ["capital_depleted"],
+      });
+
+      expect(result.ready).toBe(false);
+      expect(result.status).toBe("draft");
+      expect(result.missingFields).toContain("stopConditions");
+      expect(mockUpdateDraft).toHaveBeenCalledWith("mission-1", expect.objectContaining({
+        stop_conditions_json: ["capital_depleted"],
+        constraints_json: { stopConditionsAccepted: false },
+      }));
+      expect(mockSetStatus).not.toHaveBeenCalledWith("mission-1", "ready");
     });
 
     it("does not re-transition if already ready", async () => {
@@ -152,6 +189,7 @@ describe("mission setup", () => {
         riskProfile: "conservative",
         successCriteriaJson: ["Accumulated 10 SOL"],
         stopConditionsJson: ["capital_depleted"],
+        constraintsJson: { stopConditionsAccepted: true },
       });
 
       mockGetMission.mockResolvedValueOnce(readyMission);
@@ -173,6 +211,7 @@ describe("mission setup", () => {
         riskProfile: "conservative",
         successCriteriaJson: ["Accumulated 10 SOL"],
         stopConditionsJson: ["capital_depleted"],
+        constraintsJson: { stopConditionsAccepted: true },
       });
       mockGetMission.mockResolvedValueOnce(readyMission);
       mockGetMission.mockResolvedValueOnce(makeMission({

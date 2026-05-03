@@ -366,7 +366,8 @@ export async function resumeMissionRun(
 
 /**
  * Finalize mission + run status based on stop reason.
- * Business stops → mission completed/cancelled, run terminated.
+ * Business stops → mission completed only on success; unsuccessful terminal
+ * stops fail the mission so "completed" never means "goal not reached".
  * Runtime stops (iteration_limit, timeout) → mission failed, run failed.
  * Approval pause → run paused (already handled in turn-loop).
  * No stop → running.
@@ -389,7 +390,11 @@ async function finalizeMissionRunStatus(
       return "draft";
     }
 
-    const status: MissionStatus = stopReason === "user_stopped" ? "cancelled" : "completed";
+    const status: MissionStatus = stopReason === "goal_reached"
+      ? "completed"
+      : stopReason === "user_stopped"
+        ? "cancelled"
+        : "failed";
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     return status;

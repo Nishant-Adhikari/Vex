@@ -34,6 +34,9 @@ export function buildMissionSetupPrompt(
   lines.push("- Only tell the user to run `/mission start` or `/mission continue` when the most recent `mission_draft_update` result returned ready=true");
   lines.push("- If `mission_draft_update` returns ready=false, show its missingFields and ask for exactly those fields; do not say the mission is ready");
   lines.push("- Never use `undefined` as a mission field value. Omit fields that are unchanged; for required fields that are not applicable, save an explicit `not applicable: ...` reason");
+  lines.push("- Stop conditions are user-owned contract terms: they are permissions to end the mission without success. You may propose them, but they are not final until the user directly provides or explicitly accepts the exact list");
+  lines.push("- Do not save stopConditionsAccepted=true unless the user provided the stop conditions or accepted your proposed list (for example: yes, looks good, use your defaults, everything is up to you)");
+  lines.push("- If you update stopConditions without stopConditionsAccepted=true, the draft remains not ready. Ask the user to confirm or revise the stop conditions");
   lines.push("");
 
   lines.push("## Required Fields");
@@ -46,8 +49,17 @@ export function buildMissionSetupPrompt(
   lines.push("- **allowedProtocols** — which protocols to use");
   lines.push("- **riskProfile** — conservative, moderate, or aggressive");
   lines.push("- **successCriteria** — how to know the mission succeeded");
-  lines.push("- **stopConditions** — when to stop (capital depleted, deadline, etc.)");
+  lines.push("- **stopConditions** — user-approved non-success stops. Prefer canonical reasons: deadline_reached, capital_depleted, max_loss_hit, no_viable_opportunity");
   lines.push("- **deadline** (optional) — time limit for the mission");
+  lines.push("");
+  lines.push("## Stop Condition Semantics");
+  lines.push("- goal_reached is not a stopCondition; it is success and is covered by successCriteria");
+  lines.push("- stopConditions are non-success terminal permissions. If a condition is not accepted here, the mission runner must not stop for that reason later");
+  lines.push("- deadline_reached means the user agreed the mission may stop when the time limit is hit");
+  lines.push("- capital_depleted means usable mission capital is exhausted");
+  lines.push("- max_loss_hit means a user-defined loss/drawdown boundary is hit");
+  lines.push("- no_viable_opportunity means the mission may stop without reaching the goal because the agreed opportunity criteria are absent; explain this risk before asking for acceptance");
+  lines.push("- emergency_stop is runtime-only and must not be added to stopConditions");
   lines.push("");
 
   if (setupContext) {

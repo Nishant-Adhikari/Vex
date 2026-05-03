@@ -10,7 +10,7 @@ function makeMission(overrides: Partial<Mission> = {}): Mission {
     status: "ready",
     title: "SOL DCA",
     goal: "Accumulate 10 SOL over 7 days",
-    constraintsJson: { deadline: "2026-04-04" },
+    constraintsJson: { deadline: "2026-04-04", stopConditionsAccepted: true },
     successCriteriaJson: ["Accumulated 10 SOL"],
     stopConditionsJson: ["capital_depleted", "deadline_reached"],
     riskProfile: "conservative",
@@ -39,6 +39,7 @@ describe("mission mapper", () => {
       expect(draft.riskProfile).toBe("conservative");
       expect(draft.successCriteria).toEqual(["Accumulated 10 SOL"]);
       expect(draft.stopConditions).toEqual(["capital_depleted", "deadline_reached"]);
+      expect(draft.stopConditionsAccepted).toBe(true);
       expect(draft.deadline).toBe("2026-04-04");
     });
 
@@ -54,6 +55,7 @@ describe("mission mapper", () => {
       expect(draft.capitalSource).toBeNull();
       expect(draft.startingCapital).toBeNull();
       expect(draft.allowedChains).toBeNull();
+      expect(draft.stopConditionsAccepted).toBeNull();
       expect(draft.deadline).toBeNull();
     });
   });
@@ -85,6 +87,11 @@ describe("mission mapper", () => {
     it("converts deadline to constraints_json", () => {
       const row = domainToRow({ deadline: "2026-04-04" });
       expect(row.constraints_json).toEqual({ deadline: "2026-04-04" });
+    });
+
+    it("converts stop condition acceptance to constraints_json", () => {
+      const row = domainToRow({ stopConditionsAccepted: true });
+      expect(row.constraints_json).toEqual({ stopConditionsAccepted: true });
     });
 
     it("converts null arrays to empty arrays", () => {

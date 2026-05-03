@@ -36,6 +36,7 @@ function makeCompleteMission(): Mission {
     riskProfile: "conservative",
     successCriteriaJson: ["Accumulated 10 SOL"],
     stopConditionsJson: ["capital_depleted", "deadline_reached"],
+    constraintsJson: { stopConditionsAccepted: true },
   });
 }
 
@@ -100,6 +101,23 @@ describe("mission validator", () => {
       expect(missing).toContain("allowedProtocols");
       expect(missing).toContain("allowedWallets");
       expect(missing).toContain("successCriteria");
+      expect(missing).toContain("stopConditions");
+    });
+
+    it("requires user-accepted stop conditions for draft readiness", () => {
+      const missing = getMissingFields(makeMission({
+        ...makeCompleteMission(),
+        constraintsJson: {},
+      }));
+      expect(missing).toContain("stopConditions");
+    });
+
+    it("requires explicit stop condition acceptance even after a status transition", () => {
+      const missing = getMissingFields(makeMission({
+        ...makeCompleteMission(),
+        status: "ready",
+        constraintsJson: {},
+      }));
       expect(missing).toContain("stopConditions");
     });
 

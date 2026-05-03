@@ -75,13 +75,16 @@ describe("hydrate", () => {
     mockGetSession.mockResolvedValueOnce({
       id: "session-1", scope: "chat", summary: "Previous summary",
       compacted: true, messageCount: 5, tokenCount: 5000,
+      startedAt: "2026-05-03T08:01:02.000Z",
     });
     mockGetMissionBySession.mockResolvedValueOnce({
       id: "mission-1", rootSessionId: "session-1", status: "running",
+      constraintsJson: { deadline: "2026-05-03T14:10:00.000Z" },
     });
     mockGetActiveRun.mockResolvedValueOnce({
       id: "run-1", missionId: "mission-1", sessionId: "session-1",
       loopMode: "restricted", status: "running",
+      startedAt: "2026-05-03T08:10:00.000Z",
     });
 
     const result = await hydrateEngineSession("session-1");
@@ -89,6 +92,9 @@ describe("hydrate", () => {
     expect(result!.context.missionId).toBe("mission-1");
     expect(result!.context.missionRunId).toBe("run-1");
     expect(result!.context.loopMode).toBe("restricted");
+    expect(result!.context.sessionStartedAt).toBe("2026-05-03T08:01:02.000Z");
+    expect(result!.context.missionRunStartedAt).toBe("2026-05-03T08:10:00.000Z");
+    expect(result!.context.missionDeadline).toBe("2026-05-03T14:10:00.000Z");
     expect(result!.summary).toBe("Previous summary");
   });
 

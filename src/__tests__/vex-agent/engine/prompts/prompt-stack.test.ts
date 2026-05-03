@@ -15,6 +15,7 @@ import {
   buildModePrompt,
   buildToolUsagePrompt,
 } from "../../../../vex-agent/engine/prompts/index.js";
+import { buildRuntimeClockSnapshot } from "../../../../vex-agent/engine/runtime-clock.js";
 import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST, PROTOCOL_TOOLS } from "../../../../vex-agent/tools/protocols/catalog.js";
 
 function makeContext(overrides: Partial<EngineContext> = {}): EngineContext {
@@ -278,6 +279,8 @@ describe("prompt-stack", () => {
       expect(joined).toContain("SOL DCA");
       expect(joined).toContain("Still Missing");
       expect(joined).toContain("capitalSource");
+      expect(joined).toContain("Stop conditions are user-owned contract terms");
+      expect(joined).toContain("stopConditionsAccepted=true");
     });
 
     it("mission run with context shows mission contract", () => {
@@ -368,6 +371,35 @@ describe("prompt-stack", () => {
       expect(joined).toContain("test-session");
     });
 
+    it("includes runtime clock context for session and mission timing", () => {
+      const runtimeClock = buildRuntimeClockSnapshot({
+        now: new Date("2026-05-03T08:39:18.126Z"),
+        timezone: "UTC",
+        sessionStartedAt: "2026-05-03T08:01:02.000Z",
+        missionRunStartedAt: "2026-05-03T08:10:00.000Z",
+        missionDeadline: "2026-05-03T14:10:00.000Z",
+      });
+      const stack = buildPromptStack(
+        makeContext({
+          sessionKind: "mission",
+          missionId: "m-1",
+          missionRunId: "run-1",
+          sessionStartedAt: "2026-05-03T08:01:02.000Z",
+          missionRunStartedAt: "2026-05-03T08:10:00.000Z",
+          missionDeadline: "2026-05-03T14:10:00.000Z",
+        }),
+        { runtimeClock },
+      );
+      const joined = stack.join("\n");
+
+      expect(joined).toContain("# Runtime Clock");
+      expect(joined).toContain("Current time UTC: 2026-05-03T08:39:18.126Z");
+      expect(joined).toContain("Session started: 2026-05-03T08:01:02.000Z (elapsed: 38m 16s)");
+      expect(joined).toContain("Mission run started: 2026-05-03T08:10:00.000Z (elapsed: 29m 18s)");
+      expect(joined).toContain("Mission deadline: 2026-05-03T14:10:00.000Z (in 5h 30m)");
+      expect(joined).toContain("loop_defer(after_ms, reason)");
+    });
+
     it("includes loaded documents", () => {
       const stack = buildPromptStack(makeContext({
         loadedDocuments: new Map([["strategy.md", "# Strategy\nBuy low sell high"]]),
@@ -414,6 +446,8 @@ describe("prompt-stack", () => {
       expect(joined).toContain("MISSION RUN");
       expect(joined).toContain("executor");
       expect(joined).toContain("mission_stop");
+      expect(joined).toContain("user-approved stop condition");
+      expect(joined).toContain("loop_defer");
       expect(joined).not.toContain("teacher and collaborator");
       expect(joined).not.toContain("planner");
     });

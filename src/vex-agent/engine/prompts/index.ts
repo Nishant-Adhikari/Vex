@@ -18,12 +18,19 @@ import { buildMissionSetupPrompt, type MissionSetupContext } from "./mission-set
 import { buildMissionRunPrompt, type MissionRunContext } from "./mission-run.js";
 import { buildFullAutonomousPrompt, type FullAutonomousContext } from "./full-autonomous.js";
 import { buildSubagentPrompt, type SubagentContext } from "./subagent.js";
+import {
+  buildRuntimeClockPrompt,
+  buildRuntimeClockSnapshot,
+  type RuntimeClockSnapshot,
+} from "../runtime-clock.js";
 
 export interface PromptStackOptions {
   missionSetupContext?: MissionSetupContext;
   missionRunContext?: MissionRunContext;
   fullAutonomousContext?: FullAutonomousContext;
   subagentContext?: SubagentContext;
+  /** Optional test/host override; production builds this from EngineContext. */
+  runtimeClock?: RuntimeClockSnapshot;
   /**
    * Pre-formatted Active Knowledge block (hot context entries + Known kinds).
    * Built by `formatActiveKnowledgeBlock` after pre-fetching repo state in
@@ -46,6 +53,11 @@ export function buildPromptStack(
 
   // ── CONSTANT — always present ─────────────────────────────
   layers.push(buildBasePrompt(context));
+  layers.push(buildRuntimeClockPrompt(options.runtimeClock ?? buildRuntimeClockSnapshot({
+    sessionStartedAt: context.sessionStartedAt ?? null,
+    missionRunStartedAt: context.missionRunStartedAt ?? null,
+    missionDeadline: context.missionDeadline ?? null,
+  })));
   // Active Knowledge block is pre-fetched in executeTurn (sync option here).
   // Empty string means "no entries and no known kinds yet" → skip the layer entirely.
   if (options.activeKnowledgeBlock && options.activeKnowledgeBlock.length > 0) {

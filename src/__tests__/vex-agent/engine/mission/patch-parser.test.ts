@@ -146,6 +146,7 @@ describe("patch-parser", () => {
         allowedProtocols: ["solana"],
         successCriteria: ["Accumulated 10 SOL"],
         stopConditions: ["capital_depleted", "deadline_reached"],
+        stopConditionsAccepted: true,
         deadline: "2026-04-04",
       });
 
@@ -159,6 +160,7 @@ describe("patch-parser", () => {
       expect(result.allowedProtocols).toEqual(["solana"]);
       expect(result.successCriteria).toEqual(["Accumulated 10 SOL"]);
       expect(result.stopConditions).toEqual(["capital_depleted", "deadline_reached"]);
+      expect(result.stopConditionsAccepted).toBe(true);
       expect(result.deadline).toBe("2026-04-04");
     });
   });

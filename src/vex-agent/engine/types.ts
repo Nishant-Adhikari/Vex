@@ -49,6 +49,7 @@ export type BusinessStopReason =
   | "capital_depleted"
   | "max_loss_hit"
   | "no_viable_opportunity"
+  | "emergency_stop"
   | "user_stopped";
 
 export type RuntimeStopReason =
@@ -98,6 +99,8 @@ export interface MissionDraft {
   riskProfile: string | null;
   successCriteria: string[] | null;
   stopConditions: string[] | null;
+  /** True only after the user directly provides or accepts stop conditions. */
+  stopConditionsAccepted?: boolean | null;
   /** Optional — mission may have no deadline. */
   deadline: string | null;
 }
@@ -135,6 +138,12 @@ export interface EngineContext {
   loopMode: LoopMode;
   missionId: string | null;
   missionRunId: string | null;
+  /** Session creation time from DB; used only for runtime clock prompt context. */
+  sessionStartedAt?: string | null;
+  /** Active mission run start time from DB; null outside active mission runs. */
+  missionRunStartedAt?: string | null;
+  /** Optional mission deadline from the frozen mission constraints. */
+  missionDeadline?: string | null;
   isSubagent: boolean;
   loadedDocuments: Map<string, string>;
   /**

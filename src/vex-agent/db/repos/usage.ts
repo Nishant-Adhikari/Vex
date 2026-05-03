@@ -7,6 +7,8 @@ import { queryOne, execute } from "../client.js";
 export interface UsageStats {
   sessionTokens: number;
   sessionCost: number;
+  sessionRequestCount: number;
+  sessionLastRequestAt: string | null;
   lifetimeTokens: number;
   lifetimeCost: number;
   requestCount: number;
@@ -44,21 +46,28 @@ export async function getStats(sessionId?: string, currency?: string): Promise<U
     currencyParams,
   );
 
-  let sessionTokens = 0, sessionCost = 0;
+  let sessionTokens = 0;
+  let sessionCost = 0;
+  let sessionRequestCount = 0;
+  let sessionLastRequestAt: string | null = null;
   if (sessionId) {
     const sessionClause = currency ? " AND currency = $2" : "";
     const sessionParams = currency ? [sessionId, currency] : [sessionId];
-    const session = await queryOne<{ tokens: string; cost: string }>(
-      `SELECT COALESCE(SUM(total_tokens),0) AS tokens, COALESCE(SUM(cost),0) AS cost FROM usage_log WHERE session_id = $1${sessionClause}`,
+    const session = await queryOne<{ tokens: string; cost: string; count: string; last: string | null }>(
+      `SELECT COALESCE(SUM(total_tokens),0) AS tokens, COALESCE(SUM(cost),0) AS cost, COUNT(*) AS count, MAX(created_at) AS last FROM usage_log WHERE session_id = $1${sessionClause}`,
       sessionParams,
     );
     sessionTokens = parseInt(session?.tokens ?? "0", 10);
     sessionCost = parseFloat(session?.cost ?? "0");
+    sessionRequestCount = parseInt(session?.count ?? "0", 10);
+    sessionLastRequestAt = session?.last ?? null;
   }
 
   return {
     sessionTokens,
     sessionCost,
+    sessionRequestCount,
+    sessionLastRequestAt,
     lifetimeTokens: parseInt(lifetime?.tokens ?? "0", 10),
     lifetimeCost: parseFloat(lifetime?.cost ?? "0"),
     requestCount: parseInt(lifetime?.count ?? "0", 10),

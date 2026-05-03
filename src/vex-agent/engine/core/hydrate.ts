@@ -41,11 +41,12 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
 
   // Load active mission (excludes completed/failed/cancelled)
   const mission = await missionsRepo.getActiveMission(sessionId);
+  let activeRun: missionRunsRepo.MissionRun | null = null;
   let missionRunId: string | null = null;
   let loopMode: LoopMode = "off";
 
   if (mission) {
-    const activeRun = await missionRunsRepo.getActiveRun(mission.id);
+    activeRun = await missionRunsRepo.getActiveRun(mission.id);
     if (activeRun) {
       missionRunId = activeRun.id;
       loopMode = activeRun.loopMode as LoopMode;
@@ -74,6 +75,9 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
       loopMode,
       missionId: mission?.id ?? null,
       missionRunId,
+      sessionStartedAt: session.startedAt,
+      missionRunStartedAt: activeRun?.startedAt ?? null,
+      missionDeadline: extractMissionDeadline(mission?.constraintsJson ?? null),
       isSubagent,
       loadedDocuments: new Map(), // Populated by caller
       memoryScopeKey: session.memoryScopeKey ?? sessionId,
@@ -82,4 +86,9 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
     summary: session.summary ?? null,
     tokenCount: session.tokenCount,
   };
+}
+
+function extractMissionDeadline(constraints: Record<string, unknown> | null): string | null {
+  const raw = constraints?.deadline;
+  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
 }

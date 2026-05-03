@@ -16,7 +16,7 @@ describe("stop-conditions", () => {
   describe("isBusinessStop", () => {
     const businessReasons: StopReason[] = [
       "goal_reached", "deadline_reached", "capital_depleted",
-      "max_loss_hit", "no_viable_opportunity", "user_stopped",
+      "max_loss_hit", "no_viable_opportunity", "emergency_stop", "user_stopped",
     ];
 
     for (const reason of businessReasons) {
@@ -74,6 +74,7 @@ describe("stop-conditions", () => {
     it("terminates on business stops", () => {
       expect(shouldTerminateRun("goal_reached")).toBe(true);
       expect(shouldTerminateRun("capital_depleted")).toBe(true);
+      expect(shouldTerminateRun("emergency_stop")).toBe(true);
       expect(shouldTerminateRun("user_stopped")).toBe(true);
     });
 

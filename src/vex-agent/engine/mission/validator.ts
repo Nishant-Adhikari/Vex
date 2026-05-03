@@ -7,6 +7,7 @@
 
 import type { Mission } from "@vex-agent/db/repos/missions.js";
 import { MISSION_DRAFT_REQUIRED_FIELDS } from "../types.js";
+import { areStopConditionsAcceptedByUser } from "./stop-contract.js";
 
 // ── Field mapping: domain field → DB column accessor ────────────
 
@@ -28,7 +29,11 @@ const FIELD_ACCESSORS: Record<string, FieldAccessor> = {
   allowedProtocols: m => m.allowedProtocols.length > 0 ? m.allowedProtocols : null,
   riskProfile: m => m.riskProfile,
   successCriteria: m => m.successCriteriaJson.length > 0 ? m.successCriteriaJson : null,
-  stopConditions: m => m.stopConditionsJson.length > 0 ? m.stopConditionsJson : null,
+  stopConditions: m => (
+    m.stopConditionsJson.length > 0 && areStopConditionsAcceptedByUser(m)
+      ? m.stopConditionsJson
+      : null
+  ),
 };
 
 // ── Public API ──────────────────────────────────────────────────

@@ -20,9 +20,14 @@ const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([
   "successCriteria", "stopConditions",
 ]);
 
+const ALLOWED_BOOLEAN_KEYS = new Set<keyof MissionDraft>([
+  "stopConditionsAccepted",
+]);
+
 const ALL_ALLOWED_KEYS = new Set<string>([
   ...ALLOWED_STRING_KEYS,
   ...ALLOWED_ARRAY_KEYS,
+  ...ALLOWED_BOOLEAN_KEYS,
 ]);
 
 /** Max string field length (prevents unbounded model output). */
@@ -78,6 +83,11 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
+    } else if (ALLOWED_BOOLEAN_KEYS.has(key as keyof MissionDraft)) {
+      const sanitized = sanitizeBoolean(value);
+      if (sanitized !== undefined) {
+        (result as Record<string, unknown>)[key] = sanitized;
+      }
     }
   }
 
@@ -92,6 +102,12 @@ function sanitizeString(value: unknown): string | null | undefined {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
   return trimmed.slice(0, MAX_STRING_LENGTH);
+}
+
+function sanitizeBoolean(value: unknown): boolean | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "boolean") return undefined;
+  return value;
 }
 
 // ── Model output parser ─────────────────────────────────────────
