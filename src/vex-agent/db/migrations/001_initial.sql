@@ -408,7 +408,7 @@ CREATE TABLE proj_balances (
   id SERIAL PRIMARY KEY,
   wallet_family TEXT NOT NULL,
   wallet_address TEXT NOT NULL,
-  chain_id INTEGER,
+  chain_id BIGINT,
   token_address TEXT NOT NULL,
   token_symbol TEXT,
   token_name TEXT,

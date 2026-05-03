@@ -39,6 +39,12 @@ import {
   type Executor,
 } from "../client.js";
 
+export {
+  archivePrefix,
+  archiveSuffix,
+  forkToolMessageToArchive,
+} from "./sessions-archive.js";
+
 interface SessionRow {
   id: string;
   scope: string;
@@ -256,129 +262,6 @@ export async function setMemoryLanguageCode(
     exec,
     "UPDATE sessions SET memory_language_code = $2 WHERE id = $1 AND memory_language_code IS NULL",
     [id, code],
-  );
-}
-
-/**
- * Partial archive — move messages with `id <= cutoffMessageId` into
- * `messages_archive` and set the live `message_count` to `remainingCount`
- * (i.e. the tail length that stays).
- *
- * When called without `client`, opens its own transaction (standalone call
- * sites — e.g. forced compaction). When called WITH `client`, it runs as
- * part of the caller's existing transaction (the PR2 atomic checkpoint
- * write phase). Either way the combined "delete from messages + insert
- * into messages_archive + update sessions.message_count" stays atomic.
- *
- * Column parity between `messages` and `messages_archive` is required by
- * migration 002; this helper relies on that invariant.
- */
-export async function archivePrefix(
-  sessionId: string,
-  cutoffMessageId: number,
-  remainingCount: number,
-  client?: PoolClient,
-): Promise<void> {
-  if (client) {
-    await runArchivePrefixStatements(client, sessionId, cutoffMessageId, remainingCount);
-    return;
-  }
-  const pool = getPool();
-  const own = await pool.connect();
-  try {
-    await own.query("BEGIN");
-    await runArchivePrefixStatements(own, sessionId, cutoffMessageId, remainingCount);
-    await own.query("COMMIT");
-  } catch (err) {
-    await own.query("ROLLBACK").catch(() => {
-      // ROLLBACK failures are non-actionable; the original error is what matters.
-    });
-    throw err;
-  } finally {
-    own.release();
-  }
-}
-
-async function runArchivePrefixStatements(
-  tx: PoolClient,
-  sessionId: string,
-  cutoffMessageId: number,
-  remainingCount: number,
-): Promise<void> {
-  // ON CONFLICT (id) DO NOTHING handles the giant-tool fork/copy case:
-  // forkToolMessageToArchive already copied the pre-placeholder payload into
-  // messages_archive under the same id, so when the (now placeholder) row
-  // later ages into a normal prefix and gets moved here, we must NOT collide
-  // with the already-archived full payload. Dropping the placeholder insert
-  // is correct — archive already holds the canonical content.
-  await tx.query(
-    `WITH moved AS (
-       DELETE FROM messages
-       WHERE session_id = $1 AND id <= $2
-       RETURNING *
-     )
-     INSERT INTO messages_archive SELECT * FROM moved
-     ON CONFLICT (id) DO NOTHING`,
-    [sessionId, cutoffMessageId],
-  );
-  await tx.query(
-    "UPDATE sessions SET message_count = $2 WHERE id = $1",
-    [sessionId, remainingCount],
-  );
-}
-
-/**
- * Giant-tool fallback — COPY (not MOVE) a single live message into the archive
- * and replace the live row's `content` with a short placeholder.
- *
- * The live row keeps its `id` and `tool_call_id` so `assistant.tool_calls` ↔
- * `role:'tool'` pairing survives. The archive row carries the full payload
- * under the same `id`, so a future chunked-read tool can resolve the pointer
- * and `archivePrefix` can later drop the placeholder row without colliding
- * (both sides use `ON CONFLICT (id) DO NOTHING` to stay idempotent).
- */
-export async function forkToolMessageToArchive(
-  messageId: number,
-  placeholderContent: string,
-  client?: PoolClient,
-): Promise<void> {
-  if (client) {
-    await runForkToolStatements(client, messageId, placeholderContent);
-    return;
-  }
-  const pool = getPool();
-  const own = await pool.connect();
-  try {
-    await own.query("BEGIN");
-    await runForkToolStatements(own, messageId, placeholderContent);
-    await own.query("COMMIT");
-  } catch (err) {
-    await own.query("ROLLBACK").catch(() => {
-      // ROLLBACK failures are non-actionable; the original error is what matters.
-    });
-    throw err;
-  } finally {
-    own.release();
-  }
-}
-
-async function runForkToolStatements(
-  tx: PoolClient,
-  messageId: number,
-  placeholderContent: string,
-): Promise<void> {
-  // ON CONFLICT (id) DO NOTHING makes this retry-safe: if a crash between
-  // the archive insert and the live UPDATE retries the whole fork, we'd
-  // otherwise trip the unique index `LIKE INCLUDING INDEXES` copied from
-  // `messages.id`'s PK.
-  await tx.query(
-    `INSERT INTO messages_archive SELECT * FROM messages WHERE id = $1
-     ON CONFLICT (id) DO NOTHING`,
-    [messageId],
-  );
-  await tx.query(
-    "UPDATE messages SET content = $2 WHERE id = $1",
-    [messageId, placeholderContent],
   );
 }
 

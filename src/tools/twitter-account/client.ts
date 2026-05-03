@@ -13,7 +13,8 @@ import {
 } from "./types.js";
 
 type RettiwtInstance = InstanceType<typeof RettiwtApi.Rettiwt>;
-type TweetSearchFilter = Extract<TwitterAccountParams, { action: "tweet_search" }>["filter"];
+type TweetSearchParams = Extract<TwitterAccountParams, { action: "tweet_search" }>;
+type TweetSearchFilter = NonNullable<TweetSearchParams["filter"]>;
 
 const REPLY_SORT = {
   LATEST: RettiwtApi.TweetRepliesSortType.LATEST,
@@ -75,7 +76,7 @@ async function executeAction(
       return { tweet: serialize(await client.tweet.details(params.tweetId)) };
     case "tweet_search":
       return serializeCursored(await client.tweet.search(
-        toRettiwtFilter(params.filter),
+        toRettiwtFilter(params),
         params.count,
         params.cursor,
       ));
@@ -134,9 +135,16 @@ async function resolveUserId(
   return id;
 }
 
-function toRettiwtFilter(filter: TweetSearchFilter): ITweetFilter {
+function toRettiwtFilter(params: TweetSearchParams): ITweetFilter {
+  const filter: TweetSearchFilter = params.filter ?? {};
+  const includeWords = uniqueStrings([
+    ...queryWords(params.query),
+    ...(filter.includeWords ?? []),
+  ]);
+
   return {
     ...filter,
+    includeWords: includeWords.length > 0 ? includeWords : undefined,
     fromUsers: stripPrefixes(filter.fromUsers, "@"),
     toUsers: stripPrefixes(filter.toUsers, "@"),
     mentions: stripPrefixes(filter.mentions, "@"),
@@ -144,6 +152,22 @@ function toRettiwtFilter(filter: TweetSearchFilter): ITweetFilter {
     startDate: filter.startDate ? new Date(filter.startDate) : undefined,
     endDate: filter.endDate ? new Date(filter.endDate) : undefined,
   };
+}
+
+function queryWords(query: string | undefined): string[] {
+  return query?.split(/\s+/).map((word) => word.trim()).filter(Boolean) ?? [];
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
 }
 
 function serializeCursored(value: unknown): CursoredJson {

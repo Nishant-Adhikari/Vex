@@ -27,6 +27,7 @@ import { bootstrap } from "./bootstrap.js";
 import { startStdioTransport } from "./transports/stdio.js";
 import { startHttpTransport } from "./transports/http.js";
 import { startWakeExecutor, type WakeExecutorHandle } from "@vex-agent/engine/index.js";
+import { startSyncExecutor, type SyncExecutorHandle } from "@vex-agent/sync/executor.js";
 import logger from "@utils/logger.js";
 
 type Transport = "stdio" | "http";
@@ -62,18 +63,24 @@ export async function runMcpCli(argv: readonly string[] = process.argv.slice(2))
   // `runBootstrapChecks` (which is also called by the CLI readiness check and
   // would spin up a duplicate executor on every CLI invocation — see ADR 001).
   let wakeExecutor: WakeExecutorHandle | null = null;
+  let syncExecutor: SyncExecutorHandle | null = null;
   if (transport === "stdio") {
     await startStdioTransport();
     wakeExecutor = startWakeExecutor();
+    syncExecutor = startSyncExecutor();
   } else {
     await startHttpTransport();
     wakeExecutor = startWakeExecutor();
+    syncExecutor = startSyncExecutor();
   }
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     logger.info("mcp.shutdown", { signal });
     if (wakeExecutor) {
       await wakeExecutor.stop();
+    }
+    if (syncExecutor) {
+      await syncExecutor.stop();
     }
   };
   process.once("SIGTERM", (signal) => {

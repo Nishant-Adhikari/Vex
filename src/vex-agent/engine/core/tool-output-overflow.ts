@@ -8,7 +8,22 @@ import {
 } from "@vex-agent/knowledge/policy.js";
 import logger from "@utils/logger.js";
 
-const TOOL_OUTPUT_PREVIEW_CHARS = 160;
+const TOOL_OUTPUT_TEXT_PREVIEW_CHARS = 160;
+const TOOL_OUTPUT_STRUCTURED_PREVIEW_BYTES = 6 * 1024;
+const TOOL_OUTPUT_STRUCTURED_PREVIEW_ITEMS = 5;
+const TOOL_OUTPUT_SCALAR_STRING_CHARS = 500;
+
+const STRUCTURED_PREVIEW_LIST_KEYS = new Set([
+  "items",
+  "profiles",
+  "boosts",
+  "pairs",
+  "tweets",
+  "users",
+  "orders",
+  "ads",
+  "takeovers",
+]);
 
 interface PersistedToolResult {
   content: string;
@@ -46,10 +61,10 @@ export async function persistToolResultWithOverflow(
 
   const shapeKind = classifyShape(output);
   const blobKey = toolOutputBlobsRepo.generateBlobKey(sessionId, toolName, toolCallId);
-  const preview = output.slice(0, TOOL_OUTPUT_PREVIEW_CHARS).replace(/"/g, "'");
+  const preview = buildOverflowPreview(output, shapeKind);
   const stub =
     `[tool_output_overflow blob_key=${blobKey} bytes=${bytes} shape=${shapeKind} ` +
-    `preview="${preview}"]. ` +
+    `preview=${JSON.stringify(preview)}]. ` +
     `Call \`tool_output_read(blob_key="${blobKey}")\` to read bounded slices.`;
 
   let blobWritten = false;
@@ -115,4 +130,97 @@ function classifyShape(output: string): ToolOutputShapeKind {
   if (first === "{") return "json";
   if (first === "[") return "list";
   return "text";
+}
+
+function buildOverflowPreview(output: string, shapeKind: ToolOutputShapeKind): string {
+  if (shapeKind === "text") {
+    return output.slice(0, TOOL_OUTPUT_TEXT_PREVIEW_CHARS);
+  }
+
+  try {
+    const parsed = JSON.parse(output) as unknown;
+    const preview = JSON.stringify(toStructuredPreview(parsed), null, 2);
+    return truncateByBytes(preview, TOOL_OUTPUT_STRUCTURED_PREVIEW_BYTES);
+  } catch {
+    return output.slice(0, TOOL_OUTPUT_TEXT_PREVIEW_CHARS);
+  }
+}
+
+function toStructuredPreview(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return {
+      _preview: {
+        itemLimit: TOOL_OUTPUT_STRUCTURED_PREVIEW_ITEMS,
+        totalCount: value.length,
+      },
+      items: value.slice(0, TOOL_OUTPUT_STRUCTURED_PREVIEW_ITEMS),
+    };
+  }
+
+  if (!isRecord(value)) return value;
+
+  const meta: Record<string, unknown> = {
+    itemLimit: TOOL_OUTPUT_STRUCTURED_PREVIEW_ITEMS,
+  };
+  const preview: Record<string, unknown> = { _preview: meta };
+  const otherArrayCounts: Record<string, number> = {};
+
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (isPreviewScalar(fieldValue)) {
+      preview[key] = previewScalar(fieldValue);
+    }
+  }
+
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (!Array.isArray(fieldValue)) continue;
+
+    if (STRUCTURED_PREVIEW_LIST_KEYS.has(key)) {
+      preview[key] = fieldValue.slice(0, TOOL_OUTPUT_STRUCTURED_PREVIEW_ITEMS);
+      meta[`${key}TotalCount`] = fieldValue.length;
+    } else {
+      otherArrayCounts[key] = fieldValue.length;
+    }
+  }
+
+  if (Object.keys(otherArrayCounts).length > 0) {
+    meta.otherArrayCounts = otherArrayCounts;
+  }
+
+  return preview;
+}
+
+function isPreviewScalar(value: unknown): value is string | number | boolean | null {
+  return value === null
+    || typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean";
+}
+
+function previewScalar(value: string | number | boolean | null): string | number | boolean | null {
+  if (typeof value !== "string" || value.length <= TOOL_OUTPUT_SCALAR_STRING_CHARS) {
+    return value;
+  }
+  return `${value.slice(0, TOOL_OUTPUT_SCALAR_STRING_CHARS)}... [truncated]`;
+}
+
+function truncateByBytes(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+
+  const suffix = "\n... [preview truncated]";
+  const budget = Math.max(0, maxBytes - Buffer.byteLength(suffix, "utf8"));
+  let bytes = 0;
+  let end = 0;
+
+  for (const char of value) {
+    const charBytes = Buffer.byteLength(char, "utf8");
+    if (bytes + charBytes > budget) break;
+    bytes += charBytes;
+    end += char.length;
+  }
+
+  return `${value.slice(0, end)}${suffix}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

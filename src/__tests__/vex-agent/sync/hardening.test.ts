@@ -159,6 +159,61 @@ describe("pre-engine hardening — runtime gate", () => {
     expect(mockInsertActivity).toHaveBeenCalledTimes(1);
   });
 
+  it("successful mutating execution strips undefined before audit and projection", async () => {
+    fakeHandler.mockResolvedValueOnce({
+      success: true,
+      output: "Swap executed",
+      data: {
+        txHash: "0xabc",
+        optionalTopLevel: undefined,
+        nested: { keep: "yes", drop: undefined },
+        values: ["first", undefined],
+        _tradeCapture: {
+          type: "swap", chain: "solana", status: "executed",
+          inputToken: "SOL", outputToken: "MTGA",
+          inputTokenAddress: "So11111111111111111111111111111111111111112",
+          outputTokenAddress: "Gddas2JVfZ3YXjWoNmDtFJGBvtM4EqCLbL4hFjPMpump",
+          inputAmount: "600000", outputAmount: "617251087",
+          walletAddress: "0xWallet",
+          tradeSide: "buy", instrumentKey: "solana:Gddas2JVfZ3YXjWoNmDtFJGBvtM4EqCLbL4hFjPMpump",
+          inputValueUsd: "0.05", valuationSource: "jupiter_exact",
+          inputValueNative: "0.0006",
+          outputValueNative: undefined,
+          meta: { keep: "meta", drop: undefined, values: [undefined, "ok"] },
+        },
+      },
+    });
+
+    const result = await executeProtocolTool(
+      { toolId: "test.fake.mutate", params: { dryRun: false, optionalParam: undefined } },
+      { loopMode: "full", approved: true, sessionId: "test-sanitize" },
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockRecordExecution).toHaveBeenCalledTimes(1);
+
+    const recordCall = mockRecordExecution.mock.calls[0];
+    const storedParams = recordCall[3] as Record<string, unknown>;
+    const storedResult = recordCall[4] as Record<string, unknown>;
+    const storedCapture = recordCall[6] as Record<string, unknown>;
+
+    expect("optionalParam" in storedParams).toBe(false);
+    expect("optionalTopLevel" in storedResult).toBe(false);
+    expect(storedResult.nested).toEqual({ keep: "yes" });
+    expect(storedResult.values).toEqual(["first", null]);
+    expect("outputValueNative" in storedCapture).toBe(false);
+    expect(storedCapture.meta).toEqual({ keep: "meta", values: [null, "ok"] });
+
+    expect(mockRecordCaptureItems).toHaveBeenCalledTimes(1);
+    const captureItems = mockRecordCaptureItems.mock.calls[0][1] as Array<{ tradeCapture: Record<string, unknown> }>;
+    expect("outputValueNative" in captureItems[0].tradeCapture).toBe(false);
+
+    expect(mockInsertActivity).toHaveBeenCalledTimes(1);
+    const activityRow = mockInsertActivity.mock.calls[0][0] as Record<string, unknown>;
+    expect(activityRow.inputValueNative).toBe("0.0006");
+    expect(activityRow.outputValueNative).toBeNull();
+  });
+
   // ── sessionId propagation ─────────────────────────────────────
 
   it("sessionId from context reaches recordExecution", async () => {

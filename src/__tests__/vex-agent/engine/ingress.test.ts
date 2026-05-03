@@ -119,6 +119,23 @@ describe("ingress.routeUserMessage", () => {
     expect(mockProcessChatTurn).not.toHaveBeenCalled();
   });
 
+  it("returns a recovery hint instead of empty fallback for paused_error", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-4", status: "paused_error" });
+
+    const result = await routeUserMessage("s1", "anything");
+
+    expect(mockAddMessage).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ role: "user", content: "anything" }),
+      expect.objectContaining({ source: "user", messageType: "chat" }),
+    );
+    expect(result.text).toContain("Use /retry");
+    expect(result.text).toContain("/rewind");
+    expect(result.stopReason).toBeNull();
+    expect(mockResumeMissionRun).not.toHaveBeenCalled();
+    expect(mockProcessChatTurn).not.toHaveBeenCalled();
+  });
+
   it("routes full_autonomous sessions to processFullAutonomousTurn", async () => {
     mockGetActiveRunBySession.mockResolvedValue(null);
     mockGetSession.mockResolvedValue({ id: "s1", kind: "full_autonomous" });

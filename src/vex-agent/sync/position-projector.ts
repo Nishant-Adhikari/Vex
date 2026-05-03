@@ -90,7 +90,16 @@ async function projectOrderLifecycle(activity: Activity): Promise<void> {
 
   const status = captureStatus ?? "unknown";
 
-  if (OPEN_STATUSES.has(status)) {
+  if (status === "cancelled") {
+    await openPositionsRepo.closePosition(activity.namespace, "order", positionKey, "cancelled");
+    logger.debug("sync.order.cancelled", { positionKey });
+
+  } else if (status === "executed" || status === "filled") {
+    // Order filled — close the order position
+    await openPositionsRepo.closePosition(activity.namespace, "order", positionKey, "filled");
+    logger.debug("sync.order.filled", { positionKey });
+
+  } else if (OPEN_STATUSES.has(status)) {
     await openPositionsRepo.upsertPosition({
       namespace: activity.namespace,
       positionType: "order",
@@ -103,14 +112,5 @@ async function projectOrderLifecycle(activity: Activity): Promise<void> {
       data: activity.meta,
     });
     logger.debug("sync.order.opened", { positionKey });
-
-  } else if (status === "cancelled") {
-    await openPositionsRepo.closePosition(activity.namespace, "order", positionKey, "cancelled");
-    logger.debug("sync.order.cancelled", { positionKey });
-
-  } else if (status === "executed" || status === "filled") {
-    // Order filled — close the order position
-    await openPositionsRepo.closePosition(activity.namespace, "order", positionKey, "filled");
-    logger.debug("sync.order.filled", { positionKey });
   }
 }

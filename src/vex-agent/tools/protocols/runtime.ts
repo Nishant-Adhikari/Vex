@@ -13,6 +13,7 @@ import { isPreviewExecution, validateCaptureContract } from "./capture-validator
 import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js";
 import { MUTATION_MATRIX } from "./mutation-matrix.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
+import { sanitizeJsonbValue } from "@vex-agent/db/params.js";
 import logger from "@utils/logger.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
@@ -186,13 +187,15 @@ async function captureExecution(
   if (result.data?.dryRun === true) return;
 
   const { recordExecution } = await import("@vex-agent/db/repos/executions.js");
-  const tradeCapture = (result.data?._tradeCapture as Record<string, unknown>) ?? null;
-  const tradeCaptureItems = result.data?._tradeCaptureItems as Record<string, unknown>[] | undefined;
-  const externalRefs = extractExternalRefs(result.data);
+  const paramsForStorage = sanitizeRecord(params);
+  const resultData = sanitizeRecord(result.data ?? {});
+  const tradeCapture = isRecord(resultData._tradeCapture) ? resultData._tradeCapture : null;
+  const tradeCaptureItems = sanitizeRecordArray(resultData._tradeCaptureItems);
+  const externalRefs = extractExternalRefs(resultData);
 
   const executionId = await recordExecution(
-    toolId, namespace, sessionId, params,
-    result.data ?? {}, result.success,
+    toolId, namespace, sessionId, paramsForStorage,
+    resultData, result.success,
     tradeCapture, externalRefs, durationMs,
   );
 
@@ -241,3 +244,22 @@ async function captureExecution(
 }
 
 // populateCaptureItems moved to capture-pipeline.ts (shared with replay.ts)
+
+function sanitizeRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = sanitizeJsonbValue(value);
+  return isRecord(sanitized) ? sanitized : {};
+}
+
+function sanitizeRecordArray(value: unknown): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const sanitized = sanitizeJsonbValue(value);
+  if (!Array.isArray(sanitized)) return undefined;
+
+  const records = sanitized.filter(isRecord);
+  return records.length > 0 ? records : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

@@ -1,7 +1,7 @@
 /**
  * PR-7 — wake executor unit tests. Exercises the pure `tick` function with
  * injected `WakeDeps` so we never load the DB client. Covers:
- *   - mission_run claims that resume (banner + status flip + resume call),
+ *   - mission_run claims that resume (CAS + banner + resume call),
  *   - skip-stale-status re-check (preemption won the race),
  *   - skip-missing-mission-run guard,
  *   - full_autonomous kind drift,
@@ -54,7 +54,7 @@ function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
     claimDue: vi.fn().mockResolvedValue([]),
     getMissionRun: vi.fn().mockResolvedValue(null),
-    updateMissionRunStatus: vi.fn().mockResolvedValue(undefined),
+    casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
     getSessionKind: vi.fn().mockResolvedValue("chat"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
@@ -64,7 +64,7 @@ function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
 }
 
 describe("wake.executor.tick", () => {
-  it("resumes a paused_wake mission run — banner, status flip, resume", async () => {
+  it("resumes a paused_wake mission run only after CAS claim", async () => {
     const wake = makeWake();
     const run = makeRun();
     const deps = makeDeps({
@@ -76,12 +76,13 @@ describe("wake.executor.tick", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]!.outcome).toEqual({ kind: "resumed", runId: "run-1" });
+    expect(deps.casFlipToRunning).toHaveBeenCalledWith("run-1", ["paused_wake"]);
+    expect(deps.casFlipToRunning).toHaveBeenCalledBefore(deps.injectWakeBanner as never);
     expect(deps.injectWakeBanner).toHaveBeenCalledWith(
       "sess-1",
       "continue monitoring",
       "2026-04-20T12:00:00.000Z",
     );
-    expect(deps.updateMissionRunStatus).toHaveBeenCalledWith("run-1", "running");
     expect(deps.resumeMissionRun).toHaveBeenCalledWith("run-1");
   });
 
@@ -98,7 +99,21 @@ describe("wake.executor.tick", () => {
       currentStatus: "running",
     });
     expect(deps.injectWakeBanner).not.toHaveBeenCalled();
-    expect(deps.updateMissionRunStatus).not.toHaveBeenCalled();
+    expect(deps.casFlipToRunning).not.toHaveBeenCalled();
+    expect(deps.resumeMissionRun).not.toHaveBeenCalled();
+  });
+
+  it("skips banner and resume when the CAS claim loses to another resumer", async () => {
+    const deps = makeDeps({
+      claimDue: vi.fn().mockResolvedValue([makeWake()]),
+      getMissionRun: vi.fn().mockResolvedValue(makeRun()),
+      casFlipToRunning: vi.fn().mockResolvedValue(null),
+    });
+
+    const results = await tick(new Date(), 10, deps);
+
+    expect(results[0]!.outcome).toEqual({ kind: "skipped_claim_lost" });
+    expect(deps.injectWakeBanner).not.toHaveBeenCalled();
     expect(deps.resumeMissionRun).not.toHaveBeenCalled();
   });
 

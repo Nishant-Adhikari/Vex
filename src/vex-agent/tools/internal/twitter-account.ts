@@ -14,7 +14,7 @@ export async function handleTwitterAccount(
   const parsed = TwitterAccountParamsSchema.safeParse(params);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(`twitter_account: ${issue?.message ?? "invalid arguments"}`);
+    return fail(`twitter_account: ${formatValidationIssue(issue)}`);
   }
 
   try {
@@ -22,4 +22,12 @@ export async function handleTwitterAccount(
   } catch (error) {
     return fail(`twitter_account: ${sanitizeTwitterAccountError(error)}`);
   }
+}
+
+function formatValidationIssue(
+  issue: { path: PropertyKey[]; message: string } | undefined,
+): string {
+  if (!issue) return "invalid arguments";
+  const path = issue.path.map(String).join(".");
+  return path ? `${path}: ${issue.message}` : issue.message;
 }

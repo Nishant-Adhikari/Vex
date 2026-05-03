@@ -50,22 +50,3 @@ export function parseInstrumentKey(key: string): ParsedInstrumentKey {
 
   return { chain: parts[0] ?? "unknown", kind: "unknown" };
 }
-
-/**
- * Resolve chainId from chain slug for proj_balances join.
- * Returns undefined if unknown — caller should skip the join.
- */
-const CHAIN_IDS: Record<string, number> = {
-  // Solana has no numeric chainId in Khalani — uses wallet_family filter instead
-  ethereum: 1,
-  polygon: 137,
-  arbitrum: 42161,
-  optimism: 10,
-  base: 8453,
-  bsc: 56,
-  // 0G uses chainId from Khalani — varies by deployment
-};
-
-export function resolveChainId(chain: string): number | undefined {
-  return CHAIN_IDS[chain];
-}

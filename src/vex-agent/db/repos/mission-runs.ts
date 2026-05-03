@@ -5,9 +5,17 @@
  * Run status is the source of truth for per-run state (not runtime_state).
  */
 
-import type { LoopMode } from "../../engine/types.js";
-import { query, queryOne, execute } from "../client.js";
+import {
+  type LoopMode,
+  type MissionRunStatus,
+  ACTIVE_RUN_STATUSES,
+  PAUSED_RUN_STATUSES,
+  TERMINAL_RUN_STATUSES,
+  ACTIVE_OR_PAUSED_RUN_STATUSES,
+} from "../../engine/types.js";
+import { queryOne, execute, getPool } from "../client.js";
 import { nullableJsonb } from "../params.js";
+import logger from "@utils/logger.js";
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -15,7 +23,7 @@ export interface MissionRun {
   id: string;
   missionId: string;
   sessionId: string;
-  status: string;
+  status: MissionRunStatus;
   loopMode: LoopMode;
   startedAt: string;
   endedAt: string | null;
@@ -25,6 +33,11 @@ export interface MissionRun {
   stopEvidenceJson: Record<string, unknown> | null;
   iterationCount: number;
 }
+
+/** SQL `IN (…)` literal compiled once from `ACTIVE_OR_PAUSED_RUN_STATUSES`. */
+const ACTIVE_OR_PAUSED_SQL_IN = Array.from(ACTIVE_OR_PAUSED_RUN_STATUSES)
+  .map((s) => `'${s}'`)
+  .join(",");
 
 // DB stores `loop_mode` as TEXT without a CHECK constraint. Narrow at the
 // repo boundary so callers get a typed domain value and never need `as any`.
@@ -37,12 +50,27 @@ function coerceLoopMode(raw: unknown): LoopMode {
   return (ALLOWED_LOOP_MODES as readonly string[]).includes(raw) ? (raw as LoopMode) : "off";
 }
 
+const ALLOWED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
+  ...ACTIVE_RUN_STATUSES,
+  ...PAUSED_RUN_STATUSES,
+  ...TERMINAL_RUN_STATUSES,
+]);
+
+function coerceStatus(raw: unknown, runId: string): MissionRunStatus {
+  if (typeof raw === "string" && ALLOWED_RUN_STATUSES.has(raw as MissionRunStatus)) {
+    return raw as MissionRunStatus;
+  }
+  logger.warn("engine.mission.status_drift", { runId, raw: String(raw) });
+  throw new Error(`Unknown mission run status for ${runId}: ${String(raw)}`);
+}
+
 function mapRow(r: Record<string, unknown>): MissionRun {
+  const id = r.id as string;
   return {
-    id: r.id as string,
+    id,
     missionId: r.mission_id as string,
     sessionId: r.session_id as string,
-    status: r.status as string,
+    status: coerceStatus(r.status, id),
     loopMode: coerceLoopMode(r.loop_mode),
     startedAt: (r.started_at instanceof Date ? r.started_at.toISOString() : r.started_at as string),
     endedAt: r.ended_at ? (r.ended_at instanceof Date ? r.ended_at.toISOString() : r.ended_at as string) : null,
@@ -70,12 +98,14 @@ export async function createRun(
 
 export async function updateStatus(
   id: string,
-  status: string,
+  status: MissionRunStatus,
   stopReason?: string,
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
 ): Promise<void> {
-  const ended = (status !== "running" && status !== "paused_approval" && status !== "paused_wake")
-    ? "NOW()" : "ended_at";
+  // Active and paused statuses keep `ended_at` as-is; terminal statuses stamp
+  // it to NOW(). The classification flows from the centralised sets so adding
+  // a new arm to MissionRunStatus does not require editing this rule.
+  const ended = TERMINAL_RUN_STATUSES.has(status) ? "NOW()" : "ended_at";
   await execute(
     `UPDATE mission_runs SET status = $1, stop_reason = COALESCE($2, stop_reason),
      stop_summary = COALESCE($3, stop_summary),
@@ -107,7 +137,7 @@ export async function incrementIterations(id: string): Promise<number> {
 
 export async function getActiveRun(missionId: string): Promise<MissionRun | null> {
   const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM mission_runs WHERE mission_id = $1 AND status IN ('running', 'paused_approval', 'paused_wake') ORDER BY started_at DESC LIMIT 1",
+    `SELECT * FROM mission_runs WHERE mission_id = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN}) ORDER BY started_at DESC LIMIT 1`,
     [missionId],
   );
   return row ? mapRow(row) : null;
@@ -123,10 +153,57 @@ export async function getActiveRun(missionId: string): Promise<MissionRun | null
  */
 export async function getActiveRunBySession(sessionId: string): Promise<MissionRun | null> {
   const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM mission_runs WHERE session_id = $1 AND status IN ('running', 'paused_approval', 'paused_wake') ORDER BY started_at DESC LIMIT 1",
+    `SELECT * FROM mission_runs WHERE session_id = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN}) ORDER BY started_at DESC LIMIT 1`,
     [sessionId],
   );
   return row ? mapRow(row) : null;
+}
+
+/**
+ * Atomic compare-and-set transition from any of `fromStatuses` to `running`.
+ *
+ * Used by `/retry` and the wake executor to claim a paused run without
+ * racing each other: the SELECT … FOR UPDATE locks the row, the UPDATE only
+ * fires when the locked status is in the allowed set, and the function
+ * returns the previous status on success or `null` if another resumer
+ * already moved the row out of the allowed set.
+ */
+export async function casFlipToRunning(
+  runId: string,
+  fromStatuses: readonly MissionRunStatus[],
+): Promise<MissionRunStatus | null> {
+  if (fromStatuses.length === 0) return null;
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const lockRow = await client.query<{ status: string }>(
+      "SELECT status FROM mission_runs WHERE id = $1 FOR UPDATE",
+      [runId],
+    );
+    if (lockRow.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const prev = coerceStatus(lockRow.rows[0].status, runId);
+    if (!fromStatuses.includes(prev)) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      "UPDATE mission_runs SET status = 'running', ended_at = NULL WHERE id = $1",
+      [runId],
+    );
+    await client.query("COMMIT");
+    return prev;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {
+      // ROLLBACK failures are non-actionable; the original error is what matters.
+    });
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getRun(id: string): Promise<MissionRun | null> {

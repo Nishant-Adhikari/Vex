@@ -2,21 +2,30 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockExecute = vi.fn().mockResolvedValue(0);
 const mockQueryOne = vi.fn().mockResolvedValue(null);
+const mockClientQuery = vi.fn();
+const mockClientRelease = vi.fn();
 
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: (...args: unknown[]) => mockExecute(...args),
   queryOne: (...args: unknown[]) => mockQueryOne(...args),
   query: vi.fn().mockResolvedValue([]),
+  getPool: () => ({
+    connect: async () => ({
+      query: (...args: unknown[]) => mockClientQuery(...args),
+      release: () => mockClientRelease(),
+    }),
+  }),
 }));
 
 const {
   createRun, updateStatus, setLastCheckpoint, incrementIterations,
-  getActiveRun, getRun, getRunBySession,
+  getActiveRun, getRun, getRunBySession, casFlipToRunning,
 } = await import("../../../../vex-agent/db/repos/mission-runs.js");
 
 describe("mission-runs repo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockClientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
   });
 
   // ── createRun ───────────────────────────────────────────────
@@ -107,6 +116,7 @@ describe("mission-runs repo", () => {
       const [sql] = mockQueryOne.mock.calls[0];
       expect(sql).toContain("running");
       expect(sql).toContain("paused_approval");
+      expect(sql).toContain("paused_error");
       expect(sql).not.toContain("paused_checkpoint");
     });
 
@@ -128,6 +138,57 @@ describe("mission-runs repo", () => {
       expect(run!.loopMode).toBe("restricted");
       expect(run!.iterationCount).toBe(7);
       expect(run!.endedAt).toBeNull();
+    });
+
+    it("throws on unknown DB status instead of defaulting to failed", async () => {
+      mockQueryOne.mockResolvedValueOnce({
+        id: "run-1", mission_id: "mission-1", session_id: "session-1",
+        status: "mystery", loop_mode: "restricted",
+        started_at: new Date("2026-03-28"), ended_at: null,
+        last_checkpoint_at: null, stop_reason: null, iteration_count: 0,
+      });
+
+      await expect(getActiveRun("mission-1")).rejects.toThrow(
+        "Unknown mission run status for run-1: mystery",
+      );
+    });
+  });
+
+  describe("casFlipToRunning", () => {
+    it("locks, flips matching paused status to running, and returns previous status", async () => {
+      mockClientQuery.mockImplementation(async (sql: string) => {
+        if (sql.startsWith("SELECT status")) {
+          return { rows: [{ status: "paused_wake" }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      });
+
+      const previous = await casFlipToRunning("run-1", ["paused_wake"]);
+
+      expect(previous).toBe("paused_wake");
+      expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
+      expect(mockClientQuery).toHaveBeenCalledWith(
+        "UPDATE mission_runs SET status = 'running', ended_at = NULL WHERE id = $1",
+        ["run-1"],
+      );
+      expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
+    });
+
+    it("rolls back and returns null when the locked status is not allowed", async () => {
+      mockClientQuery.mockImplementation(async (sql: string) => {
+        if (sql.startsWith("SELECT status")) {
+          return { rows: [{ status: "running" }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      });
+
+      const previous = await casFlipToRunning("run-1", ["paused_wake"]);
+
+      expect(previous).toBeNull();
+      expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
+      expect(
+        mockClientQuery.mock.calls.some((call) => String(call[0]).startsWith("UPDATE mission_runs")),
+      ).toBe(false);
     });
   });
 

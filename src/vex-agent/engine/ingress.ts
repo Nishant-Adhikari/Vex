@@ -50,6 +50,26 @@ export async function routeUserMessage(
     if (activeRun.status === "paused_wake") {
       return resumeMissionRunWithPreempt(sessionId, userInput, activeRun.id);
     }
+    if (activeRun.status === "paused_error") {
+      // The run is parked because the previous loop threw. Persist the
+      // user message so the operator's input is visible in transcript,
+      // but return a clear hint instead of letting the shell render the
+      // empty-fallback `(no text — stopReason: unknown)` string. The
+      // operator drives recovery via /retry or /rewind.
+      await messagesRepo.addMessage(
+        sessionId,
+        { role: "user", content: userInput, timestamp: new Date().toISOString() },
+        { source: "user", messageType: "chat", visibility: "user" },
+      );
+      logger.info("ingress.paused_error_hint", { sessionId, runId: activeRun.id });
+      return {
+        text: "Mission run is paused due to a provider error. Use /retry to re-attempt or /rewind to roll back the conversation.",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+        missionStatus: "running",
+      };
+    }
     // `paused_approval` / `running` — persist the message as an interrupt
     // but do NOT fire a new turn here. Approvals resume through their own
     // flow (`approveAndResume`); a running run will pick up the message on

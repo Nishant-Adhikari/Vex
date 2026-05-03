@@ -44,7 +44,11 @@ export const TWITTER_ACCOUNT_TOOLS: readonly ToolDef[] = [
         },
         username: { type: "string", description: "Twitter/X username, with or without @." },
         userId: { type: "string", description: "Numeric Twitter/X user id." },
-        query: { type: "string", description: "Search text for user_search." },
+        query: {
+          type: "string",
+          description:
+            "Required for user_search. For tweet_search, shortcut text mapped to filter.includeWords.",
+        },
         tweetId: { type: "string", description: "Numeric tweet id." },
         spaceId: { type: "string", description: "Twitter/X Space id." },
         count: { type: "number", description: "Batch size. Max 20 for timelines/search, max 100 for social lists." },
@@ -58,7 +62,7 @@ export const TWITTER_ACCOUNT_TOOLS: readonly ToolDef[] = [
         withListeners: { type: "boolean", description: "space_details only: include listener information." },
         filter: {
           type: "object",
-          description: "tweet_search filter. Provide at least one field.",
+          description: "tweet_search filter. Provide query or at least one filter field.",
           additionalProperties: false,
           properties: {
             fromUsers: stringList("Usernames whose tweets to search."),

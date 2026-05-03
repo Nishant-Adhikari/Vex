@@ -31,6 +31,17 @@ export function jsonbPlaceholder(index: number): string {
   return `$${index}::jsonb`;
 }
 
+/**
+ * Normalize a value for an intentional JSONB persistence boundary.
+ *
+ * This keeps jsonb() strict while giving capture/audit code an explicit way to
+ * handle JavaScript's optional-field `undefined` convention without dropping an
+ * entire protocol execution.
+ */
+export function sanitizeJsonbValue(value: unknown): JsonValue {
+  return sanitizeJsonbValueAt(value, "$", new WeakSet<object>());
+}
+
 function assertJsonSerializable(value: unknown, path: string, seen: WeakSet<object>): void {
   if (value === null) return;
 
@@ -79,6 +90,63 @@ function assertJsonObject(value: object, path: string, seen: WeakSet<object>): v
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
       assertJsonSerializable(entry, `${path}.${key}`, seen);
     }
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function sanitizeJsonbValueAt(value: unknown, path: string, seen: WeakSet<object>): JsonValue {
+  if (value === undefined || value === null) return null;
+
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return value;
+    case "number":
+      if (!Number.isFinite(value)) {
+        throw new Error(`jsonb: non-finite number at ${path}`);
+      }
+      return value;
+    case "function":
+    case "symbol":
+    case "bigint":
+      throw new Error(`jsonb: unsupported ${typeof value} at ${path}`);
+    case "object":
+      return sanitizeJsonObject(value, path, seen);
+    case "undefined":
+      return null;
+  }
+  throw new Error(`jsonb: unsupported value at ${path}`);
+}
+
+function sanitizeJsonObject(value: object, path: string, seen: WeakSet<object>): JsonValue {
+  const withToJson = value as { toJSON?: unknown };
+  if (typeof withToJson.toJSON === "function") {
+    return sanitizeJsonbValueAt(withToJson.toJSON(), `${path}.toJSON()`, seen);
+  }
+
+  if (seen.has(value)) {
+    throw new Error(`jsonb: circular reference at ${path}`);
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((entry, index) =>
+        entry === undefined ? null : sanitizeJsonbValueAt(entry, `${path}[${index}]`, seen),
+      );
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error(`jsonb: unsupported object type at ${path}`);
+    }
+
+    const sanitized: Record<string, JsonValue> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (entry === undefined) continue;
+      sanitized[key] = sanitizeJsonbValueAt(entry, `${path}.${key}`, seen);
+    }
+    return sanitized;
   } finally {
     seen.delete(value);
   }

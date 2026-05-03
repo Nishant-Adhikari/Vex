@@ -197,6 +197,44 @@ describe("turn-loop tool output overflow", () => {
     });
   });
 
+  it("includes a bounded structured preview for oversized JSON outputs", async () => {
+    const bigOutput = JSON.stringify({
+      count: 8,
+      items: Array.from({ length: 8 }, (_, index) => ({
+        id: String(index),
+        text: `tweet ${index}`,
+      })),
+      padding: "x".repeat(20_000),
+    });
+    mockExecuteTurn.mockResolvedValueOnce({
+      content: null,
+      toolCalls: [{ id: "tc-1", name: "twitter_account", arguments: { action: "tweet_search" } }],
+      promptTokens: 100,
+    });
+    mockDispatchTool.mockResolvedValueOnce({ success: true, output: bigOutput });
+
+    await turnLoopModule.runTurnLoop(
+      makeContext(),
+      [],
+      null,
+      0,
+      provider,
+      config,
+      [],
+      loopConfig,
+    );
+
+    const toolSave = mockAddMessage.mock.calls.find(
+      ([, msg]) => (msg as { role?: string }).role === "tool",
+    );
+    const persistedMessage = toolSave![1] as { content: string };
+    expect(persistedMessage.content).toContain("preview=");
+    expect(persistedMessage.content).toContain("itemsTotalCount");
+    expect(persistedMessage.content).toContain("tweet 0");
+    expect(persistedMessage.content).toContain("tweet 4");
+    expect(persistedMessage.content).not.toContain("tweet 5");
+  });
+
   it("falls back to inline persistence when blob write fails", async () => {
     const bigOutput = "y".repeat(20_000);
     mockExecuteTurn.mockResolvedValueOnce({

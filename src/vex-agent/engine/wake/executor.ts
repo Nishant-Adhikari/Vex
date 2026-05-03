@@ -4,8 +4,9 @@
  * Contract (documented in ADR 001):
  *   - Exactly ONE process runs the executor per deployment. Race safety
  *     across ticks is provided by `loopWakeRepo.claimDue` (FOR UPDATE SKIP
- *     LOCKED), but mission-run-level status transitions are NOT serialized
- *     between processes. Scale-out would need an extra run-level claim.
+ *     LOCKED). Mission-run wake resumes also claim the run row with a CAS
+ *     before injecting the wake banner, so `/retry` and wake cannot both
+ *     resume the same stale `paused_wake` snapshot.
  *   - The executor is started exclusively from the MCP binary
  *     (`src/mcp/index.ts`) after the transport bind. It is NOT started by
  *     `runBootstrapChecks` because the same function is used by CLI readiness
@@ -27,6 +28,7 @@
 
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
+import type { MissionRunStatus } from "../types.js";
 import logger from "@utils/logger.js";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -34,6 +36,7 @@ import logger from "@utils/logger.js";
 export type ClaimedWakeOutcome =
   | { kind: "resumed"; runId: string | null }
   | { kind: "skipped_stale_status"; currentStatus: string }
+  | { kind: "skipped_claim_lost" }
   | { kind: "skipped_mission_run_missing" }
   | { kind: "skipped_session_kind_mismatch"; currentKind: string }
   | { kind: "error"; message: string };
@@ -54,8 +57,11 @@ export interface WakeDeps {
   claimDue(now: Date, limit: number): Promise<LoopWakeRequest[]>;
   /** Fetch a mission run by id (used to re-check status before resume). */
   getMissionRun(runId: string): Promise<MissionRun | null>;
-  /** Flip a run's status (used to exit `paused_wake` before resume). */
-  updateMissionRunStatus(runId: string, status: string): Promise<void>;
+  /** Claim a paused run before injecting a wake banner and resuming. */
+  casFlipToRunning(
+    runId: string,
+    fromStatuses: readonly MissionRunStatus[],
+  ): Promise<MissionRunStatus | null>;
   /** Return the `kind` column of a session, or `null` when missing. */
   getSessionKind(sessionId: string): Promise<string | null>;
   /** Persist a `wake_due` banner for the resume path to pick up. */
@@ -124,8 +130,16 @@ async function handleClaimed(
       return { kind: "skipped_stale_status", currentStatus: run.status };
     }
 
+    const claimed = await deps.casFlipToRunning(run.id, ["paused_wake"]);
+    if (claimed === null) {
+      logger.info("wake.executor.skip_claim_lost", {
+        wakeId: wake.id,
+        runId: run.id,
+      });
+      return { kind: "skipped_claim_lost" };
+    }
+
     await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
-    await deps.updateMissionRunStatus(run.id, "running");
     await deps.resumeMissionRun(run.id);
     return { kind: "resumed", runId: run.id };
   }
@@ -233,7 +247,8 @@ function buildProductionDeps(): WakeDeps {
   return {
     claimDue: (now, limit) => loopWakeRepo.claimDue(now, limit),
     getMissionRun: (runId) => missionRunsRepo.getRun(runId),
-    updateMissionRunStatus: (runId, status) => missionRunsRepo.updateStatus(runId, status),
+    casFlipToRunning: (runId, fromStatuses) =>
+      missionRunsRepo.casFlipToRunning(runId, fromStatuses),
     getSessionKind: async (sessionId) => {
       const session = await sessionsRepo.getSession(sessionId);
       return session?.kind ?? null;

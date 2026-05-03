@@ -123,10 +123,6 @@ export async function fullBalanceSync(): Promise<FullSyncResult> {
   // Build snapshot
   const totalUsd = await balancesRepo.getTotalUsd();
   const positions = await buildPositionsBreakdown();
-  const activeChains = [...new Set(wallets.flatMap(w => {
-    // Collect chainIds from balances
-    return [];  // filled from positions below
-  }))];
 
   // Extract active chains from positions
   const positionData = positions as { wallets?: Array<{ chains?: Array<{ chainId: number }> }> };

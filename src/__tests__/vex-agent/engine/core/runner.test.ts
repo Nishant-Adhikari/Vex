@@ -84,11 +84,11 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
   PROTOCOL_NAMESPACE_ALLOWLIST: [],
 }));
 
-const { processChatTurn, startMission, resumeMissionRun } = await import(
+const { processChatTurn, processMissionSetupTurn, startMission, resumeMissionRun } = await import(
   "../../../../vex-agent/engine/core/runner.js"
 );
-const { processMissionSetupTurn } = await import(
-  "../../../../vex-agent/engine/core/runner/mission.js"
+const { MissionRunPausedError } = await import(
+  "../../../../vex-agent/engine/types.js"
 );
 
 function makeProvider() {
@@ -386,6 +386,47 @@ describe("runner", () => {
       );
     });
 
+    it("pauses the run with evidence when the mission loop throws", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
+      mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
+
+      await expect(startMission("mission-1")).rejects.toBeInstanceOf(MissionRunPausedError);
+
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+        expect.any(String),
+        "paused_error",
+        "provider_error",
+        expect.objectContaining({
+          summary: "provider exploded",
+          evidence: expect.objectContaining({
+            errorMessage: "provider exploded",
+            errorClass: "Error",
+            missionId: "mission-1",
+          }),
+        }),
+      );
+    });
+
+    it("pauses the run when hydration fails after createRun", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockHydrate.mockResolvedValueOnce(null);
+
+      await expect(startMission("mission-1")).rejects.toBeInstanceOf(MissionRunPausedError);
+
+      expect(mockCreateRun).toHaveBeenCalled();
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+        expect.any(String),
+        "paused_error",
+        "provider_error",
+        expect.objectContaining({
+          evidence: expect.objectContaining({
+            errorMessage: "Session session-1 not found",
+          }),
+        }),
+      );
+    });
+
     it("throws if mission not found", async () => {
       mockGetMission.mockResolvedValueOnce(null);
       await expect(startMission("nonexistent")).rejects.toThrow("not found");
@@ -429,6 +470,33 @@ describe("runner", () => {
 
       expect(result.text).toBe("Resumed");
       expect(result.missionStatus).toBe("running");
+    });
+
+    it("pauses the run with evidence when resume throws inside the loop", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        loopMode: "restricted", status: "paused_wake", iterationCount: 5,
+      });
+      mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
+
+      await expect(resumeMissionRun("run-1")).rejects.toBeInstanceOf(MissionRunPausedError);
+
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-1", "running");
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+        "run-1",
+        "paused_error",
+        "provider_error",
+        expect.objectContaining({
+          evidence: expect.objectContaining({
+            errorMessage: "provider exploded",
+            runId: "run-1",
+          }),
+        }),
+      );
     });
 
     it("throws if run not found", async () => {

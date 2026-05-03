@@ -36,10 +36,63 @@ export type MissionRunStatus =
   | "running"
   | "paused_approval"
   | "paused_wake"
+  | "paused_error"
   | "completed"
   | "failed"
   | "stopped"
   | "cancelled";
+
+/**
+ * Centralised classification of `MissionRunStatus` values. Engine, repo,
+ * ingress router and UI cockpit MUST consult these sets rather than
+ * enumerating literals so a new arm (e.g. `paused_error`) flows through
+ * every decision point automatically.
+ */
+export const ACTIVE_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set(["running"]);
+export const PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
+  "paused_approval",
+  "paused_wake",
+  "paused_error",
+]);
+export const TERMINAL_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
+  "completed",
+  "failed",
+  "stopped",
+  "cancelled",
+]);
+export const ACTIVE_OR_PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
+  ...ACTIVE_RUN_STATUSES,
+  ...PAUSED_RUN_STATUSES,
+]);
+
+/**
+ * Recoverable failure surfaced by `startMission` / `resumeMissionRun` when a
+ * provider call (or the surrounding hydrate / status update / prompt prep)
+ * throws. The run is persisted in `paused_error` first, then this error is
+ * re-thrown so shell action wrappers map it to `{ ok:false }` and the UI
+ * shows a real failure with a recovery hint instead of a fake "started" line.
+ *
+ * Carries the original `cause` so callers can inspect or surface it.
+ */
+export class MissionRunPausedError extends Error {
+  readonly runId: string;
+  readonly missionId: string;
+  readonly sessionId: string;
+  constructor(args: {
+    runId: string;
+    missionId: string;
+    sessionId: string;
+    cause: unknown;
+  }) {
+    const causeMessage =
+      args.cause instanceof Error ? args.cause.message : String(args.cause);
+    super(causeMessage, { cause: args.cause });
+    this.name = "MissionRunPausedError";
+    this.runId = args.runId;
+    this.missionId = args.missionId;
+    this.sessionId = args.sessionId;
+  }
+}
 
 // ── Stop conditions ─────────────────────────────────────────────
 

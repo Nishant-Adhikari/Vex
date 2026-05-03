@@ -32,12 +32,12 @@
  * (Postgres LISTEN/NOTIFY or polling), which is out of scope.
  */
 
-import type { MissionStatus } from "../../types.js";
+import { type MissionStatus, TERMINAL_RUN_STATUSES } from "../../types.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
-import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import logger from "@utils/logger.js";
+import { rejectPendingApprovalsForSession } from "./approvals-cleanup.js";
 
 // ── In-process AbortController registry ─────────────────────────
 
@@ -107,8 +107,7 @@ export async function abortMissionRun(runId: string): Promise<AbortMissionRunRes
   const run = await missionRunsRepo.getRun(runId);
   if (!run) throw new Error(`Run ${runId} not found`);
 
-  const terminal = new Set(["completed", "failed", "stopped", "cancelled"]);
-  if (terminal.has(run.status)) {
+  if (TERMINAL_RUN_STATUSES.has(run.status)) {
     return { aborted: false, finalStatus: run.status as MissionStatus, rejectedApprovals: 0 };
   }
 
@@ -180,8 +179,7 @@ export async function stopMissionRunForEdit(
   const run = await missionRunsRepo.getRun(runId);
   if (!run) throw new Error(`Run ${runId} not found`);
 
-  const terminal = new Set(["completed", "failed", "stopped", "cancelled"]);
-  if (terminal.has(run.status)) {
+  if (TERMINAL_RUN_STATUSES.has(run.status)) {
     return {
       stopped: false,
       finalStatus: run.status as MissionStatus,
@@ -223,24 +221,4 @@ export async function stopMissionRunForEdit(
   });
 
   return { stopped: true, finalStatus: "draft", rejectedApprovals };
-}
-
-// ── Internal helpers ────────────────────────────────────────────
-
-/**
- * Filter the global pending-approvals list by sessionId and reject each.
- * `approval_queue` has no `mission_run_id`, but every approval enqueued
- * during a mission run carries the run's sessionId, so this is the safe
- * boundary. Per-row CAS in `approvalsRepo.reject` keeps the count honest
- * (we only count rows that were still `pending` at our CAS time).
- */
-async function rejectPendingApprovalsForSession(sessionId: string): Promise<number> {
-  const pending = await approvalsRepo.getPending();
-  let count = 0;
-  for (const approval of pending) {
-    if (approval.sessionId !== sessionId) continue;
-    const rejected = await approvalsRepo.reject(approval.id);
-    if (rejected) count++;
-  }
-  return count;
 }

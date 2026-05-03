@@ -93,7 +93,8 @@ export async function inspectProfits(walletAddress?: string, namespace?: string,
 
 export async function inspectUnrealized(namespace?: string): Promise<ToolResult> {
   const { query } = await import("@vex-agent/db/client.js");
-  const { parseInstrumentKey, resolveChainId } = await import("@vex-agent/sync/instrument-key.js");
+  const { parseInstrumentKey } = await import("@vex-agent/sync/instrument-key.js");
+  const { getPortfolioChainId, resolvePortfolioChainIds } = await import("@vex-agent/sync/portfolio-chain-map.js");
 
   const lotConditions: string[] = ["l.status IN ('open', 'partial')"];
   const lotParams: unknown[] = [];
@@ -115,22 +116,29 @@ export async function inspectUnrealized(namespace?: string): Promise<ToolResult>
   );
 
   const items: Record<string, unknown>[] = [];
-  for (const r of rows) {
-    const parsed = parseInstrumentKey(r.instrument_key as string);
+  const parsedRows = rows.map((row) => ({
+    row,
+    parsed: parseInstrumentKey(String(row.instrument_key)),
+  }));
+  const chainIds = await resolvePortfolioChainIds(parsedRows.map((entry) => entry.parsed.chain));
+
+  for (const { row: r, parsed } of parsedRows) {
     let currentPrice: number | null = null;
     let decimals = 18;
 
     if (parsed.tokenAddress) {
-      const chainId = resolveChainId(parsed.chain);
-      const balanceRows = await query<Record<string, unknown>>(
-        `SELECT price_usd, decimals FROM proj_balances
-         WHERE wallet_address = $1 AND token_address = $2 ${chainId != null ? "AND chain_id = $3" : ""}
-         LIMIT 1`,
-        chainId != null ? [r.wallet_address, parsed.tokenAddress, chainId] : [r.wallet_address, parsed.tokenAddress],
-      );
-      if (balanceRows.length > 0) {
-        currentPrice = balanceRows[0].price_usd != null ? Number(balanceRows[0].price_usd) : null;
-        decimals = (balanceRows[0].decimals as number) ?? 18;
+      const chainId = getPortfolioChainId(chainIds, parsed.chain);
+      if (chainId != null) {
+        const balanceRows = await query<Record<string, unknown>>(
+          `SELECT price_usd, decimals FROM proj_balances
+           WHERE wallet_address = $1 AND token_address = $2 AND chain_id = $3
+           LIMIT 1`,
+          [r.wallet_address, parsed.tokenAddress, chainId],
+        );
+        if (balanceRows.length > 0) {
+          currentPrice = balanceRows[0].price_usd != null ? Number(balanceRows[0].price_usd) : null;
+          decimals = (balanceRows[0].decimals as number) ?? 18;
+        }
       }
     }
 

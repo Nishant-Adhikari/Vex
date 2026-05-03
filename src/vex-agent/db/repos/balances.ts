@@ -107,14 +107,14 @@ export async function getBalances(walletAddress: string, chainId?: number): Prom
 
 /** Per-chain aggregation for UI. */
 export async function getBalancesByChain(walletAddress: string): Promise<ChainSummary[]> {
-  const rows = await query<{ chain_id: number; total_usd: string; token_count: string }>(
+  const rows = await query<{ chain_id: string | number; total_usd: string; token_count: string }>(
     `SELECT chain_id, COALESCE(SUM(balance_usd), 0) AS total_usd, COUNT(*) AS token_count
      FROM proj_balances WHERE wallet_address = $1
      GROUP BY chain_id ORDER BY total_usd DESC`,
     [walletAddress],
   );
   return rows.map(r => ({
-    chainId: r.chain_id,
+    chainId: Number(r.chain_id),
     totalUsd: parseFloat(r.total_usd),
     tokenCount: parseInt(r.token_count, 10),
   }));
@@ -177,7 +177,7 @@ function mapBalanceRow(r: Record<string, unknown>): BalanceRow {
   return {
     walletFamily: r.wallet_family as string,
     walletAddress: r.wallet_address as string,
-    chainId: r.chain_id as number,
+    chainId: Number(r.chain_id),
     tokenAddress: r.token_address as string,
     tokenSymbol: r.token_symbol as string | null,
     tokenName: r.token_name as string | null,

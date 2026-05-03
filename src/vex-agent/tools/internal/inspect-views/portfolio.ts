@@ -12,6 +12,7 @@ export async function inspectSummary(): Promise<ToolResult> {
   const { getLatestSnapshot } = await import("@vex-agent/db/repos/balances.js");
   const { getTotalRealizedPnl } = await import("@vex-agent/db/repos/pnl-matches.js");
   const { query: dbQuery } = await import("@vex-agent/db/client.js");
+  const { resolvePortfolioChainIds } = await import("@vex-agent/sync/portfolio-chain-map.js");
 
   const totalUsd = await getTotalUsd();
   const openPositions = await getOpen();
@@ -26,19 +27,21 @@ export async function inspectSummary(): Promise<ToolResult> {
   );
   const predictionUnrealized = mtmRow[0]?.total != null ? Number(mtmRow[0].total) : null;
 
-  const spotRow = await dbQuery<{ total: string | null }>(
-    `WITH lot_vals AS (
-       SELECT l.cost_basis_usd * l.remaining_quantity_raw::numeric / l.quantity_raw::numeric AS remaining_cost,
-              l.remaining_quantity_raw::numeric / power(10, COALESCE(b.decimals, 18)) * b.price_usd AS current_val
-       FROM proj_pnl_lots l
-       LEFT JOIN proj_balances b ON b.wallet_address = l.wallet_address
-         AND b.token_address = split_part(l.instrument_key, ':', 2)
-       WHERE l.status IN ('open', 'partial') AND b.price_usd IS NOT NULL AND l.cost_basis_usd IS NOT NULL
-     )
-     SELECT SUM(current_val - remaining_cost) AS total FROM lot_vals`,
+  const spotLotRow = await dbQuery<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM proj_pnl_lots WHERE status IN ('open', 'partial')",
     [],
   );
-  const spotUnrealized = spotRow[0]?.total != null ? Number(spotRow[0].total) : null;
+  const openSpotLotCount = Number(spotLotRow[0]?.count ?? 0);
+  const spotChainRows = await dbQuery<{ chain: string }>(
+    `SELECT DISTINCT split_part(instrument_key, ':', 1) AS chain
+     FROM proj_pnl_lots
+     WHERE status IN ('open', 'partial')`,
+    [],
+  );
+  const chainIds = await resolvePortfolioChainIds(spotChainRows.map((row) => row.chain));
+  const spotUnrealized = chainIds.size > 0
+    ? await calculateSpotUnrealized(chainIds)
+    : null;
 
   if (predictionUnrealized != null || spotUnrealized != null) {
     unrealizedPnlUsd = (predictionUnrealized ?? 0) + (spotUnrealized ?? 0);
@@ -48,6 +51,7 @@ export async function inspectSummary(): Promise<ToolResult> {
     view: "summary",
     totalBalanceUsd: totalUsd,
     openPositionCount: openPositions.length,
+    openSpotLotCount,
     latestSnapshot: latestSnapshot ? {
       totalUsd: latestSnapshot.totalUsd,
       pnlVsPrev: latestSnapshot.pnlVsPrev,
@@ -56,8 +60,38 @@ export async function inspectSummary(): Promise<ToolResult> {
     } : null,
     realizedPnlUsd: realizedPnlRaw != null ? Number(realizedPnlRaw) : null,
     unrealizedPnlUsd,
-    note: "Realized PnL from FIFO lot matching. Unrealized from prediction MTM + spot lots × current prices. Use 'unrealized' view for per-instrument detail.",
+    note: "Spot inventory is tracked as FIFO lots, not open_positions. Realized PnL comes from matched lots; unrealized comes from prediction MTM + spot lots × projected balance prices.",
   });
+}
+
+async function calculateSpotUnrealized(
+  chainIds: ReadonlyMap<string, number>,
+): Promise<number | null> {
+  const { query: dbQuery } = await import("@vex-agent/db/client.js");
+  const params: unknown[] = [];
+  const valuesSql = [...chainIds.entries()].map(([chain, chainId]) => {
+    params.push(chain, chainId);
+    const start = params.length - 1;
+    return `($${start}::text, $${start + 1}::bigint)`;
+  }).join(", ");
+
+  const spotRow = await dbQuery<{ total: string | null }>(
+    `WITH chain_map(chain_slug, chain_id) AS (VALUES ${valuesSql}),
+     lot_vals AS (
+       SELECT l.cost_basis_usd * l.remaining_quantity_raw::numeric / l.quantity_raw::numeric AS remaining_cost,
+              l.remaining_quantity_raw::numeric / power(10, COALESCE(b.decimals, 18)) * b.price_usd AS current_val
+       FROM proj_pnl_lots l
+       JOIN chain_map cm ON cm.chain_slug = lower(split_part(l.instrument_key, ':', 1))
+       LEFT JOIN proj_balances b ON b.wallet_address = l.wallet_address
+         AND b.token_address = split_part(l.instrument_key, ':', 2)
+         AND b.chain_id = cm.chain_id
+       WHERE l.status IN ('open', 'partial') AND b.price_usd IS NOT NULL AND l.cost_basis_usd IS NOT NULL
+     )
+     SELECT SUM(current_val - remaining_cost) AS total FROM lot_vals`,
+    params,
+  );
+
+  return spotRow[0]?.total != null ? Number(spotRow[0].total) : null;
 }
 
 export async function inspectBalances(): Promise<ToolResult> {

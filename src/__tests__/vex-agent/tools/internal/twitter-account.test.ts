@@ -76,6 +76,36 @@ describe("twitter_account", () => {
     expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
+  it("rejects tweet_search without query or filter", async () => {
+    const result = await handleTwitterAccount(
+      { action: "tweet_search" },
+      baseContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("tweet_search requires query or filter");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
+  });
+
+  it("accepts tweet_search with a query shortcut", async () => {
+    mockExecuteTwitterAccountRequest.mockResolvedValueOnce({
+      action: "tweet_search",
+      data: { items: [], next: "" },
+    });
+
+    const result = await handleTwitterAccount(
+      { action: "tweet_search", query: "pump fun", count: 5 },
+      baseContext,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockExecuteTwitterAccountRequest).toHaveBeenCalledWith({
+      action: "tweet_search",
+      query: "pump fun",
+      count: 5,
+    });
+  });
+
   it("redacts cookie names, bearer tokens, and the configured API key from errors", async () => {
     process.env.RETTIWT_API_KEY = "secret-do-not-leak";
     mockExecuteTwitterAccountRequest.mockRejectedValueOnce(

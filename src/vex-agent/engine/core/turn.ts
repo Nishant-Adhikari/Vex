@@ -12,6 +12,7 @@ import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
 import { formatActiveKnowledgeBlock } from "../prompts/knowledge.js";
 import { formatSessionEpisodeRecallBlock } from "../prompts/session-memory.js";
 import { effectiveRecallSeed, type LastEngineMessageHint } from "./recall-seed.js";
+import { repairOrphanedToolCalls } from "./transcript-integrity.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
@@ -99,8 +100,17 @@ export async function executeTurn(
     existingMessages,
   );
 
+  // In-flight repair only; DB tape remains unchanged.
+  const repair = repairOrphanedToolCalls(providerMessages);
+  if (repair.insertedPlaceholders > 0) {
+    logger.info("turn.transcript.repaired", {
+      sessionId: context.sessionId,
+      inserted: repair.insertedPlaceholders,
+    });
+  }
+
   // Inference
-  const response = await provider.chatCompletion(providerMessages, tools, config);
+  const response = await provider.chatCompletion(repair.messages, tools, config);
 
   // Log usage + update token count
   // NOTE: assistant message is NOT saved here — turn-loop handles deferred save

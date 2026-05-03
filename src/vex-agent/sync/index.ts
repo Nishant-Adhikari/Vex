@@ -11,9 +11,6 @@ import { drainPendingRuns } from "./worker.js";
 import * as syncRepo from "@vex-agent/db/repos/sync.js";
 import logger from "@utils/logger.js";
 
-/** Default periodic interval for full balance refresh (5 min). */
-const DEFAULT_PERIODIC_INTERVAL_MS = 5 * 60 * 1000;
-
 /**
  * Initialize sync pipeline on boot.
  *

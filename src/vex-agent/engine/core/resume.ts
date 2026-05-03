@@ -5,7 +5,7 @@
  * then dispatch the approved tool call and re-enter the turn loop.
  */
 
-import type { TurnResult } from "../types.js";
+import { type TurnResult, TERMINAL_RUN_STATUSES } from "../types.js";
 import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
@@ -43,10 +43,7 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
   // visited the queue but had already finalised the run. Without this,
   // dispatch would execute a tool against a cancelled mission.
   const activeRunForGuard = await missionRunsRepo.getActiveRunBySession(sessionId);
-  if (
-    activeRunForGuard &&
-    new Set(["completed", "failed", "stopped", "cancelled"]).has(activeRunForGuard.status)
-  ) {
+  if (activeRunForGuard && TERMINAL_RUN_STATUSES.has(activeRunForGuard.status)) {
     throw new Error(
       `Approval ${approvalId} cannot be applied: mission run ${activeRunForGuard.id} is ${activeRunForGuard.status}`,
     );

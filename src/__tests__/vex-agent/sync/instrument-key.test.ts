@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseInstrumentKey, resolveChainId } from "../../../vex-agent/sync/instrument-key.js";
+import { parseInstrumentKey } from "../../../vex-agent/sync/instrument-key.js";
 
 describe("parseInstrumentKey", () => {
   it("solana spot: solana:{mint}", () => {
@@ -54,18 +54,5 @@ describe("parseInstrumentKey", () => {
   it("unknown format", () => {
     const r = parseInstrumentKey("weird");
     expect(r.kind).toBe("unknown");
-  });
-});
-
-describe("resolveChainId", () => {
-  it("resolves known chains", () => {
-    expect(resolveChainId("ethereum")).toBe(1);
-    expect(resolveChainId("polygon")).toBe(137);
-    expect(resolveChainId("base")).toBe(8453);
-  });
-
-  it("returns undefined for unknown", () => {
-    expect(resolveChainId("solana")).toBeUndefined();
-    expect(resolveChainId("unknown")).toBeUndefined();
   });
 });

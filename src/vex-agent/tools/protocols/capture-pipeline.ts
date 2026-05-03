@@ -8,6 +8,8 @@
  * Pipeline: capture items → recordCaptureItems() → populateActivity() per item
  */
 
+import { sanitizeJsonbValue } from "@vex-agent/db/params.js";
+
 /**
  * Extract external_refs from handler result data for correlation/lookup.
  * Maps known fields per namespace to canonical keys.
@@ -69,22 +71,23 @@ export async function populateCaptureItems(
     : tradeCapture ? [tradeCapture] : [];
 
   if (items.length === 0) return;
+  const sanitizedItems = items.map(sanitizeCaptureRecord);
 
   const { recordCaptureItems } = await import("@vex-agent/db/repos/capture-items.js");
   const { populateActivity } = await import("@vex-agent/sync/activity-populator.js");
 
   const captureItemIds = await recordCaptureItems(
     executionId,
-    items.map(item => ({
+    sanitizedItems.map(item => ({
       tradeCapture: item,
       externalRefs: extractExternalRefs({ _tradeCapture: item }),
     })),
   );
 
-  for (let i = 0; i < items.length; i++) {
-    const itemRefs = extractExternalRefs({ _tradeCapture: items[i] });
+  for (let i = 0; i < sanitizedItems.length; i++) {
+    const itemRefs = extractExternalRefs({ _tradeCapture: sanitizedItems[i] });
     const mergedRefs = { ...executionExternalRefs, ...itemRefs };
-    await populateActivity(executionId, captureItemIds[i] ?? null, toolId, namespace, items[i], mergedRefs);
+    await populateActivity(executionId, captureItemIds[i] ?? null, toolId, namespace, sanitizedItems[i], mergedRefs);
   }
 }
 
@@ -107,4 +110,13 @@ export async function replayActivityFromCapture(
     const mergedRefs = { ...executionExternalRefs, ...itemRefs };
     await populateActivity(executionId, item.id, toolId, namespace, item.data, mergedRefs);
   }
+}
+
+function sanitizeCaptureRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = sanitizeJsonbValue(value);
+  return isRecord(sanitized) ? sanitized : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

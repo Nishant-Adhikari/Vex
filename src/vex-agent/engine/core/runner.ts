@@ -4,5 +4,6 @@
  */
 
 export { processChatTurn } from "./runner/chat.js";
-export { processMissionSetupTurn, startMission, resumeMissionRun } from "./runner/mission.js";
+export { processMissionSetupTurn } from "./runner/setup-turn.js";
+export { startMission, resumeMissionRun } from "./runner/mission.js";
 export { processFullAutonomousTurn, resumeFullAutonomousSession } from "./runner/full-autonomous.js";

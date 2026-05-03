@@ -152,13 +152,25 @@ describe("capture contract — runtime validator", () => {
     expect(valid).toBe(true);
   });
 
-  it("rejects pnl_spot missing tradeSide", () => {
+  it("rejects pnl_spot missing tradeSide without a neutral Solana swap marker", () => {
     const valid = validateCaptureContract("solana.swap.execute", {
       type: "swap", walletAddress: "0x",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
+      inputValueUsd: "5.00", valuationSource: "jupiter_exact",
     });
     expect(valid).toBe(false);
+  });
+
+  it("accepts neutral Solana swaps without tradeSide as activity-only captures", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x",
+      instrumentKey: "solana:USDT", inputTokenAddress: "0xUSDC", outputTokenAddress: "0xUSDT",
+      inputAmount: "100", outputAmount: "100",
+      inputValueUsd: "100.00", valuationSource: "jupiter_exact",
+      meta: { stableSwap: true },
+    });
+    expect(valid).toBe(true);
   });
 
   it("rejects capture:full with null tradeCapture", () => {
@@ -333,6 +345,16 @@ describe("capture contract — valuation expectations", () => {
     const valid = validateCaptureContract("solana.predict.claim", {
       type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "pk",
       outputValueUsd: "3.50", valuationSource: "prediction_exact",
+    });
+    expect(valid).toBe(true);
+  });
+
+  it("Solana swap exact capture with only outputValueUsd passes", () => {
+    const valid = validateCaptureContract("solana.swap.execute", {
+      type: "swap", walletAddress: "0x", tradeSide: "sell",
+      instrumentKey: "solana:BONK", inputTokenAddress: "0xBONK", outputTokenAddress: "So111",
+      inputAmount: "100", outputAmount: "200",
+      outputValueUsd: "3.50", valuationSource: "jupiter_exact",
     });
     expect(valid).toBe(true);
   });

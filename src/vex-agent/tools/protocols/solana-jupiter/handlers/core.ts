@@ -95,8 +95,10 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const input = str(p, "inputToken"), output = str(p, "outputToken");
     const amount = num(p, "amount");
     if (!input || !output || amount == null) return fail("Missing required: inputToken, outputToken, amount");
-    const result = await executeJupiterSwap(input, output, amount, walletSecret(), { slippageBps: num(p, "slippageBps") });
+    const wallet = requireSolanaWallet();
+    const result = await executeJupiterSwap(input, output, amount, wallet.secretKey, { slippageBps: num(p, "slippageBps") });
     const cls = classifySolanaSwap(result.inputToken.address, result.outputToken.address);
+    const hasExactUsdValue = result.order.inUsdValue != null || result.order.outUsdValue != null;
 
     // Side-aware unitPriceUsd (best-effort, from human-readable amounts)
     let unitPriceUsd: string | undefined;
@@ -130,12 +132,12 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
           inputToken: result.inputToken.symbol, outputToken: result.outputToken.symbol,
           inputTokenAddress: result.inputToken.address, outputTokenAddress: result.outputToken.address,
           inputAmount: result.inputAmountRaw, outputAmount: result.outputAmountRaw,
-          signature: result.signature, walletAddress: walletAddress(p),
+          signature: result.signature, walletAddress: wallet.address,
           tradeSide: cls.tradeSide, instrumentKey: `solana:${cls.instrumentMint}`,
           inputValueUsd: result.order.inUsdValue != null ? String(result.order.inUsdValue) : undefined,
           outputValueUsd: result.order.outUsdValue != null ? String(result.order.outUsdValue) : undefined,
           unitPriceUsd,
-          valuationSource: result.order.inUsdValue != null ? "jupiter_exact" : "none",
+          valuationSource: hasExactUsdValue ? "jupiter_exact" : "none",
           benchmarkAssetKey: hasSolLeg ? "SOL" : undefined,
           settlementAssetKey,
           inputValueNative: inputIsSol ? result.inputAmount : undefined,

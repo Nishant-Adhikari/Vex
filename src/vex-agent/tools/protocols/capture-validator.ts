@@ -56,9 +56,7 @@ export function validateCaptureContract(
     const value = tradeCapture[field];
     if (value === undefined || value === null || value === "") {
       // Check if this field has an exception
-      const hasException = contract.exceptions?.some(e =>
-        e.toLowerCase().includes(`no ${field.toLowerCase()}`),
-      );
+      const hasException = hasRequiredFieldException(field, tradeCapture, contract.exceptions);
       if (!hasException) {
         missingFields.push(field);
       }
@@ -121,6 +119,21 @@ export function validateCaptureContract(
   }
 
   return true;
+}
+
+function hasRequiredFieldException(
+  field: string,
+  tradeCapture: Record<string, unknown>,
+  exceptions: readonly string[] | undefined,
+): boolean {
+  if (!exceptions?.some(e => e.toLowerCase().includes(`no ${field.toLowerCase()}`))) {
+    return false;
+  }
+
+  if (field !== "tradeSide") return true;
+
+  const meta = tradeCapture.meta as Record<string, unknown> | undefined;
+  return meta?.stableSwap === true || meta?.ambiguousSwap === true;
 }
 
 /**

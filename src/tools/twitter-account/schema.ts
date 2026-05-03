@@ -63,10 +63,16 @@ const TweetFilter = z
 const WithCursor20 = z.object({ count: Count20, cursor: Cursor });
 const WithCursor100 = z.object({ count: Count100, cursor: Cursor });
 
-export const TwitterAccountParamsSchema = z.discriminatedUnion("action", [
+const TwitterAccountParamsBaseSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("account_status") }),
   z.object({ action: z.literal("tweet_details"), tweetId: NumericId }),
-  z.object({ action: z.literal("tweet_search"), filter: TweetFilter, count: Count20, cursor: Cursor }),
+  z.object({
+    action: z.literal("tweet_search"),
+    query: NonEmptyString.optional(),
+    filter: TweetFilter.optional(),
+    count: Count20,
+    cursor: Cursor,
+  }),
   z.object({
     action: z.literal("tweet_replies"),
     tweetId: NumericId,
@@ -90,5 +96,16 @@ export const TwitterAccountParamsSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("user_followers") }).merge(UserTarget).merge(WithCursor100),
   z.object({ action: z.literal("user_following") }).merge(UserTarget).merge(WithCursor100),
 ]);
+
+export const TwitterAccountParamsSchema = TwitterAccountParamsBaseSchema.superRefine((params, ctx) => {
+  if (params.action !== "tweet_search") return;
+  if (params.query !== undefined || params.filter !== undefined) return;
+
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: "tweet_search requires query or filter",
+    path: ["query"],
+  });
+});
 
 export type TwitterAccountParams = z.infer<typeof TwitterAccountParamsSchema>;

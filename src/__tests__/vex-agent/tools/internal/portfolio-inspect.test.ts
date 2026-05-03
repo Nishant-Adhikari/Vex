@@ -27,6 +27,13 @@ vi.mock("@vex-agent/db/repos/pnl-matches.js", () => ({
   getTotalRealizedPnl: (...a: unknown[]) => mockGetTotalRealizedPnl(...a),
 }));
 
+const mockResolvePortfolioChainIds = vi.fn().mockResolvedValue(new Map());
+vi.mock("@vex-agent/sync/portfolio-chain-map.js", () => ({
+  resolvePortfolioChainIds: (...a: unknown[]) => mockResolvePortfolioChainIds(...a),
+  getPortfolioChainId: (chainIds: ReadonlyMap<string, number>, chain: string) =>
+    chainIds.get(chain.trim().toLowerCase()),
+}));
+
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(), query: vi.fn().mockResolvedValue([]), queryOne: vi.fn().mockResolvedValue(null),
 }));
@@ -37,7 +44,10 @@ import { makeTestContext } from "../_test-context.js";
 const ctx = makeTestContext({ sessionId: "s1" });
 
 describe("portfolio_inspect tool", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolvePortfolioChainIds.mockResolvedValue(new Map());
+  });
 
   it("rejects invalid view", async () => {
     const r = await handlePortfolioInspect({ view: "invalid" }, ctx);
@@ -118,11 +128,14 @@ describe("portfolio_inspect tool", () => {
       const { query } = await import("@vex-agent/db/client.js");
       // prediction MTM aggregate
       (query as any).mockResolvedValueOnce([{ total: null }]);
-      // spot unrealized aggregate
-      (query as any).mockResolvedValueOnce([{ total: null }]);
+      // open spot lot count
+      (query as any).mockResolvedValueOnce([{ count: "0" }]);
+      // distinct spot lot chains
+      (query as any).mockResolvedValueOnce([]);
       const r = await handlePortfolioInspect({ view: "summary" }, ctx);
       expect(r.data!.totalBalanceUsd).toBe(5000);
       expect(r.data!.openPositionCount).toBe(2);
+      expect(r.data!.openSpotLotCount).toBe(0);
       expect(r.data!.realizedPnlUsd).toBeNull();
       expect(r.data!.unrealizedPnlUsd).toBeNull();
     });
@@ -134,7 +147,8 @@ describe("portfolio_inspect tool", () => {
       mockGetTotalRealizedPnl.mockResolvedValueOnce("42.50");
       const { query } = await import("@vex-agent/db/client.js");
       (query as any).mockResolvedValueOnce([{ total: null }]);
-      (query as any).mockResolvedValueOnce([{ total: null }]);
+      (query as any).mockResolvedValueOnce([{ count: "0" }]);
+      (query as any).mockResolvedValueOnce([]);
       const r = await handlePortfolioInspect({ view: "summary" }, ctx);
       expect(r.data!.realizedPnlUsd).toBe(42.50);
     });
@@ -291,6 +305,56 @@ describe("portfolio_inspect tool", () => {
       expect(r.data!.view).toBe("unrealized");
       expect(r.data!.count).toBe(0);
     });
+
+    it("uses dynamic Khalani chain ids for Solana spot prices", async () => {
+      const { query } = await import("@vex-agent/db/client.js");
+      (query as any).mockResolvedValueOnce([{
+        instrument_key: "solana:BonkMint",
+        wallet_address: "SolWallet",
+        namespace: "solana",
+        chain: "solana",
+        total_remaining_raw: "1000000",
+        total_quantity_raw: "1000000",
+        total_cost_basis_usd: "1.00",
+        remaining_cost_basis_usd: "1.00",
+        remaining_cost_basis_native: null,
+        benchmark_asset_key: "SOL",
+      }]);
+      mockResolvePortfolioChainIds.mockResolvedValueOnce(new Map([["solana", 20011000000]]));
+      (query as any).mockResolvedValueOnce([{ price_usd: "0.000002", decimals: 6 }]);
+
+      const r = await handlePortfolioInspect({ view: "unrealized" }, ctx);
+
+      expect(r.success).toBe(true);
+      expect((query as any).mock.calls[1][1]).toEqual(["SolWallet", "BonkMint", 20011000000]);
+      const item = (r.data!.instruments as any[])[0];
+      expect(item.currentValueUsd).toBe(0.000002);
+    });
+
+    it("does not cross-chain match prices when chain is unresolved", async () => {
+      const { query } = await import("@vex-agent/db/client.js");
+      (query as any).mockResolvedValueOnce([{
+        instrument_key: "unknown:Token",
+        wallet_address: "0xWallet",
+        namespace: "test",
+        chain: "unknown",
+        total_remaining_raw: "1000000",
+        total_quantity_raw: "1000000",
+        total_cost_basis_usd: "1.00",
+        remaining_cost_basis_usd: "1.00",
+        remaining_cost_basis_native: null,
+        benchmark_asset_key: null,
+      }]);
+      mockResolvePortfolioChainIds.mockResolvedValueOnce(new Map());
+
+      const r = await handlePortfolioInspect({ view: "unrealized" }, ctx);
+
+      expect(r.success).toBe(true);
+      expect((query as any).mock.calls).toHaveLength(1);
+      const item = (r.data!.instruments as any[])[0];
+      expect(item.currentPrice).toBeNull();
+      expect(item.unrealizedPnlUsd).toBeNull();
+    });
   });
 
   describe("summary with unrealized", () => {
@@ -302,10 +366,16 @@ describe("portfolio_inspect tool", () => {
       const { query } = await import("@vex-agent/db/client.js");
       // prediction MTM aggregate
       (query as any).mockResolvedValueOnce([{ total: "12.50" }]);
+      // open spot lot count
+      (query as any).mockResolvedValueOnce([{ count: "1" }]);
+      // distinct spot lot chains
+      (query as any).mockResolvedValueOnce([{ chain: "solana" }]);
+      mockResolvePortfolioChainIds.mockResolvedValueOnce(new Map([["solana", 20011000000]]));
       // spot unrealized aggregate
       (query as any).mockResolvedValueOnce([{ total: "7.25" }]);
       const r = await handlePortfolioInspect({ view: "summary" }, ctx);
       expect(r.data!.unrealizedPnlUsd).toBe(19.75);
+      expect(r.data!.openSpotLotCount).toBe(1);
     });
   });
 });

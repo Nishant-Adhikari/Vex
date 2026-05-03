@@ -153,6 +153,14 @@ describe("position-projector", () => {
       expect(mockClosePosition).toHaveBeenCalledWith("solana", "order", "orderKey123", "cancelled");
     });
 
+    it("closes order on captureStatus=executed", async () => {
+      await projectPosition(makeActivity({
+        productType: "order", positionKey: "orderKey123", captureStatus: "executed",
+      }));
+      expect(mockClosePosition).toHaveBeenCalledWith("solana", "order", "orderKey123", "filled");
+      expect(mockUpsertPosition).not.toHaveBeenCalled();
+    });
+
     it("does NOT open FIFO lot", async () => {
       await projectPosition(makeActivity({
         productType: "order", positionKey: "orderKey123", captureStatus: "open",
