@@ -60,6 +60,7 @@ export async function runTool(
     sessionKind,
     contextUsageBand: computeBand(session.tokenCount, DEFAULT_CONTEXT_LIMIT),
     sourceSurface: "vex_agent",
+    sourceSession: sessionId,
   };
 
   const toolCallId = `direct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

@@ -50,7 +50,7 @@ export async function persistToolResultWithOverflow(
   const stub =
     `[tool_output_overflow blob_key=${blobKey} bytes=${bytes} shape=${shapeKind} ` +
     `preview="${preview}"]. ` +
-    `Call \`tool_output_read(blob_key="${blobKey}")\` for the full payload.`;
+    `Call \`tool_output_read(blob_key="${blobKey}")\` to read bounded slices.`;
 
   let blobWritten = false;
   try {

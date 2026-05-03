@@ -4,9 +4,9 @@
  * Shape diverges from chat/mission:
  *   - `sessionKind = "full_autonomous"` and no mission attached.
  *   - `loopMode = "full"` so `loop_defer` is visible in the toolset.
- *   - `maxIterations` follows `DEFAULT_LOOP_CONFIG` (50); without a mission
- *     there are no business stops — only `loop_defer` (→ paused_wake),
- *     `user_stopped` (abort), `iteration_limit`, `timeout`.
+ *   - `maxIterations` follows `DEFAULT_LOOP_CONFIG` (50) as a per-slice
+ *     guard. Slice exhaustion schedules a wake continuation instead of
+ *     terminating the session.
  *
  * Resume semantics: `resumeFullAutonomousSession(sessionId)` is what PR-7's
  * wake executor invokes for `kind='full_autonomous'` rows. It re-reads
@@ -28,6 +28,10 @@ import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
 import type { FullAutonomousContext } from "../../prompts/full-autonomous.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
+import {
+  isContinuableRuntimeStop,
+  scheduleRuntimeContinuation,
+} from "./runtime-continuation.js";
 
 const OPEN_LOOPS_CAP = 10;
 const RECENT_EPISODES_CAP = 3;
@@ -119,6 +123,15 @@ async function runFullAutonomousLoop(
     loopConfig,
     { fullAutonomousContext },
   );
+
+  if (isContinuableRuntimeStop(result.stopReason)) {
+    await scheduleRuntimeContinuation({
+      sessionId,
+      missionRunId: null,
+      kind: "full_autonomous",
+      trigger: result.stopReason,
+    });
+  }
 
   return {
     text: result.text,

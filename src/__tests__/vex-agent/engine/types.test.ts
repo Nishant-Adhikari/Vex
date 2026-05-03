@@ -69,9 +69,9 @@ describe("engine types", () => {
     it("covers all runtime stop reasons", () => {
       const values: RuntimeStopReason[] = [
         "approval_required", "checkpoint_pause", "iteration_limit",
-        "timeout", "waiting_for_parent", "system_error",
+        "timeout", "waiting_for_parent", "waiting_for_wake", "system_error",
       ];
-      expect(values).toHaveLength(6);
+      expect(values).toHaveLength(7);
     });
   });
 

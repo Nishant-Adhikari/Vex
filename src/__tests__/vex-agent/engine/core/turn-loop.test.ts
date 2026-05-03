@@ -175,6 +175,11 @@ describe("turn-loop", () => {
 
       expect(result.text).toBe("Your balance is 2.5 SOL");
       expect(result.toolCallsMade).toBe(1);
+      const [, toolContext] = mockDispatchTool.mock.calls[0];
+      expect(toolContext).toMatchObject({
+        sourceSurface: "vex_agent",
+        sourceSession: "session-1",
+      });
     });
   });
 

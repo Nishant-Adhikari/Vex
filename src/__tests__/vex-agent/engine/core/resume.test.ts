@@ -138,6 +138,8 @@ describe("resume", () => {
       // Dispatched with approved=true
       const [, toolContext] = mockDispatchTool.mock.calls[0];
       expect(toolContext.approved).toBe(true);
+      expect(toolContext.sourceSurface).toBe("vex_agent");
+      expect(toolContext.sourceSession).toBe("session-1");
 
       // Tool result saved
       expect(mockAddMessage).toHaveBeenCalledWith(

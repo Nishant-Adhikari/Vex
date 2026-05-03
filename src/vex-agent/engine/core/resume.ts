@@ -93,6 +93,8 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
     // happens at the next turn-loop iteration. Safe default for one-shot dispatch.
     sessionKind: "chat",
     contextUsageBand: "normal",
+    sourceSurface: "vex_agent",
+    sourceSession: sessionId,
   };
 
   const result = await dispatchTool(

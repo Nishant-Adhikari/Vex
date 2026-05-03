@@ -44,8 +44,9 @@ export function buildFullAutonomousPrompt(
   lines.push("- `mission_stop` is NOT available — there is no mission to stop.");
   lines.push("- `loop_defer` is your \"park until later\" signal. Use natural completion");
   lines.push("  points, not fixed intervals — defer when the current phase is resolved.");
-  lines.push("- If you reach `iteration_limit` without deferring, the session fails open");
-  lines.push("  and stays stuck until a user message arrives. Prefer explicit `loop_defer`.");
+  lines.push("- The runtime may yield at an iteration slice boundary and schedule an");
+  lines.push("  automatic wake continuation. Still prefer explicit `loop_defer` at");
+  lines.push("  natural pauses so the next wake has your intended timing and reason.");
   lines.push("");
 
   if (faContext) {

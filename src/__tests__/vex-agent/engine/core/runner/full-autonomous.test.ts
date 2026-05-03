@@ -16,6 +16,8 @@ const mockResolveProvider = vi.fn();
 const mockHydrate = vi.fn();
 const mockRunTurnLoop = vi.fn();
 const mockAddMessage = vi.fn();
+const mockAddEngineMessage = vi.fn();
+const mockEnqueueWake = vi.fn();
 
 vi.mock("@vex-agent/inference/registry.js", () => ({
   resolveProvider: () => mockResolveProvider(),
@@ -31,10 +33,15 @@ vi.mock("../../../../../vex-agent/engine/core/turn-loop.js", () => ({
 
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
+  addEngineMessage: (...a: unknown[]) => mockAddEngineMessage(...a),
   // `resumeMissionRun` / `resumeFullAutonomousSession` call
   // refreshBlobTtlForRecentMessages which walks live messages — keep the
   // mock deterministic.
   getLiveMessages: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
+  enqueue: (...a: unknown[]) => mockEnqueueWake(...a),
 }));
 
 const { processFullAutonomousTurn, resumeFullAutonomousSession } = await import(
@@ -46,6 +53,20 @@ const config = { provider: "test", model: "m", contextLimit: 1000, maxOutputToke
 beforeEach(() => {
   vi.clearAllMocks();
   mockResolveProvider.mockResolvedValue({ loadConfig: vi.fn().mockResolvedValue(config) });
+  mockEnqueueWake.mockResolvedValue({
+    id: "wake-1",
+    sessionId: "s1",
+    missionRunId: null,
+    kind: "full_autonomous",
+    dueAt: "2026-03-29T00:00:05.000Z",
+    status: "pending",
+    reason: "iteration_limit: runtime slice exhausted; continue autonomously",
+    payload: { trigger: "iteration_limit", automatic: true },
+    createdAt: "2026-03-29T00:00:00.000Z",
+    consumedAt: null,
+    cancelledAt: null,
+    cancelledReason: null,
+  });
   mockHydrate.mockResolvedValue({
     context: {
       sessionId: "s1",
@@ -117,5 +138,32 @@ describe("full-autonomous runner", () => {
   it("throws when the session is missing", async () => {
     mockHydrate.mockResolvedValue(null);
     await expect(processFullAutonomousTurn("ghost", "hi")).rejects.toThrow(/not found/);
+  });
+
+  it("schedules wake continuation when a runtime slice hits iteration_limit", async () => {
+    mockRunTurnLoop.mockResolvedValueOnce({
+      text: "still working",
+      toolCallsMade: 50,
+      pendingApprovals: [],
+      stopReason: "iteration_limit",
+    });
+
+    const result = await resumeFullAutonomousSession("s1");
+
+    expect(result.stopReason).toBe("iteration_limit");
+    expect(mockEnqueueWake).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "s1",
+      missionRunId: null,
+      kind: "full_autonomous",
+      payload: { trigger: "iteration_limit", automatic: true },
+    }));
+    expect(mockAddEngineMessage).toHaveBeenCalledWith(
+      "s1",
+      expect.stringContaining("runtime_yield"),
+      expect.objectContaining({
+        messageType: "runtime_yield",
+        payload: expect.objectContaining({ trigger: "iteration_limit" }),
+      }),
+    );
   });
 });

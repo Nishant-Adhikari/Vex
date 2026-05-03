@@ -189,6 +189,8 @@ export async function runTurnLoop(
           missionId: context.missionId,
           sessionKind: context.sessionKind,
           contextUsageBand: computeBand(currentTokenCount, loopConfig.contextLimit),
+          sourceSurface: "vex_agent",
+          sourceSession: context.sessionId,
         };
 
         const result = await dispatchTool(
@@ -378,7 +380,8 @@ export async function runTurnLoop(
   // a natural text-break (chat/setup), surface it as `iteration_limit` so every
   // transport can see why. Chat/setup that ended on text keep stopReason=null
   // (that's the "model replied, we're done" signal). Mission-run and
-  // full_autonomous never break on text, so they always fall through here.
+  // full_autonomous never break on text; their runners treat this as a
+  // per-slice yield, not a business stop.
   if (!stopReason && !stoppedOnText) {
     stopReason = "iteration_limit";
   }

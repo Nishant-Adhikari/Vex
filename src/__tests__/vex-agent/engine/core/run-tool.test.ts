@@ -93,6 +93,8 @@ describe("runTool", () => {
     expect(ctxArg.missionRunId).toBe("run-1");
     expect(ctxArg.missionId).toBe("m-1");
     expect(ctxArg.contextUsageBand).toBe("normal");
+    expect(ctxArg.sourceSurface).toBe("vex_agent");
+    expect(ctxArg.sourceSession).toBe("sess-1");
   });
 
   it("falls back to loopMode='off' and null missionRunId when no active run", async () => {

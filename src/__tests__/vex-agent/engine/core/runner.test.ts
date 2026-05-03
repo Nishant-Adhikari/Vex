@@ -15,6 +15,7 @@ const mockSetApprovedAt = vi.fn();
 const mockCreateRun = vi.fn();
 const mockGetRun = vi.fn();
 const mockUpdateRunStatus = vi.fn();
+const mockEnqueueWake = vi.fn();
 
 vi.mock("@vex-agent/inference/registry.js", () => ({
   resolveProvider: () => mockResolveProvider(),
@@ -48,6 +49,10 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getRun: (...a: unknown[]) => mockGetRun(...a),
   updateStatus: (...a: unknown[]) => mockUpdateRunStatus(...a),
   getActiveRun: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
+  enqueue: (...a: unknown[]) => mockEnqueueWake(...a),
 }));
 
 vi.mock("@vex-agent/tools/registry.js", () => ({
@@ -159,6 +164,20 @@ describe("runner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveProvider.mockResolvedValue(makeProvider());
+    mockEnqueueWake.mockResolvedValue({
+      id: "wake-1",
+      sessionId: "session-1",
+      missionRunId: "run-1",
+      kind: "mission_run",
+      dueAt: "2026-03-29T00:00:05.000Z",
+      status: "pending",
+      reason: "iteration_limit: runtime slice exhausted; continue autonomously",
+      payload: { trigger: "iteration_limit", automatic: true },
+      createdAt: "2026-03-29T00:00:00.000Z",
+      consumedAt: null,
+      cancelledAt: null,
+      cancelledReason: null,
+    });
   });
 
   // ── processChatTurn ─────────────────────────────────────────
@@ -320,6 +339,50 @@ describe("runner", () => {
         "failed",
         "emergency_stop",
         { summary: "Wallet state cannot be verified" },
+      );
+    });
+
+    it("schedules wake continuation instead of failing on iteration_limit", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Still working",
+        toolCallsMade: 50,
+        pendingApprovals: [],
+        stopReason: "iteration_limit",
+      });
+
+      const result = await startMission("mission-1");
+
+      expect(result.missionStatus).toBe("running");
+      expect(mockSetMissionStatus).not.toHaveBeenCalledWith("mission-1", "failed");
+      expect(mockEnqueueWake).toHaveBeenCalled();
+      const wakeInput = mockEnqueueWake.mock.calls[0]![0] as {
+        sessionId: string;
+        missionRunId: string;
+        kind: string;
+        payload: Record<string, unknown>;
+      };
+      expect(wakeInput.sessionId).toBe("session-1");
+      expect(wakeInput.kind).toBe("mission_run");
+      expect(wakeInput.missionRunId).toEqual(expect.stringMatching(/^run-/));
+      expect(wakeInput.payload).toMatchObject({ trigger: "iteration_limit", automatic: true });
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+        expect.any(String),
+        "paused_wake",
+        "waiting_for_wake",
+        expect.objectContaining({
+          summary: expect.stringContaining("iteration_limit"),
+          evidence: expect.objectContaining({ trigger: "iteration_limit" }),
+        }),
+      );
+      expect(mockAddEngineMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.stringContaining("runtime_yield"),
+        expect.objectContaining({
+          messageType: "runtime_yield",
+          payload: expect.objectContaining({ trigger: "iteration_limit" }),
+        }),
       );
     });
 

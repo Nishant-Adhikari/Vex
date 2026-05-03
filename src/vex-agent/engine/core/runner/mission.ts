@@ -31,6 +31,10 @@ import {
   registerMissionRunAbortController,
   unregisterMissionRunAbortController,
 } from "./abort.js";
+import {
+  isContinuableRuntimeStop,
+  scheduleRuntimeContinuation,
+} from "./runtime-continuation.js";
 
 // ── processMissionSetupTurn ─────────────────────────────────────
 
@@ -254,7 +258,13 @@ export async function startMission(
     unregisterMissionRunAbortController(runId);
   }
 
-  const missionStatus = await finalizeMissionRunStatus(missionId, runId, result.stopReason, result.stopPayload);
+  const missionStatus = await finalizeMissionRunStatus(
+    missionId,
+    runId,
+    sessionId,
+    result.stopReason,
+    result.stopPayload,
+  );
 
   return {
     text: result.text,
@@ -351,7 +361,13 @@ export async function resumeMissionRun(
     unregisterMissionRunAbortController(runId);
   }
 
-  const missionStatus = await finalizeMissionRunStatus(run.missionId, runId, result.stopReason, result.stopPayload);
+  const missionStatus = await finalizeMissionRunStatus(
+    run.missionId,
+    runId,
+    run.sessionId,
+    result.stopReason,
+    result.stopPayload,
+  );
 
   return {
     text: result.text,
@@ -368,13 +384,15 @@ export async function resumeMissionRun(
  * Finalize mission + run status based on stop reason.
  * Business stops → mission completed only on success; unsuccessful terminal
  * stops fail the mission so "completed" never means "goal not reached".
- * Runtime stops (iteration_limit, timeout) → mission failed, run failed.
+ * Runtime continuation stops (iteration_limit, timeout) → schedule wake and
+ * keep mission running.
  * Approval pause → run paused (already handled in turn-loop).
  * No stop → running.
  */
 async function finalizeMissionRunStatus(
   missionId: string,
   runId: string,
+  sessionId: string,
   stopReason: StopReason | null,
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
 ): Promise<MissionStatus> {
@@ -400,7 +418,25 @@ async function finalizeMissionRunStatus(
     return status;
   }
 
-  if (stopReason === "iteration_limit" || stopReason === "timeout" || stopReason === "system_error") {
+  if (isContinuableRuntimeStop(stopReason)) {
+    const continuation = await scheduleRuntimeContinuation({
+      sessionId,
+      missionRunId: runId,
+      kind: "mission_run",
+      trigger: stopReason,
+    });
+    await missionRunsRepo.updateStatus(runId, "paused_wake", "waiting_for_wake", {
+      summary: `${stopReason}: runtime slice exhausted; automatic continuation scheduled`,
+      evidence: {
+        trigger: stopReason,
+        dueAt: continuation.dueAt,
+        enqueued: continuation.enqueued,
+      },
+    });
+    return "running";
+  }
+
+  if (stopReason === "system_error") {
     await missionsRepo.setStatus(missionId, "failed");
     await missionRunsRepo.updateStatus(runId, "failed", stopReason);
     return "failed";

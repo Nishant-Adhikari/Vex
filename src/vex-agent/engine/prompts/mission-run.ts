@@ -41,6 +41,7 @@ export function buildMissionRunPrompt(
   lines.push("- If the current situation is bad, unclear, or unprofitable but no accepted stop condition matches it, continue working safely or call loop_defer and wake later");
   lines.push("- Never use mission_stop to express uncertainty, fatigue, lack of confidence, or a temporary lack of market opportunity unless that exact stop condition was accepted by the user");
   lines.push("- emergency_stop is only for safety/integrity failures: unverifiable wallet state, materially conflicting tool outputs, unavailable required infrastructure, or an action that would violate allowed wallets/chains/protocols");
+  lines.push("- Runtime slice limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
   lines.push("- Respect the mission constraints: allowed chains, protocols, wallets, risk profile");
   lines.push("- Log significant decisions with rationale for audit trail");

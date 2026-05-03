@@ -36,9 +36,10 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
     surface: "agent",
     visibility: { hiddenInMissionSetup: true },
     description:
-      "Retrieve the full payload of a previously-overflowed tool output. " +
+      "Retrieve a bounded byte slice of a previously-overflowed tool output. " +
       "When a tool returns more than ~16 KiB, the engine stores the full output off-prompt and leaves a short stub with `blob_key=<key>` in the transcript. " +
-      "Pass that `blob_key` here to get the full payload (only within the current session, and only before the TTL expires).",
+      "Pass that `blob_key` here to read the payload in slices within the current session before the TTL expires. " +
+      "Use `offset` / `max_bytes` to page through large JSON without re-reading the same blob.",
     parameters: {
       type: "object",
       properties: {
@@ -46,6 +47,16 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
           type: "string",
           description:
             "The exact blob key shown in the overflow stub (format: `tob-<yyyymmdd>-<16hex>`).",
+        },
+        offset: {
+          type: "integer",
+          description:
+            "Optional byte offset to start reading from. Defaults to 0. Use `next_offset` from the previous response to continue.",
+        },
+        max_bytes: {
+          type: "integer",
+          description:
+            "Optional maximum bytes to return. The runtime caps this below the overflow threshold so reads stay inline.",
         },
       },
       required: ["blob_key"],
