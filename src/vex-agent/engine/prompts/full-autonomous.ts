@@ -41,6 +41,7 @@ export function buildFullAutonomousPrompt(
 
   lines.push("## Tool contract");
   lines.push("");
+  lines.push("- There is no frozen mission contract and no mission stop condition list.");
   lines.push("- `mission_stop` is NOT available — there is no mission to stop.");
   lines.push("- `loop_defer` is your \"park until later\" signal. Use natural completion");
   lines.push("  points, not fixed intervals — defer when the current phase is resolved.");

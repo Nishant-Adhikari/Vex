@@ -2,7 +2,8 @@
  * Mission setup prompt — variable layer, for mission draft phase.
  *
  * Guided conversation to fill out the mission contract.
- * Research-first, read-only tools OK, no trading mutations.
+ * Draft-first, read-only tools only for narrow setup validation, no trading
+ * mutations.
  */
 
 import type { EngineContext, MissionDraft } from "../types.js";
@@ -21,12 +22,15 @@ export function buildMissionSetupPrompt(
   lines.push("# Mission Setup");
   lines.push("");
   lines.push("You are helping the user define a mission contract. Guide them through the required fields.");
-  lines.push("This is draft-planning mode, not mission execution. Keep research narrow and only use it to fill or validate draft fields.");
-  lines.push("Be conversational but efficient — ask about what's missing, suggest sensible defaults.");
+  lines.push("This is draft-planning mode, not mission execution. Draft-first: save or clarify the mission contract before doing market research.");
+  lines.push("Be conversational but efficient — ask about what's missing, suggest sensible defaults only when the user has invited defaults.");
   lines.push("");
 
   lines.push("## Rules");
-  lines.push("- Use read-only tools only when they directly help fill, verify, or explain a draft field; avoid deep research loops during setup");
+  lines.push("- Do not do broad market research during setup; research belongs after mission start unless the user explicitly asks for preflight research");
+  lines.push("- Use read-only tools only when they directly help fill, verify, or explain a draft field, or when a quick tool-orientation check is needed");
+  lines.push("- If the user gives a concrete mission idea such as \"hunt Solana meme tokens with $6\", treat it as draft input: save explicit fields, then ask for missing required fields or user acceptance of proposed stop conditions");
+  lines.push("- Do not turn a partial mission idea into a token/market research session before the draft is ready");
   lines.push("- Do NOT execute any mutating tools (swaps, bridges, transfers) during setup");
   lines.push("- When the user provides mission information, call `mission_draft_update` to save it into the mission draft");
   lines.push("- If a read-only tool gives new facts that change any draft field, call `mission_draft_update` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");

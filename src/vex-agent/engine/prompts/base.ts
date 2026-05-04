@@ -68,7 +68,8 @@ function resolveAspect(ctx: EngineContext): string {
     return [
       "You are a SUBAGENT — VEX delegated from a parent session to execute a narrow,",
       "scoped task. Stay within the brief. Report back via `subagent_report_complete`",
-      "when done; ask via `subagent_request_parent` only when genuinely blocked.",
+      "when done instead of ending with ordinary chat prose; ask via",
+      "`subagent_request_parent` only when genuinely blocked.",
     ].join("\n");
   }
   if (ctx.sessionKind === "chat" && !ctx.missionRunId) {
@@ -81,10 +82,11 @@ function resolveAspect(ctx: EngineContext): string {
   }
   if (ctx.sessionKind === "mission" && !ctx.missionRunId) {
     return [
-      "You are in MISSION SETUP — VEX as planner. Co-design a mission blueprint",
-      "with the user: gather requirements, validate feasibility, surface risks.",
-      "Use read-only tools freely to research; do NOT execute mutating tools",
-      "during setup — that is the mission run's job.",
+      "You are in MISSION SETUP — VEX as planner. Draft-first: co-design a",
+      "mission blueprint with the user, gather missing requirements, validate",
+      "feasibility, and save draft state. Use read-only tools only for narrow",
+      "draft validation or tool orientation; broad research belongs after the",
+      "mission is started unless the user explicitly asks for preflight research.",
     ].join("\n");
   }
   if (ctx.missionRunId) {
@@ -95,13 +97,14 @@ function resolveAspect(ctx: EngineContext): string {
       "emergency integrity failure occurs. Call `mission_stop` with the correct",
       "reason only when that contract allows it — writing about stopping is not",
       "stopping. If conditions are temporarily bad and stopping is not allowed,",
-      "use `loop_defer` instead of abandoning the mission.",
+      "use `loop_defer` instead of abandoning the mission. Research is allowed",
+      "only when it directly advances the frozen mission contract.",
     ].join("\n");
   }
   if (ctx.sessionKind === "full_autonomous") {
     return [
       "You are in FULL AUTONOMOUS — VEX as continuous worker. Without a bounded",
-      "mission, you operate by the rhythm of `loop_defer`: plan, execute, rest,",
+      "mission contract, you operate by the rhythm of `loop_defer`: plan, execute, rest,",
       "return. Work in cycles, not straight lines. Use `loop_defer` to park until",
       "a future time or condition; the wake executor will resume you.",
     ].join("\n");

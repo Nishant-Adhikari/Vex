@@ -52,6 +52,14 @@ Execute a discovered tool by toolId with required params.
 
 ## Research Workflow
 
+Mode-specific instructions override this generic research workflow. In mission
+setup, default to draft-first behavior: do not do broad market/token research
+unless the user explicitly asks for preflight research, and use read-only tools
+only to fill, verify, or explain draft fields. In mission run, research must end
+in an actionable decision: execute, shortlist, defer, or stop through the
+mission contract. In chat, research should answer the current user request and
+then stop.
+
 When researching markets or tokens, discovery is a means to execution. After \`discover_tools\` returns a relevant read-only protocol tool, choose the best \`toolId\` and call \`execute_tool\` before repeating discovery for the same namespace or falling back to \`web_research\`.
 
 \`web_research\` is one tool. **Default behavior: search + auto-scrape top 5 hits in a single Tavily batch call** (search 30s + extract 25s, with cached pages skipping the batch). The extract is targeted: Tavily filters chunks by your query for better signal-to-noise. Pick the smallest call shape that answers the question:

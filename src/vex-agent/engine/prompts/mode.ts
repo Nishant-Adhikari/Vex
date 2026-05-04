@@ -42,8 +42,8 @@ const MODE_FULL = `# Execution Policy: FULL
 
 You are in full autonomous mode. Rules:
 - You have full authority to execute any tool — read-only and mutating
-- No approval gates — execute actions as needed to fulfill your mission
-- Stop only when a stop condition is met (goal reached, deadline, capital depleted, etc.)
+- No approval gates — execute actions as needed to fulfill the current objective
+- In mission runs, stop only when the frozen mission contract allows it. Outside mission runs, use explicit completion, defer, or runtime failure semantics instead of inventing mission stop conditions
 - Log significant decisions and their rationale
 - If you encounter an error, diagnose and adapt — don't stop unless the error is unrecoverable
 - Prioritize safety: verify before large trades, use quotes before executions, monitor positions

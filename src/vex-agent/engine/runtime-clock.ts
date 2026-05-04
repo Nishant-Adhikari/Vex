@@ -96,7 +96,7 @@ export function buildRuntimeClockPrompt(snapshot: RuntimeClockSnapshot): string 
   lines.push("Time rules:");
   lines.push("- Treat Current time UTC as the source of truth for now/today/later.");
   lines.push("- You do not observe time while deferred; a wake means the executor resumed you after real time passed.");
-  lines.push("- To wait, call `loop_defer(after_ms, reason)` for relative waits or `loop_defer(wake_at, reason)` for an exact ISO time.");
+  lines.push("- To wait when `loop_defer` is available in your current mode, call `loop_defer(after_ms, reason)` for relative waits or `loop_defer(wake_at, reason)` for an exact ISO time.");
   lines.push("- Before using deadline_reached or scheduling another wake, compare live state against this Runtime Clock.");
 
   return lines.join("\n");

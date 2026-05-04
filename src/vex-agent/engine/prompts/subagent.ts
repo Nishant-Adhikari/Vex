@@ -39,7 +39,7 @@ export function buildSubagentPrompt(
   lines.push("- Focus exclusively on your assigned task — do not deviate");
   lines.push("- Report your findings/results clearly — the parent will consume your output");
   lines.push("- You have a limited iteration budget — work efficiently");
-  lines.push("- When your task is complete, summarize your findings and stop");
+  lines.push("- When your task is complete, call `subagent_report_complete`; do not finish with ordinary chat prose alone");
   lines.push("");
 
   if (subagentContext) {
