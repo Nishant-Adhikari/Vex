@@ -114,6 +114,10 @@ describe("vex-shell slash mission activation", () => {
     await pending;
 
     expect(store.getState().pendingTurn).toBeNull();
+    expect(store.getState().messages.at(-2)).toMatchObject({
+      role: "system",
+      content: expect.stringContaining("Mission started in full mode; status=running"),
+    });
     expect(store.getState().messages.at(-1)).toMatchObject({
       role: "assistant",
       content: "Scanning Solana opportunities now.",

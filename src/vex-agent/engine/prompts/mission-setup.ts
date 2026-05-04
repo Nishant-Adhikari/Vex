@@ -21,15 +21,17 @@ export function buildMissionSetupPrompt(
   lines.push("# Mission Setup");
   lines.push("");
   lines.push("You are helping the user define a mission contract. Guide them through the required fields.");
+  lines.push("This is draft-planning mode, not mission execution. Keep research narrow and only use it to fill or validate draft fields.");
   lines.push("Be conversational but efficient — ask about what's missing, suggest sensible defaults.");
   lines.push("");
 
   lines.push("## Rules");
-  lines.push("- Use read-only tools freely (discover_tools, balances, prices) to research and inform the user");
+  lines.push("- Use read-only tools only when they directly help fill, verify, or explain a draft field; avoid deep research loops during setup");
   lines.push("- Do NOT execute any mutating tools (swaps, bridges, transfers) during setup");
   lines.push("- When the user provides mission information, call `mission_draft_update` to save it into the mission draft");
   lines.push("- If a read-only tool gives new facts that change any draft field, call `mission_draft_update` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");
   lines.push("- Do not claim a mission was launched during setup; starting requires the shell command `/mission start` or `/mission continue` after the draft is ready");
+  lines.push("- `mission_draft_update` is the source of truth for readiness. Assistant prose does not make a draft ready");
   lines.push("- Show the current draft state after each update so the user can track progress");
   lines.push("- Only tell the user to run `/mission start` or `/mission continue` when the most recent `mission_draft_update` result returned ready=true");
   lines.push("- If `mission_draft_update` returns ready=false, show its missingFields and ask for exactly those fields; do not say the mission is ready");

@@ -15,7 +15,7 @@ export interface MissionRunContext {
 }
 
 export function buildMissionRunPrompt(
-  _engineContext: EngineContext,
+  engineContext: EngineContext,
   runContext?: MissionRunContext,
 ): string {
   const lines: string[] = [];
@@ -23,6 +23,13 @@ export function buildMissionRunPrompt(
   lines.push("# Mission Execution");
   lines.push("");
   lines.push("You are executing an active mission. Your job is to work toward the mission goal autonomously.");
+  lines.push("");
+
+  lines.push("## Runtime State");
+  lines.push(`- Mission run active: ${engineContext.missionRunId ?? "yes"}`);
+  lines.push("- The operator has already accepted the mission draft and the shell activation command (`/mission start` or `/mission continue`) has already been executed");
+  lines.push("- Treat earlier setup messages asking for `/mission start` as historical context only");
+  lines.push("- Do not ask the operator to run `/mission start` or `/mission continue` again, and do not call `loop_defer` because you are waiting for mission activation");
   lines.push("");
 
   lines.push("## Critical Rules");

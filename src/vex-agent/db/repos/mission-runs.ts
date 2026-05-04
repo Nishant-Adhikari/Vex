@@ -102,14 +102,18 @@ export async function updateStatus(
   stopReason?: string,
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
 ): Promise<void> {
-  // Active and paused statuses keep `ended_at` as-is; terminal statuses stamp
-  // it to NOW(). The classification flows from the centralised sets so adding
-  // a new arm to MissionRunStatus does not require editing this rule.
-  const ended = TERMINAL_RUN_STATUSES.has(status) ? "NOW()" : "ended_at";
+  // Running is a live state, so stale stop evidence from paused_wake /
+  // paused_error must be cleared on resume. Paused states keep evidence for
+  // recovery UX; terminal statuses stamp ended_at to NOW().
+  const isRunning = status === "running";
+  const ended = isRunning ? "NULL" : TERMINAL_RUN_STATUSES.has(status) ? "NOW()" : "ended_at";
+  const stopReasonSql = isRunning ? "NULL" : "COALESCE($2, stop_reason)";
+  const stopSummarySql = isRunning ? "NULL" : "COALESCE($3, stop_summary)";
+  const stopEvidenceSql = isRunning ? "NULL" : "COALESCE($4::jsonb, stop_evidence_json)";
   await execute(
-    `UPDATE mission_runs SET status = $1, stop_reason = COALESCE($2, stop_reason),
-     stop_summary = COALESCE($3, stop_summary),
-     stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+    `UPDATE mission_runs SET status = $1, stop_reason = ${stopReasonSql},
+     stop_summary = ${stopSummarySql},
+     stop_evidence_json = ${stopEvidenceSql},
      ended_at = ${ended} WHERE id = $5`,
     [
       status, stopReason ?? null,
@@ -191,7 +195,13 @@ export async function casFlipToRunning(
       return null;
     }
     await client.query(
-      "UPDATE mission_runs SET status = 'running', ended_at = NULL WHERE id = $1",
+      `UPDATE mission_runs
+       SET status = 'running',
+           stop_reason = NULL,
+           stop_summary = NULL,
+           stop_evidence_json = NULL,
+           ended_at = NULL
+       WHERE id = $1`,
       [runId],
     );
     await client.query("COMMIT");

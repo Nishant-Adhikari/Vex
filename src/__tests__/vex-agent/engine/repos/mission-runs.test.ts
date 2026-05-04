@@ -47,7 +47,10 @@ describe("mission-runs repo", () => {
       await updateStatus("run-1", "running");
       const [sql] = mockExecute.mock.calls[0];
       expect(sql).toContain("status = $1");
-      expect(sql).toContain("ended_at = ended_at");
+      expect(sql).toContain("stop_reason = NULL");
+      expect(sql).toContain("stop_summary = NULL");
+      expect(sql).toContain("stop_evidence_json = NULL");
+      expect(sql).toContain("ended_at = NULL");
     });
 
     it("updates status without ending for paused_approval", async () => {
@@ -168,7 +171,15 @@ describe("mission-runs repo", () => {
       expect(previous).toBe("paused_wake");
       expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
       expect(mockClientQuery).toHaveBeenCalledWith(
-        "UPDATE mission_runs SET status = 'running', ended_at = NULL WHERE id = $1",
+        expect.stringContaining("stop_reason = NULL"),
+        ["run-1"],
+      );
+      expect(mockClientQuery).toHaveBeenCalledWith(
+        expect.stringContaining("stop_summary = NULL"),
+        ["run-1"],
+      );
+      expect(mockClientQuery).toHaveBeenCalledWith(
+        expect.stringContaining("stop_evidence_json = NULL"),
         ["run-1"],
       );
       expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");

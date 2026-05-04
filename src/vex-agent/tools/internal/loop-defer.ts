@@ -32,6 +32,11 @@ import { currentDate } from "@vex-agent/engine/runtime-clock.js";
 const ONE_SECOND_MS = 1_000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
 const REASON_MAX_CHARS = 500;
+const MISSION_ACTIVATION_WAIT_PATTERN = new RegExp([
+  String.raw`\/mission\s+(?:start|continue)`,
+  String.raw`waiting\s+for\s+(?:the\s+)?(?:operator|user).{0,80}(?:\/mission\s+(?:start|continue)|mission\s+(?:start|continue)|(?:start|continue)\s+(?:the\s+)?mission)`,
+  String.raw`(?:mission\s+)?(?:start|continue)\s+command`,
+].join("|"), "i");
 
 const LoopDeferArgs = z
   .object({
@@ -72,6 +77,12 @@ export async function handleLoopDefer(
   if (kind === null) {
     return fail(
       "loop_defer is only available inside an active mission run or a full-autonomous session",
+    );
+  }
+
+  if (kind === "mission_run" && MISSION_ACTIVATION_WAIT_PATTERN.test(reason)) {
+    return fail(
+      "loop_defer: this mission run is already active. Do not wait for /mission start or /mission continue; execute the frozen Mission Contract now.",
     );
   }
 

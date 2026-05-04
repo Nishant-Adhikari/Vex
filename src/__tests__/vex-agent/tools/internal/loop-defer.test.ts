@@ -212,6 +212,17 @@ describe("loop_defer — defense-in-depth", () => {
     expect(result.success).toBe(false);
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
+
+  it("rejects active mission defer reasons that wait for mission activation", async () => {
+    const result = await handleLoopDefer(
+      { after_ms: 10_000, reason: "Waiting for user to type /mission start in shell" },
+      ctxMissionActive(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("mission run is already active");
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
 });
 
 // ── Happy path ─────────────────────────────────────────────────

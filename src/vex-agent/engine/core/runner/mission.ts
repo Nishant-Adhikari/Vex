@@ -17,6 +17,7 @@ import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools } from "@vex-agent/tools/registry.js";
 import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
+import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
@@ -32,6 +33,40 @@ import {
 } from "./mission-finalize.js";
 
 // ── startMission ────────────────────────────────────────────────
+
+interface MissionActivationMessageInput {
+  sessionId: string;
+  missionId: string;
+  runId: string;
+  loopMode: LoopMode;
+}
+
+async function addMissionActivationMessage(
+  input: MissionActivationMessageInput,
+): Promise<void> {
+  const content = [
+    "[Engine: mission_started — The operator accepted the mission draft and the shell activation command has already been executed.",
+    "You are now inside an active mission run.",
+    "Do not ask the operator to run `/mission start` or `/mission continue` again.",
+    "Treat earlier setup messages asking for `/mission start` as historical context only.",
+    "Execute the frozen Mission Contract now.]",
+  ].join(" ");
+
+  await messagesRepo.addEngineMessage(
+    input.sessionId,
+    content,
+    {
+      source: "engine",
+      messageType: "mission_started",
+      visibility: "internal",
+      payload: {
+        missionId: input.missionId,
+        runId: input.runId,
+        loopMode: input.loopMode,
+      },
+    },
+  );
+}
 
 /**
  * Start a mission — validate, freeze, create run, enter turn loop.
@@ -79,6 +114,8 @@ export async function startMission(
   // of orphaning it at `running`. Caller maps `MissionRunPausedError` into
   // `{ ok: false, error, hint }` via the shell action wrapper.
   try {
+    await addMissionActivationMessage({ sessionId, missionId, runId, loopMode });
+
     const hydrated = await hydrateEngineSession(sessionId);
     if (!hydrated) throw new Error(`Session ${sessionId} not found`);
 
