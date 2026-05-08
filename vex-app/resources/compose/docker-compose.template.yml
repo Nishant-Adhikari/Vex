@@ -1,0 +1,53 @@
+# Vex production compose template — rendered per-install at runtime by
+# `src/main/compose/render.ts` (M5). Placeholders are substituted before
+# the file lands in `${userData}/compose/docker-compose.yml`.
+#
+# Skill §10 mandatory:
+#   • host_ip: 127.0.0.1 on every published port (no LAN bind)
+#   • Top-level `secrets:` with `file:` references, never env vars
+#   • Image pinned by digest (not just tag)
+#   • SCRAM-SHA-256 auth for Postgres
+#   • Named volume per-install with vex-install label for cleanup safety
+#
+# Embeddings are NOT in this compose. They run via Docker Model Runner
+# (`ai/embeddinggemma:300M-Q8_0` on port 12434) which is installed
+# separately during M4 Docker bootstrap.
+
+name: vex-${VEX_INSTALL_ID}
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.2-pg18-trixie@sha256:058fdb396f7b11f66cb7084db6c970846f8cb3a36b101b2714bea6727d530322
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vex
+      POSTGRES_USER: vex
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    secrets:
+      - pg_password
+    volumes:
+      - vex-postgres-data-${VEX_INSTALL_ID}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vex -d vex"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    ports:
+      - target: 5432
+        published: "${VEX_PG_PORT:-55432}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+        mode: host
+
+volumes:
+  vex-postgres-data-${VEX_INSTALL_ID}:
+    name: vex-postgres-data-${VEX_INSTALL_ID}
+    labels:
+      vex-install: ${VEX_INSTALL_ID}
+
+secrets:
+  pg_password:
+    file: ${VEX_PG_PASSWORD_FILE}

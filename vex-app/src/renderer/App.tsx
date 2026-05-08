@@ -13,6 +13,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Splash } from "./features/splash/Splash.js";
+import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
+import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
+import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
 import { PlaceholderShell } from "./features/placeholder/PlaceholderShell.js";
 import { useUiStore } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
@@ -23,13 +26,19 @@ export function App(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
 
   const handleSplashComplete = useCallback(() => {
-    setCurrentView("placeholder");
+    setCurrentView("systemCheck");
   }, [setCurrentView]);
 
   return (
     <>
       {currentView === "splash" ? (
         <Splash onComplete={handleSplashComplete} />
+      ) : currentView === "systemCheck" ? (
+        <SystemCheck />
+      ) : currentView === "dockerBootstrap" ? (
+        <BootstrapPanel />
+      ) : currentView === "composeBootstrap" ? (
+        <ComposeBootstrap />
       ) : (
         <PlaceholderShell />
       )}

@@ -1,0 +1,61 @@
+/**
+ * Verifies envStateSchema strictness — most importantly that walletStatus
+ * collapses to `present|missing` (no `address` or `decryptedAt`-style
+ * fields that would imply post-unlock data leaks).
+ */
+
+import { describe, expect, it } from "vitest";
+import { envStateSchema, type EnvState } from "../onboarding.js";
+
+const validState: EnvState = {
+  hasKeystorePassword: true,
+  hasJupiterApiKey: false,
+  embeddings: {
+    configured: true,
+    reachable: true,
+    baseUrlRedacted: "http://127.0.0.1:12434",
+  },
+  walletStatus: {
+    evm: "present",
+    solana: "missing",
+  },
+  setupCompleteFlag: false,
+};
+
+describe("envStateSchema", () => {
+  it("accepts a fully populated valid state", () => {
+    expect(envStateSchema.safeParse(validState).success).toBe(true);
+  });
+
+  it("accepts baseUrlRedacted = null when embeddings.configured = false", () => {
+    const state: EnvState = {
+      ...validState,
+      embeddings: { configured: false, reachable: false, baseUrlRedacted: null },
+    };
+    expect(envStateSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("rejects unknown wallet status enum (no `decrypted` etc.)", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      walletStatus: { evm: "decrypted" as never, solana: "missing" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects unknown keys at top level (no leaked address/seed)", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      walletAddress: "0xleaked",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects unknown keys in walletStatus (no nested address etc.)", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      walletStatus: { evm: "present", solana: "missing", address: "0xleaked" },
+    });
+    expect(result.success).toBe(false);
+  });
+});

@@ -20,6 +20,9 @@
  *   8. Renderer source must not use the bare Tailwind arbitrary-color syntax
  *      `[--color-x]`. Required form: semantic alias (`bg-card`, `text-success`)
  *      or explicit `[var(--color-x)]`. Catches regressions BEFORE build.
+ *   9. Compose templates pin every image by sha256 digest (skill §10), bind
+ *      every published port to host_ip 127.0.0.1, and leave no
+ *      `REPLACE_WITH_VERIFIED_DIGEST_BEFORE_FIRST_RUN` placeholders behind.
  *
  * Exit non-zero on any violation.
  */
@@ -345,6 +348,77 @@ check("renderer source — no bare `*-[--color-*]` Tailwind arbitrary syntax", (
   walk(srcDir);
   if (violations.length > 0) {
     throw new Error(`Bare Tailwind arbitrary refs:\n    ${violations.join("\n    ")}`);
+  }
+});
+
+// 9. Compose templates conform to skill §10
+const composeTemplates = [
+  path.join(root, "resources", "compose", "docker-compose.template.yml"),
+  path.join(root, "resources", "compose", "docker-compose.e2e.yml"),
+];
+
+check("compose templates — sha256 digest pinning + host_ip 127.0.0.1", () => {
+  const issues = [];
+  // Real (non-placeholder) sha256 hex must be exactly 64 lowercase hex chars.
+  const realDigestRe = /@sha256:([0-9a-f]{64})\b/;
+  // Codex turn 5 RED #1: gate rejects the placeholder string outright.
+  // Operator workflow: `docker pull pgvector/pgvector:<TAG>` then
+  // `docker inspect --format '{{index .RepoDigests 0}}' pgvector/pgvector:<TAG>`
+  // to capture the real `@sha256:<hex>`, then commit the change.
+  const placeholder = "REPLACE_WITH_VERIFIED_DIGEST_BEFORE_FIRST_RUN";
+
+  for (const file of composeTemplates) {
+    if (!existsSync(file)) {
+      issues.push(`${path.relative(root, file)}: missing`);
+      continue;
+    }
+    const content = readFileSync(file, "utf8");
+    const lines = content.split("\n");
+
+    // Every `image:` line must include a real @sha256:<64-hex> digest.
+    // Placeholder is rejected outright (release-blocking per skill §10/§14).
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i] ?? "";
+      const match = line.match(/^\s*image:\s*(\S+)/);
+      if (!match) continue;
+      const value = match[1] ?? "";
+      if (value.includes(placeholder)) {
+        issues.push(
+          `${path.relative(root, file)}:${i + 1}: image still contains placeholder; run \`docker pull <tag>\` + \`docker inspect --format '{{index .RepoDigests 0}}'\` and commit the real @sha256:<hex>`
+        );
+        continue;
+      }
+      if (!realDigestRe.test(value)) {
+        issues.push(
+          `${path.relative(root, file)}:${i + 1}: image must pin @sha256:<64-hex> (skill §10 — release-blocking)`
+        );
+      }
+    }
+
+    // Every `- target:` (long-form port mapping) must have a matching
+    // `host_ip: 127.0.0.1` line within the same entry. Count globally —
+    // YAML port blocks can't legitimately have one without the other in
+    // our convention.
+    const targetCount = (content.match(/^\s*-\s+target:/gm) ?? []).length;
+    const loopbackCount = (content.match(/^\s*host_ip:\s*127\.0\.0\.1\s*$/gm) ?? []).length;
+    if (targetCount !== loopbackCount) {
+      issues.push(
+        `${path.relative(root, file)}: long-form port mapping count (${targetCount}) does not match host_ip: 127.0.0.1 count (${loopbackCount})`
+      );
+    }
+    // Reject short-form `"<host>:<container>"` port lists — they bypass
+    // the host_ip check entirely and would expose services on 0.0.0.0
+    // by default on Linux.
+    const shortForm = content.match(/^\s*-\s+["'][^"']*:\d+["']\s*$/gm) ?? [];
+    if (shortForm.length > 0) {
+      issues.push(
+        `${path.relative(root, file)}: ${shortForm.length} short-form port mapping(s); use long-form with host_ip: 127.0.0.1`
+      );
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new Error(`Compose template issues:\n    ${issues.join("\n    ")}`);
   }
 });
 

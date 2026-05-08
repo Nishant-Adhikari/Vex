@@ -75,6 +75,24 @@ body,
   animation: vex-bobble 3.6s ease-in-out infinite;
 }
 
+/* System Check cascade reveal — JS-driven row insertion triggers fade+slide.
+ * CSS-only (no Motion `layout` per MOTION-POLICY); the renderer mounts
+ * additional rows over time and each new row plays this single-shot anim. */
+@keyframes vex-cascade-row {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.motion-cascade-row {
+  animation: vex-cascade-row 240ms ease-out both;
+}
+
 /* Respect reduced-motion preference (WCAG AA) */
 @media (prefers-reduced-motion: reduce) {
   *,

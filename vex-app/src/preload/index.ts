@@ -14,8 +14,12 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 import { z } from "zod";
-import { CH } from "../shared/ipc/channels.js";
+import { CH, EV } from "../shared/ipc/channels.js";
 import { err, type Result, type VexError } from "../shared/ipc/result.js";
+import {
+  installMethodSchema,
+  installProgressSchema,
+} from "../shared/schemas/docker.js";
 import type { VexBridge } from "../shared/types/bridge.js";
 
 function newRequestId(): string {
@@ -52,6 +56,28 @@ async function invokeWithSchema<T, I = unknown>(
   })) as Result<T, VexError>;
 }
 
+/**
+ * Domain-namespaced event subscription helper. Renderer never sees raw
+ * channel strings — every subscription comes through a typed bridge
+ * method (`vex.docker.onInstallProgress`, etc.) that calls into this.
+ * Payload is Zod-validated at the preload boundary so a misbehaving
+ * main never injects unexpected shapes into renderer state.
+ */
+function subscribe<T>(
+  channel: string,
+  schema: z.ZodType<T>,
+  cb: (payload: T) => void
+): () => void {
+  const handler = (_event: unknown, raw: unknown): void => {
+    const parsed = schema.safeParse(raw);
+    if (parsed.success) cb(parsed.data);
+  };
+  ipcRenderer.on(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
+}
+
 // ── Preload-side schemas (mirror main; lightweight) ───────────────────────
 const setTelemetryConsentSchema = z.boolean();
 const reportRendererErrorSchema = z
@@ -79,6 +105,43 @@ const api = {
     },
     network() {
       return invokeWithSchema(CH.system.network, {});
+    },
+  },
+
+  docker: {
+    detect() {
+      return invokeWithSchema(CH.docker.detect, {});
+    },
+    install(input: { method: import("../shared/schemas/docker.js").InstallMethod }) {
+      return invokeWithSchema(
+        CH.docker.install,
+        input,
+        z.object({ method: installMethodSchema }).strict()
+      );
+    },
+    start() {
+      return invokeWithSchema(CH.docker.start, {});
+    },
+    composeUp(input: { pgPort?: number } = {}) {
+      return invokeWithSchema(
+        CH.docker.composeUp,
+        input,
+        z
+          .object({ pgPort: z.number().int().min(1).max(65535).optional() })
+          .strict()
+      );
+    },
+    composeDown() {
+      return invokeWithSchema(CH.docker.composeDown, {});
+    },
+    onInstallProgress(cb) {
+      return subscribe(EV.docker.installProgress, installProgressSchema, cb);
+    },
+  },
+
+  onboarding: {
+    getEnvState() {
+      return invokeWithSchema(CH.onboarding.getEnvState, {});
     },
   },
 

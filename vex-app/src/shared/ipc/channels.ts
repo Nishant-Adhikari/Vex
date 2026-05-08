@@ -90,7 +90,9 @@ export const EV = {
     resume: "vex:event:system:resume",
   },
   docker: {
-    progress: "vex:event:docker:progress",
+    installProgress: "vex:event:docker:installProgress",
+    daemonChanged: "vex:event:docker:daemonChanged",
+    composeLogs: "vex:event:docker:composeLogs",
   },
   updater: {
     available: "vex:event:updater:available",

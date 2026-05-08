@@ -18,7 +18,12 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 export const MAX_RENDER_LOGS = 500;
 
-export type View = "splash" | "placeholder";
+export type View =
+  | "splash"
+  | "systemCheck"
+  | "dockerBootstrap"
+  | "composeBootstrap"
+  | "placeholder";
 
 export interface UiLogEntry {
   readonly id: string;

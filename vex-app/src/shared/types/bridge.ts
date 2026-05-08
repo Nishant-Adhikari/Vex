@@ -9,6 +9,16 @@
 import type { Result } from "../ipc/result.js";
 import type { Capabilities } from "../schemas/capabilities.js";
 import type {
+  ComposeDownResult,
+  ComposeUpResult,
+  DockerStatus,
+  InstallMethod,
+  InstallProgress,
+  InstallResult,
+  StartResult,
+} from "../schemas/docker.js";
+import type { EnvState } from "../schemas/onboarding.js";
+import type {
   HealthReport,
   NetworkProbe,
   OsInfo,
@@ -30,6 +40,30 @@ export interface VexBridge {
     readonly health: () => Promise<Result<HealthReport>>;
     readonly osInfo: () => Promise<Result<OsInfo>>;
     readonly network: () => Promise<Result<NetworkProbe>>;
+  };
+
+  readonly docker: {
+    readonly detect: () => Promise<Result<DockerStatus>>;
+    readonly install: (input: {
+      readonly method: InstallMethod;
+    }) => Promise<Result<InstallResult>>;
+    readonly start: () => Promise<Result<StartResult>>;
+    readonly composeUp: (input: {
+      readonly pgPort?: number;
+    }) => Promise<Result<ComposeUpResult>>;
+    readonly composeDown: () => Promise<Result<ComposeDownResult>>;
+    /**
+     * Subscribe to install progress events. Returns an idempotent
+     * unsubscribe function — call it from the React effect cleanup
+     * (skill §11). The renderer never sees the raw IPC channel.
+     */
+    readonly onInstallProgress: (
+      cb: (payload: InstallProgress) => void
+    ) => () => void;
+  };
+
+  readonly onboarding: {
+    readonly getEnvState: () => Promise<Result<EnvState>>;
   };
 
   readonly settings: {

@@ -13,9 +13,10 @@
  */
 
 import { app } from "electron";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ELECTRON_STATE_DIR } from "./paths/config-dir.js";
 import { configureLogger, log } from "./logger/index.js";
 import { acquireSingleInstanceLock } from "./lifecycle/single-instance.js";
 import { installWindowAllClosedHook } from "./lifecycle/window-all-closed.js";
@@ -26,7 +27,21 @@ import {
   registerAppProtocolPrivileges,
 } from "./protocol/app-protocol.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
+import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
+import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { createMainWindow } from "./windows/main-window.js";
+
+/**
+ * Remap Electron's userData onto CONFIG_DIR/.electron-state BEFORE any
+ * code touches `app.getPath("userData")` (per Electron docs — once a path
+ * is queried it caches). This unifies vex-app and vex-shell on a single
+ * shared CONFIG_DIR (main plan §39-43): shared `.env`, `keystore.json`,
+ * `.install-id`, etc. live at CONFIG_DIR root; Chromium cache, the
+ * preferences store, electron-log files all nest under
+ * CONFIG_DIR/.electron-state and stay invisible to vex-shell.
+ */
+mkdirSync(ELECTRON_STATE_DIR, { recursive: true });
+app.setPath("userData", ELECTRON_STATE_DIR);
 
 configureLogger();
 
@@ -85,6 +100,14 @@ app.whenReady().then(async () => {
 
   // 6. IPC surface
   registerAllIpcHandlers();
+
+  // 6a. Register lifecycle-driven cleanup. cleanupOnQuit will run inside
+  // the will-quit hook via globalCleanup; cleanupOnBoot runs once now to
+  // sweep orphaned transient secrets from a prior crashed session.
+  globalCleanup.add(() => cleanupOnQuit());
+  void cleanupOnBoot().catch((err) => {
+    log.error("[main] cleanupOnBoot failed", err);
+  });
 
   // 7. Main window
   await createMainWindow();
