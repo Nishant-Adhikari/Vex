@@ -6,14 +6,12 @@
  * preload subscription wiring.
  */
 
-import type { InstallProgress } from "@shared/schemas/docker.js";
+import type { ComposeLog, InstallProgress } from "@shared/schemas/docker.js";
 
-type Listener = (payload: InstallProgress) => void;
+class Bus<T> {
+  private readonly listeners = new Set<(payload: T) => void>();
 
-class ProgressBus {
-  private readonly listeners = new Set<Listener>();
-
-  emit(payload: InstallProgress): void {
+  emit(payload: T): void {
     for (const listener of this.listeners) {
       try {
         listener(payload);
@@ -23,7 +21,7 @@ class ProgressBus {
     }
   }
 
-  subscribe(listener: Listener): () => void {
+  subscribe(listener: (payload: T) => void): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
@@ -39,4 +37,5 @@ class ProgressBus {
   }
 }
 
-export const dockerProgressBus = new ProgressBus();
+export const dockerProgressBus = new Bus<InstallProgress>();
+export const composeLogBus = new Bus<ComposeLog>();

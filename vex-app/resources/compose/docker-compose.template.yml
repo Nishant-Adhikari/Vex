@@ -28,7 +28,13 @@ services:
     secrets:
       - pg_password
     volumes:
-      - vex-postgres-data-${VEX_INSTALL_ID}:/var/lib/postgresql/data
+      # Postgres 18+ stores data under version-specific subdirs of
+      # `/var/lib/postgresql` (docker-library/postgres#1259). Mounting at
+      # `/var/lib/postgresql/data` triggers a restart loop with the error
+      # "appears to be PostgreSQL data in: /var/lib/postgresql/data
+      # (unused mount/volume)". Mount one level up so the entrypoint can
+      # place data in `/var/lib/postgresql/18`.
+      - vex-postgres-data-${VEX_INSTALL_ID}:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vex -d vex"]
       interval: 5s

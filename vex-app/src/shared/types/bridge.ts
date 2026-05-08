@@ -10,6 +10,7 @@ import type { Result } from "../ipc/result.js";
 import type { Capabilities } from "../schemas/capabilities.js";
 import type {
   ComposeDownResult,
+  ComposeLog,
   ComposeUpResult,
   DockerStatus,
   InstallMethod,
@@ -59,6 +60,9 @@ export interface VexBridge {
      */
     readonly onInstallProgress: (
       cb: (payload: InstallProgress) => void
+    ) => () => void;
+    readonly onComposeLog: (
+      cb: (payload: ComposeLog) => void
     ) => () => void;
   };
 

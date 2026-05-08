@@ -28,15 +28,20 @@ check: lint test
 
 # -- E2E Test stack (pgvector + Docker Model Runner) -------------------------
 #
-# Postgres on host port 5777 (was 5555). Embedding model + dim are config-driven
-# via EMBEDDING_MODEL / EMBEDDING_DIM env vars (source docker/vex-agent/.env).
+# Postgres on host port 5777 (test-only; production uses 55432 via vex-app
+# render template). Embedding model + dim are config-driven via
+# EMBEDDING_MODEL / EMBEDDING_DIM env vars sourced from your CONFIG_DIR/.env.
 # Requires Docker Engine >=4.40, Compose >=2.38.1, Docker Model Runner active.
+#
+# As of M5 (2026-05-08) the canonical e2e compose lives in vex-app/resources/
+# compose/docker-compose.e2e.yml (skill §10 — sha256 digest pinning + 127.0.0.1
+# loopback). The legacy `docker/vex-agent/` directory was removed.
 
 e2e-up:
-	docker compose -f docker/vex-agent/docker-compose.e2e.yml up -d
+	docker compose -f vex-app/resources/compose/docker-compose.e2e.yml up -d
 
 e2e-down:
-	docker compose -f docker/vex-agent/docker-compose.e2e.yml down
+	docker compose -f vex-app/resources/compose/docker-compose.e2e.yml down
 
 e2e-smoke:
 	@if [ -z "$$EMBEDDING_DIM" ] || [ -z "$$EMBEDDING_MODEL" ] || [ -z "$$EMBEDDING_BASE_URL" ]; then \

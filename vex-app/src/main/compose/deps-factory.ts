@@ -28,9 +28,14 @@ const cryptoAdapter: CryptoAdapter = {
 };
 
 function getResourcesDir(): string {
+  // The compiled main bundle lands at `vex-app/dist/main/index.js`, so
+  // `import.meta.dirname` is `vex-app/dist/main`. Two levels up reaches
+  // `vex-app/`, where `resources/compose/` lives. The previous
+  // three-level path escaped vex-app entirely and tried to read
+  // `/mnt/x/Vex/resources/compose/...` (M5 hotfix).
   return app.isPackaged
     ? path.join(process.resourcesPath, "compose")
-    : path.resolve(import.meta.dirname, "../../../resources/compose");
+    : path.resolve(import.meta.dirname, "../../resources/compose");
 }
 
 export function buildRenderDeps(): RenderDeps {

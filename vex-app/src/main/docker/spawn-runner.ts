@@ -17,6 +17,13 @@ export interface SpawnRunnerOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly signal?: AbortSignal;
   readonly gracePeriodMs?: number;
+  /**
+   * Hard upper bound for the spawned process. After this many ms the
+   * process gets the same SIGTERM → SIGKILL escalation as `signal` abort.
+   * Default: undefined (no extra deadline; only the externally supplied
+   * signal terminates the process).
+   */
+  readonly timeoutMs?: number;
   readonly onStdoutLine?: (line: string) => void;
   readonly onStderrLine?: (line: string) => void;
 }
@@ -27,6 +34,7 @@ export interface SpawnRunnerResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly aborted: boolean;
+  readonly timedOut: boolean;
 }
 
 const DEFAULT_GRACE_MS = 5_000;
@@ -85,7 +93,9 @@ export async function runSpawn(
 
   return new Promise((resolve) => {
     let aborted = false;
+    let timedOut = false;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
     const stdoutReader = new StreamLineReader();
     const stderrReader = new StreamLineReader();
     let stdoutAccum = "";
@@ -98,8 +108,7 @@ export async function runSpawn(
       windowsHide: true,
     });
 
-    const onAbort = (): void => {
-      aborted = true;
+    const escalateKill = (): void => {
       if (child.pid && !child.killed) {
         try {
           child.kill("SIGTERM");
@@ -118,9 +127,21 @@ export async function runSpawn(
       }
     };
 
+    const onAbort = (): void => {
+      aborted = true;
+      escalateKill();
+    };
+    const onTimeout = (): void => {
+      timedOut = true;
+      escalateKill();
+    };
+
     if (signal) {
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
+    }
+    if (options.timeoutMs !== undefined && options.timeoutMs > 0) {
+      timeoutTimer = setTimeout(onTimeout, options.timeoutMs);
     }
 
     child.stdout?.setEncoding("utf8");
@@ -156,6 +177,7 @@ export async function runSpawn(
       stderrAccum += stderrReader.flush((line) => safeOnStderr?.(line));
       stdoutAccum += stdoutReader.flush((line) => safeOnStdout?.(line));
       if (killTimer) clearTimeout(killTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       if (signal) signal.removeEventListener("abort", onAbort);
       resolve({
         code,
@@ -163,6 +185,7 @@ export async function runSpawn(
         stdout: redact(stdoutAccum) as string,
         stderr: redact(stderrAccum) as string,
         aborted,
+        timedOut,
       });
     });
   });

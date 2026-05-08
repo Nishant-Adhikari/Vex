@@ -17,6 +17,7 @@ import { z } from "zod";
 import { CH, EV } from "../shared/ipc/channels.js";
 import { err, type Result, type VexError } from "../shared/ipc/result.js";
 import {
+  composeLogSchema,
   installMethodSchema,
   installProgressSchema,
 } from "../shared/schemas/docker.js";
@@ -136,6 +137,9 @@ const api = {
     },
     onInstallProgress(cb) {
       return subscribe(EV.docker.installProgress, installProgressSchema, cb);
+    },
+    onComposeLog(cb) {
+      return subscribe(EV.docker.composeLogs, composeLogSchema, cb);
     },
   },
 

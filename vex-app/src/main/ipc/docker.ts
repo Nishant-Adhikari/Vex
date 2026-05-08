@@ -26,9 +26,14 @@ import {
 import { probeDocker } from "../docker/probe.js";
 import { performInstall } from "../docker/install.js";
 import { performStart } from "../docker/start.js";
-import { dockerProgressBus } from "../docker/progress-bus.js";
-import { composeDown, composeUp } from "../compose/lifecycle.js";
+import { composeLogBus, dockerProgressBus } from "../docker/progress-bus.js";
+import {
+  composeDown,
+  composeUp,
+  type ComposeUpResult as InternalComposeUpResult,
+} from "../compose/lifecycle.js";
 import { buildRenderDeps } from "../compose/deps-factory.js";
+import { log } from "../logger/index.js";
 import { CONFIG_DIR } from "../paths/config-dir.js";
 import { registerHandler } from "./register-handler.js";
 
@@ -48,6 +53,16 @@ function broadcastProgress(): () => void {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send(EV.docker.installProgress, payload);
+      }
+    }
+  });
+}
+
+function broadcastComposeLogs(): () => void {
+  return composeLogBus.subscribe((payload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(EV.docker.composeLogs, payload);
       }
     }
   });
@@ -102,6 +117,14 @@ export function registerDockerHandlers(): Array<() => void> {
   let lastComposeOutPath: string | null = null;
   let lastInstallId: string | null = null;
 
+  // Single-flight deduplication for composeUp. React StrictMode dev
+  // double-mount + HMR can fire `vex.docker.composeUp` twice in quick
+  // succession; without dedup the second invocation runs concurrently
+  // and stays `isPending` long after the first emitted "ready",
+  // freezing the renderer mutation hook (codex turn 8 diagnosis).
+  let composeUpInFlight: Promise<InternalComposeUpResult> | null = null;
+  let composeUpInFlightKey: string | null = null;
+
   teardowns.push(
     registerHandler({
       channel: CH.docker.composeUp,
@@ -109,13 +132,49 @@ export function registerDockerHandlers(): Array<() => void> {
       inputSchema: composeUpInputSchema,
       outputSchema: composeUpResultSchema,
       handle: async (input): Promise<Result<ComposeUpResult>> => {
+        const key = `pgPort=${input.pgPort ?? "default"}`;
+        if (composeUpInFlight !== null && composeUpInFlightKey === key) {
+          log.info(
+            `[ipc:vex:docker:composeUp] joining in-flight invocation (key=${key})`
+          );
+          const reused = await composeUpInFlight;
+          return ok(reused);
+        }
+
+        log.info(
+          `[ipc:vex:docker:composeUp] starting (key=${key})`
+        );
+        const startedAt = Date.now();
         const deps = buildRenderDeps();
-        const result = await composeUp(deps, {
+        const run = composeUp(deps, {
           ...(input.pgPort !== undefined ? { pgPort: input.pgPort } : {}),
+          onLogLine: (stream, line) =>
+            composeLogBus.emit({ stream, line, ts: Date.now() }),
         });
-        lastComposeOutPath = result.composeOutPath;
-        lastInstallId = result.installId;
-        return ok(result);
+        composeUpInFlight = run;
+        composeUpInFlightKey = key;
+        try {
+          const result = await run;
+          log.info(
+            `[ipc:vex:docker:composeUp] completed kind=${result.kind} elapsed=${Date.now() - startedAt}ms`
+          );
+          composeLogBus.emit({
+            stream:
+              result.kind === "running" || result.kind === "reused"
+                ? "stdout"
+                : "stderr",
+            line: `Compose bootstrap completed: ${result.kind}.`,
+            ts: Date.now(),
+          });
+          lastComposeOutPath = result.composeOutPath;
+          lastInstallId = result.installId;
+          return ok(result);
+        } finally {
+          if (composeUpInFlight === run) {
+            composeUpInFlight = null;
+            composeUpInFlightKey = null;
+          }
+        }
       },
     })
   );
@@ -139,9 +198,11 @@ export function registerDockerHandlers(): Array<() => void> {
     })
   );
 
-  // Subscribe the progress bus to all renderers — runs for the lifetime
-  // of the main process, torn down when handlers are removed.
+  // Subscribe the progress + compose log buses to all renderers — runs
+  // for the lifetime of the main process, torn down when handlers are
+  // removed.
   teardowns.push(broadcastProgress());
+  teardowns.push(broadcastComposeLogs());
 
   return teardowns;
 }

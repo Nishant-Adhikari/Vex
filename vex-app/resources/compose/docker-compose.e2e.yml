@@ -16,8 +16,10 @@ services:
       POSTGRES_USER: vex
       POSTGRES_PASSWORD: ${VEX_E2E_DB_PASSWORD:-vex_e2e_test_password}
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    # Postgres 18+ uses `/var/lib/postgresql/<version>/` for the data
+    # directory (docker-library/postgres#1259). Mount one level up.
     tmpfs:
-      - /var/lib/postgresql/data
+      - /var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vex -d vex_test_e2e"]
       interval: 2s
