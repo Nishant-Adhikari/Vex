@@ -39,6 +39,10 @@ vi.mock("../steps/KeystoreStep.js", () => ({
   KeystoreStep: () => <div data-testid="keystore-step" />,
 }));
 
+vi.mock("../steps/WalletsStep.js", () => ({
+  WalletsStep: () => <div data-testid="wallets-step" />,
+}));
+
 vi.mock("../steps/PlaceholderStep.js", () => ({
   PlaceholderStep: ({ stepId, milestone }: { stepId: string; milestone: string }) => (
     <div data-testid="placeholder-step" data-step={stepId} data-milestone={milestone} />
@@ -105,7 +109,7 @@ describe("WizardShell", () => {
     await findByTestId("keystore-step");
   });
 
-  it("renders PlaceholderStep with M8 milestone for the wallets step", async () => {
+  it("renders WalletsStep when persisted.currentStepId === 'wallets' (M8)", async () => {
     mockUseWizardState.mockReturnValue(
       makeQueryResult({
         ok: true,
@@ -118,9 +122,25 @@ describe("WizardShell", () => {
       })
     );
     const { findByTestId } = renderWithQuery(<WizardShell />);
+    await findByTestId("wallets-step");
+  });
+
+  it("renders PlaceholderStep with M9 milestone for the apiKeys step (still placeholder)", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult({
+        ok: true,
+        data: {
+          schemaVersion: 1,
+          currentStepId: "apiKeys",
+          completedSteps: ["keystore", "wallets"],
+          completed: false,
+        },
+      })
+    );
+    const { findByTestId } = renderWithQuery(<WizardShell />);
     const node = await findByTestId("placeholder-step");
-    expect(node.getAttribute("data-step")).toBe("wallets");
-    expect(node.getAttribute("data-milestone")).toBe("M8");
+    expect(node.getAttribute("data-step")).toBe("apiKeys");
+    expect(node.getAttribute("data-milestone")).toBe("M9");
   });
 
   it("flips view to placeholder when persisted.completed === true", async () => {

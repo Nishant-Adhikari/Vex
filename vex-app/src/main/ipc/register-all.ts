@@ -10,6 +10,7 @@ import { registerCapabilitiesHandler } from "./capabilities.js";
 import { registerDatabaseHandlers } from "./database.js";
 import { registerDockerHandlers } from "./docker.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
+import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerSystemHandlers } from "./system.js";
 import { registerTelemetryHandler } from "./telemetry.js";
@@ -22,6 +23,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(...registerDockerHandlers());
   teardowns.push(...registerDatabaseHandlers());
   teardowns.push(...registerOnboardingHandlers());
+  teardowns.push(...registerWalletHandlers());
   teardowns.push(...registerSettingsHandlers());
   teardowns.push(registerTelemetryHandler());
 

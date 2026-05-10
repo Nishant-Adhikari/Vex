@@ -15,6 +15,20 @@ import { z } from "zod";
 export const walletPresenceSchema = z.enum(["present", "missing"]);
 export type WalletPresence = z.infer<typeof walletPresenceSchema>;
 
+// M8: public addresses sourced from `config.json` so the wizard can
+// display them across sessions without the renderer needing to talk to
+// the keystore. NULL when the config has no address for that chain.
+// Optional on the schema so existing M2/M7 tests + envState handling
+// keep parsing without changes.
+export const walletAddressesSchema = z
+  .object({
+    evm: z.string().nullable(),
+    solana: z.string().nullable(),
+  })
+  .strict();
+
+export type WalletAddresses = z.infer<typeof walletAddressesSchema>;
+
 export const envStateSchema = z
   .object({
     hasKeystorePassword: z.boolean(),
@@ -32,6 +46,7 @@ export const envStateSchema = z
         solana: walletPresenceSchema,
       })
       .strict(),
+    walletAddresses: walletAddressesSchema.optional(),
     setupCompleteFlag: z.boolean(),
   })
   .strict();

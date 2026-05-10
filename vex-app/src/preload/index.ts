@@ -26,6 +26,13 @@ import {
   keystoreSetInputSchema,
   setWizardStateInputSchema,
 } from "../shared/schemas/wizard.js";
+import {
+  walletGenerateInputSchema,
+  walletImportEvmInputSchema,
+  walletImportSolanaInputSchema,
+  walletOpenBackupFolderInputSchema,
+  walletRestoreInputSchema,
+} from "../shared/schemas/wallets.js";
 import type { VexBridge } from "../shared/types/bridge.js";
 
 function newRequestId(): string {
@@ -176,6 +183,48 @@ const api = {
         CH.onboarding.keystoreSet,
         input,
         keystoreSetInputSchema
+      );
+    },
+    walletGenerateEvm() {
+      return invokeWithSchema(
+        CH.onboarding.walletGenerateEvm,
+        {},
+        walletGenerateInputSchema
+      );
+    },
+    walletGenerateSolana() {
+      return invokeWithSchema(
+        CH.onboarding.walletGenerateSolana,
+        {},
+        walletGenerateInputSchema
+      );
+    },
+    walletImportEvm(input: import("../shared/schemas/wallets.js").WalletImportEvmInput) {
+      return invokeWithSchema(
+        CH.onboarding.walletImportEvm,
+        input,
+        walletImportEvmInputSchema
+      );
+    },
+    walletImportSolana(input: import("../shared/schemas/wallets.js").WalletImportSolanaInput) {
+      return invokeWithSchema(
+        CH.onboarding.walletImportSolana,
+        input,
+        walletImportSolanaInputSchema
+      );
+    },
+    walletRestoreFromBackup(input: import("../shared/schemas/wallets.js").WalletRestoreInput) {
+      return invokeWithSchema(
+        CH.onboarding.walletRestoreFromBackup,
+        input,
+        walletRestoreInputSchema
+      );
+    },
+    walletOpenBackupFolder(input: import("../shared/schemas/wallets.js").WalletOpenBackupFolderInput) {
+      return invokeWithSchema(
+        CH.onboarding.walletOpenBackupFolder,
+        input,
+        walletOpenBackupFolderInputSchema
       );
     },
   },

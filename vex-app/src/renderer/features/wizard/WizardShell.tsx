@@ -30,15 +30,15 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { useWizardState } from "../../lib/api/wizard.js";
 import { ProgressSidebar } from "./ProgressSidebar.js";
 import { KeystoreStep } from "./steps/KeystoreStep.js";
+import { WalletsStep } from "./steps/WalletsStep.js";
 import { PlaceholderStep } from "./steps/PlaceholderStep.js";
 
-type StepMilestone = "M8" | "M9" | "M10" | "M11";
+type StepMilestone = "M9" | "M10" | "M11";
 
 const PLACEHOLDER_MILESTONE: Record<
-  Exclude<WizardStepId, "keystore">,
+  Exclude<WizardStepId, "keystore" | "wallets">,
   StepMilestone
 > = {
-  wallets: "M8",
   apiKeys: "M9",
   embedding: "M9",
   agentCore: "M9",
@@ -56,6 +56,11 @@ function renderStep(
   if (stepId === "keystore") {
     return (
       <KeystoreStep completedSteps={completedSteps} onAdvance={onAdvance} />
+    );
+  }
+  if (stepId === "wallets") {
+    return (
+      <WalletsStep completedSteps={completedSteps} onAdvance={onAdvance} />
     );
   }
   return (

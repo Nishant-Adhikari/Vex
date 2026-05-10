@@ -30,6 +30,18 @@ import type {
   WizardState,
 } from "../schemas/wizard.js";
 import type {
+  WalletGenerateEvmResult,
+  WalletGenerateSolanaResult,
+  WalletImportEvmInput,
+  WalletImportEvmResult,
+  WalletImportSolanaInput,
+  WalletImportSolanaResult,
+  WalletOpenBackupFolderInput,
+  WalletOpenBackupFolderResult,
+  WalletRestoreInput,
+  WalletRestoreResult,
+} from "../schemas/wallets.js";
+import type {
   HealthReport,
   NetworkProbe,
   OsInfo,
@@ -99,6 +111,20 @@ export interface VexBridge {
     readonly keystoreSet: (
       input: KeystoreSetInput
     ) => Promise<Result<KeystoreSetResult>>;
+    readonly walletGenerateEvm: () => Promise<Result<WalletGenerateEvmResult>>;
+    readonly walletGenerateSolana: () => Promise<Result<WalletGenerateSolanaResult>>;
+    readonly walletImportEvm: (
+      input: WalletImportEvmInput
+    ) => Promise<Result<WalletImportEvmResult>>;
+    readonly walletImportSolana: (
+      input: WalletImportSolanaInput
+    ) => Promise<Result<WalletImportSolanaResult>>;
+    readonly walletRestoreFromBackup: (
+      input: WalletRestoreInput
+    ) => Promise<Result<WalletRestoreResult>>;
+    readonly walletOpenBackupFolder: (
+      input: WalletOpenBackupFolderInput
+    ) => Promise<Result<WalletOpenBackupFolderResult>>;
   };
 
   readonly settings: {

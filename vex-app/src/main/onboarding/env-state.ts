@@ -7,8 +7,13 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { loadConfig } from "@vex-lib/wallet.js";
 import { CONFIG_DIR, ENV_FILE, SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
-import type { EnvState } from "@shared/schemas/onboarding.js";
+import type {
+  EnvState,
+  WalletAddresses,
+} from "@shared/schemas/onboarding.js";
+import { log } from "../logger/index.js";
 
 const KEYSTORE_FILE = path.join(CONFIG_DIR, "keystore.json");
 const SOLANA_KEYSTORE_FILE = path.join(CONFIG_DIR, "solana-keystore.json");
@@ -87,6 +92,25 @@ async function probeEmbeddingsEndpoint(baseUrl: string): Promise<boolean> {
   }
 }
 
+/**
+ * Public addresses from `config.json` — plaintext, NOT decrypted from
+ * the keystore (codex turn 3 RED #3 stays honored). Returns undefined
+ * if config.json is missing or unparseable so the optional schema
+ * field stays absent rather than mis-typed.
+ */
+function gatherWalletAddresses(): WalletAddresses | undefined {
+  try {
+    const cfg = loadConfig();
+    return {
+      evm: cfg.wallet.address ?? null,
+      solana: cfg.wallet.solanaAddress ?? null,
+    };
+  } catch (cause) {
+    log.warn("[env-state] gatherWalletAddresses failed", cause);
+    return undefined;
+  }
+}
+
 export async function gatherEnvState(): Promise<EnvState> {
   const [hasPwd, hasJupiter, evmExists, solExists, setupFlag, embedRaw] =
     await Promise.all([
@@ -98,6 +122,7 @@ export async function gatherEnvState(): Promise<EnvState> {
       readEnvValue(ENV_FILE, "EMBEDDING_BASE_URL"),
     ]);
   const reachable = embedRaw !== null ? await probeEmbeddingsEndpoint(embedRaw) : false;
+  const walletAddresses = gatherWalletAddresses();
   return {
     hasKeystorePassword: hasPwd,
     hasJupiterApiKey: hasJupiter,
@@ -110,6 +135,7 @@ export async function gatherEnvState(): Promise<EnvState> {
       evm: evmExists ? "present" : "missing",
       solana: solExists ? "present" : "missing",
     },
+    ...(walletAddresses !== undefined ? { walletAddresses } : {}),
     setupCompleteFlag: setupFlag,
   };
 }

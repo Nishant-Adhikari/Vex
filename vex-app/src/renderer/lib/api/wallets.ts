@@ -1,0 +1,133 @@
+/**
+ * Wallet API hooks (M8) — TanStack Query wrappers over `vex.onboarding.wallet*`.
+ *
+ * IMPORTANT secret-handling rule (codex turn 8 RED #1):
+ * - Generate, restore, and openBackupFolder use TanStack `useMutation`
+ *   because their inputs carry NO secrets (empty / chain enum / public path).
+ * - Import does NOT use useMutation. Mutation observers retain the last
+ *   `variables` (`{ rawKey }`) in cache state for staleness/devtools/etc.,
+ *   which conflicts with SKILL §14 "no secrets in renderer state/query
+ *   cache". Import is exposed as a plain async function. Caller drives
+ *   pending state via local `useState` and clears the source DOM input
+ *   synchronously before the await resolves.
+ */
+
+import {
+  useMutation,
+  useQueryClient,
+  type UseMutationResult,
+} from "@tanstack/react-query";
+import type { Result } from "@shared/ipc/result.js";
+import type {
+  WalletChain,
+  WalletGenerateEvmResult,
+  WalletGenerateSolanaResult,
+  WalletImportEvmResult,
+  WalletImportSolanaResult,
+  WalletOpenBackupFolderInput,
+  WalletOpenBackupFolderResult,
+  WalletRestoreInput,
+  WalletRestoreResult,
+} from "@shared/schemas/wallets.js";
+import { onboardingKeys } from "./queryKeys.js";
+
+type GenerateMutationResult<T> = UseMutationResult<Result<T>, Error, void>;
+
+/**
+ * Generate a new wallet for the given chain. Per-chain hook so the
+ * EVM tab and Solana tab maintain independent `isPending` state.
+ * Invalidates `envState` on success so the skip badge updates after
+ * the next mount.
+ */
+export function useWalletGenerate(
+  chain: WalletChain
+): GenerateMutationResult<WalletGenerateEvmResult | WalletGenerateSolanaResult> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      chain === "evm"
+        ? window.vex.onboarding.walletGenerateEvm()
+        : window.vex.onboarding.walletGenerateSolana(),
+    onSuccess: (result) => {
+      if (result.ok) {
+        void queryClient.invalidateQueries({
+          queryKey: onboardingKeys.envState(),
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Restore a wallet from a backup keystore file. Main triggers the file
+ * picker on this call; renderer never sees the local path. Per-chain
+ * hook for symmetric isPending state with generate.
+ */
+export function useWalletRestore(
+  chain: WalletChain
+): UseMutationResult<Result<WalletRestoreResult>, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      const input: WalletRestoreInput = { chain };
+      return window.vex.onboarding.walletRestoreFromBackup(input);
+    },
+    onSuccess: (result) => {
+      if (result.ok) {
+        void queryClient.invalidateQueries({
+          queryKey: onboardingKeys.envState(),
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Open a backup folder in the OS file manager. Main validates the path
+ * stays inside `${CONFIG_DIR}/backups/` (realpath-safe) before opening.
+ */
+export function useOpenBackupFolder(): UseMutationResult<
+  Result<WalletOpenBackupFolderResult>,
+  Error,
+  WalletOpenBackupFolderInput
+> {
+  return useMutation({
+    mutationFn: (input: WalletOpenBackupFolderInput) =>
+      window.vex.onboarding.walletOpenBackupFolder(input),
+  });
+}
+
+/**
+ * Import a wallet — direct async function, NOT a hook. The `rawKey` is
+ * a secret; routing it through `useMutation` would park the variables
+ * in observer state (codex turn 8 RED #1). Callers MUST:
+ *  - read rawKey from an uncontrolled DOM ref at submit time,
+ *  - clear `inputRef.current.value = ""` immediately after kicking off
+ *    the import (synchronously, before the IPC promise resolves),
+ *  - call `invalidateEnvStateAfterWalletWrite(queryClient)` on success.
+ */
+export async function importWalletEvm(
+  rawKey: string
+): Promise<Result<WalletImportEvmResult>> {
+  return window.vex.onboarding.walletImportEvm({ rawKey });
+}
+
+export async function importWalletSolana(
+  rawKey: string
+): Promise<Result<WalletImportSolanaResult>> {
+  return window.vex.onboarding.walletImportSolana({ rawKey });
+}
+
+/**
+ * Helper for the bare-async import paths to invalidate envState — pulls
+ * the QueryClient via a hook indirection so callers don't have to wire
+ * one manually.
+ */
+export function useInvalidateEnvStateAfterWalletWrite(): () => void {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({
+      queryKey: onboardingKeys.envState(),
+    });
+  };
+}
