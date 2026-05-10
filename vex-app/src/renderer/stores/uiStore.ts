@@ -23,6 +23,7 @@ export type View =
   | "systemCheck"
   | "dockerBootstrap"
   | "composeBootstrap"
+  | "migrations"
   | "placeholder";
 
 export interface UiLogEntry {

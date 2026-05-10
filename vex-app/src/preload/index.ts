@@ -16,6 +16,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { z } from "zod";
 import { CH, EV } from "../shared/ipc/channels.js";
 import { err, type Result, type VexError } from "../shared/ipc/result.js";
+import { migrateProgressSchema } from "../shared/schemas/database.js";
 import {
   composeLogSchema,
   installMethodSchema,
@@ -140,6 +141,15 @@ const api = {
     },
     onComposeLog(cb) {
       return subscribe(EV.docker.composeLogs, composeLogSchema, cb);
+    },
+  },
+
+  database: {
+    migrate() {
+      return invokeWithSchema(CH.database.migrate, {});
+    },
+    onProgress(cb) {
+      return subscribe(EV.database.migrateProgress, migrateProgressSchema, cb);
     },
   },
 

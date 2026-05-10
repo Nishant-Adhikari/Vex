@@ -87,6 +87,19 @@ export interface ComposeUpResult {
   readonly composeOutPath: string;
   readonly installId: string;
   readonly message: string;
+  /**
+   * Port the published Postgres bound to on the loopback interface.
+   * Always populated (even on failure paths) so the database handler
+   * can derive a connection config without re-rendering compose.
+   */
+  readonly pgPort: number;
+  /**
+   * Absolute path to the secret file the compose stack mounts as
+   * `/run/secrets/pg_password`. Same content (after read) is the
+   * Postgres password. Main-process-internal — IPC handler MUST strip
+   * before returning to renderer (the public schema is `.strict()`).
+   */
+  readonly pgPasswordPath: string;
 }
 
 export type ComposeDownKind = "stopped" | "not_running" | "failed";
@@ -208,6 +221,8 @@ export async function composeUp(
       composeOutPath: rendered.outPath,
       installId: rendered.installId,
       message: `Docker daemon is not ready: ${daemon.message}`,
+      pgPort,
+      pgPasswordPath: rendered.pgPasswordComposePath,
     };
   }
 
@@ -231,6 +246,8 @@ export async function composeUp(
         message: healthy
           ? `Reusing existing vex-${rendered.installId} compose project on :${pgPort}.`
           : `Existing vex stack found but DB is not yet healthy. Try Retry detection.`,
+        pgPort,
+        pgPasswordPath: rendered.pgPasswordComposePath,
       };
     }
     return {
@@ -238,6 +255,8 @@ export async function composeUp(
       composeOutPath: rendered.outPath,
       installId: rendered.installId,
       message: `Port ${pgPort} is occupied by a different process. Stop the conflicting service or pick another port in Settings → Advanced.`,
+      pgPort,
+      pgPasswordPath: rendered.pgPasswordComposePath,
     };
   }
 
@@ -261,6 +280,8 @@ export async function composeUp(
       composeOutPath: rendered.outPath,
       installId: rendered.installId,
       message: `Image pull timed out after ${PULL_TIMEOUT_MS / 60_000} min. Check your network or retry.`,
+      pgPort,
+      pgPasswordPath: rendered.pgPasswordComposePath,
     };
   }
   if (pullResult.code !== 0) {
@@ -269,6 +290,8 @@ export async function composeUp(
       composeOutPath: rendered.outPath,
       installId: rendered.installId,
       message: `\`docker compose pull\` exited with ${pullResult.code ?? "unknown"}: ${pullResult.stderr.split("\n").slice(-3).join(" ")}`,
+      pgPort,
+      pgPasswordPath: rendered.pgPasswordComposePath,
     };
   }
 
@@ -326,6 +349,8 @@ export async function composeUp(
       composeOutPath: renderedAfterRecovery.outPath,
       installId: renderedAfterRecovery.installId,
       message: `\`docker compose up -d\` timed out after ${UP_TIMEOUT_MS / 60_000} min.`,
+      pgPort,
+      pgPasswordPath: renderedAfterRecovery.pgPasswordComposePath,
     };
   }
   if (upResult.code !== 0) {
@@ -334,6 +359,8 @@ export async function composeUp(
       composeOutPath: renderedAfterRecovery.outPath,
       installId: renderedAfterRecovery.installId,
       message: `\`docker compose up -d\` exited with ${upResult.code ?? "unknown"}: ${upResult.stderr.split("\n").slice(-3).join(" ")}`,
+      pgPort,
+      pgPasswordPath: renderedAfterRecovery.pgPasswordComposePath,
     };
   }
 
@@ -351,6 +378,8 @@ export async function composeUp(
     message: healthy
       ? `Vex stack vex-${renderedAfterRecovery.installId} is running on :${pgPort}.`
       : `Stack started but Postgres did not accept a TCP connection within ${HEALTH_TIMEOUT_MS / 1000}s.`,
+    pgPort,
+    pgPasswordPath: renderedAfterRecovery.pgPasswordComposePath,
   };
 }
 

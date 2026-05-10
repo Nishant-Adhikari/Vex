@@ -12,3 +12,5 @@ coverage/
 .env.*.local
 playwright-report/
 test-results/
+# Mirrored from src/vex-agent/db/migrations/ via scripts/copy-migrations.mjs
+resources/migrations/

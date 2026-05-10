@@ -7,6 +7,7 @@
 
 import { globalCleanup } from "../lifecycle/cleanup-registry.js";
 import { registerCapabilitiesHandler } from "./capabilities.js";
+import { registerDatabaseHandlers } from "./database.js";
 import { registerDockerHandlers } from "./docker.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
 import { registerSettingsHandlers } from "./settings.js";
@@ -19,6 +20,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerCapabilitiesHandler());
   teardowns.push(...registerSystemHandlers());
   teardowns.push(...registerDockerHandlers());
+  teardowns.push(...registerDatabaseHandlers());
   teardowns.push(...registerOnboardingHandlers());
   teardowns.push(...registerSettingsHandlers());
   teardowns.push(registerTelemetryHandler());

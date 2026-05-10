@@ -138,7 +138,7 @@ export function ComposeBootstrap(): JSX.Element {
               </Button>
             ) : null}
             {status === "ready" || status === "reused" ? (
-              <Button onClick={() => setCurrentView("placeholder")}>
+              <Button onClick={() => setCurrentView("migrations")}>
                 Continue
               </Button>
             ) : null}

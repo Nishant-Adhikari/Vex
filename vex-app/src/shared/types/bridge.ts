@@ -9,6 +9,10 @@
 import type { Result } from "../ipc/result.js";
 import type { Capabilities } from "../schemas/capabilities.js";
 import type {
+  MigrateProgress,
+  MigrateResult,
+} from "../schemas/database.js";
+import type {
   ComposeDownResult,
   ComposeLog,
   ComposeUpResult,
@@ -63,6 +67,20 @@ export interface VexBridge {
     ) => () => void;
     readonly onComposeLog: (
       cb: (payload: ComposeLog) => void
+    ) => () => void;
+  };
+
+  readonly database: {
+    readonly migrate: () => Promise<Result<MigrateResult>>;
+    /**
+     * Subscribe to migration progress events. Returns idempotent
+     * unsubscribe — call from React effect cleanup. The bus replays
+     * the most recent event to new subscribers so a late join
+     * (StrictMode re-mount, joined single-flight) doesn't miss the
+     * planned/index/total handshake.
+     */
+    readonly onProgress: (
+      cb: (payload: MigrateProgress) => void
     ) => () => void;
   };
 

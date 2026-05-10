@@ -35,6 +35,7 @@ import {
 import { buildRenderDeps } from "../compose/deps-factory.js";
 import { log } from "../logger/index.js";
 import { CONFIG_DIR } from "../paths/config-dir.js";
+import { setDbConnection } from "../state/db-connection-state.js";
 import { registerHandler } from "./register-handler.js";
 
 const empty = z.object({}).strict();
@@ -125,6 +126,36 @@ export function registerDockerHandlers(): Array<() => void> {
   let composeUpInFlight: Promise<InternalComposeUpResult> | null = null;
   let composeUpInFlightKey: string | null = null;
 
+  // Idempotent finalize: persist main-only side-effects (last paths, DB
+  // connection) and strip pgPort/pgPasswordPath so the payload survives
+  // composeUpResultSchema's `.strict()` validation. Called from BOTH
+  // the fresh path AND the joined single-flight path — the latter
+  // previously returned the un-stripped internal result, regressing
+  // the StrictMode dedup fix to `internal.contract_violation`
+  // (codex turn 2 must-fix #1).
+  function finalizeAndShape(
+    internal: InternalComposeUpResult
+  ): ComposeUpResult {
+    lastComposeOutPath = internal.composeOutPath;
+    lastInstallId = internal.installId;
+    // Persist DB connection only when the stack is actually usable.
+    // Failure paths still carry pgPort/pgPasswordPath but consumers
+    // (the migration runner) must NOT see a connection that points
+    // at a degraded stack.
+    if (internal.kind === "running" || internal.kind === "reused") {
+      setDbConnection({
+        pgPort: internal.pgPort,
+        pgPasswordPath: internal.pgPasswordPath,
+      });
+    }
+    const {
+      pgPort: _pgPort,
+      pgPasswordPath: _pgPasswordPath,
+      ...publicResult
+    } = internal;
+    return publicResult;
+  }
+
   teardowns.push(
     registerHandler({
       channel: CH.docker.composeUp,
@@ -138,7 +169,7 @@ export function registerDockerHandlers(): Array<() => void> {
             `[ipc:vex:docker:composeUp] joining in-flight invocation (key=${key})`
           );
           const reused = await composeUpInFlight;
-          return ok(reused);
+          return ok(finalizeAndShape(reused));
         }
 
         log.info(
@@ -158,6 +189,8 @@ export function registerDockerHandlers(): Array<() => void> {
           log.info(
             `[ipc:vex:docker:composeUp] completed kind=${result.kind} elapsed=${Date.now() - startedAt}ms`
           );
+          // The "completed" log emit lives ONLY on the fresh path so
+          // joined callers don't double-log the same outcome.
           composeLogBus.emit({
             stream:
               result.kind === "running" || result.kind === "reused"
@@ -166,9 +199,7 @@ export function registerDockerHandlers(): Array<() => void> {
             line: `Compose bootstrap completed: ${result.kind}.`,
             ts: Date.now(),
           });
-          lastComposeOutPath = result.composeOutPath;
-          lastInstallId = result.installId;
-          return ok(result);
+          return ok(finalizeAndShape(result));
         } finally {
           if (composeUpInFlight === run) {
             composeUpInFlight = null;
@@ -193,6 +224,14 @@ export function registerDockerHandlers(): Array<() => void> {
           });
         }
         const result = await composeDown(lastComposeOutPath, lastInstallId);
+        // Clear the DB connection handoff only on a confirmed stop —
+        // a failed down may have left the stack running with the same
+        // credentials, so we keep the state so the migration runner
+        // can still talk to it (codex turn 2 should-fix on lifecycle
+        // hygiene). `not_running` is short-circuited above.
+        if (result.kind === "stopped") {
+          setDbConnection(null);
+        }
         return ok(result);
       },
     })

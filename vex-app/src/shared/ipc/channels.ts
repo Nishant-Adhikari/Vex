@@ -94,6 +94,9 @@ export const EV = {
     daemonChanged: "vex:event:docker:daemonChanged",
     composeLogs: "vex:event:docker:composeLogs",
   },
+  database: {
+    migrateProgress: "vex:event:database:migrateProgress",
+  },
   updater: {
     available: "vex:event:updater:available",
   },

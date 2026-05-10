@@ -16,6 +16,7 @@ import { Splash } from "./features/splash/Splash.js";
 import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
 import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
 import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
+import { Migrations } from "./features/database/Migrations.js";
 import { PlaceholderShell } from "./features/placeholder/PlaceholderShell.js";
 import { useUiStore } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
@@ -39,6 +40,8 @@ export function App(): JSX.Element {
         <BootstrapPanel />
       ) : currentView === "composeBootstrap" ? (
         <ComposeBootstrap />
+      ) : currentView === "migrations" ? (
+        <Migrations />
       ) : (
         <PlaceholderShell />
       )}

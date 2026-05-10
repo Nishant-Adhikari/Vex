@@ -12,6 +12,7 @@
     "build:main": "vite build --config vite.main.config.ts",
     "build:preload": "vite build --config vite.preload.config.ts",
     "build:renderer": "vite build --config vite.renderer.config.ts",
+    "prebuild": "node scripts/copy-migrations.mjs",
     "build": "pnpm run build:main && pnpm run build:preload && pnpm run build:renderer",
     "postbuild": "node scripts/check-build-artifacts.mjs",
     "dev:renderer": "vite --config vite.renderer.config.ts",
@@ -27,7 +28,7 @@
     "test:e2e": "playwright test",
     "audit:deps": "pnpm audit --prod && pnpm audit",
     "doctor": "node scripts/doctor.mjs",
-    "predev": "node scripts/doctor.mjs",
+    "predev": "node scripts/doctor.mjs && node scripts/copy-migrations.mjs",
     "check:build": "node scripts/check-build-artifacts.mjs"
   },
   "dependencies": {

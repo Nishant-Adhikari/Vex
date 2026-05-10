@@ -6,12 +6,12 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist/main",
-    "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@vex-lib/*": ["../src/lib/*"]
     }
   },
-  "include": ["src/main", "src/shared"],
+  "include": ["src/main", "src/shared", "../src/lib"],
   "references": [{ "path": "./tsconfig.shared.json" }]
 }
