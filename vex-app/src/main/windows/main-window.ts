@@ -6,15 +6,28 @@
  * Window state persisted via preferencesStore.
  */
 
-import { BrowserWindow, app, shell } from "electron";
+import { BrowserWindow, app, screen, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { log } from "../logger/index.js";
 import { preferencesStore } from "../preferences/store.js";
 import { APP_ORIGIN } from "../protocol/app-protocol.js";
 import {
   isAllowedExternalUrl,
   type ExternalAllowEntry,
 } from "../security/url.js";
+import {
+  clampToVisibleArea,
+  type DisplayInfo,
+} from "./visibility.js";
+
+/**
+ * Safety timeout (ms) before forcing `win.show()` if `ready-to-show`
+ * never fires. WSLg + Electron in copy-mode presentation can stall on
+ * the ready signal — without this the window stays `show: false`
+ * forever and the user only sees a taskbar entry (codex turn 3).
+ */
+const READY_TO_SHOW_SAFETY_MS = 5_000;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,11 +66,30 @@ function isAllowedAppUrl(raw: string): boolean {
 export async function createMainWindow(): Promise<BrowserWindow> {
   const prefs = await preferencesStore.load();
 
+  // Normalize saved bounds against the *current* display config. A
+  // previously-docked secondary monitor may be gone, DPI may have
+  // changed, etc. — restoring stale x/y verbatim opens the window
+  // off-screen (codex turn 3).
+  const allDisplays: ReadonlyArray<DisplayInfo> = screen.getAllDisplays();
+  const primary: DisplayInfo | null = (() => {
+    try {
+      return screen.getPrimaryDisplay();
+    } catch {
+      return null;
+    }
+  })();
+  const normalized = clampToVisibleArea(prefs.window, allDisplays, primary);
+  log.info(
+    `[window] saved=${JSON.stringify(prefs.window)} normalized=${JSON.stringify(
+      normalized
+    )} displays=${JSON.stringify(allDisplays.map((d) => d.workArea))}`
+  );
+
   const win = new BrowserWindow({
-    width: prefs.window.width,
-    height: prefs.window.height,
-    x: prefs.window.x ?? undefined,
-    y: prefs.window.y ?? undefined,
+    width: normalized.width,
+    height: normalized.height,
+    x: normalized.x ?? undefined,
+    y: normalized.y ?? undefined,
     minWidth: 1024,
     minHeight: 720,
     show: false,
@@ -113,9 +145,41 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     }
   });
 
-  // Show only after first paint (avoid white flash).
-  win.once("ready-to-show", () => {
+  // Diagnostic: catch renderer load failures (CSP block, ENOTCONN to
+  // dev server, asar protocol bug, etc.) so the smoke test surfaces
+  // them immediately instead of showing a silent blank window.
+  win.webContents.on(
+    "did-fail-load",
+    (_event, code, description, validatedURL) => {
+      log.error(
+        `[window] did-fail-load code=${code} url=${validatedURL} desc=${description}`
+      );
+    }
+  );
+
+  // Show on first paint — but with a hard safety timeout so a stalled
+  // `ready-to-show` (known WSLg/Electron edge case) does not leave the
+  // user staring at a taskbar entry forever (codex turn 3).
+  let shown = false;
+  const showOnce = (reason: string): void => {
+    if (shown || win.isDestroyed()) return;
+    shown = true;
+    log.info(`[window] showing main window (trigger: ${reason})`);
     win.show();
+    win.focus();
+  };
+  win.once("ready-to-show", () => showOnce("ready-to-show"));
+  const safetyTimer = setTimeout(() => {
+    if (!shown) {
+      log.warn(
+        `[window] ready-to-show did not fire within ${READY_TO_SHOW_SAFETY_MS}ms; forcing show`
+      );
+      showOnce("safety-timeout");
+    }
+  }, READY_TO_SHOW_SAFETY_MS);
+  safetyTimer.unref?.();
+  win.on("closed", () => {
+    clearTimeout(safetyTimer);
   });
 
   // Load renderer.
