@@ -71,3 +71,29 @@ export function appendToDotenvFile(key: string, value: string, envPath: string):
   renameSync(tmpFile, envPath);
   return envPath;
 }
+
+/**
+ * Remove a key from the dotenv file. No-op if file or key is absent.
+ *
+ * Used by the M9 wizard agent-core writer to honour the explicit
+ * "Reset to default" UI action (renderer sends `null` for that field
+ * → handler removes the key so engine reads fall back to compile-time
+ * default). Atomic: temp+rename, mode 0o600.
+ *
+ * Returns true when the key was present and removed; false when the
+ * file or the key did not exist (idempotent for callers that don't
+ * care about prior state).
+ */
+export function removeFromDotenvFile(key: string, envPath: string): boolean {
+  if (!existsSync(envPath)) return false;
+  const content = readFileSync(envPath, "utf-8");
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`^${escapedKey}=.*(?:\r?\n|$)`, "m");
+  if (!regex.test(content)) return false;
+  const next = content.replace(regex, "");
+  const dir = dirname(envPath);
+  const tmpFile = join(dir, `.env.tmp.${Date.now()}`);
+  writeFileSync(tmpFile, next, { mode: 0o600 });
+  renameSync(tmpFile, envPath);
+  return true;
+}

@@ -4,9 +4,24 @@
  * All configurable values come from .env — validated on load, fail fast.
  * Internal technical constants (timeouts, retry params) are NOT from ENV.
  *
+ * M9 refactor: AGENT_ and SUBAGENT_ range plus default constants
+ * moved to `src/lib/agent-config.ts` (single source of truth, shared
+ * with vex-app onboarding writers and the vex-shell wizard). Engine
+ * behavior preserved:
+ *  - AGENT_ keys: parse errors aggregated and thrown (combined message).
+ *  - SUBAGENT_ keys: parse errors fall back silently with `logger.warn`.
+ *
  * @see Team Standards §16.1 Config as code, §16.2 Validation at startup
  */
 
+import {
+  AGENT_CONTEXT_LIMIT,
+  AGENT_MAX_OUTPUT_TOKENS,
+  AGENT_TEMPERATURE,
+  formatParseErrors,
+  parseAgentEnv,
+  parseSubagentEnv,
+} from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
 
 // ── ENV-loaded config (validated at startup) ─────────────────────
@@ -30,11 +45,6 @@ export interface EnvConfig {
 
 const VALID_PROVIDERS = new Set<string>(["openrouter", "0g-compute"]);
 
-/** Default max output tokens — fallback when AGENT_MAX_OUTPUT_TOKENS not set */
-const FALLBACK_MAX_OUTPUT_TOKENS = 16384;
-/** Default context limit — fallback when AGENT_CONTEXT_LIMIT not set */
-const FALLBACK_CONTEXT_LIMIT = 128_000;
-
 /**
  * Load and validate all inference ENV variables.
  * Fail fast on invalid values — agent should not start with bad config.
@@ -42,7 +52,9 @@ const FALLBACK_CONTEXT_LIMIT = 128_000;
 export function loadEnvConfig(): EnvConfig {
   const errors: string[] = [];
 
-  // AGENT_PROVIDER (optional — auto-detected)
+  // AGENT_PROVIDER (optional — auto-detected). Local validation —
+  // this field is not in agent-config.ts because it's an enum, not a
+  // numeric range.
   const rawProvider = process.env.AGENT_PROVIDER?.toLowerCase().trim() ?? null;
   let agentProvider: ProviderType | null = null;
   if (rawProvider !== null) {
@@ -53,45 +65,21 @@ export function loadEnvConfig(): EnvConfig {
     }
   }
 
-  // AGENT_CONTEXT_LIMIT
-  const rawContextLimit = process.env.AGENT_CONTEXT_LIMIT?.trim();
-  let contextLimit = FALLBACK_CONTEXT_LIMIT;
-  if (rawContextLimit) {
-    const parsed = Number(rawContextLimit);
-    if (!Number.isFinite(parsed) || parsed < 1000 || parsed > 2_000_000) {
-      errors.push(`AGENT_CONTEXT_LIMIT="${rawContextLimit}" is invalid. Must be 1000-2000000`);
-    } else {
-      contextLimit = parsed;
-    }
-  }
-
-  // OPENROUTER_API_KEY
+  // OPENROUTER_API_KEY + AGENT_MODEL — strings, no numeric validation.
   const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() ?? null;
-
-  // AGENT_MODEL
   const agentModel = process.env.AGENT_MODEL?.trim() ?? null;
 
-  // AGENT_TEMPERATURE (OpenRouter only)
-  const rawTemp = process.env.AGENT_TEMPERATURE?.trim();
-  let temperature: number | null = null;
-  if (rawTemp) {
-    const parsed = Number(rawTemp);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 2) {
-      errors.push(`AGENT_TEMPERATURE="${rawTemp}" is invalid. Must be 0.0-2.0`);
+  // AGENT_CONTEXT_LIMIT / AGENT_MAX_OUTPUT_TOKENS / AGENT_TEMPERATURE —
+  // delegated to shared parser (returns collected ParseErrors so we
+  // preserve the "throw all at once" engine contract).
+  const agentParse = parseAgentEnv(process.env);
+  for (const e of agentParse.errors) {
+    if (e.reason === "out_of_range") {
+      errors.push(
+        `${e.key}="${e.raw}" is invalid. Must be ${e.detail?.min ?? "?"}-${e.detail?.max ?? "?"}`,
+      );
     } else {
-      temperature = parsed;
-    }
-  }
-
-  // AGENT_MAX_OUTPUT_TOKENS
-  const rawMaxTokens = process.env.AGENT_MAX_OUTPUT_TOKENS?.trim();
-  let maxOutputTokens = FALLBACK_MAX_OUTPUT_TOKENS;
-  if (rawMaxTokens) {
-    const parsed = Number(rawMaxTokens);
-    if (!Number.isFinite(parsed) || parsed < 256 || parsed > 128_000) {
-      errors.push(`AGENT_MAX_OUTPUT_TOKENS="${rawMaxTokens}" is invalid. Must be 256-128000`);
-    } else {
-      maxOutputTokens = parsed;
+      errors.push(`${e.key}="${e.raw}" is invalid. Must be a number`);
     }
   }
 
@@ -104,11 +92,11 @@ export function loadEnvConfig(): EnvConfig {
 
   return {
     agentProvider,
-    contextLimit,
+    contextLimit: agentParse.value.contextLimit,
     openrouterApiKey,
     agentModel,
-    temperature,
-    maxOutputTokens,
+    temperature: agentParse.value.temperature,
+    maxOutputTokens: agentParse.value.maxOutputTokens,
   };
 }
 
@@ -123,39 +111,29 @@ export interface SubagentConfig {
   timeoutMs: number;
 }
 
-const SUBAGENT_DEFAULTS = {
-  maxConcurrent: 5,
-  contextLimit: 16_384,
-  maxIterations: 25,
-  timeoutMs: 300_000,
-} as const;
-
 export function loadSubagentConfig(agentConfig: EnvConfig): SubagentConfig {
-  return {
-    maxConcurrent: parseIntEnv("SUBAGENT_MAX_CONCURRENT", SUBAGENT_DEFAULTS.maxConcurrent, 1, 20),
-    contextLimit: parseIntEnv("SUBAGENT_CONTEXT_LIMIT", SUBAGENT_DEFAULTS.contextLimit, 1000, 2_000_000),
-    maxOutputTokens: parseIntEnv("SUBAGENT_MAX_OUTPUT_TOKENS", agentConfig.maxOutputTokens, 256, 128_000),
-    temperature: parseFloatEnv("SUBAGENT_TEMPERATURE", agentConfig.temperature, 0, 2),
-    maxIterations: parseIntEnv("SUBAGENT_MAX_ITERATIONS", SUBAGENT_DEFAULTS.maxIterations, 1, 200),
-    timeoutMs: parseIntEnv("SUBAGENT_TIMEOUT_MS", SUBAGENT_DEFAULTS.timeoutMs, 10_000, 1_800_000),
-  };
+  const result = parseSubagentEnv(process.env, {
+    contextLimit: agentConfig.contextLimit,
+    maxOutputTokens: agentConfig.maxOutputTokens,
+    temperature: agentConfig.temperature,
+  });
+  if (result.errors.length > 0) {
+    // Engine contract: SUBAGENT_* invalid values fall back silently
+    // (parseSubagentEnv already returned the fallback in `value`).
+    // Log warnings so ops can see misconfiguration without breaking
+    // agent startup. vex-app onboarding writer enforces strict
+    // validation at the write boundary.
+    logger.warn(formatParseErrors("SUBAGENT_* env values invalid (using fallback):", result.errors));
+  }
+  return result.value;
 }
 
-function parseIntEnv(key: string, fallback: number, min: number, max: number): number {
-  const raw = process.env[key]?.trim();
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return fallback;
-  return Math.floor(parsed);
-}
-
-function parseFloatEnv(key: string, fallback: number | null, min: number, max: number): number | null {
-  const raw = process.env[key]?.trim();
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return fallback;
-  return parsed;
-}
+// ── Re-exports of public field metadata ──────────────────────────
+// vex-shell wizard + vex-app onboarding both import from
+// `src/lib/agent-config.ts` directly. These are kept here for
+// backward compatibility with any in-tree consumer that already
+// imports from this module.
+export { AGENT_CONTEXT_LIMIT, AGENT_MAX_OUTPUT_TOKENS, AGENT_TEMPERATURE };
 
 // ── Internal constants (not from ENV — technical invariants) ─────
 

@@ -6,6 +6,7 @@ import {
   appendToDotenvFile,
   loadDotenvFileIntoProcess,
   readDotenvFileValue,
+  removeFromDotenvFile,
 } from "@utils/dotenv.js";
 
 const TEST_DIR = join(tmpdir(), `vex-dotenv-${Date.now()}`);
@@ -145,6 +146,52 @@ describe("utils/dotenv", () => {
       appendToDotenvFile("PASSWORD", 'my#pass=with"quotes\\slash', TEST_ENV);
 
       expect(readDotenvFileValue("PASSWORD", TEST_ENV)).toBe('my#pass=with"quotes\\slash');
+    });
+  });
+
+  describe("removeFromDotenvFile", () => {
+    it("returns false when file does not exist (no-op)", () => {
+      expect(removeFromDotenvFile("ANY", TEST_ENV)).toBe(false);
+      expect(existsSync(TEST_ENV)).toBe(false);
+    });
+
+    it("returns false when key is absent (no-op)", () => {
+      writeFileSync(TEST_ENV, 'OTHER="keep"\n');
+      expect(removeFromDotenvFile("MISSING", TEST_ENV)).toBe(false);
+      const content = readFileSync(TEST_ENV, "utf-8");
+      expect(content).toContain('OTHER="keep"');
+    });
+
+    it("removes an existing key and preserves siblings", () => {
+      writeFileSync(TEST_ENV, ['# header', 'KEEP_A="alpha"', 'TARGET="bye"', 'KEEP_B="beta"', ""].join("\n"));
+      expect(removeFromDotenvFile("TARGET", TEST_ENV)).toBe(true);
+      const content = readFileSync(TEST_ENV, "utf-8");
+      expect(content).not.toContain("TARGET");
+      expect(content).toContain("# header");
+      expect(content).toContain('KEEP_A="alpha"');
+      expect(content).toContain('KEEP_B="beta"');
+    });
+
+    it("is idempotent (second remove is no-op)", () => {
+      writeFileSync(TEST_ENV, 'X="y"\nZ="w"\n');
+      expect(removeFromDotenvFile("X", TEST_ENV)).toBe(true);
+      expect(removeFromDotenvFile("X", TEST_ENV)).toBe(false);
+      expect(readFileSync(TEST_ENV, "utf-8")).toContain('Z="w"');
+    });
+
+    it.skipIf(process.platform === "win32")("preserves 0o600 mode on rewrite", () => {
+      writeFileSync(TEST_ENV, 'X="y"\nZ="w"\n', { mode: 0o600 });
+      removeFromDotenvFile("X", TEST_ENV);
+      const mode = statSync(TEST_ENV).mode & 0o777;
+      expect(mode).toBe(0o600);
+    });
+
+    it("removes only the last-line key without trailing newline", () => {
+      writeFileSync(TEST_ENV, 'KEEP="a"\nLAST="b"');
+      expect(removeFromDotenvFile("LAST", TEST_ENV)).toBe(true);
+      const content = readFileSync(TEST_ENV, "utf-8");
+      expect(content).not.toContain("LAST");
+      expect(content).toContain('KEEP="a"');
     });
   });
 });

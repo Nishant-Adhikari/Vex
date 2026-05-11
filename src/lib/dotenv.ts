@@ -12,4 +12,5 @@ export {
   appendToDotenvFile,
   loadDotenvFileIntoProcess,
   readDotenvFileValue,
+  removeFromDotenvFile,
 } from "../utils/dotenv.js";
