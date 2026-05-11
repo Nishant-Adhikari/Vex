@@ -4,7 +4,10 @@
     "lib": ["ES2024"],
     "types": [],
     "outDir": "./dist/shared",
-    "rootDir": "./src/shared"
+    "rootDir": ".",
+    "paths": {
+      "@vex-lib/*": ["../src/lib/*"]
+    }
   },
-  "include": ["src/shared"]
+  "include": ["src/shared", "../src/lib"]
 }

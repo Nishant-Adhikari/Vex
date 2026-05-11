@@ -29,6 +29,7 @@ import { err, ok, type Result } from "@shared/ipc/result.js";
 import type { KeystoreSetResult } from "@shared/schemas/wizard.js";
 import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
+import { withEnvWriteLock } from "./env-write-mutex.js";
 
 const KEYSTORE_ENV_KEY = "VEX_KEYSTORE_PASSWORD";
 
@@ -43,40 +44,45 @@ export async function setKeystorePassword(
 ): Promise<Result<KeystoreSetResult>> {
   const targetFile = options.envFile ?? ENV_FILE;
 
-  // Read first so a no-op submission (Continue after partial recovery,
-  // dev double-mount, deliberate retry) doesn't churn the file. Read
-  // failures are tolerated — readDotenvFileValue returns null on any
-  // I/O error and we proceed to write.
-  let current: string | null = null;
-  try {
-    current = readDotenvFileValue(KEYSTORE_ENV_KEY, targetFile);
-  } catch (cause) {
-    log.warn(
-      `[keystore-writer] read of ${KEYSTORE_ENV_KEY} failed; proceeding to write`,
-      cause
-    );
-  }
+  // M9: route through env-write-mutex so concurrent keystoreSet /
+  // apiKeysSet / embeddingConfigure / agentCoreConfigure do not
+  // interleave read-modify-write on the shared .env file.
+  return withEnvWriteLock(async () => {
+    // Read first so a no-op submission (Continue after partial recovery,
+    // dev double-mount, deliberate retry) doesn't churn the file. Read
+    // failures are tolerated — readDotenvFileValue returns null on any
+    // I/O error and we proceed to write.
+    let current: string | null = null;
+    try {
+      current = readDotenvFileValue(KEYSTORE_ENV_KEY, targetFile);
+    } catch (cause) {
+      log.warn(
+        `[keystore-writer] read of ${KEYSTORE_ENV_KEY} failed; proceeding to write`,
+        cause
+      );
+    }
 
-  if (current !== null && current === password) {
-    return ok({ kind: "unchanged" });
-  }
+    if (current !== null && current === password) {
+      return ok({ kind: "unchanged" });
+    }
 
-  try {
-    appendToDotenvFile(KEYSTORE_ENV_KEY, password, targetFile);
-  } catch (cause) {
-    log.error(
-      `[keystore-writer] failed to persist ${KEYSTORE_ENV_KEY} to ${targetFile}`,
-      cause
-    );
-    return err({
-      code: "onboarding.env_persist_failed",
-      domain: "onboarding",
-      message: "Could not persist password. Check disk space and permissions.",
-      retryable: true,
-      userActionable: true,
-      redacted: true,
-    });
-  }
+    try {
+      appendToDotenvFile(KEYSTORE_ENV_KEY, password, targetFile);
+    } catch (cause) {
+      log.error(
+        `[keystore-writer] failed to persist ${KEYSTORE_ENV_KEY} to ${targetFile}`,
+        cause
+      );
+      return err({
+        code: "onboarding.env_persist_failed",
+        domain: "onboarding",
+        message: "Could not persist password. Check disk space and permissions.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+      });
+    }
 
-  return ok({ kind: "set" });
+    return ok({ kind: "set" });
+  });
 }

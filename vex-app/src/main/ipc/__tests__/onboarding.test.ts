@@ -85,7 +85,19 @@ describe("vex.onboarding.getEnvState handler", () => {
     mockGatherEnvState.mockResolvedValue({
       hasKeystorePassword: true,
       hasJupiterApiKey: false,
-      embeddings: { configured: false, reachable: false, baseUrlRedacted: null },
+      apiKeys: {
+        jupiterConfigured: false,
+        tavilyConfigured: false,
+        rettiwtConfigured: false,
+        polymarketStatus: "missing",
+      },
+      embeddings: {
+        configured: false,
+        reachable: false,
+        baseUrlRedacted: null,
+        allFieldsConfigured: false,
+        dbReachable: null,
+      },
       walletStatus: { evm: "missing", solana: "missing" },
       setupCompleteFlag: false,
     });

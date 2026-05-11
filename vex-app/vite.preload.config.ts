@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "src/shared"),
+      "@vex-lib": path.resolve(__dirname, "../src/lib"),
     },
   },
   build: {

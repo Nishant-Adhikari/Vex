@@ -3,6 +3,12 @@
  * MUST NOT decrypt keystores — codex turn 3 RED #3. Wallet status
  * collapses to `present | missing` (file existence at the shared
  * CONFIG_DIR), which is everything the System Check screen needs.
+ *
+ * M9: extends the shape with per-API-key status (jupiter / tavily /
+ * rettiwt / polymarket-3-state) + embeddings.allFieldsConfigured +
+ * embeddings.dbReachable. The legacy `hasJupiterApiKey` field stays
+ * as a deprecated mirror of `apiKeys.jupiterConfigured` so M2/M7
+ * callers keep parsing without changes.
  */
 
 import { promises as fs } from "node:fs";
@@ -13,11 +19,12 @@ import type {
   EnvState,
   WalletAddresses,
 } from "@shared/schemas/onboarding.js";
+import type { PolymarketStatus } from "@shared/schemas/api-keys.js";
 import { log } from "../logger/index.js";
+import { probeEmbeddings } from "./embedding-state.js";
 
 const KEYSTORE_FILE = path.join(CONFIG_DIR, "keystore.json");
 const SOLANA_KEYSTORE_FILE = path.join(CONFIG_DIR, "solana-keystore.json");
-const HTTP_PROBE_TIMEOUT_MS = 2_000;
 
 async function fileExists(p: string): Promise<boolean> {
   try {
@@ -72,26 +79,6 @@ export function redactEmbeddingUrl(rawUrl: string | null): string | null {
   }
 }
 
-async function probeEmbeddingsEndpoint(baseUrl: string): Promise<boolean> {
-  // Append `/models` to the configured baseUrl. We MUST NOT use
-  // `new URL("/v1/models", baseUrl)` — that resolves to the host root
-  // and silently drops `/engines/llama.cpp/v1` (codex turn 5 YELLOW #1).
-  // For ai/embeddinggemma the canonical baseUrl is
-  // `http://127.0.0.1:12434/engines/llama.cpp/v1`, so the probe URL is
-  // `http://127.0.0.1:12434/engines/llama.cpp/v1/models`.
-  const url = `${baseUrl.replace(/\/$/, "")}/models`;
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      signal: AbortSignal.timeout(HTTP_PROBE_TIMEOUT_MS),
-      headers: { Accept: "application/json" },
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Public addresses from `config.json` — plaintext, NOT decrypted from
  * the keystore (codex turn 3 RED #3 stays honored). Returns undefined
@@ -111,26 +98,57 @@ function gatherWalletAddresses(): WalletAddresses | undefined {
   }
 }
 
+function polymarketStatusFrom(
+  apiKey: boolean,
+  apiSecret: boolean,
+  passphrase: boolean,
+): PolymarketStatus {
+  const set = [apiKey, apiSecret, passphrase].filter(Boolean).length;
+  if (set === 0) return "missing";
+  if (set === 3) return "configured";
+  return "partial";
+}
+
 export async function gatherEnvState(): Promise<EnvState> {
-  const [hasPwd, hasJupiter, evmExists, solExists, setupFlag, embedRaw] =
-    await Promise.all([
-      readEnvKeyPresence(ENV_FILE, "VEX_KEYSTORE_PASSWORD"),
-      readEnvKeyPresence(ENV_FILE, "JUPITER_API_KEY"),
-      fileExists(KEYSTORE_FILE),
-      fileExists(SOLANA_KEYSTORE_FILE),
-      fileExists(SETUP_COMPLETE_FILE),
-      readEnvValue(ENV_FILE, "EMBEDDING_BASE_URL"),
-    ]);
-  const reachable = embedRaw !== null ? await probeEmbeddingsEndpoint(embedRaw) : false;
+  const [
+    hasPwd,
+    hasJupiter,
+    hasTavily,
+    hasRettiwt,
+    hasPolyKey,
+    hasPolySecret,
+    hasPolyPass,
+    evmExists,
+    solExists,
+    setupFlag,
+    embeddings,
+  ] = await Promise.all([
+    readEnvKeyPresence(ENV_FILE, "VEX_KEYSTORE_PASSWORD"),
+    readEnvKeyPresence(ENV_FILE, "JUPITER_API_KEY"),
+    readEnvKeyPresence(ENV_FILE, "TAVILY_API_KEY"),
+    readEnvKeyPresence(ENV_FILE, "RETTIWT_API_KEY"),
+    readEnvKeyPresence(ENV_FILE, "POLYMARKET_API_KEY"),
+    readEnvKeyPresence(ENV_FILE, "POLYMARKET_API_SECRET"),
+    readEnvKeyPresence(ENV_FILE, "POLYMARKET_PASSPHRASE"),
+    fileExists(KEYSTORE_FILE),
+    fileExists(SOLANA_KEYSTORE_FILE),
+    fileExists(SETUP_COMPLETE_FILE),
+    probeEmbeddings(ENV_FILE),
+  ]);
+
+  const polymarketStatus = polymarketStatusFrom(hasPolyKey, hasPolySecret, hasPolyPass);
   const walletAddresses = gatherWalletAddresses();
+
   return {
     hasKeystorePassword: hasPwd,
     hasJupiterApiKey: hasJupiter,
-    embeddings: {
-      configured: embedRaw !== null,
-      reachable,
-      baseUrlRedacted: redactEmbeddingUrl(embedRaw),
+    apiKeys: {
+      jupiterConfigured: hasJupiter,
+      tavilyConfigured: hasTavily,
+      rettiwtConfigured: hasRettiwt,
+      polymarketStatus,
     },
+    embeddings,
     walletStatus: {
       evm: evmExists ? "present" : "missing",
       solana: solExists ? "present" : "missing",

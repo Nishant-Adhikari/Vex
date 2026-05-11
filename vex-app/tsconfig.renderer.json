@@ -5,13 +5,14 @@
     "types": ["vite/client", "vitest/globals"],
     "jsx": "react-jsx",
     "outDir": "./dist/renderer",
-    "rootDir": "./src",
+    "rootDir": ".",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/renderer/*"],
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@vex-lib/*": ["../src/lib/*"]
     }
   },
-  "include": ["src/renderer", "src/shared"],
+  "include": ["src/renderer", "src/shared", "../src/lib"],
   "references": [{ "path": "./tsconfig.shared.json" }]
 }

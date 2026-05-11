@@ -10,10 +10,18 @@ import { envStateSchema, type EnvState } from "../onboarding.js";
 const validState: EnvState = {
   hasKeystorePassword: true,
   hasJupiterApiKey: false,
+  apiKeys: {
+    jupiterConfigured: false,
+    tavilyConfigured: false,
+    rettiwtConfigured: false,
+    polymarketStatus: "missing",
+  },
   embeddings: {
     configured: true,
     reachable: true,
     baseUrlRedacted: "http://127.0.0.1:12434",
+    allFieldsConfigured: true,
+    dbReachable: true,
   },
   walletStatus: {
     evm: "present",
@@ -30,9 +38,31 @@ describe("envStateSchema", () => {
   it("accepts baseUrlRedacted = null when embeddings.configured = false", () => {
     const state: EnvState = {
       ...validState,
-      embeddings: { configured: false, reachable: false, baseUrlRedacted: null },
+      embeddings: {
+        configured: false,
+        reachable: false,
+        baseUrlRedacted: null,
+        allFieldsConfigured: false,
+        dbReachable: null,
+      },
     };
     expect(envStateSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("accepts polymarketStatus = 'partial'", () => {
+    const state: EnvState = {
+      ...validState,
+      apiKeys: { ...validState.apiKeys, polymarketStatus: "partial" },
+    };
+    expect(envStateSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("rejects unknown polymarketStatus value", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      apiKeys: { ...validState.apiKeys, polymarketStatus: "weird" as never },
+    });
+    expect(result.success).toBe(false);
   });
 
   it("rejects unknown wallet status enum (no `decrypted` etc.)", () => {

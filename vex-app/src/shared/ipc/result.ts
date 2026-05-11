@@ -27,6 +27,7 @@ export type VexDomain =
   | "docker"
   | "database"
   | "onboarding"
+  | "embedding"
   | "capabilities"
   /** Used by the preload boundary when input fails its own Zod schema before reaching main. */
   | "preload"
@@ -55,6 +56,9 @@ export type VexErrorCode =
   | "update.apply_failed"
   | "onboarding.step_failed"
   | "onboarding.env_persist_failed"
+  | "embedding.dim_locked"
+  | "embedding.db_unavailable"
+  | "embedding.defaults_unavailable"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

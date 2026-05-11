@@ -11,6 +11,7 @@
  */
 
 import { z } from "zod";
+import { polymarketStatusSchema } from "./api-keys.js";
 
 export const walletPresenceSchema = z.enum(["present", "missing"]);
 export type WalletPresence = z.infer<typeof walletPresenceSchema>;
@@ -29,15 +30,40 @@ export const walletAddressesSchema = z
 
 export type WalletAddresses = z.infer<typeof walletAddressesSchema>;
 
+export const apiKeysStateSchema = z
+  .object({
+    jupiterConfigured: z.boolean(),
+    tavilyConfigured: z.boolean(),
+    rettiwtConfigured: z.boolean(),
+    polymarketStatus: polymarketStatusSchema,
+  })
+  .strict();
+
+export type ApiKeysState = z.infer<typeof apiKeysStateSchema>;
+
 export const envStateSchema = z
   .object({
     hasKeystorePassword: z.boolean(),
+    /**
+     * Deprecated alias for `apiKeys.jupiterConfigured` kept for M2/M7
+     * back-compat. M9 added the per-field `apiKeys` block; future
+     * milestones may drop this field once all callers migrate.
+     */
     hasJupiterApiKey: z.boolean(),
+    apiKeys: apiKeysStateSchema,
     embeddings: z
       .object({
         configured: z.boolean(),
         reachable: z.boolean(),
         baseUrlRedacted: z.string().nullable(),
+        /** M9: true iff all 4 EMBEDDING_* keys present + valid in .env. */
+        allFieldsConfigured: z.boolean(),
+        /**
+         * M9: best-effort probe. `null` when the probe did not run /
+         * timed out — UI must treat null as "unknown" and let the
+         * write attempt surface the real status.
+         */
+        dbReachable: z.boolean().nullable(),
       })
       .strict(),
     walletStatus: z
