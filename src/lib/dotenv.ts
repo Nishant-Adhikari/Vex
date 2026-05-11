@@ -9,6 +9,7 @@
  */
 
 export {
+  appendMultipleToDotenvFile,
   appendToDotenvFile,
   loadDotenvFileIntoProcess,
   readDotenvFileValue,

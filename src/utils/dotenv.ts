@@ -97,3 +97,66 @@ export function removeFromDotenvFile(key: string, envPath: string): boolean {
   renameSync(tmpFile, envPath);
   return true;
 }
+
+/**
+ * Atomic multi-key update for a .env file (M10).
+ *
+ * Single read → in-memory strip of ALL existing occurrences of every
+ * provided key (handles duplicate-line edge case from manual edits)
+ * → append canonical values in insertion order with the same quote-
+ * escape format as `appendToDotenvFile` → atomic temp+rename + mode
+ * 0o600. Idempotent (calling twice with identical input produces the
+ * same file state).
+ *
+ * Values are quoted exactly as `appendToDotenvFile` so that
+ * `readDotenvFileValue` round-trips correctly. Keys are written in
+ * insertion order of `Object.entries(updates)`.
+ *
+ * Used by M10 provider-writer to guarantee that OPENROUTER_API_KEY,
+ * AGENT_MODEL, and AGENT_PROVIDER are written as one consistent set
+ * (no partial state, no duplicate AGENT_PROVIDER=0g-compute lines
+ * left behind from prior CLI or manual edits).
+ *
+ * Throws on fs/permission errors — caller wraps in Result.
+ */
+export function appendMultipleToDotenvFile(
+  updates: Record<string, string>,
+  envPath: string,
+): void {
+  const dir = dirname(envPath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+  let content = "";
+  if (existsSync(envPath)) {
+    content = readFileSync(envPath, "utf-8");
+  }
+
+  // Strip ALL existing occurrences of every key (handles duplicates +
+  // lines with leading horizontal whitespace, which `loadDotenvFileIntoProcess`
+  // accepts because it `line.trim()`s before parsing — a stale line like
+  // `   AGENT_PROVIDER="0g-compute"` survives if we don't match it here,
+  // and the loader's first-match-wins rule would pick the stale value
+  // over the canonical one we append below.
+  for (const key of Object.keys(updates)) {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(
+      `^[ \\t]*${escapedKey}[ \\t]*=.*(?:\r?\n|$)`,
+      "gm",
+    );
+    content = content.replace(regex, "");
+  }
+
+  // Append canonical values with the exact same quoting as
+  // `appendToDotenvFile` so `readDotenvFileValue` round-trips.
+  content = content.trimEnd();
+  for (const [key, value] of Object.entries(updates)) {
+    const quotedValue = `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    const line = `${key}=${quotedValue}`;
+    content = content.length === 0 ? line : `${content}\n${line}`;
+  }
+  content += "\n";
+
+  const tmpFile = join(dir, `.env.tmp.${Date.now()}`);
+  writeFileSync(tmpFile, content, { mode: 0o600 });
+  renameSync(tmpFile, envPath);
+}
