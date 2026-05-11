@@ -33,16 +33,19 @@ import { AgentCoreStep } from "./steps/AgentCoreStep.js";
 import { ApiKeysStep } from "./steps/ApiKeysStep.js";
 import { EmbeddingStep } from "./steps/EmbeddingStep.js";
 import { KeystoreStep } from "./steps/KeystoreStep.js";
+import { ProviderStep } from "./steps/ProviderStep.js";
 import { WalletsStep } from "./steps/WalletsStep.js";
 import { PlaceholderStep } from "./steps/PlaceholderStep.js";
 
-type StepMilestone = "M10" | "M11";
+type StepMilestone = "M11";
 
 const PLACEHOLDER_MILESTONE: Record<
-  Exclude<WizardStepId, "keystore" | "wallets" | "apiKeys" | "embedding" | "agentCore">,
+  Exclude<
+    WizardStepId,
+    "keystore" | "wallets" | "apiKeys" | "embedding" | "agentCore" | "provider"
+  >,
   StepMilestone
 > = {
-  provider: "M10",
   mode: "M11",
   wake: "M11",
   review: "M11",
@@ -76,6 +79,11 @@ function renderStep(
   if (stepId === "agentCore") {
     return (
       <AgentCoreStep completedSteps={completedSteps} onAdvance={onAdvance} />
+    );
+  }
+  if (stepId === "provider") {
+    return (
+      <ProviderStep completedSteps={completedSteps} onAdvance={onAdvance} />
     );
   }
   return (

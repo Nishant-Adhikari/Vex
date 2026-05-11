@@ -82,6 +82,7 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       dbReachable: null,
     },
     walletStatus: { evm: "present", solana: "present" },
+    provider: { configured: false, name: null, modelLabel: null },
     setupCompleteFlag: false,
   };
 }

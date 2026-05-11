@@ -132,15 +132,24 @@ function envQueryFor(walletStatus: {
       data: {
         hasKeystorePassword: true,
         hasJupiterApiKey: false,
+        apiKeys: {
+          jupiterConfigured: false,
+          tavilyConfigured: false,
+          rettiwtConfigured: false,
+          polymarketStatus: "missing",
+        },
         embeddings: {
           configured: false,
           reachable: false,
           baseUrlRedacted: null,
+          allFieldsConfigured: false,
+          dbReachable: null,
         },
         walletStatus,
         ...(walletStatus.addresses
           ? { walletAddresses: walletStatus.addresses }
           : {}),
+        provider: { configured: false, name: null, modelLabel: null },
         setupCompleteFlag: false,
       },
     },

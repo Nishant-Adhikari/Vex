@@ -185,7 +185,7 @@ describe("WizardShell", () => {
     await findByTestId("agentcore-step");
   });
 
-  it("renders PlaceholderStep with M10 milestone for the provider step (still placeholder)", async () => {
+  it("renders ProviderStep when persisted.currentStepId === 'provider' (M10)", async () => {
     mockUseWizardState.mockReturnValue(
       makeQueryResult({
         ok: true,
@@ -197,10 +197,12 @@ describe("WizardShell", () => {
         },
       })
     );
-    const { findByTestId } = renderWithQuery(<WizardShell />);
-    const node = await findByTestId("placeholder-step");
-    expect(node.getAttribute("data-step")).toBe("provider");
-    expect(node.getAttribute("data-milestone")).toBe("M10");
+    const { container } = renderWithQuery(<WizardShell />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(
+      container.querySelector('[data-vex-wizard-provider="form"]') ??
+        container.querySelector('[data-vex-wizard-provider="skip"]'),
+    ).not.toBeNull();
   });
 
   it("flips view to placeholder when persisted.completed === true", async () => {

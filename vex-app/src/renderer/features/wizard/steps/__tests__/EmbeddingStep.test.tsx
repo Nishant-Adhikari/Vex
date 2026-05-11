@@ -89,6 +89,7 @@ function envState(allConfigured: boolean): EnvState {
       dbReachable: true,
     },
     walletStatus: { evm: "present", solana: "present" },
+    provider: { configured: false, name: null, modelLabel: null },
     setupCompleteFlag: false,
   };
 }
