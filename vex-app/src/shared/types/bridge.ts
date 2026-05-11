@@ -54,6 +54,10 @@ import type {
   AgentCoreConfigureResult,
 } from "../schemas/agent-core.js";
 import type {
+  ProviderPersistInput,
+  ProviderPersistResult,
+} from "../schemas/provider.js";
+import type {
   HealthReport,
   NetworkProbe,
   OsInfo,
@@ -146,6 +150,9 @@ export interface VexBridge {
     readonly agentCoreConfigure: (
       input: AgentCoreConfigureInput
     ) => Promise<Result<AgentCoreConfigureResult>>;
+    readonly providerPersist: (
+      input: ProviderPersistInput
+    ) => Promise<Result<ProviderPersistResult>>;
   };
 
   readonly settings: {

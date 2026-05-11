@@ -59,6 +59,11 @@ export type VexErrorCode =
   | "embedding.dim_locked"
   | "embedding.db_unavailable"
   | "embedding.defaults_unavailable"
+  | "provider.invalid_api_key"
+  | "provider.insufficient_credits"
+  | "provider.model_unsupported"
+  | "provider.unavailable"
+  | "provider.test_failed"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

@@ -99,6 +99,7 @@ describe("vex.onboarding.getEnvState handler", () => {
         dbReachable: null,
       },
       walletStatus: { evm: "missing", solana: "missing" },
+      provider: { configured: false, name: null, modelLabel: null },
       setupCompleteFlag: false,
     });
     registerOnboardingHandlers();

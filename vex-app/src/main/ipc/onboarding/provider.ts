@@ -1,0 +1,86 @@
+/**
+ * vex.onboarding.providerPersist — Wizard Step 6 IPC handler (M10).
+ *
+ * Verify-then-persist atomically (codex turn 2 RED #1):
+ *   1. Call `verifyOpenRouterConnection({apiKey, model})` — 16-token
+ *      chat completion with hard 15s timeout + SDK retries disabled.
+ *      If verify fails → return the mapped `provider.*` VexError
+ *      immediately. NO .env write.
+ *   2. If verify ok → wrap `writeProvider(input)` in `withEnvWriteLock`
+ *      so it cannot interleave with keystoreSet / apiKeysSet /
+ *      embeddingConfigure / agentCoreConfigure on the same `.env`.
+ *      The writer uses `appendMultipleToDotenvFile` so all 3 keys
+ *      land in one atomic temp+rename (no partial state).
+ *   3. Persist failure → `onboarding.env_persist_failed` with
+ *      `details: {verified: true}` so the renderer can render the
+ *      verify-but-save-failed UX.
+ *
+ * Logging contract (codex turn 1 RED #6 inherited from M9):
+ *   - log `provider=openrouter modelSet=true latencyMs=N correlationId=X`
+ *   - NEVER apiKey value, length, prefix, model value
+ *   - on failure log `errCode=X correlationId=Y`
+ */
+
+import { CH } from "@shared/ipc/channels.js";
+import type { Result } from "@shared/ipc/result.js";
+import {
+  providerPersistInputSchema,
+  providerPersistResultSchema,
+  type ProviderPersistResult,
+} from "@shared/schemas/provider.js";
+import { writeProvider } from "../../onboarding/provider-writer.js";
+import { verifyOpenRouterConnection } from "../../onboarding/openrouter-test-client.js";
+import { withEnvWriteLock } from "../../onboarding/env-write-mutex.js";
+import { log } from "../../logger/index.js";
+import { registerHandler } from "../register-handler.js";
+
+export function registerProviderHandler(): () => void {
+  return registerHandler({
+    channel: CH.onboarding.providerPersist,
+    domain: "onboarding",
+    inputSchema: providerPersistInputSchema,
+    outputSchema: providerPersistResultSchema,
+    handle: async (input, ctx): Promise<Result<ProviderPersistResult>> => {
+      // Step 1: verify connection BEFORE any disk write.
+      const verifyResult = await verifyOpenRouterConnection(
+        { apiKey: input.apiKey, model: input.model },
+        { correlationId: ctx.requestId },
+      );
+      if (!verifyResult.ok) {
+        log.info(
+          `[ipc:vex:onboarding:providerPersist] ` +
+            `errCode=${verifyResult.error.code} correlationId=${ctx.requestId}`,
+        );
+        return verifyResult;
+      }
+
+      const latencyMs = verifyResult.data.latencyMs;
+
+      // Step 2: persist 3 keys atomically inside the env-write mutex.
+      const persistResult = await withEnvWriteLock(() =>
+        writeProvider(input),
+      );
+      if (!persistResult.ok) {
+        log.info(
+          `[ipc:vex:onboarding:providerPersist] ` +
+            `errCode=${persistResult.error.code} correlationId=${ctx.requestId}`,
+        );
+        return persistResult;
+      }
+
+      log.info(
+        `[ipc:vex:onboarding:providerPersist] ` +
+          `provider=openrouter modelSet=true latencyMs=${latencyMs} ` +
+          `correlationId=${ctx.requestId}`,
+      );
+
+      return {
+        ok: true,
+        data: {
+          fieldsWritten: persistResult.data.fieldsWritten,
+          verifiedLatencyMs: latencyMs,
+        },
+      };
+    },
+  });
+}

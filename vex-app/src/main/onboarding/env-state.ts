@@ -17,11 +17,13 @@ import { loadConfig } from "@vex-lib/wallet.js";
 import { CONFIG_DIR, ENV_FILE, SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import type {
   EnvState,
+  ProviderState,
   WalletAddresses,
 } from "@shared/schemas/onboarding.js";
 import type { PolymarketStatus } from "@shared/schemas/api-keys.js";
 import { log } from "../logger/index.js";
 import { probeEmbeddings } from "./embedding-state.js";
+import { probeProvider } from "./provider-state.js";
 
 const KEYSTORE_FILE = path.join(CONFIG_DIR, "keystore.json");
 const SOLANA_KEYSTORE_FILE = path.join(CONFIG_DIR, "solana-keystore.json");
@@ -122,6 +124,7 @@ export async function gatherEnvState(): Promise<EnvState> {
     solExists,
     setupFlag,
     embeddings,
+    provider,
   ] = await Promise.all([
     readEnvKeyPresence(ENV_FILE, "VEX_KEYSTORE_PASSWORD"),
     readEnvKeyPresence(ENV_FILE, "JUPITER_API_KEY"),
@@ -134,6 +137,7 @@ export async function gatherEnvState(): Promise<EnvState> {
     fileExists(SOLANA_KEYSTORE_FILE),
     fileExists(SETUP_COMPLETE_FILE),
     probeEmbeddings(ENV_FILE),
+    probeProvider(ENV_FILE),
   ]);
 
   const polymarketStatus = polymarketStatusFrom(hasPolyKey, hasPolySecret, hasPolyPass);
@@ -154,6 +158,10 @@ export async function gatherEnvState(): Promise<EnvState> {
       solana: solExists ? "present" : "missing",
     },
     ...(walletAddresses !== undefined ? { walletAddresses } : {}),
+    provider,
     setupCompleteFlag: setupFlag,
   };
 }
+
+// Re-export ProviderState for downstream typing convenience.
+export type { ProviderState };

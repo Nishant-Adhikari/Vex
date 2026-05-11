@@ -27,6 +27,11 @@ const validState: EnvState = {
     evm: "present",
     solana: "missing",
   },
+  provider: {
+    configured: false,
+    name: null,
+    modelLabel: null,
+  },
   setupCompleteFlag: false,
 };
 
@@ -85,6 +90,58 @@ describe("envStateSchema", () => {
     const result = envStateSchema.safeParse({
       ...validState,
       walletStatus: { evm: "present", solana: "missing", address: "0xleaked" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts provider block with name=null/configured=false", () => {
+    expect(envStateSchema.safeParse(validState).success).toBe(true);
+  });
+
+  it("accepts provider name='openrouter' with model label", () => {
+    const state: EnvState = {
+      ...validState,
+      provider: {
+        configured: true,
+        name: "openrouter",
+        modelLabel: "anthropic/claude-sonnet-4.5",
+      },
+    };
+    expect(envStateSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("accepts provider name='0g-compute'", () => {
+    const state: EnvState = {
+      ...validState,
+      provider: {
+        configured: true,
+        name: "0g-compute",
+        modelLabel: "0x1234.../model-x",
+      },
+    };
+    expect(envStateSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("rejects unknown provider name enum", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      provider: {
+        configured: true,
+        name: "anthropic-direct" as never,
+        modelLabel: null,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects modelLabel > 200 chars", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      provider: {
+        configured: true,
+        name: "openrouter",
+        modelLabel: "a".repeat(201),
+      },
     });
     expect(result.success).toBe(false);
   });

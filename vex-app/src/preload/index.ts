@@ -36,6 +36,7 @@ import {
 import { apiKeysSetInputSchema } from "../shared/schemas/api-keys.js";
 import { embeddingConfigureInputSchema } from "../shared/schemas/embedding.js";
 import { agentCoreConfigureInputSchema } from "../shared/schemas/agent-core.js";
+import { providerPersistInputSchema } from "../shared/schemas/provider.js";
 import type { VexBridge } from "../shared/types/bridge.js";
 
 function newRequestId(): string {
@@ -249,6 +250,13 @@ const api = {
         CH.onboarding.agentCoreConfigure,
         input,
         agentCoreConfigureInputSchema
+      );
+    },
+    providerPersist(input: import("../shared/schemas/provider.js").ProviderPersistInput) {
+      return invokeWithSchema(
+        CH.onboarding.providerPersist,
+        input,
+        providerPersistInputSchema
       );
     },
   },
