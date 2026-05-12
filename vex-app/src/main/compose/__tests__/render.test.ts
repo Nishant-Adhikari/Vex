@@ -73,6 +73,12 @@ services:
       - target: 5432
         published: "\${VEX_PG_PORT:-55432}"
         host_ip: 127.0.0.1
+  embeddings-runtime:
+    image: ghcr.io/ggml-org/llama.cpp:server-b9115@sha256:def
+    ports:
+      - target: 8080
+        published: "\${VEX_EMBED_PORT:-55134}"
+        host_ip: 127.0.0.1
 
 volumes:
   vex-postgres-data-\${VEX_INSTALL_ID}:
@@ -160,6 +166,21 @@ describe("compose/render core", () => {
     const result = await renderCompose(deps);
     const written = readFileSync(result.outPath, "utf8");
     expect(written).toContain('published: "55432"');
+  });
+
+  it("renderCompose substitutes VEX_EMBED_PORT placeholder + returns embedPort in result", async () => {
+    const result = await renderCompose(deps, { pgPort: 56789, embedPort: 56134 });
+    expect(result.embedPort).toBe(56134);
+    const written = readFileSync(result.outPath, "utf8");
+    expect(written).toContain('published: "56134"');
+    expect(written).not.toContain("${VEX_EMBED_PORT");
+  });
+
+  it("renderCompose defaults embedPort to 55134 when not provided", async () => {
+    const result = await renderCompose(deps);
+    expect(result.embedPort).toBe(55134);
+    const written = readFileSync(result.outPath, "utf8");
+    expect(written).toContain('published: "55134"');
   });
 
   it("renderCompose is idempotent (same output across runs with same deps)", async () => {

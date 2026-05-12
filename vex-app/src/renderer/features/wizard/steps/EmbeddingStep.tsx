@@ -27,6 +27,13 @@ import {
   type EmbeddingConfigureInput,
 } from "@shared/schemas/embedding.js";
 import {
+  buildEmbeddingBaseUrl,
+  DEFAULT_EMBED_PORT,
+  EMBEDDING_DIM,
+  EMBEDDING_MODEL_ALIAS,
+  EMBEDDING_PROVIDER,
+} from "@shared/embedding-defaults.js";
+import {
   MAX_EMBEDDING_DIM,
   MIN_EMBEDDING_DIM,
 } from "@vex-lib/embedding-constants.js";
@@ -66,6 +73,21 @@ interface FormState {
 interface DimLockDetails {
   readonly existingRowCount: number;
   readonly targetDim: number;
+}
+
+function narrowDimLockDetails(raw: unknown): DimLockDetails | null {
+  // Server-side `embedding-writer.ts` puts these fields into
+  // `VexError.details` on `embedding.dim_locked`. Narrow here through
+  // `in` operator checks (zero `as` casts) so the renderer never
+  // trusts an arbitrary unknown shape — codex review round 3/4 YELLOW.
+  if (typeof raw !== "object" || raw === null) return null;
+  if (!("existingRowCount" in raw) || !("targetDim" in raw)) return null;
+  const existingRowCount = raw.existingRowCount;
+  const targetDim = raw.targetDim;
+  if (typeof existingRowCount !== "number" || typeof targetDim !== "number") {
+    return null;
+  }
+  return { existingRowCount, targetDim };
 }
 
 function isValidUrlClient(raw: string): boolean {
@@ -152,13 +174,11 @@ export function EmbeddingStep({
       };
       const result = await configure.mutateAsync(input);
       if (!result.ok) {
-        const details = result.error.details as DimLockDetails | undefined;
+        const details = narrowDimLockDetails(result.error.details);
         setServerError({
           code: result.error.code,
           message: result.error.message,
-          ...(details && typeof details.existingRowCount === "number"
-            ? { details }
-            : {}),
+          ...(details !== null ? { details } : {}),
         });
         return;
       }
@@ -174,10 +194,15 @@ export function EmbeddingStep({
           <CardTitle>Embedding configuration is set</CardTitle>
           <CardDescription>
             {embeddingsState?.baseUrlRedacted ? (
-              <>Vex is using <code>{embeddingsState.baseUrlRedacted}</code>{" "}
-              {embeddingsState.reachable ? "(reachable)" : "(unreachable — verify your services)"}.</>
+              <>
+                Vex is using <code>{embeddingsState.baseUrlRedacted}</code>{" "}
+                (bundled EmbeddingGemma 300M, dim {EMBEDDING_DIM}){" "}
+                {embeddingsState.reachable
+                  ? "— reachable ✓"
+                  : "— not reachable yet; the runtime may still be loading the model."}
+              </>
             ) : (
-              "All embedding fields are configured."
+              "Bundled EmbeddingGemma 300M is configured."
             )}
           </CardDescription>
         </CardHeader>
@@ -222,8 +247,10 @@ export function EmbeddingStep({
         <CardTitle>Embedding configuration</CardTitle>
         <CardDescription>
           Vex needs an OpenAI-compatible embedding endpoint to power
-          knowledge recall. Defaults target Docker Model Runner; point
-          this at your own OpenAI / Ollama / local server if you prefer.
+          knowledge recall. The bundled stack runs llama.cpp:server with
+          EmbeddingGemma 300M on{" "}
+          <code>127.0.0.1:{DEFAULT_EMBED_PORT}</code> — point this at
+          your own OpenAI / Ollama / remote endpoint if you prefer.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -272,7 +299,7 @@ export function EmbeddingStep({
             <Input
               id="vex-embed-baseurl"
               type="url"
-              placeholder="http://127.0.0.1:12434/engines/llama.cpp/v1"
+              placeholder={buildEmbeddingBaseUrl()}
               autoComplete="off"
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
@@ -285,7 +312,7 @@ export function EmbeddingStep({
             <Input
               id="vex-embed-model"
               type="text"
-              placeholder="ai/embeddinggemma:300M-Q8_0"
+              placeholder={EMBEDDING_MODEL_ALIAS}
               autoComplete="off"
               value={form.model}
               onChange={(e) => setForm({ ...form, model: e.target.value })}
@@ -301,7 +328,7 @@ export function EmbeddingStep({
                 inputMode="numeric"
                 min={MIN_EMBEDDING_DIM}
                 max={MAX_EMBEDDING_DIM}
-                placeholder="768"
+                placeholder={String(EMBEDDING_DIM)}
                 value={form.dim}
                 onChange={(e) => setForm({ ...form, dim: e.target.value })}
               />
@@ -314,7 +341,7 @@ export function EmbeddingStep({
               <Input
                 id="vex-embed-provider"
                 type="text"
-                placeholder="local"
+                placeholder={EMBEDDING_PROVIDER}
                 autoComplete="off"
                 value={form.provider}
                 onChange={(e) => setForm({ ...form, provider: e.target.value })}

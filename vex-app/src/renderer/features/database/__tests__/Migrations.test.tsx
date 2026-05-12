@@ -11,7 +11,19 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { JSX } from "react";
 import type { MigrateProgress } from "@shared/schemas/database.js";
+
+function renderWithQuery(ui: JSX.Element): ReturnType<typeof render> {
+  const qc = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0, staleTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 type ProgressCb = (payload: MigrateProgress) => void;
 
@@ -65,7 +77,7 @@ describe("Migrations component", () => {
         message: "Applied 2 migrations.",
       },
     });
-    const { findByText, queryByRole } = render(<Migrations />);
+    const { findByText, queryByRole } = renderWithQuery(<Migrations />);
     await findByText(/Applied 2 migrations/);
     expect(queryByRole("button", { name: /Continue/ })).toBeTruthy();
     expect(queryByRole("button", { name: /Retry/ })).toBeNull();
@@ -79,7 +91,7 @@ describe("Migrations component", () => {
         message: "All migrations already applied.",
       },
     });
-    render(<Migrations />);
+    renderWithQuery(<Migrations />);
     await waitFor(
       () => {
         expect(mockSetCurrentView).toHaveBeenCalledWith("wizard");
@@ -100,7 +112,7 @@ describe("Migrations component", () => {
         redacted: true,
       },
     });
-    const { findByText, queryByRole } = render(<Migrations />);
+    const { findByText, queryByRole } = renderWithQuery(<Migrations />);
     await findByText(/Migration 007 failed/);
     expect(queryByRole("button", { name: /Retry/ })).toBeTruthy();
     expect(queryByRole("button", { name: /Continue/ })).toBeNull();
@@ -108,7 +120,7 @@ describe("Migrations component", () => {
 
   it("renders live progress from the bus", async () => {
     mockMigrate.mockImplementation(() => new Promise(() => {}));
-    const { findByText } = render(<Migrations />);
+    const { findByText } = renderWithQuery(<Migrations />);
 
     await waitFor(() => {
       expect(progressCb).not.toBeNull();

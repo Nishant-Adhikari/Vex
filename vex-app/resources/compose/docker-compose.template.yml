@@ -5,13 +5,19 @@
 # Skill §10 mandatory:
 #   • host_ip: 127.0.0.1 on every published port (no LAN bind)
 #   • Top-level `secrets:` with `file:` references, never env vars
-#   • Image pinned by digest (not just tag)
+#   • Images pinned by digest (not just tag)
 #   • SCRAM-SHA-256 auth for Postgres
 #   • Named volume per-install with vex-install label for cleanup safety
 #
-# Embeddings are NOT in this compose. They run via Docker Model Runner
-# (`ai/embeddinggemma:300M-Q8_0` on port 12434) which is installed
-# separately during M4 Docker bootstrap.
+# Embeddings (M11.5.4): bundled standalone `llama.cpp:server` runtime
+# + EmbeddingGemma 300M Q8_0 GGUF. Works on every OS (Mac/Win/Linux
+# native/WSL2) — no Docker Model Runner dependency. Model downloaded
+# anonymously from HuggingFace by the init container, SHA256-verified,
+# cached in a named volume so subsequent runs skip the network.
+#
+# Compose floor: 2.23.1 (inline `configs.content:` support). Probed by
+# `src/main/docker/probe.ts:probeComposeFloor()` at start; vex-app
+# fails loud with an upgrade prompt if the floor is not met.
 
 name: vex-${VEX_INSTALL_ID}
 
@@ -48,12 +54,138 @@ services:
         protocol: tcp
         mode: host
 
+  # ──────────────────────────────────────────────────────────────────
+  # Embeddings stack (M11.5.4)
+  # ──────────────────────────────────────────────────────────────────
+  #
+  # `embeddings-model-init` runs once per `compose up`, downloads the
+  # EmbeddingGemma 300M Q8_0 GGUF (~333 MB) from HuggingFace if it
+  # is not already cached in the named volume, verifies SHA256, then
+  # exits 0. Subsequent runs see the cached file and exit immediately.
+  # `restart: "no"` is REQUIRED for `condition:
+  # service_completed_successfully` to behave correctly
+  # (docker/compose#10985).
+  embeddings-model-init:
+    image: curlimages/curl:8.11.0@sha256:83a505ba2ba62f208ed6e410c268b7b9aa48f0f7b403c8108b9773b44199dbba
+    # `curlimages/curl` ships with `USER 100` (non-root `curl_user`).
+    # Fresh anonymous Docker volumes are owned by `root:root` 0755, so
+    # the default user cannot write — `curl -o /models/...tmp` fails
+    # with `Permission denied`. Override to root for this one-shot
+    # init; the runtime container also runs as root so the resulting
+    # 0644 file is readable.
+    user: "0:0"
+    restart: "no"
+    configs:
+      - source: embeddings-model-init
+        target: /init.sh
+        mode: 0o755
+    entrypoint: ["/bin/sh", "/init.sh"]
+    volumes:
+      - vex-embed-models-${VEX_INSTALL_ID}:/models
+
+  # `embeddings-runtime` is `llama.cpp:server` running EmbeddingGemma
+  # in embedding-only mode (OpenAI-compatible `/v1/embeddings`). The
+  # `--alias` flag makes `/v1/models` report the public model id
+  # (`ai/embeddinggemma:300M-Q8_0`) regardless of GGUF filename so
+  # client code does not need to know about the cache layout.
+  #
+  # Healthcheck is intentionally minimal (`true`) — the runtime image
+  # is not guaranteed to ship `curl`/`wget`/`nc`, so real readiness
+  # is verified host-side from Electron main via
+  # `src/main/compose/embeddings-health.ts` (probes GET /health then
+  # POST /v1/embeddings asserting `embedding.length === 768`). No
+  # other compose service depends on this one's `service_healthy`
+  # state, so a no-op healthcheck has no observable side effect.
+  #
+  # `start_period: 5s` (not 60s) is deliberate per docker/compose#11131:
+  # `start_period` is applied to dependents in full regardless of when
+  # the first successful health check arrives. We absorb startup time
+  # via `retries: 40` × `interval: 3s` = 120 s wall budget.
+  embeddings-runtime:
+    image: ghcr.io/ggml-org/llama.cpp:server-b9115@sha256:6b0a9b4fd7e3a9a55e959e5a74d47e11f8ccd4dfbc2556b7382a6516255dcc73
+    restart: unless-stopped
+    depends_on:
+      embeddings-model-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    command:
+      - --model
+      - /models/embeddinggemma-300M-Q8_0.gguf
+      - --embeddings
+      - --alias
+      - "ai/embeddinggemma:300M-Q8_0"
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+    volumes:
+      - vex-embed-models-${VEX_INSTALL_ID}:/models
+    ports:
+      - target: 8080
+        published: "${VEX_EMBED_PORT:-55134}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+        mode: host
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
+      start_period: 5s
+
 volumes:
   vex-postgres-data-${VEX_INSTALL_ID}:
     name: vex-postgres-data-${VEX_INSTALL_ID}
+    labels:
+      vex-install: ${VEX_INSTALL_ID}
+  vex-embed-models-${VEX_INSTALL_ID}:
+    name: vex-embed-models-${VEX_INSTALL_ID}
     labels:
       vex-install: ${VEX_INSTALL_ID}
 
 secrets:
   pg_password:
     file: ${VEX_PG_PASSWORD_FILE}
+
+# Inline init script (requires Compose ≥2.23.1 — docker/compose#10942).
+#
+# CRITICAL — every `$` that should reach the shell MUST be doubled to
+# `$$` so Docker Compose's variable interpolation pass leaves it alone.
+# Without this, the live `compose up` failed with `The "EXPECTED"
+# variable is not set. Defaulting to a blank string.` and `curl: option
+# : blank argument where content is expected` because every shell
+# variable expanded to "" before reaching the container.
+# See https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/
+#
+# LF line endings ONLY: TS source uses explicit \n. Render.ts writes
+# the YAML via fs.writeFile which does not translate line endings.
+configs:
+  embeddings-model-init:
+    content: |
+      #!/bin/sh
+      set -eu
+      MODEL=/models/embeddinggemma-300M-Q8_0.gguf
+      TMP=/models/embeddinggemma-300M-Q8_0.gguf.tmp
+      EXPECTED=b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
+      URL="https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
+      if [ -f "$$MODEL" ]; then
+        ACTUAL=$$(sha256sum "$$MODEL" | cut -d' ' -f1)
+        if [ "$$ACTUAL" = "$$EXPECTED" ]; then
+          echo "[embeddings-model-init] cached model verified, skipping download"
+          exit 0
+        fi
+        echo "[embeddings-model-init] cached model checksum mismatch ($$ACTUAL); redownloading"
+        rm -f "$$MODEL"
+      fi
+      rm -f "$$TMP"
+      echo "[embeddings-model-init] downloading EmbeddingGemma 300M Q8_0 from HuggingFace…"
+      curl -fL --retry 3 --retry-delay 5 -o "$$TMP" "$$URL"
+      ACTUAL=$$(sha256sum "$$TMP" | cut -d' ' -f1)
+      if [ "$$ACTUAL" != "$$EXPECTED" ]; then
+        echo "[embeddings-model-init] downloaded checksum mismatch ($$ACTUAL != $$EXPECTED), aborting"
+        rm -f "$$TMP"
+        exit 1
+      fi
+      mv "$$TMP" "$$MODEL"
+      echo "[embeddings-model-init] model downloaded and verified ($$EXPECTED)"

@@ -6,9 +6,12 @@
  * from the Result<T, VexError> envelope so no probe data leaks into
  * renderer state on failure.
  *
- * The Linux Model Runner gap is reported as `advisory yellow` rather
- * than `failure red` (codex turn 4 YELLOW #8) — embeddings can still
- * be configured externally via `EMBEDDING_BASE_URL`.
+ * M11.5.4 — DMR (Docker Model Runner) is no longer surfaced here.
+ * vex-app ships its own bundled embeddings runtime via Compose
+ * (`embeddings-runtime` service), so the Linux-DMR-gap advisory was
+ * misleading. The `dockerStatusSchema.modelRunner` block is retained
+ * unchanged for backward compatibility — the probe still runs but
+ * no rendered surface consumes it.
  */
 
 import { useEffect, useState } from "react";
@@ -68,12 +71,6 @@ export function SystemCheck(): JSX.Element {
 
   const anyLoading =
     health.isPending || docker.isPending || env.isPending;
-
-  const linuxModelRunnerGap =
-    docker.data?.ok &&
-    health.data?.ok &&
-    health.data.data.os.platform === "linux" &&
-    docker.data.data.modelRunner.status !== "active";
 
   return (
     <main
@@ -144,13 +141,6 @@ export function SystemCheck(): JSX.Element {
               />
             ) : null}
           </ol>
-
-          {linuxModelRunnerGap ? (
-            <p className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[var(--color-warning)]">
-              Docker Model Runner is not active on this Linux host. Embeddings
-              can be configured via an external endpoint in wizard step 4.
-            </p>
-          ) : null}
         </CardContent>
       </Card>
 

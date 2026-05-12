@@ -11,8 +11,10 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { MigrateProgress } from "@shared/schemas/database.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { onboardingKeys } from "../../lib/api/queryKeys.js";
 import { Button } from "../../components/ui/button.js";
 import {
   Card,
@@ -46,6 +48,7 @@ function describeLatest(latest: MigrateProgress | null): string {
 
 export function Migrations(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const queryClient = useQueryClient();
   const [progress, setProgress] = useState<ReadonlyArray<MigrateProgress>>([]);
   const [latest, setLatest] = useState<MigrateProgress | null>(null);
   const [state, setState] = useState<PhaseState>({
@@ -78,6 +81,16 @@ export function Migrations(): JSX.Element {
           setState({ phase: "error", message: result.error.message });
           return;
         }
+        // Main process seeds bundled EMBEDDING_* defaults into the
+        // `.env` on the migrate success path (M11.5.4 — see
+        // `vex.database.migrate` handler). Invalidate the envState
+        // query so Step 4 sees the fresh values instead of waiting
+        // for the 10s staleTime window — without this the wizard can
+        // render the manual form even though defaults were just
+        // written (codex review turn 2 YELLOW #2).
+        await queryClient.invalidateQueries({
+          queryKey: onboardingKeys.envState(),
+        });
         const data = result.data;
         if (data.kind === "applied") {
           setState({ phase: "ready", message: data.message });
@@ -96,7 +109,7 @@ export function Migrations(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [retryToken]);
+  }, [retryToken, queryClient]);
 
   // No migrations to apply → auto-advance to the wizard after a short
   // delay so the user sees the up-to-date message without needing to

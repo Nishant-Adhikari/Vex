@@ -138,14 +138,14 @@ describe("SystemCheck", () => {
     expect(button.getAttribute("disabled")).not.toBeNull();
   });
 
-  it("shows Linux Model Runner advisory when Linux + Model Runner inactive", () => {
+  it("does NOT surface the legacy DMR advisory (M11.5.4 — bundled runtime)", () => {
     mockHooks.useDockerStatus.mockReturnValue(happyDocker("inactive"));
-    const { getByText } = render(<SystemCheck />);
+    const { queryByText } = render(<SystemCheck />);
     act(() => {
       vi.advanceTimersByTime(400);
     });
     expect(
-      getByText(/Docker Model Runner is not active on this Linux host/)
-    ).toBeDefined();
+      queryByText(/Docker Model Runner is not active on this Linux host/)
+    ).toBeNull();
   });
 });

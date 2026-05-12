@@ -55,6 +55,12 @@ vi.mock("../../logger/index.js", () => ({
   },
 }));
 
+vi.mock("../../onboarding/ensure-embedding-defaults.js", () => ({
+  ensureEmbeddingDefaults: vi
+    .fn()
+    .mockResolvedValue({ kind: "preserved", writtenKeys: [] }),
+}));
+
 const { registerDatabaseHandlers } = await import("../database.js");
 const { CH } = await import("@shared/ipc/channels.js");
 

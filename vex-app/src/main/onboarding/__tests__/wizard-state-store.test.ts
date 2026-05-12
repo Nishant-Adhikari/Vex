@@ -188,3 +188,153 @@ describe("WizardStateStore.update", () => {
     expect(state.completedSteps).toEqual(["keystore"]);
   });
 });
+
+describe("WizardStateStore.peekCompleted (write-protection guard)", () => {
+  it("returns null when the file does not exist (no side effects)", async () => {
+    const store = new WizardStateStore({ filePath });
+    const result = await store.peekCompleted();
+    expect(result).toBeNull();
+    // Critically: peek must NOT have created defaults on disk.
+    await expect(fs.access(filePath)).rejects.toThrow();
+  });
+
+  it("returns null when the file is corrupt JSON", async () => {
+    await fs.writeFile(filePath, "{ not json", "utf8");
+    const store = new WizardStateStore({ filePath });
+    expect(await store.peekCompleted()).toBeNull();
+  });
+
+  it("returns null when the file fails schema validation", async () => {
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        schemaVersion: 999,
+        currentStepId: "unknown",
+        completedSteps: [],
+        completed: true,
+      }),
+      "utf8"
+    );
+    const store = new WizardStateStore({ filePath });
+    expect(await store.peekCompleted()).toBeNull();
+  });
+
+  it("returns true when the persisted file reports completed=true", async () => {
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        currentStepId: "review",
+        completedSteps: [
+          "keystore",
+          "wallets",
+          "apiKeys",
+          "embedding",
+          "agentCore",
+          "provider",
+          "mode",
+          "wake",
+        ],
+        completed: true,
+      }),
+      "utf8"
+    );
+    const store = new WizardStateStore({ filePath });
+    expect(await store.peekCompleted()).toBe(true);
+  });
+
+  it("returns false when the persisted file reports completed=false", async () => {
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        currentStepId: "keystore",
+        completedSteps: [],
+        completed: false,
+      }),
+      "utf8"
+    );
+    const store = new WizardStateStore({ filePath });
+    expect(await store.peekCompleted()).toBe(false);
+  });
+
+  it("returns null AFTER load() recovered from a missing file (cache provenance)", async () => {
+    // Codex review round 4 RED — `load()` writes defaults
+    // (completed:false) to disk when the file is missing. A naive
+    // peekCompleted would then read disk and return `false`, but the
+    // destructive-recovery guard must treat that as unknown. The
+    // store tracks provenance so peekCompleted returns null when the
+    // current cached/disk state came from auto-recovery.
+    const store = new WizardStateStore({ filePath });
+    const loaded = await store.load();
+    expect(loaded.completed).toBe(false); // defaults were written
+    expect(await store.peekCompleted()).toBeNull();
+  });
+
+  it("returns null AFTER load() recovered from corrupt JSON", async () => {
+    await fs.writeFile(filePath, "{ broken", "utf8");
+    const store = new WizardStateStore({ filePath });
+    await store.load();
+    expect(await store.peekCompleted()).toBeNull();
+  });
+
+  it("trusts cache AFTER an authoritative update() (provenance becomes persisted)", async () => {
+    // load() recovers defaults — peek returns null. User-driven
+    // update() bumps the cache to "persisted" provenance, so the
+    // next peek returns the actual flag value.
+    const store = new WizardStateStore({ filePath });
+    await store.load();
+    expect(await store.peekCompleted()).toBeNull();
+
+    await store.update({
+      currentStepId: "review",
+      completedSteps: [
+        "keystore",
+        "wallets",
+        "apiKeys",
+        "embedding",
+        "agentCore",
+        "provider",
+        "mode",
+        "wake",
+      ],
+      completed: true,
+    });
+    expect(await store.peekCompleted()).toBe(true);
+  });
+
+  it("cross-process: recovery marker on disk survives store restart", async () => {
+    // Codex review round 5 RED — provenance is in-memory only; the
+    // sidecar marker file is what protects the destructive-recovery
+    // guard across process restarts. Simulate by recovering with one
+    // store instance, then creating a FRESH store with the same
+    // filePath and peeking.
+    const first = new WizardStateStore({ filePath });
+    await first.load(); // recovery branch — defaults written + marker touched
+
+    const second = new WizardStateStore({ filePath });
+    expect(await second.peekCompleted()).toBeNull();
+  });
+
+  it("cross-process: an authoritative update() clears the marker for future runs", async () => {
+    const first = new WizardStateStore({ filePath });
+    await first.load();
+    await first.update({
+      currentStepId: "review",
+      completedSteps: [
+        "keystore",
+        "wallets",
+        "apiKeys",
+        "embedding",
+        "agentCore",
+        "provider",
+        "mode",
+        "wake",
+      ],
+      completed: true,
+    });
+
+    const second = new WizardStateStore({ filePath });
+    expect(await second.peekCompleted()).toBe(true);
+  });
+});

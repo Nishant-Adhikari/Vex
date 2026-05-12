@@ -26,6 +26,7 @@ import {
 } from "../database/migrate-runner.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { log } from "../logger/index.js";
+import { ensureEmbeddingDefaults } from "../onboarding/ensure-embedding-defaults.js";
 import { registerHandler } from "./register-handler.js";
 
 const PROGRESS_CHANNEL = EV.database.migrateProgress;
@@ -114,7 +115,32 @@ export function registerDatabaseHandlers(): Array<() => void> {
 
         try {
           const runResult = await run;
-          return mapToResult(runResult, ctx.requestId);
+          const result = mapToResult(runResult, ctx.requestId);
+          // M11.5.4 — vex-app's equivalent of vex-shell's
+          // `ensureRequiredEnvDefaults`. Bundled defaults for the
+          // EMBEDDING_* env keys are seeded ONLY when every key is
+          // absent (preserve-first), so a partial user override is
+          // never clobbered. We run post-migrate because the writer
+          // needs `knowledge_entries` to exist for any future
+          // dim-related logic; failure here is non-fatal — migrate's
+          // own Result is what the wizard branches on.
+          if (
+            result.ok &&
+            (runResult.kind === "applied" || runResult.kind === "noop")
+          ) {
+            try {
+              const seed = await ensureEmbeddingDefaults();
+              log.info(
+                `[ipc:vex:database:migrate] ensureEmbeddingDefaults kind=${seed.kind} keys=${seed.writtenKeys.length}`
+              );
+            } catch (cause) {
+              log.warn(
+                "[ipc:vex:database:migrate] ensureEmbeddingDefaults failed (non-fatal)",
+                cause
+              );
+            }
+          }
+          return result;
         } finally {
           if (migrateInFlight === run) {
             migrateInFlight = null;

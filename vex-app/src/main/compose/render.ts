@@ -12,6 +12,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { DEFAULT_EMBED_PORT } from "../onboarding/embedding-defaults.js";
 
 export interface SecretAdapter {
   /** Returns the absolute path that compose should mount via `secrets:`. */
@@ -52,12 +53,19 @@ export interface RenderDeps {
 
 export interface RenderOptions {
   readonly pgPort?: number;
+  readonly embedPort?: number;
 }
 
 export interface RenderResult {
   readonly outPath: string;
   readonly installId: string;
   readonly pgPasswordComposePath: string;
+  /**
+   * Port the compose template will publish for the embeddings runtime
+   * on the loopback interface. Forwarded to `ensureEmbeddingDefaults`
+   * and host-side health probes so we never disagree on the URL.
+   */
+  readonly embedPort: number;
 }
 
 const TEMPLATE_NAME = "docker-compose.template.yml";
@@ -124,11 +132,16 @@ export async function renderCompose(
   const templatePath = path.join(deps.resourcesDir, TEMPLATE_NAME);
   const template = await fs.readFile(templatePath, "utf8");
 
-  const port = String(options.pgPort ?? DEFAULT_PG_PORT);
+  const pgPort = options.pgPort ?? DEFAULT_PG_PORT;
+  const embedPort = options.embedPort ?? DEFAULT_EMBED_PORT;
   const rendered = template
     .replaceAll("${VEX_INSTALL_ID}", installId)
     .replaceAll("${VEX_PG_PASSWORD_FILE}", pgPassword.composePath)
-    .replaceAll(`\${VEX_PG_PORT:-${DEFAULT_PG_PORT}}`, port);
+    .replaceAll(`\${VEX_PG_PORT:-${DEFAULT_PG_PORT}}`, String(pgPort))
+    .replaceAll(
+      `\${VEX_EMBED_PORT:-${DEFAULT_EMBED_PORT}}`,
+      String(embedPort)
+    );
 
   const outDir = path.join(deps.userDataDir, COMPOSE_OUT_DIR_NAME);
   await fs.mkdir(outDir, { recursive: true });
@@ -144,5 +157,6 @@ export async function renderCompose(
     outPath,
     installId,
     pgPasswordComposePath: pgPassword.composePath,
+    embedPort,
   };
 }

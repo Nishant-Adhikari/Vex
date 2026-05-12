@@ -143,6 +143,8 @@ export function registerDockerHandlers(): Array<() => void> {
     const {
       pgPort: _pgPort,
       pgPasswordPath: _pgPasswordPath,
+      embedPort: _embedPort,
+      embeddingsReadiness: _embeddingsReadiness,
       ...publicResult
     } = internal;
     return publicResult;
