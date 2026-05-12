@@ -99,7 +99,7 @@ export function removeFromDotenvFile(key: string, envPath: string): boolean {
 }
 
 /**
- * Atomic multi-key update for a .env file (M10).
+ * Atomic multi-key update for a .env file (M10, extended in M11).
  *
  * Single read → in-memory strip of ALL existing occurrences of every
  * provided key (handles duplicate-line edge case from manual edits)
@@ -112,15 +112,23 @@ export function removeFromDotenvFile(key: string, envPath: string): boolean {
  * `readDotenvFileValue` round-trips correctly. Keys are written in
  * insertion order of `Object.entries(updates)`.
  *
+ * **M11 extension**: `Record<string, string | null>` accepted — a
+ * `null` value means "delete this key from the file in the same atomic
+ * mutation". Used by mode/wake writers so e.g. switching mode to
+ * "chat" deletes AGENT_LOOP_MODE + AGENT_INITIAL_PROMPT in the same
+ * read-replace-rename op as writing AGENT_MODE="chat". Prevents the
+ * stale-key drift M10 already fixed for provider state.
+ *
  * Used by M10 provider-writer to guarantee that OPENROUTER_API_KEY,
  * AGENT_MODEL, and AGENT_PROVIDER are written as one consistent set
  * (no partial state, no duplicate AGENT_PROVIDER=0g-compute lines
- * left behind from prior CLI or manual edits).
+ * left behind from prior CLI or manual edits). M11 mode/wake writers
+ * additionally rely on the null-as-delete semantics.
  *
  * Throws on fs/permission errors — caller wraps in Result.
  */
 export function appendMultipleToDotenvFile(
-  updates: Record<string, string>,
+  updates: Record<string, string | null>,
   envPath: string,
 ): void {
   const dir = dirname(envPath);
@@ -148,13 +156,15 @@ export function appendMultipleToDotenvFile(
 
   // Append canonical values with the exact same quoting as
   // `appendToDotenvFile` so `readDotenvFileValue` round-trips.
+  // `null` values were stripped above and intentionally NOT rewritten.
   content = content.trimEnd();
   for (const [key, value] of Object.entries(updates)) {
+    if (value === null) continue;
     const quotedValue = `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
     const line = `${key}=${quotedValue}`;
     content = content.length === 0 ? line : `${content}\n${line}`;
   }
-  content += "\n";
+  if (content.length > 0) content += "\n";
 
   const tmpFile = join(dir, `.env.tmp.${Date.now()}`);
   writeFileSync(tmpFile, content, { mode: 0o600 });
