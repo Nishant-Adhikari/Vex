@@ -57,6 +57,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
     await vi.importActual<typeof import("../../../../lib/api/wizard.js")>(
       "../../../../lib/api/wizard.js",
     );
+  const { makeMockUseStepAdvance } = await import("../../__tests__/useStepAdvance-mock.js");
   return {
     ...actual,
     useSetWizardState: () =>
@@ -68,6 +69,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
         Error,
         SetWizardStateInput
       >,
+    useStepAdvance: makeMockUseStepAdvance(mockSetWizardMutate),
   };
 });
 
@@ -146,6 +148,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     expect(
@@ -164,6 +167,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     expect(
@@ -180,6 +184,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     const form = container.querySelector(
@@ -197,6 +202,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.input(getByLabelText("OpenRouter API key"), {
@@ -239,6 +245,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     const keyInput = getByLabelText("OpenRouter API key") as HTMLInputElement;
@@ -289,6 +296,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.input(getByLabelText("OpenRouter API key"), {
@@ -333,6 +341,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.input(getByLabelText("OpenRouter API key"), {
@@ -365,6 +374,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     const zerogTab = container.querySelector(
@@ -391,6 +401,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.click(
@@ -414,6 +425,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     const anchors = Array.from(container.querySelectorAll("a"));
@@ -455,6 +467,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.click(getByText("Continue"));
@@ -478,6 +491,7 @@ describe("ProviderStep", () => {
       <ProviderStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     expect(

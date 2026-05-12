@@ -46,14 +46,15 @@ import { PasswordField } from "../../../components/common/PasswordField.js";
 import { StrengthMeter } from "../../../components/common/StrengthMeter.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import {
-  nextWizardStateFor,
   useKeystoreSet,
-  useSetWizardState,
+  useStepAdvance,
+  type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
 
 export interface KeystoreStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onAdvance: (next: WizardStepId) => void;
+  readonly flowMode: WizardFlowMode;
 }
 
 const PASSWORD_INPUT_ID = "vex-keystore-password";
@@ -70,10 +71,11 @@ function joinIds(...ids: ReadonlyArray<string | false | null | undefined>): stri
 export function KeystoreStep({
   completedSteps,
   onAdvance,
+  flowMode,
 }: KeystoreStepProps): JSX.Element {
   const envQuery = useEnvState();
   const keystoreSet = useKeystoreSet();
-  const setWizardState = useSetWizardState();
+  const stepAdvance = useStepAdvance();
 
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   // Locally remember that we just persisted the password — so the skip
@@ -105,18 +107,15 @@ export function KeystoreStep({
 
   const advanceToWallets = useCallback(async (): Promise<void> => {
     setAdvanceError(null);
-    const next = nextWizardStateFor({
+    const result = await stepAdvance.advance({
+      flowMode,
       completedSteps,
       current: "keystore",
-      next: "wallets",
+      forwardNext: "wallets",
+      onAdvance,
     });
-    const result = await setWizardState.mutateAsync(next);
-    if (!result.ok) {
-      setAdvanceError(result.error.message);
-      return;
-    }
-    onAdvance("wallets");
-  }, [completedSteps, setWizardState, onAdvance]);
+    if (!result.ok) setAdvanceError(result.message);
+  }, [stepAdvance, flowMode, completedSteps, onAdvance]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     setAdvanceError(null);
@@ -169,9 +168,13 @@ export function KeystoreStep({
               onClick={() => {
                 void advanceToWallets();
               }}
-              disabled={setWizardState.isPending}
+              disabled={stepAdvance.isPending}
             >
-              {setWizardState.isPending ? "Continuing…" : "Continue"}
+              {stepAdvance.isPending
+                ? "Continuing…"
+                : flowMode === "back-edit"
+                  ? "Return to review"
+                  : "Continue"}
             </Button>
           </div>
         </CardContent>
@@ -181,7 +184,7 @@ export function KeystoreStep({
 
   const passwordError = form.formState.errors.password?.message;
   const confirmError = form.formState.errors.confirm?.message;
-  const submitting = keystoreSet.isPending || setWizardState.isPending;
+  const submitting = keystoreSet.isPending || stepAdvance.isPending;
 
   return (
     <Card className="w-full max-w-2xl" data-vex-wizard-keystore="form">
@@ -262,7 +265,11 @@ export function KeystoreStep({
 
           <div className="flex justify-end">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving…" : "Save and continue"}
+              {submitting
+                ? "Saving…"
+                : flowMode === "back-edit"
+                  ? "Save and return to review"
+                  : "Save and continue"}
             </Button>
           </div>
         </form>

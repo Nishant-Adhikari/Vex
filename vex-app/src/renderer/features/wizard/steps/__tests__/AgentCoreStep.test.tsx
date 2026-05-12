@@ -49,6 +49,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
     await vi.importActual<typeof import("../../../../lib/api/wizard.js")>(
       "../../../../lib/api/wizard.js",
     );
+  const { makeMockUseStepAdvance } = await import("../../__tests__/useStepAdvance-mock.js");
   return {
     ...actual,
     useSetWizardState: () =>
@@ -60,6 +61,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
         Error,
         SetWizardStateInput
       >,
+    useStepAdvance: makeMockUseStepAdvance(mockSetWizardMutate),
   };
 });
 
@@ -104,6 +106,7 @@ describe("AgentCoreStep", () => {
       <AgentCoreStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     const form = container.querySelector('[data-vex-wizard-agentcore="form"] form')!;
@@ -134,6 +137,7 @@ describe("AgentCoreStep", () => {
       <AgentCoreStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.change(getByLabelText("Agent context limit"), {
@@ -164,6 +168,7 @@ describe("AgentCoreStep", () => {
       <AgentCoreStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     // The 3 primary AGENT fields each have a Reset button. The 3rd is temperature.
@@ -194,6 +199,7 @@ describe("AgentCoreStep", () => {
       <AgentCoreStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     const form = container.querySelector('[data-vex-wizard-agentcore="form"] form')!;
@@ -207,6 +213,7 @@ describe("AgentCoreStep", () => {
       <AgentCoreStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.change(getByLabelText("Agent context limit"), {
@@ -223,6 +230,7 @@ describe("AgentCoreStep", () => {
       <AgentCoreStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding"]}
         onAdvance={mockOnAdvance}
+        flowMode="first-pass"
       />,
     );
     fireEvent.change(getByLabelText("Agent context limit"), {

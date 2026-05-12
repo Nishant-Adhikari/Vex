@@ -49,13 +49,14 @@ import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
 import { useAgentCoreConfigure } from "../../../lib/api/agent-core.js";
 import {
-  nextWizardStateFor,
-  useSetWizardState,
+  useStepAdvance,
+  type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
 
 export interface AgentCoreStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onAdvance: (next: WizardStepId) => void;
+  readonly flowMode: WizardFlowMode;
 }
 
 type FieldState =
@@ -274,8 +275,9 @@ function NumericRow({
 export function AgentCoreStep({
   completedSteps,
   onAdvance,
+  flowMode,
 }: AgentCoreStepProps): JSX.Element {
-  const setWizardState = useSetWizardState();
+  const stepAdvance = useStepAdvance();
   const configure = useAgentCoreConfigure();
 
   const [form, setForm] = useState<FormState>(INITIAL);
@@ -290,18 +292,15 @@ export function AgentCoreStep({
 
   const advanceToProvider = useCallback(async () => {
     setAdvanceError(null);
-    const next = nextWizardStateFor({
+    const result = await stepAdvance.advance({
+      flowMode,
       completedSteps,
       current: "agentCore",
-      next: "provider",
+      forwardNext: "provider",
+      onAdvance,
     });
-    const result = await setWizardState.mutateAsync(next);
-    if (!result.ok) {
-      setAdvanceError(result.error.message);
-      return;
-    }
-    onAdvance("provider");
-  }, [completedSteps, setWizardState, onAdvance]);
+    if (!result.ok) setAdvanceError(result.message);
+  }, [stepAdvance, flowMode, completedSteps, onAdvance]);
 
   const [clientError, setClientError] = useState<string | null>(null);
 
@@ -335,7 +334,7 @@ export function AgentCoreStep({
     [form, configure, advanceToProvider],
   );
 
-  const submitting = configure.isPending || setWizardState.isPending;
+  const submitting = configure.isPending || stepAdvance.isPending;
 
   return (
     <Card className="w-full max-w-2xl" data-vex-wizard-agentcore="form">
@@ -498,7 +497,11 @@ export function AgentCoreStep({
 
           <div className="flex justify-end gap-3">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving…" : "Save and continue"}
+              {submitting
+                ? "Saving…"
+                : flowMode === "back-edit"
+                  ? "Save and return to review"
+                  : "Save and continue"}
             </Button>
           </div>
         </form>

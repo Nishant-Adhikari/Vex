@@ -47,6 +47,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
     await vi.importActual<typeof import("../../../../lib/api/wizard.js")>(
       "../../../../lib/api/wizard.js",
     );
+  const { makeMockUseStepAdvance } = await import("../../__tests__/useStepAdvance-mock.js");
   return {
     ...actual,
     useSetWizardState: () =>
@@ -58,6 +59,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
         Error,
         SetWizardStateInput
       >,
+    useStepAdvance: makeMockUseStepAdvance(mockSetWizardMutate),
   };
 });
 
@@ -122,7 +124,7 @@ describe("ApiKeysStep", () => {
   it("renders skip-card when JUPITER configured + polymarket not partial", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
     const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).not.toBeNull();
     expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).toBeNull();
@@ -133,7 +135,7 @@ describe("ApiKeysStep", () => {
       makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
     );
     const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).not.toBeNull();
     expect(container.querySelector('[data-vex-apikeys-warning="polymarket-partial"]')).not.toBeNull();
@@ -142,7 +144,7 @@ describe("ApiKeysStep", () => {
   it("rejects partial polymarket trio at the renderer (does NOT call setApiKeys)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container, getByLabelText, getByText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.input(getByLabelText("API key"), { target: { value: "k" } });
     // Leave secret + passphrase empty
@@ -170,7 +172,7 @@ describe("ApiKeysStep", () => {
       },
     } as Result<WizardState>);
     const { container, getByLabelText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const jupiterInput = getByLabelText(/Jupiter API key/i) as HTMLInputElement;
     fireEvent.input(jupiterInput, { target: { value: "sk-jupiter-secret" } });
@@ -189,7 +191,7 @@ describe("ApiKeysStep", () => {
   it("'Skip optional' BLOCKS when Jupiter not configured (codex DRIFT)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { getByText, findByText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.click(getByText("Skip optional"));
     await findByText(/Jupiter API key is required/i);
@@ -202,7 +204,7 @@ describe("ApiKeysStep", () => {
       makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
     );
     const { getByText, findByText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.click(getByText("Skip optional"));
     await findByText(/Polymarket has only some credentials saved/i);
@@ -223,7 +225,7 @@ describe("ApiKeysStep", () => {
       },
     } as Result<WizardState>);
     const { getByText, container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     // Already configured → skip-card path; should still expose a Continue button.
     expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).not.toBeNull();
@@ -237,7 +239,7 @@ describe("ApiKeysStep", () => {
   it("'Save and continue' empty submit BLOCKS when Jupiter not configured (codex DRIFT turn 9)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container, findByText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
     fireEvent.submit(form);
@@ -251,7 +253,7 @@ describe("ApiKeysStep", () => {
       makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
     );
     const { container, findByText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
     fireEvent.submit(form);
@@ -262,7 +264,7 @@ describe("ApiKeysStep", () => {
   it("does NOT render a CHAINSCAN field anywhere in the form", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} />,
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const html = container.innerHTML.toLowerCase();
     expect(html).not.toContain("chainscan");

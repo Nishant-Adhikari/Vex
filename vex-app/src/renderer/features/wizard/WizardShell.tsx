@@ -33,62 +33,41 @@ import { AgentCoreStep } from "./steps/AgentCoreStep.js";
 import { ApiKeysStep } from "./steps/ApiKeysStep.js";
 import { EmbeddingStep } from "./steps/EmbeddingStep.js";
 import { KeystoreStep } from "./steps/KeystoreStep.js";
+import { ModeStep } from "./steps/ModeStep.js";
 import { ProviderStep } from "./steps/ProviderStep.js";
+import { ReviewStep } from "./steps/review/ReviewStep.js";
+import { WakeStep } from "./steps/WakeStep.js";
 import { WalletsStep } from "./steps/WalletsStep.js";
-import { PlaceholderStep } from "./steps/PlaceholderStep.js";
-
-type StepMilestone = "M11";
-
-const PLACEHOLDER_MILESTONE: Record<
-  Exclude<
-    WizardStepId,
-    "keystore" | "wallets" | "apiKeys" | "embedding" | "agentCore" | "provider"
-  >,
-  StepMilestone
-> = {
-  mode: "M11",
-  wake: "M11",
-  review: "M11",
-};
 
 function renderStep(
   stepId: WizardStepId,
   completedSteps: ReadonlyArray<WizardStepId>,
   onAdvance: (next: WizardStepId) => void
 ): JSX.Element {
-  if (stepId === "keystore") {
-    return (
-      <KeystoreStep completedSteps={completedSteps} onAdvance={onAdvance} />
-    );
+  // M11: every wizard step receives `flowMode="first-pass"` from the
+  // shell. ReviewStep itself dispatches edited steps with
+  // `flowMode="back-edit"` (local nav, no persisted state advance).
+  const props = { completedSteps, onAdvance, flowMode: "first-pass" as const };
+  switch (stepId) {
+    case "keystore":
+      return <KeystoreStep {...props} />;
+    case "wallets":
+      return <WalletsStep {...props} />;
+    case "apiKeys":
+      return <ApiKeysStep {...props} />;
+    case "embedding":
+      return <EmbeddingStep {...props} />;
+    case "agentCore":
+      return <AgentCoreStep {...props} />;
+    case "provider":
+      return <ProviderStep {...props} />;
+    case "mode":
+      return <ModeStep {...props} />;
+    case "wake":
+      return <WakeStep {...props} />;
+    case "review":
+      return <ReviewStep completedSteps={completedSteps} onAdvance={onAdvance} />;
   }
-  if (stepId === "wallets") {
-    return (
-      <WalletsStep completedSteps={completedSteps} onAdvance={onAdvance} />
-    );
-  }
-  if (stepId === "apiKeys") {
-    return (
-      <ApiKeysStep completedSteps={completedSteps} onAdvance={onAdvance} />
-    );
-  }
-  if (stepId === "embedding") {
-    return (
-      <EmbeddingStep completedSteps={completedSteps} onAdvance={onAdvance} />
-    );
-  }
-  if (stepId === "agentCore") {
-    return (
-      <AgentCoreStep completedSteps={completedSteps} onAdvance={onAdvance} />
-    );
-  }
-  if (stepId === "provider") {
-    return (
-      <ProviderStep completedSteps={completedSteps} onAdvance={onAdvance} />
-    );
-  }
-  return (
-    <PlaceholderStep stepId={stepId} milestone={PLACEHOLDER_MILESTONE[stepId]} />
-  );
 }
 
 export function WizardShell(): JSX.Element {

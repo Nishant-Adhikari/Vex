@@ -66,13 +66,14 @@ import {
   useInvalidateEnvStateAfterProviderWrite,
 } from "../../../lib/api/provider.js";
 import {
-  nextWizardStateFor,
-  useSetWizardState,
+  useStepAdvance,
+  type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
 
 export interface ProviderStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onAdvance: (next: WizardStepId) => void;
+  readonly flowMode: WizardFlowMode;
 }
 
 const VERIFY_AND_SAVE_MIN_DELAY_MS = 0;
@@ -133,9 +134,10 @@ function uiCopyFor(code: string): { title: string; body: string } {
 export function ProviderStep({
   completedSteps,
   onAdvance,
+  flowMode,
 }: ProviderStepProps): JSX.Element {
   const envQuery = useEnvState();
-  const setWizardState = useSetWizardState();
+  const stepAdvance = useStepAdvance();
   const invalidateEnvState = useInvalidateEnvStateAfterProviderWrite();
 
   const [model, setModel] = useState<string>("");
@@ -158,18 +160,15 @@ export function ProviderStep({
 
   const advanceToMode = useCallback(async () => {
     setClientError(null);
-    const next = nextWizardStateFor({
+    const result = await stepAdvance.advance({
+      flowMode,
       completedSteps,
       current: "provider",
-      next: "mode",
+      forwardNext: "mode",
+      onAdvance,
     });
-    const result = await setWizardState.mutateAsync(next);
-    if (!result.ok) {
-      setClientError(result.error.message);
-      return;
-    }
-    onAdvance("mode");
-  }, [completedSteps, setWizardState, onAdvance]);
+    if (!result.ok) setClientError(result.message);
+  }, [stepAdvance, flowMode, completedSteps, onAdvance]);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -264,7 +263,7 @@ export function ProviderStep({
             <Button
               variant="ghost"
               onClick={() => setShowOverride(true)}
-              disabled={setWizardState.isPending}
+              disabled={stepAdvance.isPending}
             >
               Reconfigure
             </Button>
@@ -272,9 +271,13 @@ export function ProviderStep({
               onClick={() => {
                 void advanceToMode();
               }}
-              disabled={setWizardState.isPending}
+              disabled={stepAdvance.isPending}
             >
-              {setWizardState.isPending ? "Continuing…" : "Continue"}
+              {stepAdvance.isPending
+                ? "Continuing…"
+                : flowMode === "back-edit"
+                  ? "Return to review"
+                  : "Continue"}
             </Button>
           </div>
         </CardContent>
@@ -412,13 +415,15 @@ export function ProviderStep({
               <div className="flex justify-end gap-3">
                 <Button
                   type="submit"
-                  disabled={submitting || setWizardState.isPending}
+                  disabled={submitting || stepAdvance.isPending}
                 >
                   {submitting
                     ? "Verifying…"
-                    : setWizardState.isPending
+                    : stepAdvance.isPending
                       ? "Continuing…"
-                      : "Verify and save"}
+                      : flowMode === "back-edit"
+                        ? "Verify and return to review"
+                        : "Verify and save"}
                 </Button>
               </div>
             </form>

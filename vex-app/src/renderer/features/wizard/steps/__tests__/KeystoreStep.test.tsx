@@ -39,6 +39,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
     await vi.importActual<typeof import("../../../../lib/api/wizard.js")>(
       "../../../../lib/api/wizard.js"
     );
+  const { makeMockUseStepAdvance } = await import("../../__tests__/useStepAdvance-mock.js");
   return {
     ...actual,
     useKeystoreSet: () =>
@@ -59,6 +60,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
         Error,
         SetWizardStateInput
       >,
+    useStepAdvance: makeMockUseStepAdvance(mockSetWizardMutate),
   };
 });
 
@@ -75,7 +77,7 @@ function renderStep(
   });
   return render(
     <QueryClientProvider client={qc}>
-      <KeystoreStep completedSteps={completedSteps} onAdvance={mockOnAdvance} />
+      <KeystoreStep completedSteps={completedSteps} onAdvance={mockOnAdvance} flowMode="first-pass" />
     </QueryClientProvider>
   );
 }

@@ -46,13 +46,14 @@ import { Label } from "../../../components/ui/label.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useEmbeddingConfigure } from "../../../lib/api/embedding.js";
 import {
-  nextWizardStateFor,
-  useSetWizardState,
+  useStepAdvance,
+  type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
 
 export interface EmbeddingStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onAdvance: (next: WizardStepId) => void;
+  readonly flowMode: WizardFlowMode;
 }
 
 interface FormState {
@@ -96,9 +97,10 @@ function validateForm(state: FormState): string | null {
 export function EmbeddingStep({
   completedSteps,
   onAdvance,
+  flowMode,
 }: EmbeddingStepProps): JSX.Element {
   const envQuery = useEnvState();
-  const setWizardState = useSetWizardState();
+  const stepAdvance = useStepAdvance();
   const configure = useEmbeddingConfigure();
 
   const [form, setForm] = useState<FormState>({
@@ -122,18 +124,15 @@ export function EmbeddingStep({
 
   const advanceToAgentCore = useCallback(async () => {
     setAdvanceError(null);
-    const next = nextWizardStateFor({
+    const result = await stepAdvance.advance({
+      flowMode,
       completedSteps,
       current: "embedding",
-      next: "agentCore",
+      forwardNext: "agentCore",
+      onAdvance,
     });
-    const result = await setWizardState.mutateAsync(next);
-    if (!result.ok) {
-      setAdvanceError(result.error.message);
-      return;
-    }
-    onAdvance("agentCore");
-  }, [completedSteps, setWizardState, onAdvance]);
+    if (!result.ok) setAdvanceError(result.message);
+  }, [stepAdvance, flowMode, completedSteps, onAdvance]);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -192,7 +191,7 @@ export function EmbeddingStep({
             <Button
               variant="ghost"
               onClick={() => setShowOverride(true)}
-              disabled={setWizardState.isPending}
+              disabled={stepAdvance.isPending}
             >
               Override
             </Button>
@@ -200,9 +199,13 @@ export function EmbeddingStep({
               onClick={() => {
                 void advanceToAgentCore();
               }}
-              disabled={setWizardState.isPending}
+              disabled={stepAdvance.isPending}
             >
-              {setWizardState.isPending ? "Continuing…" : "Continue"}
+              {stepAdvance.isPending
+                ? "Continuing…"
+                : flowMode === "back-edit"
+                  ? "Return to review"
+                  : "Continue"}
             </Button>
           </div>
         </CardContent>
@@ -338,13 +341,15 @@ export function EmbeddingStep({
           <div className="flex justify-end gap-3">
             <Button
               type="submit"
-              disabled={configure.isPending || setWizardState.isPending}
+              disabled={configure.isPending || stepAdvance.isPending}
             >
               {configure.isPending
                 ? "Saving…"
-                : setWizardState.isPending
+                : stepAdvance.isPending
                   ? "Continuing…"
-                  : "Save and continue"}
+                  : flowMode === "back-edit"
+                    ? "Save and return to review"
+                    : "Save and continue"}
             </Button>
           </div>
         </form>

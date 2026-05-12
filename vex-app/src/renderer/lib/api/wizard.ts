@@ -63,6 +63,72 @@ export function nextStepId(current: WizardStepId): WizardStepId | null {
   return WIZARD_STEP_IDS[idx + 1] ?? null;
 }
 
+/**
+ * M11: Wizard navigation mode. `first-pass` advances persisted
+ * `currentStepId` forward and appends to `completedSteps`. `back-edit`
+ * is local navigation only — the operator is editing a prior step
+ * from the Review screen; persisted state stays at `currentStepId:
+ * "review"` so the `isForwardSafe` schema invariant is never broken.
+ */
+export type WizardFlowMode = "first-pass" | "back-edit";
+
+export interface AdvanceArgs {
+  readonly flowMode: WizardFlowMode;
+  readonly completedSteps: ReadonlyArray<WizardStepId>;
+  readonly current: WizardStepId;
+  readonly forwardNext: WizardStepId;
+  readonly onAdvance: (next: WizardStepId) => void;
+  readonly markCompleted?: boolean;
+}
+
+export interface UseStepAdvance {
+  readonly advance: (
+    args: AdvanceArgs,
+  ) => Promise<{ ok: true } | { ok: false; message: string }>;
+  readonly isPending: boolean;
+}
+
+/**
+ * Shared advance helper used by every wizard step. Centralises the
+ * flowMode branch so all 9 steps behave identically when invoked from
+ * Review's per-card "Edit" action.
+ *
+ * Uses `useMutation` inline (NOT `useSetWizardState`) so tests can mock
+ * this hook as a single unit — calling `useSetWizardState` indirectly
+ * would bypass vi.mock module overrides due to ESM in-module references.
+ */
+export function useStepAdvance(): UseStepAdvance {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (input: SetWizardStateInput) =>
+      window.vex.onboarding.setWizardState(input),
+    onSuccess: (result) => {
+      if (result.ok) {
+        queryClient.setQueryData(onboardingKeys.wizardState(), result);
+      }
+    },
+  });
+  return {
+    isPending: mutation.isPending,
+    advance: async (args) => {
+      if (args.flowMode === "back-edit") {
+        args.onAdvance("review");
+        return { ok: true };
+      }
+      const next = nextWizardStateFor({
+        completedSteps: args.completedSteps,
+        current: args.current,
+        next: args.forwardNext,
+        ...(args.markCompleted ? { markCompleted: true } : {}),
+      });
+      const result = await mutation.mutateAsync(next);
+      if (!result.ok) return { ok: false, message: result.error.message };
+      args.onAdvance(args.forwardNext);
+      return { ok: true };
+    },
+  };
+}
+
 export function wizardStateOptions() {
   return queryOptions({
     queryKey: onboardingKeys.wizardState(),

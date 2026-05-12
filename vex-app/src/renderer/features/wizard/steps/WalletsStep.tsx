@@ -39,8 +39,8 @@ import {
 import { AddressDisplay } from "../../../components/common/AddressDisplay.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import {
-  nextWizardStateFor,
-  useSetWizardState,
+  useStepAdvance,
+  type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
@@ -54,14 +54,16 @@ interface ChainState {
 export interface WalletsStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onAdvance: (next: WizardStepId) => void;
+  readonly flowMode: WizardFlowMode;
 }
 
 export function WalletsStep({
   completedSteps,
   onAdvance,
+  flowMode,
 }: WalletsStepProps): JSX.Element {
   const envQuery = useEnvState();
-  const setWizardState = useSetWizardState();
+  const stepAdvance = useStepAdvance();
 
   const [lastGenerated, setLastGenerated] = useState<ChainState>({});
   const [lastBackupDir, setLastBackupDir] = useState<ChainState>({});
@@ -81,18 +83,15 @@ export function WalletsStep({
 
   const advanceToApiKeys = useCallback(async (): Promise<void> => {
     setAdvanceError(null);
-    const next = nextWizardStateFor({
+    const result = await stepAdvance.advance({
+      flowMode,
       completedSteps,
       current: "wallets",
-      next: "apiKeys",
+      forwardNext: "apiKeys",
+      onAdvance,
     });
-    const result = await setWizardState.mutateAsync(next);
-    if (!result.ok) {
-      setAdvanceError(result.error.message);
-      return;
-    }
-    onAdvance("apiKeys");
-  }, [completedSteps, setWizardState, onAdvance]);
+    if (!result.ok) setAdvanceError(result.message);
+  }, [stepAdvance, flowMode, completedSteps, onAdvance]);
 
   const handleAddressSet = useCallback(
     (chain: WalletChain, address: string, backupDir: string | null): void => {
@@ -171,9 +170,13 @@ export function WalletsStep({
               onClick={() => {
                 void advanceToApiKeys();
               }}
-              disabled={setWizardState.isPending}
+              disabled={stepAdvance.isPending}
             >
-              {setWizardState.isPending ? "Continuing…" : "Continue"}
+              {stepAdvance.isPending
+                ? "Continuing…"
+                : flowMode === "back-edit"
+                  ? "Return to review"
+                  : "Continue"}
             </Button>
           </div>
         </CardContent>

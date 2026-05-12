@@ -55,10 +55,16 @@ vi.mock("../steps/AgentCoreStep.js", () => ({
   AgentCoreStep: () => <div data-testid="agentcore-step" />,
 }));
 
-vi.mock("../steps/PlaceholderStep.js", () => ({
-  PlaceholderStep: ({ stepId, milestone }: { stepId: string; milestone: string }) => (
-    <div data-testid="placeholder-step" data-step={stepId} data-milestone={milestone} />
-  ),
+vi.mock("../steps/ModeStep.js", () => ({
+  ModeStep: () => <div data-testid="mode-step" />,
+}));
+
+vi.mock("../steps/WakeStep.js", () => ({
+  WakeStep: () => <div data-testid="wake-step" />,
+}));
+
+vi.mock("../steps/review/ReviewStep.js", () => ({
+  ReviewStep: () => <div data-testid="review-step" />,
 }));
 
 const { WizardShell } = await import("../WizardShell.js");
@@ -100,7 +106,7 @@ describe("WizardShell", () => {
     mockUseWizardState.mockReturnValue(makeQueryResult(undefined));
     const { container, queryByTestId } = renderWithQuery(<WizardShell />);
     expect(queryByTestId("keystore-step")).toBeNull();
-    expect(queryByTestId("placeholder-step")).toBeNull();
+    expect(queryByTestId("review-step")).toBeNull();
     // The screen container is still rendered; the shell shows a pulse.
     expect(container.querySelector('[data-vex-screen="wizard"]')).not.toBeNull();
   });
@@ -185,6 +191,78 @@ describe("WizardShell", () => {
     await findByTestId("agentcore-step");
   });
 
+  it("renders ModeStep when persisted.currentStepId === 'mode' (M11)", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult({
+        ok: true,
+        data: {
+          schemaVersion: 1,
+          currentStepId: "mode",
+          completedSteps: [
+            "keystore",
+            "wallets",
+            "apiKeys",
+            "embedding",
+            "agentCore",
+            "provider",
+          ],
+          completed: false,
+        },
+      })
+    );
+    const { findByTestId } = renderWithQuery(<WizardShell />);
+    await findByTestId("mode-step");
+  });
+
+  it("renders WakeStep when persisted.currentStepId === 'wake' (M11)", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult({
+        ok: true,
+        data: {
+          schemaVersion: 1,
+          currentStepId: "wake",
+          completedSteps: [
+            "keystore",
+            "wallets",
+            "apiKeys",
+            "embedding",
+            "agentCore",
+            "provider",
+            "mode",
+          ],
+          completed: false,
+        },
+      })
+    );
+    const { findByTestId } = renderWithQuery(<WizardShell />);
+    await findByTestId("wake-step");
+  });
+
+  it("renders ReviewStep when persisted.currentStepId === 'review' (M11)", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult({
+        ok: true,
+        data: {
+          schemaVersion: 1,
+          currentStepId: "review",
+          completedSteps: [
+            "keystore",
+            "wallets",
+            "apiKeys",
+            "embedding",
+            "agentCore",
+            "provider",
+            "mode",
+            "wake",
+          ],
+          completed: false,
+        },
+      })
+    );
+    const { findByTestId } = renderWithQuery(<WizardShell />);
+    await findByTestId("review-step");
+  });
+
   it("renders ProviderStep when persisted.currentStepId === 'provider' (M10)", async () => {
     mockUseWizardState.mockReturnValue(
       makeQueryResult({
@@ -252,6 +330,6 @@ describe("WizardShell", () => {
     const { findByText, queryByTestId } = renderWithQuery(<WizardShell />);
     await findByText(/Setup unavailable/);
     expect(queryByTestId("keystore-step")).toBeNull();
-    expect(queryByTestId("placeholder-step")).toBeNull();
+    expect(queryByTestId("review-step")).toBeNull();
   });
 });

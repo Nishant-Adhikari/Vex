@@ -55,6 +55,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
     await vi.importActual<typeof import("../../../../lib/api/wizard.js")>(
       "../../../../lib/api/wizard.js",
     );
+  const { makeMockUseStepAdvance } = await import("../../__tests__/useStepAdvance-mock.js");
   return {
     ...actual,
     useSetWizardState: () =>
@@ -66,6 +67,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
         Error,
         SetWizardStateInput
       >,
+    useStepAdvance: makeMockUseStepAdvance(mockSetWizardMutate),
   };
 });
 
@@ -128,7 +130,7 @@ describe("EmbeddingStep", () => {
   it("renders skip-card when allFieldsConfigured=true", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState(true)));
     const { container } = renderWithQuery(
-      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} />,
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     expect(container.querySelector('[data-vex-wizard-embedding="skip"]')).not.toBeNull();
   });
@@ -136,7 +138,7 @@ describe("EmbeddingStep", () => {
   it("renders form when allFieldsConfigured=false", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
     const { container } = renderWithQuery(
-      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} />,
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     expect(container.querySelector('[data-vex-wizard-embedding="form"]')).not.toBeNull();
   });
@@ -144,7 +146,7 @@ describe("EmbeddingStep", () => {
   it("client-side rejects malformed URL before calling configure", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
     const { container, getByLabelText, getByText } = renderWithQuery(
-      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} />,
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.change(getByLabelText("Base URL"), { target: { value: "not-a-url" } });
     fireEvent.change(getByLabelText("Model"), { target: { value: "m" } });
@@ -174,7 +176,7 @@ describe("EmbeddingStep", () => {
       },
     } as Result<WizardState>);
     const { container, getByLabelText } = renderWithQuery(
-      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} />,
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.change(getByLabelText("Base URL"), {
       target: { value: "http://127.0.0.1:12434/engines/llama.cpp/v1" },
@@ -204,7 +206,7 @@ describe("EmbeddingStep", () => {
       },
     });
     const { container, getByLabelText, findByText } = renderWithQuery(
-      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} />,
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.change(getByLabelText("Base URL"), {
       target: { value: "http://127.0.0.1:12434/v1" },
@@ -233,7 +235,7 @@ describe("EmbeddingStep", () => {
       },
     });
     const { container, getByLabelText } = renderWithQuery(
-      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} />,
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.change(getByLabelText("Base URL"), { target: { value: "http://x.example/v1" } });
     fireEvent.change(getByLabelText("Model"), { target: { value: "m" } });

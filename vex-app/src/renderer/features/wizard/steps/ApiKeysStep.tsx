@@ -42,13 +42,14 @@ import {
   useInvalidateEnvStateAfterApiKeysWrite,
 } from "../../../lib/api/api-keys.js";
 import {
-  nextWizardStateFor,
-  useSetWizardState,
+  useStepAdvance,
+  type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
 
 export interface ApiKeysStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onAdvance: (next: WizardStepId) => void;
+  readonly flowMode: WizardFlowMode;
 }
 
 interface FieldRefs {
@@ -103,9 +104,10 @@ function buildPayload(refs: FieldRefs): ApiKeysSetInput | { error: string } {
 export function ApiKeysStep({
   completedSteps,
   onAdvance,
+  flowMode,
 }: ApiKeysStepProps): JSX.Element {
   const envQuery = useEnvState();
-  const setWizardState = useSetWizardState();
+  const stepAdvance = useStepAdvance();
   const invalidateEnvState = useInvalidateEnvStateAfterApiKeysWrite();
 
   const [submitting, setSubmitting] = useState(false);
@@ -129,18 +131,15 @@ export function ApiKeysStep({
   const canSkip = jupiterConfigured && !polymarketPartial && !submittedOnce;
 
   const advanceToEmbedding = useCallback(async () => {
-    const next = nextWizardStateFor({
+    const result = await stepAdvance.advance({
+      flowMode,
       completedSteps,
       current: "apiKeys",
-      next: "embedding",
+      forwardNext: "embedding",
+      onAdvance,
     });
-    const result = await setWizardState.mutateAsync(next);
-    if (!result.ok) {
-      setFormError(result.error.message);
-      return;
-    }
-    onAdvance("embedding");
-  }, [completedSteps, setWizardState, onAdvance]);
+    if (!result.ok) setFormError(result.message);
+  }, [stepAdvance, flowMode, completedSteps, onAdvance]);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -232,9 +231,13 @@ export function ApiKeysStep({
               onClick={() => {
                 void onSkipContinue();
               }}
-              disabled={setWizardState.isPending}
+              disabled={stepAdvance.isPending}
             >
-              {setWizardState.isPending ? "Continuing…" : "Continue"}
+              {stepAdvance.isPending
+                ? "Continuing…"
+                : flowMode === "back-edit"
+                  ? "Return to review"
+                  : "Continue"}
             </Button>
           </div>
         </CardContent>
@@ -372,15 +375,19 @@ export function ApiKeysStep({
               onClick={() => {
                 void onSkipContinue();
               }}
-              disabled={submitting || setWizardState.isPending}
+              disabled={submitting || stepAdvance.isPending}
             >
               Skip optional
             </Button>
             <Button
               type="submit"
-              disabled={submitting || setWizardState.isPending}
+              disabled={submitting || stepAdvance.isPending}
             >
-              {submitting || setWizardState.isPending ? "Saving…" : "Save and continue"}
+              {submitting || stepAdvance.isPending
+                ? "Saving…"
+                : flowMode === "back-edit"
+                  ? "Save and return to review"
+                  : "Save and continue"}
             </Button>
           </div>
         </form>
