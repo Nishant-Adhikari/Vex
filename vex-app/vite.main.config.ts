@@ -1,16 +1,41 @@
 /// <reference types="vitest/config" />
 import path from "node:path";
+import { builtinModules } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Bare Node built-in specifiers (e.g. `os`, `fs`, `http` — no `node:`
+ * prefix). Third-party libraries like winston / `@colors/colors` still
+ * import them this way; without listing them explicitly as external,
+ * Vite's default browser-compat resolver replaces them with a
+ * `__vite-browser-external` stub of `{}`, which crashes at runtime on
+ * Windows the moment `@colors/colors` calls `os.release()`. The
+ * `^node:` regex below covers the prefixed variants.
+ */
+const bareNodeBuiltins = builtinModules.filter(
+  (name) => !name.startsWith("node:"),
+);
+
 export default defineConfig({
+  // `conditions: ["node"]` + Node-preferred `mainFields` keep Vite from
+  // selecting the `browser` package variants (e.g. `@dabh/diagnostics/browser`,
+  // `readable-stream/*-browser`) that some transient deps ship alongside
+  // their Node entrypoints. Without this, `target: "node22"` alone is not
+  // enough — `target` only controls emitted JS syntax, not resolution.
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "src/shared"),
       "@vex-lib": path.resolve(__dirname, "../src/lib"),
     },
+    // Mirror Vite's own Node/SSR condition set. `["node"]` alone works
+    // for the current bundle but is narrower than what Vite uses for
+    // SSR and may miss `module`/`development`/`production` exports
+    // some packages ship. Codex turn 3 YELLOW.
+    conditions: ["module", "node", "development|production"],
+    mainFields: ["module", "jsnext:main", "jsnext", "main"],
   },
   build: {
     outDir: path.resolve(__dirname, "dist/main"),
@@ -23,8 +48,26 @@ export default defineConfig({
       formats: ["es"],
       fileName: () => "index.js",
     },
-    rollupOptions: {
+    // Rolldown's `platform: "node"` is the DOCUMENTED fix for CJS deps
+    // bundled into ESM main. Without it, rolldown emits a throwing
+    // `__require` shim that crashes at startup on `require("buffer")`
+    // / `require("crypto")` / etc. — these calls come from transitive
+    // CJS deps (safe-buffer, secp256k1, bn.js, viem internals) that
+    // we cannot rewrite.
+    //
+    // With platform="node", rolldown emits:
+    //   import { createRequire } from "node:module";
+    //   const __require = createRequire(import.meta.url);
+    // …which routes `require("buffer")` to Node's real CJS resolver.
+    // (Verified via in-memory Vite build + rolldown docs.)
+    //
+    // `rolldownOptions` is the Vite 8 native name; `rollupOptions`
+    // remains as a deprecated alias.
+    rolldownOptions: {
+      platform: "node",
       external: [
+        ...bareNodeBuiltins,
+        /^node:/,
         "electron",
         "electron-log",
         "electron-log/main",
@@ -32,14 +75,6 @@ export default defineConfig({
         "electron-updater",
         "@sentry/electron/main",
         "pg",
-        /^node:/,
-        "node:fs",
-        "node:fs/promises",
-        "node:path",
-        "node:os",
-        "node:url",
-        "node:crypto",
-        "node:child_process",
       ],
       output: {
         format: "esm",

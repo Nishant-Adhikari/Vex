@@ -193,6 +193,31 @@ check("main bundle — entrypoint exists + uses single-instance lock", () => {
   if (!src.includes("setPermissionRequestHandler")) {
     throw new Error("main bundle missing permission deny handlers");
   }
+  // M10 regression guard #1 — first-order browser-compat stub.
+  // `__vite-browser-external` is the stub Vite emits when it tries to
+  // externalize a bare Node built-in (`os`, `fs`, `http`, …) using its
+  // browser-compat policy. That stub is `{}` and crashes at runtime the
+  // moment any consumer calls `os.release()` etc. (real-world repro:
+  // @colors/colors → supports-colors.js on Windows.)
+  // If this gate trips, audit `vite.main.config.ts` — bare builtins must
+  // be in `external` and `resolve.conditions` must include `"node"`.
+  if (src.includes("__vite-browser-external")) {
+    throw new Error(
+      "main bundle contains __vite-browser-external stubs — a Node built-in is being resolved through Vite's browser-compat path. Check vite.main.config.ts (bareNodeBuiltins + resolve.conditions including 'node')."
+    );
+  }
+  // M10 regression guard #2 — second-order throwing `__require` shim.
+  // When CJS deps are bundled into ESM main without `platform: "node"`,
+  // rolldown emits a shim that throws "Calling `require` for X in an
+  // environment that doesn't expose the `require` function". Real-world
+  // repro: safe-buffer / secp256k1 / bn.js → `require("buffer")`.
+  // Fix: `rolldownOptions.platform = "node"` so rolldown injects
+  // `createRequire(import.meta.url)` instead.
+  if (src.includes("environment that doesn't expose the `require` function")) {
+    throw new Error(
+      "main bundle contains a throwing __require shim — CJS deps are bundled into the ESM main without a Node platform setting. Set `rolldownOptions.platform = 'node'` in vite.main.config.ts."
+    );
+  }
 });
 
 // 6. brand assets — exist, decode, expected dimensions, byte budget, no EXIF

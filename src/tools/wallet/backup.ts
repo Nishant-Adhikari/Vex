@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "../../config/store.js";
 import { CONFIG_DIR, BACKUPS_DIR, SOLANA_KEYSTORE_FILE } from "../../config/paths.js";
 import { VexError, ErrorCodes } from "../../errors.js";
-import logger from "../../utils/logger.js";
+import { minLogger as logger } from "../../utils/logger-shim.js";
 
 const MAX_BACKUPS = 20;
 

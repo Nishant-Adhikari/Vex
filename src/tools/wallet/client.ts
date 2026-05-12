@@ -1,6 +1,6 @@
 import { createPublicClient, http, type PublicClient, type Chain } from "viem";
 import { loadConfig } from "../../config/store.js";
-import logger from "../../utils/logger.js";
+import { minLogger as logger } from "../../utils/logger-shim.js";
 
 const RPC_TIMEOUT = 10_000; // 10 seconds
 

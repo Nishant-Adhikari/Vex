@@ -5,7 +5,7 @@ import type { Hex } from "viem";
 import { KEYSTORE_FILE } from "../../config/paths.js";
 import { ensureConfigDir } from "../../config/store.js";
 import { VexError, ErrorCodes } from "../../errors.js";
-import logger from "../../utils/logger.js";
+import { minLogger as logger } from "../../utils/logger-shim.js";
 
 export interface KeystoreV1 {
   version: 1;

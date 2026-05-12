@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { Address } from "viem";
 import { CHAIN, PROTOCOL, SLOP } from "../constants/chain.js";
 import { CONFIG_DIR, CONFIG_FILE } from "./paths.js";
-import logger from "../utils/logger.js";
+import { minLogger as logger } from "../utils/logger-shim.js";
 
 export interface VexConfig {
   version: 1;
