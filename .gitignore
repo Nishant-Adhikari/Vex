@@ -43,8 +43,10 @@ typescript-sdk-main
 polymarket-cli-main
 github-mcp-server-main
 
-# Private local harnesses (vex-shell, scratch tooling) — never published
-local/
+# Private local harnesses — vex-shell is tracked, but per-run artifacts are not
+local/session-reports/
+local/vex-shell.log
+local/vex-shell.log.*
 
 # Local upstream checkout used for Rettiwt API inspection.
 Rettiwt-API-dev/
