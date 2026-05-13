@@ -26,7 +26,6 @@ import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
-import type { LoopWakeKind } from "@vex-agent/db/repos/loop-wake.js";
 import { currentDate } from "@vex-agent/engine/runtime-clock.js";
 
 const ONE_SECOND_MS = 1_000;
@@ -73,14 +72,13 @@ export async function handleLoopDefer(
   const { after_ms, wake_at, reason } = parsed.data;
 
   // Layer 2 — runtime defense-in-depth.
-  const kind = resolveWakeKind(context);
-  if (kind === null) {
+  if (!isMissionRunContext(context)) {
     return fail(
-      "loop_defer is only available inside an active mission run or a full-autonomous session",
+      "loop_defer is only available inside an active mission run",
     );
   }
 
-  if (kind === "mission_run" && MISSION_ACTIVATION_WAIT_PATTERN.test(reason)) {
+  if (MISSION_ACTIVATION_WAIT_PATTERN.test(reason)) {
     return fail(
       "loop_defer: this mission run is already active. Do not wait for /mission start or /mission continue; execute the frozen Mission Contract now.",
     );
@@ -100,8 +98,7 @@ export async function handleLoopDefer(
 
   const row = await loopWakeRepo.enqueue({
     sessionId: context.sessionId,
-    missionRunId: kind === "mission_run" ? context.missionRunId : null,
-    kind,
+    missionRunId: context.missionRunId!, // non-null verified by isMissionRunContext above
     dueAt,
     reason,
     payload: null,
@@ -129,9 +126,7 @@ export async function handleLoopDefer(
   };
 }
 
-function resolveWakeKind(ctx: InternalToolContext): LoopWakeKind | null {
-  if (ctx.role === "subagent") return null;
-  if (ctx.sessionKind === "full_autonomous") return "full_autonomous";
-  if (ctx.sessionKind === "mission" && ctx.missionRunId !== null) return "mission_run";
-  return null;
+function isMissionRunContext(ctx: InternalToolContext): boolean {
+  if (ctx.role === "subagent") return false;
+  return ctx.sessionKind === "mission" && ctx.missionRunId !== null;
 }

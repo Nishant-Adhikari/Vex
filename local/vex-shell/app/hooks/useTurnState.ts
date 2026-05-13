@@ -18,9 +18,7 @@ import * as toolOutputBlobsRepo from "../../../../src/vex-agent/db/repos/tool-ou
 import { createChildLogger } from "../../../../src/utils/logger.js";
 import {
   type MissionRunStatus,
-  type FullAutonomousRunStatus,
   ACTIVE_OR_PAUSED_RUN_STATUSES,
-  ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES,
 } from "../../../../src/vex-agent/engine/types.js";
 import type { PendingTurn, Store, ToolCallEntry } from "../state/store.js";
 import { useStore, appendToolCall, completeToolCall } from "../state/store.js";
@@ -36,21 +34,11 @@ export function isMissionActivityStatus(status: string | null | undefined): bool
   );
 }
 
-export function isFullAutonomousActivityStatus(status: string | null | undefined): boolean {
-  return (
-    typeof status === "string" &&
-    ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES.has(status as FullAutonomousRunStatus)
-  );
-}
-
 export function shouldPollTurnState(
   pendingTurn: PendingTurn | null,
   missionStatus: string | null | undefined,
-  fullAutonomousStatus: string | null | undefined = null,
 ): boolean {
-  return pendingTurn !== null
-    || isMissionActivityStatus(missionStatus)
-    || isFullAutonomousActivityStatus(fullAutonomousStatus);
+  return pendingTurn !== null || isMissionActivityStatus(missionStatus);
 }
 
 export function useTurnState(store: Store): void {
@@ -59,7 +47,6 @@ export function useTurnState(store: Store): void {
     (s) => shouldPollTurnState(
       s.pendingTurn,
       s.session?.missionStatus ?? null,
-      s.session?.fullAutonomousStatus ?? null,
     ),
   );
   const sessionId = useStore(store, (s) => s.session?.id ?? null);

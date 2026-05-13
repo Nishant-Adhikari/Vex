@@ -67,17 +67,17 @@ export async function processMissionSetupTurn(
 
   // Setup uses sessionKind: "mission" so mission-setup prompt is included,
   // but missionRunId stays null — turn-loop uses missionRunId to distinguish
-  // setup (ends on text) from run (continues autonomously).
+  // setup (ends on text) from run (continues autonomously). Permission is
+  // immutable per session and read from the hydrated context.
   const setupContext = {
     ...hydrated.context,
     sessionKind: "mission" as const,
-    loopMode: "off" as const,
     missionId,
     missionRunId: null,
   };
 
   const buildToolsForBand = (contextUsageBand: ContextUsageBand) => toToolDefinitions(getOpenAITools({
-    chatMode: "off",
+    permission: setupContext.sessionPermission,
     role: "parent",
     sessionKind: "mission",
     missionRunActive: false, // setup — no run yet

@@ -22,9 +22,7 @@ const STEP_TITLES: Record<string, string> = {
   embedding: "Step 4 — Embedding",
   agentCore: "Step 5 — Agent core",
   provider: "Step 6 — Provider",
-  mode: "Step 7 — Mode",
-  wake: "Step 8 — Wake",
-  review: "Step 9 — Review",
+  review: "Step 7 — Review",
 };
 
 export interface PlaceholderStepProps {

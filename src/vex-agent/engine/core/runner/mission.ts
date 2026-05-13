@@ -1,10 +1,14 @@
 /**
  * Engine runner — mission setup, start, resume, and finalization.
+ *
+ * Permission semantics: post-M12 missions inherit their approval permission
+ * from the owning session (`sessions.permission`), hydrated once at session
+ * load. Mission runs no longer carry their own `loop_mode` column.
  */
 
 import {
   type TurnResult,
-  type LoopMode,
+  type Permission,
   MissionRunPausedError,
   TERMINAL_RUN_STATUSES,
 } from "../../types.js";
@@ -23,6 +27,7 @@ import { resolveProvider } from "@vex-agent/inference/registry.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
+import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
@@ -41,7 +46,7 @@ interface MissionActivationMessageInput {
   sessionId: string;
   missionId: string;
   runId: string;
-  loopMode: LoopMode;
+  permission: Permission;
 }
 
 async function addMissionActivationMessage(
@@ -65,7 +70,7 @@ async function addMissionActivationMessage(
       payload: {
         missionId: input.missionId,
         runId: input.runId,
-        loopMode: input.loopMode,
+        permission: input.permission,
       },
     },
   );
@@ -73,11 +78,9 @@ async function addMissionActivationMessage(
 
 /**
  * Start a mission — validate, freeze, create run, enter turn loop.
+ * Permission is read from the session row (immutable) rather than passed in.
  */
-export async function startMission(
-  missionId: string,
-  loopMode: LoopMode = "restricted",
-): Promise<TurnResult> {
+export async function startMission(missionId: string): Promise<TurnResult> {
   logger.info("engine.mission.start", { missionId });
 
   const provider = await resolveProvider();
@@ -108,8 +111,14 @@ export async function startMission(
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const sessionId = mission.rootSessionId;
 
+  // Permission comes from the session row — immutable per session, set at
+  // session creation by the wizard / main app session creator.
+  const session = await sessionsRepo.getSession(sessionId);
+  if (!session) throw new Error(`Session ${sessionId} not found`);
+  const permission: Permission = session.permission;
+
   const contractSnapshot = buildMissionRunContractSnapshot(mission);
-  await missionRunsRepo.createRun(runId, missionId, sessionId, loopMode, {
+  await missionRunsRepo.createRun(runId, missionId, sessionId, {
     contractSnapshotJson: contractSnapshot,
   });
 
@@ -120,7 +129,7 @@ export async function startMission(
   // of orphaning it at `running`. Caller maps `MissionRunPausedError` into
   // `{ ok: false, error, hint }` via the shell action wrapper.
   try {
-    await addMissionActivationMessage({ sessionId, missionId, runId, loopMode });
+    await addMissionActivationMessage({ sessionId, missionId, runId, permission });
 
     const hydrated = await hydrateEngineSession(sessionId);
     if (!hydrated) throw new Error(`Session ${sessionId} not found`);
@@ -136,7 +145,7 @@ export async function startMission(
     };
 
     const buildToolsForBand = (contextUsageBand: ContextUsageBand) => toToolDefinitions(getOpenAITools({
-      chatMode: loopMode,
+      permission,
       role: "parent",
       sessionKind: "mission",
       missionRunActive: true,
@@ -151,7 +160,7 @@ export async function startMission(
     };
 
     const result = await runTurnLoop(
-      { ...hydrated.context, missionRunId: runId, loopMode, sessionKind: "mission" },
+      { ...hydrated.context, missionRunId: runId, sessionKind: "mission" },
       hydrated.messages,
       hydrated.summary,
       hydrated.tokenCount,
@@ -190,6 +199,7 @@ export async function startMission(
 
 /**
  * Resume a mission run after checkpoint or restart.
+ * Permission is re-read from session row (still immutable per session).
  */
 export async function resumeMissionRun(
   runId: string,
@@ -232,6 +242,8 @@ export async function resumeMissionRun(
     const hydrated = await hydrateEngineSession(run.sessionId);
     if (!hydrated) throw new Error(`Session ${run.sessionId} not found`);
 
+    const permission = hydrated.context.sessionPermission;
+
     const missionPromptContext = resolveMissionPromptContext({
       snapshot: run.contractSnapshotJson,
       fallbackMission: mission,
@@ -244,11 +256,11 @@ export async function resumeMissionRun(
     };
 
     // Resume — compute the band from the lagging token count so
-    // warning-band tools (PR-9) are visible if the previous turn already
+    // warning-band tools are visible if the previous turn already
     // pushed the window past 80%. Turn-loop recomputes per iteration for
     // dispatch context.
     const buildToolsForBand = (contextUsageBand: ContextUsageBand) => toToolDefinitions(getOpenAITools({
-      chatMode: run.loopMode,
+      permission,
       role: "parent",
       sessionKind: "mission",
       missionRunActive: true,
@@ -264,7 +276,7 @@ export async function resumeMissionRun(
     };
 
     const result = await runTurnLoop(
-      { ...hydrated.context, missionRunId: runId, loopMode: run.loopMode, sessionKind: "mission" },
+      { ...hydrated.context, missionRunId: runId, sessionKind: "mission" },
       hydrated.messages,
       hydrated.summary,
       hydrated.tokenCount,

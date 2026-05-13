@@ -13,7 +13,7 @@ import { describe, it, expect } from "vitest";
 import { KHALANI_HANDLERS } from "../../../vex-agent/tools/protocols/khalani/handlers.js";
 import { KHALANI_TOOLS } from "../../../vex-agent/tools/protocols/khalani/manifest.js";
 
-const EXECUTION_CTX = { loopMode: "off" as const, approved: false };
+const EXECUTION_CTX = { sessionPermission: "restricted" as const, approved: false };
 
 describe("khalani handlers — structural coverage", () => {
   it("has a handler for every manifest toolId", () => {

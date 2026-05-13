@@ -100,8 +100,6 @@ describe("vex.onboarding.getEnvState handler", () => {
       },
       walletStatus: { evm: "missing", solana: "missing" },
       provider: { configured: false, name: null, modelLabel: null },
-      mode: { selected: null, loopMode: null, hasInitialPrompt: false, coherent: false },
-      wake: { enabled: false, intervalMs: null, batchSize: null, coherent: true },
       setupCompleteFlag: false,
     });
     registerOnboardingHandlers();
@@ -119,7 +117,7 @@ describe("vex.onboarding.getEnvState handler", () => {
 describe("vex.onboarding.getWizardState handler", () => {
   it("returns the persisted state from the store", async () => {
     mockStoreLoad.mockResolvedValue({
-      schemaVersion: 1,
+      schemaVersion: 2,
       currentStepId: "wallets",
       completedSteps: ["keystore"],
       completed: false,
@@ -139,7 +137,7 @@ describe("vex.onboarding.getWizardState handler", () => {
 describe("vex.onboarding.setWizardState handler", () => {
   it("persists a valid forward transition", async () => {
     mockStoreUpdate.mockResolvedValue({
-      schemaVersion: 1,
+      schemaVersion: 2,
       currentStepId: "wallets",
       completedSteps: ["keystore"],
       completed: false,
@@ -184,7 +182,7 @@ describe("vex.onboarding.setWizardState handler", () => {
     expect(result.error?.code).toBe("validation.invalid_input");
   });
 
-  it("maps wizardStateStore.update() throw to onboarding.step_failed (codex turn 6 YELLOW #1)", async () => {
+  it("maps wizardStateStore.update() throw to onboarding.step_failed", async () => {
     mockStoreUpdate.mockRejectedValue(new Error("EACCES: writeFile failed"));
     registerOnboardingHandlers();
 

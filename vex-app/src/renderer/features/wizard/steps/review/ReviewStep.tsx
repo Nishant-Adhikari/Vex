@@ -1,8 +1,9 @@
 /**
- * Wizard Step 9 — Review & Finalize (M11).
+ * Wizard Review & Finalize step (M11, Phase 2 refactor — Mode + Wake
+ * removed from the wizard).
  *
  * Two visual modes:
- *   - default: 8 read-only summary cards + Sentry consent card +
+ *   - default: read-only summary cards + Sentry consent card +
  *     Finalize button.
  *   - back-edit: re-renders one prior step with `flowMode="back-edit"`
  *     so the operator can fix a typo without resetting the wizard.
@@ -11,10 +12,10 @@
  *     instead of writing wizard state forward.
  *
  * Finalize sequencing lives in main (`finalize.ts::completeSetup`):
- *   validate → wake-coherence enforcement → autoBackup → wizardState →
- *   telemetry → flag. The renderer just collects the telemetryConsent
- *   bool, disables Finalize on submit, and surfaces telemetryWarning if
- *   the consent flip failed after setup succeeded (codex v3 D11).
+ *   validate → autoBackup → wizardState → telemetry → flag. The
+ *   renderer just collects the telemetryConsent bool, disables Finalize
+ *   on submit, and surfaces telemetryWarning if the consent flip failed
+ *   after setup succeeded (codex v3 D11).
  */
 
 import { useCallback, useState, type JSX } from "react";
@@ -36,17 +37,13 @@ import { AgentCoreStep } from "../AgentCoreStep.js";
 import { ApiKeysStep } from "../ApiKeysStep.js";
 import { EmbeddingStep } from "../EmbeddingStep.js";
 import { KeystoreStep } from "../KeystoreStep.js";
-import { ModeStep } from "../ModeStep.js";
 import { ProviderStep } from "../ProviderStep.js";
-import { WakeStep } from "../WakeStep.js";
 import { WalletsStep } from "../WalletsStep.js";
 import { AgentCoreCard } from "./cards/AgentCoreCard.js";
 import { ApiKeysCard } from "./cards/ApiKeysCard.js";
 import { EmbeddingCard } from "./cards/EmbeddingCard.js";
 import { KeystoreCard } from "./cards/KeystoreCard.js";
-import { ModeCard } from "./cards/ModeCard.js";
 import { ProviderCard } from "./cards/ProviderCard.js";
-import { WakeCard } from "./cards/WakeCard.js";
 import { WalletsCard } from "./cards/WalletsCard.js";
 import { SentryConsentCard } from "./SentryConsentCard.js";
 
@@ -76,10 +73,6 @@ function renderEditPanel(
       return <AgentCoreStep {...props} />;
     case "provider":
       return <ProviderStep {...props} />;
-    case "mode":
-      return <ModeStep {...props} />;
-    case "wake":
-      return <WakeStep {...props} />;
   }
 }
 
@@ -128,7 +121,7 @@ export function ReviewStep({
       setWarning(result.data.telemetryWarning);
     }
     // wizardState invalidation in useCompleteSetup triggers WizardShell
-    // to flip to placeholder; no explicit nav needed here.
+    // to flip to the appShell view; no explicit nav needed here.
   }, [completeSetup, telemetryAvailable, telemetryConsent]);
 
   if (editingStep !== null) {
@@ -208,16 +201,6 @@ export function ReviewStep({
             onEdit={() => setEditingStep("provider")}
             editDisabled={editDisabled}
           />
-          <ModeCard
-            envState={env}
-            onEdit={() => setEditingStep("mode")}
-            editDisabled={editDisabled}
-          />
-          <WakeCard
-            envState={env}
-            onEdit={() => setEditingStep("wake")}
-            editDisabled={editDisabled}
-          />
           <SentryConsentCard
             telemetryAvailable={telemetryAvailable}
             checked={telemetryConsent}
@@ -256,7 +239,7 @@ export function ReviewStep({
         {/*
           Onward navigation note: after a successful finalize, useCompleteSetup
           invalidates wizardState; WizardShell then reads `completed: true`
-          and switches the view to the Phase 2 placeholder. We don't call
+          and switches the view to the Phase 2 appShell. We don't call
           `onAdvance` here because there is no next step — the wizard ends.
         */}
         <span className="sr-only" data-vex-onadvance-stub>

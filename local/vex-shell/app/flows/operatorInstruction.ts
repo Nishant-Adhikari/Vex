@@ -1,8 +1,6 @@
 import {
-  ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES,
   ACTIVE_OR_PAUSED_RUN_STATUSES,
   submitOperatorInstruction,
-  type FullAutonomousRunStatus,
   type MissionRunStatus,
 } from "../../../../src/vex-agent/engine/index.js";
 import { recordTurnLatency } from "../../platform/diagnostics.js";
@@ -13,17 +11,13 @@ import { formatError, makeLine, makeMessageId } from "../lib/shellMessages.js";
 function isActiveRuntimeStatus(status: string | null): boolean {
   return (
     typeof status === "string"
-    && (
-      ACTIVE_OR_PAUSED_RUN_STATUSES.has(status as MissionRunStatus)
-      || ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES.has(status as FullAutonomousRunStatus)
-    )
+    && ACTIVE_OR_PAUSED_RUN_STATUSES.has(status as MissionRunStatus)
   );
 }
 
 export function shouldSendOperatorInstruction(store: Store): boolean {
   const session = store.getState().session;
-  return isActiveRuntimeStatus(session?.missionStatus ?? null)
-    || isActiveRuntimeStatus(session?.fullAutonomousStatus ?? null);
+  return isActiveRuntimeStatus(session?.missionStatus ?? null);
 }
 
 export async function sendOperatorInstruction(store: Store, text: string): Promise<void> {
@@ -37,9 +31,7 @@ export async function sendOperatorInstruction(store: Store, text: string): Promi
     return;
   }
 
-  const shouldMarkPending =
-    session.missionStatus === "paused_wake"
-    || session.fullAutonomousStatus === "paused_wake";
+  const shouldMarkPending = session.missionStatus === "paused_wake";
   store.setState((s) => ({
     messages: [
       ...s.messages,

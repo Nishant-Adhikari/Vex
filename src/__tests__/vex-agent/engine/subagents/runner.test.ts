@@ -36,8 +36,8 @@ vi.mock("../../../../vex-agent/engine/core/hydrate.js", () => ({
   hydrateEngineSession: vi.fn().mockResolvedValue({
     context: {
       sessionId: "session-child",
-      sessionKind: "chat",
-      loopMode: "off",
+      sessionKind: "agent",
+      sessionPermission: "restricted",
       missionId: null,
       missionRunId: null,
       isSubagent: true,
@@ -169,7 +169,7 @@ describe("subagent runner", () => {
     await expect(runSubagentEngine("subagent-1")).rejects.toThrow("No session link");
   });
 
-  it("uses restricted mode when allowTrades is false", async () => {
+  it("uses restricted permission when allowTrades is false", async () => {
     mockRunTurnLoop.mockResolvedValue({
       text: "Done",
       toolCallsMade: 0,
@@ -179,9 +179,9 @@ describe("subagent runner", () => {
 
     await runSubagentEngine("subagent-1");
 
-    // Check that the context passed to runTurnLoop has restricted mode
+    // Check that the context passed to runTurnLoop has restricted permission
     const [context] = mockRunTurnLoop.mock.calls[0];
-    expect(context.loopMode).toBe("restricted");
+    expect(context.sessionPermission).toBe("restricted");
     expect(context.isSubagent).toBe(true);
   });
 });

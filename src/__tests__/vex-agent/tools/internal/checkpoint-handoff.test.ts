@@ -30,7 +30,7 @@ function makeCtx(overrides: Partial<{ sessionId: string; contextUsageBand: "norm
   return {
     sessionId: "sess-1",
     loadedDocuments: new Map<string, string>(),
-    loopMode: "restricted" as const,
+    sessionPermission: "restricted" as const,
     approved: false,
     role: "parent" as const,
     missionRunId: null,

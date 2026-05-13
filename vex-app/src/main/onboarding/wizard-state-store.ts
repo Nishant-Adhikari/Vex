@@ -276,7 +276,7 @@ export class WizardStateStore {
     return this.enqueue(async () => {
       const current = await this.loadInner();
       const next = wizardStateSchema.parse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: input.currentStepId,
         completedSteps: input.completedSteps,
         completed: input.completed ?? current.completed,

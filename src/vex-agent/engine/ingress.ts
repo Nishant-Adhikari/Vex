@@ -1,5 +1,5 @@
 /**
- * Ingress router — the single entry point transport layers (MCP, CLI) call
+ * Ingress router — the single entry point transport layers (MCP, CLI, GUI) call
  * when a user message arrives for a session.
  *
  * Responsibilities:
@@ -11,23 +11,17 @@
  *          turn instead of a scheduled wake.
  *        - `running` / `paused_approval` mission run → persist the message
  *          as an interrupt; resume is driven by the approval flow, not here.
- *        - `full_autonomous` session without a mission run →
- *          `processFullAutonomousTurn`.
- *        - Everything else → `processChatTurn` (chat / mission-setup).
+ *        - Everything else → `processAgentTurn` (agent / mission-setup).
  */
 
 import type { TurnResult } from "./types.js";
 import {
-  processChatTurn,
+  processAgentTurn,
   processMissionSetupTurn,
-  processFullAutonomousTurn,
   resumeMissionRun,
-  resumeFullAutonomousSession,
 } from "./core/runner.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import * as fullAutonomousRunsRepo from "@vex-agent/db/repos/full-autonomous-runs.js";
-import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import {
   addOperatorCue,
@@ -105,60 +99,13 @@ export async function routeUserMessage(
     };
   }
 
-  // No active run — route by session kind.
-  const session = await sessionsRepo.getSession(sessionId);
-  const kind = session?.kind ?? "chat";
-
-  if (kind === "full_autonomous") {
-    const activeFullAutonomous = await fullAutonomousRunsRepo.getActiveRunBySession(sessionId);
-    if (activeFullAutonomous) {
-      if (activeFullAutonomous.status === "paused_wake") {
-        return resumeFullAutonomousWithPreempt(sessionId, userInput, activeFullAutonomous.id);
-      }
-      if (activeFullAutonomous.status === "paused_error") {
-        await addOperatorInstruction(sessionId, userInput, {
-          target: "full_autonomous",
-          runId: activeFullAutonomous.id,
-          runStatus: activeFullAutonomous.status,
-        });
-        await addOperatorCue(sessionId);
-        return {
-          text: PAUSED_ERROR_TEXT,
-          toolCallsMade: 0,
-          pendingApprovals: [],
-          stopReason: null,
-          missionStatus: null,
-        };
-      }
-      await addOperatorInstruction(sessionId, userInput, {
-        target: "full_autonomous",
-        runId: activeFullAutonomous.id,
-        runStatus: activeFullAutonomous.status,
-      });
-      logger.info("ingress.full_autonomous_interrupt_persisted", {
-        sessionId,
-        runId: activeFullAutonomous.id,
-        runStatus: activeFullAutonomous.status,
-      });
-      return {
-        text: QUEUED_INTERRUPT_TEXT,
-        toolCallsMade: 0,
-        pendingApprovals: [],
-        stopReason: null,
-        missionStatus: null,
-      };
-    }
-    return processFullAutonomousTurn(sessionId, userInput);
-  }
-
-  // Chat or mission-setup. Mission-setup is distinguished by the presence of
-  // a non-terminal mission without an active run (draft/ready).
+  // No active run — distinguish agent / mission-setup by mission presence.
   const mission = await missionsRepo.getActiveMission(sessionId);
   if (mission && mission.status !== "running") {
     return processMissionSetupTurn(sessionId, userInput);
   }
 
-  return processChatTurn(sessionId, userInput);
+  return processAgentTurn(sessionId, userInput);
 }
 
 export async function submitOperatorInstruction(
@@ -202,40 +149,6 @@ async function resumeMissionRunWithPreempt(
 
   logger.info("ingress.preempt_resume", { sessionId, runId });
   // `resumeMissionRun` refreshes tool_output_blob TTLs internally (PR-13
-  // S-2), so we don't double-call here. If that behaviour ever moves, the
-  // ingress path still has the opportunity to refresh before entering the
-  // runner — restore the call above.
+  // S-2), so we don't double-call here.
   return resumeMissionRun(runId);
-}
-
-async function resumeFullAutonomousWithPreempt(
-  sessionId: string,
-  userInput: string,
-  runId: string,
-): Promise<TurnResult> {
-  const previous = await fullAutonomousRunsRepo.casFlipToRunning(runId, ["paused_wake"]);
-  if (previous === null) {
-    logger.info("ingress.full_autonomous_preempt_claim_lost", { sessionId, runId });
-    await addOperatorInstruction(sessionId, userInput, {
-      target: "full_autonomous",
-      runId,
-      runStatus: "claim_lost",
-    });
-    return {
-      text: QUEUED_INTERRUPT_TEXT,
-      toolCallsMade: 0,
-      pendingApprovals: [],
-      stopReason: null,
-      missionStatus: null,
-    };
-  }
-
-  await addOperatorInstruction(sessionId, userInput, {
-    target: "full_autonomous",
-    runId,
-    preempt: "wake",
-  });
-  await addOperatorCue(sessionId);
-  logger.info("ingress.full_autonomous_preempt_resume", { sessionId, runId });
-  return resumeFullAutonomousSession(sessionId);
 }

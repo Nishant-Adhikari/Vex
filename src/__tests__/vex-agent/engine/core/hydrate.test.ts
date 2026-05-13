@@ -52,9 +52,10 @@ describe("hydrate", () => {
     expect(result).toBeNull();
   });
 
-  it("hydrates a basic chat session", async () => {
+  it("hydrates a basic agent session", async () => {
     mockGetSession.mockResolvedValueOnce({
-      id: "session-1", scope: "chat", summary: null,
+      id: "session-1", scope: "chat", mode: "agent", permission: "restricted",
+      summary: null,
       compacted: false, messageCount: 3, tokenCount: 1500,
     });
     mockGetLiveMessages.mockResolvedValueOnce([
@@ -64,8 +65,8 @@ describe("hydrate", () => {
     const result = await hydrateEngineSession("session-1");
     expect(result).not.toBeNull();
     expect(result!.context.sessionId).toBe("session-1");
-    expect(result!.context.sessionKind).toBe("chat");
-    expect(result!.context.loopMode).toBe("off");
+    expect(result!.context.sessionKind).toBe("agent");
+    expect(result!.context.sessionPermission).toBe("restricted");
     expect(result!.context.isSubagent).toBe(false);
     expect(result!.messages).toHaveLength(1);
     expect(result!.tokenCount).toBe(1500);
@@ -73,7 +74,8 @@ describe("hydrate", () => {
 
   it("hydrates a mission session with active run", async () => {
     mockGetSession.mockResolvedValueOnce({
-      id: "session-1", scope: "chat", summary: "Previous summary",
+      id: "session-1", scope: "chat", mode: "mission", permission: "restricted",
+      summary: "Previous summary",
       compacted: true, messageCount: 5, tokenCount: 5000,
       startedAt: "2026-05-03T08:01:02.000Z",
     });
@@ -83,7 +85,7 @@ describe("hydrate", () => {
     });
     mockGetActiveRun.mockResolvedValueOnce({
       id: "run-1", missionId: "mission-1", sessionId: "session-1",
-      loopMode: "restricted", status: "running",
+      status: "running",
       startedAt: "2026-05-03T08:10:00.000Z",
     });
 
@@ -91,7 +93,7 @@ describe("hydrate", () => {
     expect(result!.context.sessionKind).toBe("mission");
     expect(result!.context.missionId).toBe("mission-1");
     expect(result!.context.missionRunId).toBe("run-1");
-    expect(result!.context.loopMode).toBe("restricted");
+    expect(result!.context.sessionPermission).toBe("restricted");
     expect(result!.context.sessionStartedAt).toBe("2026-05-03T08:01:02.000Z");
     expect(result!.context.missionRunStartedAt).toBe("2026-05-03T08:10:00.000Z");
     expect(result!.context.missionDeadline).toBe("2026-05-03T14:10:00.000Z");
@@ -100,7 +102,8 @@ describe("hydrate", () => {
 
   it("detects subagent sessions via session_links", async () => {
     mockGetSession.mockResolvedValueOnce({
-      id: "session-child", scope: "chat", summary: null,
+      id: "session-child", scope: "chat", mode: "agent", permission: "restricted",
+      summary: null,
       compacted: false, messageCount: 0, tokenCount: 0,
     });
     mockGetParentSession.mockResolvedValueOnce({ parentSessionId: "session-parent" });
@@ -109,9 +112,10 @@ describe("hydrate", () => {
     expect(result!.context.isSubagent).toBe(true);
   });
 
-  it("defaults loopMode to off when no active run", async () => {
+  it("falls back to mission setup (no active run) when mission exists in draft", async () => {
     mockGetSession.mockResolvedValueOnce({
-      id: "session-1", scope: "chat", summary: null,
+      id: "session-1", scope: "chat", mode: "mission", permission: "restricted",
+      summary: null,
       compacted: false, messageCount: 0, tokenCount: 0,
     });
     mockGetMissionBySession.mockResolvedValueOnce({
@@ -121,13 +125,14 @@ describe("hydrate", () => {
     mockGetActiveRun.mockResolvedValueOnce(null);
 
     const result = await hydrateEngineSession("session-1");
-    expect(result!.context.loopMode).toBe("off");
+    expect(result!.context.sessionKind).toBe("mission");
     expect(result!.context.missionRunId).toBeNull();
   });
 
   it("provides empty loadedDocuments", async () => {
     mockGetSession.mockResolvedValueOnce({
-      id: "session-1", scope: "chat", summary: null,
+      id: "session-1", scope: "chat", mode: "agent", permission: "restricted",
+      summary: null,
       compacted: false, messageCount: 0, tokenCount: 0,
     });
 

@@ -136,7 +136,7 @@ describe("requiresEnv filtering", () => {
     it("blocks solana.swap.quote without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.swap.quote", params: { inputToken: "SOL", outputToken: "USDC", amount: 1 } },
-        { loopMode: "off", approved: false },
+        { sessionPermission: "restricted", approved: false },
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");
@@ -145,7 +145,7 @@ describe("requiresEnv filtering", () => {
     it("blocks solana.tokens.search without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.tokens.search", params: { query: "SOL" } },
-        { loopMode: "off", approved: false },
+        { sessionPermission: "restricted", approved: false },
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");
@@ -154,7 +154,7 @@ describe("requiresEnv filtering", () => {
     it("blocks solana.predict.events without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.predict.events", params: {} },
-        { loopMode: "off", approved: false },
+        { sessionPermission: "restricted", approved: false },
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");
@@ -163,7 +163,7 @@ describe("requiresEnv filtering", () => {
     it("blocks solana.lend.rates without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.lend.rates", params: {} },
-        { loopMode: "off", approved: false },
+        { sessionPermission: "restricted", approved: false },
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");

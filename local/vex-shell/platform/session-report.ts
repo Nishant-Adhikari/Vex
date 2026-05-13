@@ -39,12 +39,10 @@ export type SessionEndedReason = "user_exit" | "sigint" | "sigterm" | "error";
 
 export interface SessionReporterInit {
   readonly sessionId: string;
-  readonly mode: "chat" | "mission" | "full_autonomous";
-  readonly sessionKind: "chat" | "full_autonomous";
-  readonly loopMode: "off" | "restricted" | "full" | null;
+  readonly mode: "agent" | "mission";
+  readonly permission: "restricted" | "full";
   readonly provider: string;
   readonly providerDetail: string;
-  readonly wakeEnabled: boolean;
 }
 
 export interface SessionReporter {
@@ -77,11 +75,9 @@ function reportDir(): string {
 function envFingerprint(init: SessionReporterInit): string {
   const ingredients = [
     process.env.NODE_ENV ?? "",
-    process.env.VEX_SHELL_WIZARD_MODE ?? "",
     init.provider,
     init.mode,
-    init.loopMode ?? "",
-    init.wakeEnabled ? "wake" : "nowake",
+    init.permission,
   ].join("|");
   return createHash("sha256").update(ingredients).digest("hex").slice(0, 16);
 }
@@ -287,11 +283,9 @@ export function createSessionReporter(init: SessionReporterInit): SessionReporte
     const meta: ReportMeta = {
       sessionId: init.sessionId,
       mode: init.mode,
-      sessionKind: init.sessionKind,
-      loopMode: init.loopMode,
+      permission: init.permission,
       provider: init.provider,
       providerDetail: init.providerDetail,
-      wakeEnabled: init.wakeEnabled,
       schemaVersion: 1,
       startedAt: startedAtIso,
       endedAt: new Date(endedAtMs).toISOString(),
@@ -381,11 +375,9 @@ export function createSessionReporter(init: SessionReporterInit): SessionReporte
   recordEvent({
     kind: "sessionStarted",
     mode: init.mode,
-    sessionKind: init.sessionKind,
-    loopMode: init.loopMode,
+    permission: init.permission,
     provider: init.provider,
     providerDetail: init.providerDetail,
-    wakeEnabled: init.wakeEnabled,
     envHash: envFingerprint(init),
     shellGitSha: process.env[ENV_GIT_SHA_HINT],
     schemaVersion: 1,

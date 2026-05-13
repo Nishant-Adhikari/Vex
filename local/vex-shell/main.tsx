@@ -25,7 +25,7 @@ import {
   createShellSession,
   summarizeSession,
 } from "./platform/session-host.js";
-import type { SessionKind } from "../../src/vex-agent/db/repos/sessions.js";
+import type { SessionKind } from "../../src/vex-agent/engine/types.js";
 import { runWizard, type WizardResult } from "./wizard/run-wizard.js";
 import { App } from "./app/App.js";
 import {
@@ -36,8 +36,11 @@ import {
 import { activateTuiLogSink } from "./platform/log.js";
 import { createSessionReporter } from "./platform/session-report.js";
 
-function mapModeToSessionKind(mode: WizardResult["mode"]): SessionKind {
-  return mode === "full_autonomous" ? "full_autonomous" : "chat";
+function mapModeToSessionKind(_mode: WizardResult["mode"]): SessionKind {
+  // Post-M12: vex-shell is single-terminal-session, always agent mode.
+  // Mission setup happens inside the agent session via prompts; the engine
+  // promotes sessionKind to "mission" once the missions row exists.
+  return "agent";
 }
 
 function buildInitialPromptIntent(wizard: WizardResult): InitialPromptIntent | null {
@@ -46,11 +49,8 @@ function buildInitialPromptIntent(wizard: WizardResult): InitialPromptIntent | n
     return {
       kind: "mission-setup",
       text: wizard.initialPrompt,
-      loopMode: wizard.missionLoopMode ?? "restricted",
+      permission: wizard.permission ?? "restricted",
     };
-  }
-  if (wizard.mode === "full_autonomous") {
-    return { kind: "user-message", text: wizard.initialPrompt };
   }
   return null;
 }
@@ -65,25 +65,15 @@ export async function runInkShell(): Promise<void> {
     return;
   }
 
-  // Auto-start the wake executor when the operator picked full_autonomous,
-  // even if they did not explicitly toggle wake in the wizard step. Without
-  // it the very first `loop_defer` would park the session forever and the
-  // mode would be untestable end-to-end. `enableWake` is idempotent, so the
-  // explicit toggle still wins when both apply.
-  if (wizard.wake || wizard.mode === "full_autonomous") {
-    enableWake({
-      intervalMs: wizard.wakeIntervalMs,
-      batchSize: wizard.wakeBatchSize,
-    });
-  }
-  process.env.VEX_SHELL_WIZARD_MODE = wizard.mode;
+  // Wake executor always-on post-M12 (codex review round 1) — no env-driven
+  // kill switch. mission loops rely on `loop_defer` + the executor.
+  enableWake({ intervalMs: 2000, batchSize: 10 });
 
   const store = createStore(
     createInitialState({
       provider: wizard.provider,
       mode: wizard.mode,
-      missionLoopMode: wizard.missionLoopMode ?? "restricted",
-      wakeEnabled: wizard.wake,
+      permission: wizard.permission ?? "restricted",
       initialPromptIntent: buildInitialPromptIntent(wizard),
     }),
   );
@@ -97,21 +87,15 @@ export async function runInkShell(): Promise<void> {
   if (bootstrapOk && wizard.provider.name !== "none") {
     try {
       const sessionKind = mapModeToSessionKind(wizard.mode);
-      const sessionId = await createShellSession(sessionKind);
+      const permission = wizard.permission ?? "restricted";
+      const sessionId = await createShellSession({ mode: sessionKind, permission });
       const summary = await summarizeSession(sessionId);
       const reporter = createSessionReporter({
         sessionId,
         mode: wizard.mode,
-        sessionKind,
-        loopMode:
-          wizard.mode === "mission"
-            ? wizard.missionLoopMode ?? "restricted"
-            : wizard.mode === "full_autonomous"
-              ? "full"
-              : "off",
+        permission,
         provider: wizard.provider.name,
         providerDetail: wizard.provider.detail,
-        wakeEnabled: wizard.wake || wizard.mode === "full_autonomous",
       });
       store.setState({ session: summary ?? null, reporter });
       onShutdown(async () => {

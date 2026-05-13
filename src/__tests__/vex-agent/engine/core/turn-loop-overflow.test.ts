@@ -90,11 +90,11 @@ const turnModule = await import("../../../../vex-agent/engine/core/turn.js");
 const mockExecuteTurn = vi.mocked(turnModule.executeTurn);
 const mockSaveAssistant = vi.mocked(turnModule.saveAssistantMessage);
 
-function makeContext(sessionKind: "chat" | "mission" | "full_autonomous" = "full_autonomous") {
+function makeContext(sessionKind: "agent" | "mission" = "mission") {
   return {
     sessionId: "s1",
     sessionKind,
-    loopMode: "full" as const,
+    sessionPermission: "full" as const,
     missionId: null,
     missionRunId: null,
     isSubagent: false,

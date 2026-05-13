@@ -6,7 +6,6 @@
  */
 
 import {
-  type LoopMode,
   type MissionRunStatus,
   ACTIVE_RUN_STATUSES,
   PAUSED_RUN_STATUSES,
@@ -19,12 +18,16 @@ import logger from "@utils/logger.js";
 
 // ── Types ───────────────────────────────────────────────────────
 
+/**
+ * Mission run state. Approval gating reads `sessions.permission` (hydrated
+ * into `EngineContext`) so
+ * the per-run snapshot is no longer needed.
+ */
 export interface MissionRun {
   id: string;
   missionId: string;
   sessionId: string;
   status: MissionRunStatus;
-  loopMode: LoopMode;
   startedAt: string;
   endedAt: string | null;
   lastCheckpointAt: string | null;
@@ -40,17 +43,6 @@ export interface MissionRun {
 const ACTIVE_OR_PAUSED_SQL_IN = Array.from(ACTIVE_OR_PAUSED_RUN_STATUSES)
   .map((s) => `'${s}'`)
   .join(",");
-
-// DB stores `loop_mode` as TEXT without a CHECK constraint. Narrow at the
-// repo boundary so callers get a typed domain value and never need `as any`.
-// Unknown values fall back to the safest mode ("off") rather than throwing —
-// a mission with a typo in loop_mode should degrade, not crash the loop.
-const ALLOWED_LOOP_MODES = ["off", "restricted", "full"] as const;
-
-function coerceLoopMode(raw: unknown): LoopMode {
-  if (typeof raw !== "string") return "off";
-  return (ALLOWED_LOOP_MODES as readonly string[]).includes(raw) ? (raw as LoopMode) : "off";
-}
 
 const ALLOWED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   ...ACTIVE_RUN_STATUSES,
@@ -73,7 +65,6 @@ function mapRow(r: Record<string, unknown>): MissionRun {
     missionId: r.mission_id as string,
     sessionId: r.session_id as string,
     status: coerceStatus(r.status, id),
-    loopMode: coerceLoopMode(r.loop_mode),
     startedAt: (r.started_at instanceof Date ? r.started_at.toISOString() : r.started_at as string),
     endedAt: r.ended_at ? (r.ended_at instanceof Date ? r.ended_at.toISOString() : r.ended_at as string) : null,
     lastCheckpointAt: r.last_checkpoint_at ? (r.last_checkpoint_at instanceof Date ? r.last_checkpoint_at.toISOString() : r.last_checkpoint_at as string) : null,
@@ -92,7 +83,6 @@ export async function createRun(
   id: string,
   missionId: string,
   sessionId: string,
-  loopMode: string,
   options: {
     contractSnapshotJson?: Record<string, unknown> | null;
     recoveredFromRunId?: string | null;
@@ -100,13 +90,12 @@ export async function createRun(
 ): Promise<void> {
   await execute(
     `INSERT INTO mission_runs (
-       id, mission_id, session_id, loop_mode, contract_snapshot_json, recovered_from_run_id
-     ) VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id
+     ) VALUES ($1, $2, $3, $4::jsonb, $5)`,
     [
       id,
       missionId,
       sessionId,
-      loopMode,
       nullableJsonb(options.contractSnapshotJson ?? null),
       options.recoveredFromRunId ?? null,
     ],

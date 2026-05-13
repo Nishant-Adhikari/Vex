@@ -60,7 +60,6 @@ export async function finalizeMissionRunStatus(
     const continuation = await scheduleRuntimeContinuation({
       sessionId,
       missionRunId: runId,
-      kind: "mission_run",
       trigger: stopReason,
     });
     await missionRunsRepo.updateStatus(runId, "paused_wake", "waiting_for_wake", {

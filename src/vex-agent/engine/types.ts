@@ -11,16 +11,28 @@
 /**
  * Engine-level session discriminator.
  *
- * `"chat"` and `"mission"` are the classic routing targets. `"full_autonomous"`
- * (PR-10) unlocks the standalone full-autonomous runner — a session that
- * loops on `loop_defer` + wake without needing an owning mission. The
- * session-level `kind` column on `sessions` is the source of truth; this
- * type is propagated through `EngineContext` and `InternalToolContext` so
- * tool visibility and prompt shaping can branch on it.
+ * `"agent"` is a one-shot conversational session (may use tools, may execute
+ * tx subject to `Permission`). `"mission"` is a goal-driven session that
+ * runs in a loop (agent self-schedules wake via `loop_defer`).
+ *
+ * The session-level `mode` column on `sessions` is the source of truth;
+ * this type is propagated through `EngineContext`, `InternalToolContext`,
+ * and `ProtocolExecutionContext` so tool visibility and prompt shaping can
+ * branch on it. Immutable per session.
  */
-export type SessionKind = "chat" | "mission" | "full_autonomous";
+export type SessionKind = "agent" | "mission";
 
-export type LoopMode = "off" | "restricted" | "full";
+/**
+ * Session-scoped approval policy. Replaces the previous `LoopMode` tri-state
+ * (`off|restricted|full`) — the `off` arm collapses into `mode === "agent"`
+ * (no loop), and `restricted | full` becomes its own immutable axis.
+ *
+ *  - `"restricted"` — every mutating tool requires user approval (default)
+ *  - `"full"` — mutating tools auto-execute without approval
+ *
+ * Immutable per session; set at session creation.
+ */
+export type Permission = "restricted" | "full";
 
 // ── Mission lifecycle ───────────────────────────────────────────
 
@@ -63,27 +75,6 @@ export const TERMINAL_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
 export const ACTIVE_OR_PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   ...ACTIVE_RUN_STATUSES,
   ...PAUSED_RUN_STATUSES,
-]);
-
-export type FullAutonomousRunStatus =
-  | "running"
-  | "paused_wake"
-  | "paused_error"
-  | "stopped"
-  | "failed";
-
-export const ACTIVE_FULL_AUTONOMOUS_STATUSES: ReadonlySet<FullAutonomousRunStatus> = new Set(["running"]);
-export const PAUSED_FULL_AUTONOMOUS_STATUSES: ReadonlySet<FullAutonomousRunStatus> = new Set([
-  "paused_wake",
-  "paused_error",
-]);
-export const TERMINAL_FULL_AUTONOMOUS_STATUSES: ReadonlySet<FullAutonomousRunStatus> = new Set([
-  "stopped",
-  "failed",
-]);
-export const ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES: ReadonlySet<FullAutonomousRunStatus> = new Set([
-  ...ACTIVE_FULL_AUTONOMOUS_STATUSES,
-  ...PAUSED_FULL_AUTONOMOUS_STATUSES,
 ]);
 
 /**
@@ -213,11 +204,16 @@ export interface MissionPatch {
 export interface EngineContext {
   sessionId: string;
   sessionKind: SessionKind;
-  loopMode: LoopMode;
+  /**
+   * Session-scoped approval policy, hydrated once from `sessions.permission`
+   * at engine entry. Immutable for the duration of the turn — every approval
+   * gate (`tools/protocols/runtime.ts`, `tools/internal/wallet/send.ts`, and
+   * any subagent-spawn check) reads this single value rather than re-querying
+   * the DB or threading a stale `loopMode` through.
+   */
+  sessionPermission: Permission;
   missionId: string | null;
   missionRunId: string | null;
-  /** Active full-autonomous run id. Null outside standalone full-auto loops. */
-  fullAutonomousRunId?: string | null;
   /** Session creation time from DB; used only for runtime clock prompt context. */
   sessionStartedAt?: string | null;
   /** Active mission run start time from DB; null outside active mission runs. */
@@ -237,7 +233,7 @@ export interface EngineContext {
 
 // ── Turn result ─────────────────────────────────────────────────
 
-/** Returned from engine entry points (processChatTurn, startMission, etc.) */
+/** Returned from engine entry points (processAgentTurn, startMission, etc.) */
 export interface TurnResult {
   /** Text response from model — null when only tool calls were made. */
   text: string | null;

@@ -91,7 +91,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: {} },
         sessionId: null,
         toolCallId: "call-1",
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: null,
       });
       await expect(approveAndResume("approval-1")).rejects.toThrow("no associated session");
@@ -110,7 +110,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: { toolId: "solana.swap" } },
         sessionId: "session-1",
         toolCallId: "call-late",
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: null,
         // Approval queued before the abort terminated the run.
         createdAt: "2026-05-04T13:00:00Z",
@@ -136,7 +136,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: { toolId: "chat.tool" } },
         sessionId: "session-1",
         toolCallId: "call-chat",
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: null,
         createdAt: "2026-05-04T13:00:00Z",
       });
@@ -157,7 +157,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: { toolId: "solana.swap" } },
         sessionId: "session-1",
         toolCallId: "call-1",
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: { toolCallId: "call-1" },
       });
       mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Swap completed" });
@@ -197,7 +197,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: {} },
         sessionId: "session-1",
         toolCallId: "call-1",
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: null,
       });
       mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Tool OK" });
@@ -219,7 +219,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: { toolId: "solana.swap" } },
         sessionId: "session-1",
         toolCallId: "call-1",
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: null,
       });
       mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Swap completed" });
@@ -239,7 +239,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: {} },
         sessionId: "session-1",
         toolCallId: "call-1",
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: null,
       });
       mockDispatchTool.mockResolvedValueOnce({ success: true, output: "ok" });
@@ -261,7 +261,7 @@ describe("resume", () => {
         toolCall: { command: "execute_tool", args: { toolId: "khalani.bridge" } },
         sessionId: "session-1",
         toolCallId: null,
-        chatMode: "restricted",
+        permissionAtEnqueue: "restricted",
         pendingContext: { toolCallId: "call-from-context" },
       });
       mockDispatchTool.mockResolvedValueOnce({ success: true, output: "Bridged" });

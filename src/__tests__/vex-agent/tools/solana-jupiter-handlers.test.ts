@@ -38,7 +38,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.tokens.search fails without query", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.tokens.search"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("query");
@@ -47,7 +47,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.predict.market fails without marketId", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.market"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("marketId");
@@ -56,7 +56,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.swap.quote fails without required params", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.swap.quote"]!(
       { inputToken: "SOL" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -65,7 +65,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.predict.buy fails without required params", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
       { marketId: "abc" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -74,7 +74,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.predict.buy rejects invalid side", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
       { marketId: "abc", side: "maybe", amountUsdc: 10 },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("yes");
@@ -84,7 +84,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.predict.buy rejects typo side silently treated as NO before fix", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
       { marketId: "abc", side: "Yes!", amountUsdc: 10 },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("yes");
@@ -93,7 +93,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.lend.deposit fails without required params", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.lend.deposit"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -102,7 +102,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.predict.event fails without eventId", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.event"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("eventId");
@@ -111,7 +111,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.prices fails without mints", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.prices"]!(
       { mints: "" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("mints");
@@ -120,7 +120,7 @@ describe("solana-jupiter handlers", () => {
   it("solana.predict.search fails without query", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("query");

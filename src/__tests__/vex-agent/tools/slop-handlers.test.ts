@@ -27,79 +27,79 @@ describe("slop handlers", () => {
 
   // Required param validation
   it("slop.token.create fails without name and symbol", async () => {
-    const result = await SLOP_HANDLERS["slop.token.create"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.token.create"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("name");
   });
 
   it("slop.token.info fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.token.info"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.token.info"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.token.info fails with invalid address", async () => {
-    const result = await SLOP_HANDLERS["slop.token.info"]!({ token: "not-addr" }, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.token.info"]!({ token: "not-addr" }, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("Invalid address");
   });
 
   it("slop.trade.buy fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.trade.buy"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.trade.buy"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.trade.buy fails without amountOg", async () => {
-    const result = await SLOP_HANDLERS["slop.trade.buy"]!({ token: "0x1234567890abcdef1234567890abcdef12345678" }, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.trade.buy"]!({ token: "0x1234567890abcdef1234567890abcdef12345678" }, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("amountOg");
   });
 
   it("slop.trade.sell fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.trade.sell"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.trade.sell"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.trade.sell fails without amountTokens", async () => {
-    const result = await SLOP_HANDLERS["slop.trade.sell"]!({ token: "0x1234567890abcdef1234567890abcdef12345678" }, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.trade.sell"]!({ token: "0x1234567890abcdef1234567890abcdef12345678" }, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("amountTokens");
   });
 
   it("slop.price fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.price"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.price"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.curve fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.curve"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.curve"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.fees.stats fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.fees.stats"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.fees.stats"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.fees.claimCreator fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.fees.claimCreator"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.fees.claimCreator"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.reward.pending fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.reward.pending"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.reward.pending"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });
 
   it("slop.reward.claim fails without token", async () => {
-    const result = await SLOP_HANDLERS["slop.reward.claim"]!({}, { loopMode: "off", approved: false });
+    const result = await SLOP_HANDLERS["slop.reward.claim"]!({}, { sessionPermission: "restricted", approved: false });
     expect(result.success).toBe(false);
     expect(result.output).toContain("token");
   });

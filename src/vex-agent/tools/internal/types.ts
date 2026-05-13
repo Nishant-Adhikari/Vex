@@ -11,6 +11,7 @@
  */
 
 import type { ToolResult } from "../types.js";
+import type { Permission, SessionKind } from "@vex-agent/engine/types.js";
 
 /** Result from an internal tool handler */
 export type InternalToolResult = ToolResult;
@@ -21,8 +22,12 @@ export interface InternalToolContext {
   sessionId: string;
   /** Loaded documents — for document_read context tracking */
   loadedDocuments: Map<string, string>;
-  /** Current agent mode */
-  loopMode: "full" | "restricted" | "off";
+  /**
+   * Session permission, hydrated once at engine entry from `sessions.permission`.
+   * Immutable for the call. Approval gates (runtime + wallet_send_confirm)
+   * branch on this single value.
+   */
+  sessionPermission: Permission;
   /** Whether this call was pre-approved */
   approved: boolean;
   /** Session role — determines tool availability (hard enforcement) */
@@ -34,14 +39,10 @@ export interface InternalToolContext {
   /**
    * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
-   * filter (e.g. `loop_defer` handler in PR-5 rejects non-mission/non-full-autonomous
-   * calls even if the model somehow emits the tool name).
-   *
-   * PR-3 adds the field; `"full_autonomous"` is a real value only after PR-10
-   * introduces `sessions.kind`. Until then callers always pass `"chat"` or
-   * `"mission"`.
+   * filter (e.g. `loop_defer` handler rejects non-mission calls even if the
+   * model somehow emits the tool name).
    */
-  sessionKind: "chat" | "mission" | "full_autonomous";
+  sessionKind: SessionKind;
   /**
    * Context-usage band at dispatch time — derived from the previous prompt's
    * token count. Used by band-scoped handlers (`checkpoint_handoff_prepare`

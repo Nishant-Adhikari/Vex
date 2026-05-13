@@ -30,17 +30,23 @@ const PROVIDER_FACTORIES: Record<string, () => Promise<InferenceProvider>> = {
   "0g-compute": createZeroGProvider,
 };
 
-// ── Singleton cache ──────────────────────────────────────────────
+// ── Singleton cache with concurrency-safe dedup ─────────────────
+//
+// `cachedProvider` is the post-resolve happy-path read. `inFlight` dedups
+// the FIRST resolve when multiple sessions hit a null cache concurrently;
+// without dedup, parallel sessions could each instantiate their own provider
+// before the first commits the cache.
+//
+// `generation` invalidates pending in-flight resolves on `resetProvider()`
+// / `switchProvider()`: if generation moves between the start of a resolve
+// and its commit, the resolve does NOT write to `cachedProvider` — a new
+// resolve fires with the post-reset env.
 
+let generation = 0;
 let cachedProvider: InferenceProvider | null = null;
+let inFlight: { gen: number; promise: Promise<InferenceProvider | null> } | null = null;
 
-/**
- * Resolve which provider to use based on ENV config.
- * Returns null if no provider is configured — agent should not start.
- */
-export async function resolveProvider(): Promise<InferenceProvider | null> {
-  if (cachedProvider) return cachedProvider;
-
+async function doResolve(): Promise<InferenceProvider | null> {
   const envConfig = loadEnvConfig();
 
   // 1. Explicit env var — fail fast on misconfiguration
@@ -54,12 +60,12 @@ export async function resolveProvider(): Promise<InferenceProvider | null> {
       return null;
     }
     try {
-      cachedProvider = await factory();
+      const provider = await factory();
       logger.info("inference.registry.resolved", {
         provider: envConfig.agentProvider,
         source: "AGENT_PROVIDER",
       });
-      return cachedProvider;
+      return provider;
     } catch (err) {
       logger.error("inference.registry.init_failed", {
         provider: envConfig.agentProvider,
@@ -72,12 +78,12 @@ export async function resolveProvider(): Promise<InferenceProvider | null> {
   // 2. OpenRouter API key present
   if (envConfig.openrouterApiKey) {
     try {
-      cachedProvider = await createOpenRouterProvider();
+      const provider = await createOpenRouterProvider();
       logger.info("inference.registry.resolved", {
         provider: "openrouter",
         source: "OPENROUTER_API_KEY",
       });
-      return cachedProvider;
+      return provider;
     } catch (err) {
       logger.warn("inference.registry.openrouter_failed", {
         error: err instanceof Error ? err.message : String(err),
@@ -88,12 +94,12 @@ export async function resolveProvider(): Promise<InferenceProvider | null> {
   // 3. 0G Compute state exists
   if (loadComputeState()) {
     try {
-      cachedProvider = await createZeroGProvider();
+      const provider = await createZeroGProvider();
       logger.info("inference.registry.resolved", {
         provider: "0g-compute",
         source: "compute-state.json",
       });
-      return cachedProvider;
+      return provider;
     } catch (err) {
       logger.warn("inference.registry.0g_failed", {
         error: err instanceof Error ? err.message : String(err),
@@ -107,6 +113,34 @@ export async function resolveProvider(): Promise<InferenceProvider | null> {
   return null;
 }
 
+/**
+ * Resolve which provider to use based on ENV config.
+ * Returns null if no provider is configured — agent should not start.
+ *
+ * Concurrency-safe: parallel callers share the same in-flight promise so
+ * only one provider instance is created on first resolve. A `resetProvider()`
+ * mid-flight invalidates the pending result via the generation token.
+ */
+export async function resolveProvider(): Promise<InferenceProvider | null> {
+  if (cachedProvider) return cachedProvider;
+  if (inFlight && inFlight.gen === generation) return inFlight.promise;
+
+  const myGen = generation;
+  const promise = doResolve().then((provider) => {
+    // Commit cache only if no reset/switch happened while we were resolving.
+    if (provider && myGen === generation) {
+      cachedProvider = provider;
+    }
+    return provider;
+  }).finally(() => {
+    if (inFlight && inFlight.gen === myGen) {
+      inFlight = null;
+    }
+  });
+  inFlight = { gen: myGen, promise };
+  return promise;
+}
+
 /** Get the cached provider. Must call resolveProvider() first. */
 export function getActiveProvider(): InferenceProvider | null {
   return cachedProvider;
@@ -116,9 +150,15 @@ export function getActiveProvider(): InferenceProvider | null {
  * Reset the cached provider. Used by `switchProvider()` for in-process
  * provider toggling and by tests that want a clean cache between cases.
  * The next `resolveProvider()` will re-read `process.env` and `compute-state.json`.
+ *
+ * Bumping `generation` ensures any in-flight resolve from before the reset
+ * does NOT commit its result to `cachedProvider` — callers that hit the
+ * cache after the reset see a fresh resolve.
  */
 export function resetProvider(): void {
+  generation++;
   cachedProvider = null;
+  inFlight = null;
 }
 
 /**

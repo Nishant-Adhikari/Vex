@@ -117,7 +117,9 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     memoryScopeKey: "sess-1",
     memoryLanguageCode: "en",
     checkpointGeneration: 2,
-    kind: "chat",
+    mode: "agent",
+    permission: "restricted",
+    initialGoal: null,
     ...overrides,
   };
 }

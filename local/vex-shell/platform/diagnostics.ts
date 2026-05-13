@@ -154,7 +154,7 @@ export async function renderDiagnostics(sessionId: string): Promise<void> {
     return;
   }
   writeLine(
-    `scope=${session.scope} kind=${session.kind} messages=${session.messageCount} tokens=${session.tokenCount}`,
+    `scope=${session.scope} mode=${session.mode} messages=${session.messageCount} tokens=${session.tokenCount}`,
   );
   writeLine(`started=${session.startedAt} ended=${session.endedAt ?? "-"}`);
 

@@ -42,7 +42,6 @@ import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import * as fullAutonomousRunsRepo from "@vex-agent/db/repos/full-autonomous-runs.js";
 import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
 import {
   appendPendingOperatorInstructions,
@@ -132,9 +131,6 @@ export async function runTurnLoop(
     if (context.missionRunId) {
       await missionRunsRepo.setLastCheckpoint(context.missionRunId);
     }
-    if (context.fullAutonomousRunId) {
-      await fullAutonomousRunsRepo.setLastCheckpoint(context.fullAutonomousRunId);
-    }
 
     liveMessages.length = 0;
     const freshMessages = await messagesRepo.getLiveMessages(context.sessionId);
@@ -174,8 +170,6 @@ export async function runTurnLoop(
     // Increment iteration counter for mission runs
     if (context.missionRunId) {
       await missionRunsRepo.incrementIterations(context.missionRunId);
-    } else if (context.fullAutonomousRunId) {
-      await fullAutonomousRunsRepo.incrementIterations(context.fullAutonomousRunId);
     }
 
     const turnBand = computeBand(currentTokenCount, loopConfig.contextLimit);
@@ -209,7 +203,7 @@ export async function runTurnLoop(
         const toolContext: InternalToolContext = {
           sessionId: context.sessionId,
           loadedDocuments: context.loadedDocuments,
-          loopMode: context.loopMode,
+          sessionPermission: context.sessionPermission,
           approved: false,
           role: context.isSubagent ? "subagent" : "parent",
           missionRunId: context.missionRunId,
@@ -237,7 +231,7 @@ export async function runTurnLoop(
             result.output,
             context.sessionId,
             toolCall.id,
-            context.loopMode,
+            context.sessionPermission,
           );
           pendingApprovals.push(approvalId);
           batchStopReason = "approval_required";
@@ -378,12 +372,10 @@ export async function runTurnLoop(
         continue;
       }
 
-      // Active mission RUN or full-autonomous session: text does NOT end the
-      // loop — inject a continue marker so the next iteration has the
-      // protocol cue. Mission SETUP (`sessionKind=mission` but no
-      // missionRunId) ends on text like chat. Full autonomous never has a
-      // missionRunId but still needs to iterate.
-      if (context.missionRunId || context.sessionKind === "full_autonomous") {
+      // Active mission RUN: text does NOT end the loop — inject a continue
+      // marker so the next iteration has the protocol cue. Mission SETUP
+      // (`sessionKind=mission` but no missionRunId) ends on text like agent.
+      if (context.missionRunId) {
         await mergeOperatorInstructions();
 
         await messagesRepo.addEngineMessage(
@@ -408,11 +400,10 @@ export async function runTurnLoop(
   }
 
   // If the for-loop exhausted maxIterations without either an explicit stop OR
-  // a natural text-break (chat/setup), surface it as `iteration_limit` so every
-  // transport can see why. Chat/setup that ended on text keep stopReason=null
-  // (that's the "model replied, we're done" signal). Mission-run and
-  // full_autonomous never break on text; their runners treat this as a
-  // per-slice yield, not a business stop.
+  // a natural text-break (agent/setup), surface it as `iteration_limit` so every
+  // transport can see why. Agent/setup that ended on text keep stopReason=null
+  // (that's the "model replied, we're done" signal). Mission-run never breaks
+  // on text; its runner treats this as a per-slice yield, not a business stop.
   if (!stopReason && !stoppedOnText) {
     stopReason = "iteration_limit";
   }

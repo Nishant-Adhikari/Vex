@@ -1,11 +1,13 @@
 /**
- * PR-7 — wake executor unit tests. Exercises the pure `tick` function with
- * injected `WakeDeps` so we never load the DB client. Covers:
+ * Wake executor unit tests. Exercises the pure `tick` function with injected
+ * `WakeDeps` so we never load the DB client. Covers:
  *   - mission_run claims that resume (CAS + banner + resume call),
  *   - skip-stale-status re-check (preemption won the race),
  *   - skip-missing-mission-run guard,
- *   - full_autonomous kind drift,
  *   - error isolation (one row's failure doesn't poison the batch).
+ *
+ * Phase 2 collapse removed the `full_autonomous` wake kind; every wake now
+ * targets a mission run.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -13,14 +15,12 @@ import { describe, it, expect, vi } from "vitest";
 import { tick, type WakeDeps } from "../../../../vex-agent/engine/wake/executor.js";
 import type { LoopWakeRequest } from "../../../../vex-agent/db/repos/loop-wake.js";
 import type { MissionRun } from "../../../../vex-agent/db/repos/mission-runs.js";
-import type { FullAutonomousRun } from "../../../../vex-agent/db/repos/full-autonomous-runs.js";
 
 function makeWake(overrides: Partial<LoopWakeRequest> = {}): LoopWakeRequest {
   return {
     id: "wake-1",
     sessionId: "sess-1",
     missionRunId: "run-1",
-    kind: "mission_run",
     dueAt: "2026-04-20T12:00:00.000Z",
     status: "consumed",
     reason: "continue monitoring",
@@ -39,7 +39,6 @@ function makeRun(overrides: Partial<MissionRun> = {}): MissionRun {
     missionId: "mission-1",
     sessionId: "sess-1",
     status: "paused_wake",
-    loopMode: "restricted",
     startedAt: "2026-04-20T10:00:00.000Z",
     endedAt: null,
     lastCheckpointAt: null,
@@ -53,34 +52,13 @@ function makeRun(overrides: Partial<MissionRun> = {}): MissionRun {
   };
 }
 
-function makeFullAutonomousRun(overrides: Partial<FullAutonomousRun> = {}): FullAutonomousRun {
-  return {
-    id: "farun-1",
-    sessionId: "sess-1",
-    status: "paused_wake",
-    loopMode: "full",
-    startedAt: "2026-04-20T10:00:00.000Z",
-    endedAt: null,
-    lastCheckpointAt: null,
-    stopReason: "waiting_for_wake",
-    stopSummary: null,
-    stopEvidenceJson: null,
-    iterationCount: 3,
-    ...overrides,
-  };
-}
-
 function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
     claimDue: vi.fn().mockResolvedValue([]),
     getMissionRun: vi.fn().mockResolvedValue(null),
     casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
-    getFullAutonomousRun: vi.fn().mockResolvedValue(null),
-    casFullAutonomousToRunning: vi.fn().mockResolvedValue("paused_wake"),
-    getSessionKind: vi.fn().mockResolvedValue("chat"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
-    resumeFullAutonomousSession: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -149,49 +127,6 @@ describe("wake.executor.tick", () => {
 
     expect(results[0]!.outcome).toEqual({ kind: "skipped_mission_run_missing" });
     expect(deps.resumeMissionRun).not.toHaveBeenCalled();
-  });
-
-  it("skips when a mission_run wake is missing its run id", async () => {
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([makeWake({ missionRunId: null })]),
-    });
-
-    const results = await tick(new Date(), 10, deps);
-
-    expect(results[0]!.outcome).toEqual({ kind: "skipped_mission_run_missing" });
-    expect(deps.getMissionRun).not.toHaveBeenCalled();
-  });
-
-  it("routes full_autonomous wakes to resumeFullAutonomousSession", async () => {
-    const wake = makeWake({ kind: "full_autonomous", missionRunId: null });
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([wake]),
-      getSessionKind: vi.fn().mockResolvedValue("full_autonomous"),
-      getFullAutonomousRun: vi.fn().mockResolvedValue(makeFullAutonomousRun()),
-    });
-
-    const results = await tick(new Date(), 10, deps);
-
-    expect(results[0]!.outcome).toEqual({ kind: "resumed", runId: "farun-1" });
-    expect(deps.casFullAutonomousToRunning).toHaveBeenCalledWith("farun-1", ["paused_wake"]);
-    expect(deps.resumeFullAutonomousSession).toHaveBeenCalledWith("sess-1");
-    expect(deps.resumeMissionRun).not.toHaveBeenCalled();
-  });
-
-  it("skips a full_autonomous wake when the session kind has drifted", async () => {
-    const wake = makeWake({ kind: "full_autonomous", missionRunId: null });
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([wake]),
-      getSessionKind: vi.fn().mockResolvedValue("chat"),
-    });
-
-    const results = await tick(new Date(), 10, deps);
-
-    expect(results[0]!.outcome).toEqual({
-      kind: "skipped_session_kind_mismatch",
-      currentKind: "chat",
-    });
-    expect(deps.resumeFullAutonomousSession).not.toHaveBeenCalled();
   });
 
   it("reports error outcome without poisoning the rest of the batch", async () => {

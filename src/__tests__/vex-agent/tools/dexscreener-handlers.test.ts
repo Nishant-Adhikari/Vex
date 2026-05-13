@@ -34,7 +34,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.search fails without query", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("query");
@@ -43,7 +43,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.pairs fails without chainId and pairAddress", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chainId");
@@ -52,7 +52,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.pairs fails with only chainId", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"]!(
       { chainId: "ethereum" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("pairAddress");
@@ -61,7 +61,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.tokens fails without chainId and tokenAddresses", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chainId");
@@ -70,7 +70,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.tokens fails with only chainId", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
       { chainId: "ethereum" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddresses");
@@ -79,7 +79,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.tokenPairs fails without chainId and tokenAddress", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chainId");
@@ -88,7 +88,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.tokenPairs fails with only chainId", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
       { chainId: "solana" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddress");
@@ -97,7 +97,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.orders fails without chainId and tokenAddress", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chainId");
@@ -106,7 +106,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.orders fails with only chainId", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
       { chainId: "solana" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddress");
@@ -117,7 +117,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.search returns pairs for a known query", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
       { query: "USDC" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
@@ -129,7 +129,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.profiles returns profiles array", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.profiles"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
@@ -140,7 +140,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.boosts returns boosts array", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.boosts"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
@@ -151,7 +151,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.trending returns merged items", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.trending"]!(
       { limit: 5 },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
@@ -169,7 +169,7 @@ describe("dexscreener handlers", () => {
   it("dexscreener.ads returns ads array", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.ads"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);

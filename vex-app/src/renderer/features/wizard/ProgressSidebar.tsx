@@ -1,9 +1,11 @@
 /**
- * Wizard progress sidebar — fixed-width left rail rendering all 9
- * steps with their completion status. Display-only in Phase 1: no
+ * Wizard progress sidebar — fixed-width left rail rendering every
+ * wizard step with its completion status. Display-only in Phase 1: no
  * back-navigation, no clickable jump (codex turn 5 answer #2 — Phase
  * 1 has no back-nav, ordering lives in the canonical step list, not
  * in user interaction).
+ *
+ * Phase 2 refactor: Mode + Wake removed; 7 steps total.
  */
 
 import type { JSX } from "react";
@@ -20,8 +22,6 @@ const STEP_LABELS: Record<WizardStepId, string> = {
   embedding: "Embedding",
   agentCore: "Agent core",
   provider: "Provider",
-  mode: "Mode",
-  wake: "Wake",
   review: "Review",
 };
 

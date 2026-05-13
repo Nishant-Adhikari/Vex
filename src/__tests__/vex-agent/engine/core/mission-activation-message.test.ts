@@ -32,6 +32,15 @@ vi.mock("@vex-agent/db/repos/missions.js", () => ({
   setApprovedAt: (...args: unknown[]) => mockSetApprovedAt(...args),
 }));
 
+vi.mock("@vex-agent/db/repos/sessions.js", () => ({
+  getSession: vi.fn().mockResolvedValue({
+    id: "session-1",
+    mode: "mission",
+    permission: "restricted",
+    tokenCount: 0,
+  }),
+}));
+
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   createRun: (...args: unknown[]) => mockCreateRun(...args),
   getActiveRun: (...args: unknown[]) => mockGetActiveRun(...args),
@@ -97,7 +106,7 @@ describe("mission activation message", () => {
       context: {
         sessionId: "session-1",
         sessionKind: "mission",
-        loopMode: "off",
+        sessionPermission: "restricted",
         missionId: "mission-1",
         missionRunId: null,
         isSubagent: false,
@@ -117,7 +126,7 @@ describe("mission activation message", () => {
   });
 
   it("writes a mission_started banner before hydrating the first active turn", async () => {
-    await startMission("mission-1", "restricted");
+    await startMission("mission-1");
 
     expect(mockAddEngineMessage).toHaveBeenCalledWith(
       "session-1",
@@ -128,7 +137,7 @@ describe("mission activation message", () => {
         visibility: "internal",
         payload: expect.objectContaining({
           missionId: "mission-1",
-          loopMode: "restricted",
+          permission: "restricted",
         }),
       }),
     );

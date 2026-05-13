@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { makeProductionContext } from "../../mcp/context.js";
 
 describe("mcp context — makeProductionContext", () => {
-  it("sets dispatcher gate bypass flags (loopMode:full, approved:true)", () => {
+  it("sets dispatcher gate bypass flags (sessionPermission:full, approved:true)", () => {
     const ctx = makeProductionContext("mcp-stdio-test123");
-    expect(ctx.loopMode).toBe("full");
+    expect(ctx.sessionPermission).toBe("full");
     expect(ctx.approved).toBe(true);
   });
 

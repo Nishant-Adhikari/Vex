@@ -1,10 +1,11 @@
 /**
- * Top-level renderer state machine for Phase 1.
+ * Top-level renderer state machine.
  *
- * Flow: splash → placeholder. Splash owns its own min-duration timer and
- * calls back into `uiStore.setCurrentView('placeholder')` when ready.
- * M2+ will introduce additional view kinds (system-check, docker, wizard)
- * and stop hardcoding the splash → placeholder transition here.
+ * Flow (Phase 1 onboarding + Phase 2 shell):
+ *   splash → systemCheck → dockerBootstrap → composeBootstrap →
+ *   migrations → wizard → appShell.
+ * The wizard completion screen now routes the user straight into the
+ * multi-session app shell (M12) instead of the old M2-era placeholder.
  *
  * The legacy M0 capability/health/security cards are gated behind
  * `import.meta.env.DEV` and are reachable via a dev-only side panel —
@@ -18,7 +19,7 @@ import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
 import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
 import { Migrations } from "./features/database/Migrations.js";
 import { WizardShell } from "./features/wizard/WizardShell.js";
-import { PlaceholderShell } from "./features/placeholder/PlaceholderShell.js";
+import { AppShell } from "./features/appShell/AppShell.js";
 import { useUiStore, type View } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
@@ -42,7 +43,7 @@ export function App(): JSX.Element {
     composeBootstrap: () => <ComposeBootstrap />,
     migrations: () => <Migrations />,
     wizard: () => <WizardShell />,
-    placeholder: () => <PlaceholderShell />,
+    appShell: () => <AppShell />,
   };
 
   return (

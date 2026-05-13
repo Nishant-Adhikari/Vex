@@ -14,7 +14,7 @@
 
 import type { ToolCallRequest, ToolResult } from "./types.js";
 import type { InternalToolContext } from "./internal/types.js";
-import { isInternalTool, isToolBlockedForRole } from "./registry.js";
+import { isInternalTool, isMutatingTool, isToolBlockedForRole } from "./registry.js";
 import { discoverProtocolCapabilities } from "./protocols/runtime.js";
 import { executeProtocolTool } from "./protocols/runtime.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "./protocols/discovery.telemetry.js";
@@ -95,7 +95,7 @@ async function routeToolCall(
 
     return executeProtocolTool(
       { toolId, params },
-      { loopMode: context.loopMode, approved: context.approved, sessionId: context.sessionId },
+      { sessionPermission: context.sessionPermission, approved: context.approved, sessionId: context.sessionId },
     );
   }
 
@@ -176,7 +176,7 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   mission_draft_update: async () => (await import("./internal/mission.js")).handleMissionDraftUpdate,
   mission_stop: async () => (await import("./internal/mission.js")).handleMissionStop,
 
-  // Autonomy primitives — mission/full-autonomous wake
+  // Autonomy primitives — mission wake
   loop_defer: async () => (await import("./internal/loop-defer.js")).handleLoopDefer,
   checkpoint_handoff_prepare: async () => (await import("./internal/checkpoint-handoff.js")).handleCheckpointHandoffPrepare,
   tool_output_read: async () => (await import("./internal/tool-output-read.js")).handleToolOutputRead,
@@ -206,6 +206,18 @@ async function routeInternalTool(
   if (!loader) {
     return { success: false, output: `Unknown internal tool: ${call.name}` };
   }
+  if (isMutatingTool(call.name) && context.sessionPermission === "restricted" && !context.approved) {
+    logger.info("tools.dispatch.approval_required", {
+      tool: call.name,
+      permission: context.sessionPermission,
+    });
+    return {
+      success: false,
+      output: `${call.name} requires approval — mutating tool in restricted permission mode.`,
+      pendingApproval: true,
+    };
+  }
+
   const handler = await loader();
   return handler(call.args, context);
 }

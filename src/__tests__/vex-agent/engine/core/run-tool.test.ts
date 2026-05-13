@@ -45,7 +45,8 @@ describe("runTool", () => {
   it("builds context from session + active mission run and delegates to dispatcher", async () => {
     mockGetSession.mockResolvedValueOnce({
       id: "sess-1",
-      kind: "chat",
+      mode: "mission",
+      permission: "restricted",
       tokenCount: 5000,
       scope: "local_shell",
       startedAt: "2026-01-01",
@@ -59,7 +60,6 @@ describe("runTool", () => {
     });
     mockGetActiveRun.mockResolvedValueOnce({
       id: "run-1",
-      loopMode: "restricted",
       missionId: "m-1",
       sessionId: "sess-1",
       status: "running",
@@ -89,7 +89,7 @@ describe("runTool", () => {
     expect(ctxArg.role).toBe("parent");
     expect(ctxArg.approved).toBe(true);
     expect(ctxArg.sessionKind).toBe("mission");
-    expect(ctxArg.loopMode).toBe("restricted");
+    expect(ctxArg.sessionPermission).toBe("restricted");
     expect(ctxArg.missionRunId).toBe("run-1");
     expect(ctxArg.missionId).toBe("m-1");
     expect(ctxArg.contextUsageBand).toBe("normal");
@@ -97,10 +97,11 @@ describe("runTool", () => {
     expect(ctxArg.sourceSession).toBe("sess-1");
   });
 
-  it("falls back to loopMode='off' and null missionRunId when no active run", async () => {
+  it("falls back to null missionRunId when no active run", async () => {
     mockGetSession.mockResolvedValueOnce({
       id: "sess-2",
-      kind: "full_autonomous",
+      mode: "agent",
+      permission: "restricted",
       tokenCount: 0,
       scope: "local_shell",
       startedAt: "2026-01-01",
@@ -121,16 +122,17 @@ describe("runTool", () => {
       { name: string; args: Record<string, unknown>; toolCallId: string },
       InternalToolContext,
     ];
-    expect(ctxArg.loopMode).toBe("off");
+    expect(ctxArg.sessionPermission).toBe("restricted");
     expect(ctxArg.missionRunId).toBeNull();
     expect(ctxArg.missionId).toBeNull();
-    expect(ctxArg.sessionKind).toBe("full_autonomous");
+    expect(ctxArg.sessionKind).toBe("agent");
   });
 
   it("uses mission setup context when a session has a draft but no active run", async () => {
     mockGetSession.mockResolvedValueOnce({
       id: "sess-3",
-      kind: "chat",
+      mode: "mission",
+      permission: "restricted",
       tokenCount: 0,
       scope: "local_shell",
       startedAt: "2026-01-01",

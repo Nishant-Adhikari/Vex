@@ -84,7 +84,7 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
   PROTOCOL_NAMESPACE_ALLOWLIST: [],
 }));
 
-const { processChatTurn, processMissionSetupTurn, startMission, resumeMissionRun } = await import(
+const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = await import(
   "../../../../vex-agent/engine/core/runner.js"
 );
 const { MissionRunPausedError } = await import(
@@ -106,8 +106,8 @@ function makeHydratedSession(overrides = {}) {
   return {
     context: {
       sessionId: "session-1",
-      sessionKind: "chat",
-      loopMode: "off",
+      sessionKind: "agent",
+      sessionPermission: "restricted",
       missionId: null,
       missionRunId: null,
       isSubagent: false,
@@ -160,6 +160,9 @@ function makeReadyMission(overrides = {}) {
   });
 }
 
+// Resolve the sessions repo once; mocks are reused inside beforeEach.
+const sessionsRepoMockedSetup = await import("@vex-agent/db/repos/sessions.js");
+
 describe("runner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -168,7 +171,6 @@ describe("runner", () => {
       id: "wake-1",
       sessionId: "session-1",
       missionRunId: "run-1",
-      kind: "mission_run",
       dueAt: "2026-03-29T00:00:05.000Z",
       status: "pending",
       reason: "iteration_limit: runtime slice exhausted; continue autonomously",
@@ -178,18 +180,25 @@ describe("runner", () => {
       cancelledAt: null,
       cancelledReason: null,
     });
+    // sessionsRepo.getSession is needed by startMission to read session.permission
+    vi.mocked(sessionsRepoMockedSetup.getSession).mockResolvedValue({
+      id: "session-1",
+      mode: "mission",
+      permission: "restricted",
+      tokenCount: 0,
+    } as unknown as Awaited<ReturnType<typeof sessionsRepoMockedSetup.getSession>>);
   });
 
-  // ── processChatTurn ─────────────────────────────────────────
+  // ── processAgentTurn ─────────────────────────────────────────
 
-  describe("processChatTurn", () => {
+  describe("processAgentTurn", () => {
     it("saves user message and runs turn loop", async () => {
       mockHydrate.mockResolvedValueOnce(makeHydratedSession());
       mockRunTurnLoop.mockResolvedValueOnce({
         text: "Hello!", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      const result = await processChatTurn("session-1", "Hi");
+      const result = await processAgentTurn("session-1", "Hi");
 
       expect(mockAddMessage).toHaveBeenCalledWith(
         "session-1",
@@ -202,12 +211,12 @@ describe("runner", () => {
 
     it("throws if no provider", async () => {
       mockResolveProvider.mockResolvedValueOnce(null);
-      await expect(processChatTurn("session-1", "Hi")).rejects.toThrow("No inference provider");
+      await expect(processAgentTurn("session-1", "Hi")).rejects.toThrow("No inference provider");
     });
 
     it("throws if session not found", async () => {
       mockHydrate.mockResolvedValueOnce(null);
-      await expect(processChatTurn("nonexistent", "Hi")).rejects.toThrow("not found");
+      await expect(processAgentTurn("nonexistent", "Hi")).rejects.toThrow("not found");
     });
   });
 
@@ -360,11 +369,9 @@ describe("runner", () => {
       const wakeInput = mockEnqueueWake.mock.calls[0]![0] as {
         sessionId: string;
         missionRunId: string;
-        kind: string;
         payload: Record<string, unknown>;
       };
       expect(wakeInput.sessionId).toBe("session-1");
-      expect(wakeInput.kind).toBe("mission_run");
       expect(wakeInput.missionRunId).toEqual(expect.stringMatching(/^run-/));
       expect(wakeInput.payload).toMatchObject({ trigger: "iteration_limit", automatic: true });
       expect(mockUpdateRunStatus).toHaveBeenCalledWith(
@@ -450,7 +457,7 @@ describe("runner", () => {
     it("resumes run and enters loop", async () => {
       mockGetRun.mockResolvedValueOnce({
         id: "run-1", missionId: "mission-1", sessionId: "session-1",
-        loopMode: "restricted", status: "running", iterationCount: 5,
+        status: "running", iterationCount: 5,
       });
       mockGetMission.mockResolvedValueOnce({
         id: "mission-1", rootSessionId: "session-1", status: "running",
@@ -475,7 +482,7 @@ describe("runner", () => {
     it("pauses the run with evidence when resume throws inside the loop", async () => {
       mockGetRun.mockResolvedValueOnce({
         id: "run-1", missionId: "mission-1", sessionId: "session-1",
-        loopMode: "restricted", status: "paused_wake", iterationCount: 5,
+        status: "paused_wake", iterationCount: 5,
       });
       mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
       mockHydrate.mockResolvedValueOnce(makeHydratedSession({

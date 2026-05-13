@@ -1,15 +1,12 @@
 /**
- * Autonomy tools — cross-cutting primitives for mission active runs and
- * standalone full-autonomous sessions. Neither "mission" nor "subagent"
- * fits: `loop_defer` lives here because it's the only tool that encodes
- * "sleep until" semantics for both runtime kinds.
+ * Autonomy tools — primitives for mission active runs. Post-M12 only the
+ * mission runtime loops; `loop_defer` lives here because it's the only
+ * tool that encodes "sleep until" semantics for the mission turn-loop.
  *
  * Visibility contract (enforced by `getOpenAITools` via `ToolVisibility`):
- *   - `requiresMissionActiveRun: true` is satisfied by EITHER an active
- *     mission run (`missionRunActive === true`) OR a standalone
- *     full-autonomous session (`sessionKind === "full_autonomous"`).
- *     That keeps the tool out of chat, mission setup, and subagent surfaces
- *     without needing a second flag.
+ *   - `requiresMissionActiveRun: true` requires `missionRunActive === true`.
+ *     Agent mode (one-shot conversation) never loops and never sees
+ *     `loop_defer`. Mission setup (no active run yet) also doesn't.
  *   - `excludeRoles: ["subagent"]` is defense in depth — a child subagent
  *     that somehow ended up with the tool name should still be rejected at
  *     dispatch.
@@ -109,7 +106,7 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
     surface: "agent",
     visibility: { requiresMissionActiveRun: true },
     description:
-      "Pause the current mission run or full-autonomous session until a wake time. " +
+      "Pause the current mission run until a wake time. " +
       "Use this when you have nothing productive to do right now but should resume later (waiting for a blockchain finality window, a price feed update, a scheduled check). " +
       "The user-facing explanation goes in the normal assistant message content; `reason` here is an internal resume hint for the wake banner. " +
       "Specify exactly one of `after_ms` (relative) or `wake_at` (absolute ISO8601). Only one pending wake per session — calling again before the first fires is a no-op.",

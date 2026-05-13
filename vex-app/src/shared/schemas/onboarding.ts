@@ -12,8 +12,6 @@
 
 import { z } from "zod";
 import { polymarketStatusSchema } from "./api-keys.js";
-import { modeStateSchema } from "./mode.js";
-import { wakeStateSchema } from "./wake.js";
 
 export const walletPresenceSchema = z.enum(["present", "missing"]);
 export type WalletPresence = z.infer<typeof walletPresenceSchema>;
@@ -103,10 +101,6 @@ export const envStateSchema = z
       .strict(),
     walletAddresses: walletAddressesSchema.optional(),
     provider: providerStateSchema,
-    /** M11: parsed mode + loop + initialPrompt presence. */
-    mode: modeStateSchema,
-    /** M11: parsed wake enable/interval/batch. */
-    wake: wakeStateSchema,
     setupCompleteFlag: z.boolean(),
   })
   .strict();

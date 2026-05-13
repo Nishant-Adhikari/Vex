@@ -87,7 +87,6 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}): Record<strin
     id: "11111111-1111-1111-1111-111111111111",
     session_id: SESSION,
     mission_run_id: RUN,
-    kind: "mission_run",
     due_at: DUE.toISOString(),
     status: "pending",
     reason: "waiting for price feed",
@@ -114,7 +113,6 @@ describe("loop-wake repo — enqueue", () => {
     const result = await loopWake.enqueue({
       sessionId: SESSION,
       missionRunId: RUN,
-      kind: "mission_run",
       dueAt: DUE,
       reason: "waiting for price feed",
       payload: { hint: "v1" },
@@ -124,7 +122,6 @@ describe("loop-wake repo — enqueue", () => {
     expect(result!.id).toBe("11111111-1111-1111-1111-111111111111");
     expect(result!.sessionId).toBe(SESSION);
     expect(result!.missionRunId).toBe(RUN);
-    expect(result!.kind).toBe("mission_run");
     expect(result!.status).toBe("pending");
     expect(result!.dueAt).toBe(DUE.toISOString());
 
@@ -132,22 +129,20 @@ describe("loop-wake repo — enqueue", () => {
     expect(sql).toContain("INSERT INTO loop_wake_requests");
     expect(sql).toContain("ON CONFLICT (session_id) WHERE status = 'pending' DO NOTHING");
     expect(sql).toContain("RETURNING *");
-    // Param positional order matches repo implementation.
+    // Param positional order matches repo implementation: session_id, mission_run_id, due_at, reason, payload.
     expect(params?.[0]).toBe(SESSION);
     expect(params?.[1]).toBe(RUN);
-    expect(params?.[2]).toBe("mission_run");
-    expect(params?.[3]).toBe(DUE.toISOString());
-    expect(params?.[4]).toBe("waiting for price feed");
+    expect(params?.[2]).toBe(DUE.toISOString());
+    expect(params?.[3]).toBe("waiting for price feed");
     // payload JSONB — stringified when not null.
-    expect(params?.[5]).toBe(JSON.stringify({ hint: "v1" }));
+    expect(params?.[4]).toBe(JSON.stringify({ hint: "v1" }));
   });
 
   it("returns null when ON CONFLICT fires (already a pending row for this session)", async () => {
     mockPoolQueryOne.mockResolvedValueOnce(null);
     const result = await loopWake.enqueue({
       sessionId: SESSION,
-      missionRunId: null,
-      kind: "full_autonomous",
+      missionRunId: RUN,
       dueAt: DUE,
       reason: null,
       payload: null,
@@ -159,14 +154,13 @@ describe("loop-wake repo — enqueue", () => {
     mockPoolQueryOne.mockResolvedValueOnce(makeRow({ payload: null }));
     await loopWake.enqueue({
       sessionId: SESSION,
-      missionRunId: null,
-      kind: "full_autonomous",
+      missionRunId: RUN,
       dueAt: DUE,
       reason: null,
       payload: null,
     });
     const [, params] = mockPoolQueryOne.mock.calls[0];
-    expect(params?.[5]).toBeNull();
+    expect(params?.[4]).toBeNull();
   });
 });
 
@@ -318,8 +312,8 @@ describe("loop-wake repo — row mapping", () => {
       makeRow({ due_at: dueDate, created_at: createdDate }),
     );
     const result = await loopWake.enqueue({
-      sessionId: SESSION, missionRunId: null,
-      kind: "full_autonomous", dueAt: DUE, reason: null, payload: null,
+      sessionId: SESSION, missionRunId: RUN,
+      dueAt: DUE, reason: null, payload: null,
     });
     expect(result!.dueAt).toBe(DUE.toISOString());
     expect(result!.createdAt).toBe(NOW.toISOString());
@@ -336,8 +330,8 @@ describe("loop-wake repo — row mapping", () => {
       }),
     );
     const result = await loopWake.enqueue({
-      sessionId: SESSION, missionRunId: null,
-      kind: "full_autonomous", dueAt: DUE, reason: null, payload: null,
+      sessionId: SESSION, missionRunId: RUN,
+      dueAt: DUE, reason: null, payload: null,
     });
     expect(result!.consumedAt).toBeNull();
     expect(result!.cancelledAt).toBeNull();

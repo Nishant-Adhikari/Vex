@@ -39,7 +39,7 @@ export function buildBasePrompt(context: EngineContext): string {
   lines.push("# Current Context");
   lines.push("");
   lines.push(`Session: ${context.sessionId}`);
-  lines.push(`Mode: ${context.sessionKind} / ${context.loopMode}`);
+  lines.push(`Mode: ${context.sessionKind} / permission=${context.sessionPermission}`);
   if (context.missionId) lines.push(`Mission: ${context.missionId}`);
   if (context.missionRunId) lines.push(`Run: ${context.missionRunId}`);
   if (context.isSubagent) lines.push("Role: subagent (delegated task from parent)");
@@ -77,12 +77,13 @@ function resolveAspect(ctx: EngineContext): string {
       "`subagent_request_parent` only when genuinely blocked.",
     ].join("\n");
   }
-  if (ctx.sessionKind === "chat" && !ctx.missionRunId) {
+  if (ctx.sessionKind === "agent" && !ctx.missionRunId) {
     return [
-      "You are in CHAT — VEX as teacher and collaborator. One user message → one",
-      "considered reply. Explain your reasoning, mark uncertainty, use tools",
-      "deliberately to answer correctly. After responding, wait for the next",
-      "user message — do not loop on your own.",
+      "You are in AGENT mode — VEX as teacher, collaborator, or one-shot",
+      "executor. One user message → one considered reply. You may chain",
+      "multiple tool calls per turn to gather context or complete the task,",
+      "but you do not loop on your own — when the request is satisfied,",
+      "return a final text reply.",
     ].join("\n");
   }
   if (ctx.sessionKind === "mission" && !ctx.missionRunId) {
@@ -104,14 +105,6 @@ function resolveAspect(ctx: EngineContext): string {
       "stopping. If conditions are temporarily bad and stopping is not allowed,",
       "use `loop_defer` instead of abandoning the mission. Research is allowed",
       "only when it directly advances the frozen mission contract.",
-    ].join("\n");
-  }
-  if (ctx.sessionKind === "full_autonomous") {
-    return [
-      "You are in FULL AUTONOMOUS — VEX as continuous worker. Without a bounded",
-      "mission contract, you operate by the rhythm of `loop_defer`: plan, execute, rest,",
-      "return. Work in cycles, not straight lines. Use `loop_defer` to park until",
-      "a future time or condition; the wake executor will resume you.",
     ].join("\n");
   }
   // Defensive fallback — should not hit in practice; kept so buildBasePrompt

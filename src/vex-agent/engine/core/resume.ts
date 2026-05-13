@@ -90,17 +90,20 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
 
   // loadedDocuments is ephemeral — not persisted across approval pauses.
   // The agent can re-read documents via document_read after resume.
+  // `sessionPermission` reads the audit snapshot from the approval row —
+  // permission is immutable per session, so this is just an explicit pass-
+  // through for the dispatch (the gate is bypassed via `approved: true`).
   const toolContext: InternalToolContext = {
     sessionId,
     loadedDocuments: new Map(),
-    loopMode: (approval.chatMode as "full" | "restricted" | "off") ?? "restricted",
+    sessionPermission: approval.permissionAtEnqueue,
     approved: true,
     role: "parent", // Approval resume is always parent context
     missionRunId: null, // Will be populated from hydrated context if needed
     missionId: null, // Will be populated by the resumed loop when needed
     // Approval resume dispatches a single tool call — band recomputation
     // happens at the next turn-loop iteration. Safe default for one-shot dispatch.
-    sessionKind: "chat",
+    sessionKind: "agent",
     contextUsageBand: "normal",
     sourceSurface: "vex_agent",
     sourceSession: sessionId,

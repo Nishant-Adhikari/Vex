@@ -28,7 +28,7 @@ describe("WizardStateStore.load", () => {
   it("first load writes the canonical defaults", async () => {
     const store = new WizardStateStore({ filePath });
     const state = await store.load();
-    expect(state.schemaVersion).toBe(1);
+    expect(state.schemaVersion).toBe(2);
     expect(state.currentStepId).toBe("keystore");
     expect(state.completedSteps).toEqual([]);
     expect(state.completed).toBe(false);
@@ -60,8 +60,48 @@ describe("WizardStateStore.load", () => {
     );
     const store = new WizardStateStore({ filePath });
     const state = await store.load();
-    expect(state.schemaVersion).toBe(1);
+    expect(state.schemaVersion).toBe(2);
     expect(state.currentStepId).toBe("keystore");
+  });
+
+  /**
+   * Codex round-4 guardrail #2 — Phase 2 wizard refactor.
+   *
+   * A v1 wizard-state.json at `keystore` with `completedSteps: []`
+   * is visually identical to the v2 defaults, BUT `schemaVersion: 1`
+   * is no longer a valid literal. The store must:
+   *   1. reject it through recoverDefaults() (marker-first),
+   *   2. cause peekCompleted() to return null until the next
+   *      user-driven update() clears the marker.
+   * Without this, a v1 file would silently look authoritative and
+   * skip the destructive-recovery guard.
+   */
+  it("v1 keystore-empty file triggers recoverDefaults() and peekCompleted stays null", async () => {
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        currentStepId: "keystore",
+        completedSteps: [],
+        completed: false,
+      }),
+      "utf8",
+    );
+    const store = new WizardStateStore({ filePath });
+    const state = await store.load();
+    // Recovery branch: schemaVersion bumped to v2.
+    expect(state.schemaVersion).toBe(2);
+    expect(state.currentStepId).toBe("keystore");
+    expect(state.completedSteps).toEqual([]);
+    expect(state.completed).toBe(false);
+    // Critically: provenance is "recovered", so peekCompleted refuses
+    // to trust the on-disk defaults until the next authoritative
+    // update() clears the sidecar marker.
+    expect(await store.peekCompleted()).toBeNull();
+
+    // Marker present on disk → survives process restart.
+    const second = new WizardStateStore({ filePath });
+    expect(await second.peekCompleted()).toBeNull();
   });
 });
 
@@ -91,8 +131,6 @@ describe("WizardStateStore.update", () => {
         "embedding",
         "agentCore",
         "provider",
-        "mode",
-        "wake",
       ],
       completed: true,
     });
@@ -106,8 +144,6 @@ describe("WizardStateStore.update", () => {
         "embedding",
         "agentCore",
         "provider",
-        "mode",
-        "wake",
       ],
     });
     expect(next.completed).toBe(true);
@@ -223,7 +259,7 @@ describe("WizardStateStore.peekCompleted (write-protection guard)", () => {
     await fs.writeFile(
       filePath,
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "review",
         completedSteps: [
           "keystore",
@@ -232,8 +268,6 @@ describe("WizardStateStore.peekCompleted (write-protection guard)", () => {
           "embedding",
           "agentCore",
           "provider",
-          "mode",
-          "wake",
         ],
         completed: true,
       }),
@@ -244,12 +278,16 @@ describe("WizardStateStore.peekCompleted (write-protection guard)", () => {
   });
 
   it("returns false when the persisted file reports completed=false", async () => {
+    // Phase 2 refactor: schemaVersion: 1 now triggers recoverDefaults()
+    // (see the v1 migration test above), so the false-completed
+    // scenario requires a v2 file with progress that isn't authoritative
+    // for completion — use a mid-wizard `apiKeys` step instead.
     await fs.writeFile(
       filePath,
       JSON.stringify({
-        schemaVersion: 1,
-        currentStepId: "keystore",
-        completedSteps: [],
+        schemaVersion: 2,
+        currentStepId: "apiKeys",
+        completedSteps: ["keystore", "wallets"],
         completed: false,
       }),
       "utf8"
@@ -295,8 +333,6 @@ describe("WizardStateStore.peekCompleted (write-protection guard)", () => {
         "embedding",
         "agentCore",
         "provider",
-        "mode",
-        "wake",
       ],
       completed: true,
     });
@@ -328,8 +364,6 @@ describe("WizardStateStore.peekCompleted (write-protection guard)", () => {
         "embedding",
         "agentCore",
         "provider",
-        "mode",
-        "wake",
       ],
       completed: true,
     });

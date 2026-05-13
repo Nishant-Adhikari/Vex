@@ -1,17 +1,15 @@
 /**
  * Engine — public API.
  *
- * Entry points for chat, mission setup, mission run, approval resume,
+ * Entry points for agent turn, mission setup, mission run, approval resume,
  * and subagent execution. Transport layer imports from here.
  */
 
 export {
-  processChatTurn,
+  processAgentTurn,
   processMissionSetupTurn,
   startMission,
   resumeMissionRun,
-  processFullAutonomousTurn,
-  resumeFullAutonomousSession,
   recoverFailedMissionRun,
 } from "./core/runner.js";
 

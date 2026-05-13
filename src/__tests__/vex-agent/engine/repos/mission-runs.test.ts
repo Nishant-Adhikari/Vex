@@ -33,11 +33,11 @@ describe("mission-runs repo", () => {
 
   describe("createRun", () => {
     it("inserts run with correct params", async () => {
-      await createRun("run-1", "mission-1", "session-1", "restricted");
+      await createRun("run-1", "mission-1", "session-1");
       expect(mockExecute).toHaveBeenCalledTimes(1);
       const [sql, params] = mockExecute.mock.calls[0];
       expect(sql).toContain("INSERT INTO mission_runs");
-      expect(params).toEqual(["run-1", "mission-1", "session-1", "restricted", null, null]);
+      expect(params).toEqual(["run-1", "mission-1", "session-1", null, null]);
     });
   });
 
@@ -138,14 +138,13 @@ describe("mission-runs repo", () => {
     it("maps row correctly", async () => {
       mockQueryOne.mockResolvedValueOnce({
         id: "run-1", mission_id: "mission-1", session_id: "session-1",
-        status: "running", loop_mode: "restricted",
+        status: "running",
         started_at: new Date("2026-03-28"), ended_at: null,
         last_checkpoint_at: null, stop_reason: null, iteration_count: 7,
       });
       const run = await getActiveRun("mission-1");
       expect(run!.id).toBe("run-1");
       expect(run!.missionId).toBe("mission-1");
-      expect(run!.loopMode).toBe("restricted");
       expect(run!.iterationCount).toBe(7);
       expect(run!.endedAt).toBeNull();
     });
@@ -153,7 +152,7 @@ describe("mission-runs repo", () => {
     it("throws on unknown DB status instead of defaulting to failed", async () => {
       mockQueryOne.mockResolvedValueOnce({
         id: "run-1", mission_id: "mission-1", session_id: "session-1",
-        status: "mystery", loop_mode: "restricted",
+        status: "mystery",
         started_at: new Date("2026-03-28"), ended_at: null,
         last_checkpoint_at: null, stop_reason: null, iteration_count: 0,
       });

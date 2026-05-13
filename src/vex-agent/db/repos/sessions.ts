@@ -58,18 +58,30 @@ interface SessionRow {
   memory_language_code: string | null;
   checkpoint_generation: number;
   /**
-   * Session-level runtime discriminator column. `mapRow` normalises
-   * unexpected values to `"chat"`.
+   * Session-level mode discriminator. `mapRow` normalises unexpected values
+   * to `"agent"`.
    */
-  kind?: string | null;
+  mode?: string | null;
+  /** Session-scoped approval policy: `restricted` (default) or `full`. */
+  permission?: string | null;
+  /** Snapshot of user-supplied goal at session creation; null for `agent` rows. */
+  initial_goal?: string | null;
 }
 
 /**
- * Known values for `sessions.kind`. `"chat"` is the default routing target
- * (chat / mission-setup / mission-run). `"full_autonomous"` unlocks the
- * standalone full-autonomous runner.
+ * Known values for `sessions.mode`. `"agent"` is a one-shot conversational
+ * session (post-M12 rename from "chat"). `"mission"` is goal-driven and
+ * runs in a loop with agent-self-scheduled wake via `loop_defer`. Immutable
+ * after session creation.
  */
-export type SessionKind = "chat" | "full_autonomous";
+export type SessionMode = "agent" | "mission";
+
+/**
+ * Session-scoped approval policy. `"restricted"` → every mutating tool
+ * requires user approval. `"full"` → mutating tools auto-execute. Immutable
+ * after session creation.
+ */
+export type SessionPermission = "restricted" | "full";
 
 export interface Session {
   id: string;
@@ -91,11 +103,18 @@ export interface Session {
    */
   checkpointGeneration: number;
   /**
-   * Session-level runtime discriminator. `"chat"` routes to chat / mission
-   * flows; `"full_autonomous"` activates the standalone full-autonomous
-   * runner (no mission, loops on `loop_defer` + wake executor).
+   * Session-level mode. `"agent"` is one-shot conversational; `"mission"`
+   * runs in a loop with agent self-scheduled wake. Immutable.
    */
-  kind: SessionKind;
+  mode: SessionMode;
+  /** Approval policy. Immutable. */
+  permission: SessionPermission;
+  /**
+   * Snapshot of user intent at session creation. The negotiated/refined
+   * mission contract goal lives on `missions.goal` and may differ from
+   * this snapshot. `null` for `mode='agent'` sessions.
+   */
+  initialGoal: string | null;
 }
 
 /**
@@ -124,25 +143,47 @@ function mapRow(r: SessionRow): Session {
     memoryScopeKey: r.memory_scope_key,
     memoryLanguageCode: r.memory_language_code,
     checkpointGeneration: r.checkpoint_generation,
-    kind: r.kind === "full_autonomous" ? "full_autonomous" : "chat",
+    mode: r.mode === "mission" ? "mission" : "agent",
+    permission: r.permission === "full" ? "full" : "restricted",
+    initialGoal: r.initial_goal ?? null,
   };
 }
 
+export interface CreateSessionOptions {
+  /** Mode is immutable per session. Defaults to `"agent"`. */
+  mode?: SessionMode;
+  /** Permission is immutable per session. Defaults to `"restricted"`. */
+  permission?: SessionPermission;
+  /**
+   * Snapshot of user goal at creation. REQUIRED when `mode === "mission"`
+   * (DB CHECK enforces non-empty trim); ignored for `mode === "agent"`.
+   */
+  initialGoal?: string | null;
+  /**
+   * Optional Executor — when provided, the insert runs inside the caller's
+   * transaction. Mission session creation uses this to atomically insert
+   * the `sessions` row + `missions` draft row.
+   */
+  executor?: Executor;
+}
+
 /**
- * Create a session row. `kind` is `"chat"` by default — callers that opt
- * into the standalone full-autonomous runtime pass `{ kind: "full_autonomous" }`
- * explicitly. `ON CONFLICT DO NOTHING` keeps the first-writer-wins
- * semantics existing transports depend on.
+ * Create a session row. `ON CONFLICT DO NOTHING` keeps the first-writer-wins
+ * semantics existing transports depend on. Caller is responsible for
+ * supplying `initialGoal` when `mode === "mission"` — DB CHECK enforces it.
  */
 export async function createSession(
   id: string,
-  options: { kind?: SessionKind } = {},
+  options: CreateSessionOptions = {},
 ): Promise<void> {
-  const kind: SessionKind = options.kind ?? "chat";
+  const mode: SessionMode = options.mode ?? "agent";
+  const permission: SessionPermission = options.permission ?? "restricted";
+  const initialGoal: string | null = mode === "mission" ? (options.initialGoal ?? null) : null;
+  const executor: Executor = options.executor ?? getPool();
   await executeWith(
-    getPool(),
-    "INSERT INTO sessions (id, kind) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
-    [id, kind],
+    executor,
+    "INSERT INTO sessions (id, mode, permission, initial_goal) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING",
+    [id, mode, permission, initialGoal],
   );
 }
 

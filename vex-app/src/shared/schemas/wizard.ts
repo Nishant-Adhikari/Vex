@@ -28,8 +28,6 @@ export const WIZARD_STEP_IDS = [
   "embedding",
   "agentCore",
   "provider",
-  "mode",
-  "wake",
   "review",
 ] as const;
 
@@ -157,9 +155,18 @@ const FORWARD_SAFE_MESSAGE =
 const COMPLETED_CONSISTENT_MESSAGE =
   "completed=true requires currentStepId='review' and every prior step in completedSteps.";
 
+// Phase 2 refactor (codex round 4 guardrail #1): bump schemaVersion to 2
+// because the v1 step set included "mode"/"wake" which no longer exist
+// in WIZARD_STEP_IDS. A v1 file with an old step id will fail the enum
+// refinement, but persisted v1 files at `currentStepId: "keystore"` with
+// `completedSteps: []` would otherwise look identical to a fresh v2 file
+// and silently re-enter the wizard with stale provenance. Bumping the
+// literal version forces every v1 file through `recoverDefaults()`
+// (marker-first, fail-closed) — the next session-config bootstrap can
+// then surface skip-badges for infra already on disk.
 export const wizardStateSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     currentStepId: wizardStepIdSchema,
     completedSteps: completedStepsSchema,
     completed: z.boolean(),
@@ -171,7 +178,7 @@ export const wizardStateSchema = z
 export type WizardState = z.infer<typeof wizardStateSchema>;
 
 export const defaultWizardState: WizardState = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   currentStepId: "keystore",
   completedSteps: [],
   completed: false,

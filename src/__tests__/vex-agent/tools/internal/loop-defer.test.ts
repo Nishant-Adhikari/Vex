@@ -45,18 +45,9 @@ const { getOpenAITools, defaultVisibilityContext } = await import(
 function ctxMissionActive() {
   return makeTestContext({
     sessionId: "session-mission-1",
-    loopMode: "restricted",
+    sessionPermission: "restricted",
     sessionKind: "mission",
     missionRunId: "run-abc",
-  });
-}
-
-function ctxFullAutonomous() {
-  return makeTestContext({
-    sessionId: "session-auto-1",
-    loopMode: "full",
-    sessionKind: "full_autonomous",
-    missionRunId: null,
   });
 }
 
@@ -65,7 +56,6 @@ function enqueueReturn(overrides: Partial<Record<string, unknown>> = {}) {
     id: "wake-uuid-xyz",
     sessionId: "session-mission-1",
     missionRunId: "run-abc",
-    kind: "mission_run",
     dueAt: "2026-04-20T11:00:00.000Z",
     status: "pending",
     reason: "waiting for finality",
@@ -183,13 +173,13 @@ describe("loop_defer — defense-in-depth", () => {
       ctx,
     );
     expect(result.success).toBe(false);
-    expect(result.output).toMatch(/active mission run or a full-autonomous/i);
+    expect(result.output).toMatch(/active mission run/i);
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
-  it("rejects chat sessionKind", async () => {
+  it("rejects agent sessionKind", async () => {
     const ctx = makeTestContext({
-      sessionKind: "chat",
+      sessionKind: "agent",
       missionRunId: null,
     });
     const result = await handleLoopDefer(
@@ -228,7 +218,7 @@ describe("loop_defer — defense-in-depth", () => {
 // ── Happy path ─────────────────────────────────────────────────
 
 describe("loop_defer — happy path", () => {
-  it("enqueues with kind=mission_run for mission active run and returns engineSignal", async () => {
+  it("enqueues for mission active run and returns engineSignal", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-20T10:00:00.000Z"));
 
@@ -243,7 +233,6 @@ describe("loop_defer — happy path", () => {
     expect(input).toMatchObject({
       sessionId: "session-mission-1",
       missionRunId: "run-abc",
-      kind: "mission_run",
       reason: "waiting for finality",
       payload: null,
     });
@@ -253,27 +242,6 @@ describe("loop_defer — happy path", () => {
     expect(result.engineSignal?.type).toBe("defer_until");
     expect(result.engineSignal?.dueAt).toBe("2026-04-20T11:00:00.000Z");
     expect(result.data?.defer_id).toBe("wake-uuid-xyz");
-  });
-
-  it("enqueues with kind=full_autonomous for standalone full-autonomous session", async () => {
-    mockEnqueue.mockResolvedValueOnce(
-      enqueueReturn({ kind: "full_autonomous", missionRunId: null, sessionId: "session-auto-1" }),
-    );
-
-    const result = await handleLoopDefer(
-      { wake_at: "2030-01-01T00:00:00Z", reason: "long idle" },
-      ctxFullAutonomous(),
-    );
-
-    expect(result.success).toBe(true);
-    const [input] = mockEnqueue.mock.calls[0];
-    expect(input).toMatchObject({
-      sessionId: "session-auto-1",
-      missionRunId: null,
-      kind: "full_autonomous",
-      reason: "long idle",
-    });
-    expect((input.dueAt as Date).toISOString()).toBe("2030-01-01T00:00:00.000Z");
   });
 
   it("soft-fails when a pending wake already exists (enqueue returns null)", async () => {
@@ -292,7 +260,7 @@ describe("loop_defer — happy path", () => {
 describe("loop_defer — visibility", () => {
   it("is visible in a mission active run (restricted)", () => {
     const tools = getOpenAITools(defaultVisibilityContext({
-      chatMode: "restricted",
+      permission: "restricted",
       sessionKind: "mission",
       missionRunActive: true,
     }));
@@ -302,7 +270,7 @@ describe("loop_defer — visibility", () => {
 
   it("is visible in a mission active run (full)", () => {
     const tools = getOpenAITools(defaultVisibilityContext({
-      chatMode: "full",
+      permission: "full",
       sessionKind: "mission",
       missionRunActive: true,
     }));
@@ -310,25 +278,15 @@ describe("loop_defer — visibility", () => {
     expect(names).toContain("loop_defer");
   });
 
-  it("is visible in a standalone full_autonomous session", () => {
-    const tools = getOpenAITools(defaultVisibilityContext({
-      chatMode: "full",
-      sessionKind: "full_autonomous",
-      missionRunActive: false,
-    }));
-    const names = tools.map((t) => t.function.name);
-    expect(names).toContain("loop_defer");
-  });
-
-  it("is hidden in a chat session", () => {
-    const tools = getOpenAITools(defaultVisibilityContext({ sessionKind: "chat" }));
+  it("is hidden in an agent session", () => {
+    const tools = getOpenAITools(defaultVisibilityContext({ sessionKind: "agent" }));
     const names = tools.map((t) => t.function.name);
     expect(names).not.toContain("loop_defer");
   });
 
   it("is hidden in mission setup (missionRunActive=false)", () => {
     const tools = getOpenAITools(defaultVisibilityContext({
-      chatMode: "off",
+      permission: "restricted",
       sessionKind: "mission",
       missionRunActive: false,
     }));
@@ -338,7 +296,7 @@ describe("loop_defer — visibility", () => {
 
   it("is hidden from the subagent role even in a mission active run", () => {
     const tools = getOpenAITools(defaultVisibilityContext({
-      chatMode: "restricted",
+      permission: "restricted",
       role: "subagent",
       sessionKind: "mission",
       missionRunActive: true,

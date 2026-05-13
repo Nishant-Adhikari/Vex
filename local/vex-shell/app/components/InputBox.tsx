@@ -12,9 +12,7 @@ import { Box, Text } from "ink";
 import TextInput from "ink-text-input";
 import {
   type MissionRunStatus,
-  type FullAutonomousRunStatus,
   ACTIVE_OR_PAUSED_RUN_STATUSES,
-  ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES,
 } from "../../../../src/vex-agent/engine/types.js";
 import type { Store, ShellViewState } from "../state/store.js";
 import { useStore } from "../state/store.js";
@@ -30,13 +28,9 @@ function selectPending(s: ShellViewState) {
 
 function selectCanSubmitWhilePending(s: ShellViewState): boolean {
   const missionStatus = s.session?.missionStatus ?? null;
-  const fullAutonomousStatus = s.session?.fullAutonomousStatus ?? null;
   return (
-    (typeof missionStatus === "string" && ACTIVE_OR_PAUSED_RUN_STATUSES.has(missionStatus as MissionRunStatus))
-    || (
-      typeof fullAutonomousStatus === "string"
-      && ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES.has(fullAutonomousStatus as FullAutonomousRunStatus)
-    )
+    typeof missionStatus === "string"
+    && ACTIVE_OR_PAUSED_RUN_STATUSES.has(missionStatus as MissionRunStatus)
   );
 }
 

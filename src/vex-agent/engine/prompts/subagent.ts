@@ -11,15 +11,20 @@
  * wiszącą referencję do disabled tooli — patrz Residual Risk w docs planu.
  */
 
-import type { EngineContext } from "../types.js";
+import type { EngineContext, Permission } from "../types.js";
 
 export interface SubagentContext {
   /** Task description from parent. */
   task: string;
   /** Whether this subagent is allowed to make trades. */
   allowTrades: boolean;
-  /** Parent's loop mode — child cannot exceed parent. */
-  parentLoopMode: string;
+  /**
+   * The child session's effective permission — derived from parent's
+   * permission at spawn time (`allowTrades=false` always demotes to
+   * `restricted`; `allowTrades=true` inherits parent). Stored on the
+   * child sessions row so it cannot be re-upgraded mid-run.
+   */
+  childPermission: Permission;
   /**
    * Snapshot of the parent session's rolling summary at the moment of spawn.
    * Copied by value, not referenced — later drift in the parent's summary does
@@ -68,7 +73,7 @@ export function buildSubagentPrompt(
       lines.push("");
     }
 
-    lines.push(`Parent mode: ${subagentContext.parentLoopMode}`);
+    lines.push(`Effective permission: ${subagentContext.childPermission}`);
     lines.push("");
   }
 

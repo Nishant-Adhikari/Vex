@@ -20,7 +20,6 @@ vi.mock("../../../../src/vex-agent/engine/index.js", () => ({
   routeUserMessage: (...args: unknown[]) => mocks.routeUserMessage(...args),
   submitOperatorInstruction: (...args: unknown[]) => mocks.submitOperatorInstruction(...args),
   ACTIVE_OR_PAUSED_RUN_STATUSES: new Set(["running", "paused_approval", "paused_wake", "paused_error"]),
-  ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES: new Set(["running", "paused_wake", "paused_error"]),
 }));
 
 vi.mock("../../../../local/vex-shell/engine-actions.js", () => ({
@@ -54,9 +53,8 @@ const { runSlashCommand } = await import(
 function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
     id: "session-1",
-    kind: "chat",
+    kind: "agent",
     missionStatus: "ready",
-    fullAutonomousStatus: null,
     missionCommand: "start",
     pendingApprovals: 0,
     usage: {
@@ -80,7 +78,7 @@ function makeStore() {
   const store = createStore(createInitialState({
     provider: { name: "openrouter", detail: "test-model" },
     mode: "mission",
-    missionLoopMode: "full",
+    permission: "full",
     wakeEnabled: true,
   }));
   store.setState({
@@ -106,7 +104,7 @@ describe("vex-shell slash mission activation", () => {
 
     expect(store.getState().pendingTurn).not.toBeNull();
     expect(store.getState().lastError).toBeNull();
-    expect(mocks.startReadyMission).toHaveBeenCalledWith("session-1", "full");
+    expect(mocks.startReadyMission).toHaveBeenCalledWith("session-1");
 
     resolveMission({
       ok: true,
@@ -141,7 +139,7 @@ describe("vex-shell slash mission activation", () => {
   it("renders /mission continue fallback details when the engine returns no text", async () => {
     const { store } = makeStore();
     store.setState({
-      missionLoopMode: "restricted",
+      permission: "restricted",
       session: makeSession({
         missionStatus: "ready",
         missionCommand: "continue",

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import type {
   SessionKind,
-  LoopMode,
+  Permission,
   MissionStatus,
   MissionRunStatus,
   BusinessStopReason,
@@ -25,15 +25,15 @@ describe("engine types", () => {
 
   describe("SessionKind", () => {
     it("accepts valid values", () => {
-      const values: SessionKind[] = ["chat", "mission", "full_autonomous"];
-      expect(values).toHaveLength(3);
+      const values: SessionKind[] = ["agent", "mission"];
+      expect(values).toHaveLength(2);
     });
   });
 
-  describe("LoopMode", () => {
+  describe("Permission", () => {
     it("accepts valid values", () => {
-      const values: LoopMode[] = ["off", "restricted", "full"];
-      expect(values).toHaveLength(3);
+      const values: Permission[] = ["restricted", "full"];
+      expect(values).toHaveLength(2);
     });
   });
 
@@ -178,8 +178,8 @@ describe("engine types", () => {
     it("has all expected fields", () => {
       const ctx: EngineContext = {
         sessionId: "session-1",
-        sessionKind: "chat",
-        loopMode: "off",
+        sessionKind: "agent",
+        sessionPermission: "restricted",
         missionId: null,
         missionRunId: null,
         isSubagent: false,
@@ -195,7 +195,7 @@ describe("engine types", () => {
       const ctx: EngineContext = {
         sessionId: "session-2",
         sessionKind: "mission",
-        loopMode: "restricted",
+        sessionPermission: "restricted",
         missionId: "mission-1",
         missionRunId: "run-1",
         isSubagent: false,
@@ -210,7 +210,7 @@ describe("engine types", () => {
       const ctx: EngineContext = {
         sessionId: "session-3",
         sessionKind: "mission",
-        loopMode: "restricted",
+        sessionPermission: "restricted",
         missionId: "mission-1",
         missionRunId: "run-1",
         isSubagent: true,

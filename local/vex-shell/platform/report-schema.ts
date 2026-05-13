@@ -27,20 +27,17 @@ const baseEnvelope = z.object({
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const loopModeSchema = z.enum(["off", "restricted", "full"]);
-const wizardModeSchema = z.enum(["chat", "mission", "full_autonomous"]);
-const sessionKindSchema = z.enum(["chat", "full_autonomous"]);
+const wizardModeSchema = z.enum(["agent", "mission"]);
+const permissionSchema = z.enum(["restricted", "full"]);
 
 // ── Event payloads ──────────────────────────────────────────────────────────
 
 const sessionStartedSchema = baseEnvelope.extend({
   kind: z.literal("sessionStarted"),
   mode: wizardModeSchema,
-  sessionKind: sessionKindSchema,
-  loopMode: loopModeSchema.nullable(),
+  permission: permissionSchema,
   provider: z.string().min(1),
   providerDetail: z.string(),
-  wakeEnabled: z.boolean(),
   /** Optional sha256 fingerprint of select env vars — helps an evaluator group runs. */
   envHash: z.string().optional(),
   /** Optional commit sha of the shell, when discoverable from process.env. */
@@ -107,7 +104,17 @@ const turnCompletedSchema = baseEnvelope.extend({
   textLength: z.number().int().nonnegative(),
   stopReason: z.string().nullable(),
   missionStatus: z.string().nullable(),
-  source: z.enum(["input", "wizard_goal", "slash_approve", "slash_mission_start", "slash_mission_continue", "slash_mission_edit"]),
+  source: z.enum([
+    "input",
+    "wizard_goal",
+    "slash_approve",
+    "slash_mission_start",
+    "slash_mission_continue",
+    "slash_mission_edit",
+    "slash_mission_recover",
+    "slash_retry",
+    "slash_rewind",
+  ]),
 });
 
 const engineSignalSchema = baseEnvelope.extend({
@@ -122,7 +129,20 @@ const engineSignalSchema = baseEnvelope.extend({
 
 const errorSchema = baseEnvelope.extend({
   kind: z.literal("error"),
-  where: z.enum(["turn", "setup", "approve", "reject", "abort", "mission_start", "mission_continue", "mission_edit"]),
+  where: z.enum([
+    "turn",
+    "setup",
+    "approve",
+    "reject",
+    "abort",
+    "mission_start",
+    "mission_continue",
+    "mission_edit",
+    "mission_recover",
+    "operator_instruction",
+    "retry",
+    "rewind",
+  ]),
   message: z.string(),
 });
 
@@ -177,11 +197,9 @@ export type RecordableEvent =
 export const reportMetaSchema = z.object({
   sessionId: z.string().min(1),
   mode: wizardModeSchema,
-  sessionKind: sessionKindSchema,
-  loopMode: loopModeSchema.nullable(),
+  permission: permissionSchema,
   provider: z.string().min(1),
   providerDetail: z.string(),
-  wakeEnabled: z.boolean(),
   schemaVersion: z.literal(1),
   startedAt: z.string().min(1),
   endedAt: z.string().min(1),

@@ -2,11 +2,18 @@
  * Subagent engine runner — runs a child engine session.
  *
  * Reuses engine-core: hydrate, turn-loop, prompts.
- * Constraints: respects allowTrades and parent loopMode.
- * Uses session_links as canonical relationship graph.
+ *
+ * Permission model: subagents are spawned with their permission baked into
+ * the child sessions row at spawn time (see
+ * `tools/internal/subagent/parent.ts:handleSubagentSpawn`). The hydrate
+ * reads `session.permission` directly — the runner does NOT re-derive from
+ * the parent at runtime, since that would risk accidentally re-upgrading a
+ * child that was deliberately restricted.
+ *
+ * Uses session_links as the canonical relationship graph.
  */
 
-import type { EngineContext, LoopMode, StopReason } from "../types.js";
+import type { EngineContext, StopReason } from "../types.js";
 import { hydrateEngineSession } from "../core/hydrate.js";
 import { runTurnLoop, type TurnLoopConfig } from "../core/turn-loop.js";
 import { getOpenAITools } from "@vex-agent/tools/registry.js";
@@ -29,14 +36,11 @@ export interface SubagentResult {
   stopReason: StopReason | null;
 }
 
-// Removed: DEFAULT_MAX_ITERATIONS / DEFAULT_TIMEOUT_MS
-// Now sourced from loadSubagentConfig() (ENV-backed with fallbacks)
-
 /**
  * Run a subagent's engine session.
  *
  * 1. Load subagent config from DB
- * 2. Determine constraints (allowTrades, parent loopMode)
+ * 2. Hydrate child session (permission already baked into the row)
  * 3. Build prompt stack with subagent layer
  * 4. Run turn loop
  * 5. Relay result to parent
@@ -60,35 +64,33 @@ export async function runSubagentEngine(
   if (!sessionLink) throw new Error(`No session link found for subagent ${subagentId}`);
   const sessionId = sessionLink.childSessionId;
 
-  // Determine parent constraints from session_links → parent session → active run.
-  // Parent's rolling summary snapshot is also captured here so the child's
-  // briefing can include it — copy by value, so later drift on the parent's
-  // summary does not affect this child's prompt.
+  // Parent's rolling summary snapshot is captured for the child's briefing —
+  // copy by value, so later drift on the parent's summary does not affect
+  // this child's prompt. We do NOT read parent's permission here — that was
+  // already resolved at spawn time and persisted on the child sessions row.
   const parentLink = await sessionLinksRepo.getParentSession(sessionId);
-  let parentLoopMode: LoopMode = "restricted";
   let parentSummarySnapshot: string | undefined;
   if (parentLink) {
     const parentHydrated = await hydrateEngineSession(parentLink.parentSessionId);
-    if (parentHydrated) {
-      parentLoopMode = parentHydrated.context.loopMode;
-      if (parentHydrated.summary && parentHydrated.summary.trim().length > 0) {
-        parentSummarySnapshot = parentHydrated.summary;
-      }
+    if (parentHydrated?.summary && parentHydrated.summary.trim().length > 0) {
+      parentSummarySnapshot = parentHydrated.summary;
     }
   }
 
-  // Effective mode: allowTrades=false → always restricted. Otherwise inherit parent.
-  const allowTrades = subagent.allowTrades ?? false;
-  const effectiveLoopMode: LoopMode = allowTrades ? parentLoopMode : "restricted";
-
-  // Hydrate session
+  // Hydrate child session — permission is loaded from the child's own row.
   const hydrated = await hydrateEngineSession(sessionId);
   if (!hydrated) throw new Error(`Subagent session ${sessionId} not found`);
+
+  const allowTrades = subagent.allowTrades ?? false;
+  // Defense in depth: even if a future bug somehow created a child row with
+  // permission='full' on an `allow_trades=false` spawn, this guard demotes
+  // back to restricted before any tool dispatch sees the context.
+  const effectivePermission = allowTrades ? hydrated.context.sessionPermission : "restricted";
 
   // Build context
   const context: EngineContext = {
     ...hydrated.context,
-    loopMode: effectiveLoopMode,
+    sessionPermission: effectivePermission,
     isSubagent: true,
   };
 
@@ -96,15 +98,15 @@ export async function runSubagentEngine(
     subagentContext: {
       task: subagent.task,
       allowTrades,
-      parentLoopMode,
+      childPermission: effectivePermission,
       parentSummarySnapshot,
     },
   };
 
   const openAITools = getOpenAITools({
-    chatMode: effectiveLoopMode,
+    permission: effectivePermission,
     role: "subagent",
-    sessionKind: "chat", // subagents run in isolated chat-like sessions
+    sessionKind: "agent", // subagents run in isolated agent-like sessions
     missionRunActive: false,
     contextUsageBand: "normal",
   });

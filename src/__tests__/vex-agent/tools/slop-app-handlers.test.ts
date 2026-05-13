@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { SLOP_APP_HANDLERS } from "../../../vex-agent/tools/protocols/0g/slop-app/handlers.js";
 import { SLOP_APP_TOOLS } from "../../../vex-agent/tools/protocols/0g/slop-app/manifest.js";
 
-const ctx = { loopMode: "off" as const, approved: false };
+const ctx = { sessionPermission: "restricted" as const, approved: false };
 
 describe("slop-app handlers", () => {
   // ── Structural integrity ─────────────────────────────────────────

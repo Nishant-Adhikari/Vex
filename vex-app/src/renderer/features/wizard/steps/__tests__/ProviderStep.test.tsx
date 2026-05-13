@@ -9,7 +9,7 @@
  *    turn 2 RED #1 the only sane way to merge test+persist).
  *  - Each VexErrorCode renders FIXED UI copy (NO SDK raw message —
  *    codex turn 3 YELLOW).
- *  - Success card with latencyMs + advance to "mode".
+ *  - Success card with latencyMs + advance to "review".
  *  - 0G tab clickable + inert (Phase 2B badge, no form).
  *  - "Back to OpenRouter" button switches tabs.
  *  - External `<a target="_blank">` to openrouter.ai/models (no
@@ -228,8 +228,8 @@ describe("ProviderStep", () => {
     mockSetWizardMutate.mockResolvedValue({
       ok: true,
       data: {
-        schemaVersion: 1,
-        currentStepId: "mode",
+        schemaVersion: 2,
+        currentStepId: "review",
         completedSteps: [
           "keystore",
           "wallets",
@@ -267,7 +267,7 @@ describe("ProviderStep", () => {
     // apiKey ref cleared synchronously before await.
     expect(keyInput.value).toBe("");
     await waitFor(() => {
-      expect(mockOnAdvance).toHaveBeenCalledWith("mode");
+      expect(mockOnAdvance).toHaveBeenCalledWith("review");
     });
   });
 
@@ -437,7 +437,7 @@ describe("ProviderStep", () => {
     expect(models?.getAttribute("rel")).toContain("noreferrer");
   });
 
-  it("Skip-card 'Continue' button advances to mode without calling persistProvider", async () => {
+  it("Skip-card 'Continue' button advances to review without calling persistProvider", async () => {
     mockUseEnvState.mockReturnValue(
       makeQueryResult(
         envState({
@@ -450,8 +450,8 @@ describe("ProviderStep", () => {
     mockSetWizardMutate.mockResolvedValue({
       ok: true,
       data: {
-        schemaVersion: 1,
-        currentStepId: "mode",
+        schemaVersion: 2,
+        currentStepId: "review",
         completedSteps: [
           "keystore",
           "wallets",
@@ -472,7 +472,7 @@ describe("ProviderStep", () => {
     );
     fireEvent.click(getByText("Continue"));
     await waitFor(() => {
-      expect(mockOnAdvance).toHaveBeenCalledWith("mode");
+      expect(mockOnAdvance).toHaveBeenCalledWith("review");
     });
     expect(mockPersistProvider).not.toHaveBeenCalled();
   });

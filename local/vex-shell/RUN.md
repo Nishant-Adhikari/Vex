@@ -12,7 +12,7 @@ pnpm exec tsx --tsconfig local/vex-shell/tsconfig.json local/vex-shell/index.ts
 
 ## Flow
 
-1. **Wizard** (@clack/prompts, linear) — 9 steps:
+1. **Wizard** (@clack/prompts, linear) — 8 steps:
    1. **System check** — `collectSystemChecks()` + bootstrap. If Postgres /
       embeddings are down, offers `docker compose up -d` + retries.
    2. **Keystore password** — create `VEX_KEYSTORE_PASSWORD` when missing.
@@ -29,19 +29,18 @@ pnpm exec tsx --tsconfig local/vex-shell/tsconfig.json local/vex-shell/index.ts
       — find IDs at https://openrouter.ai/models) or 0G Compute (guided
       readiness + deposit + fund + ack + smoke via the existing readline
       flow). The `/v1/models` fetch was removed — operator picks the id.
-   8. **Mode** — `chat` / `mission` (with goal textarea + `loopMode`) /
-      `full_autonomous` (with optional initial prompt).
-   9. **Wake** — executor on/off + optional `intervalMs` / `batchSize`.
+   8. **Mode** — `agent` / `mission`, permission (`restricted` / `full`),
+      and a mission goal when mission mode is selected. Wake is always-on and
+      not user-configurable.
 
 2. **Ink TUI** — Cockpit (provider / wake / session / mission / approvals) +
    Messages (tool-call stream via `useTurnState` polling every 500 ms) +
    Thinking indicator + ApprovalBanner + Input. Sidebar on Ctrl+D (latency,
    errors). Settings panel on Ctrl+S.
 
-3. **Session auto-wire** — if the wizard picked `mission` or
-   `full_autonomous` with an initial prompt, App.tsx dispatches it once
-   after the session lands (via `engine-actions.startMissionFromSetup` for
-   mission, `routeUserMessage` for full_autonomous).
+3. **Session auto-wire** — if the wizard picked `mission` with an initial
+   goal, App.tsx dispatches it once after the session lands via
+   `engine-actions.startMissionFromSetup`.
 
 ## Hotkeys
 
@@ -59,7 +58,7 @@ footer); inline edit forms appear in a yellow box with `Enter` to save and
 
 1. **Provider** — `k` edit OPENROUTER_API_KEY, `m` edit AGENT_MODEL +
    re-switch, `o` activate OpenRouter, `g` activate 0G.
-2. **Session** — `n` new (kind from wizard mode), `e` end current, `↑↓`
+2. **Session** — `n` new, `e` end current, `↑↓`
    navigate recent, `Enter` resume.
 3. **Mission** — `s` start ready mission (restricted), `a` abort active run.
 4. **Approvals** — `↑↓` select, `a` approve, `r` reject (`rejectApproval`),
@@ -91,7 +90,7 @@ local/vex-shell/
 ├── RUN.md            this file
 ├── platform/         reused modules (bootstrap, log, runtime, services,
 │                     session-host, diagnostics, provider, render)
-├── wizard/           9 @clack steps + run-wizard orchestrator
+├── wizard/           8 @clack steps + run-wizard orchestrator
 └── app/              Ink TUI
     ├── App.tsx
     ├── components/   Cockpit, Messages, Thinking, Approvals, Input,

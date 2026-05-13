@@ -17,10 +17,8 @@ import {
   DiagnosticsTab,
   handleKnowledgeInput,
   handleServicesInput,
-  handleWakeInput,
   KnowledgeTab,
   ServicesTab,
-  WakeTab,
 } from "./tabsRuntime.js";
 import {
   handleSubagentsInput,
@@ -57,8 +55,6 @@ export function TabContent({
       return <KnowledgeTab store={store} />;
     case "subagents":
       return <SubagentsTab store={store} />;
-    case "wake":
-      return <WakeTab store={store} />;
     case "diagnostics":
       return <DiagnosticsTab store={store} />;
     case "services":
@@ -99,9 +95,6 @@ export function handleTabInput(
       return;
     case "subagents":
       handleSubagentsInput(store, input, key);
-      return;
-    case "wake":
-      handleWakeInput(store, input);
       return;
     case "services":
       handleServicesInput(store, input);

@@ -1,11 +1,11 @@
 /**
- * finalize.ts tests — sequenced completeSetup (M11).
+ * finalize.ts tests — sequenced completeSetup (M11, Phase 2 refactor:
+ * Mode + Wake no longer live in the wizard, so the previous full-
+ * autonomous wake auto-correction at the main boundary is removed).
  *
- * Covers the codex v3 RED + clarification items:
+ * Covers the remaining codex v3 RED + clarification items:
  *   - single-flight: two concurrent calls share the same promise; the
  *     pending slot clears in finally so a third call later can proceed.
- *   - full_autonomous mode → wake auto-correction at the main boundary
- *     before validation.
  *   - autoBackup() throw → mapped to onboarding.step_failed step=auto_backup,
  *     backupPath: null.
  *   - wizardState write fs error → onboarding.step_failed step=wizard_state
@@ -23,7 +23,6 @@ import path from "node:path";
 const mockAutoBackup = vi.fn();
 const mockGatherEnvState = vi.fn();
 const mockWizardUpdate = vi.fn();
-const mockWriteWake = vi.fn();
 const mockPrefUpdate = vi.fn();
 const mockInitSentry = vi.fn();
 let configDir: string;
@@ -43,14 +42,6 @@ vi.mock("../wizard-state-store.js", () => ({
   wizardStateStore: {
     update: (input: unknown) => mockWizardUpdate(input),
   },
-}));
-
-vi.mock("../wake-writer.js", () => ({
-  writeWake: (input: unknown) => mockWriteWake(input),
-}));
-
-vi.mock("../env-write-mutex.js", () => ({
-  withEnvWriteLock: async <T>(fn: () => Promise<T>): Promise<T> => fn(),
 }));
 
 vi.mock("../../preferences/store.js", () => ({
@@ -77,12 +68,7 @@ const { completeSetup, __resetFinalizeSingleFlightForTests } = await import(
   "../finalize.js"
 );
 
-function fullEnvState(overrides: {
-  modeSelected?: "chat" | "mission" | "full_autonomous" | null;
-  modeCoherent?: boolean;
-  wakeEnabled?: boolean;
-  wakeCoherent?: boolean;
-} = {}): unknown {
+function fullEnvState(): unknown {
   return {
     hasKeystorePassword: true,
     hasJupiterApiKey: true,
@@ -102,18 +88,6 @@ function fullEnvState(overrides: {
     walletStatus: { evm: "present", solana: "present" },
     walletAddresses: { evm: "0x1234", solana: "Sol1234" },
     provider: { configured: true, name: "openrouter", modelLabel: "anthropic/claude-sonnet-4.5" },
-    mode: {
-      selected: overrides.modeSelected ?? "chat",
-      loopMode: null,
-      hasInitialPrompt: false,
-      coherent: overrides.modeCoherent ?? true,
-    },
-    wake: {
-      enabled: overrides.wakeEnabled ?? false,
-      intervalMs: null,
-      batchSize: null,
-      coherent: overrides.wakeCoherent ?? true,
-    },
     setupCompleteFlag: false,
   };
 }
@@ -122,7 +96,6 @@ beforeEach(() => {
   mockAutoBackup.mockReset();
   mockGatherEnvState.mockReset();
   mockWizardUpdate.mockReset();
-  mockWriteWake.mockReset();
   mockPrefUpdate.mockReset();
   mockInitSentry.mockReset();
   configDir = mkdtempSync(path.join(tmpdir(), "vex-finalize-"));
@@ -158,63 +131,6 @@ describe("completeSetup", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected err");
     expect(result.error.code).toBe("validation.invalid_input");
-  });
-
-  it("full_autonomous + wake-writer fails during auto-correction: returns step_failed step=wake_auto_enable", async () => {
-    mockGatherEnvState.mockResolvedValue(
-      fullEnvState({
-        modeSelected: "full_autonomous",
-        wakeEnabled: false,
-        wakeCoherent: true,
-      }),
-    );
-    mockWriteWake.mockResolvedValue({
-      ok: false,
-      error: {
-        code: "onboarding.env_persist_failed",
-        domain: "onboarding",
-        message: "raw write failed",
-        retryable: true,
-        userActionable: true,
-        redacted: true,
-      },
-    });
-
-    const result = await completeSetup({ telemetryConsent: false });
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected err");
-    // Codex post-impl YELLOW: must be re-wrapped, not propagated raw.
-    expect(result.error.code).toBe("onboarding.step_failed");
-    expect(result.error.details?.step).toBe("wake_auto_enable");
-    expect(mockAutoBackup).not.toHaveBeenCalled();
-    expect(mockWizardUpdate).not.toHaveBeenCalled();
-  });
-
-  it("full_autonomous + wake disabled: auto-corrects wake before validation", async () => {
-    mockGatherEnvState
-      .mockResolvedValueOnce(
-        fullEnvState({
-          modeSelected: "full_autonomous",
-          wakeEnabled: false,
-          wakeCoherent: true,
-        }),
-      )
-      .mockResolvedValueOnce(
-        fullEnvState({
-          modeSelected: "full_autonomous",
-          wakeEnabled: true,
-          wakeCoherent: true,
-        }),
-      );
-    mockWriteWake.mockResolvedValue({ ok: true, data: { fieldsWritten: [], fieldsDeleted: [] } });
-    mockAutoBackup.mockResolvedValue("/tmp/backup");
-    mockWizardUpdate.mockResolvedValue({ ok: true });
-
-    const result = await completeSetup({ telemetryConsent: false });
-    expect(result.ok).toBe(true);
-    expect(mockWriteWake).toHaveBeenCalledTimes(1);
-    const wakeCall = mockWriteWake.mock.calls[0]?.[0] as { enabled: boolean };
-    expect(wakeCall?.enabled).toBe(true);
   });
 
   it("autoBackup throws: returns onboarding.step_failed step=auto_backup", async () => {

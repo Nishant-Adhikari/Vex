@@ -13,10 +13,6 @@ import {
   switchProviderFlow,
 } from "../../../engine-actions.js";
 import { listSessionSubagents } from "../../../platform/subagent-monitor.js";
-import {
-  disableWake,
-  enableWake,
-} from "../../../platform/runtime.js";
 import { listShellSessions } from "../../../platform/session-host.js";
 import { CONFIG_FIELDS } from "./constants.js";
 
@@ -187,29 +183,6 @@ export async function applyEdit(store: Store, edit: SettingsEditMode): Promise<v
     setToast(store, "ok", `Recalled ${hits.length} entries.`);
     return;
   }
-  if (edit.tab === "wake") {
-    const n = parseInt(value, 10);
-    if (!Number.isFinite(n)) {
-      setToast(store, "error", "Must be an integer");
-      return;
-    }
-    if (edit.field === "intervalMs" && (n < 60 || n > 60000)) {
-      setToast(store, "error", "intervalMs out of range 60..60000");
-      return;
-    }
-    if (edit.field === "batchSize" && (n < 1 || n > 100)) {
-      setToast(store, "error", "batchSize out of range 1..100");
-      return;
-    }
-    await disableWake();
-    enableWake({
-      intervalMs: edit.field === "intervalMs" ? n : 2000,
-      batchSize: edit.field === "batchSize" ? n : 10,
-    });
-    store.setState({ wakeEnabled: true });
-    setToast(store, "ok", `wake ${edit.field} = ${n}, restarted`);
-    return;
-  }
   setToast(store, "error", `No applyEdit handler for ${edit.tab}.${edit.field}`);
 }
 
@@ -241,7 +214,7 @@ export async function hydrateTabData(store: Store, tab: SettingsTabId): Promise<
       const rows = await listShellSessions(8);
       const recent: RecentSession[] = rows.map((r) => ({
         id: r.id,
-        kind: r.kind,
+        kind: r.mode,
         startedAt: r.startedAt,
         endedAt: r.endedAt,
         messageCount: r.messageCount,

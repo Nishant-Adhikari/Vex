@@ -1,7 +1,7 @@
 import type { ProviderSummary, SessionSummary } from "../../platform/render.js";
 import type { SessionReporter } from "../../platform/session-report.js";
 import type { SubagentMonitorRow } from "../../platform/subagent-monitor.js";
-import type { WizardMode } from "../../wizard/mode-step.js";
+import type { WizardMode, WizardPermission } from "../../wizard/mode-step.js";
 
 export type MessageRole = "user" | "assistant" | "system" | "tool";
 
@@ -41,13 +41,12 @@ export interface ApprovalItem {
 
 export type InitialPromptIntent =
   | { kind: "user-message"; text: string }
-  | { kind: "mission-setup"; text: string; loopMode: "off" | "restricted" | "full" };
+  | { kind: "mission-setup"; text: string; permission: WizardPermission };
 
 export interface ShellViewState {
   provider: ProviderSummary;
   mode: WizardMode;
-  missionLoopMode: "off" | "restricted" | "full";
-  wakeEnabled: boolean;
+  permission: WizardPermission;
   session: SessionSummary | null;
   messages: ChatMessageLine[];
   approvals: ApprovalItem[];
@@ -106,7 +105,6 @@ export type SettingsTabId =
   | "tools"
   | "knowledge"
   | "subagents"
-  | "wake"
   | "diagnostics"
   | "services"
   | "env"
@@ -121,7 +119,6 @@ export const SETTINGS_TAB_ORDER: readonly SettingsTabId[] = [
   "tools",
   "knowledge",
   "subagents",
-  "wake",
   "diagnostics",
   "services",
   "env",

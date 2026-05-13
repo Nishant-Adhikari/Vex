@@ -64,7 +64,7 @@ describe("A2 — protocol runtime namespace lifecycle gate", () => {
   it("active namespace executes normally", async () => {
     const result = await executeProtocolTool(
       { toolId: "khalani.fake", params: {} },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(true);
     expect(result.output).toBe("ok");
@@ -74,7 +74,7 @@ describe("A2 — protocol runtime namespace lifecycle gate", () => {
   it("deprecated_hidden namespace is blocked by default", async () => {
     const result = await executeProtocolTool(
       { toolId: "chainscan.fake", params: {} },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("deprecated_hidden");
@@ -86,7 +86,7 @@ describe("A2 — protocol runtime namespace lifecycle gate", () => {
     process.env.VEX_ALLOW_DEPRECATED_PROTOCOLS = "1";
     const result = await executeProtocolTool(
       { toolId: "chainscan.fake", params: {} },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(true);
     expect(fakeHandler).toHaveBeenCalledTimes(1);
@@ -96,7 +96,7 @@ describe("A2 — protocol runtime namespace lifecycle gate", () => {
     process.env.VEX_ALLOW_DEPRECATED_PROTOCOLS = "1";
     const result = await executeProtocolTool(
       { toolId: "0g-compute.fake", params: {} },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("reserved");

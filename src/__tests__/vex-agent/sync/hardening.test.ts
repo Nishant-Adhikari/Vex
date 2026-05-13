@@ -111,7 +111,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { loopMode: "full", approved: true, sessionId: "test-fail" },
+      { sessionPermission: "full", approved: true, sessionId: "test-fail" },
     );
 
     expect(result.success).toBe(false);
@@ -145,7 +145,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { loopMode: "full", approved: true, sessionId: "test-success" },
+      { sessionPermission: "full", approved: true, sessionId: "test-success" },
     );
 
     expect(result.success).toBe(true);
@@ -186,7 +186,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: { dryRun: false, optionalParam: undefined } },
-      { loopMode: "full", approved: true, sessionId: "test-sanitize" },
+      { sessionPermission: "full", approved: true, sessionId: "test-sanitize" },
     );
 
     expect(result.success).toBe(true);
@@ -225,7 +225,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { loopMode: "full", approved: true, sessionId: "session-xyz-789" },
+      { sessionPermission: "full", approved: true, sessionId: "session-xyz-789" },
     );
 
     expect(mockRecordExecution).toHaveBeenCalledTimes(1);
@@ -239,7 +239,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { loopMode: "full", approved: true, sessionId: "test-throw" },
+      { sessionPermission: "full", approved: true, sessionId: "test-throw" },
     );
 
     expect(result.success).toBe(false);

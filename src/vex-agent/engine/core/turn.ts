@@ -192,11 +192,11 @@ async function resolveRecallSeed(
         session.checkpointGeneration,
       );
     }
-    // Pull a small slice of recent episodes for two fallback paths:
-    //   1. full-autonomous empty-session seed → recentEpisodeTitles.
-    //   2. mission / full-autonomous open loops when no handoff is present —
-    //      the last 3 episodes tend to carry the live workstream.
-    if (context.sessionKind !== "chat") {
+    // Pull a small slice of recent episodes for the mission fallback path:
+    // when no handoff is present, the last 3 episodes tend to carry the live
+    // workstream and seed recall with current entities/open loops. Agent mode
+    // is one-shot so no recall seeding is needed there.
+    if (context.sessionKind === "mission") {
       const recent = await episodesRepo.listRecentBySession(context.sessionId, 3);
       recentEpisodeTitles = recent
         .map((ep) => ep.title.trim())

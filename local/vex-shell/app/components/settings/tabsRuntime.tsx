@@ -7,11 +7,6 @@ import {
 } from "../../../platform/bootstrap.js";
 import { recordBootstrapResult } from "../../../platform/diagnostics.js";
 import { getRecentTuiLogLines, SHELL_LOG_FILE } from "../../../platform/log.js";
-import {
-  disableWake,
-  enableWake,
-  isWakeEnabled,
-} from "../../../platform/runtime.js";
 import { startServices, stopServices } from "../../../platform/services.js";
 import type { Store } from "../../state/store.js";
 import { useStore } from "../../state/store.js";
@@ -51,53 +46,6 @@ export function KnowledgeTab({ store }: { store: Store }): React.JSX.Element {
       )}
       <Box marginTop={1}>
         <Hint>q — new query (knowledge_recall via runTool). x — clear results.</Hint>
-      </Box>
-    </Box>
-  );
-}
-
-export function handleWakeInput(store: Store, input: string): void {
-  if (input === "t") {
-    const enabled = isWakeEnabled();
-    if (enabled) {
-      void disableWake().then(() => {
-        store.setState({ wakeEnabled: false });
-        setToast(store, "ok", "Wake disabled.");
-      });
-    } else {
-      enableWake();
-      store.setState({ wakeEnabled: true });
-      setToast(store, "ok", "Wake enabled (defaults).");
-    }
-  }
-  if (input === "i") {
-    startEdit(store, {
-      tab: "wake",
-      field: "intervalMs",
-      kind: "number",
-      value: "2000",
-      placeholder: "60..60000",
-    });
-  }
-  if (input === "b") {
-    startEdit(store, {
-      tab: "wake",
-      field: "batchSize",
-      kind: "number",
-      value: "10",
-      placeholder: "1..100",
-    });
-  }
-}
-
-export function WakeTab({ store }: { store: Store }): React.JSX.Element {
-  const enabled = useStore(store, (s) => s.wakeEnabled);
-  return (
-    <Box flexDirection="column">
-      <Label>Wake executor</Label>
-      <Text>State: {enabled ? "running" : "stopped"}</Text>
-      <Box marginTop={1}>
-        <Hint>t — toggle on/off. i — set intervalMs (restarts). b — set batchSize (restarts).</Hint>
       </Box>
     </Box>
   );

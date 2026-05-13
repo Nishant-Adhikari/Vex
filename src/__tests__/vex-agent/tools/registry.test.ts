@@ -139,10 +139,10 @@ describe("registry", () => {
     }
   });
 
-  it("filters proactive tools in off mode", () => {
-    const offTools = getOpenAITools(defaultVisibilityContext({ chatMode: "off" }));
-    const fullTools = getOpenAITools(defaultVisibilityContext({ chatMode: "full" }));
-    expect(offTools.length).toBeLessThanOrEqual(fullTools.length);
+  it("filters proactive tools in restricted permission", () => {
+    const restrictedTools = getOpenAITools(defaultVisibilityContext({ permission: "restricted" }));
+    const fullTools = getOpenAITools(defaultVisibilityContext({ permission: "full" }));
+    expect(restrictedTools.length).toBeLessThanOrEqual(fullTools.length);
   });
 
   // ── Tool definitions quality ─────────────────────────────────────
@@ -182,7 +182,7 @@ describe("registry", () => {
 
   describe("role filtering", () => {
     it("subagent role excludes mission_stop, subagent_spawn, subagent_reply", () => {
-      const tools = getOpenAITools(defaultVisibilityContext({ chatMode: "restricted", role: "subagent" }));
+      const tools = getOpenAITools(defaultVisibilityContext({ permission: "restricted", role: "subagent" }));
       const names = tools.map(t => t.function.name);
       expect(names).not.toContain("mission_stop");
       expect(names).not.toContain("subagent_spawn");
@@ -191,14 +191,14 @@ describe("registry", () => {
 
     // TODO(subagent-disabled): re-enable razem z SUBAGENT_TOOLS.
     it.skip("subagent role includes subagent_request_parent and subagent_report_complete", () => {
-      const tools = getOpenAITools(defaultVisibilityContext({ chatMode: "restricted", role: "subagent" }));
+      const tools = getOpenAITools(defaultVisibilityContext({ permission: "restricted", role: "subagent" }));
       const names = tools.map(t => t.function.name);
       expect(names).toContain("subagent_request_parent");
       expect(names).toContain("subagent_report_complete");
     });
 
     it("parent role excludes subagent_request_parent and subagent_report_complete", () => {
-      const tools = getOpenAITools(defaultVisibilityContext({ chatMode: "restricted", role: "parent" }));
+      const tools = getOpenAITools(defaultVisibilityContext({ permission: "restricted", role: "parent" }));
       const names = tools.map(t => t.function.name);
       expect(names).not.toContain("subagent_request_parent");
       expect(names).not.toContain("subagent_report_complete");
@@ -207,9 +207,9 @@ describe("registry", () => {
     // TODO(subagent-disabled): re-enable razem z SUBAGENT_TOOLS.
     it.skip("parent role includes mission_stop (inside a run), subagent_spawn, subagent_reply", () => {
       const tools = getOpenAITools(defaultVisibilityContext({
-        chatMode: "restricted",
+        permission: "restricted",
         role: "parent",
-        // mission_stop is now hiddenInChat — check it inside an active mission run
+        // mission_stop is now hiddenInAgent — check it inside an active mission run
         sessionKind: "mission",
         missionRunActive: true,
       }));
@@ -219,11 +219,11 @@ describe("registry", () => {
       expect(names).toContain("subagent_reply");
     });
 
-    it("mission_stop is hidden in chat sessions (hiddenInChat visibility gate)", () => {
+    it("mission_stop is hidden in agent sessions (hiddenInAgent visibility gate)", () => {
       const tools = getOpenAITools(defaultVisibilityContext({
-        chatMode: "restricted",
+        permission: "restricted",
         role: "parent",
-        sessionKind: "chat",
+        sessionKind: "agent",
       }));
       const names = tools.map(t => t.function.name);
       expect(names).not.toContain("mission_stop");
@@ -231,7 +231,7 @@ describe("registry", () => {
 
     it("mission tools split setup and run surfaces", () => {
       const setupNames = getOpenAITools(defaultVisibilityContext({
-        chatMode: "off",
+        permission: "restricted",
         role: "parent",
         sessionKind: "mission",
         missionRunActive: false,
@@ -240,7 +240,7 @@ describe("registry", () => {
       expect(setupNames).not.toContain("mission_stop");
 
       const runNames = getOpenAITools(defaultVisibilityContext({
-        chatMode: "restricted",
+        permission: "restricted",
         role: "parent",
         sessionKind: "mission",
         missionRunActive: true,
@@ -250,7 +250,7 @@ describe("registry", () => {
     });
 
     it("subagent_status and subagent_stop are excluded for subagent role", () => {
-      const tools = getOpenAITools(defaultVisibilityContext({ chatMode: "restricted", role: "subagent" }));
+      const tools = getOpenAITools(defaultVisibilityContext({ permission: "restricted", role: "subagent" }));
       const names = tools.map(t => t.function.name);
       expect(names).not.toContain("subagent_status");
       expect(names).not.toContain("subagent_stop");
@@ -258,7 +258,7 @@ describe("registry", () => {
 
     // TODO(subagent-disabled): re-enable razem z SUBAGENT_TOOLS.
     it.skip("subagent_status and subagent_stop remain visible to parent role", () => {
-      const tools = getOpenAITools(defaultVisibilityContext({ chatMode: "restricted", role: "parent" }));
+      const tools = getOpenAITools(defaultVisibilityContext({ permission: "restricted", role: "parent" }));
       const names = tools.map(t => t.function.name);
       expect(names).toContain("subagent_status");
       expect(names).toContain("subagent_stop");
@@ -277,8 +277,8 @@ describe("registry", () => {
     });
 
     it("defaultVisibilityContext produces parent-role defaults", () => {
-      const defaultTools = getOpenAITools(defaultVisibilityContext({ chatMode: "restricted" }));
-      const parentTools = getOpenAITools(defaultVisibilityContext({ chatMode: "restricted", role: "parent" }));
+      const defaultTools = getOpenAITools(defaultVisibilityContext({ permission: "restricted" }));
+      const parentTools = getOpenAITools(defaultVisibilityContext({ permission: "restricted", role: "parent" }));
       expect(defaultTools.length).toBe(parentTools.length);
     });
   });
@@ -317,7 +317,7 @@ describe("registry", () => {
 
     it("mission_stop remains visible to Vex Agent inside an active mission run", () => {
       const names = getOpenAITools(defaultVisibilityContext({
-        chatMode: "restricted",
+        permission: "restricted",
         role: "parent",
         sessionKind: "mission",
         missionRunActive: true,

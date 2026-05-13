@@ -25,7 +25,7 @@ const { handleMissionDraftUpdate, handleMissionStop } = await import("../../../.
 
 const baseContext = makeTestContext({
   sessionId: "session-1",
-  loopMode: "restricted",
+  sessionPermission: "restricted",
   missionRunId: "run-1",
   missionId: "mission-1",
   sessionKind: "mission",

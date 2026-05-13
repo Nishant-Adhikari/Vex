@@ -4,12 +4,12 @@ export function makeTestContext(overrides?: Partial<InternalToolContext>): Inter
   return {
     sessionId: "test-session",
     loadedDocuments: new Map<string, string>(),
-    loopMode: "off",
+    sessionPermission: "restricted",
     approved: false,
     role: "parent",
     missionRunId: null,
     missionId: null,
-    sessionKind: "chat",
+    sessionKind: "agent",
     contextUsageBand: "normal",
     ...overrides,
   };

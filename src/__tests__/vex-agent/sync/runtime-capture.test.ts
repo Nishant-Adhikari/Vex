@@ -16,10 +16,10 @@ vi.mock("@vex-agent/db/repos/sync.js", () => ({
 const { executeProtocolTool } = await import("../../../vex-agent/tools/protocols/runtime.js");
 
 describe("runtime approval gate", () => {
-  it("blocks mutating tool in restricted mode → pendingApproval", async () => {
+  it("blocks mutating tool in restricted permission → pendingApproval", async () => {
     const result = await executeProtocolTool(
       { toolId: "khalani.bridge", params: { fromChain: "ethereum", toChain: "solana", fromToken: "0x", toToken: "0x", amount: "1" } },
-      { loopMode: "restricted", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
 
     expect(result.success).toBe(false);
@@ -27,19 +27,10 @@ describe("runtime approval gate", () => {
     expect(result.output).toContain("requires approval");
   });
 
-  it("blocks in off mode too", async () => {
-    const result = await executeProtocolTool(
-      { toolId: "khalani.bridge", params: { fromChain: "ethereum", toChain: "solana", fromToken: "0x", toToken: "0x", amount: "1" } },
-      { loopMode: "off", approved: false },
-    );
-
-    expect(result.pendingApproval).toBe(true);
-  });
-
-  it("non-mutating tool passes in restricted mode", async () => {
+  it("non-mutating tool passes in restricted permission", async () => {
     const result = await executeProtocolTool(
       { toolId: "khalani.tokens.search", params: { query: "USDC" } },
-      { loopMode: "restricted", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
 
     // Will fail at network level but NOT at approval gate

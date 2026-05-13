@@ -35,7 +35,7 @@ describe("chainscan handlers", () => {
   it("chainscan.account.balance fails without address", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.account.balance"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("address");
@@ -44,7 +44,7 @@ describe("chainscan handlers", () => {
   it("chainscan.account.balanceMulti fails without addresses", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.account.balanceMulti"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("addresses");
@@ -53,7 +53,7 @@ describe("chainscan handlers", () => {
   it("chainscan.account.transactions fails without address", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.account.transactions"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("address");
@@ -62,7 +62,7 @@ describe("chainscan handlers", () => {
   it("chainscan.account.tokenTransfers fails without address", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.account.tokenTransfers"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("address");
@@ -71,7 +71,7 @@ describe("chainscan handlers", () => {
   it("chainscan.account.nftTransfers fails without address", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.account.nftTransfers"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("address");
@@ -80,7 +80,7 @@ describe("chainscan handlers", () => {
   it("chainscan.account.tokenBalance fails without address and contractAddress", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.account.tokenBalance"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("address");
@@ -89,7 +89,7 @@ describe("chainscan handlers", () => {
   it("chainscan.account.tokenBalance fails with only address", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.account.tokenBalance"]!(
       { address: "0x1234567890abcdef1234567890abcdef12345678" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("contractAddress");
@@ -99,7 +99,7 @@ describe("chainscan handlers", () => {
   it("chainscan.tx.status fails without txHash", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.tx.status"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("txHash");
@@ -108,7 +108,7 @@ describe("chainscan handlers", () => {
   it("chainscan.tx.receipt fails without txHash", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.tx.receipt"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("txHash");
@@ -118,7 +118,7 @@ describe("chainscan handlers", () => {
   it("chainscan.contract.abi fails without address", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.contract.abi"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("address");
@@ -127,7 +127,7 @@ describe("chainscan handlers", () => {
   it("chainscan.contract.source fails without address", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.contract.source"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("address");
@@ -136,7 +136,7 @@ describe("chainscan handlers", () => {
   it("chainscan.contract.creation fails without addresses", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.contract.creation"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("addresses");
@@ -146,7 +146,7 @@ describe("chainscan handlers", () => {
   it("chainscan.decode.byHashes fails without hashes", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.decode.byHashes"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("hashes");
@@ -155,7 +155,7 @@ describe("chainscan handlers", () => {
   it("chainscan.decode.raw fails without contracts and inputs", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.decode.raw"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("contracts");
@@ -164,7 +164,7 @@ describe("chainscan handlers", () => {
   it("chainscan.decode.raw fails with only contracts", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.decode.raw"]!(
       { contracts: "0x1234567890abcdef1234567890abcdef12345678" },
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("inputs");
@@ -174,7 +174,7 @@ describe("chainscan handlers", () => {
   it("chainscan.token.supply fails without contractAddress", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.token.supply"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("contractAddress");
@@ -184,7 +184,7 @@ describe("chainscan handlers", () => {
   it("chainscan.stats.holders fails without contract", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.stats.holders"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("contract");
@@ -193,7 +193,7 @@ describe("chainscan handlers", () => {
   it("chainscan.stats.transfers fails without contract", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.stats.transfers"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("contract");
@@ -202,7 +202,7 @@ describe("chainscan handlers", () => {
   it("chainscan.stats.participants fails without contract", async () => {
     const result = await CHAINSCAN_HANDLERS["chainscan.stats.participants"]!(
       {},
-      { loopMode: "off", approved: false },
+      { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("contract");

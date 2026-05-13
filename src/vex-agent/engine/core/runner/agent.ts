@@ -1,5 +1,11 @@
 /**
- * Engine runner — chat turn entry point.
+ * Engine runner — agent turn entry point.
+ *
+ * "Agent" is the one-shot conversational session kind (post-M12 rename
+ * from "chat"). The model may emit tool calls, dispatch transactions
+ * subject to session permission, and respond with text. No loop — when
+ * a final text reply lands the turn ends. Wake / `loop_defer` are
+ * mission-mode only.
  */
 
 import type { TurnResult } from "../../types.js";
@@ -13,17 +19,18 @@ import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
 
-// ── processChatTurn ─────────────────────────────────────────────
+// ── processAgentTurn ────────────────────────────────────────────
 
 /**
- * Process a single chat turn. User sends message → engine responds.
- * For sessionKind=chat, loopMode=off.
+ * Process a single agent turn. User sends message → engine responds.
+ * For sessionKind="agent", the turn-loop iterates tool-call rounds
+ * until the model emits a final text reply (capped by maxIterations).
  */
-export async function processChatTurn(
+export async function processAgentTurn(
   sessionId: string,
   userInput: string,
 ): Promise<TurnResult> {
-  logger.info("engine.chat.turn", { sessionId });
+  logger.info("engine.agent.turn", { sessionId });
 
   const provider = await resolveProvider();
   if (!provider) throw new Error("No inference provider available");
@@ -42,13 +49,14 @@ export async function processChatTurn(
   const hydrated = await hydrateEngineSession(sessionId);
   if (!hydrated) throw new Error(`Session ${sessionId} not found`);
 
-  // Force chat semantics — even if session has a mission attached
-  const chatContext = { ...hydrated.context, sessionKind: "chat" as const, loopMode: "off" as const };
+  // Force agent semantics — even if session has a mission attached, this
+  // entry point always processes a single agent turn (no mission loop).
+  const agentContext = { ...hydrated.context, sessionKind: "agent" as const };
 
   const buildToolsForBand = (contextUsageBand: ContextUsageBand) => toToolDefinitions(getOpenAITools({
-    chatMode: "off",
+    permission: agentContext.sessionPermission,
     role: "parent",
-    sessionKind: "chat",
+    sessionKind: "agent",
     missionRunActive: false,
     contextUsageBand,
   }));
@@ -56,16 +64,17 @@ export async function processChatTurn(
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,
-    // Chat iterates through tool-call rounds until the model emits a final text
-    // reply; turn-loop.ts:367 breaks on text for sessionKind="chat", so this cap
-    // only engages when the model loops on tool-calls without ever summarising.
+    // Agent iterates through tool-call rounds until the model emits a final
+    // text reply; turn-loop.ts breaks on text for sessionKind="agent", so this
+    // cap only engages when the model loops on tool-calls without ever
+    // summarising.
     maxIterations: 10,
     contextLimit: config.contextLimit,
     buildToolsForBand,
   };
 
   const result = await runTurnLoop(
-    chatContext,
+    agentContext,
     hydrated.messages,
     hydrated.summary,
     hydrated.tokenCount,

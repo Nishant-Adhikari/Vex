@@ -4,9 +4,13 @@
  * Covers the 5-priority resolver:
  *   1. Active handoff (handoff.payload.preferredRecallQuery)
  *   2. Post-wake (lastEngineMessage.messageType === "wake_due")
- *   3. Mission / full-autonomous with history
- *   4. Empty full-autonomous (recent episode titles OR null)
- *   5. Chat / fallback (last user input)
+ *   3. Mission with history (assistant plan + open loops)
+ *   4. Mission with no history (recent episode titles OR null)
+ *   5. Agent / fallback (last user input)
+ *
+ * Phase 2 collapse: `full_autonomous` sessionKind is gone; the mission
+ * branch covers what used to be split between `mission` and
+ * `full_autonomous`.
  */
 
 import { describe, it, expect } from "vitest";
@@ -49,7 +53,7 @@ describe("effectiveRecallSeed", () => {
   it("ignores handoff when preferredRecallQuery is empty (falls to next priority)", () => {
     const empty = handoff("");
     const seed = effectiveRecallSeed({
-      sessionKind: "chat",
+      sessionKind: "agent",
       missionRunActive: false,
       messages: [msg("user", "last chat line")],
       activeHandoff: empty,
@@ -71,10 +75,10 @@ describe("effectiveRecallSeed", () => {
     expect(seed).toContain("Check USDC balance");
   });
 
-  it("picks assistant plan + open loops for mission/full-autonomous with history", () => {
+  it("picks assistant plan + open loops for an active mission run with history", () => {
     const seed = effectiveRecallSeed({
-      sessionKind: "full_autonomous",
-      missionRunActive: false,
+      sessionKind: "mission",
+      missionRunActive: true,
       messages: [
         msg("user", "kickoff"),
         msg("assistant", "Plan: 1) fetch prices 2) place bet 3) monitor"),
@@ -85,9 +89,9 @@ describe("effectiveRecallSeed", () => {
     expect(seed).toContain("step 3 pending");
   });
 
-  it("falls back to recent episode titles for empty full_autonomous", () => {
+  it("falls back to recent episode titles for empty mission session", () => {
     const seed = effectiveRecallSeed({
-      sessionKind: "full_autonomous",
+      sessionKind: "mission",
       missionRunActive: false,
       messages: [],
       recentEpisodeTitles: ["Trade signals", "Risk review", "Capital deployment"],
@@ -95,18 +99,18 @@ describe("effectiveRecallSeed", () => {
     expect(seed).toContain("Trade signals");
   });
 
-  it("returns null for empty full_autonomous session with zero history", () => {
+  it("returns null for empty mission session with zero history", () => {
     const seed = effectiveRecallSeed({
-      sessionKind: "full_autonomous",
+      sessionKind: "mission",
       missionRunActive: false,
       messages: [],
     });
     expect(seed).toBeNull();
   });
 
-  it("uses last user input as the chat fallback", () => {
+  it("uses last user input as the agent fallback", () => {
     const seed = effectiveRecallSeed({
-      sessionKind: "chat",
+      sessionKind: "agent",
       missionRunActive: false,
       messages: [
         msg("user", "hello"),
@@ -117,9 +121,9 @@ describe("effectiveRecallSeed", () => {
     expect(seed).toBe("what's the balance?");
   });
 
-  it("returns null when chat has no user input at all", () => {
+  it("returns null when agent has no user input at all", () => {
     const seed = effectiveRecallSeed({
-      sessionKind: "chat",
+      sessionKind: "agent",
       missionRunActive: false,
       messages: [],
     });

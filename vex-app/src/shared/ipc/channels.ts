@@ -55,9 +55,14 @@ export const CH = {
     providerListModels: "vex:onboarding:providerListModels",
     providerTest: "vex:onboarding:providerTest",
     providerPersist: "vex:onboarding:providerPersist",
-    modeSet: "vex:onboarding:modeSet",
-    wakeSet: "vex:onboarding:wakeSet",
     completeSetup: "vex:onboarding:completeSetup",
+  },
+
+  // Sessions — multi-session shell (M12, Phase 2)
+  sessions: {
+    create: "vex:sessions:create",
+    list: "vex:sessions:list",
+    get: "vex:sessions:get",
   },
 
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)

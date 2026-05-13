@@ -5,18 +5,26 @@
  * so skipping this would crash the first turn with a FK violation.
  *
  * Pattern mirrors `src/mcp/sessions.ts` but uses `local_shell` scope.
+ *
+ * Post-M12: vex-shell creates a single per-launch session — always
+ * `mode='agent'` initially. Mission setup happens inside the agent session
+ * via prompts; the engine promotes sessionKind to "mission" once a missions
+ * row exists.
  */
 
 import { randomBytes } from "node:crypto";
 import * as sessionsRepo from "../../../src/vex-agent/db/repos/sessions.js";
 import * as missionsRepo from "../../../src/vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "../../../src/vex-agent/db/repos/mission-runs.js";
-import * as fullAutonomousRunsRepo from "../../../src/vex-agent/db/repos/full-autonomous-runs.js";
 import * as approvalsRepo from "../../../src/vex-agent/db/repos/approvals.js";
 import * as usageRepo from "../../../src/vex-agent/db/repos/usage.js";
 import { computeBand } from "../../../src/vex-agent/engine/core/context-band.js";
 import { loadEnvConfig } from "../../../src/vex-agent/inference/config.js";
-import type { Session, SessionKind } from "../../../src/vex-agent/db/repos/sessions.js";
+import type {
+  Session,
+  SessionMode,
+  SessionPermission,
+} from "../../../src/vex-agent/db/repos/sessions.js";
 import type { ApprovalItem } from "../../../src/vex-agent/db/repos/approvals.js";
 import type { ContextWindowSummary, SessionSummary, TokenUsageSummary } from "./render.js";
 
@@ -24,9 +32,22 @@ const SESSION_SCOPE = "local_shell";
 const ID_BYTES = 8;
 const FALLBACK_CONTEXT_LIMIT = 128_000;
 
-export async function createShellSession(kind: SessionKind = "chat"): Promise<string> {
-  const id = `vex-shell-${kind === "full_autonomous" ? "fa" : "chat"}-${nanoid()}`;
-  await sessionsRepo.createSession(id, { kind });
+export interface CreateShellSessionOptions {
+  mode?: SessionMode;
+  permission?: SessionPermission;
+  initialGoal?: string | null;
+}
+
+export async function createShellSession(
+  options: CreateShellSessionOptions = {},
+): Promise<string> {
+  const mode = options.mode ?? "agent";
+  const id = `vex-shell-${mode}-${nanoid()}`;
+  await sessionsRepo.createSession(id, {
+    mode,
+    permission: options.permission ?? "restricted",
+    initialGoal: options.initialGoal ?? null,
+  });
   await sessionsRepo.setScope(id, SESSION_SCOPE);
   return id;
 }
@@ -68,19 +89,11 @@ export async function getMissionCommand(sessionId: string, status: string | null
   return latestRun ? "continue" : "start";
 }
 
-export async function getFullAutonomousStatus(sessionId: string): Promise<string | null> {
-  const active = await fullAutonomousRunsRepo.getActiveRunBySession(sessionId);
-  return active?.status ?? null;
-}
-
 export async function summarizeSession(sessionId: string): Promise<SessionSummary | null> {
   const session = await getSession(sessionId);
   if (!session) return null;
-  const [missionStatus, fullAutonomousStatus, pending, usageStats] = await Promise.all([
+  const [missionStatus, pending, usageStats] = await Promise.all([
     getMissionStatus(sessionId),
-    session.kind === "full_autonomous"
-      ? getFullAutonomousStatus(sessionId)
-      : Promise.resolve(null),
     getPendingApprovalsForSession(sessionId),
     usageRepo.getStats(sessionId),
   ]);
@@ -88,9 +101,8 @@ export async function summarizeSession(sessionId: string): Promise<SessionSummar
   const contextLimit = resolveContextLimit();
   return {
     id: session.id,
-    kind: session.kind,
+    kind: session.mode,
     missionStatus,
-    fullAutonomousStatus,
     missionCommand,
     pendingApprovals: pending.length,
     usage: toTokenUsageSummary(usageStats),

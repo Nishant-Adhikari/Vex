@@ -32,18 +32,6 @@ const validState: EnvState = {
     name: null,
     modelLabel: null,
   },
-  mode: {
-    selected: null,
-    loopMode: null,
-    hasInitialPrompt: false,
-    coherent: false,
-  },
-  wake: {
-    enabled: false,
-    intervalMs: null,
-    batchSize: null,
-    coherent: true,
-  },
   setupCompleteFlag: false,
 };
 

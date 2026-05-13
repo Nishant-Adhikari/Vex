@@ -2,13 +2,15 @@
  * Runtime continuation helpers.
  *
  * `iteration_limit` and `timeout` are slice guards, not mission contract
- * outcomes. When an autonomous loop exhausts a runtime slice, schedule a
+ * outcomes. When a mission run exhausts a runtime slice, schedule a
  * near-future wake so the executor can continue from a clean turn instead of
  * marking the mission as failed.
+ *
+ * Post-M12: only mission runs use the wake substrate; agent mode is one-shot
+ * and never schedules continuations.
  */
 
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
-import type { LoopWakeKind } from "@vex-agent/db/repos/loop-wake.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import { currentDate } from "@vex-agent/engine/runtime-clock.js";
 import type { RuntimeStopReason, StopReason } from "../../types.js";
@@ -19,8 +21,7 @@ export type ContinuableRuntimeStop = Extract<RuntimeStopReason, "iteration_limit
 
 export interface RuntimeContinuationInput {
   sessionId: string;
-  missionRunId: string | null;
-  kind: LoopWakeKind;
+  missionRunId: string;
   trigger: ContinuableRuntimeStop;
 }
 
@@ -38,17 +39,12 @@ export function isContinuableRuntimeStop(
 export async function scheduleRuntimeContinuation(
   input: RuntimeContinuationInput,
 ): Promise<RuntimeContinuationResult> {
-  if (input.kind === "mission_run" && !input.missionRunId) {
-    throw new Error("scheduleRuntimeContinuation: missionRunId is required for mission_run wakes");
-  }
-
   const dueAt = new Date(currentDate().getTime() + AUTO_CONTINUE_AFTER_MS);
   const reason = `${input.trigger}: runtime slice exhausted; continue autonomously`;
 
   const row = await loopWakeRepo.enqueue({
     sessionId: input.sessionId,
-    missionRunId: input.kind === "mission_run" ? input.missionRunId : null,
-    kind: input.kind,
+    missionRunId: input.missionRunId,
     dueAt,
     reason,
     payload: { trigger: input.trigger, automatic: true },
@@ -69,7 +65,6 @@ export async function scheduleRuntimeContinuation(
         trigger: input.trigger,
         dueAt: scheduledAt,
         enqueued: row !== null,
-        kind: input.kind,
         missionRunId: input.missionRunId,
       },
     },

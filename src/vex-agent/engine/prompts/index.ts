@@ -3,20 +3,20 @@
  *
  * Two layers:
  * - CONSTANT (always present): base, tool-usage, protocols
- * - VARIABLE (per mode/context): mode, chat/mission-setup/mission-run/subagent
+ * - VARIABLE (per mode/permission/context): permission, agent/mission-setup/mission-run/subagent
  *
- * Rule: mode changes policy execution, never the scope of protocol knowledge.
+ * Rule: mode and permission change policy execution, never the scope of
+ * protocol knowledge.
  */
 
 import type { EngineContext } from "../types.js";
 import { buildBasePrompt } from "./base.js";
 import { buildToolUsagePrompt } from "./tool-usage.js";
 import { buildProtocolsPrompt } from "./protocols.js";
-import { buildModePrompt } from "./mode.js";
-import { buildChatPrompt } from "./chat.js";
+import { buildPermissionPrompt } from "./mode.js";
+import { buildAgentPrompt } from "./agent.js";
 import { buildMissionSetupPrompt, type MissionSetupContext } from "./mission-setup.js";
 import { buildMissionRunPrompt, type MissionRunContext } from "./mission-run.js";
-import { buildFullAutonomousPrompt, type FullAutonomousContext } from "./full-autonomous.js";
 import { buildSubagentPrompt, type SubagentContext } from "./subagent.js";
 import {
   buildRuntimeClockPrompt,
@@ -27,7 +27,6 @@ import {
 export interface PromptStackOptions {
   missionSetupContext?: MissionSetupContext;
   missionRunContext?: MissionRunContext;
-  fullAutonomousContext?: FullAutonomousContext;
   subagentContext?: SubagentContext;
   /** Optional test/host override; production builds this from EngineContext. */
   runtimeClock?: RuntimeClockSnapshot;
@@ -58,20 +57,18 @@ export function buildPromptStack(
     missionRunStartedAt: context.missionRunStartedAt ?? null,
     missionDeadline: context.missionDeadline ?? null,
   })));
-  // Active Knowledge block is pre-fetched in executeTurn (sync option here).
-  // Empty string means "no entries and no known kinds yet" → skip the layer entirely.
   if (options.activeKnowledgeBlock && options.activeKnowledgeBlock.length > 0) {
     layers.push(options.activeKnowledgeBlock);
   }
   layers.push(buildToolUsagePrompt());
   layers.push(buildProtocolsPrompt());
 
-  // ── VARIABLE — per mode ───────────────────────────────────
-  layers.push(buildModePrompt(context.loopMode));
+  // ── VARIABLE — per mode + permission ──────────────────────
+  layers.push(buildPermissionPrompt({ mode: context.sessionKind, permission: context.sessionPermission }));
 
   // ── CONTEXTUAL — per sessionKind ──────────────────────────
-  if (context.sessionKind === "chat" && !context.missionRunId) {
-    layers.push(buildChatPrompt());
+  if (context.sessionKind === "agent" && !context.missionRunId) {
+    layers.push(buildAgentPrompt());
   }
 
   if (context.sessionKind === "mission" && !context.missionRunId) {
@@ -80,10 +77,6 @@ export function buildPromptStack(
 
   if (context.missionRunId) {
     layers.push(buildMissionRunPrompt(context, options.missionRunContext));
-  }
-
-  if (context.sessionKind === "full_autonomous" && !context.missionRunId) {
-    layers.push(buildFullAutonomousPrompt(context, options.fullAutonomousContext));
   }
 
   // ── SUBAGENT — override ───────────────────────────────────
@@ -98,9 +91,8 @@ export function buildPromptStack(
 export { buildBasePrompt } from "./base.js";
 export { buildToolUsagePrompt } from "./tool-usage.js";
 export { buildProtocolsPrompt, resetProtocolsPromptCache } from "./protocols.js";
-export { buildModePrompt } from "./mode.js";
-export { buildChatPrompt } from "./chat.js";
+export { buildPermissionPrompt } from "./mode.js";
+export { buildAgentPrompt } from "./agent.js";
 export { buildMissionSetupPrompt, type MissionSetupContext } from "./mission-setup.js";
 export { buildMissionRunPrompt, type MissionRunContext } from "./mission-run.js";
-export { buildFullAutonomousPrompt, type FullAutonomousContext } from "./full-autonomous.js";
 export { buildSubagentPrompt, type SubagentContext } from "./subagent.js";

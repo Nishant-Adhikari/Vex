@@ -7,12 +7,12 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import type { EngineContext, LoopMode, SessionKind } from "../../../../vex-agent/engine/types.js";
+import type { EngineContext, Permission, SessionKind } from "../../../../vex-agent/engine/types.js";
 import {
   buildPromptStack,
   buildProtocolsPrompt,
   resetProtocolsPromptCache,
-  buildModePrompt,
+  buildPermissionPrompt,
   buildToolUsagePrompt,
 } from "../../../../vex-agent/engine/prompts/index.js";
 import { buildRuntimeClockSnapshot } from "../../../../vex-agent/engine/runtime-clock.js";
@@ -21,8 +21,8 @@ import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST, PROTOCOL_TOOLS } from "../../.
 function makeContext(overrides: Partial<EngineContext> = {}): EngineContext {
   return {
     sessionId: "session-1",
-    sessionKind: "chat",
-    loopMode: "off",
+    sessionKind: "agent",
+    sessionPermission: "restricted",
     missionId: null,
     missionRunId: null,
     isSubagent: false,
@@ -40,13 +40,13 @@ describe("prompt-stack", () => {
   // ── Constant block present in every mode ────────────────────
 
   describe("constant layer always present", () => {
-    const modes: LoopMode[] = ["off", "restricted", "full"];
-    const kinds: SessionKind[] = ["chat", "mission"];
+    const permissions: Permission[] = ["restricted", "full"];
+    const kinds: SessionKind[] = ["agent", "mission"];
 
-    for (const mode of modes) {
+    for (const permission of permissions) {
       for (const kind of kinds) {
-        it(`includes base + tool-usage + protocols in ${kind}/${mode}`, () => {
-          const stack = buildPromptStack(makeContext({ loopMode: mode, sessionKind: kind }));
+        it(`includes base + tool-usage + protocols in ${kind}/${permission}`, () => {
+          const stack = buildPromptStack(makeContext({ sessionPermission: permission, sessionKind: kind }));
           const joined = stack.join("\n");
 
           // Base prompt markers
@@ -134,13 +134,13 @@ describe("prompt-stack", () => {
 
   // ── Mission setup has same protocol knowledge ───────────────
 
-  describe("mission setup vs full mode protocol knowledge", () => {
+  describe("mission setup vs full permission protocol knowledge", () => {
     it("has identical protocol block", () => {
       const setupStack = buildPromptStack(makeContext({
-        sessionKind: "mission", loopMode: "restricted",
+        sessionKind: "mission", sessionPermission: "restricted",
       }));
       const fullStack = buildPromptStack(makeContext({
-        sessionKind: "mission", loopMode: "full", missionRunId: "run-1",
+        sessionKind: "mission", sessionPermission: "full", missionRunId: "run-1",
       }));
 
       // Both should have the same protocols prompt
@@ -156,10 +156,10 @@ describe("prompt-stack", () => {
 
     it("differs only in policy and context", () => {
       const setupStack = buildPromptStack(makeContext({
-        sessionKind: "mission", loopMode: "restricted",
+        sessionKind: "mission", sessionPermission: "restricted",
       }));
       const fullStack = buildPromptStack(makeContext({
-        sessionKind: "mission", loopMode: "full", missionRunId: "run-1",
+        sessionKind: "mission", sessionPermission: "full", missionRunId: "run-1",
       }));
 
       const setupJoined = setupStack.join("\n");
@@ -175,35 +175,39 @@ describe("prompt-stack", () => {
     });
   });
 
-  // ── Mode prompts ────────────────────────────────────────────
+  // ── Permission prompts ──────────────────────────────────────
 
-  describe("mode prompts", () => {
-    it("off mode restricts proactive actions", () => {
-      const prompt = buildModePrompt("off");
-      expect(prompt).toContain("passive");
-      expect(prompt).toContain("do not take proactive actions");
-    });
-
-    it("restricted mode requires approval for mutations", () => {
-      const prompt = buildModePrompt("restricted");
+  describe("permission prompts", () => {
+    it("agent / restricted requires approval for mutations", () => {
+      const prompt = buildPermissionPrompt({ mode: "agent", permission: "restricted" });
       expect(prompt).toContain("approval");
       expect(prompt).toContain("Mutating tools");
     });
 
-    it("full mode allows everything", () => {
-      const prompt = buildModePrompt("full");
+    it("agent / full grants full authority", () => {
+      const prompt = buildPermissionPrompt({ mode: "agent", permission: "full" });
       expect(prompt).toContain("full authority");
-      expect(prompt).toContain("No approval gates");
+    });
+
+    it("mission / restricted requires approval and supports loop_defer", () => {
+      const prompt = buildPermissionPrompt({ mode: "mission", permission: "restricted" });
+      expect(prompt).toContain("approval");
+      expect(prompt).toContain("loop_defer");
+    });
+
+    it("mission / full grants full authority", () => {
+      const prompt = buildPermissionPrompt({ mode: "mission", permission: "full" });
+      expect(prompt).toContain("full authority");
     });
   });
 
   // ── Contextual layers ───────────────────────────────────────
 
   describe("contextual layers", () => {
-    it("chat mode includes chat prompt", () => {
-      const stack = buildPromptStack(makeContext({ sessionKind: "chat" }));
+    it("agent mode includes agent prompt", () => {
+      const stack = buildPromptStack(makeContext({ sessionKind: "agent" }));
       const joined = stack.join("\n");
-      expect(joined).toContain("# Chat Mode");
+      expect(joined).toContain("# Agent Mode");
     });
 
     it("mission setup includes setup prompt", () => {
@@ -228,41 +232,6 @@ describe("prompt-stack", () => {
       const stack = buildPromptStack(makeContext({ isSubagent: true }));
       const joined = stack.join("\n");
       expect(joined).toContain("# Subagent Role");
-    });
-
-    it("full_autonomous includes full-autonomous prompt layer", () => {
-      const stack = buildPromptStack(makeContext({ sessionKind: "full_autonomous", loopMode: "full" }));
-      const joined = stack.join("\n");
-      expect(joined).toContain("# Full Autonomous Rhythm");
-      expect(joined).toContain("loop_defer");
-      expect(joined).not.toContain("# Chat Mode");
-      expect(joined).not.toContain("# Mission Setup");
-    });
-
-    it("full_autonomous with context shows where-you-left-off section", () => {
-      const stack = buildPromptStack(
-        makeContext({ sessionKind: "full_autonomous", loopMode: "full" }),
-        {
-          fullAutonomousContext: {
-            recentEpisodeTitles: ["Monitored TRUMP price", "Deferred until 09:00"],
-            openLoops: ["price_watch: TRUMP -8% since 6h"],
-            iterationCountInSession: 12,
-            wakeReason: "scheduled",
-          },
-        },
-      );
-      const joined = stack.join("\n");
-      expect(joined).toContain("Where you left off");
-      expect(joined).toContain("TRUMP");
-      expect(joined).toContain("Open loops");
-      expect(joined).toContain("Iterations accumulated");
-      expect(joined).toContain("Resumed by wake");
-    });
-
-    it("full_autonomous without context omits where-you-left-off section", () => {
-      const stack = buildPromptStack(makeContext({ sessionKind: "full_autonomous", loopMode: "full" }));
-      const joined = stack.join("\n");
-      expect(joined).not.toContain("Where you left off");
     });
 
     it("mission setup with context shows draft state", () => {
@@ -305,7 +274,7 @@ describe("prompt-stack", () => {
           subagentContext: {
             task: "Research SOL/USDC liquidity on Jupiter",
             allowTrades: false,
-            parentLoopMode: "restricted",
+            childPermission: "restricted",
           },
         },
       );
@@ -322,7 +291,7 @@ describe("prompt-stack", () => {
           subagentContext: {
             task: "Research L2 gas costs",
             allowTrades: false,
-            parentLoopMode: "restricted",
+            childPermission: "restricted",
             parentSummarySnapshot:
               "User opened a SOL long at 145 USD, closed BTC short at 62500, portfolio +4.2% 7d.",
           },
@@ -341,7 +310,7 @@ describe("prompt-stack", () => {
           subagentContext: {
             task: "T",
             allowTrades: false,
-            parentLoopMode: "restricted",
+            childPermission: "restricted",
           },
         },
       ).join("\n");
@@ -353,7 +322,7 @@ describe("prompt-stack", () => {
           subagentContext: {
             task: "T",
             allowTrades: false,
-            parentLoopMode: "restricted",
+            childPermission: "restricted",
             parentSummarySnapshot: "   \n   ",
           },
         },
@@ -418,27 +387,26 @@ describe("prompt-stack", () => {
      * aspect lands in the prompt. Prevents model from reading about modes it
      * can't reach from this session.
      */
-    it("CHAT aspect: only teacher/collaborator lines, no MISSION / FULL AUTONOMOUS narrative", () => {
-      const stack = buildPromptStack(makeContext({ sessionKind: "chat" }));
+    it("AGENT aspect: only teacher/collaborator lines, no MISSION narrative", () => {
+      const stack = buildPromptStack(makeContext({ sessionKind: "agent" }));
       const joined = stack.join("\n");
-      expect(joined).toContain("CHAT");
-      expect(joined).toContain("teacher and collaborator");
+      expect(joined).toContain("AGENT");
+      expect(joined).toContain("teacher, collaborator");
       expect(joined).not.toContain("MISSION SETUP");
       expect(joined).not.toContain("MISSION RUN");
-      expect(joined).not.toContain("FULL AUTONOMOUS");
     });
 
-    it("MISSION SETUP aspect: planner lines, no CHAT / MISSION RUN narrative", () => {
+    it("MISSION SETUP aspect: planner lines, no AGENT / MISSION RUN narrative", () => {
       const stack = buildPromptStack(makeContext({ sessionKind: "mission" }));
       const joined = stack.join("\n");
       expect(joined).toContain("MISSION SETUP");
       expect(joined).toContain("planner");
-      // CHAT aspect narrative absent — we only check the aspect-section label.
-      expect(joined).not.toContain("teacher and collaborator");
+      // AGENT aspect narrative absent — we only check the aspect-section label.
+      expect(joined).not.toContain("teacher, collaborator");
       expect(joined).not.toContain("MISSION RUN");
     });
 
-    it("MISSION RUN aspect: executor lines, no SETUP / CHAT narrative", () => {
+    it("MISSION RUN aspect: executor lines, no SETUP / AGENT narrative", () => {
       const stack = buildPromptStack(makeContext({
         sessionKind: "mission", missionId: "m-1", missionRunId: "run-1",
       }));
@@ -448,28 +416,16 @@ describe("prompt-stack", () => {
       expect(joined).toContain("mission_stop");
       expect(joined).toContain("user-approved stop condition");
       expect(joined).toContain("loop_defer");
-      expect(joined).not.toContain("teacher and collaborator");
-      expect(joined).not.toContain("planner");
-    });
-
-    it("FULL AUTONOMOUS aspect: rhythm lines, no mission narrative", () => {
-      const stack = buildPromptStack(makeContext({
-        sessionKind: "full_autonomous", loopMode: "full",
-      }));
-      const joined = stack.join("\n");
-      expect(joined).toContain("FULL AUTONOMOUS");
-      expect(joined).toContain("continuous worker");
-      expect(joined).toContain("rhythm");
-      expect(joined).not.toContain("teacher and collaborator");
+      expect(joined).not.toContain("teacher, collaborator");
       expect(joined).not.toContain("planner");
     });
 
     it("SUBAGENT aspect overrides sessionKind and narrates delegated task", () => {
-      const stack = buildPromptStack(makeContext({ isSubagent: true, sessionKind: "chat" }));
+      const stack = buildPromptStack(makeContext({ isSubagent: true, sessionKind: "agent" }));
       const joined = stack.join("\n");
       expect(joined).toContain("SUBAGENT");
       expect(joined).toContain("delegated");
-      expect(joined).not.toContain("teacher and collaborator");
+      expect(joined).not.toContain("teacher, collaborator");
     });
   });
 

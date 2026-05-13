@@ -1,12 +1,14 @@
 /**
- * PR-7 — ingress router unit tests. Covers the preempt-then-route matrix:
+ * Ingress router unit tests. Covers the preempt-then-route matrix:
  *   - cancelForSession is ALWAYS called first,
  *   - paused_wake run → flip to running + save user msg + resumeMissionRun,
  *   - paused_approval / running run → persist interrupt, no new turn,
- *   - full_autonomous (no run) → stub falls through to processChatTurn (PR-10
- *     replaces this branch),
+ *   - paused_error → return recovery hint + persist interrupt,
  *   - no run + active mission (draft) → processMissionSetupTurn,
- *   - no run + no mission → processChatTurn.
+ *   - no run + no mission → processAgentTurn.
+ *
+ * Phase 2 collapse: `full_autonomous` route is gone; agent mode is the
+ * default when no mission row exists.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -15,16 +17,15 @@ const mockCancelForSession = vi.fn();
 const mockGetActiveRunBySession = vi.fn();
 const mockUpdateRunStatus = vi.fn();
 const mockCasFlipToRunning = vi.fn();
-const mockGetActiveFullAutonomousRunBySession = vi.fn();
-const mockCasFullAutonomousToRunning = vi.fn();
 const mockGetSession = vi.fn();
 const mockGetActiveMission = vi.fn();
 const mockAddMessage = vi.fn();
 const mockAddEngineMessage = vi.fn();
-const mockProcessChatTurn = vi.fn();
+const mockProcessAgentTurn = vi.fn();
 const mockProcessMissionSetupTurn = vi.fn();
-const mockProcessFullAutonomousTurn = vi.fn();
 const mockResumeMissionRun = vi.fn();
+const mockAddOperatorInstruction = vi.fn();
+const mockAddOperatorCue = vi.fn();
 
 vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
   cancelForSession: (...a: unknown[]) => mockCancelForSession(...a),
@@ -34,11 +35,6 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getActiveRunBySession: (...a: unknown[]) => mockGetActiveRunBySession(...a),
   updateStatus: (...a: unknown[]) => mockUpdateRunStatus(...a),
   casFlipToRunning: (...a: unknown[]) => mockCasFlipToRunning(...a),
-}));
-
-vi.mock("@vex-agent/db/repos/full-autonomous-runs.js", () => ({
-  getActiveRunBySession: (...a: unknown[]) => mockGetActiveFullAutonomousRunBySession(...a),
-  casFlipToRunning: (...a: unknown[]) => mockCasFullAutonomousToRunning(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/sessions.js", () => ({
@@ -55,35 +51,37 @@ vi.mock("@vex-agent/db/repos/messages.js", () => ({
 }));
 
 vi.mock("../../../vex-agent/engine/core/runner.js", () => ({
-  processChatTurn: (...a: unknown[]) => mockProcessChatTurn(...a),
+  processAgentTurn: (...a: unknown[]) => mockProcessAgentTurn(...a),
   processMissionSetupTurn: (...a: unknown[]) => mockProcessMissionSetupTurn(...a),
-  processFullAutonomousTurn: (...a: unknown[]) => mockProcessFullAutonomousTurn(...a),
   resumeMissionRun: (...a: unknown[]) => mockResumeMissionRun(...a),
+}));
+
+vi.mock("../../../vex-agent/engine/core/operator-instructions.js", () => ({
+  addOperatorInstruction: (...a: unknown[]) => mockAddOperatorInstruction(...a),
+  addOperatorCue: (...a: unknown[]) => mockAddOperatorCue(...a),
 }));
 
 const { routeUserMessage } = await import("../../../vex-agent/engine/ingress.js");
 
-const chatResult = { text: "hi", toolCallsMade: 0, pendingApprovals: [], stopReason: null, missionStatus: null };
-const setupResult = { ...chatResult, missionStatus: "draft" as const };
+const agentResult = { text: "hi", toolCallsMade: 0, pendingApprovals: [], stopReason: null, missionStatus: null };
+const setupResult = { ...agentResult, missionStatus: "draft" as const };
 const resumeResult = { text: null, toolCallsMade: 2, pendingApprovals: [], stopReason: null, missionStatus: "running" as const };
-const fullAutoResult = { text: "full-auto", toolCallsMade: 0, pendingApprovals: [], stopReason: null, missionStatus: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockCancelForSession.mockResolvedValue(0);
-  mockProcessChatTurn.mockResolvedValue(chatResult);
+  mockProcessAgentTurn.mockResolvedValue(agentResult);
   mockProcessMissionSetupTurn.mockResolvedValue(setupResult);
-  mockProcessFullAutonomousTurn.mockResolvedValue(fullAutoResult);
   mockResumeMissionRun.mockResolvedValue(resumeResult);
   mockCasFlipToRunning.mockResolvedValue("paused_wake");
-  mockGetActiveFullAutonomousRunBySession.mockResolvedValue(null);
-  mockCasFullAutonomousToRunning.mockResolvedValue("paused_wake");
+  mockAddOperatorInstruction.mockResolvedValue(undefined);
+  mockAddOperatorCue.mockResolvedValue(undefined);
 });
 
 describe("ingress.routeUserMessage", () => {
   it("always cancels pending wakes before routing", async () => {
     mockGetActiveRunBySession.mockResolvedValue(null);
-    mockGetSession.mockResolvedValue({ id: "s1", kind: "chat" });
+    mockGetSession.mockResolvedValue({ id: "s1", mode: "agent", permission: "restricted" });
     mockGetActiveMission.mockResolvedValue(null);
 
     await routeUserMessage("s1", "hello");
@@ -99,18 +97,18 @@ describe("ingress.routeUserMessage", () => {
 
     expect(result).toBe(resumeResult);
     expect(mockCasFlipToRunning).toHaveBeenCalledWith("run-1", ["paused_wake"]);
-    expect(mockAddMessage).toHaveBeenCalledWith(
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
       "s1",
-      expect.objectContaining({ role: "user", content: "can you pause?" }),
+      "can you pause?",
       expect.objectContaining({
-        source: "user",
-        messageType: "operator_interrupt",
-        payload: expect.objectContaining({ preempt: "wake" }),
+        target: "mission_run",
+        runId: "run-1",
+        preempt: "wake",
       }),
     );
-    expect(mockAddEngineMessage).toHaveBeenCalled();
+    expect(mockAddOperatorCue).toHaveBeenCalled();
     expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1");
-    expect(mockProcessChatTurn).not.toHaveBeenCalled();
+    expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 
   it("persists an interrupt (but does NOT fire a new turn) when the run is paused_approval", async () => {
@@ -120,9 +118,9 @@ describe("ingress.routeUserMessage", () => {
 
     expect(result.text).toContain("queued");
     expect(result.toolCallsMade).toBe(0);
-    expect(mockAddMessage).toHaveBeenCalled();
+    expect(mockAddOperatorInstruction).toHaveBeenCalled();
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
-    expect(mockProcessChatTurn).not.toHaveBeenCalled();
+    expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 
   it("persists an interrupt when the run is still running", async () => {
@@ -130,8 +128,8 @@ describe("ingress.routeUserMessage", () => {
 
     await routeUserMessage("s1", "FYI");
 
-    expect(mockAddMessage).toHaveBeenCalled();
-    expect(mockProcessChatTurn).not.toHaveBeenCalled();
+    expect(mockAddOperatorInstruction).toHaveBeenCalled();
+    expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 
   it("returns a recovery hint instead of empty fallback for paused_error", async () => {
@@ -139,33 +137,21 @@ describe("ingress.routeUserMessage", () => {
 
     const result = await routeUserMessage("s1", "anything");
 
-    expect(mockAddMessage).toHaveBeenCalledWith(
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
       "s1",
-      expect.objectContaining({ role: "user", content: "anything" }),
-      expect.objectContaining({ source: "user", messageType: "operator_interrupt" }),
+      "anything",
+      expect.objectContaining({ target: "mission_run", runId: "run-4", runStatus: "paused_error" }),
     );
     expect(result.text).toContain("/retry");
     expect(result.text).toContain("/rewind");
     expect(result.stopReason).toBeNull();
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
-    expect(mockProcessChatTurn).not.toHaveBeenCalled();
-  });
-
-  it("routes full_autonomous sessions to processFullAutonomousTurn", async () => {
-    mockGetActiveRunBySession.mockResolvedValue(null);
-    mockGetSession.mockResolvedValue({ id: "s1", kind: "full_autonomous" });
-    mockGetActiveMission.mockResolvedValue(null);
-
-    const result = await routeUserMessage("s1", "hello");
-
-    expect(result).toBe(fullAutoResult);
-    expect(mockProcessFullAutonomousTurn).toHaveBeenCalledWith("s1", "hello");
-    expect(mockProcessChatTurn).not.toHaveBeenCalled();
+    expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 
   it("routes to mission-setup when a draft mission exists and there is no run", async () => {
     mockGetActiveRunBySession.mockResolvedValue(null);
-    mockGetSession.mockResolvedValue({ id: "s1", kind: "chat" });
+    mockGetSession.mockResolvedValue({ id: "s1", mode: "mission", permission: "restricted" });
     mockGetActiveMission.mockResolvedValue({ id: "m1", status: "draft" });
 
     const result = await routeUserMessage("s1", "goal is x");
@@ -174,14 +160,14 @@ describe("ingress.routeUserMessage", () => {
     expect(mockProcessMissionSetupTurn).toHaveBeenCalledWith("s1", "goal is x");
   });
 
-  it("routes to chat when no mission and no run exist", async () => {
+  it("routes to agent when no mission and no run exist", async () => {
     mockGetActiveRunBySession.mockResolvedValue(null);
-    mockGetSession.mockResolvedValue({ id: "s1", kind: "chat" });
+    mockGetSession.mockResolvedValue({ id: "s1", mode: "agent", permission: "restricted" });
     mockGetActiveMission.mockResolvedValue(null);
 
     const result = await routeUserMessage("s1", "hi");
 
-    expect(result).toBe(chatResult);
-    expect(mockProcessChatTurn).toHaveBeenCalledWith("s1", "hi");
+    expect(result).toBe(agentResult);
+    expect(mockProcessAgentTurn).toHaveBeenCalledWith("s1", "hi");
   });
 });

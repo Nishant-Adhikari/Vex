@@ -1,8 +1,11 @@
 /**
- * Loop wake requests repo — durable substrate for `loop_defer` (PR-5) and
- * the wake executor (PR-7).
+ * Loop wake requests repo — durable substrate for `loop_defer` and the wake
+ * executor.
  *
- * Schema lives in `011_loop_wake_requests.sql`. Rows progress one-way:
+ * Schema lives in `011_loop_wake_requests.sql`. Only mission_run wakes exist;
+ * `mission_run_id` is always present.
+ *
+ * Rows progress one-way:
  *   pending → consumed (executor `claimDue`)
  *   pending → cancelled (ingress router `cancelForSession` on user preempt)
  *
@@ -12,13 +15,12 @@
  *     `ON CONFLICT DO NOTHING` — re-enqueueing while pending returns `null`
  *     so callers can detect the no-op without a separate pre-check.
  *   - `status` CHECK constraint — only the three known values persist.
- *   - `kind` CHECK constraint — only `mission_run` / `full_autonomous`.
  *
  * Exactly-once claim (`claimDue`): single UPDATE that selects due pending
  * rows via `FOR UPDATE SKIP LOCKED` and flips them to `consumed`. Using a
  * dedicated short-lived `PoolClient` so the SKIP LOCKED predicate and the
  * UPDATE live in the same transaction — race-safe across concurrent
- * executor ticks (see LeadDev audit must-fix #4 rationale).
+ * executor ticks.
  */
 
 import type { PoolClient } from "pg";
@@ -27,14 +29,12 @@ import { nullableJsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type LoopWakeKind = "mission_run" | "full_autonomous";
 export type LoopWakeStatus = "pending" | "consumed" | "cancelled";
 
 export interface LoopWakeRequest {
   id: string;
   sessionId: string;
-  missionRunId: string | null;
-  kind: LoopWakeKind;
+  missionRunId: string;
   dueAt: string;
   status: LoopWakeStatus;
   reason: string | null;
@@ -48,8 +48,7 @@ export interface LoopWakeRequest {
 interface LoopWakeRow {
   id: string;
   session_id: string;
-  mission_run_id: string | null;
-  kind: string;
+  mission_run_id: string;
   due_at: string | Date;
   status: string;
   reason: string | null;
@@ -74,7 +73,6 @@ function mapRow(r: LoopWakeRow): LoopWakeRequest {
     id: r.id,
     sessionId: r.session_id,
     missionRunId: r.mission_run_id,
-    kind: r.kind as LoopWakeKind,
     dueAt: iso(r.due_at),
     status: r.status as LoopWakeStatus,
     reason: r.reason,
@@ -90,8 +88,7 @@ function mapRow(r: LoopWakeRow): LoopWakeRequest {
 
 export interface EnqueueInput {
   sessionId: string;
-  missionRunId: string | null;
-  kind: LoopWakeKind;
+  missionRunId: string;
   dueAt: Date;
   reason: string | null;
   payload: Record<string, unknown> | null;
@@ -101,20 +98,19 @@ export interface EnqueueInput {
  * Insert a pending wake row. Returns the inserted row, or `null` when a
  * pending row already exists for this session (partial unique index hits
  * `ON CONFLICT DO NOTHING`). Callers — today only the `loop_defer` handler
- * in PR-5 — treat `null` as a no-op and surface that back to the model so
- * it doesn't double-enqueue.
+ * — treat `null` as a no-op and surface that back to the model so it
+ * doesn't double-enqueue.
  */
 export async function enqueue(input: EnqueueInput): Promise<LoopWakeRequest | null> {
   const row = await queryOne<LoopWakeRow>(
     `INSERT INTO loop_wake_requests
-       (session_id, mission_run_id, kind, due_at, status, reason, payload)
-     VALUES ($1, $2, $3, $4::timestamptz, 'pending', $5, $6::jsonb)
+       (session_id, mission_run_id, due_at, status, reason, payload)
+     VALUES ($1, $2, $3::timestamptz, 'pending', $4, $5::jsonb)
      ON CONFLICT (session_id) WHERE status = 'pending' DO NOTHING
      RETURNING *`,
     [
       input.sessionId,
       input.missionRunId,
-      input.kind,
       input.dueAt.toISOString(),
       input.reason,
       nullableJsonb(input.payload),

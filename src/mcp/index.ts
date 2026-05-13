@@ -28,8 +28,12 @@ import { startStdioTransport } from "./transports/stdio.js";
 import { startHttpTransport } from "./transports/http.js";
 import { startWakeExecutor, type WakeExecutorHandle } from "@vex-agent/engine/index.js";
 import { startSyncExecutor, type SyncExecutorHandle } from "@vex-agent/sync/executor.js";
-import { parseWakeRuntimeConfig } from "./wake-config.js";
 import logger from "@utils/logger.js";
+
+// Wake is always-on with no env-driven kill switch. Stale `AGENT_WAKE_*`
+// env values from older installs must never disable the wake loop.
+const WAKE_INTERVAL_MS = 2000;
+const WAKE_BATCH_SIZE = 10;
 
 type Transport = "stdio" | "http";
 
@@ -63,28 +67,19 @@ export async function runMcpCli(argv: readonly string[] = process.argv.slice(2))
   // Wake executor lives on the long-lived MCP process, NOT in
   // `runBootstrapChecks` (which is also called by the CLI readiness check and
   // would spin up a duplicate executor on every CLI invocation — see ADR 001).
-  // M11 honours AGENT_WAKE_ENABLED / AGENT_WAKE_INTERVAL_MS / AGENT_WAKE_BATCH_SIZE
-  // written by the vex-app wizard. Absent / default → previous behaviour
-  // (always-on with executor compile-time defaults). Single helper for both
-  // transports so stdio + http never drift apart.
-  const wakeConfig = parseWakeRuntimeConfig(process.env);
+  //
+  // Wake is ALWAYS ON with hardcoded defaults. The legacy `AGENT_WAKE_*`
+  // env vars are ignored at runtime so a stale
+  // `AGENT_WAKE_ENABLED=false` from an older install cannot disable wake.
   let wakeExecutor: WakeExecutorHandle | null = null;
   let syncExecutor: SyncExecutorHandle | null = null;
   if (transport === "stdio") {
     await startStdioTransport();
-    if (wakeConfig.enabled) {
-      wakeExecutor = startWakeExecutor(wakeConfig.opts);
-    } else {
-      logger.info("mcp.wake_disabled_by_env");
-    }
+    wakeExecutor = startWakeExecutor({ intervalMs: WAKE_INTERVAL_MS, batchSize: WAKE_BATCH_SIZE });
     syncExecutor = startSyncExecutor();
   } else {
     await startHttpTransport();
-    if (wakeConfig.enabled) {
-      wakeExecutor = startWakeExecutor(wakeConfig.opts);
-    } else {
-      logger.info("mcp.wake_disabled_by_env");
-    }
+    wakeExecutor = startWakeExecutor({ intervalMs: WAKE_INTERVAL_MS, batchSize: WAKE_BATCH_SIZE });
     syncExecutor = startSyncExecutor();
   }
 

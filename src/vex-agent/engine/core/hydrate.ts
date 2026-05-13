@@ -6,7 +6,7 @@
  * space, not session — the caller knows which docs to load).
  */
 
-import type { EngineContext, SessionKind, LoopMode } from "../types.js";
+import type { EngineContext, Permission, SessionKind } from "../types.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
@@ -27,6 +27,12 @@ export interface HydratedSession {
  *
  * `loadedDocuments` is left empty — the caller populates it
  * (documents are keyed by space/folder, not session).
+ *
+ * `sessionKind` and `sessionPermission` are immutable per session.
+ * `sessionKind` defaults to `session.mode` from DB; if an active mission
+ * is attached we surface `"mission"` regardless. `sessionPermission`
+ * mirrors `session.permission` and is the single source for approval
+ * gates throughout the turn — no per-call DB queries downstream.
  */
 export async function hydrateEngineSession(sessionId: string): Promise<HydratedSession | null> {
   const session = await sessionsRepo.getSession(sessionId);
@@ -43,36 +49,27 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
   const mission = await missionsRepo.getActiveMission(sessionId);
   let activeRun: missionRunsRepo.MissionRun | null = null;
   let missionRunId: string | null = null;
-  let loopMode: LoopMode = "off";
 
   if (mission) {
     activeRun = await missionRunsRepo.getActiveRun(mission.id);
     if (activeRun) {
       missionRunId = activeRun.id;
-      loopMode = activeRun.loopMode as LoopMode;
     }
   }
 
-  // Priority:
-  //   1. Active mission → sessionKind="mission" + loopMode from run.
-  //   2. Otherwise session.kind from DB (`chat` by default, `full_autonomous`
-  //      when the session was created with that kind — PR-10). Full autonomous
-  //      runs in `loopMode: "full"` so `loop_defer` is visible in the toolset.
-  const sessionKind: SessionKind = mission
-    ? "mission"
-    : session.kind === "full_autonomous"
-      ? "full_autonomous"
-      : "chat";
-
-  if (!mission && session.kind === "full_autonomous") {
-    loopMode = "full";
-  }
+  // Mode discrimination: a session with an attached active mission acts as
+  // "mission" regardless of the row's `mode` column. Sessions without a
+  // mission fall through to whatever `mode` the row was created with — only
+  // `"agent"` is observed today since mission setup creates the mission row
+  // synchronously (see Commit C mission creation pipeline).
+  const sessionKind: SessionKind = mission ? "mission" : session.mode;
+  const sessionPermission: Permission = session.permission;
 
   return {
     context: {
       sessionId,
       sessionKind,
-      loopMode,
+      sessionPermission,
       missionId: mission?.id ?? null,
       missionRunId,
       sessionStartedAt: session.startedAt,

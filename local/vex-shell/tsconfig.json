@@ -1,13 +1,21 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "baseUrl": "../..",
     "rootDir": "../..",
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
     "jsx": "react-jsx",
-    "jsxImportSource": "react"
+    "jsxImportSource": "react",
+    "paths": {
+      "@tools/*": ["src/tools/*"],
+      "@utils/*": ["src/utils/*"],
+      "@config/*": ["src/config/*"],
+      "@vex-agent/*": ["src/vex-agent/*"],
+      "@shared/*": ["vex-app/src/shared/*"]
+    }
   },
   "include": ["**/*.ts", "**/*.tsx", "../../src/**/*.ts"],
   "exclude": ["../../node_modules", "../../dist", "../../src/__tests__"]

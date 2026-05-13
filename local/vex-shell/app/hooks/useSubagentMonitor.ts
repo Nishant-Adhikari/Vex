@@ -18,6 +18,7 @@ export function useSubagentMonitor(store: Store): void {
     let disposed = false;
 
     async function refresh(): Promise<void> {
+      if (!sessionId) return;
       try {
         const rows = await listSessionSubagents(sessionId);
         if (disposed) return;

@@ -1,7 +1,14 @@
 /**
  * Approvals repo — tool execution approval queue.
+ *
+ * `permission_at_enqueue` is NOT NULL + CHECK (IN 'restricted'|'full').
+ * The column is an audit
+ * snapshot of `session.permission` at enqueue time; it does not authorize
+ * re-dispatch on its own (approval flow handles the bypass via the
+ * standard `approved: true` context flag).
  */
 
+import type { Permission } from "../../engine/types.js";
 import { query, queryOne, execute } from "../client.js";
 import { jsonb, nullableJsonb } from "../params.js";
 
@@ -12,12 +19,15 @@ export interface ApprovalItem {
   status: "pending" | "approved" | "rejected";
   sessionId: string | null;
   toolCallId: string | null;
-  chatMode: string;
+  /** Permission snapshot at enqueue time. Audit only. */
+  permissionAtEnqueue: Permission;
   createdAt: string;
   resolvedAt: string | null;
 }
 
 function mapRow(r: Record<string, unknown>): ApprovalItem {
+  const raw = (r.permission_at_enqueue as string) ?? "restricted";
+  const permission: Permission = raw === "full" ? "full" : "restricted";
   return {
     id: r.id as string,
     toolCall: r.tool_call as Record<string, unknown>,
@@ -25,7 +35,7 @@ function mapRow(r: Record<string, unknown>): ApprovalItem {
     status: r.status as ApprovalItem["status"],
     sessionId: r.session_id as string | null,
     toolCallId: r.tool_call_id as string | null,
-    chatMode: (r.chat_mode as string) ?? "restricted",
+    permissionAtEnqueue: permission,
     createdAt: r.created_at as string,
     resolvedAt: r.resolved_at as string | null,
   };
@@ -37,13 +47,13 @@ export async function enqueue(
   reasoning: string,
   sessionId: string,
   toolCallId?: string,
-  chatMode?: string,
+  permission?: Permission,
 ): Promise<void> {
   const pendingContext = nullableJsonb(toolCallId ? { toolCallId } : null);
   await execute(
-    `INSERT INTO approval_queue (id, tool_call, reasoning, status, session_id, tool_call_id, chat_mode, pending_context)
+    `INSERT INTO approval_queue (id, tool_call, reasoning, status, session_id, tool_call_id, permission_at_enqueue, pending_context)
      VALUES ($1, $2::jsonb, $3, 'pending', $4, $5, $6, $7::jsonb)`,
-    [id, jsonb(toolCall), reasoning, sessionId, toolCallId ?? null, chatMode ?? "restricted", pendingContext],
+    [id, jsonb(toolCall), reasoning, sessionId, toolCallId ?? null, permission ?? "restricted", pendingContext],
   );
 }
 

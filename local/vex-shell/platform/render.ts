@@ -27,9 +27,8 @@ export interface ProviderSummary {
 
 export interface SessionSummary {
   id: string;
-  kind: "chat" | "full_autonomous";
+  kind: "agent" | "mission";
   missionStatus: string | null;
-  fullAutonomousStatus: string | null;
   missionCommand: "start" | "continue" | null;
   pendingApprovals: number;
   usage: TokenUsageSummary;
@@ -96,11 +95,8 @@ export function renderSessionSection(session: SessionSummary | null): void {
     return;
   }
   writeLine(`- ID:       ${session.id}`);
-  writeLine(`- Kind:     ${session.kind}`);
+  writeLine(`- Mode:     ${session.kind}`);
   writeLine(`- Mission:  ${session.missionStatus ?? "none"}`);
-  if (session.kind === "full_autonomous") {
-    writeLine(`- FullAuto: ${session.fullAutonomousStatus ?? "none"}`);
-  }
   writeLine(`- Command:  ${session.missionCommand ? `/mission ${session.missionCommand}` : "none"}`);
   writeLine(`- Pending:  ${session.pendingApprovals} approval(s)`);
   writeLine(`- Context:  ${formatContextWindow(session.context)}`);
@@ -119,8 +115,7 @@ export function renderPrompt(session: SessionSummary | null, provider: ProviderS
     return `[local_shell] no-session provider=${provider.name} ${runtime}`;
   }
   const mission = session.missionStatus ?? "none";
-  const fullAuto = session.fullAutonomousStatus ? ` full_auto=${session.fullAutonomousStatus}` : "";
-  return `[local_shell] session=${session.id.slice(0, 8)} kind=${session.kind} mission=${mission}${fullAuto} provider=${provider.name} approvals=${session.pendingApprovals} ${runtime}`;
+  return `[local_shell] session=${session.id.slice(0, 8)} mode=${session.kind} mission=${mission} provider=${provider.name} approvals=${session.pendingApprovals} ${runtime}`;
 }
 
 export function formatTokenCount(value: number): string {

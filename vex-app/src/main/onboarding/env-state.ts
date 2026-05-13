@@ -24,8 +24,6 @@ import type { PolymarketStatus } from "@shared/schemas/api-keys.js";
 import { log } from "../logger/index.js";
 import { probeEmbeddings } from "./embedding-state.js";
 import { probeProvider } from "./provider-state.js";
-import { probeMode } from "./mode-state.js";
-import { probeWake } from "./wake-state.js";
 
 const KEYSTORE_FILE = path.join(CONFIG_DIR, "keystore.json");
 const SOLANA_KEYSTORE_FILE = path.join(CONFIG_DIR, "solana-keystore.json");
@@ -127,8 +125,6 @@ export async function gatherEnvState(): Promise<EnvState> {
     setupFlag,
     embeddings,
     provider,
-    mode,
-    wake,
   ] = await Promise.all([
     readEnvKeyPresence(ENV_FILE, "VEX_KEYSTORE_PASSWORD"),
     readEnvKeyPresence(ENV_FILE, "JUPITER_API_KEY"),
@@ -142,8 +138,6 @@ export async function gatherEnvState(): Promise<EnvState> {
     fileExists(SETUP_COMPLETE_FILE),
     probeEmbeddings(ENV_FILE),
     probeProvider(ENV_FILE),
-    probeMode({ envFile: ENV_FILE }),
-    probeWake({ envFile: ENV_FILE }),
   ]);
 
   const polymarketStatus = polymarketStatusFrom(hasPolyKey, hasPolySecret, hasPolyPass);
@@ -165,8 +159,6 @@ export async function gatherEnvState(): Promise<EnvState> {
     },
     ...(walletAddresses !== undefined ? { walletAddresses } : {}),
     provider,
-    mode,
-    wake,
     setupCompleteFlag: setupFlag,
   };
 }

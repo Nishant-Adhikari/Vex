@@ -15,29 +15,33 @@
 
 import type { ToolDef, ToolVisibility, OpenAITool } from "./types.js";
 import { toOpenAITools } from "./types.js";
+import type { Permission, SessionKind } from "@vex-agent/engine/types.js";
 import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 /**
  * Session-aware context for tool surface projection. Built by engine runners
  * before every provider call so `getOpenAITools` can gate session-scoped
- * tools (loop_defer, checkpoint_handoff_prepare, tool_output_read — all
- * added by later PRs).
+ * tools (loop_defer, checkpoint_handoff_prepare, tool_output_read).
+ *
+ * `permission` and `sessionKind` are immutable per session; the former
+ * controls approval bypass on mutating tools, the latter controls
+ * mode-only visibility (e.g. `loop_defer` is mission-only).
  *
  * `contextUsageBand` is derived from `sessions.token_count` via
  * `computeBand()` — it lags by one turn (previous prompt size) and callers
  * are expected to recompute per turn rather than cache.
  */
 export interface ToolVisibilityContext {
-  chatMode: "full" | "restricted" | "off";
+  permission: Permission;
   role: "parent" | "subagent";
-  sessionKind: "chat" | "mission" | "full_autonomous";
+  sessionKind: SessionKind;
   /** True iff `missionRunId !== null`. Mission setup is `false` even when sessionKind="mission". */
   missionRunActive: boolean;
   contextUsageBand: ContextUsageBand;
 }
 
 /**
- * Convenience constructor for `ToolVisibilityContext` — chat-session
+ * Convenience constructor for `ToolVisibilityContext` — agent-session
  * defaults with optional overrides. Primarily used by tests to avoid
  * inlining a 5-field object at every call site.
  */
@@ -45,9 +49,9 @@ export function defaultVisibilityContext(
   overrides: Partial<ToolVisibilityContext> = {},
 ): ToolVisibilityContext {
   return {
-    chatMode: "off",
+    permission: "restricted",
     role: "parent",
-    sessionKind: "chat",
+    sessionKind: "agent",
     missionRunActive: false,
     contextUsageBand: "normal",
     ...overrides,
@@ -115,17 +119,18 @@ export function getAllTools(): readonly ToolDef[] {
  *
  * Filter chain (in order):
  *   1. `requiresEnv` / `showOnlyWhenEnvMissing` — env-var gates.
- *   2. `proactive` — hidden when `chatMode === "off"`.
+ *   2. `proactive` — hidden when `sessionKind === "agent"` (one-shot
+ *      conversation; proactive tools are for mission loops).
  *   3. `excludeRoles` — hard role gate.
- *   4. `visibility` — session-aware gates (band / mission-active / full-auto
- *      / chat-hidden / mission-setup-hidden). When a ToolDef has no
+ *   4. `visibility` — session-aware gates (band / mission-active /
+ *      agent-hidden / mission-setup-hidden). When a ToolDef has no
  *      `visibility`, it's visible unconditionally at this step.
  */
 export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
   const filtered = TOOLS
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
-    .filter(t => ctx.chatMode === "off" ? !t.proactive : true)
+    .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
     .filter(t => !t.excludeRoles?.includes(ctx.role))
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => isVisibleOnSurface(t, "agent"));
@@ -156,12 +161,9 @@ function passesVisibility(
   if (v.band === "warning" && ctx.contextUsageBand === "normal") return false;
   if (v.band === "critical" && ctx.contextUsageBand !== "critical") return false;
 
-  // Mission active run gate — satisfied by either an active mission run
-  // or a standalone full_autonomous session. Keeps loop_defer (PR-5)
-  // available in both runtimes without a second flag.
-  if (v.requiresMissionActiveRun
-      && !ctx.missionRunActive
-      && ctx.sessionKind !== "full_autonomous") {
+  // Mission active run gate — only mission sessions with an active run
+  // see autonomy primitives like `loop_defer`. Agent mode never loops.
+  if (v.requiresMissionActiveRun && !ctx.missionRunActive) {
     return false;
   }
 
@@ -175,8 +177,7 @@ function passesVisibility(
     return false;
   }
 
-  if (v.requiresFullAutonomous && ctx.sessionKind !== "full_autonomous") return false;
-  if (v.hiddenInChat && ctx.sessionKind === "chat") return false;
+  if (v.hiddenInAgent && ctx.sessionKind === "agent") return false;
   if (v.hiddenInMissionSetup
       && ctx.sessionKind === "mission"
       && !ctx.missionRunActive) {

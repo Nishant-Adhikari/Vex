@@ -30,7 +30,7 @@ import {
   formatMissingMissionFields,
   getMissionSetupState,
 } from "../../src/vex-agent/engine/mission/setup.js";
-import type { TurnResult, LoopMode, MissionStatus } from "../../src/vex-agent/engine/types.js";
+import type { TurnResult, MissionStatus } from "../../src/vex-agent/engine/types.js";
 import type { ToolResult } from "../../src/vex-agent/tools/types.js";
 import { switchProvider } from "../../src/vex-agent/inference/registry.js";
 import type { InferenceProvider } from "../../src/vex-agent/inference/types.js";
@@ -67,11 +67,11 @@ export async function startMissionFromSetup(
  * Start the "ready" mission attached to the session. The caller (UI / hotkey)
  * has already ensured `missionStatus === "ready"`; this action wraps the
  * lookup + `startMission` handshake so the UI only deals with a single
- * promise.
+ * promise. Permission is read from the session row by the engine — no longer
+ * passed in.
  */
 export async function startReadyMission(
   sessionId: string,
-  loopMode: LoopMode = "restricted",
 ): Promise<ActionResult<TurnResult>> {
   try {
     const mission = await missionsRepo.getMissionBySession(sessionId);
@@ -93,7 +93,7 @@ export async function startReadyMission(
         hint: `Missing fields: ${missingFields}. Ask the agent to save the complete draft with mission_draft_update before starting.`,
       };
     }
-    const result = await startMission(mission.id, loopMode);
+    const result = await startMission(mission.id);
     return { ok: true, value: result };
   } catch (err) {
     if (err instanceof MissionRunPausedError) {

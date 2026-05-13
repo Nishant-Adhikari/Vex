@@ -27,7 +27,7 @@ import type { CheckpointHandoff } from "@vex-agent/db/repos/checkpoint-handoffs.
 import type { Message } from "@vex-agent/db/repos/messages.js";
 
 export interface EffectiveRecallSeedInput {
-  sessionKind: "chat" | "mission" | "full_autonomous";
+  sessionKind: "agent" | "mission";
   missionRunActive: boolean;
   messages: readonly Message[];
   missionObjective?: string | null;
@@ -76,10 +76,11 @@ export function effectiveRecallSeed(input: EffectiveRecallSeedInput): string | n
     if (combined.length > 0) return combined;
   }
 
-  // 3. Mission / full-autonomous with session history — pull the last
-  //    meaningful assistant content (a plan / continuation note), plus any
-  //    open loops the caller threaded through.
-  if (input.sessionKind !== "chat" && (input.missionRunActive || input.sessionKind === "full_autonomous")) {
+  // 3. Mission run with session history — pull the last meaningful assistant
+  //    content (a plan / continuation note), plus any open loops the caller
+  //    threaded through. Agent mode is one-shot; this branch never fires
+  //    there because there's no recurring recall surface.
+  if (input.sessionKind === "mission" && input.missionRunActive) {
     const assistantHint = findLastSubstantialAssistantContent(input.messages);
     if (assistantHint) {
       const parts: string[] = [assistantHint];
@@ -88,9 +89,9 @@ export function effectiveRecallSeed(input: EffectiveRecallSeedInput): string | n
     }
   }
 
-  // 4. Empty full-autonomous — no history, but recent episode titles (if
-  //    any) still point at what this session is supposed to be doing.
-  if (input.sessionKind === "full_autonomous") {
+  // 4. Mission with no live messages — fall back to recent episode titles
+  //    so a fresh run wakes into a recall pool seeded by prior work.
+  if (input.sessionKind === "mission") {
     const titles = (input.recentEpisodeTitles ?? []).filter((t) => t.trim().length > 0);
     if (titles.length > 0) {
       return `${EMPTY_OBJECTIVE_FALLBACK}: ${titles.slice(0, 3).join(" / ")}`;

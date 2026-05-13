@@ -15,7 +15,8 @@
  *      completion, hard 15s timeout) BEFORE writing the 3 .env keys
  *      (OPENROUTER_API_KEY + AGENT_MODEL + AGENT_PROVIDER=openrouter
  *      via atomic batch writer).
- *   4. On success → advance to step 7 (mode).
+ *   4. On success → advance to the Review step (Phase 2: Mode + Wake
+ *      are session-config, not wizard steps).
  *   5. On error → render specialised UI copy per VexErrorCode (fixed
  *      strings; SDK raw messages NEVER surfaced — codex turn 3
  *      YELLOW).
@@ -158,13 +159,13 @@ export function ProviderStep({
   const effectiveName = providerState?.name ?? null;
   const effectiveModel = providerState?.modelLabel ?? null;
 
-  const advanceToMode = useCallback(async () => {
+  const advanceToReview = useCallback(async () => {
     setClientError(null);
     const result = await stepAdvance.advance({
       flowMode,
       completedSteps,
       current: "provider",
-      forwardNext: "mode",
+      forwardNext: "review",
       onAdvance,
     });
     if (!result.ok) setClientError(result.message);
@@ -222,12 +223,12 @@ export function ProviderStep({
         }
         invalidateEnvState();
         setSuccessLatencyMs(result.data.verifiedLatencyMs);
-        await advanceToMode();
+        await advanceToReview();
       } finally {
         setSubmitting(false);
       }
     },
-    [advanceToMode, invalidateEnvState, model],
+    [advanceToReview, invalidateEnvState, model],
   );
 
   // ── Skip card ────────────────────────────────────────────────────
@@ -269,7 +270,7 @@ export function ProviderStep({
             </Button>
             <Button
               onClick={() => {
-                void advanceToMode();
+                void advanceToReview();
               }}
               disabled={stepAdvance.isPending}
             >

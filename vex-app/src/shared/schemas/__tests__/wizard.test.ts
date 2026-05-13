@@ -18,7 +18,7 @@ import {
 } from "../wizard.js";
 
 describe("WIZARD_STEP_IDS canonical order", () => {
-  it("contains exactly the nine Phase 1 steps in setup order", () => {
+  it("contains exactly the seven Phase 2 wizard steps in setup order (Mode + Wake removed)", () => {
     expect(WIZARD_STEP_IDS).toEqual([
       "keystore",
       "wallets",
@@ -26,8 +26,6 @@ describe("WIZARD_STEP_IDS canonical order", () => {
       "embedding",
       "agentCore",
       "provider",
-      "mode",
-      "wake",
       "review",
     ]);
   });
@@ -126,11 +124,17 @@ describe("wizardStateSchema (persisted)", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects schemaVersion ≠ 1", () => {
+  it("rejects schemaVersion ≠ 2 (Phase 2 wizard bump invalidates v1 files)", () => {
     expect(
       wizardStateSchema.safeParse({
         ...defaultWizardState,
-        schemaVersion: 2 as 1,
+        schemaVersion: 1 as 2,
+      }).success
+    ).toBe(false);
+    expect(
+      wizardStateSchema.safeParse({
+        ...defaultWizardState,
+        schemaVersion: 3 as 2,
       }).success
     ).toBe(false);
   });
@@ -138,7 +142,7 @@ describe("wizardStateSchema (persisted)", () => {
   it("rejects duplicate completedSteps entries", () => {
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "wallets",
         completedSteps: ["keystore", "keystore"],
         completed: false,
@@ -150,7 +154,7 @@ describe("wizardStateSchema (persisted)", () => {
     // wallets is completed but currentStepId is keystore (idx 0 < idx 1)
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "keystore",
         completedSteps: ["wallets"],
         completed: false,
@@ -161,7 +165,7 @@ describe("wizardStateSchema (persisted)", () => {
   it("accepts forward transition (currentStepId == max completed + 1)", () => {
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "wallets",
         completedSteps: ["keystore"],
         completed: false,
@@ -172,7 +176,7 @@ describe("wizardStateSchema (persisted)", () => {
   it("accepts currentStepId AT the max completed (idempotent re-entry)", () => {
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "keystore",
         completedSteps: ["keystore"],
         completed: false,
@@ -185,7 +189,7 @@ describe("wizardStateSchema (persisted)", () => {
   it("rejects completedSteps with a gap (non-canonical-prefix)", () => {
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "embedding",
         completedSteps: ["keystore", "apiKeys"],
         completed: false,
@@ -196,9 +200,9 @@ describe("wizardStateSchema (persisted)", () => {
   it("rejects completedSteps starting from a non-zero step", () => {
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "review",
-        completedSteps: ["wake"],
+        completedSteps: ["provider"],
         completed: false,
       }).success
     ).toBe(false);
@@ -207,7 +211,7 @@ describe("wizardStateSchema (persisted)", () => {
   it("rejects completed=true with currentStepId !== 'review'", () => {
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "keystore",
         completedSteps: [],
         completed: true,
@@ -218,7 +222,7 @@ describe("wizardStateSchema (persisted)", () => {
   it("rejects completed=true at review with missing prior steps", () => {
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "review",
         completedSteps: ["keystore", "wallets"],
         completed: true,
@@ -226,12 +230,13 @@ describe("wizardStateSchema (persisted)", () => {
     ).toBe(false);
   });
 
-  it("accepts completed=true at review with all 8 prior steps", () => {
+  it("accepts completed=true at review with every prior step (Phase 2: 6 priors)", () => {
+    const priors = WIZARD_STEP_IDS.filter((id) => id !== "review");
     expect(
       wizardStateSchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         currentStepId: "review",
-        completedSteps: WIZARD_STEP_IDS.slice(0, 8),
+        completedSteps: priors,
         completed: true,
       }).success
     ).toBe(true);
@@ -248,9 +253,10 @@ describe("setWizardStateInputSchema (IPC boundary)", () => {
   });
 
   it("accepts an explicit completed: true at review", () => {
+    const priors = WIZARD_STEP_IDS.filter((id) => id !== "review");
     const r = setWizardStateInputSchema.safeParse({
       currentStepId: "review",
-      completedSteps: WIZARD_STEP_IDS.slice(0, 8),
+      completedSteps: priors,
       completed: true,
     });
     expect(r.success).toBe(true);
@@ -279,7 +285,7 @@ describe("setWizardStateInputSchema (IPC boundary)", () => {
       setWizardStateInputSchema.safeParse({
         currentStepId: "wallets",
         completedSteps: ["keystore"],
-        schemaVersion: 1,
+        schemaVersion: 2,
       }).success
     ).toBe(false);
   });

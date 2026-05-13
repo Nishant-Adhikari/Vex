@@ -9,8 +9,9 @@
  *   5. embedding      — optional EMBEDDING_{BASE_URL,MODEL,DIM,PROVIDER}
  *   6. agent-core     — optional AGENT_* + SUBAGENT_*
  *   7. provider       — OpenRouter (key + model picker) or 0G Compute (guided)
- *   8. mode           — chat | mission | full_autonomous (+ optional goal)
- *   9. wake           — executor on/off (+ optional intervalMs/batchSize)
+ *   8. mode           — agent | mission + permission (restricted | full)
+ *
+ * Post-M12: wake step removed (always-on hardcoded); full_autonomous gone.
  */
 
 import { cancel, intro, outro } from "@clack/prompts";
@@ -23,27 +24,22 @@ import { runApiKeysStep } from "./api-keys-step.js";
 import { runEmbeddingStep } from "./embedding-step.js";
 import { runAgentCoreStep } from "./agent-core-step.js";
 import { runProviderStep } from "./provider-step.js";
-import { runModeStep, type WizardMode } from "./mode-step.js";
-import { runWakeStep } from "./wake-step.js";
+import { runModeStep, type WizardMode, type WizardPermission } from "./mode-step.js";
 
 export interface WizardResult {
   aborted: boolean;
   bootstrap: BootstrapResult | null;
   provider: ProviderSummary;
   mode: WizardMode;
+  permission?: WizardPermission;
   initialPrompt?: string;
-  missionLoopMode?: "off" | "restricted" | "full";
-  wake: boolean;
-  wakeIntervalMs?: number;
-  wakeBatchSize?: number;
 }
 
 const DEFAULT_ABORT: WizardResult = {
   aborted: true,
   bootstrap: null,
   provider: { name: "none", detail: "wizard cancelled" },
-  mode: "chat",
-  wake: false,
+  mode: "agent",
 };
 
 export async function runWizard(): Promise<WizardResult> {
@@ -101,27 +97,13 @@ export async function runWizard(): Promise<WizardResult> {
     };
   }
 
-  const wake = await runWakeStep();
-  if (wake.aborted) {
-    cancel("Wizard cancelled during wake setup.");
-    return {
-      ...DEFAULT_ABORT,
-      bootstrap: systemCheck.bootstrap,
-      provider: provider.summary,
-      mode: mode.mode,
-    };
-  }
-
   outro("Setup complete — launching shell.");
   return {
     aborted: false,
     bootstrap: systemCheck.bootstrap,
     provider: provider.summary,
     mode: mode.mode,
+    permission: mode.permission,
     initialPrompt: mode.initialPrompt,
-    missionLoopMode: mode.loopMode,
-    wake: wake.enabled,
-    wakeIntervalMs: wake.intervalMs,
-    wakeBatchSize: wake.batchSize,
   };
 }

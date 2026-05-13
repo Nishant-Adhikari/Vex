@@ -13,6 +13,8 @@
  */
 
 import { useCallback, useRef, useSyncExternalStore } from "react";
+import type { ProviderSummary } from "../../platform/render.js";
+import type { WizardMode, WizardPermission } from "../../wizard/mode-step.js";
 import { RECENT_TOOL_CALLS_LIMIT } from "./types.js";
 import type {
   ChatMessageLine,
@@ -42,15 +44,13 @@ export type {
 export function createInitialState(init: {
   provider: ProviderSummary;
   mode: WizardMode;
-  missionLoopMode?: "off" | "restricted" | "full";
-  wakeEnabled: boolean;
+  permission?: WizardPermission;
   initialPromptIntent?: InitialPromptIntent | null;
 }): ShellViewState {
   return {
     provider: init.provider,
     mode: init.mode,
-    missionLoopMode: init.missionLoopMode ?? "restricted",
-    wakeEnabled: init.wakeEnabled,
+    permission: init.permission ?? "restricted",
     session: null,
     messages: [],
     approvals: [],

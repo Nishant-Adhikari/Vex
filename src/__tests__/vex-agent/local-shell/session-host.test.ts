@@ -7,7 +7,6 @@ const mockEndSession = vi.fn();
 const mockListSessions = vi.fn();
 const mockGetPending = vi.fn();
 const mockGetActiveRunBySession = vi.fn();
-const mockGetActiveFullAutonomousRunBySession = vi.fn();
 const mockGetRunBySession = vi.fn();
 const mockGetActiveMission = vi.fn();
 const mockGetMissionBySession = vi.fn();
@@ -29,10 +28,6 @@ vi.mock("../../../../src/vex-agent/db/repos/approvals.js", () => ({
 vi.mock("../../../../src/vex-agent/db/repos/mission-runs.js", () => ({
   getActiveRunBySession: (...a: unknown[]) => mockGetActiveRunBySession(...a),
   getRunBySession: (...a: unknown[]) => mockGetRunBySession(...a),
-}));
-
-vi.mock("../../../../src/vex-agent/db/repos/full-autonomous-runs.js", () => ({
-  getActiveRunBySession: (...a: unknown[]) => mockGetActiveFullAutonomousRunBySession(...a),
 }));
 
 vi.mock("../../../../src/vex-agent/db/repos/missions.js", () => ({
@@ -65,7 +60,9 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     memoryScopeKey: null,
     memoryLanguageCode: null,
     checkpointGeneration: 0,
-    kind: "chat",
+    mode: "agent",
+    permission: "restricted",
+    initialGoal: null,
     ...overrides,
   };
 }
@@ -90,7 +87,6 @@ describe("local shell session-host", () => {
     mockGetSession.mockResolvedValue(makeSession());
     mockGetPending.mockResolvedValue([]);
     mockGetActiveRunBySession.mockResolvedValue(null);
-    mockGetActiveFullAutonomousRunBySession.mockResolvedValue(null);
     mockGetActiveMission.mockResolvedValue(null);
     mockGetMissionBySession.mockResolvedValue(null);
     mockGetRunBySession.mockResolvedValue(null);
@@ -131,7 +127,7 @@ describe("local shell session-host", () => {
 
     await expect(summarizeSession("session-1")).resolves.toMatchObject({
       id: "session-1",
-      kind: "chat",
+      kind: "agent",
       missionStatus: "ready",
       missionCommand: "start",
       pendingApprovals: 1,

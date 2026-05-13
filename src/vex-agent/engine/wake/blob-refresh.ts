@@ -1,7 +1,7 @@
 /**
  * Blob TTL refresh — bumps the expiry on every tool_output blob referenced
  * by the last N live messages of a session. Called from resume paths (wake
- * executor, ingress preempt, mission / full-autonomous resume) so a long
+ * executor, ingress preempt, mission resume) so a long
  * wait doesn't let blobs expire before the model can read them back.
  *
  * Scan is bounded (`RECENT_WINDOW`) so a very long session doesn't pay the

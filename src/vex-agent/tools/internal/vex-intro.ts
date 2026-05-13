@@ -74,7 +74,7 @@ function renderOverview(): string {
     "",
     "## Two products on one stack",
     "",
-    "**Vex Agent** — a software agent that runs on the user's machine. Has its own engine (chat / mission / full-autonomous shapes), turn loop, knowledge memory, and dispatch layer. Lives at `src/vex-agent/`. End-user-facing.",
+    "**Vex Agent** — a software agent that runs on the user's machine. Has its own engine (agent / mission shapes), turn loop, knowledge memory, and dispatch layer. Lives at `src/vex-agent/`. End-user-facing.",
     "",
     "**Vex MCP** — `vex-mcp` npm package. Mounts the relevant subset of the Vex tool surface into a host MCP client (Claude Code, Cursor, Codex). Lives at `src/mcp/`. Agent-host-facing. You are talking to this product right now.",
     "",

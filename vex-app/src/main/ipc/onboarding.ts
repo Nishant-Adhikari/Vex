@@ -8,7 +8,7 @@
  *   - `keystoreSet({ password })` — Step 1 (master password) writer
  *
  * M8–M11 land the remaining wizard step handlers (wallets*, apiKeysSet,
- * embeddingConfigure, agentCoreConfigure, provider*, modeSet, wakeSet,
+ * embeddingConfigure, agentCoreConfigure, provider*,
  * completeSetup).
  */
 

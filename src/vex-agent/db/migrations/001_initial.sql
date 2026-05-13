@@ -146,19 +146,14 @@ CREATE TABLE sessions (
   message_count INTEGER DEFAULT 0,
   token_count INTEGER DEFAULT 0,
   checkpoint_generation INTEGER NOT NULL DEFAULT 0,
-  -- PR-10 (wake roadmap): session-level runtime discriminator. `'chat'` (default)
-  -- keeps the existing chat / mission-setup / mission-run routing matrix;
-  -- `'full_autonomous'` unlocks the standalone full-autonomous runner — no
-  -- mission, engine loops on `loop_defer` + wake executor indefinitely.
-  -- `loop_mode` stays on `mission_runs` because it describes the MODE of a
-  -- specific run, not the SHAPE of the session.
-  kind TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'full_autonomous'))
+  mode TEXT NOT NULL DEFAULT 'agent' CHECK (mode IN ('agent', 'mission')),
+  permission TEXT NOT NULL DEFAULT 'restricted' CHECK (permission IN ('restricted', 'full')),
+  initial_goal TEXT,
+  CONSTRAINT sessions_mission_requires_initial_goal
+    CHECK (mode <> 'mission' OR (initial_goal IS NOT NULL AND btrim(initial_goal) <> ''))
 );
 CREATE INDEX idx_sessions_scope ON sessions(scope, started_at DESC);
--- Partial index — only sessions opted into full_autonomous routing need to
--- be enumerated (most sessions are chat; skipping the bulk default keeps the
--- index compact).
-CREATE INDEX idx_sessions_kind ON sessions(kind) WHERE kind <> 'chat';
+CREATE INDEX idx_sessions_mode ON sessions(mode);
 
 -- Messages
 CREATE TABLE messages (
@@ -183,7 +178,8 @@ CREATE TABLE approval_queue (
   status TEXT NOT NULL DEFAULT 'pending',
   session_id TEXT REFERENCES sessions(id),
   tool_call_id TEXT,
-  chat_mode TEXT DEFAULT 'restricted',
+  permission_at_enqueue TEXT NOT NULL DEFAULT 'restricted'
+    CHECK (permission_at_enqueue IN ('restricted', 'full')),
   source TEXT DEFAULT 'chat',
   pending_context JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW(),

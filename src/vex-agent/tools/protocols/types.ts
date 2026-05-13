@@ -11,6 +11,7 @@
  */
 
 import type { ToolResult } from "../types.js";
+import type { Permission } from "@vex-agent/engine/types.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -102,7 +103,12 @@ export type ProtocolHandler = (
 ) => Promise<ToolResult>;
 
 export interface ProtocolExecutionContext {
-  loopMode: "full" | "restricted" | "off";
+  /**
+   * Session permission, hydrated once at engine entry from `sessions.permission`.
+   * Approval gate in `tools/protocols/runtime.ts` reads this to decide whether
+   * a mutating tool needs enqueue or auto-executes.
+   */
+  sessionPermission: Permission;
   approved: boolean;
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;

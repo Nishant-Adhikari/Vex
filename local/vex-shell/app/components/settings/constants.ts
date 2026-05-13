@@ -9,7 +9,6 @@ export const TAB_LABELS: Record<SettingsTabId, string> = {
   tools: "Tools",
   knowledge: "Knowledge",
   subagents: "Subagents",
-  wake: "Wake",
   diagnostics: "Diagnostics",
   services: "Services",
   env: "Env",

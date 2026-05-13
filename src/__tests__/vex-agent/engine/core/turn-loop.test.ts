@@ -12,10 +12,8 @@ const mockGetLiveMessages = vi.fn().mockResolvedValue([]);
 const mockGetOperatorInstructionsAfter = vi.fn().mockResolvedValue([]);
 const mockDispatchTool = vi.fn();
 const mockIncrementIterations = vi.fn().mockResolvedValue(1);
-const mockIncrementFullAutonomousIterations = vi.fn().mockResolvedValue(1);
 const mockUpdateStatus = vi.fn();
 const mockSetLastCheckpoint = vi.fn();
-const mockSetFullAutonomousLastCheckpoint = vi.fn();
 
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
@@ -28,11 +26,6 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   incrementIterations: (...a: unknown[]) => mockIncrementIterations(...a),
   updateStatus: (...a: unknown[]) => mockUpdateStatus(...a),
   setLastCheckpoint: (...a: unknown[]) => mockSetLastCheckpoint(...a),
-}));
-
-vi.mock("@vex-agent/db/repos/full-autonomous-runs.js", () => ({
-  incrementIterations: (...a: unknown[]) => mockIncrementFullAutonomousIterations(...a),
-  setLastCheckpoint: (...a: unknown[]) => mockSetFullAutonomousLastCheckpoint(...a),
 }));
 
 vi.mock("@vex-agent/tools/dispatcher.js", () => ({
@@ -115,8 +108,8 @@ describe("turn-loop", () => {
   function makeContext(overrides = {}) {
     return {
       sessionId: "session-1",
-      sessionKind: "chat" as const,
-      loopMode: "off" as const,
+      sessionKind: "agent" as const,
+      sessionPermission: "restricted" as const,
       missionId: null,
       missionRunId: null,
       isSubagent: false,
@@ -311,7 +304,7 @@ describe("turn-loop", () => {
       });
 
       const result = await runTurnLoop(
-        makeContext({ sessionKind: "mission", missionRunId: "run-1", loopMode: "restricted" }),
+        makeContext({ sessionKind: "mission", missionRunId: "run-1", sessionPermission: "restricted" }),
         [], null, 0, provider as any, makeConfig() as any, [],
         defaultLoopConfig,
       );
@@ -425,7 +418,7 @@ describe("turn-loop", () => {
       });
 
       const result = await runTurnLoop(
-        makeContext({ sessionKind: "mission", missionRunId: "run-1", loopMode: "restricted" }),
+        makeContext({ sessionKind: "mission", missionRunId: "run-1", sessionPermission: "restricted" }),
         [], null, 0, provider as any, makeConfig() as any, [],
         defaultLoopConfig,
       );
@@ -463,7 +456,7 @@ describe("turn-loop", () => {
       });
 
       await runTurnLoop(
-        makeContext({ sessionKind: "mission", missionRunId: "run-1", loopMode: "restricted" }),
+        makeContext({ sessionKind: "mission", missionRunId: "run-1", sessionPermission: "restricted" }),
         [], null, 0, provider as any, makeConfig() as any, [],
         defaultLoopConfig,
       );
@@ -489,7 +482,7 @@ describe("turn-loop", () => {
       mockDispatchTool.mockResolvedValue({ success: false, output: "Approval required", pendingApproval: true });
 
       const result = await runTurnLoop(
-        makeContext({ sessionKind: "mission", missionRunId: "run-1", loopMode: "restricted" }),
+        makeContext({ sessionKind: "mission", missionRunId: "run-1", sessionPermission: "restricted" }),
         [], null, 0, provider as any, makeConfig() as any, [],
         defaultLoopConfig,
       );

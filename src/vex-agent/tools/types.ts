@@ -28,18 +28,16 @@ export interface ToolVisibility {
    */
   band?: "warning" | "critical";
   /**
-   * True → require a mission active run (`missionRunActive === true`) OR
-   * a standalone `full_autonomous` session. Used by `loop_defer` in PR-5.
+   * True → require an active mission run (`missionRunActive === true`).
+   * Used by autonomy primitives like `loop_defer` — agent mode never loops.
    */
   requiresMissionActiveRun?: boolean;
-  /** True → require an active mission run specifically. */
+  /** True → require an active mission run specifically (same as above today). */
   requiresMissionRun?: boolean;
   /** True → require mission setup/edit (`sessionKind === "mission"` and no active run). */
   requiresMissionSetup?: boolean;
-  /** True → require `sessionKind === "full_autonomous"` specifically. */
-  requiresFullAutonomous?: boolean;
-  /** True → hide in `sessionKind === "chat"` sessions. */
-  hiddenInChat?: boolean;
+  /** True → hide in `sessionKind === "agent"` sessions. */
+  hiddenInAgent?: boolean;
   /** True → hide during mission setup (`sessionKind === "mission"` and no active run). */
   hiddenInMissionSetup?: boolean;
 }
@@ -66,8 +64,8 @@ export interface ToolDef {
   /**
    * Surface(s) on which this tool is advertised. Default `undefined` ≡ "both".
    *
-   * - `"agent"` → only the Vex Agent runtime sees it (chat / mission /
-   *   full_autonomous). `getProductionMcpTools` filters it out. Use for tools
+   * - `"agent"` → only the Vex Agent runtime sees it (agent / mission).
+   *   `getProductionMcpTools` filters it out. Use for tools
    *   that only make sense inside the agent loop (`mission_stop`, `loop_defer`,
    *   `checkpoint_handoff_prepare`, `tool_output_read`).
    * - `"mcp"` → only the MCP server (`getProductionMcpTools`) advertises it.

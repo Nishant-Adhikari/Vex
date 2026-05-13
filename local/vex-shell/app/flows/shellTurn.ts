@@ -441,11 +441,11 @@ async function runMissionActivationCommand(
     return;
   }
 
-  const loopMode = store.getState().missionLoopMode;
+  const permission = store.getState().permission;
   const startedAt = Date.now();
   store.setState({ pendingTurn: { startedAt }, lastError: null });
 
-  const result = await startReadyMission(session.id, loopMode);
+  const result = await startReadyMission(session.id);
   const latency = Date.now() - startedAt;
   recordTurnLatency(latency);
 
@@ -454,7 +454,7 @@ async function runMissionActivationCommand(
   const failureWhere = action === "start" ? "mission_start" : "mission_continue";
 
   if (result.ok) {
-    const fallback = `Mission ${verb} in ${loopMode} mode; status=${result.value.missionStatus ?? "running"}`;
+    const fallback = `Mission ${verb} in ${permission} mode; status=${result.value.missionStatus ?? "running"}`;
     const activationLine = formatTurnResult({ ...result.value, text: null }, fallback);
     const assistantLine = result.value.text ? makeLine("assistant", result.value.text) : null;
 

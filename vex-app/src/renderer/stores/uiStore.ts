@@ -25,7 +25,7 @@ export type View =
   | "composeBootstrap"
   | "migrations"
   | "wizard"
-  | "placeholder";
+  | "appShell";
 
 export interface UiLogEntry {
   readonly id: string;
@@ -38,8 +38,16 @@ interface UiState {
   readonly sidebarOpen: boolean;
   readonly currentView: View;
   readonly logBuffer: ReadonlyArray<UiLogEntry>;
+  /**
+   * Currently-selected session in the app shell sidebar. `null` means
+   * the welcome state is shown (no session opened yet). NOT persisted —
+   * session selection is launch-ephemeral; domain data still lives in
+   * TanStack Query.
+   */
+  readonly activeSessionId: string | null;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setCurrentView: (value: View) => void;
+  readonly setActiveSessionId: (value: string | null) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -50,8 +58,10 @@ export const useUiStore = create<UiState>()(
       sidebarOpen: true,
       currentView: "splash",
       logBuffer: [],
+      activeSessionId: null,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setCurrentView: (currentView) => set({ currentView }),
+      setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),

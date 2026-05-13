@@ -1,6 +1,5 @@
 /**
- * Wizard shell (M7) — sidebar + active-step panel layout for the
- * Phase 1 setup ceremony.
+ * Wizard shell (M7, Phase 2 refactor — Mode + Wake steps removed).
  *
  * Phase 1 has no back-navigation (Explore agent 1 finding §1) and no
  * cross-step needs; the active step lives in local React state, not
@@ -9,9 +8,9 @@
  * TanStack Query cache: on mount we read the persisted state and
  * initialise the local step from it.
  *
- * If `completed === true` (Step 9 / Review finalised on a previous
- * launch) we flip the view to `placeholder` immediately. The wizard
- * never re-renders for a finished install.
+ * If `completed === true` (Review finalised on a previous launch) we
+ * flip the view to `appShell` immediately. The wizard never re-renders
+ * for a finished install.
  */
 
 import { useCallback, useEffect, useState, type JSX } from "react";
@@ -33,10 +32,8 @@ import { AgentCoreStep } from "./steps/AgentCoreStep.js";
 import { ApiKeysStep } from "./steps/ApiKeysStep.js";
 import { EmbeddingStep } from "./steps/EmbeddingStep.js";
 import { KeystoreStep } from "./steps/KeystoreStep.js";
-import { ModeStep } from "./steps/ModeStep.js";
 import { ProviderStep } from "./steps/ProviderStep.js";
 import { ReviewStep } from "./steps/review/ReviewStep.js";
-import { WakeStep } from "./steps/WakeStep.js";
 import { WalletsStep } from "./steps/WalletsStep.js";
 
 function renderStep(
@@ -61,10 +58,6 @@ function renderStep(
       return <AgentCoreStep {...props} />;
     case "provider":
       return <ProviderStep {...props} />;
-    case "mode":
-      return <ModeStep {...props} />;
-    case "wake":
-      return <WakeStep {...props} />;
     case "review":
       return <ReviewStep completedSteps={completedSteps} onAdvance={onAdvance} />;
   }
@@ -89,7 +82,7 @@ export function WizardShell(): JSX.Element {
   useEffect(() => {
     if (persisted === null || currentStepId !== null) return;
     if (persisted.completed) {
-      setCurrentView("placeholder");
+      setCurrentView("appShell");
       return;
     }
     setCurrentStepId(persisted.currentStepId);

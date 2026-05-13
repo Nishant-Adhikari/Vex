@@ -56,8 +56,23 @@ export async function handleSubagentSpawn(
   const subagentId = `subagent-${randomUUID()}`;
   const childSessionId = `session-${randomUUID()}`;
 
+  // Subagent permission inheritance:
+  //   - Subagents are ALWAYS mode='agent' (never spawn missions; they execute
+  //     a single delegated task and return).
+  //   - Permission derives from parent: a `restricted` parent always produces
+  //     a `restricted` child (parent can never broaden). A `full` parent only
+  //     broadens to `full` if the spawn explicitly opted into `allow_trades`.
+  //   - The derived permission is stored on the child sessions row at creation
+  //     time so subsequent hydrate() loads cannot "re-upgrade" the child by
+  //     accidentally reading parent context elsewhere.
+  const childPermission =
+    allowTrades && context.sessionPermission === "full" ? "full" : "restricted";
+
   await subagentsRepo.insert({ id: subagentId, name, task, allowTrades, maxIterations });
-  await sessionsRepo.createSession(childSessionId);
+  await sessionsRepo.createSession(childSessionId, {
+    mode: "agent",
+    permission: childPermission,
+  });
   await sessionsRepo.setScope(childSessionId, "subagent");
   // Resolve memory_scope_key from the chosen strategy:
   //   - isolated: new scope keyed on the child session (own pool)
@@ -81,6 +96,8 @@ export async function handleSubagentSpawn(
     name,
     childSessionId,
     allowTrades,
+    childPermission,
+    parentPermission: context.sessionPermission,
     maxIterations,
     scopeStrategy,
     resolvedScope,

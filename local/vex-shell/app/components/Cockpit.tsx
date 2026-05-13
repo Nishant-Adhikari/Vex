@@ -1,7 +1,7 @@
 /**
- * Top-bar cockpit — always-visible session state (provider, wake, session,
- * mission, approvals count). Static render, re-renders only when the selector
- * output changes.
+ * Top-bar cockpit — always-visible session state (provider, permission,
+ * session, mission, approvals count). Static render, re-renders only when
+ * the selector output changes.
  */
 
 import React from "react";
@@ -18,7 +18,7 @@ interface CockpitProps {
 function selectCockpit(s: ShellViewState) {
   return {
     provider: s.provider,
-    wakeEnabled: s.wakeEnabled,
+    permission: s.permission,
     session: s.session,
     approvalsCount: s.approvals.length,
     subagentRows: s.subagentRows,
@@ -26,7 +26,7 @@ function selectCockpit(s: ShellViewState) {
 }
 
 export function Cockpit({ store }: CockpitProps): React.JSX.Element {
-  const { provider, wakeEnabled, session, approvalsCount, subagentRows } = useStore(store, selectCockpit);
+  const { provider, permission, session, approvalsCount, subagentRows } = useStore(store, selectCockpit);
 
   const sessionLabel = session
     ? `${session.id.slice(0, 16)}… (${session.kind})`
@@ -48,7 +48,7 @@ export function Cockpit({ store }: CockpitProps): React.JSX.Element {
       <Text wrap="truncate">
         <Text bold color="cyan">VEX</Text>
         {"  "}provider=<Text color="green">{provider.name}</Text>
-        {"  "}wake=<Text color={wakeEnabled ? "green" : "gray"}>{wakeEnabled ? "on" : "off"}</Text>
+        {"  "}permission=<Text color={permission === "full" ? "yellow" : "green"}>{permission}</Text>
         {"  "}session=<Text color={session ? "green" : "gray"}>{sessionLabel}</Text>
         {"  "}mission=<Text color={missionLabel === "none" ? "gray" : "yellow"}>{missionLabel}</Text>
         {"  "}approvals=<Text color={approvalsCount > 0 ? "yellow" : "gray"}>{approvalsCount}</Text>

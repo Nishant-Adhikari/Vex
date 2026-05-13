@@ -33,7 +33,6 @@ CREATE TABLE mission_runs (
   mission_id TEXT NOT NULL REFERENCES missions(id),
   session_id TEXT NOT NULL REFERENCES sessions(id),
   status TEXT NOT NULL DEFAULT 'running',
-  loop_mode TEXT NOT NULL DEFAULT 'restricted',
   started_at TIMESTAMPTZ DEFAULT NOW(),
   ended_at TIMESTAMPTZ,
   last_checkpoint_at TIMESTAMPTZ,

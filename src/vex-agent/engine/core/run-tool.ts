@@ -43,16 +43,12 @@ export async function runTool(
   const activeRun = await missionRunsRepo.getActiveRunBySession(sessionId);
   const mission = activeRun ? null : await missionsRepo.getActiveMission(sessionId);
   const missionId = activeRun?.missionId ?? mission?.id ?? null;
-  const sessionKind = session.kind === "full_autonomous"
-    ? "full_autonomous"
-    : missionId
-      ? "mission"
-      : "chat";
+  const sessionKind = missionId ? "mission" : session.mode;
 
   const context: InternalToolContext = {
     sessionId,
     loadedDocuments: new Map(),
-    loopMode: activeRun?.loopMode ?? "off",
+    sessionPermission: session.permission,
     approved: true,
     role: "parent",
     missionRunId: activeRun?.id ?? null,

@@ -115,14 +115,13 @@ export function handleSessionInput(store: Store, input: string, key: InkKey): vo
 
   if (input === "n") {
     void (async () => {
-      const mode = store.getState().mode;
-      const kind = mode === "full_autonomous" ? "full_autonomous" : "chat";
+      const { mode, permission } = store.getState();
       try {
-        const id = await createShellSession(kind);
+        const id = await createShellSession({ mode, permission });
         const summary = await summarizeSession(id);
         store.setState({ session: summary ?? null });
         await hydrateTabData(store, "session");
-        setToast(store, "ok", `New ${kind} session: ${id.slice(0, 16)}…`);
+        setToast(store, "ok", `New ${mode} session: ${id.slice(0, 16)}…`);
       } catch (err) {
         setToast(store, "error", err instanceof Error ? err.message : String(err));
       }
@@ -203,10 +202,10 @@ export function handleMissionInput(store: Store, input: string): void {
   }
   if (input === "s") {
     void (async () => {
-      const loopMode = store.getState().missionLoopMode;
-      const result = await startReadyMission(session.id, loopMode);
+      const permission = store.getState().permission;
+      const result = await startReadyMission(session.id);
       if (result.ok) {
-        setToast(store, "ok", `Mission started (${loopMode}). status=${result.value.missionStatus ?? "running"}`);
+        setToast(store, "ok", `Mission started (${permission}). status=${result.value.missionStatus ?? "running"}`);
       } else {
         setToast(store, "error", `${result.error}${result.hint ? ` (${result.hint})` : ""}`);
       }
@@ -232,16 +231,16 @@ export function handleMissionInput(store: Store, input: string): void {
 
 export function MissionTab({ store }: { store: Store }): React.JSX.Element {
   const session = useStore(store, (s) => s.session);
-  const loopMode = useStore(store, (s) => s.missionLoopMode);
+  const permission = useStore(store, (s) => s.permission);
   return (
     <Box flexDirection="column">
       <Label>Mission</Label>
       <Text>Session status: {session?.missionStatus ?? "none"}</Text>
       <Text>Start command: {session?.missionCommand ? `/mission ${session.missionCommand}` : "none"}</Text>
-      <Text>Loop mode: {loopMode}</Text>
+      <Text>Permission: {permission}</Text>
       <Text dimColor>
-        Mission setup happens through chat input or via wizard. Start/continue uses the selected
-        mission loop mode.
+        Mission setup happens through chat input or via wizard. Start/continue runs under the
+        session's permission policy.
       </Text>
       <Box marginTop={1}>
         <Hint>s — start/continue ready mission. a — stop active run.</Hint>
@@ -364,17 +363,15 @@ export function ApprovalsTab({ store }: { store: Store }): React.JSX.Element {
 }
 
 function getCurrentTools(store: Store): { name: string }[] {
-  const session = store.getState().session;
+  const state = store.getState();
+  const session = state.session;
   const missionRunActive = ACTIVE_OR_PAUSED_RUN_STATUSES.has(
     (session?.missionStatus ?? "") as MissionRunStatus,
   );
-  const kind = session?.kind === "full_autonomous"
-    ? "full_autonomous"
-    : session?.missionStatus
-      ? "mission"
-      : "chat";
+  const kind: "agent" | "mission" =
+    session?.kind === "mission" ? "mission" : "agent";
   return getOpenAITools({
-    chatMode: "restricted",
+    permission: state.permission,
     role: "parent",
     sessionKind: kind,
     missionRunActive,

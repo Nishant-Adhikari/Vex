@@ -100,13 +100,13 @@ export async function executeProtocolTool(
     };
   }
 
-  // Approval gate — mutating tools require approval in restricted/off mode
-  // Preview (dryRun) is read-only simulation — skip approval
-  if (manifest.mutating && !context.approved && context.loopMode !== "full" && !isPreviewExecution(request.toolId, params)) {
-    logger.info("protocol.execute.approval_required", { toolId: request.toolId, loopMode: context.loopMode });
+  // Approval gate — mutating tools require approval under restricted permission.
+  // Preview (dryRun) is read-only simulation — skip approval.
+  if (manifest.mutating && !context.approved && context.sessionPermission === "restricted" && !isPreviewExecution(request.toolId, params)) {
+    logger.info("protocol.execute.approval_required", { toolId: request.toolId, permission: context.sessionPermission });
     return {
       success: false,
-      output: `${request.toolId} requires approval — mutating tool in ${context.loopMode} mode.`,
+      output: `${request.toolId} requires approval — mutating tool in restricted permission mode.`,
       pendingApproval: true,
     };
   }

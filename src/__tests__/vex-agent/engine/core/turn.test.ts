@@ -54,8 +54,8 @@ describe("turn", () => {
   function makeContext() {
     return {
       sessionId: "session-1",
-      sessionKind: "chat" as const,
-      loopMode: "off" as const,
+      sessionKind: "agent" as const,
+      sessionPermission: "restricted" as const,
       missionId: null,
       missionRunId: null,
       isSubagent: false,

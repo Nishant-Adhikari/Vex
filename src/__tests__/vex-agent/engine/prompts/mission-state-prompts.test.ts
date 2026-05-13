@@ -12,7 +12,7 @@ function makeMissionContext(overrides: Partial<EngineContext> = {}): EngineConte
   return {
     sessionId: "session-1",
     sessionKind: "mission",
-    loopMode: "restricted",
+    sessionPermission: "restricted",
     missionId: "mission-1",
     missionRunId: null,
     isSubagent: false,
@@ -63,16 +63,4 @@ describe("mission state prompts", () => {
     expect(prompt).toContain("each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
   });
 
-  it("keeps full-autonomous wording separate from mission contracts", () => {
-    const prompt = buildPromptStack(
-      makeMissionContext({
-        sessionKind: "full_autonomous",
-        loopMode: "full",
-        missionId: null,
-      }),
-    ).join("\n");
-
-    expect(prompt).toContain("There is no frozen mission contract");
-    expect(prompt).not.toContain("fulfill your mission");
-  });
 });

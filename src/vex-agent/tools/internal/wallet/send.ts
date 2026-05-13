@@ -118,12 +118,14 @@ export async function handleWalletSendConfirm(
     return fail(`Network mismatch: intent is ${intent.network}, got ${network}`);
   }
 
-  // Approval gate — mutating tool, requires approval in restricted/off mode
-  if (!context.approved && context.loopMode !== "full") {
+  // Approval gate — mutating tool, requires approval under restricted permission.
+  // (Codex review round 1 RED 1 — this gate is parallel to runtime.ts:105
+  // and must use the same permission axis as the central gate.)
+  if (!context.approved && context.sessionPermission === "restricted") {
     // DON'T delete intent — must survive until approval retry
     return {
       success: false,
-      output: `Transfer requires approval in ${context.loopMode} mode. Use the approval flow to confirm.`,
+      output: `Transfer requires approval under restricted permission. Use the approval flow to confirm.`,
       pendingApproval: true,
     };
   }

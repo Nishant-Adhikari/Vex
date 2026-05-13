@@ -81,7 +81,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", sort: 123 } },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/invalid type.*expected string.*got number/i);
@@ -92,7 +92,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", limit: "ten" } },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/invalid type.*expected number.*got string/i);
@@ -103,7 +103,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", active: "yes" } },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/invalid type.*expected boolean.*got string/i);
@@ -117,7 +117,7 @@ describe("runtime type validation (execute_tool)", () => {
         toolId: "test.type_validation.strict",
         params: { required_str: "ok", sort: "hot", limit: 10, active: true },
       },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(true);
     expect(handlerCalls).toBe(1);
@@ -127,7 +127,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok" } },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(true);
     expect(handlerCalls).toBe(1);
@@ -137,7 +137,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: {} },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/missing required parameter/i);
@@ -151,7 +151,7 @@ describe("runtime type validation (execute_tool)", () => {
     // as missing required. This mirrors pre-PR1 behaviour.
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "", sort: "" } },
-      { loopMode: "full", approved: true },
+      { sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/missing required parameter "required_str"/i);

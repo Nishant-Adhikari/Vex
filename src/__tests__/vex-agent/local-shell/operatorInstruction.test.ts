@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../../../src/vex-agent/engine/index.js", () => ({
   submitOperatorInstruction: (...args: unknown[]) => mocks.submitOperatorInstruction(...args),
   ACTIVE_OR_PAUSED_RUN_STATUSES: new Set(["running", "paused_approval", "paused_wake", "paused_error"]),
-  ACTIVE_OR_PAUSED_FULL_AUTONOMOUS_STATUSES: new Set(["running", "paused_wake", "paused_error"]),
 }));
 
 vi.mock("../../../../local/vex-shell/platform/diagnostics.js", () => ({
@@ -32,9 +31,8 @@ function makeStore() {
   store.setState({
     session: {
       id: "session-1",
-      kind: "chat",
+      kind: "agent",
       missionStatus: "running",
-      fullAutonomousStatus: null,
       missionCommand: null,
       pendingApprovals: 0,
       usage: {
@@ -66,17 +64,17 @@ beforeEach(() => {
 });
 
 describe("operator instruction shell flow", () => {
-  it("detects active mission/full-autonomous sessions", () => {
+  it("detects active mission sessions", () => {
     const store = makeStore();
     expect(shouldSendOperatorInstruction(store)).toBe(true);
 
     store.setState((s) => ({
-      session: s.session ? { ...s.session, missionStatus: null, fullAutonomousStatus: "running" } : null,
+      session: s.session ? { ...s.session, missionStatus: "paused_wake" } : null,
     }));
     expect(shouldSendOperatorInstruction(store)).toBe(true);
 
     store.setState((s) => ({
-      session: s.session ? { ...s.session, missionStatus: "ready", fullAutonomousStatus: null } : null,
+      session: s.session ? { ...s.session, missionStatus: "ready" } : null,
     }));
     expect(shouldSendOperatorInstruction(store)).toBe(false);
   });

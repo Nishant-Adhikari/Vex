@@ -55,14 +55,6 @@ vi.mock("../steps/AgentCoreStep.js", () => ({
   AgentCoreStep: () => <div data-testid="agentcore-step" />,
 }));
 
-vi.mock("../steps/ModeStep.js", () => ({
-  ModeStep: () => <div data-testid="mode-step" />,
-}));
-
-vi.mock("../steps/WakeStep.js", () => ({
-  WakeStep: () => <div data-testid="wake-step" />,
-}));
-
 vi.mock("../steps/review/ReviewStep.js", () => ({
   ReviewStep: () => <div data-testid="review-step" />,
 }));
@@ -116,7 +108,7 @@ describe("WizardShell", () => {
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "keystore",
           completedSteps: [],
           completed: false,
@@ -132,7 +124,7 @@ describe("WizardShell", () => {
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "wallets",
           completedSteps: ["keystore"],
           completed: false,
@@ -148,7 +140,7 @@ describe("WizardShell", () => {
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "apiKeys",
           completedSteps: ["keystore", "wallets"],
           completed: false,
@@ -164,7 +156,7 @@ describe("WizardShell", () => {
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "embedding",
           completedSteps: ["keystore", "wallets", "apiKeys"],
           completed: false,
@@ -180,7 +172,7 @@ describe("WizardShell", () => {
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "agentCore",
           completedSteps: ["keystore", "wallets", "apiKeys", "embedding"],
           completed: false,
@@ -191,59 +183,12 @@ describe("WizardShell", () => {
     await findByTestId("agentcore-step");
   });
 
-  it("renders ModeStep when persisted.currentStepId === 'mode' (M11)", async () => {
+  it("renders ReviewStep when persisted.currentStepId === 'review' (Phase 2)", async () => {
     mockUseWizardState.mockReturnValue(
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
-          currentStepId: "mode",
-          completedSteps: [
-            "keystore",
-            "wallets",
-            "apiKeys",
-            "embedding",
-            "agentCore",
-            "provider",
-          ],
-          completed: false,
-        },
-      })
-    );
-    const { findByTestId } = renderWithQuery(<WizardShell />);
-    await findByTestId("mode-step");
-  });
-
-  it("renders WakeStep when persisted.currentStepId === 'wake' (M11)", async () => {
-    mockUseWizardState.mockReturnValue(
-      makeQueryResult({
-        ok: true,
-        data: {
-          schemaVersion: 1,
-          currentStepId: "wake",
-          completedSteps: [
-            "keystore",
-            "wallets",
-            "apiKeys",
-            "embedding",
-            "agentCore",
-            "provider",
-            "mode",
-          ],
-          completed: false,
-        },
-      })
-    );
-    const { findByTestId } = renderWithQuery(<WizardShell />);
-    await findByTestId("wake-step");
-  });
-
-  it("renders ReviewStep when persisted.currentStepId === 'review' (M11)", async () => {
-    mockUseWizardState.mockReturnValue(
-      makeQueryResult({
-        ok: true,
-        data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "review",
           completedSteps: [
             "keystore",
@@ -252,8 +197,6 @@ describe("WizardShell", () => {
             "embedding",
             "agentCore",
             "provider",
-            "mode",
-            "wake",
           ],
           completed: false,
         },
@@ -268,7 +211,7 @@ describe("WizardShell", () => {
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "provider",
           completedSteps: ["keystore", "wallets", "apiKeys", "embedding", "agentCore"],
           completed: false,
@@ -283,12 +226,12 @@ describe("WizardShell", () => {
     ).not.toBeNull();
   });
 
-  it("flips view to placeholder when persisted.completed === true", async () => {
+  it("flips view to appShell when persisted.completed === true", async () => {
     mockUseWizardState.mockReturnValue(
       makeQueryResult({
         ok: true,
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           currentStepId: "review",
           completedSteps: [
             "keystore",
@@ -297,8 +240,6 @@ describe("WizardShell", () => {
             "embedding",
             "agentCore",
             "provider",
-            "mode",
-            "wake",
           ],
           completed: true,
         },
@@ -306,7 +247,7 @@ describe("WizardShell", () => {
     );
     renderWithQuery(<WizardShell />);
     await waitFor(() => {
-      expect(mockSetCurrentView).toHaveBeenCalledWith("placeholder");
+      expect(mockSetCurrentView).toHaveBeenCalledWith("appShell");
     });
   });
 

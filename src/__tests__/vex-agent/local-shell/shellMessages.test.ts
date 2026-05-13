@@ -16,14 +16,13 @@ describe("vex-shell mission draft message formatting", () => {
   it("includes token and context counters in /status", () => {
     const snapshot = createInitialState({
       provider: { name: "openrouter", detail: "model=test" },
-      mode: "chat",
+      mode: "agent",
       wakeEnabled: true,
     });
     snapshot.session = {
       id: "session-1",
-      kind: "chat",
+      kind: "agent",
       missionStatus: "running",
-      fullAutonomousStatus: null,
       missionCommand: null,
       pendingApprovals: 0,
       usage: {

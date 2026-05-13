@@ -35,7 +35,7 @@ export async function recoverFailedMissionRun(sessionId: string): Promise<TurnRe
   await missionsRepo.setApprovedAt(mission.id);
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await missionRunsRepo.createRun(runId, mission.id, sessionId, failed.loopMode, {
+  await missionRunsRepo.createRun(runId, mission.id, sessionId, {
     contractSnapshotJson: failed.contractSnapshotJson,
     recoveredFromRunId: failed.id,
   });

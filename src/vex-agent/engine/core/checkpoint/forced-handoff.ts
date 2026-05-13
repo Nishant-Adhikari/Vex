@@ -126,7 +126,7 @@ async function runForcedHandoffPass(
     const result = await handleCheckpointHandoffPrepare(call.arguments, {
       sessionId,
       loadedDocuments: new Map(),
-      loopMode: "off",
+      sessionPermission: "restricted",
       approved: true,
       role: "parent",
       missionRunId: null,

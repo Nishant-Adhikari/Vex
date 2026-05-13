@@ -94,7 +94,7 @@ function makeContext(overrides = {}) {
   return {
     sessionId: "session-1",
     sessionKind: "mission" as const,
-    loopMode: "restricted" as const,
+    sessionPermission: "restricted" as const,
     missionId: "mission-1",
     missionRunId: "run-1",
     isSubagent: false,

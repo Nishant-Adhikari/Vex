@@ -33,7 +33,7 @@ const { CORE_HANDLERS } = await import(
 
 const ctx: ProtocolExecutionContext = {
   approved: true,
-  loopMode: "off",
+  sessionPermission: "restricted",
 };
 
 describe("solana.swap.execute capture", () => {

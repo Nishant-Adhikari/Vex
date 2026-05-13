@@ -48,7 +48,6 @@ beforeEach(() => {
     missionId: "mission-1",
     sessionId: "session-1",
     status: "failed",
-    loopMode: "full",
     contractSnapshotJson: snapshot,
   });
   mockGetMission.mockResolvedValue({ id: "mission-1" });
@@ -75,7 +74,6 @@ describe("recoverFailedMissionRun", () => {
       expect.stringMatching(/^run-/),
       "mission-1",
       "session-1",
-      "full",
       {
         contractSnapshotJson: snapshot,
         recoveredFromRunId: "failed-run",
@@ -105,7 +103,6 @@ describe("recoverFailedMissionRun", () => {
       missionId: "mission-1",
       sessionId: "session-1",
       status: "failed",
-      loopMode: "restricted",
       contractSnapshotJson: null,
     });
 
