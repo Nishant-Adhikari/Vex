@@ -1,9 +1,23 @@
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 const APP_NAME = "vex";
 
 function getConfigDir(): string {
+  // Test/CI override — accept an explicit absolute path so Playwright
+  // (and any future integration harness) can isolate state per spec
+  // without touching ~/.config or %APPDATA%. Must be non-empty AND
+  // absolute; a relative value silently falls through to the platform
+  // default so a typo can't redirect production writes into the cwd.
+  const override = process.env.VEX_CONFIG_DIR;
+  if (
+    typeof override === "string" &&
+    override.length > 0 &&
+    isAbsolute(override)
+  ) {
+    return override;
+  }
+
   const plat = platform();
 
   if (plat === "win32") {

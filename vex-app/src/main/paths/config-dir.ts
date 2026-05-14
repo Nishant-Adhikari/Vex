@@ -23,6 +23,22 @@ interface ResolveDeps {
 export function resolveConfigDir(deps: ResolveDeps): string {
   const { platform, homedir: home, env } = deps;
 
+  // Test/CI override — Playwright fixtures (and any future integration
+  // harness) need to isolate per-spec state from the user's real
+  // ~/.config or %APPDATA%. Honour `VEX_CONFIG_DIR` ONLY when it is
+  // non-empty AND absolute; a relative value silently falls through
+  // to the platform default so a typo can't redirect production
+  // writes into the launcher's cwd. Mirrors the override in
+  // src/config/paths.ts so vex-shell sees the same root.
+  const override = env["VEX_CONFIG_DIR"];
+  if (
+    typeof override === "string" &&
+    override.length > 0 &&
+    path.isAbsolute(override)
+  ) {
+    return override;
+  }
+
   if (platform === "win32") {
     const appData = env["APPDATA"] ?? path.join(home, "AppData", "Roaming");
     return path.join(appData, APP_NAME);

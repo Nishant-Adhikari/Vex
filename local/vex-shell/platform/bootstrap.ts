@@ -2,8 +2,8 @@
  * Bootstrap startup sequence — mirrors `runConnectFlow()` from
  * `src/cli/setup/flow.ts` so the local shell uses the production config
  * contract without copying setup code. `runBootstrapChecks` does NOT unlock
- * the vault and does require `JUPITER_API_KEY` in `process.env`; setup unlocks
- * the vault before that check.
+ * the vault and does require `JUPITER_API_KEY` in `process.env`; wizard setup
+ * unlocks the vault before that check.
  *
  * `bootstrapShell()` also captures the cold-start state (system checks +
  * wallet status) so the cockpit can render it without re-probing on every
@@ -11,8 +11,6 @@
  */
 
 import {
-  ensureJupiterApiKey,
-  ensureKeystorePassword,
   ensureRequiredEnvDefaults,
   synchronizeTrackedEnv,
 } from "../../../src/cli/setup/setup.js";
@@ -31,8 +29,6 @@ import { bootstrapLog, withTiming, withTimingSync } from "./log.js";
 
 export type BootstrapStage =
   | "env_defaults"
-  | "keystore_password"
-  | "jupiter_api_key"
   | "sync_env"
   | "bootstrap_checks";
 
@@ -92,18 +88,6 @@ export async function bootstrapShell(): Promise<BootstrapResult> {
     withTimingSync(bootstrapLog, "bootstrap.env_defaults", () => ensureRequiredEnvDefaults());
   } catch (err) {
     return reportFailure("env_defaults", err);
-  }
-
-  try {
-    await withTiming(bootstrapLog, "bootstrap.keystore_password", () => ensureKeystorePassword());
-  } catch (err) {
-    return reportFailure("keystore_password", err);
-  }
-
-  try {
-    await withTiming(bootstrapLog, "bootstrap.jupiter_api_key", () => ensureJupiterApiKey());
-  } catch (err) {
-    return reportFailure("jupiter_api_key", err);
   }
 
   try {

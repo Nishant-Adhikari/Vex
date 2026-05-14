@@ -12,9 +12,8 @@ pnpm exec tsx --tsconfig local/vex-shell/tsconfig.json local/vex-shell/index.ts
 
 ## Flow
 
-1. **Wizard** (@clack/prompts, linear) — 8 steps:
-   1. **System check** — `collectSystemChecks()` + bootstrap. If Postgres /
-      embeddings are down, offers `docker compose up -d` + retries.
+1. **Wizard** (@clack/prompts, linear) — 9 steps:
+   1. **System check** — `collectSystemChecks()` + non-secret local defaults.
    2. **Keystore password** — create or unlock the encrypted Vex secret vault.
    3. **Wallets** — EVM + Solana create/import (delegates to `ensureWallets`).
    4. **API keys** — store `JUPITER_API_KEY` (required) + `TAVILY_API_KEY`,
@@ -23,13 +22,15 @@ pnpm exec tsx --tsconfig local/vex-shell/tsconfig.json local/vex-shell/index.ts
       `_PASSPHRASE`) in the encrypted vault.
    5. **Embedding** — optional override of `EMBEDDING_{BASE_URL,MODEL,DIM,
       PROVIDER}`. `DIM` is locked when `knowledge_entries` is non-empty.
-   6. **Agent core** — optional `AGENT_CONTEXT_LIMIT` /
+   6. **Bootstrap checks** — DB migrations + embeddings probe. If Postgres /
+      embeddings are down, offers `docker compose up -d` + retries.
+   7. **Agent core** — optional `AGENT_CONTEXT_LIMIT` /
       `AGENT_MAX_OUTPUT_TOKENS` / `AGENT_TEMPERATURE` + all six `SUBAGENT_*`.
-   7. **Provider** — OpenRouter (API key stored in the encrypted vault +
+   8. **Provider** — OpenRouter (API key stored in the encrypted vault +
       manual model id text input
       — find IDs at https://openrouter.ai/models). The `/v1/models` fetch was
       removed — operator picks the id.
-   8. **Mode** — `agent` / `mission`, permission (`restricted` / `full`),
+   9. **Mode** — `agent` / `mission`, permission (`restricted` / `full`),
       and a mission goal when mission mode is selected. Wake is always-on and
       not user-configurable.
 
@@ -99,7 +100,10 @@ local/vex-shell/
     └── state/        store (useSyncExternalStore)
 ```
 
-## Unexposed non-secret env vars (edit `~/.vex/.env` + restart)
+## Unexposed non-secret env vars
+
+Edit `~/.config/vex/.env` on Linux, or `CONFIG_DIR/.env` for the current
+platform, then restart.
 
 These exist in the code but the wizard and settings panel do not touch them:
 

@@ -2,14 +2,15 @@
  * Wizard orchestrator — linear @clack flow executed before Ink mounts.
  *
  * Pipeline (every step cancellable with Ctrl+C → returns `aborted: true`):
- *   1. system-check   — collectSystemChecks + startLocalServices + bootstrap
+ *   1. system-check   — collectSystemChecks + non-secret local defaults
  *   2. keystore       — unlock or create the encrypted Vex secret vault
  *   3. wallets        — create/import EVM + Solana keystores if missing
  *   4. api-keys       — JUPITER (req), TAVILY, POLYMARKET trio
  *   5. embedding      — optional EMBEDDING_{BASE_URL,MODEL,DIM,PROVIDER}
- *   6. agent-core     — optional AGENT_* + SUBAGENT_*
- *   7. provider       — OpenRouter (key + model picker)
- *   8. mode           — agent | mission + permission (restricted | full)
+ *   6. bootstrap      — DB migrations + embeddings probe, with service retry
+ *   7. agent-core     — optional AGENT_* + SUBAGENT_*
+ *   8. provider       — OpenRouter (key + model picker)
+ *   9. mode           — agent | mission + permission (restricted | full)
  *
  * Post-M12: wake step removed (always-on hardcoded); full_autonomous gone.
  */
@@ -17,7 +18,10 @@
 import { cancel, intro, outro } from "@clack/prompts";
 import type { BootstrapResult } from "../platform/bootstrap.js";
 import type { ProviderSummary } from "../platform/render.js";
-import { runSystemCheckStep } from "./system-check-step.js";
+import {
+  runBootstrapValidationStep,
+  runSystemCheckStep,
+} from "./system-check-step.js";
 import { runKeystoreStep } from "./keystore-step.js";
 import { runWalletsStep } from "./wallets-step.js";
 import { runApiKeysStep } from "./api-keys-step.js";
@@ -44,6 +48,7 @@ const DEFAULT_ABORT: WizardResult = {
 
 export async function runWizard(): Promise<WizardResult> {
   intro("VEX Shell — setup");
+  let bootstrap: BootstrapResult | null = null;
 
   const systemCheck = await runSystemCheckStep();
   if (systemCheck.aborted) {
@@ -54,37 +59,44 @@ export async function runWizard(): Promise<WizardResult> {
   const keystore = await runKeystoreStep();
   if (keystore.aborted) {
     cancel("Wizard cancelled during keystore setup.");
-    return { ...DEFAULT_ABORT, bootstrap: systemCheck.bootstrap };
+    return { ...DEFAULT_ABORT, bootstrap };
   }
 
   const wallets = await runWalletsStep();
   if (wallets.aborted) {
     cancel("Wizard cancelled during wallet setup.");
-    return { ...DEFAULT_ABORT, bootstrap: systemCheck.bootstrap };
+    return { ...DEFAULT_ABORT, bootstrap };
   }
 
   const apiKeys = await runApiKeysStep();
   if (apiKeys.aborted) {
     cancel("Wizard cancelled during API keys.");
-    return { ...DEFAULT_ABORT, bootstrap: systemCheck.bootstrap };
+    return { ...DEFAULT_ABORT, bootstrap };
   }
 
   const embedding = await runEmbeddingStep();
   if (embedding.aborted) {
     cancel("Wizard cancelled during embedding setup.");
-    return { ...DEFAULT_ABORT, bootstrap: systemCheck.bootstrap };
+    return { ...DEFAULT_ABORT, bootstrap };
+  }
+
+  const bootstrapValidation = await runBootstrapValidationStep();
+  bootstrap = bootstrapValidation.bootstrap;
+  if (bootstrapValidation.aborted) {
+    cancel("Wizard cancelled during bootstrap checks.");
+    return { ...DEFAULT_ABORT, bootstrap };
   }
 
   const agentCore = await runAgentCoreStep();
   if (agentCore.aborted) {
     cancel("Wizard cancelled during agent tuning.");
-    return { ...DEFAULT_ABORT, bootstrap: systemCheck.bootstrap };
+    return { ...DEFAULT_ABORT, bootstrap };
   }
 
   const provider = await runProviderStep();
   if (provider.aborted) {
     cancel("Wizard cancelled during provider setup.");
-    return { ...DEFAULT_ABORT, bootstrap: systemCheck.bootstrap };
+    return { ...DEFAULT_ABORT, bootstrap };
   }
 
   const mode = await runModeStep();
@@ -92,7 +104,7 @@ export async function runWizard(): Promise<WizardResult> {
     cancel("Wizard cancelled during mode selection.");
     return {
       ...DEFAULT_ABORT,
-      bootstrap: systemCheck.bootstrap,
+      bootstrap,
       provider: provider.summary,
     };
   }
@@ -100,7 +112,7 @@ export async function runWizard(): Promise<WizardResult> {
   outro("Setup complete — launching shell.");
   return {
     aborted: false,
-    bootstrap: systemCheck.bootstrap,
+    bootstrap,
     provider: provider.summary,
     mode: mode.mode,
     permission: mode.permission,

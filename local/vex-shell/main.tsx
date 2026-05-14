@@ -1,8 +1,8 @@
 /**
  * VEX Ink-shell orchestrator. Order of operations:
  *   1. Assert interactive TTY + install SIGINT/SIGTERM handlers.
- *   2. Run the linear @clack wizard — system-check + bootstrap + keystore +
- *      wallets + api-keys + embedding + agent-core + provider + mode + wake.
+ *   2. Run the linear @clack wizard — system-check + keystore + wallets +
+ *      api-keys + embedding + bootstrap + agent-core + provider + mode.
  *   3. Apply wake toggle (with optional intervalMs / batchSize).
  *   4. Create a session in the kind the wizard picked. `mission` maps to chat —
  *      App.tsx auto-sends `processMissionSetupTurn(goal)` via the initial

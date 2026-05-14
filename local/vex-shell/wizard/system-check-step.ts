@@ -1,7 +1,7 @@
 /**
- * System-check step — verifies Docker / Compose / Model Runner, then runs
- * bootstrap checks (DB migrations + embeddings probe). If bootstrap fails on
- * a missing local stack, offers to `docker compose up -d` and retries.
+ * System-check step — verifies Docker / Compose / Model Runner without
+ * prompting for secrets. Bootstrap validation runs later, after wizard steps
+ * have unlocked the vault and collected required API keys.
  *
  * Stays @clack/prompts-driven (wizard is linear); in-session live system
  * refresh is handled by the Ink Services tab (3F).
@@ -13,13 +13,19 @@ import {
   collectSystemChecks,
   startLocalServices,
 } from "../../../src/cli/setup/system.js";
+import { ensureRequiredEnvDefaults } from "../../../src/cli/setup/setup.js";
 import { bootstrapShell } from "../platform/bootstrap.js";
 import { recordBootstrapResult } from "../platform/diagnostics.js";
 import type { BootstrapResult } from "../platform/bootstrap.js";
+import { shouldOfferLocalServicesStart } from "./bootstrap-recovery.js";
 
 export interface SystemCheckOutcome {
-  bootstrap: BootstrapResult;
   systemChecks: readonly SystemCheckResult[];
+  aborted: boolean;
+}
+
+export interface BootstrapValidationOutcome {
+  bootstrap: BootstrapResult;
   aborted: boolean;
 }
 
@@ -60,6 +66,21 @@ export async function runSystemCheckStep(): Promise<SystemCheckOutcome> {
     );
   }
 
+  try {
+    ensureRequiredEnvDefaults();
+  } catch (err) {
+    log.error(
+      `Failed to configure local defaults: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return { systemChecks, aborted: true };
+  }
+
+  return { systemChecks, aborted: false };
+}
+
+export async function runBootstrapValidationStep(): Promise<BootstrapValidationOutcome> {
+  log.step("Bootstrap checks");
+
   // First bootstrap attempt
   let bootstrap = await runBootstrapOnce();
 
@@ -67,12 +88,8 @@ export async function runSystemCheckStep(): Promise<SystemCheckOutcome> {
   let attempts = 1;
   while (!bootstrap.ok && attempts < MAX_BOOTSTRAP_RETRIES) {
     const failureMsg = bootstrap.failure?.message ?? "";
-    const looksLikeServicesDown =
-      failureMsg.includes("ECONNREFUSED") ||
-      failureMsg.toLowerCase().includes("connect") ||
-      bootstrap.failure?.stage === "bootstrap_checks";
 
-    if (!looksLikeServicesDown) {
+    if (!shouldOfferLocalServicesStart(bootstrap)) {
       log.error(
         `Bootstrap failed at ${bootstrap.failure?.stage}: ${failureMsg}. Not auto-recoverable.`,
       );
@@ -111,9 +128,9 @@ export async function runSystemCheckStep(): Promise<SystemCheckOutcome> {
       initialValue: false,
     });
     if (isCancel(shouldContinue) || !shouldContinue) {
-      return { bootstrap, systemChecks, aborted: true };
+      return { bootstrap, aborted: true };
     }
   }
 
-  return { bootstrap, systemChecks, aborted: false };
+  return { bootstrap, aborted: false };
 }

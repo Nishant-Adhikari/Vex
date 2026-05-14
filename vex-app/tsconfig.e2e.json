@@ -3,13 +3,11 @@
   "compilerOptions": {
     "lib": ["ES2024", "DOM"],
     "types": ["node"],
-    "outDir": "./dist/e2e",
-    "rootDir": "./src",
+    "noEmit": true,
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/e2e", "src/shared"],
-  "references": [{ "path": "./tsconfig.shared.json" }]
+  "include": ["e2e/**/*", "src/shared/**/*"]
 }

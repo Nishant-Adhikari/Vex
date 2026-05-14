@@ -67,6 +67,39 @@ describe("resolveConfigDir", () => {
     ).toBe("/home/kuba/.config/vex");
   });
 
+  it("honours an absolute VEX_CONFIG_DIR override (test/CI escape hatch)", () => {
+    expect(
+      resolveConfigDir({
+        platform: "linux",
+        homedir: "/home/kuba",
+        env: { VEX_CONFIG_DIR: "/tmp/vex-e2e-abc123" },
+      })
+    ).toBe("/tmp/vex-e2e-abc123");
+  });
+
+  it("ignores a relative VEX_CONFIG_DIR and falls back to the platform default", () => {
+    // Relative paths are unsafe — they'd resolve against the launcher's
+    // cwd, which Electron can change at any point. A typo must not
+    // redirect production state writes.
+    expect(
+      resolveConfigDir({
+        platform: "linux",
+        homedir: "/home/kuba",
+        env: { VEX_CONFIG_DIR: "vex-e2e-relative" },
+      })
+    ).toBe("/home/kuba/.config/vex");
+  });
+
+  it("ignores an empty VEX_CONFIG_DIR and falls back to the platform default", () => {
+    expect(
+      resolveConfigDir({
+        platform: "darwin",
+        homedir: "/Users/kuba",
+        env: { VEX_CONFIG_DIR: "" },
+      })
+    ).toBe("/Users/kuba/Library/Application Support/vex");
+  });
+
   it("uses the same lowercase `vex` app name as the engine resolver (parity check)", () => {
     // src/config/paths.ts declares APP_NAME = "vex". If vex-app drifted to
     // "Vex" (capital) or "VexElectron" we'd silently split user state across
