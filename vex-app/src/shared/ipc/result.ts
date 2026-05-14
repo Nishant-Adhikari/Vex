@@ -45,6 +45,8 @@ export type VexErrorCode =
   | "wallet.keystore_locked"
   | "wallet.keystore_corrupt"
   | "wallet.password_invalid"
+  | "wallet.vault_not_configured"
+  | "secrets.unlock_throttled"
   | "services.docker_unavailable"
   | "services.port_in_use"
   | "services.healthcheck_failed"
@@ -80,6 +82,12 @@ export interface VexError {
   readonly details?: Readonly<Record<string, JsonValue>>;
   /** Stable id for correlating renderer-visible error with main-process logs. */
   readonly correlationId?: string;
+  /**
+   * Optional backoff hint in milliseconds. Set by rate-limited operations
+   * (e.g. `secrets.unlock_throttled`) so the renderer can render a precise
+   * "Try again in Xs" message. Not present on errors without a retry window.
+   */
+  readonly retryAfterMs?: number;
 }
 
 export type Result<T, E extends VexError = VexError> =

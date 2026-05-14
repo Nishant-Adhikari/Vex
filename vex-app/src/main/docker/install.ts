@@ -4,10 +4,6 @@
  *   desktop_download       → macOS/Windows: download installer to user's
  *                            Downloads folder + open it (user runs admin
  *                            install). We never auto-elevate for desktop.
- *   linux_apt_auto         → Linux: pkexec-driven apt install of docker-ce
- *                            + compose + model plugin. Auto-degrades to
- *                            `linux_manual_instructions` on polkit failure
- *                            (codex turn 4 YELLOW #5).
  *   linux_manual_instructions → returns a copy-paste block per distro;
  *                               renderer renders the block.
  *
@@ -18,7 +14,6 @@
 import { app, net, shell } from "electron";
 import path from "node:path";
 import { promises as fs } from "node:fs";
-import { runSpawn } from "./spawn-runner.js";
 import { dockerProgressBus } from "./progress-bus.js";
 import {
   getInstallerForPlatform,
@@ -37,7 +32,6 @@ export async function performInstall(
   ctx: InstallContext = {}
 ): Promise<InstallResult> {
   if (method === "desktop_download") return performDesktopDownload(ctx);
-  if (method === "linux_apt_auto") return performLinuxAutoInstall(ctx);
   if (method === "linux_manual_instructions") return buildLinuxManualInstructions();
   return {
     kind: "unsupported",
@@ -171,151 +165,6 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-type LinuxDistro = "ubuntu" | "debian";
-
-async function detectSupportedDistro(): Promise<LinuxDistro | null> {
-  try {
-    const content = await fs.readFile("/etc/os-release", "utf8");
-    for (const rawLine of content.split("\n")) {
-      const line = rawLine.trim();
-      const sep = line.indexOf("=");
-      if (sep < 1) continue;
-      if (line.slice(0, sep) !== "ID") continue;
-      const value = line.slice(sep + 1).replace(/^"|"$/g, "").toLowerCase();
-      if (value === "ubuntu" || value === "debian") return value;
-      return null;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-async function performLinuxAutoInstall(ctx: InstallContext): Promise<InstallResult> {
-  if (process.platform !== "linux") {
-    return {
-      kind: "unsupported",
-      message: "Linux apt auto-install is only available on Linux.",
-      artifactPath: null,
-      fallbackInstructions: null,
-    };
-  }
-
-  // Codex turn 5 RED #5 — script must use the right docker.com repo path
-  // for the host distro (Ubuntu uses /linux/ubuntu, Debian uses /linux/debian).
-  const distro = await detectSupportedDistro();
-  if (distro === null) {
-    const manual = buildLinuxManualInstructions();
-    return {
-      kind: "degraded",
-      message:
-        "Unsupported Linux distro for auto-install (need Ubuntu or Debian). Falling back to guided manual install.",
-      artifactPath: null,
-      fallbackInstructions: manual.fallbackInstructions,
-    };
-  }
-
-  // Detect if pkexec is available; if not, immediately degrade to manual.
-  const pkexecCheck = await runSpawn("which", ["pkexec"], { signal: ctx.signal });
-  if (pkexecCheck.code !== 0) {
-    const manual = buildLinuxManualInstructions();
-    return {
-      kind: "degraded",
-      message: "pkexec is not installed — falling back to guided manual install.",
-      artifactPath: null,
-      fallbackInstructions: manual.fallbackInstructions,
-    };
-  }
-
-  dockerProgressBus.emit({
-    phase: "starting",
-    message: "Authenticating with PolicyKit…",
-    percent: null,
-  });
-
-  // Run a tiny pkexec sanity check (e.g. `true`) so polkit prompts upfront.
-  const auth = await runSpawn("pkexec", ["true"], {
-    signal: ctx.signal,
-    onStdoutLine: (line) =>
-      dockerProgressBus.emit({ phase: "installing", message: line, percent: null }),
-    onStderrLine: (line) =>
-      dockerProgressBus.emit({ phase: "installing", message: line, percent: null }),
-  });
-
-  if (auth.code !== 0) {
-    const reason = describePkexecExit(auth.code, auth.stderr);
-    const manual = buildLinuxManualInstructions();
-    return {
-      kind: "degraded",
-      message: `pkexec authentication failed (${reason}) — falling back to guided manual install.`,
-      artifactPath: null,
-      fallbackInstructions: manual.fallbackInstructions,
-    };
-  }
-
-  // Authenticated; run the docker-ce install script for the detected distro.
-  const installScript = buildAptInstallScript(distro);
-  const result = await runSpawn(
-    "pkexec",
-    ["sh", "-c", installScript],
-    {
-      signal: ctx.signal,
-      onStdoutLine: (line) =>
-        dockerProgressBus.emit({ phase: "installing", message: line, percent: null }),
-      onStderrLine: (line) =>
-        dockerProgressBus.emit({ phase: "installing", message: line, percent: null }),
-    }
-  );
-
-  if (result.code !== 0) {
-    const manual = buildLinuxManualInstructions();
-    return {
-      kind: "degraded",
-      message: `apt install exited with code ${result.code ?? "unknown"}. Falling back to guided manual install.`,
-      artifactPath: null,
-      fallbackInstructions: manual.fallbackInstructions,
-    };
-  }
-
-  dockerProgressBus.emit({
-    phase: "completed",
-    message: "Docker Engine installed. Log out and back in to apply group changes.",
-    percent: 100,
-  });
-  return {
-    kind: "completed",
-    message:
-      "Docker Engine installed. Log out and log back in (or reboot) so the docker group takes effect.",
-    artifactPath: null,
-    fallbackInstructions: null,
-  };
-}
-
-function describePkexecExit(code: number | null, stderr: string): string {
-  if (code === 126) return "user cancelled";
-  if (code === 127) return "polkit unavailable";
-  if (/not authorized/i.test(stderr)) return "not authorized";
-  return `exit code ${code ?? "unknown"}`;
-}
-
-function buildAptInstallScript(distro: LinuxDistro): string {
-  // Mirrors docker.com's apt repo bootstrap — keep idempotent, fail-fast.
-  // Distro path picks the right keyring + signed-by + repo URL. Ubuntu and
-  // Debian have separate package manifests on docker.com.
-  return [
-    "set -euo pipefail",
-    "apt-get update",
-    "apt-get install -y ca-certificates curl gnupg",
-    "install -m 0755 -d /etc/apt/keyrings",
-    `curl -fsSL https://download.docker.com/linux/${distro}/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg`,
-    "chmod a+r /etc/apt/keyrings/docker.gpg",
-    `echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${distro} $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list`,
-    "apt-get update",
-    "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-    "usermod -aG docker ${SUDO_USER:-${USER:-$(id -un)}}",
-  ].join("\n");
 }
 
 function buildLinuxManualInstructions(): InstallResult {

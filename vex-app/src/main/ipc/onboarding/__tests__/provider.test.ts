@@ -16,9 +16,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createMainFrame,
+  createTestWebContents,
+  createTrustedSender,
+  type TestIpcEvent,
+} from "../../__tests__/test-sender.js";
 
 type Handler = (
-  event: { senderFrame?: { url?: string }; sender?: unknown },
+  event: TestIpcEvent,
   raw: unknown,
 ) => Promise<unknown>;
 
@@ -59,10 +65,7 @@ vi.mock("../../../logger/index.js", () => ({
 const { registerProviderHandler } = await import("../provider.js");
 const { CH } = await import("@shared/ipc/channels.js");
 
-const trustedSender = {
-  senderFrame: { url: "app://vex/index.html" },
-  sender: { send: vi.fn(), isDestroyed: () => false },
-};
+const trustedSender = createTrustedSender({ sender: createTestWebContents() });
 
 const VALID_PAYLOAD = {
   provider: "openrouter" as const,
@@ -268,7 +271,10 @@ describe("providerPersist handler", () => {
     registerProviderHandler();
     const fn = handlers.get(CH.onboarding.providerPersist)!;
     const result = (await fn(
-      { senderFrame: { url: "https://malicious.example.com" }, sender: trustedSender.sender },
+      {
+        senderFrame: createMainFrame("https://malicious.example.com"),
+        sender: trustedSender.sender,
+      },
       { requestId: "req-bad-sender", payload: VALID_PAYLOAD },
     )) as { ok: boolean; error?: { code: string } };
     expect(result.ok).toBe(false);

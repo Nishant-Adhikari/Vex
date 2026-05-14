@@ -75,6 +75,12 @@ export const envStateSchema = z
      */
     hasJupiterApiKey: z.boolean(),
     apiKeys: apiKeysStateSchema,
+    secrets: z
+      .object({
+        vaultConfigured: z.boolean(),
+        unlocked: z.boolean(),
+      })
+      .strict(),
     embeddings: z
       .object({
         configured: z.boolean(),

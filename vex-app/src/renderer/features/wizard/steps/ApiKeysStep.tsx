@@ -1,7 +1,7 @@
 /**
  * Wizard Step 3 — API keys (M9).
  *
- * Persists optional API keys + the all-or-none Polymarket trio via
+ * Stores optional API keys + the all-or-none Polymarket trio via
  * `vex.onboarding.apiKeysSet`. Per skill §14: secret inputs are
  * uncontrolled DOM refs, plain-async submit, refs cleared
  * synchronously after firing the IPC. Per-field "Set ✓ / Not set"

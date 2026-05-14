@@ -1,15 +1,21 @@
 /**
  * Provider-neutral env resolution.
- * 2-level password chain:
- *   1. process.env.VEX_KEYSTORE_PASSWORD
- *   2. ~/.config/vex/.env (app-specific)
+ *
+ * `.env` is reserved for non-secret runtime configuration. Secrets are
+ * loaded only from the current process environment, which the desktop app
+ * and shell populate after unlocking the encrypted local vault.
  */
 
 import { ENV_FILE } from "../config/paths.js";
 import {
+  MANAGED_SECRET_ENV_KEYS,
+  isManagedSecretEnvKey,
+} from "../lib/secret-keys.js";
+import {
   appendToDotenvFile,
   loadDotenvFileIntoProcess,
   readDotenvFileValue,
+  removeFromDotenvFile,
 } from "../utils/dotenv.js";
 
 /**
@@ -17,6 +23,10 @@ import {
  * Handles double-quoted values.
  */
 export function readEnvValue(key: string, envPath: string): string | null {
+  if (isManagedSecretEnvKey(key)) {
+    const value = process.env[key]?.trim();
+    return value ? value : null;
+  }
   return readDotenvFileValue(key, envPath);
 }
 
@@ -25,9 +35,17 @@ export function readEnvValue(key: string, envPath: string): string | null {
  * Loads from app-specific .env only.
  */
 export function loadProviderDotenv(): void {
-  loadDotenvFileIntoProcess(ENV_FILE);
+  loadDotenvFileIntoProcess(ENV_FILE, {
+    shouldLoadKey: (key) => !isManagedSecretEnvKey(key),
+  });
 }
 
 export function writeAppEnvValue(key: string, value: string): string {
+  if (isManagedSecretEnvKey(key)) {
+    throw new Error(`${key} is managed by the encrypted Vex secret vault.`);
+  }
+  for (const secretKey of MANAGED_SECRET_ENV_KEYS) {
+    removeFromDotenvFile(secretKey, ENV_FILE);
+  }
   return appendToDotenvFile(key, value, ENV_FILE);
 }

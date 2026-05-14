@@ -18,6 +18,10 @@ import type { WizardState } from "@shared/schemas/wizard.js";
 
 const mockUseWizardState = vi.fn();
 const mockSetCurrentView = vi.fn();
+const mockOpenUnlock = vi.fn();
+const mockSecretsStatus = vi.fn();
+const mockReviewStep = vi.fn();
+let mockWizardEntryMode: "setup" | "reconfigure" = "setup";
 
 vi.mock("../../../lib/api/wizard.js", async () => {
   const actual =
@@ -31,8 +35,18 @@ vi.mock("../../../lib/api/wizard.js", async () => {
 });
 
 vi.mock("../../../stores/uiStore.js", () => ({
-  useUiStore: (selector: (s: { setCurrentView: typeof mockSetCurrentView }) => unknown) =>
-    selector({ setCurrentView: mockSetCurrentView }),
+  useUiStore: (
+    selector: (s: {
+      setCurrentView: typeof mockSetCurrentView;
+      openUnlock: typeof mockOpenUnlock;
+      wizardEntryMode: "setup" | "reconfigure";
+    }) => unknown
+  ) =>
+    selector({
+      setCurrentView: mockSetCurrentView,
+      openUnlock: mockOpenUnlock,
+      wizardEntryMode: mockWizardEntryMode,
+    }),
 }));
 
 vi.mock("../steps/KeystoreStep.js", () => ({
@@ -56,7 +70,10 @@ vi.mock("../steps/AgentCoreStep.js", () => ({
 }));
 
 vi.mock("../steps/review/ReviewStep.js", () => ({
-  ReviewStep: () => <div data-testid="review-step" />,
+  ReviewStep: (props: unknown) => {
+    mockReviewStep(props);
+    return <div data-testid="review-step" />;
+  },
 }));
 
 const { WizardShell } = await import("../WizardShell.js");
@@ -87,10 +104,27 @@ function makeQueryResult(
 beforeEach(() => {
   mockUseWizardState.mockReset();
   mockSetCurrentView.mockReset();
+  mockOpenUnlock.mockReset();
+  mockSecretsStatus.mockReset();
+  mockSecretsStatus.mockResolvedValue({
+    ok: true,
+    data: { vaultConfigured: true, unlocked: true },
+  });
+  mockReviewStep.mockReset();
+  mockWizardEntryMode = "setup";
+  Object.defineProperty(window, "vex", {
+    configurable: true,
+    value: {
+      secrets: {
+        status: mockSecretsStatus,
+      },
+    },
+  });
 });
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(window, "vex");
 });
 
 describe("WizardShell", () => {
@@ -249,6 +283,86 @@ describe("WizardShell", () => {
     await waitFor(() => {
       expect(mockSetCurrentView).toHaveBeenCalledWith("appShell");
     });
+  });
+
+  it("opens unlock before appShell when a completed setup has a locked vault", async () => {
+    mockSecretsStatus.mockResolvedValue({
+      ok: true,
+      data: { vaultConfigured: true, unlocked: false },
+    });
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult({
+        ok: true,
+        data: {
+          schemaVersion: 2,
+          currentStepId: "review",
+          completedSteps: [
+            "keystore",
+            "wallets",
+            "apiKeys",
+            "embedding",
+            "agentCore",
+            "provider",
+          ],
+          completed: true,
+        },
+      })
+    );
+    renderWithQuery(<WizardShell />);
+    await waitFor(() => {
+      expect(mockOpenUnlock).toHaveBeenCalledWith("appShell");
+    });
+    expect(mockSetCurrentView).not.toHaveBeenCalledWith("appShell");
+  });
+
+  it("opens unlock before resuming an incomplete wizard after keystore", async () => {
+    mockSecretsStatus.mockResolvedValue({
+      ok: true,
+      data: { vaultConfigured: true, unlocked: false },
+    });
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult({
+        ok: true,
+        data: {
+          schemaVersion: 2,
+          currentStepId: "wallets",
+          completedSteps: ["keystore"],
+          completed: false,
+        },
+      })
+    );
+    renderWithQuery(<WizardShell />);
+    await waitFor(() => {
+      expect(mockOpenUnlock).toHaveBeenCalledWith("wizard");
+    });
+  });
+
+  it("opens ReviewStep in reconfigure mode when completed wizard is explicitly re-entered", async () => {
+    mockWizardEntryMode = "reconfigure";
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult({
+        ok: true,
+        data: {
+          schemaVersion: 2,
+          currentStepId: "review",
+          completedSteps: [
+            "keystore",
+            "wallets",
+            "apiKeys",
+            "embedding",
+            "agentCore",
+            "provider",
+          ],
+          completed: true,
+        },
+      })
+    );
+    const { findByTestId } = renderWithQuery(<WizardShell />);
+    await findByTestId("review-step");
+    expect(mockSetCurrentView).not.toHaveBeenCalledWith("appShell");
+    expect(mockReviewStep).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "reconfigure" })
+    );
   });
 
   it("renders the error shell when the query returns ok:false", async () => {

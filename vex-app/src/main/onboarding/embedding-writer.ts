@@ -34,6 +34,7 @@ import type {
 import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
 import { countRowsWithDimNotMatching } from "../database/dim-lock.js";
+import { stripManagedSecretsFromDotenvFile } from "@vex-lib/local-secret-vault.js";
 
 export interface EmbeddingWriterOptions {
   /** Override `ENV_FILE` for tests; production callers omit. */
@@ -112,6 +113,8 @@ export async function writeEmbeddingConfig(
     { key: "EMBEDDING_DIM", value: String(input.dim) },
     { key: "EMBEDDING_PROVIDER", value: input.provider },
   ];
+
+  stripManagedSecretsFromDotenvFile(targetFile);
 
   for (const w of writes) {
     try {

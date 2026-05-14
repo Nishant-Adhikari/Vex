@@ -2,18 +2,22 @@ import { REQUIRED_ENV } from "../../mcp/bootstrap.js";
 import { loadProviderDotenv, writeAppEnvValue } from "../../providers/env-resolution.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import { writeStderr } from "../../utils/output.js";
+import {
+  applySecretVaultToProcessEnv,
+  createSecretVault,
+  secretVaultExists,
+  stripManagedSecretsFromDotenvFile,
+  unlockSecretVault,
+  writeSecretVaultSecrets,
+} from "../../lib/local-secret-vault.js";
+import { MASTER_PASSWORD_ENV_KEY } from "../../lib/secret-keys.js";
 import { getEnvExamplePath } from "./package-assets.js";
 import { readAppEnvMap } from "./status.js";
 import { promptSecret, renderSection } from "./ui.js";
 import { JUPITER_API_KEY_GUIDANCE } from "./api-key-guidance.js";
 
 const LOCAL_DEFAULT_ENV_KEYS = REQUIRED_ENV.filter((key) => key !== "JUPITER_API_KEY");
-const TRACKED_ENV_KEYS = [
-  ...REQUIRED_ENV,
-  "VEX_KEYSTORE_PASSWORD",
-  "TAVILY_API_KEY",
-  "RETTIWT_API_KEY",
-];
+const TRACKED_ENV_KEYS = REQUIRED_ENV.filter((key) => key !== "JUPITER_API_KEY");
 
 function readBundledEnvDefaults(): Record<string, string> {
   return readAppEnvMap(getEnvExamplePath());
@@ -57,6 +61,7 @@ export function ensureRequiredEnvDefaults(): void {
 }
 
 export async function ensureJupiterApiKey(): Promise<void> {
+  await ensureKeystorePassword();
   const envMap = readAppEnvMap();
   const existingKey = envMap.JUPITER_API_KEY?.trim();
 
@@ -77,20 +82,39 @@ export async function ensureJupiterApiKey(): Promise<void> {
       continue;
     }
 
-    writeAppEnvValue("JUPITER_API_KEY", apiKey.trim());
+    writeSecretVaultSecrets(requireUnlockedSetupPassword(), {
+      JUPITER_API_KEY: apiKey.trim(),
+    });
+    stripManagedSecretsFromDotenvFile();
     process.env.JUPITER_API_KEY = apiKey.trim();
-    writeStderr("Stored JUPITER_API_KEY in CONFIG_DIR/.env.");
+    writeStderr("Stored JUPITER_API_KEY in the encrypted Vex secret vault.");
     return;
   }
 }
 
 export async function ensureKeystorePassword(): Promise<void> {
-  const envMap = readAppEnvMap();
-  const existingPassword = envMap.VEX_KEYSTORE_PASSWORD?.trim();
+  const existingPassword = process.env[MASTER_PASSWORD_ENV_KEY]?.trim();
 
   if (existingPassword) {
-    process.env.VEX_KEYSTORE_PASSWORD = existingPassword;
+    if (secretVaultExists()) applySecretVaultToProcessEnv(existingPassword);
+    process.env[MASTER_PASSWORD_ENV_KEY] = existingPassword;
     return;
+  }
+
+  if (secretVaultExists()) {
+    renderSection("Password", "Unlock the encrypted Vex secret vault.");
+    while (true) {
+      const password = await promptSecret("Enter master password");
+      try {
+        unlockSecretVault(password);
+        process.env[MASTER_PASSWORD_ENV_KEY] = password;
+        applySecretVaultToProcessEnv(password);
+        stripManagedSecretsFromDotenvFile();
+        return;
+      } catch {
+        writeStderr("Password could not unlock the Vex secret vault.");
+      }
+    }
   }
 
   renderSection(
@@ -111,9 +135,22 @@ export async function ensureKeystorePassword(): Promise<void> {
       continue;
     }
 
-    writeAppEnvValue("VEX_KEYSTORE_PASSWORD", password);
-    process.env.VEX_KEYSTORE_PASSWORD = password;
-    writeStderr("Stored VEX_KEYSTORE_PASSWORD in CONFIG_DIR/.env.");
+    createSecretVault(password);
+    stripManagedSecretsFromDotenvFile();
+    process.env[MASTER_PASSWORD_ENV_KEY] = password;
+    writeStderr("Created encrypted Vex secret vault.");
     return;
   }
+}
+
+function requireUnlockedSetupPassword(): string {
+  const password = process.env[MASTER_PASSWORD_ENV_KEY]?.trim();
+  if (!password) {
+    throw new VexError(
+      ErrorCodes.KEYSTORE_PASSWORD_NOT_SET,
+      "Vex secret vault is locked.",
+      "Unlock Vex with your master password before writing secrets.",
+    );
+  }
+  return password;
 }

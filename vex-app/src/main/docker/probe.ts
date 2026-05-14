@@ -272,6 +272,7 @@ export async function getAvailableDiskGB(targetPath: string): Promise<number> {
 // ── Composite probe ──────────────────────────────────────────────────
 
 import type { DockerStatus } from "@shared/schemas/docker.js";
+import { inspectDockerEndpointPolicy } from "./endpoint-policy.js";
 
 export interface DockerProbeOpts {
   readonly signal?: AbortSignal;
@@ -283,27 +284,38 @@ export interface DockerProbeOpts {
 export async function probeDocker(opts: DockerProbeOpts): Promise<DockerStatus> {
   const { signal, pgPort, modelRunnerBaseUrl, diskTarget } = opts;
 
-  const [versionRes, composeRes, modelRes, infoRes, pgFree, mrTcp, diskGB] =
+  const [versionRes, composeRes, endpoint, pgFree, diskGB] =
     await Promise.all([
       runCmd("docker", ["--version"], signal),
       runCmd("docker", ["compose", "version"], signal),
-      runCmd("docker", ["model", "status"], signal),
-      runCmd("docker", ["info", "--format", "{{json .}}"], signal),
+      inspectDockerEndpointPolicy(signal),
       isPortFree("127.0.0.1", pgPort, signal),
-      isModelRunnerEndpointReachable(modelRunnerBaseUrl, signal),
       getAvailableDiskGB(diskTarget),
     ]);
 
   const engineVersion = versionRes.ok ? parseDockerVersion(versionRes.stdout) : null;
   const composeVersion = composeRes.ok ? parseComposeVersion(composeRes.stdout) : null;
-  const modelStatus = parseModelStatus(modelRes.stdout, modelRes.errorMessage);
-  const daemonRunning = parseDaemonRunning(infoRes.stdout, infoRes.errorMessage);
+  let modelStatus: ModelStatusKind = "unsupported";
+  let daemonRunning = false;
+  let mrTcp = false;
+
+  if (versionRes.ok && endpoint.accepted) {
+    const [modelRes, infoRes, modelRunnerTcp] = await Promise.all([
+      runCmd("docker", ["model", "status"], signal),
+      runCmd("docker", ["info", "--format", "{{json .}}"], signal),
+      isModelRunnerEndpointReachable(modelRunnerBaseUrl, signal),
+    ]);
+    modelStatus = parseModelStatus(modelRes.stdout, modelRes.errorMessage);
+    daemonRunning = parseDaemonRunning(infoRes.stdout, infoRes.errorMessage);
+    mrTcp = modelRunnerTcp;
+  }
 
   return {
+    endpoint,
     engine: {
       present: versionRes.ok,
       version: engineVersion,
-      runtimeOK: versionRes.ok && daemonRunning,
+      runtimeOK: versionRes.ok && endpoint.accepted && daemonRunning,
     },
     compose: {
       present: composeRes.ok,
@@ -316,9 +328,8 @@ export async function probeDocker(opts: DockerProbeOpts): Promise<DockerStatus> 
     },
     daemon: {
       running: daemonRunning,
-      // Startable on macOS/Windows with Docker Desktop installed; on Linux
-      // requires `pkexec systemctl start docker`. M4 will refine this with
-      // explicit per-OS detection — for M2 we approximate.
+      // Startable means Vex can attempt a non-privileged start. Linux Docker
+      // Engine may still require user/admin action outside Vex.
       startable: versionRes.ok,
     },
     ports: {

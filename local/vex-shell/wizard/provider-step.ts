@@ -10,6 +10,11 @@ import { isCancel, log, password, select, text } from "@clack/prompts";
 import { readAppEnvMap } from "../../../src/cli/setup/status.js";
 import { writeAppEnvValue } from "../../../src/providers/env-resolution.js";
 import { synchronizeTrackedEnv } from "../../../src/cli/setup/setup.js";
+import {
+  stripManagedSecretsFromDotenvFile,
+  writeSecretVaultSecrets,
+} from "../../../src/lib/local-secret-vault.js";
+import { MASTER_PASSWORD_ENV_KEY } from "../../../src/lib/secret-keys.js";
 import { switchProvider } from "../../../src/vex-agent/inference/registry.js";
 import type { ProviderSummary } from "../platform/render.js";
 import { detectInitialProvider } from "../platform/provider.js";
@@ -29,7 +34,10 @@ async function activateOpenRouter(): Promise<ProviderOutcome> {
     });
     if (isCancel(input)) return { aborted: true, summary: currentSummary() };
     apiKey = String(input).trim();
-    writeAppEnvValue("OPENROUTER_API_KEY", apiKey);
+    const masterPassword = process.env[MASTER_PASSWORD_ENV_KEY]?.trim();
+    if (!masterPassword) throw new Error("Vex secret vault is locked.");
+    writeSecretVaultSecrets(masterPassword, { OPENROUTER_API_KEY: apiKey });
+    stripManagedSecretsFromDotenvFile();
     process.env.OPENROUTER_API_KEY = apiKey;
   }
 

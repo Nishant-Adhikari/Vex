@@ -57,6 +57,7 @@ import {
 } from "@shared/schemas/agent-core.js";
 import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
+import { stripManagedSecretsFromDotenvFile } from "@vex-lib/local-secret-vault.js";
 
 export interface AgentCoreWriterOptions {
   /** Override `ENV_FILE` for tests; production callers omit. */
@@ -216,6 +217,8 @@ export async function writeAgentCoreConfig(
   }
 
   // All checks passed — apply the plan in canonical order.
+  stripManagedSecretsFromDotenvFile(targetFile);
+
   const fieldsWritten: CanonicalKey[] = [];
   const fieldsCleared: CanonicalKey[] = [];
 

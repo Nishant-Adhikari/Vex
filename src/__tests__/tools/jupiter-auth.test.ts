@@ -27,7 +27,7 @@ describe("shared Jupiter auth", () => {
     expect(resolveJupiterApiKey()).toBe("");
   });
 
-  it("throws an env-only hint when the API key is missing", () => {
+  it("throws a setup-only hint when the API key is missing", () => {
     delete process.env.JUPITER_API_KEY;
 
     try {
@@ -35,7 +35,7 @@ describe("shared Jupiter auth", () => {
       throw new Error("Expected requireJupiterApiKey() to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(VexError);
-      expect((error as VexError).hint).toContain("CONFIG_DIR/.env");
+      expect((error as VexError).hint).toContain("Vex setup");
     }
   });
 });

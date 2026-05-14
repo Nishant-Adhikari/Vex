@@ -22,6 +22,7 @@ import {
   COMPOSE_VERSION_FLOOR,
 } from "../docker/probe.js";
 import { ensureDockerDaemonReady } from "../docker/daemon.js";
+import { inspectDockerEndpointPolicy } from "../docker/endpoint-policy.js";
 import { DEFAULT_EMBED_PORT } from "../onboarding/embedding-defaults.js";
 import { wizardStateStore } from "../onboarding/wizard-state-store.js";
 import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
@@ -319,6 +320,21 @@ export async function composeUp(
     embedPort = DEFAULT_EMBED_PORT,
   } = options;
   const renderOptions = { pgPort, embedPort };
+
+  const endpoint = await inspectDockerEndpointPolicy(signal);
+  if (!endpoint.accepted) {
+    const rendered = await renderCompose(deps, renderOptions);
+    return {
+      kind: "failed",
+      composeOutPath: rendered.outPath,
+      installId: rendered.installId,
+      message: endpoint.message ?? "Docker endpoint policy rejected this request.",
+      pgPort,
+      embedPort: rendered.embedPort,
+      pgPasswordPath: rendered.pgPasswordComposePath,
+      embeddingsReadiness: null,
+    };
+  }
 
   // Compose-floor pre-check. Inline `configs.content:` is parsed only
   // by Compose ≥ 2.23.1; below that, `compose up` fails with a cryptic
@@ -666,6 +682,13 @@ export async function composeDown(
 ): Promise<ComposeDownResult> {
   const project = `vex-${installId}`;
   const composeDir = path.dirname(composeOutPath);
+  const endpoint = await inspectDockerEndpointPolicy(signal);
+  if (!endpoint.accepted) {
+    return {
+      kind: "failed",
+      message: endpoint.message ?? "Docker endpoint policy rejected this request.",
+    };
+  }
 
   // Codex turn 1 RED #1 / R7 — drive compose via cwd so we never feed
   // a Windows absolute path through the buggy `-f` resolver. If the

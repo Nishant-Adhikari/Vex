@@ -8,6 +8,13 @@ import { describe, expect, it } from "vitest";
 import { dockerStatusSchema, type DockerStatus } from "../docker.js";
 
 const validStatus: DockerStatus = {
+  endpoint: {
+    accepted: true,
+    currentContext: "default",
+    dockerHostSet: false,
+    reason: null,
+    message: null,
+  },
   engine: { present: true, version: "27.5.1", runtimeOK: true },
   compose: { present: true, version: "v2.32.4" },
   modelRunner: { present: true, status: "active", tcpReachable: true },

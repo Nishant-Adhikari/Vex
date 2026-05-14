@@ -1,9 +1,8 @@
 /**
  * Wizard Step 1 — Master password (M7).
  *
- * Persists `VEX_KEYSTORE_PASSWORD` in the shared Vex config via
- * `vex.onboarding.keystoreSet` so vex-shell sees the same value
- * (CLI ↔ GUI parity gate). The form is uncontrolled (React Hook Form
+ * Creates or unlocks the encrypted local secret vault via
+ * `vex.onboarding.keystoreSet`. The form is uncontrolled (React Hook Form
  * `register` ref forwarding) and the inputs are cleared via
  * `form.reset()` after the IPC call succeeds — the password value
  * never lives in long-running React state and never enters Zustand
@@ -19,10 +18,7 @@
  * leaves the user staring at an empty form (codex turn 6 YELLOW #3).
  *
  * UX copy refers to the credential as "master password", not
- * "keystore" — M7 only persists the password, it does not create or
- * unlock an encrypted keystore (codex turn 5 RED #2). Encryption
- * happens later when wallets are generated in M8. Concrete file paths
- * are intentionally not surfaced in the UI (codex turn 6 YELLOW #4).
+ * "keystore". Concrete file paths are intentionally not surfaced in the UI.
  */
 
 import { useCallback, useRef, useState, type JSX } from "react";
@@ -148,14 +144,14 @@ export function KeystoreStep({
         <CardHeader>
           <CardTitle>Master password already configured</CardTitle>
           <CardDescription>
-            Vex found a saved master password in your config. Continue to
-            keep using it.
+            Vex has an encrypted local secret vault for this install.
+            Continue to keep using it.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
             To rotate the password, complete setup and use the future
-            Settings panel — wallet keystores are not re-encrypted
+            Settings panel. Wallet keystores are not re-encrypted
             automatically when the password changes.
           </p>
           {advanceError ? (
@@ -191,9 +187,9 @@ export function KeystoreStep({
       <CardHeader>
         <CardTitle>Set your master password</CardTitle>
         <CardDescription>
-          This password will encrypt your wallet keystores when you create
-          them in the next step. It stays on this machine — Vex never
-          sends it anywhere.
+          This password unlocks the encrypted local vault and protects
+          wallet keystores when you create them in the next step. It stays
+          on this machine.
         </CardDescription>
       </CardHeader>
       <CardContent>

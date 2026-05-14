@@ -57,6 +57,8 @@ export function SystemCheck(): JSX.Element {
     ? "loading"
     : !docker.data?.ok
       ? "fail"
+      : !docker.data.data.endpoint.accepted
+        ? "fail"
       : !docker.data.data.engine.present || !docker.data.data.daemon.running
         ? "warn"
         : "ok";
@@ -157,6 +159,9 @@ export function SystemCheck(): JSX.Element {
 }
 
 function formatDockerDetail(status: import("@shared/schemas/docker.js").DockerStatus): string {
+  if (!status.endpoint.accepted) {
+    return status.endpoint.message ?? "Docker endpoint rejected.";
+  }
   const engine = status.engine.present
     ? `Docker ${status.engine.version ?? "?"}`
     : "Docker not found";

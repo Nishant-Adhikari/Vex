@@ -10,9 +10,15 @@ import { z } from "zod";
 // Capture handlers registered by registerHandler so tests can invoke them
 // directly with a stubbed IpcMainInvokeEvent.
 type Handler = (
-  event: { senderFrame?: { url?: string } },
+  event: { senderFrame?: MockFrame },
   raw: unknown
 ) => unknown;
+
+interface MockFrame {
+  readonly url: string;
+  readonly parent: MockFrame | null;
+  readonly top: MockFrame | null;
+}
 
 const handlers = new Map<string, Handler>();
 const errorMock = vi.fn();
@@ -48,7 +54,28 @@ async function load() {
   return mod.registerHandler;
 }
 
-const trustedSender = { senderFrame: { url: "app://vex/index.html" } };
+function senderFrame(url: string): { senderFrame: MockFrame } {
+  const frame: { url: string; parent: MockFrame | null; top: MockFrame | null } = {
+    url,
+    parent: null,
+    top: null,
+  };
+  frame.top = frame;
+  return { senderFrame: frame };
+}
+
+function childSenderFrame(url: string): { senderFrame: MockFrame } {
+  const top = senderFrame(url).senderFrame;
+  return {
+    senderFrame: {
+      url,
+      parent: top,
+      top,
+    },
+  };
+}
+
+const trustedSender = senderFrame("app://vex/index.html");
 
 describe("registerHandler", () => {
   beforeEach(() => {
@@ -90,7 +117,7 @@ describe("registerHandler", () => {
     });
     const fn = handlers.get("vex:test:sender")!;
     const result: any = await fn(
-      { senderFrame: { url: "https://evil.com/" } },
+      senderFrame("https://evil.com/"),
       { requestId: "r", payload: {} }
     );
     expect(result.ok).toBe(false);
@@ -99,6 +126,24 @@ describe("registerHandler", () => {
     // Sender URL must NOT appear in the public error payload.
     expect(JSON.stringify(result.error)).not.toContain("evil.com");
     expect(errorMock).toHaveBeenCalled();
+  });
+
+  it("rejects trusted-origin subframes", async () => {
+    const registerHandler = await load();
+    registerHandler({
+      channel: "vex:test:subframe",
+      domain: "system",
+      inputSchema: z.object({}).strict(),
+      handle: async () => ({ ok: true as const, data: undefined }),
+    });
+    const fn = handlers.get("vex:test:subframe")!;
+    const result: any = await fn(childSenderFrame("app://vex/index.html"), {
+      requestId: "r",
+      payload: {},
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("validation.invalid_sender");
+    expect(result.error.redacted).toBe(true);
   });
 
   it("rejects invalid input shape with redacted error", async () => {

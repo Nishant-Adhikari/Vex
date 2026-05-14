@@ -32,6 +32,10 @@ const validState: EnvState = {
     name: null,
     modelLabel: null,
   },
+  secrets: {
+    vaultConfigured: true,
+    unlocked: true,
+  },
   setupCompleteFlag: false,
 };
 

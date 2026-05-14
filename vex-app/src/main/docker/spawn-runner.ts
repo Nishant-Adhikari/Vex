@@ -100,6 +100,43 @@ export async function runSpawn(
     const stderrReader = new StreamLineReader();
     let stdoutAccum = "";
     let stderrAccum = "";
+    let stdoutLinesEmitted = 0;
+    let stderrLinesEmitted = 0;
+
+    // Codex turn 5 YELLOW #4: redact each line BEFORE invoking the
+    // user-supplied callback (those callbacks fan out to renderer event
+    // streams). Final stdout/stderr buffers are also redacted at resolve
+    // time, but per-line redaction prevents secrets being broadcast in
+    // realtime through the event bus.
+    const safeOnStdout = onStdoutLine
+      ? (line: string): void => onStdoutLine(redact(line) as string)
+      : undefined;
+    const safeOnStderr = onStderrLine
+      ? (line: string): void => onStderrLine(redact(line) as string)
+      : undefined;
+    const emitStdoutLine = (line: string): void => {
+      stdoutLinesEmitted += 1;
+      if (safeOnStdout !== undefined) safeOnStdout(line);
+    };
+    const emitStderrLine = (line: string): void => {
+      stderrLinesEmitted += 1;
+      if (safeOnStderr !== undefined) safeOnStderr(line);
+    };
+    const replayLinesIfNeeded = (
+      stream: "stdout" | "stderr",
+      content: string
+    ): void => {
+      if (content.length === 0) return;
+      if (stream === "stdout" && stdoutLinesEmitted > 0) return;
+      if (stream === "stderr" && stderrLinesEmitted > 0) return;
+      const lines = content.endsWith("\n")
+        ? content.slice(0, -1).split("\n")
+        : content.split("\n");
+      for (const line of lines) {
+        if (stream === "stdout") emitStdoutLine(line);
+        else emitStderrLine(line);
+      }
+    };
 
     const child: ChildProcess = spawn(command, [...args], {
       cwd,
@@ -107,6 +144,45 @@ export async function runSpawn(
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+
+    child.stdout?.on("data", (chunk: string) => {
+      const flushed = stdoutReader.push(chunk, emitStdoutLine);
+      stdoutAccum += flushed;
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      const flushed = stderrReader.push(chunk, emitStderrLine);
+      stderrAccum += flushed;
+    });
+    child.stdout?.resume();
+    child.stderr?.resume();
+
+    child.on("error", () => {
+      stderrAccum += stderrReader.flush(() => undefined);
+      stdoutAccum += stdoutReader.flush(() => undefined);
+    });
+
+    const waitForStreamClose = (
+      stream: ChildProcess["stdout"] | ChildProcess["stderr"]
+    ): Promise<void> =>
+      new Promise((streamResolve) => {
+        if (!stream) {
+          streamResolve();
+          return;
+        }
+        let settled = false;
+        const settle = (): void => {
+          if (settled) return;
+          settled = true;
+          streamResolve();
+        };
+        stream.once("end", settle);
+        stream.once("close", settle);
+        stream.once("error", settle);
+      });
+    const stdoutDone = waitForStreamClose(child.stdout);
+    const stderrDone = waitForStreamClose(child.stderr);
 
     const escalateKill = (): void => {
       if (child.pid && !child.killed) {
@@ -144,38 +220,13 @@ export async function runSpawn(
       timeoutTimer = setTimeout(onTimeout, options.timeoutMs);
     }
 
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-
-    // Codex turn 5 YELLOW #4: redact each line BEFORE invoking the
-    // user-supplied callback (those callbacks fan out to renderer event
-    // streams). Final stdout/stderr buffers are also redacted at resolve
-    // time, but per-line redaction prevents secrets being broadcast in
-    // realtime through the event bus.
-    const safeOnStdout = onStdoutLine
-      ? (line: string): void => onStdoutLine(redact(line) as string)
-      : undefined;
-    const safeOnStderr = onStderrLine
-      ? (line: string): void => onStderrLine(redact(line) as string)
-      : undefined;
-
-    child.stdout?.on("data", (chunk: string) => {
-      const flushed = stdoutReader.push(chunk, (line) => safeOnStdout?.(line));
-      stdoutAccum += flushed;
-    });
-    child.stderr?.on("data", (chunk: string) => {
-      const flushed = stderrReader.push(chunk, (line) => safeOnStderr?.(line));
-      stderrAccum += flushed;
-    });
-
-    child.on("error", () => {
-      stderrAccum += stderrReader.flush(() => undefined);
-      stdoutAccum += stdoutReader.flush(() => undefined);
-    });
-
     child.on("close", (code, sig) => {
-      stderrAccum += stderrReader.flush((line) => safeOnStderr?.(line));
-      stdoutAccum += stdoutReader.flush((line) => safeOnStdout?.(line));
+      void (async (): Promise<void> => {
+        await Promise.all([stdoutDone, stderrDone]);
+      stderrAccum += stderrReader.flush(emitStderrLine);
+      stdoutAccum += stdoutReader.flush(emitStdoutLine);
+      replayLinesIfNeeded("stderr", stderrAccum);
+      replayLinesIfNeeded("stdout", stdoutAccum);
       if (killTimer) clearTimeout(killTimer);
       if (timeoutTimer) clearTimeout(timeoutTimer);
       if (signal) signal.removeEventListener("abort", onAbort);
@@ -187,6 +238,7 @@ export async function runSpawn(
         aborted,
         timedOut,
       });
+      })();
     });
   });
 }

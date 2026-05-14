@@ -14,6 +14,11 @@ import {
 } from "../../../src/vex-agent/inference/registry.js";
 import { writeAppEnvValue } from "../../../src/providers/env-resolution.js";
 import { synchronizeTrackedEnv } from "../../../src/cli/setup/setup.js";
+import {
+  stripManagedSecretsFromDotenvFile,
+  writeSecretVaultSecrets,
+} from "../../../src/lib/local-secret-vault.js";
+import { MASTER_PASSWORD_ENV_KEY } from "../../../src/lib/secret-keys.js";
 import type { ProviderSummary } from "./render.js";
 import { writeLine } from "./render.js";
 import { providerLog, withTiming } from "./log.js";
@@ -69,7 +74,10 @@ async function ensureOpenRouterCredentials(): Promise<void> {
     if (!apiKey) {
       throw new Error("OpenRouter API key is required");
     }
-    writeAppEnvValue("OPENROUTER_API_KEY", apiKey);
+    const masterPassword = process.env[MASTER_PASSWORD_ENV_KEY]?.trim();
+    if (!masterPassword) throw new Error("Vex secret vault is locked.");
+    writeSecretVaultSecrets(masterPassword, { OPENROUTER_API_KEY: apiKey });
+    stripManagedSecretsFromDotenvFile();
     process.env.OPENROUTER_API_KEY = apiKey;
     providerLog.info("provider.openrouter.api_key_persisted");
   }

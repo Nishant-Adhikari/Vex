@@ -26,7 +26,7 @@ export async function handlePolymarketSetup(
     return ok({
       configured: true,
       apiKeyPrefix: result.apiKeyPrefix,
-      envFilePath: result.envFilePath,
+      storage: result.storage,
       note: "Polymarket CLOB credentials saved. Trading tools (buy/sell/cancel) are now available.",
     });
   } catch (err) {

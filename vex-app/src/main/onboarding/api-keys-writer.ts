@@ -1,9 +1,8 @@
 /**
  * API keys writer (M9 Step 3).
  *
- * Writes the optional set of API keys + the all-or-none Polymarket
- * trio into `${CONFIG_DIR}/.env` atomically. Caller wraps in
- * `withEnvWriteLock`.
+ * Writes API/provider secrets into the encrypted local secret vault.
+ * `.env` is intentionally not used for any API key.
  *
  * Polymarket trio:
  *   The schema's `polymarket?: { apiKey, apiSecret, passphrase }`
@@ -20,15 +19,14 @@
  * without secrets crossing the boundary.
  */
 
-import { appendToDotenvFile } from "@vex-lib/dotenv.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   API_KEYS_CANONICAL_ORDER,
   type ApiKeysSetInput,
   type ApiKeysSetResult,
 } from "@shared/schemas/api-keys.js";
-import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
+import { writeUnlockedSecrets } from "../secrets/session.js";
 
 export interface ApiKeysWriterOptions {
   /** Override `ENV_FILE` for tests; production callers omit. */
@@ -39,10 +37,8 @@ type CanonicalKey = (typeof API_KEYS_CANONICAL_ORDER)[number];
 
 export async function writeApiKeys(
   input: ApiKeysSetInput,
-  options: ApiKeysWriterOptions = {}
+  _options: ApiKeysWriterOptions = {},
 ): Promise<Result<ApiKeysSetResult>> {
-  const targetFile = options.envFile ?? ENV_FILE;
-
   // Defensive trio coherence check (schema already enforces; this
   // closes the gap if the schema is ever relaxed).
   if (input.polymarket !== undefined) {
@@ -88,32 +84,17 @@ export async function writeApiKeys(
   }
 
   const fieldsWritten: CanonicalKey[] = [];
+  const updates: Partial<Record<CanonicalKey, string>> = {};
   for (const w of writes) {
-    try {
-      appendToDotenvFile(w.key, w.value, targetFile);
-      fieldsWritten.push(w.key);
-    } catch (cause) {
-      log.error(
-        `[api-keys-writer] failed to persist ${w.key} to ${targetFile}`,
-        cause
-      );
-      // Partial-write recovery: surface what got through so the
-      // renderer can update its skip-card optimistically and the
-      // user knows which keys still need a retry.
-      return err({
-        code: "onboarding.env_persist_failed",
-        domain: "onboarding",
-        message: `Could not persist ${w.key}. Check disk space and permissions.`,
-        retryable: true,
-        userActionable: true,
-        redacted: true,
-        details: { partialFieldsWritten: fieldsWritten },
-      });
-    }
+    updates[w.key] = w.value;
+    fieldsWritten.push(w.key);
   }
 
+  const writeResult = writeUnlockedSecrets(updates);
+  if (!writeResult.ok) return writeResult;
+
   log.info(
-    `[api-keys-writer] persisted keys=${fieldsWritten.join(",")}`
+    `[api-keys-writer] persisted vault keys=${fieldsWritten.join(",")}`
   );
   return ok({ fieldsWritten });
 }

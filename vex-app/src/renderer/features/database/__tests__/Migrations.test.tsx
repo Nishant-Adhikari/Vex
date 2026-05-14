@@ -29,18 +29,18 @@ type ProgressCb = (payload: MigrateProgress) => void;
 
 const mockMigrate = vi.fn();
 const mockOnProgress = vi.fn();
-const mockSetCurrentView = vi.fn();
+const mockOpenWizard = vi.fn();
 let progressCb: ProgressCb | null = null;
 
 vi.mock("../../../stores/uiStore.js", () => ({
-  useUiStore: (selector: (s: { setCurrentView: typeof mockSetCurrentView }) => unknown) =>
-    selector({ setCurrentView: mockSetCurrentView }),
+  useUiStore: (selector: (s: { openWizard: typeof mockOpenWizard }) => unknown) =>
+    selector({ openWizard: mockOpenWizard }),
 }));
 
 beforeEach(() => {
   mockMigrate.mockReset();
   mockOnProgress.mockReset();
-  mockSetCurrentView.mockReset();
+  mockOpenWizard.mockReset();
   progressCb = null;
 
   mockOnProgress.mockImplementation((cb: ProgressCb) => {
@@ -94,7 +94,7 @@ describe("Migrations component", () => {
     renderWithQuery(<Migrations />);
     await waitFor(
       () => {
-        expect(mockSetCurrentView).toHaveBeenCalledWith("wizard");
+        expect(mockOpenWizard).toHaveBeenCalledWith("setup");
       },
       { timeout: 1500 }
     );

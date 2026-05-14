@@ -7,9 +7,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createTestWebContents,
+  createTrustedSender,
+  type TestIpcEvent,
+} from "../../__tests__/test-sender.js";
 
 type Handler = (
-  event: { senderFrame?: { url?: string }; sender?: unknown },
+  event: TestIpcEvent,
   raw: unknown,
 ) => Promise<unknown>;
 
@@ -44,10 +49,7 @@ vi.mock("../../../logger/index.js", () => ({
 const { registerApiKeysHandler } = await import("../api-keys.js");
 const { CH } = await import("@shared/ipc/channels.js");
 
-const trustedSender = {
-  senderFrame: { url: "app://vex/index.html" },
-  sender: { send: vi.fn(), isDestroyed: () => false },
-};
+const trustedSender = createTrustedSender({ sender: createTestWebContents() });
 
 beforeEach(() => {
   handlers.clear();

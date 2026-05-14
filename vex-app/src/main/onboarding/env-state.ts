@@ -1,5 +1,5 @@
 /**
- * Presence-only env-state probes for `vex.onboarding.getEnvState()`.
+ * Presence-only setup probes for `vex.onboarding.getEnvState()`.
  * MUST NOT decrypt keystores — codex turn 3 RED #3. Wallet status
  * collapses to `present | missing` (file existence at the shared
  * CONFIG_DIR), which is everything the System Check screen needs.
@@ -24,6 +24,7 @@ import type { PolymarketStatus } from "@shared/schemas/api-keys.js";
 import { log } from "../logger/index.js";
 import { probeEmbeddings } from "./embedding-state.js";
 import { probeProvider } from "./provider-state.js";
+import { getUnlockedSecretPresence } from "../secrets/session.js";
 
 const KEYSTORE_FILE = path.join(CONFIG_DIR, "keystore.json");
 const SOLANA_KEYSTORE_FILE = path.join(CONFIG_DIR, "solana-keystore.json");
@@ -112,33 +113,27 @@ function polymarketStatusFrom(
 }
 
 export async function gatherEnvState(): Promise<EnvState> {
+  const secretPresence = getUnlockedSecretPresence();
   const [
-    hasPwd,
-    hasJupiter,
-    hasTavily,
-    hasRettiwt,
-    hasPolyKey,
-    hasPolySecret,
-    hasPolyPass,
     evmExists,
     solExists,
     setupFlag,
     embeddings,
     provider,
   ] = await Promise.all([
-    readEnvKeyPresence(ENV_FILE, "VEX_KEYSTORE_PASSWORD"),
-    readEnvKeyPresence(ENV_FILE, "JUPITER_API_KEY"),
-    readEnvKeyPresence(ENV_FILE, "TAVILY_API_KEY"),
-    readEnvKeyPresence(ENV_FILE, "RETTIWT_API_KEY"),
-    readEnvKeyPresence(ENV_FILE, "POLYMARKET_API_KEY"),
-    readEnvKeyPresence(ENV_FILE, "POLYMARKET_API_SECRET"),
-    readEnvKeyPresence(ENV_FILE, "POLYMARKET_PASSPHRASE"),
     fileExists(KEYSTORE_FILE),
     fileExists(SOLANA_KEYSTORE_FILE),
     fileExists(SETUP_COMPLETE_FILE),
     probeEmbeddings(ENV_FILE),
     probeProvider(ENV_FILE),
   ]);
+  const hasPwd = secretPresence.vaultConfigured;
+  const hasJupiter = secretPresence.secrets.JUPITER_API_KEY === true;
+  const hasTavily = secretPresence.secrets.TAVILY_API_KEY === true;
+  const hasRettiwt = secretPresence.secrets.RETTIWT_API_KEY === true;
+  const hasPolyKey = secretPresence.secrets.POLYMARKET_API_KEY === true;
+  const hasPolySecret = secretPresence.secrets.POLYMARKET_API_SECRET === true;
+  const hasPolyPass = secretPresence.secrets.POLYMARKET_PASSPHRASE === true;
 
   const polymarketStatus = polymarketStatusFrom(hasPolyKey, hasPolySecret, hasPolyPass);
   const walletAddresses = gatherWalletAddresses();
@@ -151,6 +146,10 @@ export async function gatherEnvState(): Promise<EnvState> {
       tavilyConfigured: hasTavily,
       rettiwtConfigured: hasRettiwt,
       polymarketStatus,
+    },
+    secrets: {
+      vaultConfigured: secretPresence.vaultConfigured,
+      unlocked: secretPresence.unlocked,
     },
     embeddings,
     walletStatus: {

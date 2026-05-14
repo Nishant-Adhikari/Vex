@@ -4,9 +4,9 @@
  * embedding, etc.).
  *
  * The wizard itself decides which steps are "back-edit"-able via the
- * Review screen's per-card Edit action; here we only swap the top-level
- * view. WizardShell re-reads the persisted wizard state on mount and
- * lands the user on the review screen because `completed: true`.
+ * Review screen's per-card Edit action. Here we enter the wizard in
+ * reconfiguration mode so completed installs land on Review instead of
+ * immediately bouncing back to the app shell.
  */
 
 import { useCallback } from "react";
@@ -14,10 +14,10 @@ import { Button } from "../../components/ui/button.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
 export function EditInfrastructureButton(): JSX.Element {
-  const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const openWizard = useUiStore((s) => s.openWizard);
   const onClick = useCallback((): void => {
-    setCurrentView("wizard");
-  }, [setCurrentView]);
+    openWizard("reconfigure");
+  }, [openWizard]);
   return (
     <Button variant="outline" size="sm" onClick={onClick}>
       Edit infrastructure

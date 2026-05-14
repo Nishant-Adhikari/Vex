@@ -18,7 +18,10 @@ function resetStoreToDefaults(): void {
   useUiStore.setState({
     sidebarOpen: true,
     currentView: "splash",
+    wizardEntryMode: "setup",
+    unlockReturnView: "appShell",
     logBuffer: [],
+    activeSessionId: null,
   });
 }
 
@@ -37,12 +40,26 @@ describe("uiStore", () => {
     const state = useUiStore.getState();
     expect(state.sidebarOpen).toBe(true);
     expect(state.currentView).toBe("splash");
+    expect(state.wizardEntryMode).toBe("setup");
+    expect(state.unlockReturnView).toBe("appShell");
     expect(state.logBuffer).toEqual([]);
   });
 
   it("setSidebarOpen mutates and reflects new value", () => {
     useUiStore.getState().setSidebarOpen(false);
     expect(useUiStore.getState().sidebarOpen).toBe(false);
+  });
+
+  it("openWizard sets the wizard view and entry mode together", () => {
+    useUiStore.getState().openWizard("reconfigure");
+    expect(useUiStore.getState().currentView).toBe("wizard");
+    expect(useUiStore.getState().wizardEntryMode).toBe("reconfigure");
+  });
+
+  it("openUnlock sets the unlock view and return target together", () => {
+    useUiStore.getState().openUnlock("wizard");
+    expect(useUiStore.getState().currentView).toBe("unlock");
+    expect(useUiStore.getState().unlockReturnView).toBe("wizard");
   });
 
   it("appendLog hard-caps logBuffer at MAX_RENDER_LOGS", () => {
@@ -73,9 +90,11 @@ describe("uiStore", () => {
     expect(useUiStore.getState().logBuffer).toEqual([]);
   });
 
-  it("persists ONLY sidebarOpen to localStorage (never logBuffer / currentView)", () => {
+  it("persists ONLY sidebarOpen to localStorage (never logBuffer / transient navigation state)", () => {
     useUiStore.getState().setSidebarOpen(false);
     useUiStore.getState().setCurrentView("placeholder");
+    useUiStore.getState().openWizard("reconfigure");
+    useUiStore.getState().openUnlock("wizard");
     useUiStore.getState().appendLog({
       id: "secret-log",
       level: "error",
@@ -90,6 +109,8 @@ describe("uiStore", () => {
     expect(parsed.state).toEqual({ sidebarOpen: false });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();
+    expect(parsed.state.wizardEntryMode).toBeUndefined();
+    expect(parsed.state.unlockReturnView).toBeUndefined();
     // Belt-and-braces: the message text must not appear anywhere serialized.
     expect(raw).not.toContain("private payload");
     expect(raw).not.toContain("secret-log");

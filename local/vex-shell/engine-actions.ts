@@ -316,7 +316,7 @@ export async function directRunTool(
 /**
  * Switch the active inference provider in-process. Does NOT run guided
  * credential/setup flows — those live in the UI layer (2C+). Call this after
- * the wizard has persisted `OPENROUTER_API_KEY` / `AGENT_MODEL`;
+ * the wizard has loaded `OPENROUTER_API_KEY` / `AGENT_MODEL`;
  * `switchProvider` then resolves the provider factory.
  */
 export async function switchProviderFlow(
@@ -328,7 +328,7 @@ export async function switchProviderFlow(
       return {
         ok: false,
         error: `switchProvider("${name}") returned null.`,
-        hint: "Check OPENROUTER_API_KEY + AGENT_MODEL in ~/.vex/.env.",
+        hint: "Check that the Vex secret vault is unlocked and AGENT_MODEL is configured.",
       };
     }
     return { ok: true, value: provider };

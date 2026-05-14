@@ -25,7 +25,11 @@ export type View =
   | "composeBootstrap"
   | "migrations"
   | "wizard"
+  | "unlock"
   | "appShell";
+
+export type WizardEntryMode = "setup" | "reconfigure";
+export type UnlockReturnView = "wizard" | "appShell";
 
 export interface UiLogEntry {
   readonly id: string;
@@ -37,6 +41,8 @@ export interface UiLogEntry {
 interface UiState {
   readonly sidebarOpen: boolean;
   readonly currentView: View;
+  readonly wizardEntryMode: WizardEntryMode;
+  readonly unlockReturnView: UnlockReturnView;
   readonly logBuffer: ReadonlyArray<UiLogEntry>;
   /**
    * Currently-selected session in the app shell sidebar. `null` means
@@ -47,6 +53,8 @@ interface UiState {
   readonly activeSessionId: string | null;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setCurrentView: (value: View) => void;
+  readonly openWizard: (mode: WizardEntryMode) => void;
+  readonly openUnlock: (returnView: UnlockReturnView) => void;
   readonly setActiveSessionId: (value: string | null) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
@@ -57,10 +65,16 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       sidebarOpen: true,
       currentView: "splash",
+      wizardEntryMode: "setup",
+      unlockReturnView: "appShell",
       logBuffer: [],
       activeSessionId: null,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setCurrentView: (currentView) => set({ currentView }),
+      openWizard: (wizardEntryMode) =>
+        set({ currentView: "wizard", wizardEntryMode }),
+      openUnlock: (unlockReturnView) =>
+        set({ currentView: "unlock", unlockReturnView }),
       setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
       appendLog: (entry) =>
         set((state) => ({

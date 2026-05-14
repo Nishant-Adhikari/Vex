@@ -49,7 +49,9 @@ import { SentryConsentCard } from "./SentryConsentCard.js";
 
 export interface ReviewStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
+  readonly mode?: "setup" | "reconfigure";
   readonly onAdvance: (next: WizardStepId) => void;
+  readonly onExitReconfigure?: () => void;
 }
 
 type EditableStep = Exclude<WizardStepId, "review">;
@@ -78,12 +80,16 @@ function renderEditPanel(
 
 export function ReviewStep({
   completedSteps,
+  mode = "setup",
   onAdvance,
+  onExitReconfigure,
 }: ReviewStepProps): JSX.Element {
   const envQuery = useEnvState();
+  const isReconfigure = mode === "reconfigure";
   const capabilitiesQuery = useQuery({
     queryKey: ["capabilities"] as const,
     queryFn: () => window.vex.capabilities.get(),
+    enabled: !isReconfigure,
     staleTime: 60_000,
   });
   const completeSetup = useCompleteSetup();
@@ -98,7 +104,7 @@ export function ReviewStep({
     capabilitiesQuery.data?.ok === true
       ? (capabilitiesQuery.data as Result<Capabilities> & { ok: true }).data
       : null;
-  const telemetryAvailable = caps?.telemetryAvailable ?? false;
+  const telemetryAvailable = !isReconfigure && (caps?.telemetryAvailable ?? false);
 
   const onReturnFromEdit = useCallback(
     (_next: WizardStepId) => {
@@ -163,11 +169,13 @@ export function ReviewStep({
   return (
     <Card className="w-full max-w-2xl" data-vex-wizard-review="form">
       <CardHeader>
-        <CardTitle>Review your setup</CardTitle>
+        <CardTitle>
+          {isReconfigure ? "Edit infrastructure" : "Review your setup"}
+        </CardTitle>
         <CardDescription>
-          Confirm everything below, choose whether to share anonymous error
-          reports, and finalize. Vex will back up your wallets before
-          marking setup complete.
+          {isReconfigure
+            ? "Review current infrastructure settings and edit only the section you need."
+            : "Confirm everything below, choose whether to share anonymous error reports, and finalize. Vex will back up your wallets before marking setup complete."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -201,12 +209,14 @@ export function ReviewStep({
             onEdit={() => setEditingStep("provider")}
             editDisabled={editDisabled}
           />
-          <SentryConsentCard
-            telemetryAvailable={telemetryAvailable}
-            checked={telemetryConsent}
-            onChange={setTelemetryConsent}
-            disabled={submitting}
-          />
+          {isReconfigure ? null : (
+            <SentryConsentCard
+              telemetryAvailable={telemetryAvailable}
+              checked={telemetryConsent}
+              onChange={setTelemetryConsent}
+              disabled={submitting}
+            />
+          )}
 
           {serverError ? (
             <p className="text-sm text-destructive" role="alert">
@@ -223,16 +233,26 @@ export function ReviewStep({
           ) : null}
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button
-              type="button"
-              onClick={() => {
-                void onFinalize();
-              }}
-              disabled={submitting}
-              data-vex-wizard-review-finalize
-            >
-              {submitting ? "Finalizing…" : "Finalize setup"}
-            </Button>
+            {isReconfigure ? (
+              <Button
+                type="button"
+                onClick={onExitReconfigure}
+                data-vex-wizard-review-exit
+              >
+                Back to sessions
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => {
+                  void onFinalize();
+                }}
+                disabled={submitting}
+                data-vex-wizard-review-finalize
+              >
+                {submitting ? "Finalizing…" : "Finalize setup"}
+              </Button>
+            )}
           </div>
         </div>
 

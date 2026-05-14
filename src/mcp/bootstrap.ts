@@ -2,7 +2,7 @@
  * Production MCP — boot sequence.
  *
  * fail-fast pipeline executed before any transport is bound:
- *   1. loadProviderDotenv() — pulls the same `ENV_FILE` Vex Agent uses.
+ *   1. loadProviderDotenv() — pulls non-secret local config from `ENV_FILE`.
  *   2. validateRequiredEnv() — explicit VEX_DB_URL + EMBEDDING_* + JUPITER_API_KEY.
  *   3. runMigrations() — idempotent additive migration runner.
  *   4. probeAll() — DB ping + embeddings round-trip.
@@ -42,8 +42,8 @@ export function validateRequiredEnv(): void {
   if (missing.length === 0) return;
   throw new McpBootstrapError(
     `Missing required env: ${missing.join(", ")}`,
-    "Set them in your app .env (CONFIG_DIR/.env) or pass via the MCP host config. " +
-      "Vex MCP shares the same env contract as Vex Agent — see docker/vex-agent/.env.example.",
+    "Unlock Vex so secrets are loaded into process.env, or pass them via the MCP host config. " +
+      "Non-secret local defaults still live in CONFIG_DIR/.env.",
   );
 }
 
@@ -94,7 +94,7 @@ export async function runBootstrapChecks(): Promise<void> {
  * to stderr and exits the process with code 2 (no recovery is sensible).
  */
 export async function bootstrap(): Promise<void> {
-  // 1. Load provider-neutral .env from CONFIG_DIR/.env (same path Vex Agent reads).
+  // 1. Load provider-neutral non-secret .env values from CONFIG_DIR/.env.
   try {
     loadProviderDotenv();
   } catch (err) {

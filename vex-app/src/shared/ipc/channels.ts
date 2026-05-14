@@ -37,6 +37,12 @@ export const CH = {
     status: "vex:database:status",
   },
 
+  secrets: {
+    status: "vex:secrets:status",
+    unlock: "vex:secrets:unlock",
+    lock: "vex:secrets:lock",
+  },
+
   // Onboarding — wizard step actions (M7–M11)
   onboarding: {
     getEnvState: "vex:onboarding:getEnvState",
@@ -79,11 +85,6 @@ export const CH = {
   // Telemetry — renderer-side error reporting (no-op stub bez consent)
   telemetry: {
     reportRendererError: "vex:telemetry:reportRendererError",
-  },
-
-  // Permissions — request privilege escalation (Linux pkexec)
-  permissions: {
-    requestAccess: "vex:permissions:requestAccess",
   },
 
   // Cancellation

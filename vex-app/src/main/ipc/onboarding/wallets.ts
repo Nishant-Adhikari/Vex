@@ -4,9 +4,10 @@
  * Six handlers split out from `onboarding.ts` per codex turn 8 GREEN
  * and user decision (file boundary at the wallet domain). Every handler
  * routes through `withWalletLock` (global mutex) and
- * `withFreshKeystorePassword` (force-fresh password from `${CONFIG_DIR}/.env`)
- * so concurrent invocations cannot interleave keystore + config writes,
- * and no stale `process.env` value leaks past M7's password write.
+ * `withFreshKeystorePassword` (injects the unlocked in-memory master password
+ * into `process.env` only for the duration of the engine call) so concurrent
+ * invocations cannot interleave keystore + config writes and the password is
+ * not persisted in `.env`.
  */
 
 import path from "node:path";

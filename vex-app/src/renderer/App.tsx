@@ -20,6 +20,7 @@ import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
 import { Migrations } from "./features/database/Migrations.js";
 import { WizardShell } from "./features/wizard/WizardShell.js";
 import { AppShell } from "./features/appShell/AppShell.js";
+import { UnlockScreen } from "./features/secrets/UnlockScreen.js";
 import { useUiStore, type View } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
@@ -43,6 +44,7 @@ export function App(): JSX.Element {
     composeBootstrap: () => <ComposeBootstrap />,
     migrations: () => <Migrations />,
     wizard: () => <WizardShell />,
+    unlock: () => <UnlockScreen />,
     appShell: () => <AppShell />,
   };
 

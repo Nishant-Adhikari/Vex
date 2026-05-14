@@ -3,9 +3,9 @@
  *
  * Single IPC that does verify-then-persist atomically (codex turn 2
  * RED #1): handler tests the OpenRouter key+model via a 1-shot chat
- * completion, then writes 3 .env keys (OPENROUTER_API_KEY +
- * AGENT_MODEL + AGENT_PROVIDER=openrouter) via the batch writer
- * `appendMultipleToDotenvFile`. If verify fails, no persist happens.
+ * completion, then stores OPENROUTER_API_KEY in the encrypted vault
+ * and writes non-secret AGENT_MODEL + AGENT_PROVIDER=openrouter to
+ * `.env`. If verify fails, no persist happens.
  *
  * Input validation:
  *   - `.trim().min(1).max(200)` for apiKey + model (codex turn 1 RED #4
@@ -38,14 +38,14 @@ export const providerPersistInputSchema = z
 export type ProviderPersistInput = z.infer<typeof providerPersistInputSchema>;
 
 /**
- * Canonical .env keys written by `providerPersist` (M10). Order
- * matches the deterministic write order in `provider-writer.ts`.
+ * Canonical fields reported by `providerPersist` (M10). Order
+ * matches the deterministic persist order in `provider-writer.ts`.
  * Engine resolution precedence (`registry.ts:41-108`):
  *   1. Explicit `AGENT_PROVIDER` value
  *   2. `OPENROUTER_API_KEY` + `AGENT_MODEL` present → openrouter
- * Writing all 3 keys ensures GUI's wizard choice is unambiguous even
- * when stale `AGENT_PROVIDER` lines exist from prior CLI use or manual
- * edits.
+ * The API key is stored in the encrypted vault; provider/model selection
+ * stays in `.env` so the GUI's wizard choice is unambiguous even when
+ * stale `AGENT_PROVIDER` lines exist from prior CLI use or manual edits.
  */
 export const PROVIDER_PERSIST_CANONICAL_ORDER = [
   "OPENROUTER_API_KEY",

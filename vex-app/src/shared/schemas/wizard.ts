@@ -11,11 +11,9 @@
  * from this list. Adding/removing a step in M8–M11 is one edit here
  * (codex turn 5 RED #1).
  *
- * "keystore" as the step id is historical and matches the env var name
- * (`VEX_KEYSTORE_PASSWORD`) the step writes — UX copy refers to the
- * configured value as "master password" / "password" because M7 only
- * persists the credential, it does not create or unlock a keystore file
- * (codex turn 5 RED #2).
+ * "keystore" as the step id is historical. The step now creates or
+ * unlocks the encrypted local secret vault with the user's master
+ * password; it does not persist `VEX_KEYSTORE_PASSWORD` to `.env`.
  */
 
 import { z } from "zod";

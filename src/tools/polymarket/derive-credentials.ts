@@ -1,7 +1,7 @@
 /**
  * Polymarket CLOB API credential derivation — canonical source of truth.
  *
- * Flow: wallet keystore → EIP-712 ClobAuth signature → derive/create API key → save to .env
+ * Flow: wallet keystore → EIP-712 ClobAuth signature → derive/create API key → save to encrypted vault
  * Used by: vex-agent internal tool + CLI `vex polymarket setup`
  *
  * Auth: L1 EIP-712 typed data signature in request headers (POLY_ADDRESS, POLY_SIGNATURE,
@@ -13,7 +13,11 @@
 import { requireWalletAndKeystore } from "../wallet/auth.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import { VexError, ErrorCodes } from "../../errors.js";
-import { writeAppEnvValue } from "../../providers/env-resolution.js";
+import {
+  stripManagedSecretsFromDotenvFile,
+  writeSecretVaultSecrets,
+} from "../../lib/local-secret-vault.js";
+import { requireKeystorePassword } from "../../utils/env.js";
 import { isRecord } from "../../utils/validation-helpers.js";
 import {
   CLOB_BASE_URL,
@@ -46,8 +50,8 @@ const CLOB_AUTH_MESSAGE = "This message attests that I control the given wallet"
 export interface DeriveResult {
   /** First 8 characters of API key — safe for display/output. */
   apiKeyPrefix: string;
-  /** Path to .env file where credentials were saved. */
-  envFilePath: string;
+  /** Storage location where credentials were saved. */
+  storage: "secret-vault";
   /** Wallet address used for derivation. */
   address: string;
 }
@@ -93,13 +97,13 @@ async function buildL1AuthHeaders(
 }
 
 /**
- * Derive Polymarket CLOB API credentials from wallet keystore and save to .env.
+ * Derive Polymarket CLOB API credentials from wallet keystore and save to the encrypted vault.
  *
  * 1. Get wallet from keystore
  * 2. Sign EIP-712 ClobAuth typed data
  * 3. Try GET /auth/derive-api-key (recover existing creds)
  * 4. If not found, POST /auth/api-key (create new creds)
- * 5. Save apiKey/secret/passphrase to .env via writeAppEnvValue
+ * 5. Save apiKey/secret/passphrase to the encrypted vault
  * 6. Set process.env immediately for same-process use
  *
  * Throws VexError on failure (network, auth, missing fields).
@@ -123,10 +127,13 @@ export async function deriveAndSavePolymarketCredentials(): Promise<DeriveResult
     throw new VexError(ErrorCodes.POLYMARKET_AUTH_FAILED, "Failed to derive or create API key");
   }
 
-  // Save to .env
-  const envFilePath = writeAppEnvValue(ENV_POLYMARKET_API_KEY, creds.apiKey);
-  writeAppEnvValue(ENV_POLYMARKET_API_SECRET, creds.secret);
-  writeAppEnvValue(ENV_POLYMARKET_PASSPHRASE, creds.passphrase);
+  const masterPassword = requireKeystorePassword();
+  writeSecretVaultSecrets(masterPassword, {
+    [ENV_POLYMARKET_API_KEY]: creds.apiKey,
+    [ENV_POLYMARKET_API_SECRET]: creds.secret,
+    [ENV_POLYMARKET_PASSPHRASE]: creds.passphrase,
+  });
+  stripManagedSecretsFromDotenvFile();
 
   // Set in process.env for immediate use
   process.env[ENV_POLYMARKET_API_KEY] = creds.apiKey;
@@ -135,7 +142,7 @@ export async function deriveAndSavePolymarketCredentials(): Promise<DeriveResult
 
   return {
     apiKeyPrefix: creds.apiKey.slice(0, 8),
-    envFilePath,
+    storage: "secret-vault",
     address,
   };
 }

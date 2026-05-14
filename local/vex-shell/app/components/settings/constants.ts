@@ -18,7 +18,6 @@ export const TAB_LABELS: Record<SettingsTabId, string> = {
 
 export const ENV_FIELDS: ReadonlyArray<{ key: string; secret: boolean }> = [
   { key: "VEX_DB_URL", secret: false },
-  { key: "VEX_KEYSTORE_PASSWORD", secret: true },
   { key: "JUPITER_API_KEY", secret: true },
   { key: "EMBEDDING_BASE_URL", secret: false },
   { key: "EMBEDDING_MODEL", secret: false },

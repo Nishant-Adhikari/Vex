@@ -13,7 +13,6 @@ export type ModelRunnerStatus = z.infer<typeof modelRunnerStatusSchema>;
 
 export const installMethodSchema = z.enum([
   "desktop_download",
-  "linux_apt_auto",
   "linux_manual_instructions",
 ]);
 export type InstallMethod = z.infer<typeof installMethodSchema>;
@@ -116,8 +115,29 @@ export const composeLogSchema = z
   .strict();
 export type ComposeLog = z.infer<typeof composeLogSchema>;
 
+export const dockerEndpointBlockReasonSchema = z.enum([
+  "docker_host_unsupported",
+  "context_host_unsupported",
+  "context_unverified",
+]);
+export type DockerEndpointBlockReason = z.infer<
+  typeof dockerEndpointBlockReasonSchema
+>;
+
+export const dockerEndpointPolicySchema = z
+  .object({
+    accepted: z.boolean(),
+    currentContext: z.string().nullable(),
+    dockerHostSet: z.boolean(),
+    reason: dockerEndpointBlockReasonSchema.nullable(),
+    message: z.string().nullable(),
+  })
+  .strict();
+export type DockerEndpointPolicy = z.infer<typeof dockerEndpointPolicySchema>;
+
 export const dockerStatusSchema = z
   .object({
+    endpoint: dockerEndpointPolicySchema,
     engine: z
       .object({
         present: z.boolean(),

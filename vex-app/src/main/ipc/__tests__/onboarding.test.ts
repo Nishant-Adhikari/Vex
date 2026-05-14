@@ -13,9 +13,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTrustedSender, type TestIpcEvent } from "./test-sender.js";
 
 type Handler = (
-  event: { senderFrame?: { url?: string } },
+  event: TestIpcEvent,
   raw: unknown
 ) => Promise<unknown>;
 
@@ -64,9 +65,7 @@ vi.mock("../../logger/index.js", () => ({
 const { registerOnboardingHandlers } = await import("../onboarding.js");
 const { CH } = await import("@shared/ipc/channels.js");
 
-const trustedSender = {
-  senderFrame: { url: "app://vex/index.html" },
-};
+const trustedSender = createTrustedSender();
 
 beforeEach(() => {
   handlers.clear();
@@ -90,6 +89,10 @@ describe("vex.onboarding.getEnvState handler", () => {
         tavilyConfigured: false,
         rettiwtConfigured: false,
         polymarketStatus: "missing",
+      },
+      secrets: {
+        vaultConfigured: true,
+        unlocked: true,
       },
       embeddings: {
         configured: false,

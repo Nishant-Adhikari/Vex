@@ -1,8 +1,10 @@
 /**
- * Single instance lock — drugą instancję odmawiamy startu (focus existing window).
+ * Single instance lock: a second app instance is rejected and the existing
+ * window is focused.
  *
- * Krytyczne dla shared keystore + DB: dwa procesy współbieżnie pisałyby do .env,
- * keystore.json, preferences.json — race conditions, corrupted state, double-unlock.
+ * Critical for the shared vault, keystore, and DB: two processes writing
+ * concurrently to secrets.vault.json, .env, keystore.json, or preferences.json
+ * would risk races, corrupted state, and double unlock.
  *
  * Skill §10 implicit: "user app instance owns local infra contract".
  */

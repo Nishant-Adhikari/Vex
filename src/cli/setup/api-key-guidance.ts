@@ -15,7 +15,7 @@ export const TAVILY_API_KEY_GUIDANCE = [
   "How to get it:",
   "1. Log in or create an account at https://app.tavily.com/home",
   "2. Open API Keys.",
-  "3. Copy the key and add TAVILY_API_KEY to CONFIG_DIR/.env when you want web access.",
+  "3. Copy the key and add it through Vex setup when you want web access.",
   "Tavily includes 1,000 free credits per month.",
 ].join("\n");
 
@@ -25,7 +25,7 @@ export const RETTIWT_API_KEY_GUIDANCE = [
   "How to get it:",
   "1. Follow the Rettiwt-API authentication instructions for the browser helper extension.",
   "2. Copy the generated API_KEY.",
-  "3. Add RETTIWT_API_KEY to CONFIG_DIR/.env when you want Twitter/X account research.",
+  "3. Add it through Vex setup when you want Twitter/X account research.",
   "Do not use a primary personal account.",
 ].join("\n");
 

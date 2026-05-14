@@ -39,6 +39,10 @@ import { agentCoreConfigureInputSchema } from "../shared/schemas/agent-core.js";
 import { providerPersistInputSchema } from "../shared/schemas/provider.js";
 import { completeSetupInputSchema } from "../shared/schemas/finalize.js";
 import {
+  secretsLockInputSchema,
+  secretsUnlockInputSchema,
+} from "../shared/schemas/secrets.js";
+import {
   sessionCreateInputSchema,
   sessionGetInputSchema,
 } from "../shared/schemas/sessions.js";
@@ -170,6 +174,22 @@ const api = {
     },
     onProgress(cb) {
       return subscribe(EV.database.migrateProgress, migrateProgressSchema, cb);
+    },
+  },
+
+  secrets: {
+    status() {
+      return invokeWithSchema(CH.secrets.status, {});
+    },
+    unlock(input: import("../shared/schemas/secrets.js").SecretsUnlockInput) {
+      return invokeWithSchema(
+        CH.secrets.unlock,
+        input,
+        secretsUnlockInputSchema
+      );
+    },
+    lock() {
+      return invokeWithSchema(CH.secrets.lock, {}, secretsLockInputSchema);
     },
   },
 

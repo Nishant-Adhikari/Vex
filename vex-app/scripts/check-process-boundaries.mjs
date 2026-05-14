@@ -1,0 +1,164 @@
+#!/usr/bin/env node
+/**
+ * Source-level process-boundary checks for the Electron app.
+ *
+ * This is intentionally a small repo-local gate, not a replacement for a
+ * future ESLint/dependency-cruiser setup. It catches the highest-risk drift:
+ * renderer importing privileged modules and shared importing runtime-specific
+ * code.
+ */
+
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+
+const root = path.resolve(process.cwd());
+const srcRoot = path.join(root, "src");
+const rendererRoot = path.join(srcRoot, "renderer");
+const sharedRoot = path.join(srcRoot, "shared");
+
+const RED = "\x1b[31m";
+const GREEN = "\x1b[32m";
+const RESET = "\x1b[0m";
+
+const NODE_BUILTINS = new Set([
+  "assert",
+  "buffer",
+  "child_process",
+  "cluster",
+  "crypto",
+  "dns",
+  "fs",
+  "http",
+  "https",
+  "net",
+  "os",
+  "path",
+  "process",
+  "readline",
+  "stream",
+  "tls",
+  "tty",
+  "url",
+  "util",
+  "worker_threads",
+  "zlib",
+]);
+
+const failures = [];
+
+function collectFiles(dir) {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (
+        entry.name === "node_modules" ||
+        entry.name === "dist" ||
+        entry.name === "__tests__"
+      ) {
+        continue;
+      }
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.(tsx?|mts|cts)$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+function importSpecifiers(source) {
+  const specs = [];
+  const patterns = [
+    /\bimport\s+(?:type\s+)?(?:[^"'()]+?\s+from\s+)?["']([^"']+)["']/g,
+    /\bexport\s+(?:type\s+)?[^"'()]+?\s+from\s+["']([^"']+)["']/g,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const spec = match[1];
+      if (typeof spec === "string") specs.push(spec);
+    }
+  }
+  return specs;
+}
+
+function isNodeBuiltin(spec) {
+  if (spec.startsWith("node:")) return true;
+  const first = spec.split("/")[0] ?? spec;
+  return NODE_BUILTINS.has(first);
+}
+
+function resolveRelativeImport(fromFile, spec) {
+  if (!spec.startsWith(".")) return null;
+  return path.resolve(path.dirname(fromFile), spec);
+}
+
+function isInside(target, dir) {
+  const rel = path.relative(dir, target);
+  return rel.length === 0 || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function checkRendererFile(file) {
+  const source = readFileSync(file, "utf8");
+  for (const spec of importSpecifiers(source)) {
+    const resolved = resolveRelativeImport(file, spec);
+    const forbidden =
+      spec === "electron" ||
+      spec.startsWith("@main/") ||
+      spec.startsWith("@preload/") ||
+      isNodeBuiltin(spec) ||
+      (resolved !== null &&
+        (isInside(resolved, path.join(srcRoot, "main")) ||
+          isInside(resolved, path.join(srcRoot, "preload"))));
+    if (forbidden) {
+      failures.push(
+        `${path.relative(root, file)} imports privileged module "${spec}"`
+      );
+    }
+  }
+}
+
+function checkSharedFile(file) {
+  const source = readFileSync(file, "utf8");
+  for (const spec of importSpecifiers(source)) {
+    const resolved = resolveRelativeImport(file, spec);
+    const forbidden =
+      spec === "electron" ||
+      spec === "react" ||
+      spec.startsWith("@main/") ||
+      spec.startsWith("@preload/") ||
+      spec.startsWith("@renderer/") ||
+      isNodeBuiltin(spec) ||
+      (resolved !== null &&
+        (isInside(resolved, path.join(srcRoot, "main")) ||
+          isInside(resolved, path.join(srcRoot, "preload")) ||
+          isInside(resolved, path.join(srcRoot, "renderer"))));
+    if (forbidden) {
+      failures.push(
+        `${path.relative(root, file)} imports runtime-specific module "${spec}"`
+      );
+    }
+  }
+}
+
+for (const file of collectFiles(rendererRoot)) {
+  checkRendererFile(file);
+}
+for (const file of collectFiles(sharedRoot)) {
+  checkSharedFile(file);
+}
+
+if (failures.length > 0) {
+  console.log(`${RED}Process boundary check failed:${RESET}`);
+  for (const failure of failures) {
+    console.log(`  - ${failure}`);
+  }
+  process.exit(1);
+}
+
+console.log(`${GREEN}Process boundary check passed.${RESET}`);

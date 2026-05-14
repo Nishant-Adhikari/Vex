@@ -34,6 +34,13 @@ function statusResult(opts: {
     data: {
       ok: true as const,
       data: {
+        endpoint: {
+          accepted: true,
+          currentContext: "default",
+          dockerHostSet: false,
+          reason: null,
+          message: null,
+        },
         engine: { present: opts.enginePresent, version: opts.enginePresent ? "27.5.1" : null, runtimeOK: opts.daemonRunning },
         compose: { present: opts.enginePresent, version: opts.enginePresent ? "v2.32.4" : null },
         modelRunner: { present: opts.enginePresent, status: "active" as const, tcpReachable: true },
@@ -128,13 +135,12 @@ describe("BootstrapPanel branch matrix", () => {
     }
   );
 
-  it("branch C-linux: missing engine on Linux offers auto + manual options", () => {
+  it("branch C-linux: missing engine on Linux offers manual instructions only", () => {
     mockHooks.useDockerStatus.mockReturnValue(
       statusResult({ enginePresent: false, daemonRunning: false })
     );
     mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
     const { getByRole } = render(<BootstrapPanel />);
-    expect(getByRole("button", { name: /Run for me/i })).toBeDefined();
     expect(getByRole("button", { name: /Show manual instructions/i })).toBeDefined();
   });
 });

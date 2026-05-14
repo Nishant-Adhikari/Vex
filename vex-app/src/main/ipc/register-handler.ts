@@ -26,7 +26,15 @@ const TRUSTED_PRODUCTION_ORIGIN = "app://vex";
 const TRUSTED_DEV_ORIGIN = "http://127.0.0.1:5173";
 
 function assertTrustedSender(event: IpcMainInvokeEvent): void {
-  const url = event.senderFrame?.url ?? "";
+  const frame = event.senderFrame;
+  if (!frame) {
+    throw new Error("Untrusted IPC sender: <missing frame>");
+  }
+  if (frame.parent !== null || frame.top !== frame) {
+    throw new Error("Untrusted IPC sender: subframe");
+  }
+
+  const url = frame.url;
   const trusted =
     url.startsWith(`${TRUSTED_PRODUCTION_ORIGIN}/`) ||
     url === TRUSTED_PRODUCTION_ORIGIN ||

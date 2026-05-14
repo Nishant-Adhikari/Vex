@@ -8,9 +8,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createTestWebContents,
+  createTrustedSender,
+  type TestIpcEvent,
+} from "./test-sender.js";
 
 type Handler = (
-  event: { senderFrame?: { url?: string } },
+  event: TestIpcEvent,
   raw: unknown
 ) => Promise<unknown>;
 
@@ -64,15 +69,11 @@ vi.mock("../../onboarding/ensure-embedding-defaults.js", () => ({
 const { registerDatabaseHandlers } = await import("../database.js");
 const { CH } = await import("@shared/ipc/channels.js");
 
-const trustedSender = {
-  senderFrame: { url: "app://vex/index.html" },
+const trustedSender = createTrustedSender({
   // ctx.event.sender — used by the join branch to replay the latest
   // progress event directly to the joining renderer's webContents.
-  sender: {
-    send: vi.fn(),
-    isDestroyed: () => false,
-  },
-};
+  sender: createTestWebContents(),
+});
 
 beforeEach(() => {
   handlers.clear();

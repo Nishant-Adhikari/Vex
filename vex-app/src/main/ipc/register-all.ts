@@ -19,6 +19,7 @@ import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
 import { registerSessionsGetHandler } from "./sessions/get.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
+import { registerSecretsHandlers } from "./secrets.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerSystemHandlers } from "./system.js";
 import { registerTelemetryHandler } from "./telemetry.js";
@@ -30,6 +31,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(...registerSystemHandlers());
   teardowns.push(...registerDockerHandlers());
   teardowns.push(...registerDatabaseHandlers());
+  teardowns.push(...registerSecretsHandlers());
   teardowns.push(...registerOnboardingHandlers());
   teardowns.push(...registerWalletHandlers());
   teardowns.push(registerApiKeysHandler());

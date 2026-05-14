@@ -15,17 +15,18 @@ pnpm exec tsx --tsconfig local/vex-shell/tsconfig.json local/vex-shell/index.ts
 1. **Wizard** (@clack/prompts, linear) — 8 steps:
    1. **System check** — `collectSystemChecks()` + bootstrap. If Postgres /
       embeddings are down, offers `docker compose up -d` + retries.
-   2. **Keystore password** — create `VEX_KEYSTORE_PASSWORD` when missing.
+   2. **Keystore password** — create or unlock the encrypted Vex secret vault.
    3. **Wallets** — EVM + Solana create/import (delegates to `ensureWallets`).
-   4. **API keys** — `JUPITER_API_KEY` (required) + `TAVILY_API_KEY`,
+   4. **API keys** — store `JUPITER_API_KEY` (required) + `TAVILY_API_KEY`,
       `RETTIWT_API_KEY` for `twitter_account` read-only X/Twitter research,
       Polymarket CLOB trio (`POLYMARKET_API_KEY` / `_API_SECRET` /
-      `_PASSPHRASE`).
+      `_PASSPHRASE`) in the encrypted vault.
    5. **Embedding** — optional override of `EMBEDDING_{BASE_URL,MODEL,DIM,
       PROVIDER}`. `DIM` is locked when `knowledge_entries` is non-empty.
    6. **Agent core** — optional `AGENT_CONTEXT_LIMIT` /
       `AGENT_MAX_OUTPUT_TOKENS` / `AGENT_TEMPERATURE` + all six `SUBAGENT_*`.
-   7. **Provider** — OpenRouter (API key prompt + manual model id text input
+   7. **Provider** — OpenRouter (API key stored in the encrypted vault +
+      manual model id text input
       — find IDs at https://openrouter.ai/models). The `/v1/models` fetch was
       removed — operator picks the id.
    8. **Mode** — `agent` / `mission`, permission (`restricted` / `full`),
@@ -55,8 +56,8 @@ pnpm exec tsx --tsconfig local/vex-shell/tsconfig.json local/vex-shell/index.ts
 footer); inline edit forms appear in a yellow box with `Enter` to save and
 `Esc` to cancel.
 
-1. **Provider** — `k` edit OPENROUTER_API_KEY, `m` edit AGENT_MODEL +
-   re-switch, `o` activate OpenRouter.
+1. **Provider** — `k` edit OPENROUTER_API_KEY in the encrypted vault,
+   `m` edit AGENT_MODEL + re-switch, `o` activate OpenRouter.
 2. **Session** — `n` new, `e` end current, `↑↓`
    navigate recent, `Enter` resume.
 3. **Mission** — `s` start ready mission (restricted), `a` abort active run.
@@ -72,8 +73,8 @@ footer); inline edit forms appear in a yellow box with `Enter` to save and
 9. **Diagnostics** — read-only (latency ring buffer + last error).
 10. **Services** — `s` `docker compose up -d`, `p` stop, `r` rebootstrap
     (DB migrations + probes).
-11. **Env** — `↑↓` select, `Enter` edit (writes to `.env` + sync). Secrets
-    are masked, including `RETTIWT_API_KEY`.
+11. **Env** — `↑↓` select, `Enter` edit. Non-secret settings write to `.env`;
+    managed secrets write to the encrypted vault and stay masked in the UI.
 12. **Config** — `↑↓` select, `Enter` edit (calls `saveConfigPatch`). Chain
     rpcUrl change requires `/provider` re-switch to drop cached broker.
 13. **Advanced** — `↑↓` select, `Enter` edit `SUBAGENT_*` tunings.
@@ -98,7 +99,7 @@ local/vex-shell/
     └── state/        store (useSyncExternalStore)
 ```
 
-## Unexposed env vars (edit `~/.vex/.env` + restart)
+## Unexposed non-secret env vars (edit `~/.vex/.env` + restart)
 
 These exist in the code but the wizard and settings panel do not touch them:
 

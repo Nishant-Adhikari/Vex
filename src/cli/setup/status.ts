@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { CONFIG_FILE, ENV_FILE, KEYSTORE_FILE, SOLANA_KEYSTORE_FILE } from "../../config/paths.js";
 import { loadConfig } from "../../config/store.js";
 import { readEnvValue } from "../../providers/env-resolution.js";
+import { MANAGED_SECRET_ENV_KEYS, isManagedSecretEnvKey } from "../../lib/secret-keys.js";
 import { getKeystorePassword } from "../../utils/env.js";
 import { decryptPrivateKey, loadKeystore } from "../../tools/wallet/keystore.js";
 import {
@@ -87,6 +88,7 @@ export function parseDotenvContent(content: string): Record<string, string> {
     if (eqIndex < 1) continue;
 
     const key = line.slice(0, eqIndex).trim();
+    if (isManagedSecretEnvKey(key)) continue;
     let value = line.slice(eqIndex + 1).trim();
 
     if (value.startsWith('"') && value.endsWith('"')) {
@@ -100,8 +102,14 @@ export function parseDotenvContent(content: string): Record<string, string> {
 }
 
 export function readAppEnvMap(envPath: string = ENV_FILE): Record<string, string> {
-  if (!existsSync(envPath)) return {};
-  return parseDotenvContent(readFileSync(envPath, "utf-8"));
+  const values = existsSync(envPath)
+    ? parseDotenvContent(readFileSync(envPath, "utf-8"))
+    : {};
+  for (const key of MANAGED_SECRET_ENV_KEYS) {
+    const value = process.env[key]?.trim();
+    if (value) values[key] = value;
+  }
+  return values;
 }
 
 export function collectEnvFieldStatuses(envPath: string = ENV_FILE): EnvFieldStatus[] {
@@ -146,7 +154,7 @@ export function getEvmWalletStatus(): WalletStatus {
       kind: "evm",
       status: "missing",
       address,
-      detail: "VEX_KEYSTORE_PASSWORD is missing in CONFIG_DIR/.env.",
+      detail: "Vex secret vault is locked. Unlock with the master password first.",
       hasStoredState,
     };
   }
@@ -203,7 +211,7 @@ export function getSolanaWalletStatus(): WalletStatus {
       kind: "solana",
       status: "missing",
       address,
-      detail: "VEX_KEYSTORE_PASSWORD is missing in CONFIG_DIR/.env.",
+      detail: "Vex secret vault is locked. Unlock with the master password first.",
       hasStoredState,
     };
   }

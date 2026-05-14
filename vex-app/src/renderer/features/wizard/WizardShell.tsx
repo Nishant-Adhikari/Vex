@@ -9,8 +9,8 @@
  * initialise the local step from it.
  *
  * If `completed === true` (Review finalised on a previous launch) we
- * flip the view to `appShell` immediately. The wizard never re-renders
- * for a finished install.
+ * flip the view to `appShell` immediately unless the app shell opened
+ * the wizard in reconfiguration mode.
  */
 
 import { useCallback, useEffect, useState, type JSX } from "react";
@@ -39,7 +39,9 @@ import { WalletsStep } from "./steps/WalletsStep.js";
 function renderStep(
   stepId: WizardStepId,
   completedSteps: ReadonlyArray<WizardStepId>,
-  onAdvance: (next: WizardStepId) => void
+  onAdvance: (next: WizardStepId) => void,
+  reviewMode: "setup" | "reconfigure",
+  onExitReconfigure: () => void
 ): JSX.Element {
   // M11: every wizard step receives `flowMode="first-pass"` from the
   // shell. ReviewStep itself dispatches edited steps with
@@ -59,12 +61,21 @@ function renderStep(
     case "provider":
       return <ProviderStep {...props} />;
     case "review":
-      return <ReviewStep completedSteps={completedSteps} onAdvance={onAdvance} />;
+      return (
+        <ReviewStep
+          completedSteps={completedSteps}
+          mode={reviewMode}
+          onAdvance={onAdvance}
+          onExitReconfigure={onExitReconfigure}
+        />
+      );
   }
 }
 
 export function WizardShell(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const openUnlock = useUiStore((s) => s.openUnlock);
+  const wizardEntryMode = useUiStore((s) => s.wizardEntryMode);
   const wizardStateQuery = useWizardState();
 
   const persisted: WizardState | null =
@@ -81,16 +92,56 @@ export function WizardShell(): JSX.Element {
   // user's `Save and Continue` advances both local and persisted).
   useEffect(() => {
     if (persisted === null || currentStepId !== null) return;
-    if (persisted.completed) {
-      setCurrentView("appShell");
-      return;
-    }
-    setCurrentStepId(persisted.currentStepId);
-  }, [persisted, currentStepId, setCurrentView]);
+    let cancelled = false;
+    const route = async (): Promise<void> => {
+      const status = await window.vex.secrets.status();
+      if (cancelled) return;
+      const vaultConfigured = status.ok ? status.data.vaultConfigured : false;
+      const unlocked = status.ok ? status.data.unlocked : false;
+
+      if (persisted.completed) {
+        if (wizardEntryMode === "reconfigure") {
+          setCurrentStepId("review");
+          return;
+        }
+        if (vaultConfigured && !unlocked) {
+          openUnlock("appShell");
+          return;
+        }
+        if (!vaultConfigured) {
+          setCurrentStepId("keystore");
+          return;
+        }
+        setCurrentView("appShell");
+        return;
+      }
+
+      if (
+        persisted.currentStepId !== "keystore" &&
+        vaultConfigured &&
+        !unlocked
+      ) {
+        openUnlock("wizard");
+        return;
+      }
+      setCurrentStepId(persisted.currentStepId);
+    };
+    void route();
+    return () => {
+      cancelled = true;
+    };
+  }, [persisted, currentStepId, setCurrentView, wizardEntryMode, openUnlock]);
 
   const onAdvance = useCallback((next: WizardStepId) => {
     setCurrentStepId(next);
   }, []);
+  const onExitReconfigure = useCallback(() => {
+    setCurrentView("appShell");
+  }, [setCurrentView]);
+  const reviewMode =
+    persisted?.completed === true && wizardEntryMode === "reconfigure"
+      ? "reconfigure"
+      : "setup";
 
   if (queryError) {
     const message =
@@ -163,7 +214,9 @@ export function WizardShell(): JSX.Element {
             {renderStep(
               currentStepId,
               persisted?.completedSteps ?? [],
-              onAdvance
+              onAdvance,
+              reviewMode,
+              onExitReconfigure
             )}
           </motion.div>
         </AnimatePresence>

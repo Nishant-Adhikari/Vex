@@ -74,6 +74,12 @@ import type {
   OsInfo,
 } from "../schemas/system.js";
 import type { Preferences } from "../schemas/preferences.js";
+import type {
+  SecretsLockResult,
+  SecretsStatus,
+  SecretsUnlockInput,
+  SecretsUnlockResult,
+} from "../schemas/secrets.js";
 
 export interface TelemetryReportInput {
   readonly kind: "caught" | "uncaught" | "boundary";
@@ -127,6 +133,14 @@ export interface VexBridge {
     readonly onProgress: (
       cb: (payload: MigrateProgress) => void
     ) => () => void;
+  };
+
+  readonly secrets: {
+    readonly status: () => Promise<Result<SecretsStatus>>;
+    readonly unlock: (
+      input: SecretsUnlockInput
+    ) => Promise<Result<SecretsUnlockResult>>;
+    readonly lock: () => Promise<Result<SecretsLockResult>>;
   };
 
   readonly onboarding: {

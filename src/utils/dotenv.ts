@@ -17,7 +17,14 @@ export function readDotenvFileValue(key: string, envPath: string): string | null
   return value || null;
 }
 
-export function loadDotenvFileIntoProcess(envPath: string): void {
+export interface LoadDotenvOptions {
+  readonly shouldLoadKey?: (key: string) => boolean;
+}
+
+export function loadDotenvFileIntoProcess(
+  envPath: string,
+  options: LoadDotenvOptions = {},
+): void {
   if (!existsSync(envPath)) return;
 
   let content: string;
@@ -35,6 +42,7 @@ export function loadDotenvFileIntoProcess(envPath: string): void {
     if (eqIdx < 1) continue;
 
     const key = trimmed.slice(0, eqIdx);
+    if (options.shouldLoadKey && !options.shouldLoadKey(key)) continue;
     if (process.env[key] !== undefined) continue;
 
     let value = trimmed.slice(eqIdx + 1).trim();

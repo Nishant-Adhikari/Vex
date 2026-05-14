@@ -3,7 +3,7 @@
  *
  * Pipeline (every step cancellable with Ctrl+C → returns `aborted: true`):
  *   1. system-check   — collectSystemChecks + startLocalServices + bootstrap
- *   2. keystore       — VEX_KEYSTORE_PASSWORD (create if missing)
+ *   2. keystore       — unlock or create the encrypted Vex secret vault
  *   3. wallets        — create/import EVM + Solana keystores if missing
  *   4. api-keys       — JUPITER (req), TAVILY, POLYMARKET trio
  *   5. embedding      — optional EMBEDDING_{BASE_URL,MODEL,DIM,PROVIDER}

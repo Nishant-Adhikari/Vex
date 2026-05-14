@@ -1,93 +1,75 @@
-/**
- * Tests for api-keys-writer (M9 Step 3).
- *
- * Real fs against tmp dir; verifies:
- *  - Empty submission → no writes, ok({fieldsWritten:[]}).
- *  - Jupiter only → JUPITER_API_KEY persisted.
- *  - Polymarket trio → all 3 written together; existing comments
- *    + unknown keys preserved; mode 0o600 maintained.
- *  - Defensive trio coherence (empty string → invalid_input).
- *  - Deterministic fieldsWritten in canonical order.
- */
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { promises as fs } from "node:fs";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+const sessionMocks = vi.hoisted(() => ({
+  writeUnlockedSecrets: vi.fn(),
+}));
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+vi.mock("../../secrets/session.js", () => ({
+  writeUnlockedSecrets: sessionMocks.writeUnlockedSecrets,
+}));
+
 const { writeApiKeys } = await import("../api-keys-writer.js");
-const { readDotenvFileValue } = await import("@vex-lib/dotenv.js");
-
-let tmpDir = "";
-let envFile = "";
-
-beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vex-apikeys-"));
-  envFile = path.join(tmpDir, ".env");
-});
-
-afterEach(async () => {
-  await fs.rm(tmpDir, { recursive: true, force: true });
-});
 
 describe("writeApiKeys", () => {
+  beforeEach(() => {
+    sessionMocks.writeUnlockedSecrets.mockReset();
+    sessionMocks.writeUnlockedSecrets.mockReturnValue({ ok: true, data: undefined });
+  });
+
   it("returns empty fieldsWritten when nothing is submitted", async () => {
-    const r = await writeApiKeys({}, { envFile });
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.data.fieldsWritten).toEqual([]);
-    expect(existsSync(envFile)).toBe(false);
+    const result = await writeApiKeys({});
+    expect(result).toEqual({ ok: true, data: { fieldsWritten: [] } });
+    expect(sessionMocks.writeUnlockedSecrets).not.toHaveBeenCalled();
   });
 
-  it("persists JUPITER_API_KEY only", async () => {
-    const r = await writeApiKeys({ jupiterApiKey: "sk-jup-xyz" }, { envFile });
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.data.fieldsWritten).toEqual(["JUPITER_API_KEY"]);
-    expect(readDotenvFileValue("JUPITER_API_KEY", envFile)).toBe("sk-jup-xyz");
-    expect(readDotenvFileValue("TAVILY_API_KEY", envFile)).toBeNull();
+  it("stores JUPITER_API_KEY in the encrypted vault", async () => {
+    const result = await writeApiKeys({ jupiterApiKey: "sk-jup-xyz" });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.fieldsWritten).toEqual(["JUPITER_API_KEY"]);
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      JUPITER_API_KEY: "sk-jup-xyz",
+    });
   });
 
-  it("writes the Polymarket trio together when present", async () => {
-    const r = await writeApiKeys(
-      {
-        polymarket: {
-          apiKey: "p-key",
-          apiSecret: "p-secret",
-          passphrase: "p-pass",
-        },
+  it("stores the Polymarket trio together when present", async () => {
+    const result = await writeApiKeys({
+      polymarket: {
+        apiKey: "p-key",
+        apiSecret: "p-secret",
+        passphrase: "p-pass",
       },
-      { envFile },
-    );
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.data.fieldsWritten).toEqual([
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.fieldsWritten).toEqual([
         "POLYMARKET_API_KEY",
         "POLYMARKET_API_SECRET",
         "POLYMARKET_PASSPHRASE",
       ]);
     }
-    expect(readDotenvFileValue("POLYMARKET_API_KEY", envFile)).toBe("p-key");
-    expect(readDotenvFileValue("POLYMARKET_API_SECRET", envFile)).toBe("p-secret");
-    expect(readDotenvFileValue("POLYMARKET_PASSPHRASE", envFile)).toBe("p-pass");
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      POLYMARKET_API_KEY: "p-key",
+      POLYMARKET_API_SECRET: "p-secret",
+      POLYMARKET_PASSPHRASE: "p-pass",
+    });
   });
 
-  it("writes all submitted keys in canonical order", async () => {
-    const r = await writeApiKeys(
-      {
-        rettiwtApiKey: "r",
-        tavilyApiKey: "t",
-        jupiterApiKey: "j",
-        polymarket: { apiKey: "pk", apiSecret: "ps", passphrase: "pp" },
-      },
-      { envFile },
-    );
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.data.fieldsWritten).toEqual([
+  it("returns fieldsWritten in canonical order", async () => {
+    const result = await writeApiKeys({
+      rettiwtApiKey: "r",
+      tavilyApiKey: "t",
+      jupiterApiKey: "j",
+      polymarket: { apiKey: "pk", apiSecret: "ps", passphrase: "pp" },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.fieldsWritten).toEqual([
         "JUPITER_API_KEY",
         "TAVILY_API_KEY",
         "RETTIWT_API_KEY",
@@ -98,33 +80,32 @@ describe("writeApiKeys", () => {
     }
   });
 
-  it("preserves existing comments and unknown keys", async () => {
-    await fs.writeFile(envFile, "# header\nUNKNOWN_KEY=\"keep me\"\n", "utf8");
-    const r = await writeApiKeys({ jupiterApiKey: "j" }, { envFile });
-    expect(r.ok).toBe(true);
-    const raw = readFileSync(envFile, "utf8");
-    expect(raw).toContain("# header");
-    expect(raw).toContain('UNKNOWN_KEY="keep me"');
-    expect(raw).toContain('JUPITER_API_KEY="j"');
+  it("rejects a malformed Polymarket trio before writing", async () => {
+    const result = await writeApiKeys({
+      polymarket: { apiKey: "k", apiSecret: "", passphrase: "p" } as never,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("validation.invalid_input");
+    expect(sessionMocks.writeUnlockedSecrets).not.toHaveBeenCalled();
   });
 
-  it("(POSIX) keeps mode 0o600 after write", async () => {
-    if (process.platform === "win32") return;
-    await writeApiKeys({ jupiterApiKey: "x" }, { envFile });
-    expect(statSync(envFile).mode & 0o777).toBe(0o600);
-  });
-
-  it("rejects polymarket trio with empty-string field (defense in depth)", async () => {
-    const r = await writeApiKeys(
-      {
-        polymarket: { apiKey: "k", apiSecret: "", passphrase: "p" } as never,
+  it("returns the locked-vault error from the secret session", async () => {
+    sessionMocks.writeUnlockedSecrets.mockReturnValue({
+      ok: false,
+      error: {
+        code: "wallet.keystore_locked",
+        domain: "wallet",
+        message: "Unlock Vex first.",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
       },
-      { envFile },
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.error.code).toBe("validation.invalid_input");
-    }
-    expect(existsSync(envFile)).toBe(false);
+    });
+
+    const result = await writeApiKeys({ jupiterApiKey: "j" });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("wallet.keystore_locked");
   });
 });

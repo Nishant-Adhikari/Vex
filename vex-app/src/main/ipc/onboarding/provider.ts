@@ -9,8 +9,8 @@
  *   2. If verify ok → wrap `writeProvider(input)` in `withEnvWriteLock`
  *      so it cannot interleave with keystoreSet / apiKeysSet /
  *      embeddingConfigure / agentCoreConfigure on the same `.env`.
- *      The writer uses `appendMultipleToDotenvFile` so all 3 keys
- *      land in one atomic temp+rename (no partial state).
+ *      The writer stores the API key in the encrypted vault and writes
+ *      only non-secret provider selection to `.env`.
  *   3. Persist failure → `onboarding.env_persist_failed` with
  *      `details: {verified: true}` so the renderer can render the
  *      verify-but-save-failed UX.
@@ -56,7 +56,7 @@ export function registerProviderHandler(): () => void {
 
       const latencyMs = verifyResult.data.latencyMs;
 
-      // Step 2: persist 3 keys atomically inside the env-write mutex.
+      // Step 2: persist vault secret + non-secret env values inside the env-write mutex.
       const persistResult = await withEnvWriteLock(() =>
         writeProvider(input),
       );

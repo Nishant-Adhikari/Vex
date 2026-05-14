@@ -30,6 +30,7 @@ export const INTENTS_DIR = join(CONFIG_DIR, "intents");
 export const JWT_FILE = join(CONFIG_DIR, "jwt.json");
 // App-specific .env (provider-neutral)
 export const ENV_FILE = join(CONFIG_DIR, ".env");
+export const SECRETS_VAULT_FILE = join(CONFIG_DIR, "secrets.vault.json");
 
 // Backup paths
 export const BACKUPS_DIR = join(CONFIG_DIR, "backups");

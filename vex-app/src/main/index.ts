@@ -29,6 +29,7 @@ import {
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
+import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import {
   disableSentry,
@@ -90,6 +91,17 @@ registerAppProtocolPrivileges();
 // 3. Lifecycle hooks
 installWindowAllClosedHook();
 installBeforeQuitHook();
+
+// Secret vault: scrub the cached master password as early as we know the app
+// is leaving. `before-quit` fires first; `will-quit` is the backstop in case
+// `before-quit` was suppressed by an active-mission gate that later resolved.
+// Both listeners are idempotent — calling `lockSecretSession()` twice is safe.
+app.on("before-quit", () => {
+  lockSecretSession();
+});
+app.on("will-quit", () => {
+  lockSecretSession();
+});
 
 app.whenReady().then(async () => {
   log.info("[main] app.whenReady — initializing");

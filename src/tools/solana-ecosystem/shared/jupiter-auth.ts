@@ -24,7 +24,7 @@ export function requireJupiterApiKey(options: JupiterApiKeyOptions = {}): string
     throw new VexError(
       errorCode,
       `JUPITER_API_KEY is required for ${feature}.`,
-      "Generate a key at https://portal.jup.ag and set JUPITER_API_KEY in CONFIG_DIR/.env.",
+      "Generate a key at https://portal.jup.ag and add it through Vex setup.",
     );
   }
 

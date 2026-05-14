@@ -48,6 +48,10 @@ export function BootstrapPanel(): JSX.Element {
   }, [dockerStatus.data, step]);
 
   const branch = decideBranch(dockerStatus.data, platform);
+  const failureMessage =
+    dockerStatus.data?.ok && !dockerStatus.data.data.endpoint.accepted
+      ? dockerStatus.data.data.endpoint.message
+      : null;
 
   function handleStart(): void {
     setStep("start");
@@ -71,22 +75,6 @@ export function BootstrapPanel(): JSX.Element {
       { method: "desktop_download" },
       {
         onSettled: () => {
-          setStep("verify");
-          void dockerStatus.refetch();
-        },
-      }
-    );
-  }
-
-  function handleLinuxAutoInstall(): void {
-    setStep("install");
-    installMutation.mutate(
-      { method: "linux_apt_auto" },
-      {
-        onSettled: (data) => {
-          if (data?.ok && (data.data.kind === "degraded" || data.data.kind === "guided")) {
-            setManualInstructions(data.data.fallbackInstructions);
-          }
           setStep("verify");
           void dockerStatus.refetch();
         },
@@ -154,7 +142,6 @@ export function BootstrapPanel(): JSX.Element {
 
       {step !== "ready" && branch === "C-linux" && manualInstructions === null ? (
         <LinuxInstallCard
-          onAutoInstall={handleLinuxAutoInstall}
           onManualInstall={handleLinuxManual}
           installing={installMutation.isPending || step === "install"}
         />
@@ -168,7 +155,7 @@ export function BootstrapPanel(): JSX.Element {
       ) : null}
 
       {branch === "D" || step === "failed" ? (
-        <FailureCard onRetry={handleRetry} />
+        <FailureCard message={failureMessage} onRetry={handleRetry} />
       ) : null}
 
       {step === "install" || step === "start" ? (
@@ -196,6 +183,7 @@ function decideBranch(
 ): Branch {
   if (!result || !result.ok) return null;
   const status = result.data;
+  if (!status.endpoint.accepted) return "D";
   if (status.engine.present && status.daemon.running) return "A";
   if (status.engine.present && !status.daemon.running) return "B";
   if (!status.engine.present) {
@@ -280,11 +268,9 @@ function DesktopInstallCard({
 }
 
 function LinuxInstallCard({
-  onAutoInstall,
   onManualInstall,
   installing,
 }: {
-  readonly onAutoInstall: () => void;
   readonly onManualInstall: () => void;
   readonly installing: boolean;
 }): JSX.Element {
@@ -295,15 +281,11 @@ function LinuxInstallCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
-          The recommended path is the manual instructions — review them before
-          running. If you trust Vex with PolicyKit elevation, the auto-install
-          option will run the same commands via{" "}
-          <code className="font-mono">pkexec</code>.
+          Docker Engine and the Docker Compose plugin must be installed by you
+          or your system administrator. Vex will show the official command
+          sequence, but it will not run elevated install commands.
         </p>
-        <div className="flex justify-between">
-          <Button variant="ghost" onClick={onAutoInstall} disabled={installing}>
-            Run for me (pkexec)
-          </Button>
+        <div className="flex justify-end">
           <Button onClick={onManualInstall} disabled={installing}>
             Show manual instructions
           </Button>
@@ -313,7 +295,13 @@ function LinuxInstallCard({
   );
 }
 
-function FailureCard({ onRetry }: { readonly onRetry: () => void }): JSX.Element {
+function FailureCard({
+  message,
+  onRetry,
+}: {
+  readonly message: string | null;
+  readonly onRetry: () => void;
+}): JSX.Element {
   return (
     <Card className="w-full max-w-xl">
       <CardHeader>
@@ -321,7 +309,11 @@ function FailureCard({ onRetry }: { readonly onRetry: () => void }): JSX.Element
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
-          Try detecting again, or visit{" "}
+          {message !== null ? (
+            <span>{message} </span>
+          ) : (
+            <span>Try detecting again, or visit </span>
+          )}
           <a
             href="https://docs.docker.com/get-docker/"
             target="_blank"

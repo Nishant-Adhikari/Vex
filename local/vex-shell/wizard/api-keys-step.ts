@@ -7,15 +7,20 @@
  *   (POLYMARKET_API_KEY + POLYMARKET_API_SECRET + POLYMARKET_PASSPHRASE —
  *   `requirePolyClobCredentials` fails on any missing).
  *
- * The wizard does NOT auto-generate Polymarket creds (that's the
- * `polymarket_setup` tool's job); we only record whatever the operator
- * provides.
+ * Values are written to the encrypted Vex secret vault, not `.env`.
  */
 
 import { confirm, isCancel, log, password, text } from "@clack/prompts";
 import { readAppEnvMap } from "../../../src/cli/setup/status.js";
-import { writeAppEnvValue } from "../../../src/providers/env-resolution.js";
 import { synchronizeTrackedEnv } from "../../../src/cli/setup/setup.js";
+import {
+  stripManagedSecretsFromDotenvFile,
+  writeSecretVaultSecrets,
+} from "../../../src/lib/local-secret-vault.js";
+import {
+  MASTER_PASSWORD_ENV_KEY,
+  type VaultSecretKey,
+} from "../../../src/lib/secret-keys.js";
 
 export interface ApiKeysOutcome {
   aborted: boolean;
@@ -36,7 +41,7 @@ const RETTIWT_AUTH_GUIDANCE = [
 ].join("\n");
 
 async function promptEnv(
-  key: string,
+  key: VaultSecretKey,
   opts: {
     message: string;
     secret?: boolean;
@@ -58,7 +63,12 @@ async function promptEnv(
     if (opts.allowEmpty) return { value: "", aborted: false };
     return { value: null, aborted: false };
   }
-  writeAppEnvValue(key, trimmed);
+  const masterPassword = process.env[MASTER_PASSWORD_ENV_KEY]?.trim();
+  if (!masterPassword) {
+    throw new Error("Vex secret vault is locked.");
+  }
+  writeSecretVaultSecrets(masterPassword, { [key]: trimmed });
+  stripManagedSecretsFromDotenvFile();
   process.env[key] = trimmed;
   return { value: trimmed, aborted: false };
 }

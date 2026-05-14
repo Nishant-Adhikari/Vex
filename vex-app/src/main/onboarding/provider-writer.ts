@@ -1,19 +1,13 @@
 /**
  * Provider configuration writer (M10 Step 6).
  *
- * Atomic 3-key batch write — `appendMultipleToDotenvFile` does a
- * single read → strip all existing occurrences of every key → append
- * canonical values → temp+rename + mode 0o600. This is the codex
- * turn 2 RED #2 fix: 3 separate `appendToDotenvFile` calls only
- * serialise via `withEnvWriteLock`; they do NOT make the multi-key
- * update transactional, and a stale unsupported `AGENT_PROVIDER`
- * (manual edit / future code) would silently override the wizard's
- * choice via engine precedence (`registry.ts:47-69`).
+ * Stores the OpenRouter API key in the encrypted local secret vault and
+ * writes only non-secret provider selection to `.env`.
  *
- * Writes 3 keys in canonical order:
- *   1. OPENROUTER_API_KEY
- *   2. AGENT_MODEL
- *   3. AGENT_PROVIDER=openrouter   (explicit override of any stale value)
+ * Returns fields in canonical UI order:
+ *   1. OPENROUTER_API_KEY      (stored in the encrypted vault)
+ *   2. AGENT_MODEL            (stored in `.env`)
+ *   3. AGENT_PROVIDER=openrouter
  *
  * Caller (IPC handler) wraps this in `withEnvWriteLock`.
  *
@@ -30,6 +24,8 @@ import {
 } from "@shared/schemas/provider.js";
 import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
+import { writeUnlockedSecrets } from "../secrets/session.js";
+import { stripManagedSecretsFromDotenvFile } from "@vex-lib/local-secret-vault.js";
 
 export interface ProviderWriterOptions {
   /** Override `ENV_FILE` for tests; production callers omit. */
@@ -45,11 +41,9 @@ export interface ProviderWriteResult {
 }
 
 /**
- * Persists the 3 provider .env keys atomically. Returns the full
- * canonical fieldsWritten array on success — partial-write recovery
- * is impossible with a single read-modify-write batch (either the
- * temp+rename succeeds and ALL 3 keys are in the final file, or it
- * fails and NONE are).
+ * Persists the provider secret plus non-secret provider selection. Returns
+ * the full canonical fieldsWritten array on success so the renderer can
+ * keep the existing completion summary.
  */
 export async function writeProvider(
   input: ProviderPersistInput,
@@ -64,7 +58,19 @@ export async function writeProvider(
   };
 
   try {
-    appendMultipleToDotenvFile(updates, targetFile);
+    const secretWrite = writeUnlockedSecrets({
+      OPENROUTER_API_KEY: input.apiKey,
+    });
+    if (!secretWrite.ok) return secretWrite;
+    stripManagedSecretsFromDotenvFile(targetFile);
+    appendMultipleToDotenvFile(
+      {
+        OPENROUTER_API_KEY: null,
+        AGENT_MODEL: updates.AGENT_MODEL,
+        AGENT_PROVIDER: updates.AGENT_PROVIDER,
+      },
+      targetFile,
+    );
   } catch (cause) {
     log.error(
       `[provider-writer] failed to persist provider keys to ${targetFile}`,

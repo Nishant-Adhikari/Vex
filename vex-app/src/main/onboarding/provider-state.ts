@@ -5,7 +5,7 @@
  * reflects what the engine will actually pick at next startup:
  *
  *   1. If `AGENT_PROVIDER` is set to "openrouter" explicitly → use it.
- *   2. Else if `OPENROUTER_API_KEY` + `AGENT_MODEL` both present → openrouter.
+ *   2. Else if OpenRouter key in vault + `AGENT_MODEL` both present → openrouter.
  *   3. Else → null (not configured).
  *
  * `configured` = `name !== null` AND prerequisites met:
@@ -19,6 +19,7 @@
 import { readEnvValue } from "./env-state.js";
 import type { ProviderState } from "@shared/schemas/onboarding.js";
 import { log } from "../logger/index.js";
+import { getUnlockedSecretPresence } from "../secrets/session.js";
 
 const MAX_MODEL_LABEL = 200;
 
@@ -30,16 +31,13 @@ function capLabel(value: string | null): string | null {
 }
 
 export async function probeProvider(envPath: string): Promise<ProviderState> {
-  const [openRouterKey, modelValue, agentProvider] =
+  const secretPresence = getUnlockedSecretPresence();
+  const [modelValue, agentProvider] =
     await Promise.all([
-      // Use `readEnvValue` (not `readEnvKeyPresence`) so `KEY=""` is
-      // correctly treated as "not configured" — matches engine
-      // `loadEnvConfig` which requires non-empty key.
-      readEnvValue(envPath, "OPENROUTER_API_KEY"),
       readEnvValue(envPath, "AGENT_MODEL"),
       readEnvValue(envPath, "AGENT_PROVIDER"),
     ]);
-  const hasOpenRouterKey = openRouterKey !== null;
+  const hasOpenRouterKey = secretPresence.secrets.OPENROUTER_API_KEY === true;
 
   // Step 1: explicit AGENT_PROVIDER wins.
   // Bogus explicit value → engine logs error + returns null + agent won't

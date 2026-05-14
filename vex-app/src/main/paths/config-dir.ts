@@ -56,6 +56,7 @@ export const ELECTRON_STATE_DIR = path.join(CONFIG_DIR, ".electron-state");
  *
  *   CONFIG_DIR/
  *     .env                              shared TRACKED_ENV_KEYS
+ *     secrets.vault.json                encrypted API/provider credentials
  *     .install-id                       per-install uuid (M5)
  *     .setup-complete                   wizard completion flag
  *     keystore.json                     EVM keystore
@@ -66,6 +67,7 @@ export const ELECTRON_STATE_DIR = path.join(CONFIG_DIR, ".electron-state");
  *     .electron-state/                  Electron-only (window state, cache)
  */
 export const ENV_FILE = path.join(CONFIG_DIR, ".env");
+export const SECRETS_VAULT_FILE = path.join(CONFIG_DIR, "secrets.vault.json");
 export const INSTALL_ID_FILE = path.join(CONFIG_DIR, ".install-id");
 export const SETUP_COMPLETE_FILE = path.join(CONFIG_DIR, ".setup-complete");
 export const COMPOSE_OUTPUT_DIR = path.join(CONFIG_DIR, "compose");

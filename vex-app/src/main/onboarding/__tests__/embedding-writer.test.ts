@@ -133,10 +133,10 @@ describe("writeEmbeddingConfig", () => {
     );
   });
 
-  it("preserves unrelated keys when overwriting embedding values", async () => {
+  it("preserves unrelated non-secret keys while stripping legacy plaintext secrets", async () => {
     await fs.writeFile(
       envFile,
-      'JUPITER_API_KEY="keep"\nEMBEDDING_DIM="768"\n',
+      'JUPITER_API_KEY="legacy-secret"\nOTHER_KEY="keep"\nEMBEDDING_DIM="768"\n',
       "utf8",
     );
     const checker = vi.fn().mockResolvedValue(ok(0));
@@ -144,7 +144,8 @@ describe("writeEmbeddingConfig", () => {
       envFile,
       countMismatchedRows: checker,
     });
-    expect(readDotenvFileValue("JUPITER_API_KEY", envFile)).toBe("keep");
+    expect(readDotenvFileValue("JUPITER_API_KEY", envFile)).toBeNull();
+    expect(readDotenvFileValue("OTHER_KEY", envFile)).toBe("keep");
     expect(readDotenvFileValue("EMBEDDING_MODEL", envFile)).toBe(
       "ai/embeddinggemma:300M-Q8_0",
     );

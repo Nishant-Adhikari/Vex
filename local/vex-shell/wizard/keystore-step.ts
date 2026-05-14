@@ -1,13 +1,17 @@
 /**
- * Keystore password — ensure `VEX_KEYSTORE_PASSWORD` exists in the .env +
- * process.env. Reuses the bundled env file via `synchronizeTrackedEnv` so
- * values survive across wizard + chat runs.
+ * Keystore password — unlock or create the encrypted Vex secret vault.
  */
 
 import { password, isCancel, log } from "@clack/prompts";
-import { readAppEnvMap } from "../../../src/cli/setup/status.js";
-import { writeAppEnvValue } from "../../../src/providers/env-resolution.js";
 import { synchronizeTrackedEnv } from "../../../src/cli/setup/setup.js";
+import {
+  applySecretVaultToProcessEnv,
+  createSecretVault,
+  secretVaultExists,
+  stripManagedSecretsFromDotenvFile,
+  unlockSecretVault,
+} from "../../../src/lib/local-secret-vault.js";
+import { MASTER_PASSWORD_ENV_KEY } from "../../../src/lib/secret-keys.js";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -17,12 +21,40 @@ export interface KeystoreOutcome {
 }
 
 export async function runKeystoreStep(): Promise<KeystoreOutcome> {
-  const envMap = readAppEnvMap();
-  const existing = envMap.VEX_KEYSTORE_PASSWORD?.trim();
+  const existing = process.env[MASTER_PASSWORD_ENV_KEY]?.trim();
   if (existing) {
-    process.env.VEX_KEYSTORE_PASSWORD = existing;
+    process.env[MASTER_PASSWORD_ENV_KEY] = existing;
+    if (secretVaultExists()) applySecretVaultToProcessEnv(existing);
+    stripManagedSecretsFromDotenvFile();
     log.info("Keystore password already configured.");
     return { aborted: false, wasMissing: false };
+  }
+
+  if (secretVaultExists()) {
+    log.step("Unlock Vex");
+    while (true) {
+      const input = await password({
+        message: "Enter master password",
+        validate: (value) => {
+          if (!value || value.length < MIN_PASSWORD_LENGTH) {
+            return `At least ${MIN_PASSWORD_LENGTH} characters required.`;
+          }
+          return undefined;
+        },
+      });
+      if (isCancel(input)) return { aborted: true, wasMissing: false };
+      try {
+        unlockSecretVault(input);
+        process.env[MASTER_PASSWORD_ENV_KEY] = input;
+        applySecretVaultToProcessEnv(input);
+        stripManagedSecretsFromDotenvFile();
+        synchronizeTrackedEnv();
+        log.success("Secret vault unlocked.");
+        return { aborted: false, wasMissing: false };
+      } catch {
+        log.warn("Password could not unlock the Vex secret vault.");
+      }
+    }
   }
 
   log.step("Keystore password");
@@ -48,10 +80,11 @@ export async function runKeystoreStep(): Promise<KeystoreOutcome> {
     });
     if (isCancel(confirm)) return { aborted: true, wasMissing: true };
 
-    writeAppEnvValue("VEX_KEYSTORE_PASSWORD", first);
-    process.env.VEX_KEYSTORE_PASSWORD = first;
+    createSecretVault(first);
+    stripManagedSecretsFromDotenvFile();
+    process.env[MASTER_PASSWORD_ENV_KEY] = first;
     synchronizeTrackedEnv();
-    log.success("Stored VEX_KEYSTORE_PASSWORD in CONFIG_DIR/.env.");
+    log.success("Created encrypted Vex secret vault.");
     return { aborted: false, wasMissing: true };
   }
 }

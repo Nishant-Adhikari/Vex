@@ -2,8 +2,8 @@
  * Docker daemon start — best-effort per OS:
  *   macOS  → `open -a Docker`
  *   Windows → `Start-Process "Docker Desktop"`
- *   Linux  → systemctl --user start docker-desktop, fallback to
- *             pkexec systemctl start docker
+ *   Linux  → systemctl --user start docker-desktop only. Docker Engine
+ *             daemon startup requires user/admin action outside Vex.
  *
  * Returns a `StartResult` describing what we attempted; the renderer
  * polls `vex.docker.detect()` afterwards to verify daemon comes up.
@@ -73,28 +73,9 @@ async function startLinux(signal?: AbortSignal): Promise<StartResult> {
     };
   }
 
-  // Fall back to system docker daemon via pkexec (Docker Engine).
-  const pkexec = await runSpawn(
-    "pkexec",
-    ["systemctl", "start", "docker"],
-    { signal }
-  );
-  if (pkexec.code === 0) {
-    return {
-      kind: "started",
-      message: "System docker daemon started via pkexec.",
-    };
-  }
-
-  if (pkexec.code === 126) {
-    return {
-      kind: "user_action_required",
-      message:
-        "User cancelled the polkit prompt. Run `sudo systemctl start docker` from a terminal, then retry.",
-    };
-  }
   return {
-    kind: "failed",
-    message: `Could not start docker daemon (systemctl --user → ${userService.code ?? "?"}, pkexec → ${pkexec.code ?? "?"}).`,
+    kind: "user_action_required",
+    message:
+      "Vex cannot start the system Docker Engine daemon. Start Docker from your system tools or run `sudo systemctl start docker` in a terminal, then retry.",
   };
 }

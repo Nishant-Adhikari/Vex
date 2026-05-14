@@ -10,9 +10,9 @@
  *      the await (skill §14 — never park secrets in observer state).
  *   3. Calls `providerPersist({apiKey, model, provider:"openrouter"})`.
  *      Main process verifies via OpenRouter SDK (16-token chat
- *      completion, hard 15s timeout) BEFORE writing the 3 .env keys
- *      (OPENROUTER_API_KEY + AGENT_MODEL + AGENT_PROVIDER=openrouter
- *      via atomic batch writer).
+ *      completion, hard 15s timeout) BEFORE storing OPENROUTER_API_KEY
+ *      in the encrypted vault and writing non-secret model/provider
+ *      values to `.env`.
  *   4. On success → advance to the Review step (Phase 2: Mode + Wake
  *      are session-config, not wizard steps).
  *   5. On error → render specialised UI copy per VexErrorCode (fixed

@@ -9,6 +9,16 @@ import { saveConfigPatch } from "../../../../../src/config/store.js";
 import { writeAppEnvValue } from "../../../../../src/providers/env-resolution.js";
 import { synchronizeTrackedEnv } from "../../../../../src/cli/setup/setup.js";
 import {
+  stripManagedSecretsFromDotenvFile,
+  writeSecretVaultSecrets,
+} from "../../../../../src/lib/local-secret-vault.js";
+import {
+  MASTER_PASSWORD_ENV_KEY,
+  isManagedSecretEnvKey,
+  isVaultSecretKey,
+  type VaultSecretKey,
+} from "../../../../../src/lib/secret-keys.js";
+import {
   directRunTool,
   switchProviderFlow,
 } from "../../../engine-actions.js";
@@ -100,6 +110,16 @@ export async function applyEdit(store: Store, edit: SettingsEditMode): Promise<v
       setToast(store, "error", "Empty value rejected. Use Esc to cancel.");
       return;
     }
+    if (isManagedSecretEnvKey(edit.field)) {
+      if (!isVaultSecretKey(edit.field)) {
+        setToast(store, "error", "Master password rotation is handled by setup, not Env settings.");
+        return;
+      }
+      writeSecretFromSettings(edit.field, value);
+      synchronizeTrackedEnv();
+      setToast(store, "ok", `${edit.field} updated in the encrypted vault.`);
+      return;
+    }
     writeAppEnvValue(edit.field, value);
     process.env[edit.field] = value;
     synchronizeTrackedEnv();
@@ -118,7 +138,7 @@ export async function applyEdit(store: Store, edit: SettingsEditMode): Promise<v
   }
   if (edit.tab === "provider") {
     if (edit.field === "OPENROUTER_API_KEY") {
-      writeAppEnvValue("OPENROUTER_API_KEY", value);
+      writeSecretFromSettings("OPENROUTER_API_KEY", value);
       process.env.OPENROUTER_API_KEY = value;
       synchronizeTrackedEnv();
       setToast(store, "ok", "OPENROUTER_API_KEY updated.");
@@ -206,6 +226,14 @@ export function parseKnowledgeHits(rawJson: string): KnowledgeHit[] {
   } catch {
     return [];
   }
+}
+
+function writeSecretFromSettings(field: VaultSecretKey, value: string): void {
+  const masterPassword = process.env[MASTER_PASSWORD_ENV_KEY]?.trim();
+  if (!masterPassword) throw new Error("Vex secret vault is locked.");
+  writeSecretVaultSecrets(masterPassword, { [field]: value });
+  stripManagedSecretsFromDotenvFile();
+  process.env[field] = value;
 }
 
 export async function hydrateTabData(store: Store, tab: SettingsTabId): Promise<void> {

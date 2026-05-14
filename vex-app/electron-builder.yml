@@ -2,8 +2,9 @@ appId: com.vex.app
 productName: Vex
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
-# Stage 1 = unsigned dev release for internal team distribution.
-# Switch to forceCodeSigning: true + signing config gdy team ma certs (Phase 2+).
+# Internal unsigned dev/test packaging only. Public production releases must use
+# a separate signed release profile with forceCodeSigning: true, macOS
+# notarization, Windows signature verification, checksums, and updater metadata.
 forceCodeSigning: false
 
 asar: true
@@ -31,11 +32,6 @@ extraResources:
     to: migrations
     filter: ["**/*.sql"]
 
-publish:
-  provider: github
-  releaseType: prerelease
-  vPrefixedTagName: true
-
 mac:
   category: public.app-category.finance
   target:
@@ -47,6 +43,7 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
+  # Dev/test only. Production release config must set this to true.
   notarize: false
 
 win:
@@ -55,6 +52,7 @@ win:
       arch: [x64, arm64]
     - target: zip
       arch: [x64, arm64]
+  # Dev/test only. Production release config must set this to true.
   verifyUpdateCodeSignature: false
 
 linux:

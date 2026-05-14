@@ -47,7 +47,7 @@ function describeLatest(latest: MigrateProgress | null): string {
 }
 
 export function Migrations(): JSX.Element {
-  const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const openWizard = useUiStore((s) => s.openWizard);
   const queryClient = useQueryClient();
   const [progress, setProgress] = useState<ReadonlyArray<MigrateProgress>>([]);
   const [latest, setLatest] = useState<MigrateProgress | null>(null);
@@ -117,12 +117,9 @@ export function Migrations(): JSX.Element {
   // skip-to-app based on `wizard-state.json` + envState (M7).
   useEffect(() => {
     if (state.phase !== "noop") return;
-    const timer = setTimeout(
-      () => setCurrentView("wizard"),
-      NOOP_AUTOADVANCE_MS
-    );
+    const timer = setTimeout(() => openWizard("setup"), NOOP_AUTOADVANCE_MS);
     return () => clearTimeout(timer);
-  }, [state.phase, setCurrentView]);
+  }, [state.phase, openWizard]);
 
   const handleRetry = useCallback((): void => {
     setProgress([]);
@@ -180,7 +177,7 @@ export function Migrations(): JSX.Element {
               </Button>
             ) : null}
             {state.phase === "ready" ? (
-              <Button onClick={() => setCurrentView("wizard")}>
+              <Button onClick={() => openWizard("setup")}>
                 Continue
               </Button>
             ) : null}

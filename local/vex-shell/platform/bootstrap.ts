@@ -1,10 +1,9 @@
 /**
  * Bootstrap startup sequence — mirrors `runConnectFlow()` from
- * `src/cli/setup/flow.ts` so the local shell uses the production env contract
- * (`CONFIG_DIR/.env`, keystore password, Jupiter key) without copying setup
- * code. `runBootstrapChecks` does NOT load `.env` and does require
- * `JUPITER_API_KEY` (it is in `REQUIRED_ENV`); `ensureRequiredEnvDefaults`
- * deliberately skips Jupiter, so we run `ensureJupiterApiKey` separately.
+ * `src/cli/setup/flow.ts` so the local shell uses the production config
+ * contract without copying setup code. `runBootstrapChecks` does NOT unlock
+ * the vault and does require `JUPITER_API_KEY` in `process.env`; setup unlocks
+ * the vault before that check.
  *
  * `bootstrapShell()` also captures the cold-start state (system checks +
  * wallet status) so the cockpit can render it without re-probing on every
