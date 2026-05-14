@@ -14,6 +14,7 @@ import { registerAgentCoreHandler } from "./onboarding/agent-core.js";
 import { registerApiKeysHandler } from "./onboarding/api-keys.js";
 import { registerEmbeddingHandler } from "./onboarding/embedding.js";
 import { registerFinalizeHandler } from "./onboarding/finalize.js";
+import { registerPolymarketSetupHandler } from "./onboarding/polymarket-setup.js";
 import { registerProviderHandler } from "./onboarding/provider.js";
 import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
@@ -37,6 +38,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(...registerWalletHandlers());
   teardowns.push(registerWalletExportHandler());
   teardowns.push(registerApiKeysHandler());
+  teardowns.push(registerPolymarketSetupHandler());
   teardowns.push(registerEmbeddingHandler());
   teardowns.push(registerAgentCoreHandler());
   teardowns.push(registerProviderHandler());

@@ -34,7 +34,10 @@ import {
   walletOpenBackupFolderInputSchema,
   walletRestoreInputSchema,
 } from "../shared/schemas/wallets.js";
-import { apiKeysSetInputSchema } from "../shared/schemas/api-keys.js";
+import {
+  apiKeysSetInputSchema,
+  polymarketAutoSetupInputSchema,
+} from "../shared/schemas/api-keys.js";
 import { embeddingConfigureInputSchema } from "../shared/schemas/embedding.js";
 import { agentCoreConfigureInputSchema } from "../shared/schemas/agent-core.js";
 import { providerPersistInputSchema } from "../shared/schemas/provider.js";
@@ -274,6 +277,15 @@ const api = {
         CH.onboarding.apiKeysSet,
         input,
         apiKeysSetInputSchema
+      );
+    },
+    polymarketAutoSetup(
+      input: import("../shared/schemas/api-keys.js").PolymarketAutoSetupInput
+    ) {
+      return invokeWithSchema(
+        CH.onboarding.polymarketAutoSetup,
+        input,
+        polymarketAutoSetupInputSchema
       );
     },
     embeddingConfigure(input: import("../shared/schemas/embedding.js").EmbeddingConfigureInput) {

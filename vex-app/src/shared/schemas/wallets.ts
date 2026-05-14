@@ -39,7 +39,10 @@ export type WalletChain = z.infer<typeof chainSchema>;
 // EVM: 0x-prefixed 40 hex chars (20 bytes). Case is checksum-sensitive
 // upstream (viem returns checksum-cased) so we accept both cases at the
 // IPC boundary and let the renderer display verbatim.
-const evmAddressSchema = z
+//
+// Exported because the polymarket auto-setup result schema (api-keys.ts)
+// reuses it for the wallet address returned to the renderer.
+export const evmAddressSchema = z
   .string()
   .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid EVM address.");
 

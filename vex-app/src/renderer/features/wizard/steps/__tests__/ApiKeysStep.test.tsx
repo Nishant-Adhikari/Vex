@@ -1,13 +1,19 @@
 /**
- * ApiKeysStep tests (M9 Step 3).
+ * ApiKeysStep tests (M9 Step 3 + feature #7 Polymarket auto-setup).
  *
  * Verifies:
  *  - Skip-card when JUPITER configured + polymarket NOT partial.
+ *  - Skip-card surfaces "Configure Polymarket now" CTA in setup mode
+ *    when polymarketStatus !== "configured" (feature #7).
+ *  - back-edit flow ALWAYS renders the form (feature #7 Codex Q5).
  *  - "Repair Polymarket" warning rendered when polymarketStatus === "partial".
  *  - Form rejects partial Polymarket trio at the renderer level.
  *  - Successful submit clears all input refs synchronously and advances.
  *  - "Skip optional" advances without calling setApiKeys.
  *  - Legacy API-key fields are not rendered.
+ *  - PolymarketAutoSetupSection mounts inside the Polymarket fieldset
+ *    (feature #7) and the onSuccess callback wires through to envState
+ *    invalidation (Codex Q8).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,7 +71,15 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
 
 const { ApiKeysStep } = await import("../ApiKeysStep.js");
 
-function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
+interface EnvStateExtras {
+  readonly secretsUnlocked?: boolean;
+  readonly evmWalletPresent?: boolean;
+}
+
+function envState(
+  overrides: Partial<EnvState["apiKeys"]> = {},
+  extras: EnvStateExtras = {},
+): EnvState {
   return {
     hasKeystorePassword: true,
     hasJupiterApiKey: overrides.jupiterConfigured ?? false,
@@ -76,6 +90,10 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       polymarketStatus: "missing",
       ...overrides,
     },
+    secrets: {
+      vaultConfigured: true,
+      unlocked: extras.secretsUnlocked ?? true,
+    },
     embeddings: {
       configured: false,
       reachable: false,
@@ -83,7 +101,10 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       allFieldsConfigured: false,
       dbReachable: null,
     },
-    walletStatus: { evm: "present", solana: "present" },
+    walletStatus: {
+      evm: (extras.evmWalletPresent ?? true) ? "present" : "missing",
+      solana: "present",
+    },
     provider: { configured: false, name: null, modelLabel: null },
     setupCompleteFlag: false,
   };
@@ -148,7 +169,8 @@ describe("ApiKeysStep", () => {
     );
     fireEvent.input(getByLabelText("API key"), { target: { value: "k" } });
     // Leave secret + passphrase empty
-    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
+    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form');
+    if (form === null) throw new Error("form element not found");
     fireEvent.submit(form);
     await waitFor(() => {
       expect(getByText(/needs all three fields/i)).toBeTruthy();
@@ -268,5 +290,130 @@ describe("ApiKeysStep", () => {
     );
     const html = container.innerHTML.toLowerCase();
     expect(html).not.toContain("legacyapikey");
+  });
+
+  it("back-edit mode renders the full form even when JUPITER configured (feature #7 Codex Q5)", () => {
+    mockUseEnvState.mockReturnValue(
+      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "missing" })),
+    );
+    const { container } = renderWithQuery(
+      <ApiKeysStep
+        completedSteps={["keystore", "wallets", "apiKeys"]}
+        onAdvance={mockOnAdvance}
+        flowMode="back-edit"
+      />,
+    );
+    expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).not.toBeNull();
+    expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).toBeNull();
+  });
+
+  it("setup mode skip-card shows 'Configure Polymarket now' CTA when polymarket missing", () => {
+    mockUseEnvState.mockReturnValue(
+      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "missing" })),
+    );
+    const { container, getByText } = renderWithQuery(
+      <ApiKeysStep
+        completedSteps={["keystore", "wallets"]}
+        onAdvance={mockOnAdvance}
+        flowMode="first-pass"
+      />,
+    );
+    expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).not.toBeNull();
+    expect(getByText(/Configure Polymarket now/i)).toBeTruthy();
+  });
+
+  it("setup mode skip-card hides 'Configure Polymarket now' CTA when polymarket configured", () => {
+    mockUseEnvState.mockReturnValue(
+      makeQueryResult(
+        envState({ jupiterConfigured: true, polymarketStatus: "configured" }),
+      ),
+    );
+    const { container } = renderWithQuery(
+      <ApiKeysStep
+        completedSteps={["keystore", "wallets"]}
+        onAdvance={mockOnAdvance}
+        flowMode="first-pass"
+      />,
+    );
+    expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).not.toBeNull();
+    expect(
+      container.querySelector("[data-vex-apikeys-skip-polymarket-cta='button']"),
+    ).toBeNull();
+  });
+
+  it("clicking 'Configure Polymarket now' CTA expands skip-card into the form", () => {
+    mockUseEnvState.mockReturnValue(
+      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "missing" })),
+    );
+    const { container, getByText } = renderWithQuery(
+      <ApiKeysStep
+        completedSteps={["keystore", "wallets"]}
+        onAdvance={mockOnAdvance}
+        flowMode="first-pass"
+      />,
+    );
+    fireEvent.click(getByText(/Configure Polymarket now/i));
+    expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).not.toBeNull();
+    expect(
+      container.querySelector("[data-vex-polymarket-auto-button]"),
+    ).not.toBeNull();
+  });
+
+  it("Polymarket fieldset includes the auto-setup section (feature #7)", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const fieldset = container.querySelector(
+      "[data-vex-apikeys-polymarket='fieldset']",
+    );
+    expect(fieldset).not.toBeNull();
+    expect(
+      fieldset?.querySelector("[data-vex-polymarket-auto-button]"),
+    ).not.toBeNull();
+  });
+
+  it("auto-setup section button is disabled when EVM wallet missing (feature #7)", () => {
+    mockUseEnvState.mockReturnValue(
+      makeQueryResult(envState({}, { evmWalletPresent: false })),
+    );
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const button = container.querySelector(
+      "[data-vex-polymarket-auto-button]",
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(
+      container.querySelector("[data-vex-polymarket-auto-helper]")?.textContent,
+    ).toMatch(/EVM wallet required/);
+  });
+
+  it("auto-setup section button is disabled when vault locked (feature #7)", () => {
+    mockUseEnvState.mockReturnValue(
+      makeQueryResult(envState({}, { secretsUnlocked: false })),
+    );
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const button = container.querySelector(
+      "[data-vex-polymarket-auto-button]",
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(
+      container.querySelector("[data-vex-polymarket-auto-helper]")?.textContent,
+    ).toMatch(/Unlock Vex first/);
+  });
+
+  it("'Save and continue' empty submit does NOT auto-advance when Jupiter missing (feature #7 Codex Q8)", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container, findByText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
+    fireEvent.submit(form);
+    await findByText(/Jupiter API key is required/i);
+    expect(mockOnAdvance).not.toHaveBeenCalled();
+    expect(mockSetWizardMutate).not.toHaveBeenCalled();
   });
 });

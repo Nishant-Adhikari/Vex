@@ -1,5 +1,5 @@
 /**
- * Wizard Step 3 — API keys (M9).
+ * Wizard Step 3 — API keys (M9 + feature #7 Polymarket auto-setup).
  *
  * Stores optional API keys + the all-or-none Polymarket trio via
  * `vex.onboarding.apiKeysSet`. Per skill §14: secret inputs are
@@ -7,14 +7,21 @@
  * synchronously after firing the IPC. Per-field "Set ✓ / Not set"
  * derives from envState booleans only — values never round-trip.
  *
- * Skip-card semantics (codex turn 1 D3):
+ * Skip-card semantics (codex turn 1 D3 + feature #7 Q5):
  *   - Step 3 is "configured" iff JUPITER_API_KEY is set AND the
  *     Polymarket status is NOT "partial". Partial blocks the skip
  *     and surfaces a "Repair Polymarket" CTA in the form.
+ *   - Skip-card is ONLY shown in `first-pass` flow mode. In
+ *     `back-edit` mode (user clicked Edit from Review) we always
+ *     render the full form so they can change anything.
+ *   - In setup mode the skip-card surfaces a "Configure Polymarket
+ *     now" CTA when polymarketStatus !== "configured" so the operator
+ *     can run feature #7 auto-setup without going through Settings.
  *
  * Polymarket trio: schema enforces all-or-none. Renderer only emits
  * the trio when the user types at least one of the three; if any
- * one is filled, the form requires all three before submit.
+ * one is filled, the form requires all three before submit. Feature
+ * #7 adds a derived auto-setup path that runs above the manual trio.
  */
 
 import { useCallback, useRef, useState, type JSX } from "react";
@@ -43,6 +50,7 @@ import {
   useStepAdvance,
   type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
+import { PolymarketFieldset } from "./polymarket-auto-setup/PolymarketFieldset.js";
 
 export interface ApiKeysStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -111,6 +119,11 @@ export function ApiKeysStep({
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submittedOnce, setSubmittedOnce] = useState(false);
+  // Feature #7 Q5: in setup mode, skip-card can be "opened" to reveal
+  // the full form (so the operator can run auto-setup without first
+  // visiting Settings). The flag stays local — refetching envState
+  // does not reset it.
+  const [skipExpanded, setSkipExpanded] = useState(false);
 
   const refs: FieldRefs = {
     jupiter: useRef<HTMLInputElement | null>(null),
@@ -121,12 +134,25 @@ export function ApiKeysStep({
     polymarketPassphrase: useRef<HTMLInputElement | null>(null),
   };
 
-  const apiKeysState =
-    envQuery.data?.ok === true ? envQuery.data.data.apiKeys : null;
+  const envState = envQuery.data?.ok === true ? envQuery.data.data : null;
+  const apiKeysState = envState?.apiKeys ?? null;
   const jupiterConfigured = apiKeysState?.jupiterConfigured ?? false;
   const polymarketStatus = apiKeysState?.polymarketStatus ?? "missing";
   const polymarketPartial = polymarketStatus === "partial";
-  const canSkip = jupiterConfigured && !polymarketPartial && !submittedOnce;
+  // Feature #7 inputs: the auto-setup IPC needs an EVM keystore and an
+  // unlocked vault. Both come from envState; the section disables its
+  // button (with helper text) when either is missing.
+  const evmWalletPresent = envState?.walletStatus.evm === "present";
+  const vaultUnlocked = envState?.secrets.unlocked ?? false;
+  // Feature #7 Q5: back-edit ALWAYS renders the full form. In setup
+  // mode the skip-card stays available unless the operator clicked the
+  // "Configure Polymarket now" CTA (skipExpanded === true).
+  const canSkip =
+    flowMode === "first-pass"
+    && jupiterConfigured
+    && !polymarketPartial
+    && !submittedOnce
+    && !skipExpanded;
 
   const advanceToEmbedding = useCallback(async () => {
     const result = await stepAdvance.advance({
@@ -208,6 +234,7 @@ export function ApiKeysStep({
   }, [advanceToEmbedding, jupiterConfigured, polymarketPartial, submittedOnce]);
 
   if (canSkip) {
+    const polymarketNotConfigured = polymarketStatus !== "configured";
     return (
       <Card className="w-full max-w-2xl" data-vex-wizard-apikeys="skip">
         <CardHeader>
@@ -224,6 +251,26 @@ export function ApiKeysStep({
               {formError}
             </p>
           ) : null}
+          {polymarketNotConfigured ? (
+            <p
+              className="mb-4 text-sm text-muted-foreground"
+              data-vex-apikeys-skip-polymarket-cta="container"
+            >
+              Want to enable Polymarket trading?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setFormError(null);
+                  setSkipExpanded(true);
+                }}
+                className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-vex-apikeys-skip-polymarket-cta="button"
+              >
+                Configure Polymarket now
+              </button>
+              .
+            </p>
+          ) : null}
           <div className="flex justify-end">
             <Button
               onClick={() => {
@@ -231,11 +278,7 @@ export function ApiKeysStep({
               }}
               disabled={stepAdvance.isPending}
             >
-              {stepAdvance.isPending
-                ? "Continuing…"
-                : flowMode === "back-edit"
-                  ? "Return to review"
-                  : "Continue"}
+              {stepAdvance.isPending ? "Continuing…" : "Continue"}
             </Button>
           </div>
         </CardContent>
@@ -319,46 +362,18 @@ export function ApiKeysStep({
             </p>
           </div>
 
-          <fieldset className="flex flex-col gap-3 rounded-md border border-border p-3">
-            <legend className="px-1 text-sm font-medium">
-              Polymarket{" "}
-              <span className="text-xs text-muted-foreground">
-                (optional — all three or none)
-              </span>
-            </legend>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="vex-apikey-poly-key">API key</Label>
-              <PasswordField
-                id="vex-apikey-poly-key"
-                autoComplete="new-password"
-                ref={refs.polymarketKey}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="vex-apikey-poly-secret">API secret</Label>
-              <PasswordField
-                id="vex-apikey-poly-secret"
-                autoComplete="new-password"
-                ref={refs.polymarketSecret}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="vex-apikey-poly-pass">Passphrase</Label>
-              <PasswordField
-                id="vex-apikey-poly-pass"
-                autoComplete="new-password"
-                ref={refs.polymarketPassphrase}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Status:{" "}
-              {polymarketStatus === "configured"
-                ? "Set ✓"
-                : polymarketStatus === "partial"
-                  ? "Partial — repair above"
-                  : "Not set"}
-            </p>
-          </fieldset>
+          <PolymarketFieldset
+            refs={{
+              polymarketKey: refs.polymarketKey,
+              polymarketSecret: refs.polymarketSecret,
+              polymarketPassphrase: refs.polymarketPassphrase,
+            }}
+            polymarketStatus={polymarketStatus}
+            evmWalletPresent={evmWalletPresent}
+            vaultUnlocked={vaultUnlocked}
+            disabled={submitting || stepAdvance.isPending}
+            onAutoSetupSuccess={invalidateEnvState}
+          />
 
           {formError ? (
             <p className="text-sm text-destructive" role="alert">

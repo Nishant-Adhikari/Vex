@@ -61,6 +61,7 @@ export const CH = {
     walletRestoreFromBackup: "vex:onboarding:walletRestoreFromBackup",
     walletOpenBackupFolder: "vex:onboarding:walletOpenBackupFolder",
     apiKeysSet: "vex:onboarding:apiKeysSet",
+    polymarketAutoSetup: "vex:onboarding:polymarketAutoSetup",
     embeddingConfigure: "vex:onboarding:embeddingConfigure",
     agentCoreConfigure: "vex:onboarding:agentCoreConfigure",
     providerListModels: "vex:onboarding:providerListModels",

@@ -46,6 +46,8 @@ import type {
 import type {
   ApiKeysSetInput,
   ApiKeysSetResult,
+  PolymarketAutoSetupInput,
+  PolymarketAutoSetupResult,
 } from "../schemas/api-keys.js";
 import type {
   EmbeddingConfigureInput,
@@ -191,6 +193,16 @@ export interface VexBridge {
     readonly apiKeysSet: (
       input: ApiKeysSetInput
     ) => Promise<Result<ApiKeysSetResult>>;
+    /**
+     * One-click Polymarket setup (Phase 2 feature #7). Derives CLOB API
+     * credentials from the unlocked EVM wallet keystore via the engine
+     * primitive, persists them inside the encrypted secret vault, and
+     * returns the wallet address. Result does NOT carry credentials —
+     * the renderer reads canonical envState for confirmation.
+     */
+    readonly polymarketAutoSetup: (
+      input: PolymarketAutoSetupInput
+    ) => Promise<Result<PolymarketAutoSetupResult>>;
     readonly embeddingConfigure: (
       input: EmbeddingConfigureInput
     ) => Promise<Result<EmbeddingConfigureResult>>;

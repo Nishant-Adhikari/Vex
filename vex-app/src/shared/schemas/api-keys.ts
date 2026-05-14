@@ -15,6 +15,8 @@
  */
 
 import { z } from "zod";
+import { PASSWORD_MIN_LENGTH } from "./secrets.js";
+import { evmAddressSchema } from "./wallets.js";
 
 const optionalSecret = z.string().min(1).optional();
 
@@ -70,3 +72,41 @@ export type ApiKeysSetResult = z.infer<typeof apiKeysSetResultSchema>;
  */
 export const polymarketStatusSchema = z.enum(["missing", "partial", "configured"]);
 export type PolymarketStatus = z.infer<typeof polymarketStatusSchema>;
+
+// ── Polymarket one-click auto-setup (Phase 2 feature #7) ──────────────────
+//
+// Derives Polymarket CLOB API credentials from the unlocked EVM wallet
+// keystore and persists them inside the encrypted secret vault. Public
+// surface mirrors `walletExportPrivateKey`:
+//   - `password` re-auths the vault (sudo-style; no session mutation)
+//   - `riskAcknowledged: true` is a hard literal so an accidental
+//     auto-tick or missing checkbox cannot reach the network/disk path.
+//   - `overwriteConfirmed` is a renderer-controlled boolean that must be
+//     true when the trio is already present. The handler re-checks under
+//     the env-write lock to close the TOCTOU race between the pre-network
+//     presence probe and the vault write.
+//
+// Result deliberately does NOT carry `apiKeyPrefix` (or any preview of
+// the secret material) — logging contracts forbid prefix previews even
+// when redacted. The renderer surfaces "Configured" + the address, then
+// reads canonical names via envState.
+export const polymarketAutoSetupInputSchema = z
+  .object({
+    password: z.string().min(PASSWORD_MIN_LENGTH),
+    riskAcknowledged: z.literal(true),
+    overwriteConfirmed: z.boolean().default(false),
+  })
+  .strict();
+export type PolymarketAutoSetupInput = z.infer<
+  typeof polymarketAutoSetupInputSchema
+>;
+
+export const polymarketAutoSetupResultSchema = z
+  .object({
+    configured: z.literal(true),
+    address: evmAddressSchema,
+  })
+  .strict();
+export type PolymarketAutoSetupResult = z.infer<
+  typeof polymarketAutoSetupResultSchema
+>;
