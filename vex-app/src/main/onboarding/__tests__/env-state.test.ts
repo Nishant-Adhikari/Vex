@@ -7,12 +7,18 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../logger/index.js", () => ({
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+const {
+  gatherWalletAddresses,
   readEnvKeyPresence,
   readEnvValue,
   redactEmbeddingUrl,
-} from "../env-state.js";
+} = await import("../env-state.js");
 
 describe("readEnvKeyPresence", () => {
   let tmp = "";
@@ -81,6 +87,96 @@ describe("readEnvValue", () => {
   it("returns null when value is empty", async () => {
     writeFileSync(envFile, "EMBEDDING_BASE_URL=\n", "utf8");
     expect(await readEnvValue(envFile, "EMBEDDING_BASE_URL")).toBeNull();
+  });
+});
+
+describe("gatherWalletAddresses", () => {
+  let tmp = "";
+  let configFile = "";
+
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(tmpdir(), "vex-walletaddr-"));
+    configFile = path.join(tmp, "config.json");
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("returns both addresses when config.json is fully valid", async () => {
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        wallet: {
+          address: "0xabc",
+          solanaAddress: "SoLanA1111111111111111111111111111111111111",
+        },
+      }),
+      "utf8",
+    );
+    expect(await gatherWalletAddresses(configFile)).toEqual({
+      evm: "0xabc",
+      solana: "SoLanA1111111111111111111111111111111111111",
+    });
+  });
+
+  it("returns {evm:null, solana:null} when the config file is missing", async () => {
+    expect(await gatherWalletAddresses(configFile)).toEqual({
+      evm: null,
+      solana: null,
+    });
+  });
+
+  it("returns {evm:null, solana:null} when the file contains malformed JSON", async () => {
+    writeFileSync(configFile, "{not-valid-json", "utf8");
+    expect(await gatherWalletAddresses(configFile)).toEqual({
+      evm: null,
+      solana: null,
+    });
+  });
+
+  it("returns nulls when wallet key is absent (config exists but has no addresses)", async () => {
+    writeFileSync(configFile, JSON.stringify({ chain: "evm" }), "utf8");
+    expect(await gatherWalletAddresses(configFile)).toEqual({
+      evm: null,
+      solana: null,
+    });
+  });
+
+  it("returns nulls when wallet object has no address fields", async () => {
+    writeFileSync(configFile, JSON.stringify({ wallet: {} }), "utf8");
+    expect(await gatherWalletAddresses(configFile)).toEqual({
+      evm: null,
+      solana: null,
+    });
+  });
+
+  it("collapses to nulls when wallet.address is a non-string (schema rejection)", async () => {
+    writeFileSync(
+      configFile,
+      JSON.stringify({ wallet: { address: 12345 } }),
+      "utf8",
+    );
+    expect(await gatherWalletAddresses(configFile)).toEqual({
+      evm: null,
+      solana: null,
+    });
+  });
+
+  it("ignores unknown top-level keys (passthrough on outer object)", async () => {
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        wallet: { address: "0xabc", solanaAddress: null },
+        chain: "evm",
+        unrelated: { nested: true },
+      }),
+      "utf8",
+    );
+    expect(await gatherWalletAddresses(configFile)).toEqual({
+      evm: "0xabc",
+      solana: null,
+    });
   });
 });
 

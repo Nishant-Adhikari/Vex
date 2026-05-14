@@ -13,8 +13,13 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { loadConfig } from "@vex-lib/wallet.js";
-import { CONFIG_DIR, ENV_FILE, SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
+import { z } from "zod";
+import {
+  CONFIG_DIR,
+  CONFIG_FILE,
+  ENV_FILE,
+  SETUP_COMPLETE_FILE,
+} from "../paths/config-dir.js";
 import type {
   EnvState,
   ProviderState,
@@ -83,21 +88,52 @@ export function redactEmbeddingUrl(rawUrl: string | null): string | null {
 }
 
 /**
- * Public addresses from `config.json` — plaintext, NOT decrypted from
- * the keystore (codex turn 3 RED #3 stays honored). Returns undefined
- * if config.json is missing or unparseable so the optional schema
- * field stays absent rather than mis-typed.
+ * Local schema for the wallet-addresses slice of `config.json`. Kept
+ * local (not imported from @vex-lib) so this probe stays free of the
+ * root MCP wallet barrel — that barrel transitively pulls
+ * `viem/accounts` for keystore creation, which (a) is not a dependency
+ * of vex-app and (b) would drag signing-capable code through the env
+ * probe path for no reason.
+ *
+ * `.passthrough()` because `config.json` has other top-level keys
+ * (`chain`, etc.) we deliberately ignore here.
  */
-function gatherWalletAddresses(): WalletAddresses | undefined {
+const walletConfigFileSchema = z
+  .object({
+    wallet: z
+      .object({
+        address: z.string().nullable().optional(),
+        solanaAddress: z.string().nullable().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+/**
+ * Public wallet addresses from `config.json` — plaintext, NOT decrypted
+ * from the keystore (codex turn 3 RED #3 stays honored).
+ *
+ * Missing file, malformed JSON, or schema rejection all collapse to
+ * `{ evm: null, solana: null }`. That matches the historical behavior
+ * of the previous `loadConfig()`-based implementation (which defaulted
+ * to nulls when `config.json` was absent) so existing M2/M7 callers
+ * keep parsing the same response shape. Failure cause is logged at
+ * warn level for audit without leaking file contents.
+ */
+export async function gatherWalletAddresses(
+  configFile: string = CONFIG_FILE,
+): Promise<WalletAddresses> {
   try {
-    const cfg = loadConfig();
+    const raw = await fs.readFile(configFile, "utf8");
+    const parsed = walletConfigFileSchema.parse(JSON.parse(raw));
     return {
-      evm: cfg.wallet.address ?? null,
-      solana: cfg.wallet.solanaAddress ?? null,
+      evm: parsed.wallet?.address ?? null,
+      solana: parsed.wallet?.solanaAddress ?? null,
     };
   } catch (cause) {
     log.warn("[env-state] gatherWalletAddresses failed", cause);
-    return undefined;
+    return { evm: null, solana: null };
   }
 }
 
@@ -136,7 +172,7 @@ export async function gatherEnvState(): Promise<EnvState> {
   const hasPolyPass = secretPresence.secrets.POLYMARKET_PASSPHRASE === true;
 
   const polymarketStatus = polymarketStatusFrom(hasPolyKey, hasPolySecret, hasPolyPass);
-  const walletAddresses = gatherWalletAddresses();
+  const walletAddresses = await gatherWalletAddresses();
 
   return {
     hasKeystorePassword: hasPwd,
@@ -156,7 +192,7 @@ export async function gatherEnvState(): Promise<EnvState> {
       evm: evmExists ? "present" : "missing",
       solana: solExists ? "present" : "missing",
     },
-    ...(walletAddresses !== undefined ? { walletAddresses } : {}),
+    walletAddresses,
     provider,
     setupCompleteFlag: setupFlag,
   };
