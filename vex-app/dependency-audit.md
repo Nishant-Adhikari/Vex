@@ -70,6 +70,25 @@ Three direct deps received major bumps vs planned targets. Each verified safe:
 ## Removed from plan
 - **`@types/dompurify`** — DOMPurify v3.x ships own types (`@types/dompurify` deprecated as stub). Removed.
 
+## Added 2026-05-14 — root MCP runtime deps bundled into main bundle
+
+The vex-app main process consumes root MCP code (`/mnt/x/Vex/src/lib/*`, `/mnt/x/Vex/src/tools/*`) through the `@vex-lib` Vite alias declared in `vite.main.config.ts`. At BUILD time, Rolldown bundles that source into `dist/main/index.js` and must resolve its third-party imports against vex-app's own `node_modules` — pnpm hoisting across workspace boundaries is not honoured during bundling. The fix is to declare these runtime deps directly in `vex-app/package.json` so they are resolvable at build AND copied into the packaged Electron app.
+
+| Package | Version | Verified | License | Why |
+|---|---|---|---|---|
+| `viem` | `2.45.1` | matches root pin | MIT | Wallet primitives — keystore decryption, `privateKeyToAddress`, chain definitions. Used by `wallet-export`, `polymarket-setup`, `wallet-restore`, `wallets-runner`. |
+| `@solana/web3.js` | `^1.98.4` | matches root range | Apache-2.0 / MIT | Solana keystore handling, native balances. Used by root `tools/wallet/solana-create.ts`, `solana-keystore.ts`. |
+| `bs58` | `^6.0.0` | matches root range | MIT | Base58 encoding for Solana keys. Used by root `tools/wallet/solana-keystore.ts`. Listed direct (not transitive via `@solana/web3.js`) because that package pins `bs58@4` which would conflict with our `^6.0.0` selection. |
+| `@openrouter/sdk` | `^0.9.11` | matches root range | Apache-2.0 | OpenRouter client used by `openrouter-test-client.ts`. |
+
+All four are declared in `dependencies` (not `devDependencies`) because electron-builder must ship them in the packaged app.
+
+This addition does NOT close the root MCP architectural leak — that is a separate refactor (split `src/lib/wallet.ts` so `loadConfig` does not pull `viem/accounts`) tracked in task #13. The build fix unblocks CI; the proper boundary fix follows.
+
+### Accepted transitive debt
+
+- **`uuid@8.3.2`** (deprecated upstream) — pulled in via `@solana/web3.js` → `jayson` chain. Non-blocking; upstream has not yet migrated to a non-deprecated UUID library. We accept this as transitive debt and revisit whenever the Solana SDK ships an upgrade.
+
 ## Transitive prereleases (post-install scan — 2026-05-07)
 
 `pnpm install` resolved 504 packages (431 added). Transitive prereleases identified, all pulled by stable top-level deps:
