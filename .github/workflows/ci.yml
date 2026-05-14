@@ -70,9 +70,10 @@ jobs:
   vex-app-e2e:
     # Required gate from day 1 — boot smoke against the built Electron
     # bundle. If this flakes we treat that as a real bug, not as a
-    # soft check (no continue-on-error). The job depends on
-    # vex-app-build-and-test so the `dist/main/index.js` bundle and
-    # `node_modules` from the same install are visible.
+    # soft check (no continue-on-error). `needs:` here gates START
+    # ordering only; this job runs in a fresh runner and rebuilds the
+    # bundle + reinstalls node_modules from scratch (per-job filesystem
+    # isolation in GitHub Actions).
     runs-on: ubuntu-latest
     needs: vex-app-build-and-test
     defaults:

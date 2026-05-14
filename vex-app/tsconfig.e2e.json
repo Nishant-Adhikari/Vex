@@ -3,11 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2024", "DOM"],
     "types": ["node"],
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "@shared/*": ["src/shared/*"]
-    }
+    "noEmit": true
   },
-  "include": ["e2e/**/*", "src/shared/**/*"]
+  "include": ["e2e/**/*"]
 }

@@ -183,7 +183,17 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   });
 
   // Load renderer.
-  if (app.isPackaged) {
+  //
+  // `app.isPackaged` is FALSE when Electron is launched directly against
+  // `dist/main/index.js` (the path Playwright uses via `_electron.launch`).
+  // In that mode there is no Vite dev server to fall back to, so we honour
+  // an explicit `VEX_E2E_LOAD_BUILT=1` override that forces the production
+  // load path through the `app://vex/` protocol. The renderer bundle must
+  // exist on disk (i.e. `pnpm run build` has run); CI orders the e2e job
+  // after the build step to enforce that.
+  const loadBuiltBundle =
+    app.isPackaged || process.env["VEX_E2E_LOAD_BUILT"] === "1";
+  if (loadBuiltBundle) {
     await win.loadURL(`${APP_ORIGIN}/index.html`);
   } else {
     await win.loadURL("http://127.0.0.1:5173/");

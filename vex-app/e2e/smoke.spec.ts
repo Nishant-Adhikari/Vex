@@ -24,12 +24,22 @@
  *     decision, tracked under #13 follow-ups + task #9.
  */
 
+import path from "node:path";
 import { test, expect } from "./fixtures/electron-app.js";
 
 test("boots to SystemCheck with the bridged window.vex surface", async ({
   vexApp,
 }) => {
-  const { firstWindow } = vexApp;
+  const { app, firstWindow, configDir } = vexApp;
+
+  // 1. Per-spec config isolation actually took effect.
+  // Verified via Electron's own `app.getPath("userData")`, which the
+  // main process remaps to `CONFIG_DIR/.electron-state` after the
+  // VEX_CONFIG_DIR override resolves CONFIG_DIR to our tmpdir.
+  const userDataDir = await app.evaluate(({ app: electronApp }) =>
+    electronApp.getPath("userData"),
+  );
+  expect(userDataDir).toBe(path.join(configDir, ".electron-state"));
 
   // Wait for the renderer to finish loading before probing globals.
   // Electron's first window event fires before the preload script
@@ -37,7 +47,7 @@ test("boots to SystemCheck with the bridged window.vex surface", async ({
   // gives us a stable point to query.
   await firstWindow.waitForLoadState("domcontentloaded");
 
-  // 1. contextBridge surface is bound.
+  // 2. contextBridge surface is bound.
   const bridgeShape = await firstWindow.evaluate(() => ({
     vexType: typeof (window as unknown as { vex?: unknown }).vex,
     healthType: typeof (
@@ -47,7 +57,7 @@ test("boots to SystemCheck with the bridged window.vex surface", async ({
   expect(bridgeShape.vexType).toBe("object");
   expect(bridgeShape.healthType).toBe("function");
 
-  // 2. The splash effect advances the uiStore to systemCheck.
+  // 3. The splash effect advances the uiStore to systemCheck.
   // `data-vex-screen` is set on every top-level screen container and
   // is stable across refactors (Codex S2 turn 2 selector strategy).
   await expect(

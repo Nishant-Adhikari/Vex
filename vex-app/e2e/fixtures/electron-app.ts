@@ -44,6 +44,11 @@ export const test = base.extend<{ vexApp: VexElectronFixture }>({
       env: {
         ...process.env,
         VEX_CONFIG_DIR: configDir,
+        // Force the production renderer load path even though
+        // `app.isPackaged` is false when launching `dist/main/index.js`
+        // directly. Without this, main would try `http://127.0.0.1:5173/`
+        // (Vite dev server) which CI does not run.
+        VEX_E2E_LOAD_BUILT: "1",
       },
     });
     let firstWindow: Page;
