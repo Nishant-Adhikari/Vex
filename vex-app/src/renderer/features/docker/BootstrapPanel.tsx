@@ -1,333 +1,340 @@
 /**
- * Docker bootstrap orchestrator. Determines the active branch
- * (A/B/C/D) from the M2 docker.detect status and dispatches to the
- * appropriate sub-component.
+ * Docker bootstrap orchestrator — second user-facing surface in the
+ * onboarding flow. Carries the same visual system as IntroScreen and
+ * SystemCheck: full-bleed anime portrait background (`setup.png`),
+ * right-side iOS Liquid Glass panel, electric-blue
+ * `--dockerbootstrap-accent` scope.
  *
- *   A — engine present + daemon running → green check, Continue
- *   B — engine present + daemon stopped → "Start Docker" button
- *   C — engine missing → desktop download (mac/win) OR Linux install
- *   D — failure / declined → actionable error + retry
+ * Branch dispatch lives here; the per-branch render is delegated to
+ * the body components in `bootstrap/branches/`. Shared visual primitives
+ * (status tile, primary button, docs link) live in `bootstrap/`.
+ *
+ * State machine:
+ *   loading     — Docker probe in flight, OR engine missing + platform
+ *                 still resolving (data wins when platform irrelevant).
+ *   A           — engine + daemon running → ReadyBody + Continue.
+ *   B           — engine present + daemon stopped → DaemonStoppedBody;
+ *                 per-platform copy (Linux shows `sudo systemctl start`
+ *                 because the main process only attempts the user-mode
+ *                 Docker Desktop unit, never sudo).
+ *   C-desktop   — mac/win, engine missing → DesktopInstallBody (in-app
+ *                 installer download via LicenseNotice).
+ *   C-linux     — linux, engine missing → LinuxInstallBody (auto-fetch
+ *                 `linux_manual_instructions` IPC).
+ *   D           — IPC/Result error OR endpoint rejected → FailureBody.
+ *
+ * Recheck (footer, always visible non-A) calls `dockerStatus.refetch()`
+ * so the user never has to restart the app after fixing Docker.
  */
 
-import { useEffect, useState } from "react";
-import { useDockerInstall, useDockerStart, useDockerStatus } from "../../lib/api/docker.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
+import { Docker } from "@thesvg/react";
+
+import {
+  useDockerInstall,
+  useDockerStart,
+  useDockerStatus,
+} from "../../lib/api/docker.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { useUiStore } from "../../stores/uiStore.js";
-import { Button } from "../../components/ui/button.js";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card.js";
+import { cn } from "../../lib/utils.js";
 import { InstallProgressStrip } from "./InstallProgress.js";
 import { LicenseNotice } from "./LicenseNotice.js";
-import { LinuxManualInstructions } from "./LinuxManualInstructions.js";
-
-type Step = "detect" | "install" | "start" | "verify" | "ready" | "failed";
+import {
+  DOCKER_BOOTSTRAP_STEP,
+  TOTAL_ONBOARDING_STEPS,
+} from "./bootstrap/constants.js";
+import type {
+  ActiveInstallMethod,
+  Branch,
+  ManualFetchState,
+} from "./bootstrap/types.js";
+import {
+  ContinueButton,
+  RecheckButton,
+} from "./bootstrap/FooterButtons.js";
+import { LoadingBody } from "./bootstrap/branches/LoadingBody.js";
+import { ReadyBody } from "./bootstrap/branches/ReadyBody.js";
+import { DaemonStoppedBody } from "./bootstrap/branches/DaemonStoppedBody.js";
+import { DesktopInstallBody } from "./bootstrap/branches/DesktopInstallBody.js";
+import { LinuxInstallBody } from "./bootstrap/branches/LinuxInstallBody.js";
+import { FailureBody } from "./bootstrap/branches/FailureBody.js";
 
 export function BootstrapPanel(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const reducedMotion = useReducedMotion();
   const dockerStatus = useDockerStatus();
   const systemHealth = useSystemHealth();
   const installMutation = useDockerInstall();
   const startMutation = useDockerStart();
 
-  const [step, setStep] = useState<Step>("detect");
   const [licenseOpen, setLicenseOpen] = useState(false);
-  const [manualInstructions, setManualInstructions] = useState<string | null>(null);
+  const [activeInstallMethod, setActiveInstallMethod] =
+    useState<ActiveInstallMethod>(null);
+  const [manualFetchState, setManualFetchState] = useState<ManualFetchState>({
+    kind: "idle",
+  });
+  const manualFetchRequestedRef = useRef(false);
 
   const platform = systemHealth.data?.ok
     ? systemHealth.data.data.os.platform
     : null;
+  const branch = decideBranch(
+    dockerStatus.data,
+    platform,
+    systemHealth.isPending,
+  );
 
-  // Auto-detect the branch from the latest probe whenever it lands.
+  // Single source of truth for the Linux manual-instructions IPC call.
+  // Called both from the auto-fetch effect (on C-linux mount) and from
+  // the explicit "Retry instructions fetch" handler (codex post-impl
+  // SHOULD-FIX #1 — bare ref reset didn't re-trigger the effect because
+  // neither `branch` nor `installMutation` changed).
+  const fetchLinuxInstructions = useCallback(() => {
+    manualFetchRequestedRef.current = true;
+    setActiveInstallMethod("linux_manual_instructions");
+    setManualFetchState({ kind: "loading" });
+    installMutation.mutate(
+      { method: "linux_manual_instructions" },
+      {
+        onSuccess: (data) => {
+          if (data.ok && data.data.fallbackInstructions !== null) {
+            setManualFetchState({
+              kind: "ready",
+              instructions: data.data.fallbackInstructions,
+            });
+          } else {
+            setManualFetchState({
+              kind: "error",
+              message: data.ok
+                ? "No instructions returned"
+                : data.error.message,
+            });
+          }
+        },
+        onError: (err) => {
+          setManualFetchState({
+            kind: "error",
+            message: err instanceof Error ? err.message : "Unknown error",
+          });
+        },
+        onSettled: () => {
+          setActiveInstallMethod(null);
+        },
+      },
+    );
+  }, [installMutation]);
+
+  // Auto-fetch on entering C-linux. `manualFetchRequestedRef` guards
+  // against effect re-runs while a fetch is in flight. Explicit retry
+  // calls `fetchLinuxInstructions` directly so the effect deps don't
+  // need to change.
   useEffect(() => {
-    if (step !== "detect") return;
-    const result = dockerStatus.data;
-    if (!result || !result.ok) return;
-    const status = result.data;
-    if (status.engine.present && status.daemon.running) {
-      setStep("ready");
-    }
-  }, [dockerStatus.data, step]);
+    if (branch !== "C-linux") return;
+    if (manualFetchRequestedRef.current) return;
+    fetchLinuxInstructions();
+  }, [branch, fetchLinuxInstructions]);
 
-  const branch = decideBranch(dockerStatus.data, platform);
-  const failureMessage =
-    dockerStatus.data?.ok && !dockerStatus.data.data.endpoint.accepted
-      ? dockerStatus.data.data.endpoint.message
-      : null;
+  const handleContinue = useCallback(() => {
+    setCurrentView("composeBootstrap");
+  }, [setCurrentView]);
 
-  function handleStart(): void {
-    setStep("start");
+  const handleStart = useCallback(() => {
     startMutation.mutate(undefined, {
       onSettled: () => {
-        // Trigger fresh detection — daemon takes ~30s on macOS Desktop.
-        setStep("verify");
         void dockerStatus.refetch();
       },
     });
-  }
+  }, [startMutation, dockerStatus]);
 
-  function handleDesktopInstall(): void {
+  const handleDesktopInstall = useCallback(() => {
     setLicenseOpen(true);
-  }
+  }, []);
 
-  function handleLicenseAccepted(): void {
+  const handleLicenseAccepted = useCallback(() => {
     setLicenseOpen(false);
-    setStep("install");
+    setActiveInstallMethod("desktop_download");
     installMutation.mutate(
       { method: "desktop_download" },
       {
         onSettled: () => {
-          setStep("verify");
+          setActiveInstallMethod(null);
           void dockerStatus.refetch();
         },
-      }
+      },
     );
-  }
+  }, [installMutation, dockerStatus]);
 
-  function handleLinuxManual(): void {
-    setStep("install");
-    installMutation.mutate(
-      { method: "linux_manual_instructions" },
-      {
-        onSettled: (data) => {
-          if (data?.ok) {
-            setManualInstructions(data.data.fallbackInstructions);
-          }
-          setStep("verify");
-        },
-      }
-    );
-  }
+  const handleLicenseDismiss = useCallback(() => {
+    setLicenseOpen(false);
+  }, []);
 
-  function handleContinue(): void {
-    setCurrentView("composeBootstrap");
-  }
-
-  function handleRetry(): void {
-    setStep("detect");
-    setManualInstructions(null);
+  const handleRecheck = useCallback(() => {
     void dockerStatus.refetch();
-  }
+  }, [dockerStatus]);
+
+  const handleRetryInstructionsFetch = useCallback(() => {
+    fetchLinuxInstructions();
+  }, [fetchLinuxInstructions]);
+
+  const showInstallProgress =
+    activeInstallMethod === "desktop_download" && installMutation.isPending;
+  // Disable Recheck while any probe/mutation is in flight, OR while the
+  // branch is "loading" (which covers `systemHealth.isPending` cases
+  // where dockerStatus may not be fetching but platform is still
+  // resolving). Codex post-impl SHOULD-FIX #2.
+  const recheckDisabled =
+    installMutation.isPending ||
+    startMutation.isPending ||
+    dockerStatus.isFetching ||
+    branch === "loading";
 
   return (
-    <main
-      className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background p-8 text-foreground"
+    <div
       data-vex-screen="dockerBootstrap"
+      className="relative h-screen w-screen overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]"
     >
-      <div className="flex flex-col items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Docker setup</h1>
-        <p className="text-sm text-[var(--color-text-secondary)]">
-          Vex runs Postgres + embeddings locally through Docker.
-        </p>
+      <img
+        src="/setup.png"
+        alt=""
+        aria-hidden
+        draggable={false}
+        className="absolute inset-0 h-full w-full object-cover object-center"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[rgba(5,8,22,0.6)]"
+      />
+
+      <div className="pointer-events-none absolute right-8 top-6">
+        <img
+          src="/logo_clean.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="h-10 w-10 object-contain drop-shadow-[0_2px_8px_rgba(50,117,248,0.35)]"
+        />
       </div>
 
-      {step === "ready" || branch === "A" ? (
-        <ReadyCard onContinue={handleContinue} />
-      ) : null}
+      <section
+        aria-labelledby="dockerbootstrap-heading"
+        className="relative ml-auto flex h-full w-[44%] min-w-[420px] max-w-[560px] flex-col items-center justify-center px-8"
+      >
+        <motion.div
+          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: reducedMotion ? 0 : 0.45, ease: "easeOut" }}
+          className={cn(
+            "flex w-full max-h-[88vh] flex-col overflow-hidden rounded-3xl border border-white/[0.12] bg-white/[0.05] backdrop-blur-2xl",
+            "shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.45)]",
+          )}
+        >
+          <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
+            <span
+              aria-hidden
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.1] bg-[var(--dockerbootstrap-accent)]/15 text-[var(--dockerbootstrap-accent)]"
+            >
+              <Docker width={24} height={24} aria-hidden />
+            </span>
+            <div className="flex flex-col gap-1">
+              <h1
+                id="dockerbootstrap-heading"
+                className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+              >
+                Docker setup
+              </h1>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Vex runs Postgres + embeddings locally through Docker.
+              </p>
+            </div>
+          </header>
 
-      {step !== "ready" && branch === "B" ? (
-        <DaemonStoppedCard
-          onStart={handleStart}
-          starting={startMutation.isPending || step === "start" || step === "verify"}
-          startMessage={
-            startMutation.data?.ok ? startMutation.data.data.message : null
-          }
-        />
-      ) : null}
+          <div className="flex-1 overflow-y-auto px-5 py-5">
+            {showInstallProgress ? (
+              <InstallProgressStrip active />
+            ) : branch === "loading" ? (
+              <LoadingBody />
+            ) : branch === "A" ? (
+              <ReadyBody
+                status={dockerStatus.data?.ok ? dockerStatus.data.data : null}
+              />
+            ) : branch === "B" ? (
+              <DaemonStoppedBody
+                platform={platform}
+                starting={startMutation.isPending}
+                startMessage={
+                  startMutation.data?.ok
+                    ? startMutation.data.data.message ?? null
+                    : null
+                }
+                onStart={handleStart}
+              />
+            ) : branch === "C-desktop" ? (
+              <DesktopInstallBody
+                platform={platform}
+                installing={installMutation.isPending}
+                onInstall={handleDesktopInstall}
+              />
+            ) : branch === "C-linux" ? (
+              <LinuxInstallBody
+                state={manualFetchState}
+                onRetryFetch={handleRetryInstructionsFetch}
+              />
+            ) : (
+              <FailureBody status={dockerStatus.data} />
+            )}
+          </div>
 
-      {step !== "ready" && branch === "C-desktop" ? (
-        <DesktopInstallCard
-          onInstall={handleDesktopInstall}
-          installing={installMutation.isPending || step === "install"}
-        />
-      ) : null}
-
-      {step !== "ready" && branch === "C-linux" && manualInstructions === null ? (
-        <LinuxInstallCard
-          onManualInstall={handleLinuxManual}
-          installing={installMutation.isPending || step === "install"}
-        />
-      ) : null}
-
-      {manualInstructions !== null ? (
-        <LinuxManualInstructions
-          instructions={manualInstructions}
-          onRetry={handleRetry}
-        />
-      ) : null}
-
-      {branch === "D" || step === "failed" ? (
-        <FailureCard message={failureMessage} onRetry={handleRetry} />
-      ) : null}
-
-      {step === "install" || step === "start" ? (
-        <Card className="w-full max-w-xl">
-          <CardContent className="pt-6">
-            <InstallProgressStrip active />
-          </CardContent>
-        </Card>
-      ) : null}
+          <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-6 py-4">
+            <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
+              Step {DOCKER_BOOTSTRAP_STEP} of {TOTAL_ONBOARDING_STEPS}
+            </span>
+            {branch === "A" ? (
+              <ContinueButton onClick={handleContinue} />
+            ) : (
+              <RecheckButton
+                onClick={handleRecheck}
+                disabled={recheckDisabled}
+              />
+            )}
+          </div>
+        </motion.div>
+      </section>
 
       <LicenseNotice
         open={licenseOpen}
         onAccept={handleLicenseAccepted}
-        onDismiss={() => setLicenseOpen(false)}
+        onDismiss={handleLicenseDismiss}
       />
-    </main>
+    </div>
   );
 }
 
-type Branch = "A" | "B" | "C-desktop" | "C-linux" | "D" | null;
-
 function decideBranch(
   result: ReturnType<typeof useDockerStatus>["data"],
-  platform: string | null
+  platform: string | null,
+  platformPending: boolean,
 ): Branch {
-  if (!result || !result.ok) return null;
+  if (!result) return "loading";
+  if (!result.ok) return "D";
   const status = result.data;
   if (!status.endpoint.accepted) return "D";
+
+  // A — data wins when platform irrelevant; don't flicker to loading
+  // while the health probe is pending (codex round 11 SHOULD-FIX #2).
   if (status.engine.present && status.daemon.running) return "A";
-  if (status.engine.present && !status.daemon.running) return "B";
+
+  // Below: platform matters (B copy varies by OS; C dispatches per OS).
+  if (status.engine.present && !status.daemon.running) {
+    if (platformPending) return "loading";
+    return "B";
+  }
   if (!status.engine.present) {
+    if (platformPending) return "loading";
     if (platform === "darwin" || platform === "win32") return "C-desktop";
     if (platform === "linux") return "C-linux";
   }
   return "D";
 }
 
-function ReadyCard({ onContinue }: { readonly onContinue: () => void }): JSX.Element {
-  return (
-    <Card className="w-full max-w-xl">
-      <CardHeader>
-        <CardTitle>Docker is ready</CardTitle>
-      </CardHeader>
-      <CardContent className="flex justify-end">
-        <Button size="lg" onClick={onContinue}>
-          Continue
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DaemonStoppedCard({
-  onStart,
-  starting,
-  startMessage,
-}: {
-  readonly onStart: () => void;
-  readonly starting: boolean;
-  readonly startMessage: string | null;
-}): JSX.Element {
-  return (
-    <Card className="w-full max-w-xl">
-      <CardHeader>
-        <CardTitle>Docker is installed but not running</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          We&rsquo;ll launch Docker for you. macOS may need ~30 seconds before
-          the daemon answers.
-        </p>
-        {startMessage ? (
-          <p className="text-xs text-muted-foreground">{startMessage}</p>
-        ) : null}
-        <div className="flex justify-end">
-          <Button onClick={onStart} disabled={starting}>
-            {starting ? "Starting…" : "Start Docker"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DesktopInstallCard({
-  onInstall,
-  installing,
-}: {
-  readonly onInstall: () => void;
-  readonly installing: boolean;
-}): JSX.Element {
-  return (
-    <Card className="w-full max-w-xl">
-      <CardHeader>
-        <CardTitle>Install Docker Desktop</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          We&rsquo;ll download Docker Desktop&rsquo;s official installer to your
-          Downloads folder, then open it for you to run with admin privileges.
-        </p>
-        <div className="flex justify-end">
-          <Button onClick={onInstall} disabled={installing}>
-            {installing ? "Downloading…" : "Download installer"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function LinuxInstallCard({
-  onManualInstall,
-  installing,
-}: {
-  readonly onManualInstall: () => void;
-  readonly installing: boolean;
-}): JSX.Element {
-  return (
-    <Card className="w-full max-w-xl">
-      <CardHeader>
-        <CardTitle>Install Docker Engine</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          Docker Engine and the Docker Compose plugin must be installed by you
-          or your system administrator. Vex will show the official command
-          sequence, but it will not run elevated install commands.
-        </p>
-        <div className="flex justify-end">
-          <Button onClick={onManualInstall} disabled={installing}>
-            Show manual instructions
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function FailureCard({
-  message,
-  onRetry,
-}: {
-  readonly message: string | null;
-  readonly onRetry: () => void;
-}): JSX.Element {
-  return (
-    <Card className="w-full max-w-xl">
-      <CardHeader>
-        <CardTitle>Docker check did not complete</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          {message !== null ? (
-            <span>{message} </span>
-          ) : (
-            <span>Try detecting again, or visit </span>
-          )}
-          <a
-            href="https://docs.docker.com/get-docker/"
-            target="_blank"
-            rel="noreferrer"
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            Docker&rsquo;s install docs
-          </a>
-          {" "}for help.
-        </p>
-        <div className="flex justify-end">
-          <Button onClick={onRetry}>Retry detection</Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}

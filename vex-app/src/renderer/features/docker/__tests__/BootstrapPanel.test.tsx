@@ -1,7 +1,18 @@
 /**
  * Branch matrix tests for BootstrapPanel — ensures each (engine present,
  * daemon running, platform) combination renders the correct branch
- * (A/B/C-desktop/C-linux/D) per M4 plan.
+ * body (loading / A / B / C-desktop / C-linux / D) and that the
+ * orchestrator wires the right footer CTA.
+ *
+ * Covers the post-redesign contract:
+ *   - "Recheck" rename (previously "Retry detection")
+ *   - data-wins-when-platform-irrelevant (A renders even if health is pending)
+ *   - loading branch when status missing OR engine missing + platform pending
+ *   - D when result.ok === false (not just endpoint rejected)
+ *   - C-linux auto-fetch success path (instructions visible)
+ *   - C-linux auto-fetch error path (retry instructions fetch visible)
+ *   - B Linux copy: prominent `sudo systemctl` command + subordinate
+ *     "Try Start Docker Desktop" ghost button
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +42,7 @@ function statusResult(opts: {
 }) {
   return {
     isPending: false,
+    isFetching: false,
     data: {
       ok: true as const,
       data: {
@@ -41,14 +53,52 @@ function statusResult(opts: {
           reason: null,
           message: null,
         },
-        engine: { present: opts.enginePresent, version: opts.enginePresent ? "27.5.1" : null, runtimeOK: opts.daemonRunning },
-        compose: { present: opts.enginePresent, version: opts.enginePresent ? "v2.32.4" : null },
-        modelRunner: { present: opts.enginePresent, status: "active" as const, tcpReachable: true },
-        daemon: { running: opts.daemonRunning, startable: opts.enginePresent },
+        engine: {
+          present: opts.enginePresent,
+          version: opts.enginePresent ? "27.5.1" : null,
+          runtimeOK: opts.daemonRunning,
+        },
+        compose: {
+          present: opts.enginePresent,
+          version: opts.enginePresent ? "v2.32.4" : null,
+        },
+        modelRunner: {
+          present: opts.enginePresent,
+          status: "active" as const,
+          tcpReachable: true,
+        },
+        daemon: {
+          running: opts.daemonRunning,
+          startable: opts.enginePresent,
+        },
         ports: { vexPgFree: true },
         disk: { availableGB: 50 },
       },
     },
+    refetch: vi.fn(),
+  };
+}
+
+function failureStatusResult() {
+  return {
+    isPending: false,
+    isFetching: false,
+    data: {
+      ok: false as const,
+      error: {
+        code: "DOCKER_PROBE_FAILED",
+        message: "Docker IPC probe rejected",
+      },
+    },
+    refetch: vi.fn(),
+  };
+}
+
+function pendingStatusResult() {
+  return {
+    isPending: true,
+    isFetching: true,
+    data: undefined,
     refetch: vi.fn(),
   };
 }
@@ -70,12 +120,20 @@ function healthResult(platform: "linux" | "darwin" | "win32") {
           electronVersion: "42.0.0",
           nodeVersion: "22.0.0",
         },
-        network: { online: true, latencyMs: 1, probedAt: "2026-05-08T00:00:00Z" },
+        network: {
+          online: true,
+          latencyMs: 1,
+          probedAt: "2026-05-08T00:00:00Z",
+        },
         setupComplete: false,
         overall: "degraded" as const,
       },
     },
   };
+}
+
+function pendingHealthResult() {
+  return { isPending: true, data: undefined };
 }
 
 const noopMutation = {
@@ -99,48 +157,203 @@ describe("BootstrapPanel branch matrix", () => {
     noopMutation.mutate.mockReset();
   });
 
-  it.each<["linux" | "darwin" | "win32"]>([["darwin"], ["win32"], ["linux"]])(
+  it.each<["linux" | "darwin" | "win32"]>([
+    ["darwin"],
+    ["win32"],
+    ["linux"],
+  ])(
     "branch A: ready when engine present + daemon running (%s)",
     (platform) => {
       mockHooks.useDockerStatus.mockReturnValue(
-        statusResult({ enginePresent: true, daemonRunning: true })
+        statusResult({ enginePresent: true, daemonRunning: true }),
       );
       mockHooks.useSystemHealth.mockReturnValue(healthResult(platform));
-      const { getByText } = render(<BootstrapPanel />);
+      const { getByText, getByRole } = render(<BootstrapPanel />);
       expect(getByText(/Docker is ready/i)).toBeDefined();
-    }
+      expect(getByRole("button", { name: /continue/i })).toBeDefined();
+    },
   );
 
-  it.each<["linux" | "darwin" | "win32"]>([["darwin"], ["win32"], ["linux"]])(
-    "branch B: daemon stopped offers Start Docker (%s)",
+  it("branch A: data wins when health probe is still pending", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: true }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(pendingHealthResult());
+    const { getByText, getByRole } = render(<BootstrapPanel />);
+    expect(getByText(/Docker is ready/i)).toBeDefined();
+    expect(getByRole("button", { name: /continue/i })).toBeDefined();
+  });
+
+  it.each<["darwin" | "win32"]>([["darwin"], ["win32"]])(
+    "branch B (mac/win): daemon stopped offers Start Docker (%s)",
     (platform) => {
       mockHooks.useDockerStatus.mockReturnValue(
-        statusResult({ enginePresent: true, daemonRunning: false })
+        statusResult({ enginePresent: true, daemonRunning: false }),
       );
       mockHooks.useSystemHealth.mockReturnValue(healthResult(platform));
       const { getByRole } = render(<BootstrapPanel />);
       expect(getByRole("button", { name: /Start Docker/i })).toBeDefined();
-    }
+    },
   );
 
+  it("branch B (linux): shows sudo systemctl command + subordinate Try Start Docker Desktop", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+    const { getByText, getByRole } = render(<BootstrapPanel />);
+    expect(getByText(/sudo systemctl start docker/)).toBeDefined();
+    expect(
+      getByRole("button", { name: /Try Start Docker Desktop/i }),
+    ).toBeDefined();
+  });
+
+  it("branch B + health pending: loading view (platform-conditional copy needs platform)", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(pendingHealthResult());
+    const { getByText, queryByRole } = render(<BootstrapPanel />);
+    expect(getByText(/Detecting Docker/i)).toBeDefined();
+    expect(queryByRole("button", { name: /Start Docker/i })).toBeNull();
+  });
+
   it.each<["darwin" | "win32"]>([["darwin"], ["win32"]])(
-    "branch C-desktop: missing engine on macOS/Windows offers Download (%s)",
+    "branch C-desktop: missing engine on mac/win offers Download installer (%s)",
     (platform) => {
       mockHooks.useDockerStatus.mockReturnValue(
-        statusResult({ enginePresent: false, daemonRunning: false })
+        statusResult({ enginePresent: false, daemonRunning: false }),
       );
       mockHooks.useSystemHealth.mockReturnValue(healthResult(platform));
       const { getByRole } = render(<BootstrapPanel />);
-      expect(getByRole("button", { name: /Download installer/i })).toBeDefined();
-    }
+      expect(
+        getByRole("button", { name: /Download installer/i }),
+      ).toBeDefined();
+    },
   );
 
-  it("branch C-linux: missing engine on Linux offers manual instructions only", () => {
+  it("branch C-no-engine + health pending: loading view (don't transiently show C)", () => {
     mockHooks.useDockerStatus.mockReturnValue(
-      statusResult({ enginePresent: false, daemonRunning: false })
+      statusResult({ enginePresent: false, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(pendingHealthResult());
+    const { getByText, queryByRole } = render(<BootstrapPanel />);
+    expect(getByText(/Detecting Docker/i)).toBeDefined();
+    expect(
+      queryByRole("button", { name: /Download installer/i }),
+    ).toBeNull();
+  });
+
+  it("branch C-linux: auto-fetches manual instructions on mount", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: false, daemonRunning: false }),
     );
     mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+    const installCapture = {
+      ...noopMutation,
+      mutate: vi.fn((args, options) => {
+        options?.onSuccess?.({
+          ok: true,
+          data: {
+            kind: "guided",
+            message: "",
+            artifactPath: null,
+            fallbackInstructions: "sudo apt-get install docker",
+          },
+        });
+        options?.onSettled?.();
+      }),
+    };
+    mockHooks.useDockerInstall.mockReturnValue(installCapture);
+    const { getByText } = render(<BootstrapPanel />);
+    expect(installCapture.mutate).toHaveBeenCalledWith(
+      { method: "linux_manual_instructions" },
+      expect.anything(),
+    );
+    expect(getByText(/sudo apt-get install docker/)).toBeDefined();
+  });
+
+  it("branch C-linux: fetch error surfaces Retry instructions fetch button", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: false, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+    const installCapture = {
+      ...noopMutation,
+      mutate: vi.fn((_args, options) => {
+        options?.onError?.(new Error("IPC timeout"));
+        options?.onSettled?.();
+      }),
+    };
+    mockHooks.useDockerInstall.mockReturnValue(installCapture);
     const { getByRole } = render(<BootstrapPanel />);
-    expect(getByRole("button", { name: /Show manual instructions/i })).toBeDefined();
+    expect(
+      getByRole("button", { name: /Retry instructions fetch/i }),
+    ).toBeDefined();
+  });
+
+  it("branch C-linux: clicking 'Retry instructions fetch' invokes the mutation again", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: false, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+    let mutateCount = 0;
+    const installCapture = {
+      ...noopMutation,
+      mutate: vi.fn((_args, options) => {
+        mutateCount += 1;
+        // First call → error so the retry button appears; second
+        // call → success so the captured count flips past 1.
+        if (mutateCount === 1) {
+          options?.onError?.(new Error("IPC timeout"));
+        } else {
+          options?.onSuccess?.({
+            ok: true,
+            data: {
+              kind: "guided",
+              message: "",
+              artifactPath: null,
+              fallbackInstructions: "sudo apt-get install docker",
+            },
+          });
+        }
+        options?.onSettled?.();
+      }),
+    };
+    mockHooks.useDockerInstall.mockReturnValue(installCapture);
+    const { getByRole } = render(<BootstrapPanel />);
+    const retryButton = getByRole("button", {
+      name: /Retry instructions fetch/i,
+    });
+    retryButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(installCapture.mutate).toHaveBeenCalledTimes(2);
+  });
+
+  it("branch D: when result.ok === false, renders failure body (not blank screen)", () => {
+    mockHooks.useDockerStatus.mockReturnValue(failureStatusResult());
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+    const { getByText, getByRole } = render(<BootstrapPanel />);
+    expect(getByText(/Docker check did not complete/i)).toBeDefined();
+    expect(getByText(/Docker IPC probe rejected/)).toBeDefined();
+    expect(getByRole("button", { name: /Recheck/i })).toBeDefined();
+  });
+
+  it("branch loading: when dockerStatus has no data yet", () => {
+    mockHooks.useDockerStatus.mockReturnValue(pendingStatusResult());
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+    const { getByText } = render(<BootstrapPanel />);
+    expect(getByText(/Detecting Docker/i)).toBeDefined();
+  });
+
+  it("footer: Recheck button renamed from 'Retry detection' on non-A branches", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("darwin"));
+    const { getByRole, queryByRole } = render(<BootstrapPanel />);
+    expect(getByRole("button", { name: /^Recheck$/i })).toBeDefined();
+    expect(
+      queryByRole("button", { name: /Retry detection/i }),
+    ).toBeNull();
   });
 });

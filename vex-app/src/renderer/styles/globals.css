@@ -69,6 +69,14 @@
   --systemcheck-accent: #3275f8;
 }
 
+/* DockerBootstrap-scoped accent: third onboarding screen sharing the
+ * electric-blue identity. After composeBootstrap (4th usage) consider
+ * promoting these three scopes to a shared --vex-onboarding-accent
+ * token applied via [data-vex-onboarding] wrapper. */
+[data-vex-screen="dockerBootstrap"] {
+  --dockerbootstrap-accent: #3275f8;
+}
+
 html,
 body,
 #root {
