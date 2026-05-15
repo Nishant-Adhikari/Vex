@@ -19,6 +19,7 @@ const {
   readEnvValue,
   redactEmbeddingUrl,
 } = await import("../env-state.js");
+const { log } = await import("../../logger/index.js");
 
 describe("readEnvKeyPresence", () => {
   let tmp = "";
@@ -97,6 +98,7 @@ describe("gatherWalletAddresses", () => {
   beforeEach(() => {
     tmp = mkdtempSync(path.join(tmpdir(), "vex-walletaddr-"));
     configFile = path.join(tmp, "config.json");
+    vi.mocked(log.warn).mockClear();
   });
 
   afterEach(() => {
@@ -120,19 +122,21 @@ describe("gatherWalletAddresses", () => {
     });
   });
 
-  it("returns {evm:null, solana:null} when the config file is missing", async () => {
+  it("returns {evm:null, solana:null} when the config file is missing (silent — no warn for expected first-run state)", async () => {
     expect(await gatherWalletAddresses(configFile)).toEqual({
       evm: null,
       solana: null,
     });
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it("returns {evm:null, solana:null} when the file contains malformed JSON", async () => {
+  it("returns {evm:null, solana:null} when the file contains malformed JSON (warns — corrupt config is operationally meaningful)", async () => {
     writeFileSync(configFile, "{not-valid-json", "utf8");
     expect(await gatherWalletAddresses(configFile)).toEqual({
       evm: null,
       solana: null,
     });
+    expect(log.warn).toHaveBeenCalledTimes(1);
   });
 
   it("returns nulls when wallet key is absent (config exists but has no addresses)", async () => {

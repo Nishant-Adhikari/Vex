@@ -118,8 +118,11 @@ const walletConfigFileSchema = z
  * `{ evm: null, solana: null }`. That matches the historical behavior
  * of the previous `loadConfig()`-based implementation (which defaulted
  * to nulls when `config.json` was absent) so existing M2/M7 callers
- * keep parsing the same response shape. Failure cause is logged at
- * warn level for audit without leaking file contents.
+ * keep parsing the same response shape.
+ *
+ * ENOENT is the expected first-run state (no wallet created yet) — we
+ * return nulls silently. Every other failure mode (malformed JSON,
+ * schema rejection, permission errors) is logged at warn for audit.
  */
 export async function gatherWalletAddresses(
   configFile: string = CONFIG_FILE,
@@ -132,6 +135,13 @@ export async function gatherWalletAddresses(
       solana: parsed.wallet?.solanaAddress ?? null,
     };
   } catch (cause) {
+    if (
+      cause instanceof Error &&
+      "code" in cause &&
+      cause.code === "ENOENT"
+    ) {
+      return { evm: null, solana: null };
+    }
     log.warn("[env-state] gatherWalletAddresses failed", cause);
     return { evm: null, solana: null };
   }
