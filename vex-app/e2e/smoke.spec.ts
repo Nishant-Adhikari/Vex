@@ -12,9 +12,11 @@
  *      bridged surface matches the `VexBridge` contract — if the
  *      preload `satisfies VexBridge` check ever drifts, this catches
  *      it).
- *   5. The splash dismisses and the SystemCheck view mounts within
- *      the expect timeout (proves the Zustand uiStore + the splash
- *      effect run in the renderer).
+ *   5. The intro screen renders, the user clicks Begin (no auto-
+ *      dismiss — that is the documented UX contract in IntroScreen.tsx),
+ *      and the SystemCheck view mounts within the expect timeout
+ *      (proves the Zustand uiStore + the intro click handler run in
+ *      the renderer).
  *
  * What we INTENTIONALLY do NOT assert:
  *   - Anything past SystemCheck. Docker bootstrap, compose up,
@@ -27,7 +29,7 @@
 import path from "node:path";
 import { test, expect } from "./fixtures/electron-app.js";
 
-test("boots to SystemCheck with the bridged window.vex surface", async ({
+test("boots through intro to SystemCheck with the bridged window.vex surface", async ({
   vexApp,
 }) => {
   const { app, firstWindow, configDir } = vexApp;
@@ -57,9 +59,24 @@ test("boots to SystemCheck with the bridged window.vex surface", async ({
   expect(bridgeShape.vexType).toBe("object");
   expect(bridgeShape.healthType).toBe("function");
 
-  // 3. The splash effect advances the uiStore to systemCheck.
+  // 3. The intro screen renders first.
   // `data-vex-screen` is set on every top-level screen container and
   // is stable across refactors (Codex S2 turn 2 selector strategy).
+  await expect(
+    firstWindow.locator('[data-vex-screen="intro"]')
+  ).toBeVisible();
+
+  // 4. The loader animates 0→100% (~3.5s real time) and Begin appears.
+  // Use an explicit `toBeVisible()` assertion before clicking so the
+  // wait is bounded by `expect.timeout: 15_000` (playwright.config.ts)
+  // and failures are reported as "Begin button did not become visible"
+  // rather than a generic click timeout. No auto-dismiss: clicking
+  // Begin is the only exit (documented UX contract in IntroScreen.tsx).
+  const beginButton = firstWindow.getByRole("button", { name: /begin/i });
+  await expect(beginButton).toBeVisible();
+  await beginButton.click();
+
+  // 5. Click advances uiStore.currentView to systemCheck.
   await expect(
     firstWindow.locator('[data-vex-screen="systemCheck"]')
   ).toBeVisible();
