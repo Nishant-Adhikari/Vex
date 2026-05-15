@@ -60,6 +60,15 @@
   --intro-accent: #3275f8;
 }
 
+/* SystemCheck-scoped accent: same electric blue (the onboarding flow
+ * shares the anime portrait + blue eye-glow aesthetic across screens).
+ * Kept per-screen rather than promoted to a shared --vex-onboarding-*
+ * token until 3+ onboarding screens adopt the same visual system
+ * (codex round 7 SHOULD-FIX #5 — avoid premature shared abstraction). */
+[data-vex-screen="systemCheck"] {
+  --systemcheck-accent: #3275f8;
+}
+
 html,
 body,
 #root {

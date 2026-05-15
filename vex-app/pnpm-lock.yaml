@@ -38,6 +38,9 @@ importers:
       '@tanstack/react-virtual':
         specifier: ~3.13.24
         version: 3.13.24(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@thesvg/react':
+        specifier: ~2.1.10
+        version: 2.1.10(react@19.2.6)
       bs58:
         specifier: ^6.0.0
         version: 6.0.0
@@ -1099,6 +1102,12 @@ packages:
         optional: true
       '@types/react-dom':
         optional: true
+
+  '@thesvg/react@2.1.10':
+    resolution: {integrity: sha512-xBD/fhlwelYDWfyOCIQiSARzKXoKW/Duld9HOlnoeSh13jRmZPeTD8lyWOefsznIetCTJ9SP/qILsLe5QmkW6w==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
 
   '@tybys/wasm-util@0.10.2':
     resolution: {integrity: sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg==}
@@ -3971,6 +3980,10 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.14
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
+
+  '@thesvg/react@2.1.10(react@19.2.6)':
+    dependencies:
+      react: 19.2.6
 
   '@tybys/wasm-util@0.10.2':
     dependencies:

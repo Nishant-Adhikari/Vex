@@ -43,6 +43,7 @@
     "@solana/web3.js": "^1.98.4",
     "@tanstack/react-query": "~5.100.9",
     "@tanstack/react-virtual": "~3.13.24",
+    "@thesvg/react": "~2.1.10",
     "bs58": "^6.0.0",
     "class-variance-authority": "~0.7.1",
     "clsx": "~2.1.1",
