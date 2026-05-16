@@ -300,7 +300,7 @@ export function WizardShell(): JSX.Element {
         pb-8) let the glass panel shrink and scroll on the 1024×720
         minimum BrowserWindow size (codex final review V2 P1).
       */}
-      <div className="relative z-10 m-auto flex min-h-0 w-full max-w-[760px] flex-col items-center gap-6">
+      <div className="relative z-10 m-auto flex min-h-0 w-full max-w-[760px] flex-col items-center gap-6 translate-x-12 lg:translate-x-16">
         <HorizontalStepper
           currentStepId={currentStepId}
           completedSteps={persisted?.completedSteps ?? []}

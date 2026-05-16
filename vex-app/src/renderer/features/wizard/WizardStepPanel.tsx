@@ -113,8 +113,7 @@ const HEADER_CHROME = cn(
 
 const ICON_TILE_CHROME = cn(
   "flex h-10 w-10 shrink-0 items-center justify-center",
-  "rounded-xl border border-white/[0.1]",
-  "bg-[var(--vex-onboarding-accent)]/15 text-[var(--vex-onboarding-accent)]",
+  "text-[var(--vex-onboarding-accent)]",
 );
 
 const BODY_CHROME = cn("flex-1 overflow-y-auto px-5 py-5");

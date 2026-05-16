@@ -234,7 +234,7 @@ export function BootstrapPanel(): JSX.Element {
           <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
             <span
               aria-hidden
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.1] bg-[var(--dockerbootstrap-accent)]/15 text-[var(--dockerbootstrap-accent)]"
+              className="flex h-10 w-10 shrink-0 items-center justify-center text-[var(--dockerbootstrap-accent)]"
             >
               <Docker width={24} height={24} aria-hidden />
             </span>

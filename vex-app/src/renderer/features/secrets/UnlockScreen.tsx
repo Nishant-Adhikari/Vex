@@ -125,7 +125,7 @@ export function UnlockScreen(): JSX.Element {
     >
       <Card className="w-full max-w-md">
         <CardHeader>
-          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-md border border-border bg-popover">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center">
             <LockIcon />
           </div>
           <CardTitle>Unlock Vex</CardTitle>
