@@ -90,6 +90,19 @@ describe("UnlockScreen", () => {
     expect(getByRole("button", { name: /Unlock/i })).toBeTruthy();
   });
 
+  it("wears the onboarding chrome (PR9 — backdrop + data-vex-onboarding)", () => {
+    // Regression guard: lock screen must stay visually consistent with
+    // the rest of the onboarding flow. Without this assertion, a future
+    // edit that strips the chrome would slip past the suite because the
+    // form-level tests don't care about the wrapper.
+    const view = renderUnlockScreen();
+    const root = view.container.querySelector('[data-vex-screen="unlock"]');
+    expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
+    expect(
+      view.container.querySelector('img[src="/onboarding2.png"]'),
+    ).not.toBeNull();
+  });
+
   it("rejects a password shorter than PASSWORD_MIN_LENGTH without calling unlock", async () => {
     const view = renderUnlockScreen();
     const input = view.getByLabelText(/Master password/i) as HTMLInputElement;
