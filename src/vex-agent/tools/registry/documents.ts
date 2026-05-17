@@ -9,7 +9,7 @@ import type { ToolDef } from "../types.js";
 
 export const DOCUMENT_TOOLS: readonly ToolDef[] = [
   {
-    name: "document_read", kind: "internal", mutating: false,
+    name: "document_read", kind: "internal", mutating: false, pressureSafety: "read_only",
     description: "Read a freeform note from the notes space. For canonical structured memory use knowledge_get. Use preview=true for first 1000 chars without context load.",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space (only 'notes' is exposed)" },
@@ -19,7 +19,7 @@ export const DOCUMENT_TOOLS: readonly ToolDef[] = [
     }, required: ["slug"] },
   },
   {
-    name: "document_write", kind: "internal", mutating: false,
+    name: "document_write", kind: "internal", mutating: false, pressureSafety: "mutating",
     description: "Create or update a freeform note in the notes space. For canonical structured memory (rules, observations, strategies) use knowledge_write instead — it embeds and is retrievable.",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space (only 'notes' is exposed)" },
@@ -30,7 +30,7 @@ export const DOCUMENT_TOOLS: readonly ToolDef[] = [
     }, required: ["title", "content"] },
   },
   {
-    name: "document_list", kind: "internal", mutating: false,
+    name: "document_list", kind: "internal", mutating: false, pressureSafety: "read_only",
     description: "List notes in a space, optionally filtered by folder.",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space (only 'notes' is exposed)" },
@@ -38,7 +38,7 @@ export const DOCUMENT_TOOLS: readonly ToolDef[] = [
     } },
   },
   {
-    name: "document_delete", kind: "internal", mutating: false,
+    name: "document_delete", kind: "internal", mutating: false, pressureSafety: "mutating",
     description: "Archive (soft-delete) a note.",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space" },

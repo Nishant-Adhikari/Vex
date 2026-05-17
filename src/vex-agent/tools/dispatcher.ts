@@ -14,12 +14,54 @@
 
 import type { ToolCallRequest, ToolResult } from "./types.js";
 import type { InternalToolContext } from "./internal/types.js";
-import { isInternalTool, isMutatingTool, isToolBlockedForRole } from "./registry.js";
+import { getPressureSafety, isInternalTool, isMutatingTool, isToolBlockedForRole } from "./registry.js";
 import { discoverProtocolCapabilities } from "./protocols/runtime.js";
 import { executeProtocolTool } from "./protocols/runtime.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "./protocols/discovery.telemetry.js";
 import { toResultData } from "./protocols/handler-helpers.js";
+import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 import logger from "@utils/logger.js";
+
+/**
+ * Pressure-band hard-deny check. Returns a synthetic error result when the
+ * tool should be blocked at the current band; returns null when dispatch can
+ * proceed. Bands `barrier` and `critical` block tools with `pressureSafety
+ * === "mutating"`. `compact_only` tools dispatch only at those bands.
+ *
+ * PR2 cutover: this helper is staged but NOT invoked yet. Will be activated
+ * when turn-loop wires the `compact_committed` engine signal and the legacy
+ * auto-checkpoint is removed.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function checkPressureDeny(
+  toolName: string,
+  band: ContextUsageBand,
+): ToolResult | null {
+  const safety = getPressureSafety(toolName);
+  if (safety === undefined) return null; // unknown tool — let routing handle it
+
+  const atBarrier = band === "barrier" || band === "critical";
+
+  if (atBarrier && safety === "mutating") {
+    return {
+      success: false,
+      output:
+        `Tool ${toolName} is blocked at context pressure ${band}. ` +
+        `Call compact_now first to compact the conversation; the next turn after compaction restores the full tool set.`,
+    };
+  }
+
+  if (!atBarrier && safety === "compact_only") {
+    return {
+      success: false,
+      output:
+        `Tool ${toolName} is only available at context pressure barrier (≥ 88% of context limit). ` +
+        `Current band is ${band}; continue with normal work.`,
+    };
+  }
+
+  return null;
+}
 
 /**
  * Dispatch a tool call to the appropriate handler.
@@ -32,6 +74,13 @@ export async function dispatchTool(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   const startTime = Date.now();
+
+  // PR2 cutover (deferred to fresh session): pressure-band hard-deny via
+  // `checkPressureDeny(call.name, context.contextUsageBand)` would block
+  // mutating tools at barrier/critical and route the agent through
+  // compact_now. Currently inert — turn-loop does not yet handle the
+  // `compact_committed` engine signal, so denying tools without a working
+  // escape would strand the agent in the 88-92% window.
 
   try {
     const result = await routeToolCall(call, context);
@@ -95,7 +144,12 @@ async function routeToolCall(
 
     return executeProtocolTool(
       { toolId, params },
-      { sessionPermission: context.sessionPermission, approved: context.approved, sessionId: context.sessionId },
+      {
+        sessionPermission: context.sessionPermission,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+      },
     );
   }
 
@@ -196,6 +250,13 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   wallet_read: async () => (await import("./internal/wallet.js")).handleWalletRead,
   wallet_send_prepare: async () => (await import("./internal/wallet.js")).handleWalletSendPrepare,
   wallet_send_confirm: async () => (await import("./internal/wallet.js")).handleWalletSendConfirm,
+
+  // PR2 cutover (deferred to fresh session): compact_now, memory_recall,
+  // mark_outstanding_resolved. Handler files exist under tools/internal/{compact,memory}
+  // and the registry definitions exist under tools/registry/{compact,memory}.ts;
+  // both are intentionally NOT wired here so the legacy auto-compact path
+  // remains the sole compaction primitive until turn-loop signal handling
+  // (compact_committed) lands.
 };
 
 async function routeInternalTool(

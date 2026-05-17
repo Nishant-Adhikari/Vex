@@ -30,6 +30,7 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
     name: "tool_output_read",
     kind: "internal",
     mutating: false,
+    pressureSafety: "read_only",
     surface: "agent",
     visibility: { hiddenInMissionSetup: true },
     description:
@@ -63,6 +64,7 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
     name: "checkpoint_handoff_prepare",
     kind: "internal",
     mutating: true,
+    pressureSafety: "mutating",
     excludeRoles: ["subagent"],
     surface: "agent",
     visibility: { band: "warning" },
@@ -102,6 +104,7 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
     name: "loop_defer",
     kind: "internal",
     mutating: false,
+    pressureSafety: "mutating",
     excludeRoles: ["subagent"],
     surface: "agent",
     visibility: { requiresMissionActiveRun: true },

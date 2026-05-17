@@ -7,7 +7,7 @@ import type { ToolDef } from "../types.js";
 
 export const MISSION_TOOLS: readonly ToolDef[] = [
   {
-    name: "mission_draft_update", kind: "internal", mutating: false,
+    name: "mission_draft_update", kind: "internal", mutating: false, pressureSafety: "mutating",
     excludeRoles: ["subagent"],
     surface: "agent",
     visibility: { requiresMissionSetup: true },
@@ -28,7 +28,7 @@ export const MISSION_TOOLS: readonly ToolDef[] = [
     }, additionalProperties: false },
   },
   {
-    name: "mission_stop", kind: "internal", mutating: false,
+    name: "mission_stop", kind: "internal", mutating: false, pressureSafety: "safe_at_barrier",
     excludeRoles: ["subagent"],
     surface: "agent",
     visibility: { requiresMissionRun: true },

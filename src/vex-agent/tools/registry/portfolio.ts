@@ -7,7 +7,7 @@ import type { ToolDef } from "../types.js";
 
 export const PORTFOLIO_TOOLS: readonly ToolDef[] = [
   {
-    name: "portfolio_inspect", kind: "internal", mutating: false,
+    name: "portfolio_inspect", kind: "internal", mutating: false, pressureSafety: "read_only",
     description: "Inspect your own portfolio state — open positions, activity, executions, balances, snapshots, summary, lots, profits, closed_positions, non_trading_history, bridges, lp_history, orders, unrealized. DB-backed, read-only.",
     parameters: { type: "object", properties: {
       view: { type: "string", enum: ["open_positions", "activity", "executions", "balances", "snapshots", "summary", "lots", "profits", "closed_positions", "non_trading_history", "bridges", "lp_history", "orders", "unrealized"], description: "What to inspect" },

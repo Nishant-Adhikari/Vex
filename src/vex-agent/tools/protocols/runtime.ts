@@ -14,6 +14,7 @@ import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js
 import { MUTATION_MATRIX } from "./mutation-matrix.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import { sanitizeJsonbValue } from "@vex-agent/db/params.js";
+import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 import logger from "@utils/logger.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
@@ -61,6 +62,12 @@ export async function executeProtocolTool(
       output: `${request.toolId} requires ${manifest.requiresEnv} to be set in .env`,
     };
   }
+
+  // PR2 cutover (deferred to fresh session): pressure-barrier guard for
+  // protocol tools. Will reject mutating protocol calls at band ≥ barrier
+  // (preview / dryRun pass through via `isPreviewExecution`). Inert until
+  // turn-loop signal handling lands so the agent has a working compact_now
+  // escape path.
 
   // Validate params — presence (required) and runtime type (§1f).
   // Pre-PR1 runtime only checked `required`; that left handlers defending

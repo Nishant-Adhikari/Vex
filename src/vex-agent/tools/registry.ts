@@ -72,6 +72,12 @@ import { AUTONOMY_TOOLS } from "./registry/autonomy.js";
 import { SUBAGENT_TOOLS } from "./registry/subagents.js";
 import { EVM_TOOLS } from "./registry/evm.js";
 import { WALLET_TOOLS } from "./registry/wallet.js";
+// PR2 staging: COMPACT_TOOLS + MEMORY_TOOLS exist on disk (./registry/compact.js
+// + ./registry/memory.js) but are NOT registered into the TOOLS array yet.
+// The cutover PR (turn-loop signal handling + legacy delete) will both
+// register these tools AND remove the legacy auto-compact path atomically.
+// Importing them as dormant prevents the LLM from seeing tools it cannot
+// safely use (compact_committed signal not yet handled by turn-loop).
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. `VEX_TOOLS` (self-documentation) come first so the
@@ -92,6 +98,7 @@ const TOOLS: readonly ToolDef[] = [
   ...SUBAGENT_TOOLS,
   ...EVM_TOOLS,
   ...WALLET_TOOLS,
+  // PR2 cutover (deferred to fresh session): ...COMPACT_TOOLS, ...MEMORY_TOOLS
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
@@ -108,6 +115,17 @@ export function isInternalTool(name: string): boolean {
 
 export function isMutatingTool(name: string): boolean {
   return byName.get(name)?.mutating === true;
+}
+
+/**
+ * Look up the `pressureSafety` classification for a tool. Returns `undefined`
+ * when the tool name is not registered — caller decides whether unknown
+ * tools are dispatched through (legacy behavior) or denied. The dispatcher
+ * currently returns `null` (proceed) on undefined so the routing layer can
+ * produce a descriptive "unknown tool" error rather than a pressure error.
+ */
+export function getPressureSafety(name: string): ToolDef["pressureSafety"] | undefined {
+  return byName.get(name)?.pressureSafety;
 }
 
 export function getAllTools(): readonly ToolDef[] {
@@ -156,9 +174,15 @@ function passesVisibility(
 ): boolean {
   if (!v) return true;
 
-  // Band gate. `band: "warning"` = visible at warning OR critical.
+  // Band gate (PR2: 4 bands).
+  // `band: "warning"`  = visible at warning OR barrier OR critical.
+  // `band: "barrier"`  = visible at barrier OR critical.
   // `band: "critical"` = visible only at critical.
   if (v.band === "warning" && ctx.contextUsageBand === "normal") return false;
+  if (v.band === "barrier"
+      && (ctx.contextUsageBand === "normal" || ctx.contextUsageBand === "warning")) {
+    return false;
+  }
   if (v.band === "critical" && ctx.contextUsageBand !== "critical") return false;
 
   // Mission active run gate — only mission sessions with an active run

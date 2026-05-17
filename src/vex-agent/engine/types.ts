@@ -124,6 +124,8 @@ export type RuntimeStopReason =
   | "timeout"
   | "waiting_for_parent"
   | "waiting_for_wake"
+  | "waiting_for_compact_commit"
+  | "compact_unable_at_critical"
   | "system_error";
 
 export type StopReason = BusinessStopReason | RuntimeStopReason;

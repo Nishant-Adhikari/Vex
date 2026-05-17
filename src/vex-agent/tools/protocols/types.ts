@@ -105,6 +105,14 @@ export interface ProtocolExecutionContext {
   approved: boolean;
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;
+  /**
+   * Context-usage band at dispatch time, threaded through from the
+   * dispatcher so the protocol-runtime pressure guard can reject mutating
+   * protocol calls at barrier/critical even when discovery doesn't carry
+   * the advisory flag. Optional for legacy callers; PR2 dispatcher always
+   * passes it.
+   */
+  contextUsageBand?: "normal" | "warning" | "barrier" | "critical";
 }
 
 // ── Discovery request/result ─────────────────────────────────────

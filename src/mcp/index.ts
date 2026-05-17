@@ -27,6 +27,10 @@ import { bootstrap } from "./bootstrap.js";
 import { startStdioTransport } from "./transports/stdio.js";
 import { startHttpTransport } from "./transports/http.js";
 import { startWakeExecutor, type WakeExecutorHandle } from "@vex-agent/engine/index.js";
+import {
+  startCompactJobsExecutor,
+  type CompactJobsExecutorHandle,
+} from "@vex-agent/engine/compact-jobs/executor.js";
 import { startSyncExecutor, type SyncExecutorHandle } from "@vex-agent/sync/executor.js";
 import logger from "@utils/logger.js";
 
@@ -73,18 +77,24 @@ export async function runMcpCli(argv: readonly string[] = process.argv.slice(2))
   // `AGENT_WAKE_ENABLED=false` from an older install cannot disable wake.
   let wakeExecutor: WakeExecutorHandle | null = null;
   let syncExecutor: SyncExecutorHandle | null = null;
+  let compactJobsExecutor: CompactJobsExecutorHandle | null = null;
   if (transport === "stdio") {
     await startStdioTransport();
     wakeExecutor = startWakeExecutor({ intervalMs: WAKE_INTERVAL_MS, batchSize: WAKE_BATCH_SIZE });
     syncExecutor = startSyncExecutor();
+    compactJobsExecutor = startCompactJobsExecutor();
   } else {
     await startHttpTransport();
     wakeExecutor = startWakeExecutor({ intervalMs: WAKE_INTERVAL_MS, batchSize: WAKE_BATCH_SIZE });
     syncExecutor = startSyncExecutor();
+    compactJobsExecutor = startCompactJobsExecutor();
   }
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     logger.info("mcp.shutdown", { signal });
+    if (compactJobsExecutor) {
+      await compactJobsExecutor.stop();
+    }
     if (wakeExecutor) {
       await wakeExecutor.stop();
     }

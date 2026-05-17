@@ -22,11 +22,12 @@
 export interface ToolVisibility {
   /**
    * Minimum context-usage band at which the tool becomes visible.
-   * `"warning"` → visible when band is `warning` OR `critical`.
+   * `"warning"` → visible when band is `warning`, `barrier`, or `critical`.
+   * `"barrier"` → visible only when band is `barrier` or `critical` (PR2).
    * `"critical"` → visible only when band is `critical`.
    * Undefined → visible in all bands.
    */
-  band?: "warning" | "critical";
+  band?: "warning" | "barrier" | "critical";
   /**
    * True → require an active mission run (`missionRunActive === true`).
    * Used by autonomy primitives like `loop_defer` — agent mode never loops.
@@ -42,6 +43,25 @@ export interface ToolVisibility {
   hiddenInMissionSetup?: boolean;
 }
 
+/**
+ * Pressure-safety classification — orthogonal to `mutating`.
+ *
+ * `mutating` is permission-gated (restricted vs full session permission)
+ * and tells the approval queue whether the call needs explicit user
+ * approval. `pressureSafety` is band-gated (PR2) and tells the dispatcher
+ * whether the call is allowed when context pressure forces a compaction
+ * before further work.
+ *
+ * Bands `barrier` and `critical` block calls where `pressureSafety ===
+ * "mutating"`. `compact_only` is visible only at those bands. `read_only`
+ * and `safe_at_barrier` pass through.
+ */
+export type PressureSafety =
+  | "safe_at_barrier"
+  | "read_only"
+  | "mutating"
+  | "compact_only";
+
 export interface ToolDef {
   /** Unique tool name — used by LLM in tool_calls */
   name: string;
@@ -51,8 +71,13 @@ export interface ToolDef {
   parameters: JsonSchema;
   /** Internal = handled in-process, protocol = via discover+execute */
   kind: "internal" | "protocol";
-  /** Whether this tool modifies state (trades, transfers, posts) */
+  /** Whether this tool modifies state (trades, transfers, posts). Permission-gated. */
   mutating: boolean;
+  /**
+   * Pressure-safety classification. REQUIRED — every tool MUST be deliberately
+   * classified so the dispatcher knows whether to block at barrier/critical.
+   */
+  pressureSafety: PressureSafety;
   /** If true, tool is only available in restricted/full modes */
   proactive?: boolean;
   /** ENV var required for this tool. If set and ENV is empty, tool is hidden. */
@@ -151,12 +176,21 @@ export interface ToolResult {
  * - stop_mission: parent mission stop (business stop reason)
  * - wait_for_parent: child pauses for parent help (subagent_request_parent)
  * - complete_subagent: child finished task (subagent_report_complete)
- * - defer_until: the agent wants to sleep until a wake time (loop_defer, PR-5).
- *   PR-6 turn-loop integration flips the mission run to `paused_wake` after
- *   the tool handler has written the `loop_wake_requests` row.
+ * - defer_until: the agent wants to sleep until a wake time (loop_defer)
+ * - compact_committed: `compact_now` archived the conversation prefix, updated
+ *   the rolling summary, and enqueued a Track 2 chunking job (PR2). Turn-loop
+ *   drains remaining tool calls in the batch with `batch_aborted_by_compact`,
+ *   reloads live messages, merges operator interrupts, updates
+ *   `mission_runs.last_checkpoint_at`, and injects a deterministic resume
+ *   packet for `POST_COMPACT_BRIDGE_CYCLES` subsequent turns.
  */
 export interface EngineSignal {
-  type: "stop_mission" | "wait_for_parent" | "complete_subagent" | "defer_until";
+  type:
+    | "stop_mission"
+    | "wait_for_parent"
+    | "complete_subagent"
+    | "defer_until"
+    | "compact_committed";
   reason: string;
   summary: string;
   evidence?: Record<string, unknown>;
@@ -164,6 +198,10 @@ export interface EngineSignal {
   messageId?: number;
   /** For defer_until: ISO8601 timestamp when the wake executor should resume the session. */
   dueAt?: string;
+  /** For compact_committed: the freshly-bumped sessions.checkpoint_generation value. */
+  generation?: number;
+  /** For compact_committed: the compact_job id enqueued for Track 2 chunking, or null on cooldown noop. */
+  jobId?: number | null;
 }
 
 // ── OpenAI-compatible tool format (for inference providers) ──────

@@ -27,6 +27,7 @@ export const KHALANI_INTERNAL_TOOLS: readonly ToolDef[] = Object.entries(KHALANI
       name,
       kind: "internal",
       mutating: false,
+      pressureSafety: "read_only",
       description: internalDescription(name, manifest.description),
       parameters: paramsToJsonSchema(manifest.params),
     };

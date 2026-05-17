@@ -9,21 +9,21 @@
  * before the next provider call — projecting token count pre-prompt would
  * require running the tokenizer, which is out of scope.
  *
- * Thresholds:
- * - `< 80%`  → `"normal"`  — no band-scoped tools visible.
- * - `≥ 80%` and `< 90%` → `"warning"` — `checkpoint_handoff_prepare` visible.
- * - `≥ 90%` → `"critical"` — checkpoint gate fires; forced pre-compact
- *   handoff pass runs if no active handoff exists for the next generation.
+ * PR2 staging: `ContextUsageBand` includes `"barrier"` as a literal so the
+ * new memory-layer code can type-check against the planned 4-band system,
+ * but `computeBand` still returns only `"normal" | "warning" | "critical"`
+ * with the legacy 0.80 / 0.90 thresholds. The PR2 cutover (turn-loop signal
+ * handling + legacy delete) will flip the implementation to the 4-band
+ * thresholds at 0.85 / 0.88 / 0.92 from `memory/policy.ts`.
  *
  * `contextLimit <= 0` is treated as a degenerate config (no meaningful
- * pressure) → always `"normal"`. Prevents division-by-zero and keeps the
- * helper total.
+ * pressure) → always `"normal"`. Prevents division-by-zero.
  */
 
 export const WARNING_THRESHOLD = 0.80;
 export const CRITICAL_THRESHOLD = 0.90;
 
-export type ContextUsageBand = "normal" | "warning" | "critical";
+export type ContextUsageBand = "normal" | "warning" | "barrier" | "critical";
 
 export function computeBand(
   tokenCount: number,
@@ -36,4 +36,9 @@ export function computeBand(
   if (ratio >= CRITICAL_THRESHOLD) return "critical";
   if (ratio >= WARNING_THRESHOLD) return "warning";
   return "normal";
+}
+
+/** True iff the band restricts mutating tools at dispatch (PR2 cutover). */
+export function isPressureBarrier(band: ContextUsageBand): boolean {
+  return band === "barrier" || band === "critical";
 }

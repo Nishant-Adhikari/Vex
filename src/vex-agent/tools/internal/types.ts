@@ -48,7 +48,7 @@ export interface InternalToolContext {
    * token count. Used by band-scoped handlers (`checkpoint_handoff_prepare`
    * in PR-9) for defense-in-depth against calls outside their intended band.
    */
-  contextUsageBand: "normal" | "warning" | "critical";
+  contextUsageBand: "normal" | "warning" | "barrier" | "critical";
   /**
    * Origin of the call. Used for knowledge provenance (knowledge_entries.source_surface).
    * - undefined / "vex_agent": Vex Agent (mission loop, chat, scripts) — default

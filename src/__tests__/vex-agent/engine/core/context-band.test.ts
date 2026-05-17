@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeBand,
+  isPressureBarrier,
   WARNING_THRESHOLD,
   CRITICAL_THRESHOLD,
 } from "../../../../vex-agent/engine/core/context-band.js";
@@ -73,9 +74,20 @@ describe("context-band / computeBand", () => {
   });
 
   describe("threshold constants", () => {
-    it("WARNING is 0.80 and CRITICAL is 0.90 (load-bearing for PR-9 forced-pass gate)", () => {
+    it("WARNING is 0.80 and CRITICAL is 0.90 (legacy thresholds; PR2 cutover will flip to 0.85/0.88/0.92)", () => {
       expect(WARNING_THRESHOLD).toBe(0.80);
       expect(CRITICAL_THRESHOLD).toBe(0.90);
     });
+  });
+});
+
+describe("isPressureBarrier helper (PR2 staging)", () => {
+  it("normal and warning are not at barrier", () => {
+    expect(isPressureBarrier("normal")).toBe(false);
+    expect(isPressureBarrier("warning")).toBe(false);
+  });
+  it("barrier and critical are at barrier", () => {
+    expect(isPressureBarrier("barrier")).toBe(true);
+    expect(isPressureBarrier("critical")).toBe(true);
   });
 });
