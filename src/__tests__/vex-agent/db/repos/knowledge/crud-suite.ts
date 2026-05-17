@@ -97,19 +97,21 @@ export function crudSuite(ctx: SuiteCtx): void {
       const [, params] = mockQueryOne.mock.calls[0];
       expect(params[7]).toBe("invalidated");
       expect(params[9]).toBe(validFrom.toISOString());
-      // Lifecycle columns, then created_at / updated_at at the tail:
+      // Lifecycle columns, then source, then created_at / updated_at at the tail:
       //   17 supersedesId        (default null)
       //   18 statusReason         (default null)
       //   19 changeSummary        (default null)
       //   20 whatFailed           (default null)
-      //   21 createdAt
-      //   22 updatedAt
+      //   21 source               (default null → server applies 'observed')
+      //   22 createdAt
+      //   23 updatedAt
       expect(params[17]).toBeNull();
       expect(params[18]).toBeNull();
       expect(params[19]).toBeNull();
       expect(params[20]).toBeNull();
-      expect(params[21]).toBe(createdAt.toISOString());
-      expect(params[22]).toBe(updatedAt.toISOString());
+      expect(params[21]).toBeNull();
+      expect(params[22]).toBe(createdAt.toISOString());
+      expect(params[23]).toBe(updatedAt.toISOString());
     });
 
     it("passes lifecycle fields (supersedesId + reason + change_summary + what_failed) when provided", async () => {

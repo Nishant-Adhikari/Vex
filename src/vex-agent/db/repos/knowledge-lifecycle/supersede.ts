@@ -120,6 +120,7 @@ export async function runSupersedeStatements(
          content_hash, embedding_model, embedding_dim, embedding,
          source_surface, source_session,
          supersedes_id, status_reason, change_summary, what_failed,
+         source,
          created_at, updated_at
        )
        VALUES (
@@ -128,6 +129,7 @@ export async function runSupersedeStatements(
          $10, $11, $12, $13::vector,
          COALESCE($14::text, 'vex_agent'), $15,
          $16, NULL, $17, $18,
+         COALESCE($19::text, 'observed'),
          NOW(), NOW()
        )
        RETURNING *`,
@@ -150,6 +152,7 @@ export async function runSupersedeStatements(
         input.previousId,
         input.changeSummary ?? null,
         input.whatFailed ?? null,
+        input.source ?? null,
       ],
     );
     const successorRow = successorRes.rows[0];

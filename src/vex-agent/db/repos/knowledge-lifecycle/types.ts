@@ -8,6 +8,7 @@
 
 import type { KnowledgeEntry, InsertEntryInput } from "../knowledge.js";
 import type { KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
+import type { KnowledgeSource } from "@vex-agent/memory/policy.js";
 
 /**
  * Input shape mirrors `knowledge_write` params + lineage fields. We accept the
@@ -56,6 +57,7 @@ export interface KnowledgeRowShape {
   status_reason: string | null;
   change_summary: string | null;
   what_failed: string | null;
+  source: string;
   created_at: string;
   updated_at: string;
 }
@@ -83,6 +85,7 @@ export function mapRowLocal(r: KnowledgeRowShape): KnowledgeEntry {
     statusReason: r.status_reason,
     changeSummary: r.change_summary,
     whatFailed: r.what_failed,
+    source: (r.source ?? "observed") as KnowledgeSource,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

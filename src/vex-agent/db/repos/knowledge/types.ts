@@ -8,6 +8,7 @@
 
 import type { KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
 import type { RecallCandidate } from "@vex-agent/knowledge/ranking.js";
+import type { KnowledgeSource } from "@vex-agent/memory/policy.js";
 
 // ── Internal row types (not exported) ───────────────────────────
 
@@ -33,6 +34,8 @@ export interface KnowledgeRow {
   status_reason: string | null;
   change_summary: string | null;
   what_failed: string | null;
+  /** Provenance classification — gates hot-context injection. See migration 018. */
+  source: string;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +77,8 @@ export interface KnowledgeEntry {
   changeSummary: string | null;
   /** Supersede-only: evidence that invalidated the predecessor. NULL on predecessors and plain entries. */
   whatFailed: string | null;
+  /** Provenance classification — only `observed` + `user_confirmed` surface in Active Knowledge hot context. */
+  source: KnowledgeSource;
   createdAt: string;
   updatedAt: string;
 }
@@ -136,6 +141,13 @@ export interface InsertEntryInput {
   statusReason?: string | null;
   changeSummary?: string | null;
   whatFailed?: string | null;
+  /**
+   * Provenance classification. Defaults to `'observed'` when omitted (backward-
+   * compatible with import scripts and tools that haven't been updated yet).
+   * Only `observed` + `user_confirmed` show up in Active Knowledge hot context;
+   * `inferred` + `hypothesis` are recall-only.
+   */
+  source?: KnowledgeSource;
 }
 
 export interface InsertEntryResult {
@@ -220,6 +232,7 @@ export function mapRow(r: KnowledgeRow): KnowledgeEntry {
     statusReason: r.status_reason,
     changeSummary: r.change_summary,
     whatFailed: r.what_failed,
+    source: (r.source ?? "observed") as KnowledgeSource,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

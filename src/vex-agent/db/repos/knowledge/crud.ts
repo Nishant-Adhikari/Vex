@@ -83,6 +83,7 @@ export async function insertEntry(
          content_hash, embedding_model, embedding_dim, embedding,
          source_surface, source_session,
          supersedes_id, status_reason, change_summary, what_failed,
+         source,
          created_at, updated_at
        )
        VALUES (
@@ -91,7 +92,8 @@ export async function insertEntry(
          $12, $13, $14, $15::vector,
          COALESCE($16::text, 'vex_agent'), $17,
          $18, $19, $20, $21,
-         COALESCE($22::timestamptz, NOW()), COALESCE($23::timestamptz, NOW())
+         COALESCE($22::text, 'observed'),
+         COALESCE($23::timestamptz, NOW()), COALESCE($24::timestamptz, NOW())
        )
        ON CONFLICT (content_hash) DO NOTHING
        RETURNING *
@@ -122,6 +124,7 @@ export async function insertEntry(
       input.statusReason ?? null,
       input.changeSummary ?? null,
       input.whatFailed ?? null,
+      input.source ?? null,
       toIsoOrNull(input.createdAt),
       toIsoOrNull(input.updatedAt),
     ],
