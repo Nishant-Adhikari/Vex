@@ -55,22 +55,38 @@ describe("pathStartsWithBoundary", () => {
 });
 
 describe("isAllowedExternalUrl", () => {
+  // Mirrors the production ALLOWED_EXTERNAL in main-window.ts. Keep the
+  // two in sync — every new production entry needs both an allow case
+  // and a near-miss deny case below.
   const allowlist: ReadonlyArray<ExternalAllowEntry> = [
     "vex.ai",
     "docs.vex.ai",
     "portal.jup.ag",
+    "app.tavily.com",
     "openrouter.ai",
     "releases.electronjs.org",
     "desktop.docker.com",
     "docs.docker.com",
     { host: "github.com", pathPrefix: "/Vex-Foundation/" },
     { host: "github.com", pathPrefix: "/electron/electron/releases" },
+    {
+      host: "chromewebstore.google.com",
+      pathPrefix:
+        "/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp",
+    },
+    {
+      host: "addons.mozilla.org",
+      pathPrefix: "/en-US/firefox/addon/rettiwt-auth-helper",
+    },
   ];
 
   it.each([
     "https://vex.ai/",
     "https://docs.vex.ai/",
     "https://portal.jup.ag/keys",
+    "https://app.tavily.com/",
+    "https://app.tavily.com/home",
+    "https://app.tavily.com/api-keys",
     "https://openrouter.ai/models",
     "https://releases.electronjs.org/schedule",
     "https://desktop.docker.com/mac/main/arm64/Docker.dmg",
@@ -79,6 +95,10 @@ describe("isAllowedExternalUrl", () => {
     "https://github.com/Vex-Foundation/Vex/releases",
     "https://github.com/electron/electron/releases",
     "https://github.com/electron/electron/releases/tag/v42.0.0",
+    "https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp",
+    "https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp/reviews",
+    "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper",
+    "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper/reviews/",
   ])("allows %s", (u) => {
     expect(isAllowedExternalUrl(u, allowlist)).toBe(true);
   });
@@ -104,6 +124,20 @@ describe("isAllowedExternalUrl", () => {
     "https://github.com/../Vex-Foundation/",
     "https://github.com/electron/electron/releases/../../torvalds/linux",
     "https://github.com/%2e%2e/Vex-Foundation/",
+    // Tavily — host pollution / wrong subdomain / wrong scheme
+    "http://app.tavily.com/", // wrong scheme
+    "https://docs.tavily.com/",
+    "https://api.tavily.com/",
+    "https://app.tavily.com.evil.com/",
+    // Chrome Web Store — exact-extension path-boundary regression
+    "https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp-malicious",
+    "https://chromewebstore.google.com/detail/x-auth-helper-clone/igpkhkjmpdecacocghpgkghdcmcmpfhp",
+    "https://chromewebstore.google.com/detail/other-extension/abc",
+    "https://chromewebstore.google.com/category/extensions",
+    // Firefox addon — path-boundary regression / locale prefix / root
+    "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper-evil",
+    "https://addons.mozilla.org/de/firefox/addon/rettiwt-auth-helper",
+    "https://addons.mozilla.org/",
     "",
     "not-a-url",
   ])("denies %s", (u) => {

@@ -2,8 +2,10 @@
  * Polymarket auto-setup section (feature #7) — owns the
  * "Auto-configure Polymarket" CTA and the two-modal flow that backs it.
  *
- * Renders INSIDE the existing Polymarket fieldset in ApiKeysStep so the
- * manual trio entry stays visible as a fallback. Behaviour:
+ * Renders INSIDE the Polymarket provider card in `ApiKeysStep` as the
+ * single repair / configure path. The manual trio entry was removed in
+ * the PR8 redesign, so auto-setup is no longer a fallback — it is the
+ * only renderer-visible way to write Polymarket credentials. Behaviour:
  *
  *   - status === "configured" → button reads "Reconfigure Polymarket".
  *     Clicking opens the confirm modal first (overwrite is destructive

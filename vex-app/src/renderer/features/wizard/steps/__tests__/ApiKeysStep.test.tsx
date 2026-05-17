@@ -1,5 +1,6 @@
 /**
- * ApiKeysStep tests (M9 Step 3 + feature #7 Polymarket auto-setup).
+ * ApiKeysStep tests (M9 Step 3 + feature #7 Polymarket auto-setup +
+ * PR8 redesign — per-provider glass cards).
  *
  * Verifies:
  *  - Skip-card when JUPITER configured + polymarket NOT partial.
@@ -7,17 +8,28 @@
  *    when polymarketStatus !== "configured" (feature #7).
  *  - back-edit flow ALWAYS renders the form (feature #7 Codex Q5).
  *  - "Repair Polymarket" warning rendered when polymarketStatus === "partial".
- *  - Form rejects partial Polymarket trio at the renderer level.
  *  - Successful submit clears all input refs synchronously and advances.
  *  - "Skip optional" advances without calling setApiKeys.
  *  - Legacy API-key fields are not rendered.
- *  - PolymarketAutoSetupSection mounts inside the Polymarket fieldset
+ *  - 4 provider cards render in canonical order (jupiter → tavily →
+ *    rettiwt → polymarket) and each carries the correct external link.
+ *  - Polymarket card hosts the auto-setup section only — no manual
+ *    API-key / secret / passphrase inputs (PR8).
+ *  - Every external "Get key" link opens with target="_blank" +
+ *    rel="noopener noreferrer".
+ *  - PolymarketAutoSetupSection mounts inside the Polymarket card
  *    (feature #7) and the onSuccess callback wires through to envState
  *    invalidation (Codex Q8).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   QueryClient,
   QueryClientProvider,
@@ -160,22 +172,6 @@ describe("ApiKeysStep", () => {
     );
     expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).not.toBeNull();
     expect(container.querySelector('[data-vex-apikeys-warning="polymarket-partial"]')).not.toBeNull();
-  });
-
-  it("rejects partial polymarket trio at the renderer (does NOT call setApiKeys)", async () => {
-    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    const { container, getByLabelText, getByText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    fireEvent.input(getByLabelText("API key"), { target: { value: "k" } });
-    // Leave secret + passphrase empty
-    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form');
-    if (form === null) throw new Error("form element not found");
-    fireEvent.submit(form);
-    await waitFor(() => {
-      expect(getByText(/needs all three fields/i)).toBeTruthy();
-    });
-    expect(mockSetApiKeys).not.toHaveBeenCalled();
   });
 
   it("submits Jupiter key, clears the input, and advances on success", async () => {
@@ -415,5 +411,90 @@ describe("ApiKeysStep", () => {
     await findByText(/Jupiter API key is required/i);
     expect(mockOnAdvance).not.toHaveBeenCalled();
     expect(mockSetWizardMutate).not.toHaveBeenCalled();
+  });
+
+  // ── PR8 redesign — per-provider cards ────────────────────────────────
+
+  it("renders 4 provider cards in canonical order (PR8)", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const cards = container.querySelectorAll("[data-vex-apikeys-card]");
+    expect(cards).toHaveLength(4);
+    expect(
+      Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
+    ).toEqual(["jupiter", "tavily", "rettiwt", "polymarket"]);
+  });
+
+  it("renders canonical external links for each provider card (PR8)", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const jupHref = container
+      .querySelector('[data-vex-apikeys-card="jupiter"] a[href]')
+      ?.getAttribute("href");
+    expect(jupHref).toBe("https://portal.jup.ag/");
+
+    const tavHref = container
+      .querySelector('[data-vex-apikeys-card="tavily"] a[href]')
+      ?.getAttribute("href");
+    expect(tavHref).toBe("https://app.tavily.com/home");
+
+    const rettiwtHrefs = Array.from(
+      container.querySelectorAll('[data-vex-apikeys-card="rettiwt"] a[href]'),
+    ).map((a) => a.getAttribute("href"));
+    expect(rettiwtHrefs).toContain(
+      "https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp",
+    );
+    expect(rettiwtHrefs).toContain(
+      "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper",
+    );
+
+    // Polymarket card has NO get-key link (auto-setup only).
+    expect(
+      container.querySelector('[data-vex-apikeys-card="polymarket"] a[href]'),
+    ).toBeNull();
+  });
+
+  it("Polymarket card renders auto-setup only — no manual fields (PR8)", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const polyCard = container.querySelector(
+      '[data-vex-apikeys-card="polymarket"]',
+    ) as HTMLElement | null;
+    expect(polyCard).not.toBeNull();
+    if (polyCard === null) return;
+    // Auto-setup button is present.
+    expect(
+      polyCard.querySelector("[data-vex-polymarket-auto-button]"),
+    ).not.toBeNull();
+    // No manual trio inputs — labels "API key", "API secret",
+    // "Passphrase" must not exist anywhere inside the Polymarket card.
+    const w = within(polyCard);
+    expect(w.queryByLabelText("API key")).toBeNull();
+    expect(w.queryByLabelText("API secret")).toBeNull();
+    expect(w.queryByLabelText("Passphrase")).toBeNull();
+  });
+
+  it("every external link on a card uses target='_blank' + rel='noopener noreferrer' (PR8)", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const anchors = container.querySelectorAll(
+      "[data-vex-apikeys-card] a[href]",
+    );
+    // We expect at least one anchor (Jupiter / Tavily / 2× Rettiwt).
+    expect(anchors.length).toBeGreaterThan(0);
+    for (const a of Array.from(anchors)) {
+      expect(a.getAttribute("target")).toBe("_blank");
+      const rel = a.getAttribute("rel") ?? "";
+      expect(rel).toMatch(/\bnoopener\b/);
+      expect(rel).toMatch(/\bnoreferrer\b/);
+    }
   });
 });

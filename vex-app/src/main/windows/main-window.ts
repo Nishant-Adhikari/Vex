@@ -44,6 +44,7 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   "vex.ai",
   "docs.vex.ai",
   "portal.jup.ag",
+  "app.tavily.com",
   "openrouter.ai",
   "releases.electronjs.org",
   "desktop.docker.com",
@@ -51,6 +52,18 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   // GitHub: restrict to Vex Foundation org + Electron releases (specific repos only)
   { host: "github.com", pathPrefix: "/Vex-Foundation/" },
   { host: "github.com", pathPrefix: "/electron/electron/releases" },
+  // Rettiwt extension stores — exact extension URLs only. Path-boundary
+  // in `pathStartsWithBoundary` keeps `-malicious`/`-clone` suffixes out.
+  // Chrome ext ID from Rettiwt-API-dev/README.md (X Auth Helper).
+  {
+    host: "chromewebstore.google.com",
+    pathPrefix:
+      "/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp",
+  },
+  {
+    host: "addons.mozilla.org",
+    pathPrefix: "/en-US/firefox/addon/rettiwt-auth-helper",
+  },
 ];
 
 function checkExternalUrl(raw: string): boolean {

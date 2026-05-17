@@ -89,6 +89,46 @@
   --wizard-accent: var(--vex-onboarding-accent);
 }
 
+/* Custom scrollbar — scoped to every onboarding screen via the
+ * `data-vex-onboarding="true"` attribute on the outer wrapper. Electron
+ * runs Chromium so the `::-webkit-scrollbar` pseudo-elements are the
+ * canonical surface; `scrollbar-color` / `scrollbar-width` are added
+ * for forward-compat with non-WebKit engines (no-op on Electron).
+ *
+ * Two selectors so both the wrapper itself AND every nested overflow
+ * container (wizard step body, error history lists, etc.) pick up the
+ * accent-tinted thumb. The thin border + `background-clip: content-box`
+ * trick gives the thumb a subtle inset look against the glass chrome. */
+[data-vex-onboarding="true"]::-webkit-scrollbar,
+[data-vex-onboarding="true"] *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+[data-vex-onboarding="true"]::-webkit-scrollbar-track,
+[data-vex-onboarding="true"] *::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-vex-onboarding="true"]::-webkit-scrollbar-thumb,
+[data-vex-onboarding="true"] *::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--vex-onboarding-accent) 38%, transparent);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+[data-vex-onboarding="true"]::-webkit-scrollbar-thumb:hover,
+[data-vex-onboarding="true"] *::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--vex-onboarding-accent) 60%, transparent);
+  background-clip: content-box;
+}
+[data-vex-onboarding="true"]::-webkit-scrollbar-corner,
+[data-vex-onboarding="true"] *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+[data-vex-onboarding="true"] {
+  scrollbar-color: color-mix(in oklab, var(--vex-onboarding-accent) 38%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
 html,
 body,
 #root {

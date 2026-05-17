@@ -271,7 +271,9 @@ describe("PolymarketAutoSetupSection", () => {
         view.container.querySelector("[data-vex-polymarket-confirm='root']"),
       ).not.toBeNull();
     });
-    // The SudoModal is closed because the bubble path also called onClose.
+    // SudoModal is gone because the parent phase transitioned from
+    // "submitting" → "confirming" via onRiskConfirmationRequired; the
+    // sudo branch only renders while phase === "submitting".
     expect(
       view.container.querySelector("[data-vex-polymarket-sudo='root']"),
     ).toBeNull();
