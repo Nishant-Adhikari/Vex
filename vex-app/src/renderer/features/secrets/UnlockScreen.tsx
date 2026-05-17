@@ -7,7 +7,7 @@
  * composeBootstrap / migrations / wizard. Same glass-chrome recipe:
  * full-bleed `/onboarding2.png` backdrop, gradient overlay, top-left
  * logo + "VEX UNLOCK" chip, top-right version chip, central glass
- * panel with header (accent icon tile + title + description) + body
+ * panel with header (accent icon + title + description) + body
  * (form with master password input + error/throttle + submit).
  *
  * Why inline (not extracted): every polished screen currently inlines
@@ -207,7 +207,7 @@ export function UnlockScreen(): JSX.Element {
         <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
           <span
             aria-hidden
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_14%,transparent)]"
+            className="flex h-10 w-10 shrink-0 items-center justify-center"
           >
             <LockIcon />
           </span>

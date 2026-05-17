@@ -17,8 +17,9 @@
  * Visual contract:
  *   - card root: `rounded-2xl border-white/[0.06] bg-white/[0.02] p-4`,
  *     stack-spacing 3 (header / description / body).
- *   - icon tile: 36×36 rounded-xl, accent-tinted background derived
- *     from `var(--vex-onboarding-accent)`. Caller's icon should be ~20px.
+ *   - icon slot: 36×36 sizing-only box (flex centering, no bg, no
+ *     border, no border-radius) so the brand icon / PNG sits directly
+ *     on the glass surface. Caller's icon should be ~20px.
  *   - badges: small inline pills with semantic palette tokens.
  *   - data attributes: `data-vex-apikeys-card` set from the `slug` prop
  *     so tests can address each card individually.
@@ -59,8 +60,7 @@ const CARD_CHROME = cn(
 );
 
 const ICON_TILE_CHROME = cn(
-  "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-  "bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_14%,transparent)]",
+  "flex h-9 w-9 shrink-0 items-center justify-center",
   "text-[var(--vex-onboarding-accent)]",
 );
 
