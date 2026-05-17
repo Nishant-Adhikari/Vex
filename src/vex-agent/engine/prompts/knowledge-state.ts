@@ -17,7 +17,7 @@ export function buildKnowledgeStateBanner(input: KnowledgeStateInput): string {
   if (input.activeCount === 0) {
     return [
       `[Knowledge: empty.`,
-      `Long-term memory has no entries yet. Use knowledge_write to save: persona, strategies, lessons, observed user preferences.`,
+      `Curated cross-session memory has no entries yet. Use knowledge_write to save: persona, observed strategies, lessons from failures, observed user preferences.`,
       `Skip knowledge_recall — nothing to find.]`,
     ].join(" ");
   }

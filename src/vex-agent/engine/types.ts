@@ -225,10 +225,13 @@ export interface EngineContext {
   isSubagent: boolean;
   loadedDocuments: Map<string, string>;
   /**
-   * Semantic memory scope — the identity that `session_episodes` recall groups
-   * on. Distinct from the coarse `sessions.scope` (chat/mcp/subagent). Default
-   * in `hydrate` is the session id; subagents inherit the parent's scope so
-   * their checkpoints contribute to the parent's memory.
+   * Semantic memory scope — legacy identity for `session_episodes` recall
+   * grouping (sunset in PR4). The new `session_memories` layer is strictly
+   * per-session, so this field has no effect on PR2 recall paths but is
+   * retained until the table drops. Distinct from the coarse `sessions.scope`
+   * (chat/mcp/subagent). Default in `hydrate` is the session id; subagents
+   * inherit the parent's scope so their legacy episodes contribute to the
+   * parent's memory.
    */
   memoryScopeKey: string;
 }

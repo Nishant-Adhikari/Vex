@@ -12,13 +12,13 @@
  *     the live row's `content` with a short placeholder. Used when a bloated
  *     tool output in the tail is the sole source of context pressure.
  *
- * Transaction coordination (PR2, post-migration 008):
+ * Transaction coordination (PR2):
  *   `setRollingSummary`, `setMemoryLanguageCode`, and `archivePrefix` accept
  *   an optional `PoolClient`. When provided, they run inside the caller's
- *   transaction instead of opening their own. `executeCheckpoint` uses this
- *   to atomically apply the whole write phase (language_code + summary +
- *   episodes + archive) under a single BEGIN/COMMIT — a crash rolls back the
- *   entire set together.
+ *   transaction instead of opening their own. `executeCompactNow` (Track 1)
+ *   uses this to atomically apply the whole write phase (summary +
+ *   generation bump + compact_jobs enqueue + archive) under a single
+ *   BEGIN/COMMIT — a crash rolls back the entire set together.
  *
  * Memory language contract (PR2, migration 008):
  *   `sessions.memory_language_code` holds a per-session language marker set
@@ -124,7 +124,8 @@ export interface Session {
  *   - or the literal "und" for mixed/unclear.
  *
  * Validation lives at the code boundary (this file's
- * {@link setMemoryLanguageCode}); `knowledge_entries` and `session_episodes`
+ * {@link setMemoryLanguageCode}); `knowledge_entries` (legacy
+ * `session_episodes` is sunsetting in PR4)
  * do not own this schema. Adding a language later does not require a DB
  * migration — just new prompt cases in `extract.ts` / `merge.ts`.
  */
@@ -214,7 +215,9 @@ export async function setScope(id: string, scope: string): Promise<void> {
 }
 
 /**
- * Set the semantic memory scope key used by `session_episodes` recall.
+ * Set the semantic memory scope key — legacy `session_episodes` recall key,
+ * retained until PR4 drops the table. New `session_memories` is per-session
+ * (scope key not used) so this setter only affects the legacy read path.
  *
  * Separate from `scope` (which is coarse: `chat` / `mcp` / `subagent`). The
  * scope key is the identity that episodic recall groups on — typically the
@@ -245,8 +248,8 @@ export async function updateTokenCount(id: string, tokenCount: number): Promise<
  * `archivePrefix`.
  *
  * When `client` is provided, this runs inside the caller's transaction.
- * `executeCheckpoint` uses this to group summary + episodes + archive under
- * a single atomic write.
+ * `executeCompactNow` uses this to group summary + generation bump +
+ * compact_jobs enqueue + archive under a single atomic write.
  */
 export async function setRollingSummary(
   id: string,

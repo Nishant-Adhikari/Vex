@@ -27,12 +27,7 @@ import logger from "@utils/logger.js";
  * tool should be blocked at the current band; returns null when dispatch can
  * proceed. Bands `barrier` and `critical` block tools with `pressureSafety
  * === "mutating"`. `compact_only` tools dispatch only at those bands.
- *
- * PR2 cutover: this helper is staged but NOT invoked yet. Will be activated
- * when turn-loop wires the `compact_committed` engine signal and the legacy
- * auto-checkpoint is removed.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function checkPressureDeny(
   toolName: string,
   band: ContextUsageBand,
@@ -75,12 +70,20 @@ export async function dispatchTool(
 ): Promise<ToolResult> {
   const startTime = Date.now();
 
-  // PR2 cutover (deferred to fresh session): pressure-band hard-deny via
-  // `checkPressureDeny(call.name, context.contextUsageBand)` would block
-  // mutating tools at barrier/critical and route the agent through
-  // compact_now. Currently inert — turn-loop does not yet handle the
-  // `compact_committed` engine signal, so denying tools without a working
-  // escape would strand the agent in the 88-92% window.
+  // Pressure-band hard-deny: at barrier/critical bands, mutating tools are
+  // rejected with a synthetic error pointing the agent at compact_now. The
+  // soft filter (LLM-visible tool catalog projection) is the first layer;
+  // this is the runtime safety net for tools the model emits anyway.
+  if (context.contextUsageBand) {
+    const denied = checkPressureDeny(call.name, context.contextUsageBand);
+    if (denied) {
+      logger.info("tools.dispatch.pressure_denied", {
+        tool: call.name,
+        band: context.contextUsageBand,
+      });
+      return denied;
+    }
+  }
 
   try {
     const result = await routeToolCall(call, context);
@@ -232,8 +235,15 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
 
   // Autonomy primitives — mission wake
   loop_defer: async () => (await import("./internal/loop-defer.js")).handleLoopDefer,
-  checkpoint_handoff_prepare: async () => (await import("./internal/checkpoint-handoff.js")).handleCheckpointHandoffPrepare,
   tool_output_read: async () => (await import("./internal/tool-output-read.js")).handleToolOutputRead,
+
+  // Per-session memory layer — agent-driven recall + outstanding-item closing
+  memory_recall: async () => (await import("./internal/memory/recall.js")).handleMemoryRecall,
+  mark_outstanding_resolved: async () =>
+    (await import("./internal/memory/mark-resolved.js")).handleMarkOutstandingResolved,
+
+  // Compact primitive — agent-driven entry point for compaction at pressure
+  compact_now: async () => (await import("./internal/compact/now.js")).handleCompactNow,
 
   // Subagents — DISABLED (TODO subagent-disabled). Re-enable z registry/subagents.ts.
   // subagent_spawn: async () => (await import("./internal/subagent.js")).handleSubagentSpawn,
@@ -250,13 +260,6 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   wallet_read: async () => (await import("./internal/wallet.js")).handleWalletRead,
   wallet_send_prepare: async () => (await import("./internal/wallet.js")).handleWalletSendPrepare,
   wallet_send_confirm: async () => (await import("./internal/wallet.js")).handleWalletSendConfirm,
-
-  // PR2 cutover (deferred to fresh session): compact_now, memory_recall,
-  // mark_outstanding_resolved. Handler files exist under tools/internal/{compact,memory}
-  // and the registry definitions exist under tools/registry/{compact,memory}.ts;
-  // both are intentionally NOT wired here so the legacy auto-compact path
-  // remains the sole compaction primitive until turn-loop signal handling
-  // (compact_committed) lands.
 };
 
 async function routeInternalTool(

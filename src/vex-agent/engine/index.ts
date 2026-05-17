@@ -24,6 +24,9 @@ export { routeUserMessage, submitOperatorInstruction } from "./ingress.js";
 export { startWakeExecutor } from "./wake/executor.js";
 export type { WakeExecutorHandle, WakeDeps, ClaimedWake, ClaimedWakeOutcome } from "./wake/executor.js";
 
+export { startCompactJobsExecutor } from "./compact-jobs/executor.js";
+export type { CompactJobsExecutorHandle } from "./compact-jobs/executor.js";
+
 export {
   abortMissionRun,
   abortActiveMissionForSession,

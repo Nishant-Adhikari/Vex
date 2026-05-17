@@ -34,8 +34,11 @@ import {
 } from "@vex-agent/db/repos/compact-jobs/index.js";
 import { query } from "@vex-agent/db/client.js";
 import { embedDocument } from "@vex-agent/embeddings/client.js";
-import { insertMemories } from "@vex-agent/db/repos/session-memories/index.js";
-import { redact } from "@vex-agent/memory/redaction.js";
+import {
+  insertPreparedMemory,
+  prepareMemoryRender,
+} from "@vex-agent/db/repos/session-memories/index.js";
+import { redact, type RedactionResult } from "@vex-agent/memory/redaction.js";
 import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
 import { validateTheme, buildFallbackTheme } from "@vex-agent/memory/theme-validation.js";
 import {
@@ -70,15 +73,34 @@ export function startCompactJobsExecutor(
   let timer: NodeJS.Timeout | null = null;
   const sessionMutex = new Set<string>(); // per-session in-flight set
 
-  // Bootstrap stale recovery — handles app-crash leftovers.
-  void recoverStaleRunning(WORKER_STALE_THRESHOLD_MS).then((n) => {
-    if (n > 0) {
-      logger.info("compact-worker.stale_recovered", { count: n, workerId });
-    }
-  });
+  // Bootstrap stale recovery — handles app-crash leftovers. DB failures
+  // here are non-fatal for the executor lifecycle (next tick will retry
+  // claim), but the rejection must NOT bubble into Node's
+  // unhandledRejection trap.
+  void recoverStaleRunning(WORKER_STALE_THRESHOLD_MS)
+    .then((n) => {
+      if (n > 0) {
+        logger.info("compact-worker.stale_recovered", { count: n, workerId });
+      }
+    })
+    .catch((err) => {
+      logger.warn("compact-worker.stale_recovery_failed", {
+        workerId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
   const tick = async (): Promise<void> => {
     try {
+      // Pre-claim provider-config gate — claimNextDueJob increments
+      // attempt_count, so claiming and then throwing on missing config would
+      // burn the retry budget and prematurely escalate jobs to
+      // permanently_failed. Stay idle until env is wired (operator unlocks
+      // OPENROUTER_API_KEY / sets AGENT_MODEL → next tick claims normally).
+      if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
+        logger.warn("compact-worker.skip_no_provider_config", { workerId });
+        return;
+      }
       const job = await claimNextDueJob(workerId);
       if (!job) return;
       if (sessionMutex.has(job.sessionId)) {
@@ -133,57 +155,79 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
       job.sourceEndMessageId,
     );
     if (archivedPrefix.length === 0) {
+      // An empty range against committed source_*_message_id values means
+      // the archive write was rolled back, the messages were re-archived
+      // elsewhere, or a row range disappeared — none of which are a "0
+      // chunks" success. Marking completed would silently drop the job's
+      // implied work; treat as retryable so the next attempt re-reads the
+      // archive after any in-flight Phase II finishes, or surfaces a
+      // permanent corruption signal once attempts are exhausted.
       logger.warn("compact-worker.empty_archive_range", {
         jobId: job.id,
         sessionId: job.sessionId,
         sourceStartMessageId: job.sourceStartMessageId,
         sourceEndMessageId: job.sourceEndMessageId,
       });
-      await markCompleted(job.id, workerId, {
-        chunksInserted: 0,
-        chunksRejectedByExclusion: 0,
-        chunksRejectedByRedaction: 0,
-        inferenceProvider: "openrouter",
-        inferenceModel: process.env.AGENT_MODEL ?? "unknown",
-        costUsd: 0,
-      });
-      return;
+      throw new Error("compact_worker_empty_archive_range");
     }
 
     const chunkerOutput = await callChunkerLLM(job, archivedPrefix);
 
     let inserted = 0;
     let rejectedExclusion = 0;
-    let rejectedRedaction = 0;
 
     for (const raw of chunkerOutput.slice(0, MAX_CHUNKS_PER_COMPACT)) {
-      const themeResult = validateTheme(raw.theme);
-      const theme = themeResult.ok
-        ? themeResult.theme
-        : buildFallbackTheme({
-            entities: raw.entities ?? [],
-            protocols: raw.protocols ?? [],
-            errorClasses: raw.error_classes ?? [],
-            chains: raw.chains ?? [],
-            tasks: raw.tasks ?? [],
-            generation: job.checkpointGeneration,
-          });
-      const themeSource = themeResult.ok ? "chunker" : "fallback";
-
-      // Redaction across all narrative + structured fields.
+      // Redaction across ALL generated string fields the chunker emitted —
+      // narrative + outstanding items + entities/protocols/error_classes/
+      // chains/tasks/theme. Anything that lands in the row's structured
+      // columns (or in the body_md / embedded text) must be redacted before
+      // DB write so secrets and address/tx identifiers never reach storage.
+      const themeR = redact(raw.theme ?? "");
       const r1 = redact(raw.happened_md ?? "");
       const r2 = redact(raw.did_md ?? "");
       const r3 = redact(raw.tried_md ?? "");
       const rOuts = (raw.outstanding_items ?? []).slice(0, MAX_OUTSTANDING_ITEMS_PER_CHUNK).map(
         (t) => redact(t),
       );
+      const entitiesR = redactStringArray(raw.entities ?? []);
+      const protocolsR = redactStringArray(raw.protocols ?? []);
+      const errorClassesR = redactStringArray(raw.error_classes ?? []);
+      const chainsR = redactStringArray(raw.chains ?? []);
+      const tasksR = redactStringArray(raw.tasks ?? []);
+
       const totalHard =
-        r1.hardRedactCount + r2.hardRedactCount + r3.hardRedactCount
-        + rOuts.reduce((acc, r) => acc + r.hardRedactCount, 0);
+        themeR.hardRedactCount
+        + r1.hardRedactCount + r2.hardRedactCount + r3.hardRedactCount
+        + rOuts.reduce((acc, r) => acc + r.hardRedactCount, 0)
+        + entitiesR.hardCount + protocolsR.hardCount + errorClassesR.hardCount
+        + chainsR.hardCount + tasksR.hardCount;
+
+      // Validate the REDACTED theme — hard-redact placeholders would fail
+      // slug validation anyway, but the build-fallback path still needs
+      // sanitized inputs so a leaked identifier doesn't survive via the
+      // fallback theme construction.
+      const themeResult = validateTheme(themeR.text);
+      const theme = themeResult.ok
+        ? themeResult.theme
+        : buildFallbackTheme({
+            entities: entitiesR.values,
+            protocols: protocolsR.values,
+            errorClasses: errorClassesR.values,
+            chains: chainsR.values,
+            tasks: tasksR.values,
+            generation: job.checkpointGeneration,
+          });
+      const themeSource = themeResult.ok ? "chunker" : "fallback";
 
       // Exclusion check on the redacted body — if it's mostly live state,
-      // drop the chunk.
-      const bodyForExclusion = `${r1.text}\n${r2.text}\n${r3.text}`;
+      // drop the chunk. Outstanding items ARE part of `body_md` (rendered
+      // by `renderBodyMd` + embedded into pgvector), so a chunk with bland
+      // narrative sections but live-state-only outstanding items would
+      // otherwise sneak past the rejection rule and pollute recall. Include
+      // the redacted outstanding text in the scan input. (codex P1 — round 2.)
+      const outstandingTextForExclusion = rOuts.map((r) => r.text).join("\n");
+      const bodyForExclusion =
+        `${r1.text}\n${r2.text}\n${r3.text}\n${outstandingTextForExclusion}`;
       const exclusionScan = scanLiveState(bodyForExclusion);
       if (exclusionScan.rejected) {
         rejectedExclusion += 1;
@@ -205,75 +249,71 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
         });
       }
 
-      // Prepare row + embed exact body bytes (codex contract: embedding
-      // input must match persisted body_md). insertMemories internally
-      // generates outstanding item UUIDs and renders body_md from the
-      // same inputs we pass; the redacted body it renders is what we
-      // embed, by passing the already-redacted strings.
-      const inputForRepo = {
-        sessionId: job.sessionId,
-        checkpointGeneration: job.checkpointGeneration,
+      // Exact-body embedding contract: pre-render outstanding items + body_md
+      // + content_hash ONCE via `prepareMemoryRender`, embed the rendered
+      // body, then persist via `insertPreparedMemory` so the bytes embedded
+      // are the bytes stored. Without this split the repo would regenerate
+      // fresh outstanding-item UUIDs/timestamps and the embedded body would
+      // describe a body the DB no longer contains.
+      const prep = prepareMemoryRender({
         theme,
-        themeSource: themeSource as "chunker" | "fallback",
-        entities: raw.entities ?? [],
-        protocols: raw.protocols ?? [],
-        errorClasses: raw.error_classes ?? [],
-        chains: raw.chains ?? [],
-        tasks: raw.tasks ?? [],
         happenedMd: r1.text,
         didMd: r2.text,
         triedMd: r3.text,
         outstandingTexts: rOuts.map((r) => r.text),
-        sourceStartMessageId: job.sourceStartMessageId,
-        sourceEndMessageId: job.sourceEndMessageId,
-        languageCode: null,
-        inferenceModel: process.env.AGENT_MODEL ?? null,
-        embeddingModel: "pending", // overwritten after embed
-        embeddingDim: 0,
-        embedding: [] as number[],
-      };
-
-      // Render body_md the same way the repo does (deterministic), embed it,
-      // then insert with the embedding produced from the exact body. The
-      // repo's insertMemories re-renders the same body internally (the
-      // function is deterministic given the same inputs), so the embedded
-      // text equals the persisted body_md.
-      const { renderBodyMd, newOutstandingItem } = await import(
-        "@vex-agent/db/repos/session-memories/types.js"
-      );
-      const renderedItems = inputForRepo.outstandingTexts.map(newOutstandingItem);
-      const bodyMd = renderBodyMd({
-        happenedMd: inputForRepo.happenedMd,
-        didMd: inputForRepo.didMd,
-        triedMd: inputForRepo.triedMd,
-        outstandingItems: renderedItems,
       });
-      const embedded = await embedDocument(theme, bodyMd);
+      const embedded = await embedDocument(theme, prep.bodyMd);
 
-      // Insert via the existing path (will re-render body_md from the same
-      // narrative columns + new outstanding-item UUIDs). The body_md it
-      // computes will share the same narrative core; outstanding item ids
-      // differ between embed-time and insert-time but content_hash excludes
-      // outstanding_items per PR1 contract, so dedup still works.
-      const results = await insertMemories([
+      const result = await insertPreparedMemory(
         {
-          ...inputForRepo,
+          sessionId: job.sessionId,
+          checkpointGeneration: job.checkpointGeneration,
+          theme,
+          themeSource: themeSource as "chunker" | "fallback",
+          entities: entitiesR.values,
+          protocols: protocolsR.values,
+          errorClasses: errorClassesR.values,
+          chains: chainsR.values,
+          tasks: tasksR.values,
+          happenedMd: r1.text,
+          didMd: r2.text,
+          triedMd: r3.text,
+          outstandingTexts: rOuts.map((r) => r.text),
+          sourceStartMessageId: job.sourceStartMessageId,
+          sourceEndMessageId: job.sourceEndMessageId,
+          languageCode: null,
+          inferenceModel: process.env.AGENT_MODEL ?? null,
           embedding: embedded.embedding,
           embeddingModel: embedded.providerModel,
           embeddingDim: embedded.embedding.length,
         },
-      ]);
-      if (results[0]?.inserted) inserted += 1;
+        prep,
+      );
+      if (result.inserted) inserted += 1;
     }
 
-    await markCompleted(job.id, workerId, {
+    const completedOk = await markCompleted(job.id, workerId, {
       chunksInserted: inserted,
       chunksRejectedByExclusion: rejectedExclusion,
-      chunksRejectedByRedaction: rejectedRedaction,
+      // PR2 never drops a chunk on redaction count alone — hard-redact
+      // placeholders sanitize in-place. The audit column stays available
+      // (schema-preserved) and reports 0 here; a redaction-threshold drop
+      // policy can populate it in a follow-up PR.
+      chunksRejectedByRedaction: 0,
       inferenceProvider: "openrouter",
       inferenceModel: process.env.AGENT_MODEL ?? "unknown",
       costUsd: null, // cost telemetry deferred to PR3
     });
+    if (!completedOk) {
+      // Owner-check failed — another worker recovered the claim mid-run or
+      // the row was already terminated. Log so operator can spot the race;
+      // no retry, the chunks are already in the DB so the work is durable.
+      logger.warn("compact-worker.completion_claim_lost", {
+        jobId: job.id,
+        sessionId: job.sessionId,
+        workerId,
+      });
+    }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const backoff = TRACK2_RETRY_BACKOFF_BASE_MS * Math.max(1, job.attemptCount);
@@ -291,6 +331,31 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
 }
 
 // ── Archived prefix loading ──────────────────────────────────────
+
+/**
+ * Apply `redact` to every element of a string array and aggregate the hard-
+ * redact counts. Used for the structured columns the chunker emits
+ * (entities / protocols / error_classes / chains / tasks). Anything that
+ * tripped a hard-redact pattern (BIP39, private keys, JWT, API keys) is
+ * replaced with a placeholder; mask patterns (addresses, tx hashes) are
+ * masked. Both flavours are reflected in the returned counts.
+ */
+function redactStringArray(values: readonly string[]): {
+  values: string[];
+  hardCount: number;
+  maskCount: number;
+} {
+  const out: string[] = [];
+  let hardCount = 0;
+  let maskCount = 0;
+  for (const v of values) {
+    const r: RedactionResult = redact(v);
+    out.push(r.text);
+    hardCount += r.hardRedactCount;
+    maskCount += r.maskCount;
+  }
+  return { values: out, hardCount, maskCount };
+}
 
 async function loadArchivedPrefix(
   sessionId: string,
@@ -336,17 +401,21 @@ async function callChunkerLLM(
 ): Promise<ChunkerChunk[]> {
   // Use the same env-driven OpenRouter constructor the in-turn provider
   // uses. Worker calls it on-demand so settings changes after restart
-  // pick up the new model. If env is missing, we skip with a warning.
+  // pick up the new model. If env is missing or the loader can't produce a
+  // config, we THROW (not silently return []) so `processJob`'s catch leaves
+  // the outbox row in `pending` with a backoff for retry. Returning an
+  // empty array here would let `markCompleted(0 chunks)` silently lose
+  // the job — codex flagged this as a permanent-loss bug.
   if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
     logger.warn("compact-worker.provider_config_missing", { jobId: job.id });
-    return [];
+    throw new Error("compact_worker_provider_config_missing");
   }
   const { OpenRouterProvider } = await import("@vex-agent/inference/openrouter.js");
   const provider = new OpenRouterProvider();
   const config = await provider.loadConfig();
   if (!config) {
     logger.warn("compact-worker.provider_config_load_failed", { jobId: job.id });
-    return [];
+    throw new Error("compact_worker_provider_config_load_failed");
   }
 
   const transcript = archivedPrefix

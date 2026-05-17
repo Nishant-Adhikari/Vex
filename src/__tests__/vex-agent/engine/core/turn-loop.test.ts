@@ -43,21 +43,25 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   getSession: (...a: unknown[]) => mockGetSessionForLoop(...a),
 }));
 
-const mockExecuteCheckpoint = vi.fn().mockResolvedValue({
-  mode: "prefix",
-  summary: "new rolling summary",
-  episodeIds: [],
+const mockForcedFallback = vi.fn().mockResolvedValue({
+  kind: "committed",
+  generation: 1,
+  archivedMessages: 3,
+  jobId: 7,
+  redactionCounts: { hard: 0, mask: 0 },
+  planMode: "prefix",
 });
 
-vi.mock("@vex-agent/engine/core/checkpoint.js", async () => {
-  const actual = await vi.importActual<typeof import("../../../../vex-agent/engine/core/checkpoint.js")>(
-    "@vex-agent/engine/core/checkpoint.js",
-  );
-  return {
-    ...actual,
-    executeCheckpoint: (...a: unknown[]) => mockExecuteCheckpoint(...a),
-  };
-});
+vi.mock("@vex-agent/engine/compact-jobs/forced-fallback.js", () => ({
+  maybeRunForcedCompactFallback: (...a: unknown[]) => mockForcedFallback(...a),
+}));
+
+// PR2 cutover: the post-compact resume packet is fetched from DB inside the
+// turn loop via `buildResumePacket`. The implementation runs SQL queries via
+// `@vex-agent/db/client.js` (already mocked above) and falls back to "" on
+// any failure / empty result, so the default mocks keep the resume packet
+// empty by design — tests that exercise the bridge counter add their own
+// db client mocks to inject content.
 
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   enqueue: vi.fn(),
@@ -84,10 +88,13 @@ describe("turn-loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 0 });
-    mockExecuteCheckpoint.mockResolvedValue({
-      mode: "prefix",
-      summary: "new rolling summary",
-      episodeIds: [],
+    mockForcedFallback.mockResolvedValue({
+      kind: "committed",
+      generation: 1,
+      archivedMessages: 3,
+      jobId: 7,
+      redactionCounts: { hard: 0, mask: 0 },
+      planMode: "prefix",
     });
   });
 
@@ -595,32 +602,10 @@ describe("turn-loop", () => {
     });
   });
 
-  // ── Checkpoint gating ──────────────────────────────────────
+  // ── Pressure gating (PR2 cutover) ────────────────────────────
 
-  describe("checkpoint gate", () => {
-    it("fires executeCheckpoint after a tool-only batch when token count exceeds threshold", async () => {
-      mockGetSessionForLoop.mockResolvedValue({ tokenCount: 120_000 });
-
-      const provider = makeProvider([
-        { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "x" } }] },
-        { content: "wrapped up" },
-      ]);
-      mockDispatchTool.mockResolvedValue({ success: true, output: "huge-output" });
-
-      await runTurnLoop(
-        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
-        defaultLoopConfig,
-      );
-
-      // Must have fired at least once on the tool-only batch branch (before the
-      // text-response branch would have fired it again).
-      expect(mockExecuteCheckpoint).toHaveBeenCalled();
-      const [[sessionId, scopeKey]] = mockExecuteCheckpoint.mock.calls;
-      expect(sessionId).toBe("session-1");
-      expect(scopeKey).toBe("session-1");
-    });
-
-    it("does not fire executeCheckpoint when token count is below threshold", async () => {
+  describe("pressure gating", () => {
+    it("does NOT trigger forced compact fallback when band is normal", async () => {
       mockGetSessionForLoop.mockResolvedValue({ tokenCount: 1_000 });
 
       const provider = makeProvider([{ content: "done" }]);
@@ -630,46 +615,153 @@ describe("turn-loop", () => {
         defaultLoopConfig,
       );
 
-      expect(mockExecuteCheckpoint).not.toHaveBeenCalled();
+      expect(mockForcedFallback).not.toHaveBeenCalled();
     });
 
-    it("noop checkpoint: [Engine: continue] fires in SAME iteration, not the next", async () => {
-      // Load-bearing invariant: when maybeRunCheckpoint sees `mode: "noop"`
-      // it must return false so the text branch falls through to the
-      // mission-continue injection — NOT short-circuit with `continue`.
-      // `maxIterations: 1` is deliberate: if continue appears in `order`,
-      // it cannot have come from a later iteration, so it must have fired
-      // in the SAME iteration as the noop checkpoint.
-      const order: string[] = [];
-      mockGetSessionForLoop.mockResolvedValue({ tokenCount: 120_000 });
-      mockExecuteCheckpoint.mockImplementationOnce(async () => {
-        order.push("ckpt");
-        return { mode: "noop" as const, summary: null, episodeIds: [] };
-      });
-      mockAddEngineMessage.mockImplementationOnce(async () => {
-        order.push("continue");
-      });
-
-      const chatCompletion = vi.fn().mockImplementationOnce(async () => {
-        order.push("turn");
-        return {
-          content: "assessing",
-          toolCalls: null,
-          usage: { promptTokens: 120_000, completionTokens: 200, cachedTokens: 0, reasoningTokens: 0 },
-        };
-      });
-      const provider = {
-        chatCompletion,
-        calculateCost: vi.fn().mockReturnValue({ totalCost: 0.001, currency: "USD" }),
-      };
+    it("fires forced compact fallback at the top of the iteration when band is critical", async () => {
+      // contextLimit = 128_000; critical threshold = 0.92 → 117_760 tokens.
+      // Initial token count of 120_000 triggers critical at iter top.
+      const provider = makeProvider([{ content: "post-compact reply" }]);
 
       await runTurnLoop(
         makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
-        [], null, 0, provider as any, makeConfig() as any, [],
+        [], null, 120_000, provider as any, makeConfig() as any, [],
         { ...defaultLoopConfig, maxIterations: 1 },
       );
 
-      expect(order).toEqual(["turn", "ckpt", "continue"]);
+      expect(mockForcedFallback).toHaveBeenCalledTimes(1);
+      expect(mockForcedFallback).toHaveBeenCalledWith("session-1");
+      // Post-compact bookkeeping: mission_runs.last_checkpoint_at bumped.
+      expect(mockSetLastCheckpoint).toHaveBeenCalledWith("run-1");
+    });
+
+    it("after committed forced fallback the next provider call sees the post-compact band, not the stale critical band (P1 #2 regression)", async () => {
+      // Start at critical (120_000 / 128_000 > 0.92). After forced fallback
+      // commits, the handlePostCompactBookkeeping reset currentTokenCount=0
+      // and the loop recomputes turnBand to normal. Without that recompute,
+      // `buildToolsForBand("critical")` would be called and the model would
+      // see the restricted (compact_only + read_only + safe_at_barrier)
+      // catalog AND the directive critical-pressure banner on the very
+      // first post-compact turn, wasting a turn.
+      const buildToolsForBand = vi.fn((_band: ContextUsageBand) => [] as ToolDefinition[]);
+
+      const provider = makeProvider([{ content: "post-compact reply" }]);
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 120_000, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1, buildToolsForBand },
+      );
+
+      // Forced fallback fired and committed.
+      expect(mockForcedFallback).toHaveBeenCalledTimes(1);
+      // buildToolsForBand was called exactly once for the post-fallback turn.
+      expect(buildToolsForBand).toHaveBeenCalledTimes(1);
+      // CRITICAL invariant: the band passed to buildToolsForBand was NOT
+      // critical — it must be the recomputed post-compact band ("normal"
+      // because currentTokenCount was reset to 0 inside the bookkeeping).
+      const [bandUsed] = buildToolsForBand.mock.calls[0]!;
+      expect(bandUsed).toBe("normal");
+    });
+
+    it("two consecutive forced-fallback noops at critical escalate to compact_unable_at_critical", async () => {
+      mockForcedFallback.mockResolvedValue({ kind: "noop", reason: "no_compactable" });
+
+      // Mission-mode provider that stays text-only so each iter loops back
+      // through the band check at the top and re-triggers forced fallback.
+      const provider = {
+        chatCompletion: vi.fn().mockResolvedValue({
+          content: "still working",
+          toolCalls: null,
+          usage: {
+            promptTokens: 120_000,
+            completionTokens: 200,
+            cachedTokens: 0,
+            reasoningTokens: 0,
+          },
+        }),
+        calculateCost: vi.fn().mockReturnValue({ totalCost: 0.001, currency: "USD" }),
+      };
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 120_000, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 5 },
+      );
+
+      expect(result.stopReason).toBe("compact_unable_at_critical");
+      expect(mockForcedFallback).toHaveBeenCalledTimes(2);
+      // Mission run flipped to paused_error with the right reason.
+      const lastUpdate = mockUpdateStatus.mock.calls.findLast(
+        (c: unknown[]) => c[0] === "run-1" && c[1] === "paused_error",
+      );
+      expect(lastUpdate).toBeDefined();
+      expect(lastUpdate![2]).toBe("compact_unable_at_critical");
+    });
+
+    it("compact_committed engine signal drains remaining batch tool calls with synthetic results", async () => {
+      // Three tools in the batch; the SECOND one returns compact_committed.
+      // Expected: first dispatched normally; second dispatched (returns signal);
+      // third NOT dispatched but persisted with a synthetic
+      // `batch_aborted_by_compact` tool_result so the assistant.tool_calls JSONB
+      // stays balanced after reload.
+      let dispatchCount = 0;
+      mockDispatchTool.mockImplementation(async () => {
+        dispatchCount++;
+        if (dispatchCount === 1) {
+          return { success: true, output: "wallet-read-result" };
+        }
+        if (dispatchCount === 2) {
+          return {
+            success: true,
+            output: "compact committed",
+            engineSignal: {
+              type: "compact_committed",
+              reason: "context_pressure_compact",
+              summary: "compacted",
+              generation: 2,
+              jobId: 11,
+            },
+          };
+        }
+        throw new Error("third tool call must not be dispatched");
+      });
+
+      const provider = makeProvider([
+        {
+          toolCalls: [
+            { id: "tc-1", name: "wallet_read", arguments: {} },
+            { id: "tc-2", name: "compact_now", arguments: { conversation_summary: "..." } },
+            { id: "tc-3", name: "knowledge_write", arguments: {} },
+          ],
+        },
+        { content: "post-compact reply" },
+      ]);
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 50_000, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 2 },
+      );
+
+      expect(mockDispatchTool).toHaveBeenCalledTimes(2);
+
+      // The synthetic batch_aborted result for tc-3 is persisted via addMessage
+      // with role="tool" alongside the other two.
+      const toolMessages = mockAddMessage.mock.calls.filter(
+        (c: unknown[]) => (c[1] as { role?: string })?.role === "tool",
+      );
+      expect(toolMessages.length).toBe(3);
+      const abortedMsg = toolMessages.find(
+        (c: unknown[]) => (c[1] as { toolCallId?: string })?.toolCallId === "tc-3",
+      );
+      expect(abortedMsg).toBeDefined();
+      expect((abortedMsg![1] as { content: string }).content).toContain(
+        "batch_aborted_by_compact",
+      );
+
+      // Post-compact bookkeeping: mission_runs.last_checkpoint_at bumped.
+      expect(mockSetLastCheckpoint).toHaveBeenCalledWith("run-1");
     });
 
     it("uses the latest promptTokens for tool dispatch context band", async () => {

@@ -12,8 +12,9 @@
  *     the sole source of context pressure. We DON'T archive the prefix
  *     (there's nothing compactable left), we fork-copy just the bloated row
  *     and replace its live content with a short placeholder.
- *   - `noop`: nothing to do. The caller should log and back off — the in-
- *     memory cooldown in `executeCheckpoint` prevents infinite retries.
+ *   - `noop`: nothing to do. The caller (`executeCompactNow`) logs and
+ *     returns `{kind: 'noop'}`; the runtime forced-fallback's noop counter
+ *     escalates after `COMPACT_MAX_CONSECUTIVE_NOOPS` consecutive misses.
  */
 
 import { selectArchivePrefix } from "@vex-agent/db/repos/messages.js";

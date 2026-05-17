@@ -63,18 +63,37 @@ export async function executeProtocolTool(
     };
   }
 
-  // PR2 cutover (deferred to fresh session): pressure-barrier guard for
-  // protocol tools. Will reject mutating protocol calls at band ≥ barrier
-  // (preview / dryRun pass through via `isPreviewExecution`). Inert until
-  // turn-loop signal handling lands so the agent has a working compact_now
-  // escape path.
+  const params = request.params ?? {};
+
+  // Pressure-barrier guard for protocol tools — at band ≥ barrier, mutating
+  // protocol calls are blocked unless they are preview/dryRun. The agent must
+  // call `compact_now` first to clear the barrier. Same semantics as the
+  // dispatcher's hard-deny for internal mutating tools.
+  if (
+    context.contextUsageBand
+    && manifest.mutating
+    && !isPreviewExecution(request.toolId, params)
+  ) {
+    const band = context.contextUsageBand;
+    if (band === "barrier" || band === "critical") {
+      logger.info("protocol.execute.pressure_denied", {
+        toolId: request.toolId,
+        band,
+      });
+      return {
+        success: false,
+        output:
+          `${request.toolId} is blocked at context pressure ${band}. `
+          + `Call compact_now first to compact the conversation; the next turn after compaction restores the full tool set.`,
+      };
+    }
+  }
 
   // Validate params — presence (required) and runtime type (§1f).
   // Pre-PR1 runtime only checked `required`; that left handlers defending
   // against bad types with `as-any` casts on SDK enum params. Rejecting the
   // call here gives the LLM a clear error instead of silently coercing via
   // `str()` / `num()` readers inside each handler.
-  const params = request.params ?? {};
   for (const param of manifest.params) {
     const value = params[param.key];
     const missing = value === undefined || value === null || value === "";

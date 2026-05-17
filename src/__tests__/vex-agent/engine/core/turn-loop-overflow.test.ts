@@ -51,15 +51,22 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   getSession: vi.fn().mockResolvedValue({ tokenCount: 0 }),
 }));
 
-vi.mock("@vex-agent/engine/core/checkpoint.js", async () => {
-  const actual = await vi.importActual<typeof import("../../../../vex-agent/engine/core/checkpoint.js")>(
-    "../../../../vex-agent/engine/core/checkpoint.js",
-  );
-  return {
-    ...actual,
-    executeCheckpoint: vi.fn().mockResolvedValue({ mode: "noop", summary: null, episodeIds: [] }),
-  };
-});
+// PR2 cutover: legacy `engine/core/checkpoint.js` (executeCheckpoint /
+// maybeRunCheckpoint) was removed. Turn-loop no longer auto-compacts on
+// token threshold; compaction is agent-driven via `compact_now` or runtime
+// forced fallback at `critical` band (covered in separate tests). For this
+// overflow-focused test we only need to keep the dispatcher / messages /
+// sessions mocks above to exercise the tool-output blob fallback path.
+
+vi.mock("@vex-agent/engine/compact-jobs/forced-fallback.js", () => ({
+  // Default to noop so overflow tests do not accidentally trigger a forced
+  // compact write — the overflow assertions care about tool-result blob
+  // persistence, not compaction.
+  maybeRunForcedCompactFallback: vi.fn().mockResolvedValue({
+    kind: "noop",
+    reason: "no_compactable",
+  }),
+}));
 
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   enqueue: (...a: unknown[]) => mockEnqueueApproval(...a),

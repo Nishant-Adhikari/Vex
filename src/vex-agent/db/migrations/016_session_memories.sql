@@ -83,7 +83,11 @@ CREATE TABLE IF NOT EXISTS session_memories (
   embedding_model                 TEXT NOT NULL,
   embedding_dim                   INTEGER NOT NULL,
 
-  -- Dedup key: sha256(theme + '\n' + body_md)
+  -- Dedup key: sha256(theme + happened_md + did_md + tried_md) — length-
+  -- prefixed encoding. Outstanding items and body_md intentionally EXCLUDED
+  -- (see types.ts contract): outstanding mutates via markOutstandingResolved
+  -- and including it would break the (session_id, content_hash) partial
+  -- unique invariant on every resolution.
   content_hash                    CHAR(64) NOT NULL,
 
   created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

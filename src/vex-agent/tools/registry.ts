@@ -21,7 +21,7 @@ import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 /**
  * Session-aware context for tool surface projection. Built by engine runners
  * before every provider call so `getOpenAITools` can gate session-scoped
- * tools (loop_defer, checkpoint_handoff_prepare, tool_output_read).
+ * tools (loop_defer, tool_output_read, compact_now).
  *
  * `permission` and `sessionKind` are immutable per session; the former
  * controls approval bypass on mutating tools, the latter controls
@@ -72,12 +72,8 @@ import { AUTONOMY_TOOLS } from "./registry/autonomy.js";
 import { SUBAGENT_TOOLS } from "./registry/subagents.js";
 import { EVM_TOOLS } from "./registry/evm.js";
 import { WALLET_TOOLS } from "./registry/wallet.js";
-// PR2 staging: COMPACT_TOOLS + MEMORY_TOOLS exist on disk (./registry/compact.js
-// + ./registry/memory.js) but are NOT registered into the TOOLS array yet.
-// The cutover PR (turn-loop signal handling + legacy delete) will both
-// register these tools AND remove the legacy auto-compact path atomically.
-// Importing them as dormant prevents the LLM from seeing tools it cannot
-// safely use (compact_committed signal not yet handled by turn-loop).
+import { COMPACT_TOOLS } from "./registry/compact.js";
+import { MEMORY_TOOLS } from "./registry/memory.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. `VEX_TOOLS` (self-documentation) come first so the
@@ -98,7 +94,8 @@ const TOOLS: readonly ToolDef[] = [
   ...SUBAGENT_TOOLS,
   ...EVM_TOOLS,
   ...WALLET_TOOLS,
-  // PR2 cutover (deferred to fresh session): ...COMPACT_TOOLS, ...MEMORY_TOOLS
+  ...COMPACT_TOOLS,
+  ...MEMORY_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
@@ -151,8 +148,33 @@ export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
     .filter(t => !t.excludeRoles?.includes(ctx.role))
     .filter(t => passesVisibility(t.visibility, ctx))
+    .filter(t => passesPressureSafety(t, ctx.contextUsageBand))
     .filter(t => isVisibleOnSurface(t, "agent"));
   return toOpenAITools(filtered);
+}
+
+/**
+ * Catalog-level pressure-safety filter — the soft layer that keeps the
+ * LLM-visible tool catalog consistent with the dispatcher's hard-deny.
+ *
+ * At pressure barrier+ (`barrier` or `critical`), the agent's full mutating
+ * surface is restricted — only `read_only`, `safe_at_barrier`, and
+ * `compact_only` tools are usable. Showing `mutating` tools in the catalog
+ * at those bands would invite the model to emit calls the dispatcher then
+ * rejects with the deny error, wasting a turn and confusing the model. The
+ * inverse also holds: `compact_only` tools (currently only `compact_now`)
+ * are NOT useful below barrier, where there is no compactable pressure.
+ *
+ * Tools without `pressureSafety` declared default to "mutating" via the
+ * required-field invariant in `ToolDef`, so undefined cases cannot reach
+ * here — the compiler enforced classification at registration time.
+ */
+function passesPressureSafety(tool: ToolDef, band: ContextUsageBand): boolean {
+  const safety = tool.pressureSafety;
+  const atBarrier = band === "barrier" || band === "critical";
+  if (atBarrier && safety === "mutating") return false;
+  if (!atBarrier && safety === "compact_only") return false;
+  return true;
 }
 
 /**
@@ -218,7 +240,7 @@ function passesVisibility(
  * everywhere else. The MCP server is a passive bridge — it surfaces the
  * `parent`-role view of tools (no subagent child-only tools), drops anything
  * marked `surface: "agent"` (e.g. `mission_stop`, `loop_defer`,
- * `checkpoint_handoff_prepare`, `tool_output_read` — Vex Agent runtime
+ * `tool_output_read`, `compact_now` — Vex Agent runtime
  * concepts that the MCP host cannot drive), and hard-excludes any name
  * starting with `subagent_` as defense in depth (today these are already
  * filtered by `excludeRoles: ["subagent"]` for child-only ones, but

@@ -112,7 +112,10 @@ describe("local shell session-host", () => {
   });
 
   it("summarizes mission, approvals, token usage, and context pressure", async () => {
-    mockGetSession.mockResolvedValueOnce(makeSession({ tokenCount: 104_000 }));
+    // 110_400 / 128_000 = 86.25% → above PR2 cutover warning threshold (0.85),
+    // below barrier (0.88). Stays in the "warning" band so the assertion
+    // exercises the non-trivial banner pathway end-to-end.
+    mockGetSession.mockResolvedValueOnce(makeSession({ tokenCount: 110_400 }));
     mockGetPending.mockResolvedValueOnce([
       { sessionId: "session-1" },
       { sessionId: "other-session" },
@@ -138,9 +141,9 @@ describe("local shell session-host", () => {
         lastRequestAt: "2026-05-03T08:15:00.000Z",
       },
       context: {
-        promptTokens: 104_000,
+        promptTokens: 110_400,
         limit: 128_000,
-        percent: 81.25,
+        percent: 86.25,
         band: "warning",
       },
     });

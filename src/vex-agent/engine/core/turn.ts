@@ -10,25 +10,24 @@ import type { InferenceProvider, InferenceConfig, ProviderMessage, ParsedToolCal
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
 import { formatActiveKnowledgeBlock } from "../prompts/knowledge.js";
-import { formatSessionEpisodeRecallBlock } from "../prompts/session-memory.js";
-import { effectiveRecallSeed, type LastEngineMessageHint } from "./recall-seed.js";
+import { buildKnowledgeStateBanner } from "../prompts/knowledge-state.js";
+import { buildMemoryStateBanner } from "../prompts/memory-state.js";
+import { sanitizeForSystemPrompt } from "../prompts/sanitize.js";
 import { repairOrphanedToolCalls } from "./transcript-integrity.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
-import * as episodesRepo from "@vex-agent/db/repos/session-episodes.js";
-import * as checkpointHandoffsRepo from "@vex-agent/db/repos/checkpoint-handoffs.js";
-import * as missionsRepo from "@vex-agent/db/repos/missions.js";
-import { embedQuery } from "@vex-agent/embeddings/client.js";
+import { getSessionMemoryStats } from "@vex-agent/db/repos/session-memories/index.js";
 import {
   ACTIVE_KNOWLEDGE_ENTRY_LIMIT,
   KNOWN_KINDS_LIMIT,
 } from "@vex-agent/knowledge/policy.js";
+import {
+  KNOWLEDGE_BANNER_TOP_KINDS_LIMIT,
+  MEMORY_BANNER_RECENT_THEMES_LIMIT,
+} from "@vex-agent/memory/policy.js";
 import logger from "@utils/logger.js";
-
-const SESSION_EPISODE_RECALL_TOPK = 5;
-const SESSION_EPISODE_RECALL_MIN_SIMILARITY = 0.25;
 
 export interface SingleTurnResult {
   /** Text content from model — null when only tool calls. */
@@ -61,42 +60,60 @@ export async function executeTurn(
   tools: ToolDefinition[],
   promptOptions: PromptStackOptions = {},
 ): Promise<SingleTurnResult> {
-  // Pre-fetch Active Knowledge inputs (hot context entries + known kinds taxonomy).
-  // Both queries are indexed and cheap; failure here is non-fatal — we just render
-  // an empty Active Knowledge block instead of crashing the turn.
+  // Pre-fetch Active Knowledge inputs (hot context entries + known kinds taxonomy
+  // + active count for the state banner). All four queries are indexed and cheap;
+  // failure here is non-fatal — we just render an empty Active Knowledge block
+  // and an empty knowledge-state banner instead of crashing the turn.
   let activeKnowledgeBlock = "";
+  let knowledgeStateBanner = "";
   try {
-    const [activeEntries, knownKinds] = await Promise.all([
+    const [activeEntries, knownKinds, activeCount] = await Promise.all([
       knowledgeRepo.listActiveForHotContext({ limit: ACTIVE_KNOWLEDGE_ENTRY_LIMIT }),
       knowledgeRepo.listKnownKinds({ limit: KNOWN_KINDS_LIMIT }),
+      knowledgeRepo.countActiveHotContextEntries(),
     ]);
     activeKnowledgeBlock = formatActiveKnowledgeBlock(activeEntries, knownKinds);
+    knowledgeStateBanner = buildKnowledgeStateBanner({
+      activeCount,
+      topKinds: knownKinds.slice(0, KNOWLEDGE_BANNER_TOP_KINDS_LIMIT),
+    });
   } catch (err) {
     logger.warn("turn.active_knowledge.fetch_failed", {
       error: err instanceof Error ? err.message : String(err),
     });
   }
 
-  // Pre-fetch session episode recall. The query embeds the last user input
-  // directly in its native language — EmbeddingGemma is multilingual (100+
-  // languages, MTEB Multilingual v2: 61.15 @ 768d) so we don't normalize to
-  // English first. Failure on either embed or DB recall is non-fatal — an
-  // empty block just omits the system message.
-  const sessionEpisodeRecallBlock = await fetchSessionEpisodeRecallBlock(
-    context,
-    context.memoryScopeKey,
-    existingMessages,
-  );
+  // Pre-fetch per-session narrative-memory stats for the memory-state banner.
+  // Single CTE round-trip — `getSessionMemoryStats` returns activeCount,
+  // compactCount (from sessions.checkpoint_generation), recentThemes and
+  // unresolvedOutstandingCount in one query. Failure → empty banner.
+  let memoryStateBanner = "";
+  try {
+    const memStats = await getSessionMemoryStats(
+      context.sessionId,
+      MEMORY_BANNER_RECENT_THEMES_LIMIT,
+    );
+    memoryStateBanner = buildMemoryStateBanner(memStats);
+  } catch (err) {
+    logger.warn("turn.memory_state.fetch_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
-  // Build prompt
-  const promptLayers = buildPromptStack(context, { ...promptOptions, activeKnowledgeBlock });
+  // Build prompt — banners passed through promptOptions; the caller (turn-loop)
+  // may have already supplied `contextPressureBanner` and `resumePacket`.
+  const promptLayers = buildPromptStack(context, {
+    ...promptOptions,
+    activeKnowledgeBlock,
+    knowledgeStateBanner,
+    memoryStateBanner,
+  });
   const systemPrompt = promptLayers.join("\n\n---\n\n");
 
   // Convert to provider format
   const providerMessages = buildProviderMessages(
     systemPrompt,
     summary,
-    sessionEpisodeRecallBlock,
     existingMessages,
   );
 
@@ -143,133 +160,9 @@ export async function executeTurn(
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-async function fetchSessionEpisodeRecallBlock(
-  context: EngineContext,
-  memoryScopeKey: string,
-  existingMessages: readonly Message[],
-): Promise<string> {
-  const seed = await resolveRecallSeed(context, existingMessages);
-  if (!seed || seed.trim().length === 0) return "";
-
-  try {
-    const { embedding, providerModel } = await embedQuery(seed);
-    const hits = await episodesRepo.recallTopK(embedding, {
-      memoryScopeKey,
-      embeddingModel: providerModel,
-      embeddingDim: embedding.length,
-      topK: SESSION_EPISODE_RECALL_TOPK,
-      minSimilarity: SESSION_EPISODE_RECALL_MIN_SIMILARITY,
-    });
-    return formatSessionEpisodeRecallBlock(hits);
-  } catch (err) {
-    logger.warn("turn.session_episode_recall.fetch_failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return "";
-  }
-}
-
-async function resolveRecallSeed(
-  context: EngineContext,
-  existingMessages: readonly Message[],
-): Promise<string | null> {
-  // Surface the handoff for the CURRENT generation (if any). The handoff
-  // for `session.checkpointGeneration` is the one that seeded / will seed
-  // this turn: pre-checkpoint it lives as `active` (written by
-  // checkpoint_handoff_prepare or Phase 0), post-checkpoint it sits as
-  // `consumed` after Phase II flipped it atomically with the generation
-  // bump. `getLatestForTarget` returns either — filtering on `status='active'`
-  // alone would miss the post-compact read and the whole contract collapses
-  // into fallback-seed (M-1 from the audit).
-  let handoff = null;
-  let recentEpisodeTitles: string[] = [];
-  let recentOpenLoops: string[] = [];
-  try {
-    const session = await sessionsRepo.getSession(context.sessionId);
-    if (session) {
-      handoff = await checkpointHandoffsRepo.getLatestForTarget(
-        context.sessionId,
-        session.checkpointGeneration,
-      );
-    }
-    // Pull a small slice of recent episodes for the mission fallback path:
-    // when no handoff is present, the last 3 episodes tend to carry the live
-    // workstream and seed recall with current entities/open loops. Agent mode
-    // is one-shot so no recall seeding is needed there.
-    if (context.sessionKind === "mission") {
-      const recent = await episodesRepo.listRecentBySession(context.sessionId, 3);
-      recentEpisodeTitles = recent
-        .map((ep) => ep.title.trim())
-        .filter((t) => t.length > 0);
-      const loops = new Set<string>();
-      for (const ep of recent) {
-        for (const [key, value] of Object.entries(ep.openLoops ?? {})) {
-          const detail = typeof value === "string" ? value : JSON.stringify(value);
-          loops.add(`${key}: ${detail}`.slice(0, 200));
-          if (loops.size >= 10) break;
-        }
-        if (loops.size >= 10) break;
-      }
-      recentOpenLoops = [...loops];
-    }
-  } catch (err) {
-    logger.warn("turn.recall_seed.lookup_failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Look backwards for the most recent engine-written message — a wake_due
-  // banner from PR-7 carries the model's original loop_defer reason.
-  const lastEngineMessage = findLastEngineMessageHint(existingMessages);
-
-  // Mission objective — light fetch so post-wake recall anchors to mission
-  // goal rather than drifting on mood.
-  let missionObjective: string | null = null;
-  if (context.missionId) {
-    try {
-      const mission = await missionsRepo.getMission(context.missionId);
-      missionObjective = mission?.goal ?? null;
-    } catch {
-      // Non-fatal — continue without the objective.
-    }
-  }
-
-  // open_loops priority: handoff > recent episodes. The handoff is the
-  // model's own hand-picked list; episodes are the automatic fallback.
-  const handoffOpenLoops = handoff?.payload.openLoops ?? [];
-  const openLoops = handoffOpenLoops.length > 0 ? handoffOpenLoops : recentOpenLoops;
-
-  return effectiveRecallSeed({
-    sessionKind: context.sessionKind,
-    missionRunActive: context.missionRunId !== null,
-    messages: existingMessages,
-    missionObjective,
-    activeHandoff: handoff,
-    lastEngineMessage,
-    openLoops,
-    recentEpisodeTitles,
-  });
-}
-
-function findLastEngineMessageHint(messages: readonly Message[]): LastEngineMessageHint | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role !== "system") continue;
-    const metadata = m.metadata ?? null;
-    if (!metadata) continue;
-    const messageType = metadata.messageType ?? null;
-    if (!messageType) continue;
-    const payload = (metadata.payload ?? {}) as Record<string, unknown>;
-    const reason = typeof payload.reason === "string" ? payload.reason : null;
-    return { messageType, reason };
-  }
-  return null;
-}
-
 function buildProviderMessages(
   systemPrompt: string,
   summary: string | null,
-  episodeRecallBlock: string,
   messages: Message[],
 ): ProviderMessage[] {
   const result: ProviderMessage[] = [];
@@ -277,14 +170,16 @@ function buildProviderMessages(
   // System prompt
   result.push({ role: "system", content: systemPrompt });
 
-  // Compaction summary (if checkpoint happened)
+  // Compaction summary (if checkpoint happened). The summary is the agent's
+  // own `compact_now.conversation_summary` argument — LLM-emitted prose that
+  // reaches the next provider call as a system message. Sanitize before
+  // injection so a crafted summary can't carry fence escapes or pseudo role
+  // tags into the durable rolling context.
   if (summary) {
-    result.push({ role: "system", content: `[Previous conversation summary]\n${summary}` });
-  }
-
-  // Session episode recall (if non-empty)
-  if (episodeRecallBlock.length > 0) {
-    result.push({ role: "system", content: episodeRecallBlock });
+    result.push({
+      role: "system",
+      content: `[Previous conversation summary]\n${sanitizeForSystemPrompt(summary)}`,
+    });
   }
 
   // Message history

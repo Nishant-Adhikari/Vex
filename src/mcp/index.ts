@@ -26,11 +26,12 @@ import { pathToFileURL } from "node:url";
 import { bootstrap } from "./bootstrap.js";
 import { startStdioTransport } from "./transports/stdio.js";
 import { startHttpTransport } from "./transports/http.js";
-import { startWakeExecutor, type WakeExecutorHandle } from "@vex-agent/engine/index.js";
 import {
+  startWakeExecutor,
+  type WakeExecutorHandle,
   startCompactJobsExecutor,
   type CompactJobsExecutorHandle,
-} from "@vex-agent/engine/compact-jobs/executor.js";
+} from "@vex-agent/engine/index.js";
 import { startSyncExecutor, type SyncExecutorHandle } from "@vex-agent/sync/executor.js";
 import logger from "@utils/logger.js";
 

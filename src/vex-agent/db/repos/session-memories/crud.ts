@@ -47,10 +47,149 @@ export interface InsertResult {
 }
 
 /**
+ * Materialized chunk render — outstanding items, body_md, and content_hash
+ * computed exactly once from the caller's inputs. Track 2 (the chunking
+ * worker) calls `prepareMemoryRender` BEFORE embedding so the bytes fed
+ * into `embedDocument` are byte-identical to the `body_md` persisted by
+ * `insertPreparedMemory` — that pair guarantees the recall-time embedding
+ * vector continues to represent what's actually stored in the row.
+ *
+ * Without this split, the worker would render+embed, then `insertMemories`
+ * would generate FRESH `randomUUID()` outstanding items and re-render
+ * `body_md`, and the embedding vector would describe a body the DB no
+ * longer contains. Codex flagged this as a correctness blocker.
+ */
+export interface PreparedMemoryRender {
+  outstandingItems: readonly OutstandingItem[];
+  bodyMd: string;
+  contentHash: string;
+}
+
+export function prepareMemoryRender(parts: {
+  theme: string;
+  happenedMd: string;
+  didMd: string;
+  triedMd: string;
+  outstandingTexts: readonly string[];
+}): PreparedMemoryRender {
+  const outstandingItems: OutstandingItem[] = parts.outstandingTexts.map(newOutstandingItem);
+  const bodyMd = renderBodyMd({
+    happenedMd: parts.happenedMd,
+    didMd: parts.didMd,
+    triedMd: parts.triedMd,
+    outstandingItems,
+  });
+  const contentHash = computeContentHash({
+    theme: parts.theme,
+    happenedMd: parts.happenedMd,
+    didMd: parts.didMd,
+    triedMd: parts.triedMd,
+  });
+  return { outstandingItems, bodyMd, contentHash };
+}
+
+/**
+ * Insert a single chunk using a pre-materialized render. Track 2 uses this
+ * after `prepareMemoryRender` + `embedDocument` to land a row whose
+ * `body_md` matches the embedding input verbatim.
+ *
+ * Existing dedup invariant preserved: `(session_id, content_hash)` partial
+ * unique on active rows. Conflicts return the existing row with
+ * `inserted: false`.
+ */
+export async function insertPreparedMemory(
+  row: NewSessionMemory,
+  prep: PreparedMemoryRender,
+  client?: PoolClient,
+): Promise<InsertResult> {
+  if (row.embedding.length !== row.embeddingDim) {
+    throw new Error(
+      `insertPreparedMemory: embedding length ${row.embedding.length} does not match embeddingDim ${row.embeddingDim} ` +
+        `(session=${row.sessionId}). DB CHECK constraint would reject this.`,
+    );
+  }
+
+  const exec = client ?? getPool();
+  const persistedItems = prep.outstandingItems.map(toPersistedItem);
+
+  const upserted = await queryOneWith<SessionMemoryRow & { inserted: boolean }>(
+    exec,
+    `WITH ins AS (
+       INSERT INTO session_memories (
+         session_id, checkpoint_generation,
+         theme, theme_source, entities, protocols, error_classes, chains, tasks,
+         happened_md, did_md, tried_md, body_md, body_md_schema_version,
+         outstanding_items,
+         source_start_message_id, source_end_message_id,
+         language_code, inference_model,
+         importance, confidence,
+         embedding, embedding_model, embedding_dim,
+         content_hash
+       )
+       VALUES (
+         $1, $2,
+         $3, $4, $5, $6, $7, $8, $9,
+         $10, $11, $12, $13, $14,
+         $15::jsonb,
+         $16, $17,
+         $18, $19,
+         COALESCE($20::int, 5), COALESCE($21::numeric, 0.5),
+         $22::vector, $23, $24,
+         $25
+       )
+       ON CONFLICT (session_id, content_hash) WHERE status = 'active' DO NOTHING
+       RETURNING *
+     )
+     SELECT *, true AS inserted FROM ins
+     UNION ALL
+     SELECT m.*, false AS inserted FROM session_memories m
+       WHERE m.session_id = $1 AND m.content_hash = $25 AND m.status = 'active'
+         AND NOT EXISTS (SELECT 1 FROM ins)`,
+    [
+      row.sessionId,
+      row.checkpointGeneration,
+      row.theme,
+      row.themeSource,
+      row.entities,
+      row.protocols,
+      row.errorClasses,
+      row.chains,
+      row.tasks,
+      row.happenedMd,
+      row.didMd,
+      row.triedMd,
+      prep.bodyMd,
+      BODY_MD_SCHEMA_VERSION,
+      jsonb(persistedItems),
+      row.sourceStartMessageId,
+      row.sourceEndMessageId,
+      row.languageCode,
+      row.inferenceModel,
+      row.importance ?? null,
+      row.confidence ?? null,
+      vectorLiteral(row.embedding),
+      row.embeddingModel,
+      row.embeddingDim,
+      prep.contentHash,
+    ],
+  );
+  if (!upserted) {
+    throw new Error(`insertPreparedMemory: upsert returned no row for session=${row.sessionId}`);
+  }
+  const { inserted, ...rest } = upserted;
+  return { memory: mapRow(rest as SessionMemoryRow), inserted };
+}
+
+/**
  * Batch insert. Each row's `embedding.length` is validated against
  * `embeddingDim` before SQL runs so the DB CHECK constraint never has to
  * reject. Dedup uses `(session_id, content_hash)` partial unique index;
  * conflicts return the existing row with `inserted: false`.
+ *
+ * NOTE: this function generates outstanding-item UUIDs internally and re-
+ * renders body_md. Callers that need the embedded text to match persisted
+ * body_md byte-for-byte (Track 2 worker) MUST use the
+ * `prepareMemoryRender` + `insertPreparedMemory` pair instead.
  */
 export async function insertMemories(
   rows: readonly NewSessionMemory[],
@@ -266,6 +405,13 @@ export type ResolveOutstandingResult =
  * re-renders `body_md`, recomputes the row's `updated_at`. Embedding is NOT
  * re-generated here — that requires the embedding service and the caller is
  * responsible (typically the tool handler) for orchestrating that.
+ *
+ * Concurrency: the read + transform + write runs inside a single
+ * transaction with `SELECT ... FOR UPDATE` on the memory row. Two concurrent
+ * resolutions race on the lock; the second one re-reads the row's current
+ * `outstanding_items` after acquiring it, so a resolution already applied
+ * by the first call cleanly returns `already_resolved` rather than
+ * silently overwriting the resolution_note. (codex P2 — round 2.)
  */
 export async function markOutstandingResolved(
   memoryId: number,
@@ -273,46 +419,73 @@ export async function markOutstandingResolved(
   resolutionNote: string,
   resolutionSource: "agent" | "user" | "auto",
 ): Promise<ResolveOutstandingResult> {
-  const existing = await getById(memoryId);
-  if (!existing) return { ok: false, reason: "memory_not_found" };
+  const pool = getPool();
+  const tx = await pool.connect();
+  try {
+    await tx.query("BEGIN");
 
-  const item = existing.outstandingItems.find((it) => it.id === outstandingItemId);
-  if (!item) return { ok: false, reason: "item_not_found" };
-  if (item.resolvedAt !== null) return { ok: false, reason: "already_resolved" };
+    const lockedRow = await queryOneWith<SessionMemoryRow>(
+      tx,
+      `SELECT ${MEMORY_COLUMNS} FROM session_memories WHERE id = $1 FOR UPDATE`,
+      [memoryId],
+    );
+    if (!lockedRow) {
+      await tx.query("ROLLBACK").catch(() => undefined);
+      return { ok: false, reason: "memory_not_found" };
+    }
+    const existing = mapRow(lockedRow);
 
-  const updatedItems: OutstandingItem[] = existing.outstandingItems.map((it) =>
-    it.id === outstandingItemId
-      ? {
-          ...it,
-          resolvedAt: new Date().toISOString(),
-          resolutionNote,
-          resolutionSource,
-        }
-      : it,
-  );
+    const item = existing.outstandingItems.find((it) => it.id === outstandingItemId);
+    if (!item) {
+      await tx.query("ROLLBACK").catch(() => undefined);
+      return { ok: false, reason: "item_not_found" };
+    }
+    if (item.resolvedAt !== null) {
+      await tx.query("ROLLBACK").catch(() => undefined);
+      return { ok: false, reason: "already_resolved" };
+    }
 
-  const newBodyMd = renderBodyMd({
-    happenedMd: existing.happenedMd,
-    didMd: existing.didMd,
-    triedMd: existing.triedMd,
-    outstandingItems: updatedItems,
-  });
+    const updatedItems: OutstandingItem[] = existing.outstandingItems.map((it) =>
+      it.id === outstandingItemId
+        ? {
+            ...it,
+            resolvedAt: new Date().toISOString(),
+            resolutionNote,
+            resolutionSource,
+          }
+        : it,
+    );
 
-  // Persist via snake_case JSONB (matches migration 016 + unresolved-count SQL).
-  // content_hash is NOT updated because the immutable narrative core didn't
-  // change (see types.ts content-hash contract).
-  const persistedItems = updatedItems.map(toPersistedItem);
-  const updated = await queryOne<SessionMemoryRow>(
-    `UPDATE session_memories
-     SET outstanding_items = $2::jsonb,
-         body_md           = $3,
-         updated_at        = NOW()
-     WHERE id = $1
-     RETURNING ${MEMORY_COLUMNS}`,
-    [memoryId, jsonb(persistedItems), newBodyMd],
-  );
-  if (!updated) return { ok: false, reason: "memory_not_found" };
-  return { ok: true, memory: mapRow(updated) };
+    const newBodyMd = renderBodyMd({
+      happenedMd: existing.happenedMd,
+      didMd: existing.didMd,
+      triedMd: existing.triedMd,
+      outstandingItems: updatedItems,
+    });
+
+    // Persist via snake_case JSONB (matches migration 016 + unresolved-count
+    // SQL). content_hash is NOT updated because the immutable narrative core
+    // didn't change (see types.ts content-hash contract).
+    const persistedItems = updatedItems.map(toPersistedItem);
+    const updated = await queryOneWith<SessionMemoryRow>(
+      tx,
+      `UPDATE session_memories
+       SET outstanding_items = $2::jsonb,
+           body_md           = $3,
+           updated_at        = NOW()
+       WHERE id = $1
+       RETURNING ${MEMORY_COLUMNS}`,
+      [memoryId, jsonb(persistedItems), newBodyMd],
+    );
+    await tx.query("COMMIT");
+    if (!updated) return { ok: false, reason: "memory_not_found" };
+    return { ok: true, memory: mapRow(updated) };
+  } catch (err) {
+    await tx.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    tx.release();
+  }
 }
 
 // ── Maintenance: re-embed after body_md change ──────────────────

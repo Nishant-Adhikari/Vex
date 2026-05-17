@@ -11,7 +11,8 @@
  * the turn loop do not carry ids and must never be used as a cutoff input.
  */
 
-import { query, execute } from "../client.js";
+import type { PoolClient } from "pg";
+import { query, queryWith, execute } from "../client.js";
 import { nullableJsonb } from "../params.js";
 
 export interface MessageRow {
@@ -111,15 +112,25 @@ export async function getLiveMessages(sessionId: string): Promise<Message[]> {
 }
 
 /**
- * Get live messages with a guaranteed id on each row. Used by checkpoint to
+ * Get live messages with a guaranteed id on each row. Used by compact to
  * compute a safe archive cutoff — in-memory `liveMessages` kept by the turn
  * loop do not carry ids and are not valid inputs for cutoff selection.
+ *
+ * Tx-aware variant: pass the same `PoolClient` used for the `sessions ...
+ * FOR UPDATE` lock so the prefix selector observes the same snapshot the
+ * compact transaction will commit against. Without this, a concurrent
+ * second compacter racing on the row lock could plan against a stale
+ * transcript and silently bump a second generation with the wrong cutoff.
  */
-export async function getLiveMessagesWithId(sessionId: string): Promise<MessageWithId[]> {
-  const rows = await query<MessageRow>(
-    "SELECT id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
-    [sessionId],
-  );
+export async function getLiveMessagesWithId(
+  sessionId: string,
+  client?: PoolClient,
+): Promise<MessageWithId[]> {
+  const sql =
+    "SELECT id, role, content, tool_call_id, tool_calls, created_at, source, message_type, visibility, origin_session_id, subagent_id, metadata FROM messages WHERE session_id = $1 ORDER BY created_at ASC, id ASC";
+  const rows = client
+    ? await queryWith<MessageRow>(client, sql, [sessionId])
+    : await query<MessageRow>(sql, [sessionId]);
   return rows.map((r) => ({ ...mapRowToMessage(r), id: r.id }));
 }
 

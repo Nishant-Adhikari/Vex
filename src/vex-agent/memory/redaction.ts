@@ -1,9 +1,26 @@
 /**
  * Two-tier redaction for memory layer writes.
  *
- * Applied to every field that lands in `session_memories`, `compact_jobs`,
- * and the corresponding embedding inputs. Plan invariant: sensitive data
- * NEVER reaches pgvector storage and NEVER reaches the LLM extractor.
+ * Applied to every field the engine and worker EMIT before persistence:
+ *   - `executeCompactNow` (Track 1) redacts `agentSummary` / `preserveMd` /
+ *     `threadThemesHints` before they land in `sessions.summary` /
+ *     `compact_jobs` / archive metadata.
+ *   - The Track 2 worker re-applies redaction to every chunker-emitted
+ *     string (theme, structured columns, narrative sections, outstanding
+ *     items) before computing the body_md it embeds and persists into
+ *     `session_memories`.
+ *
+ * Plan invariant: secrets that this layer recognizes NEVER reach pgvector
+ * storage and NEVER appear in any prompt the next provider call receives.
+ *
+ * NOT covered by this layer: the Track 2 worker sends the archived live
+ * transcript to OpenRouter for chunk synthesis without first re-scrubbing
+ * the original messages (PR-11 overflow handling already externalises
+ * giant tool outputs; PII / wallet / address material in normal-sized
+ * `messages.content` is treated as the agent's own context that it
+ * already saw inline during the live conversation). Tightening the
+ * transcript-side scrub is tracked for a follow-up — calling it "redaction
+ * before the chunker call" here would overclaim.
  *
  * Tier 1 — HARD REDACT
  *   Replaced with `[REDACTED:<class>]`. Secrets that would constitute a

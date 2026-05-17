@@ -27,12 +27,15 @@ export {
 
 export {
   insertMemories,
+  insertPreparedMemory,
+  prepareMemoryRender,
   getById,
   listActiveBySession,
   getSessionMemoryStats,
   markOutstandingResolved,
   updateEmbedding,
   type InsertResult,
+  type PreparedMemoryRender,
   type SessionMemoryStats,
   type ResolveOutstandingResult,
 } from "./crud.js";

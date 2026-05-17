@@ -27,17 +27,6 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryOne: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("@vex-agent/db/repos/session-episodes.js", () => ({
-  recallTopK: vi.fn().mockResolvedValue([]),
-  insertEpisodes: vi.fn(),
-  listRecentBySession: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("@vex-agent/embeddings/client.js", () => ({
-  embedDocument: vi.fn(),
-  embedQuery: vi.fn().mockResolvedValue({ embedding: [0], providerModel: "test" }),
-}));
-
 // Mock the protocols prompt to avoid loading all manifests
 vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
   PROTOCOL_TOOLS: [],
@@ -168,121 +157,9 @@ describe("turn", () => {
     expect(userMsg.role).toBe("user");
   });
 
-  it("injects session episode recall as its own system block AFTER the summary and BEFORE history", async () => {
-    const episodesMod = await import("@vex-agent/db/repos/session-episodes.js");
-    (episodesMod.recallTopK as any).mockResolvedValue([
-      {
-        similarity: 0.9,
-        episode: {
-          id: 5,
-          sessionId: "prev-session",
-          memoryScopeKey: "session-1",
-          episodeKind: "decision",
-          title: "Hold SOL decision",
-          summaryText: "Earlier decision to hold SOL",
-          facts: {},
-          decisions: {},
-          openLoops: {},
-          entities: [],
-          toolOutcomes: {},
-          sourceSurface: "vex_agent",
-          sourceSession: "prev-session",
-          sourceStartMessageId: 1,
-          sourceEndMessageId: 2,
-          episodeHash: "h".repeat(64),
-          embeddingModel: "test",
-          embeddingDim: 1,
-          createdAt: "2026-04-01T00:00:00Z",
-        },
-      },
-    ]);
-
-    const provider = makeProvider({ content: "OK" });
-    const messages = [
-      { role: "user" as const, content: "What did I decide?", timestamp: "2026-04-01T10:00:00Z" },
-    ];
-    await executeTurn(
-      makeContext(), messages, "Previous session summary", provider as any, makeConfig() as any, [],
-    );
-
-    const [providerMessages] = provider.chatCompletion.mock.calls[0];
-    const systemBlocks = providerMessages.filter((m: any) => m.role === "system");
-    // At minimum: main system prompt, summary, recall.
-    expect(systemBlocks.length).toBeGreaterThanOrEqual(3);
-    const summaryIdx = providerMessages.findIndex((m: any) =>
-      typeof m.content === "string" && m.content.includes("Previous conversation summary"),
-    );
-    const recallIdx = providerMessages.findIndex((m: any) =>
-      typeof m.content === "string" && m.content.includes("[Session episode recall]"),
-    );
-    const firstUserIdx = providerMessages.findIndex((m: any) => m.role === "user");
-    expect(summaryIdx).toBeGreaterThan(-1);
-    expect(recallIdx).toBeGreaterThan(summaryIdx);
-    expect(firstUserIdx).toBeGreaterThan(recallIdx);
-  });
-
-  // ── Recall path: post-PR1 (no translation) ─────────────────────────
-
-  it("embeds the last user input verbatim for recall — no translation remote call", async () => {
-    const embeddingsMod = await import("@vex-agent/embeddings/client.js");
-    const episodesMod = await import("@vex-agent/db/repos/session-episodes.js");
-    (embeddingsMod.embedQuery as any).mockClear();
-    (episodesMod.recallTopK as any).mockResolvedValue([]);
-
-    const provider = makeProvider({ content: "OK" });
-    const messages = [
-      // Polish input — would have triggered translation pre-PR1. Now it must
-      // go to embedQuery directly because EmbeddingGemma handles multilingual
-      // recall natively (see docs/benchmarks/cross-lingual-recall.md).
-      { role: "user" as const, content: "Sprawdź mój balance SOL", timestamp: "2026-04-01T10:00:00Z" },
-    ];
-    await executeTurn(
-      makeContext(), messages, null, provider as any, makeConfig() as any, [],
-    );
-
-    // No translation round-trip for the recall path — chatCompletionSimple
-    // stays on the provider contract (checkpoint extract/merge use it) but
-    // the recall path doesn't touch it.
-    expect(provider.chatCompletionSimple).not.toHaveBeenCalled();
-    // embedQuery sees the raw user text verbatim.
-    expect(embeddingsMod.embedQuery).toHaveBeenCalledWith("Sprawdź mój balance SOL");
-  });
-
-  it("embeds English queries verbatim too (no heuristic, just raw)", async () => {
-    const embeddingsMod = await import("@vex-agent/embeddings/client.js");
-    const episodesMod = await import("@vex-agent/db/repos/session-episodes.js");
-    (embeddingsMod.embedQuery as any).mockClear();
-    (episodesMod.recallTopK as any).mockResolvedValue([]);
-
-    const provider = makeProvider({ content: "OK" });
-    const messages = [
-      { role: "user" as const, content: "what is the yield on solana", timestamp: "2026-04-01T10:00:00Z" },
-    ];
-    await executeTurn(
-      makeContext(), messages, null, provider as any, makeConfig() as any, [],
-    );
-
-    expect(provider.chatCompletionSimple).not.toHaveBeenCalled();
-    expect(embeddingsMod.embedQuery).toHaveBeenCalledWith("what is the yield on solana");
-  });
-
-  it("swallows embedQuery failures and omits the recall block (turn continues)", async () => {
-    const embeddingsMod = await import("@vex-agent/embeddings/client.js");
-    (embeddingsMod.embedQuery as any).mockRejectedValueOnce(new Error("embed provider down"));
-
-    const provider = makeProvider({ content: "Hello" });
-    const messages = [
-      { role: "user" as const, content: "hello", timestamp: "2026-04-01T10:00:00Z" },
-    ];
-
-    // The turn must still complete cleanly even if recall embed throws —
-    // fetchSessionEpisodeRecallBlock has its own try/catch that degrades to
-    // an empty block.
-    const result = await executeTurn(
-      makeContext(), messages, null, provider as any, makeConfig() as any, [],
-    );
-
-    expect(result.content).toBe("Hello");
-    expect(provider.chatCompletion).toHaveBeenCalled();
-  });
+  // PR2 cutover: the legacy `[Session episode recall]` block + the
+  // `recallTopK`-driven auto-injection are removed. Per-session narrative
+  // memory is now agent-driven via `memory_recall`; the system-prompt-side
+  // surface is the `[Session memories: ...]` banner from `buildMemoryStateBanner`
+  // (covered by `prompts/memory-state.test.ts` + `prompts/prompt-stack.test.ts`).
 });

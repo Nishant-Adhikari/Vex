@@ -1,16 +1,16 @@
 /**
- * PR-10 — `effectiveRecallSeed` priority tests.
+ * `effectiveRecallSeed` priority tests.
  *
  * Covers the 5-priority resolver:
  *   1. Active handoff (handoff.payload.preferredRecallQuery)
  *   2. Post-wake (lastEngineMessage.messageType === "wake_due")
  *   3. Mission with history (assistant plan + open loops)
- *   4. Mission with no history (recent episode titles OR null)
+ *   4. Mission with no history (recent narrative-memory themes OR null)
  *   5. Agent / fallback (last user input)
  *
- * Phase 2 collapse: `full_autonomous` sessionKind is gone; the mission
- * branch covers what used to be split between `mission` and
- * `full_autonomous`.
+ * PR2 cutover: priority 4 was `recentEpisodeTitles` → now `recentThemes`
+ * sourced from `session_memories` via `getSessionMemoryStats`. Priorities
+ * 1, 2, 3, 5 unchanged.
  */
 
 import { describe, it, expect } from "vitest";
@@ -89,14 +89,28 @@ describe("effectiveRecallSeed", () => {
     expect(seed).toContain("step 3 pending");
   });
 
-  it("falls back to recent episode titles for empty mission session", () => {
+  it("falls back to recent narrative-memory themes for empty mission session", () => {
     const seed = effectiveRecallSeed({
       sessionKind: "mission",
       missionRunActive: false,
       messages: [],
-      recentEpisodeTitles: ["Trade signals", "Risk review", "Capital deployment"],
+      recentThemes: [
+        "kyber_quote_timeout_pattern",
+        "wif_position_unwind_signal",
+        "wallet_balance_drift_observed",
+      ],
     });
-    expect(seed).toContain("Trade signals");
+    expect(seed).toContain("kyber_quote_timeout_pattern");
+  });
+
+  it("filters empty and whitespace themes before falling back", () => {
+    const seed = effectiveRecallSeed({
+      sessionKind: "mission",
+      missionRunActive: false,
+      messages: [],
+      recentThemes: ["   ", "", "real_theme_here"],
+    });
+    expect(seed).toContain("real_theme_here");
   });
 
   it("returns null for empty mission session with zero history", () => {

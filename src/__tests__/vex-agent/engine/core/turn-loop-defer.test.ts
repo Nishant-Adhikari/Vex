@@ -1,5 +1,5 @@
 /**
- * PR-6 — turn-loop integration of the `defer_until` engine signal.
+ * Turn-loop integration of the `defer_until` engine signal.
  *
  * Covered here:
  *   - `loop_defer` tool emission parks the mission run in `paused_wake`
@@ -8,9 +8,11 @@
  *       - `approval_required` in the same batch wins over a later `loop_defer`
  *         (turn-loop breaks on approval first, so the defer never dispatches).
  *       - `stop_mission` in the same batch wins over a later `loop_defer`.
- *   - Checkpoint-before-wait: when `contextUsageBand === "critical"` at the
- *     moment of wake entry, `maybeRunCheckpoint()` fires BEFORE the loop
- *     returns, so post-wake resume starts from a compacted prompt.
+ *   - Forced-compact-before-wait: when `contextUsageBand === "critical"` at the
+ *     moment of wake entry, `maybeRunForcedCompactFallback()` fires BEFORE the
+ *     mission_runs.updateStatus flip to `paused_wake`, so post-wake resume
+ *     starts from a compacted prompt and no concurrent wake claim / user
+ *     preempt races a running compaction (audit M-3).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -24,10 +26,13 @@ const mockUpdateStatus = vi.fn();
 const mockSetLastCheckpoint = vi.fn();
 const mockEnqueueApproval = vi.fn();
 
+const mockGetOperatorInstructionsAfter = vi.fn().mockResolvedValue([]);
+
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
   addEngineMessage: (...a: unknown[]) => mockAddEngineMessage(...a),
   getLiveMessages: (...a: unknown[]) => mockGetLiveMessages(...a),
+  getOperatorInstructionsAfter: (...a: unknown[]) => mockGetOperatorInstructionsAfter(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -51,21 +56,18 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   getSession: (...a: unknown[]) => mockGetSessionForLoop(...a),
 }));
 
-const mockExecuteCheckpoint = vi.fn().mockResolvedValue({
-  mode: "prefix",
-  summary: "new rolling summary",
-  episodeIds: [],
+const mockForcedFallback = vi.fn().mockResolvedValue({
+  kind: "committed",
+  generation: 1,
+  archivedMessages: 3,
+  jobId: 7,
+  redactionCounts: { hard: 0, mask: 0 },
+  planMode: "prefix",
 });
 
-vi.mock("@vex-agent/engine/core/checkpoint.js", async () => {
-  const actual = await vi.importActual<typeof import("../../../../vex-agent/engine/core/checkpoint.js")>(
-    "@vex-agent/engine/core/checkpoint.js",
-  );
-  return {
-    ...actual,
-    executeCheckpoint: (...a: unknown[]) => mockExecuteCheckpoint(...a),
-  };
-});
+vi.mock("@vex-agent/engine/compact-jobs/forced-fallback.js", () => ({
+  maybeRunForcedCompactFallback: (...a: unknown[]) => mockForcedFallback(...a),
+}));
 
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   enqueue: (...a: unknown[]) => mockEnqueueApproval(...a),
@@ -313,10 +315,10 @@ describe("turn-loop — state exclusivity", () => {
   });
 });
 
-// ── Checkpoint-before-wait ────────────────────────────────────
+// ── Forced-compact-before-wait ────────────────────────────────
 
-describe("turn-loop — checkpoint-before-wait", () => {
-  it("does NOT run checkpoint when band is normal at wake entry", async () => {
+describe("turn-loop — forced-compact-before-wait", () => {
+  it("does NOT run forced compact fallback when band is normal at wake entry", async () => {
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 10_000 }); // ~7.8%
 
     mockDispatchTool.mockResolvedValueOnce({
@@ -348,11 +350,15 @@ describe("turn-loop — checkpoint-before-wait", () => {
       makeLoopConfig(),
     );
 
-    expect(mockExecuteCheckpoint).not.toHaveBeenCalled();
+    expect(mockForcedFallback).not.toHaveBeenCalled();
   });
 
-  it("DOES run checkpoint when band is critical at wake entry", async () => {
-    // 128_000 * 0.90 = 115_200 → tokenCount just over that triggers critical.
+  it("DOES run forced compact fallback when band is critical at wake entry", async () => {
+    // 128_000 * 0.92 = 117_760 (PR2 cutover threshold) → 120_000 is critical.
+    // The top-of-iteration check sees `currentTokenCount = 0` (initial) so it
+    // does NOT trigger; the critical band is only observed via the freshly
+    // queried `sessions.token_count` AT the waiting_for_wake branch. That
+    // branch path is the one this test asserts.
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 120_000 });
 
     mockDispatchTool.mockResolvedValueOnce({
@@ -385,11 +391,11 @@ describe("turn-loop — checkpoint-before-wait", () => {
     );
 
     expect(result.stopReason).toBe("waiting_for_wake");
-    // Checkpoint-before-wait fired so resume starts compacted.
-    expect(mockExecuteCheckpoint).toHaveBeenCalledTimes(1);
+    // Forced fallback fired so resume starts compacted.
+    expect(mockForcedFallback).toHaveBeenCalledTimes(1);
   });
 
-  it("runs checkpoint BEFORE flipping the run to paused_wake (PR-13 M-3)", async () => {
+  it("runs forced compact fallback BEFORE flipping the run to paused_wake", async () => {
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 120_000 });
 
     mockDispatchTool.mockResolvedValueOnce({
@@ -422,16 +428,16 @@ describe("turn-loop — checkpoint-before-wait", () => {
     );
 
     // Both hooks were called once — this test asserts their RELATIVE order:
-    // checkpoint must have landed before updateStatus(paused_wake) so
+    // forced fallback must have landed before updateStatus(paused_wake) so
     // ingress / wake executor never see paused_wake during a running
-    // compaction (audit M-3).
-    const checkpointCall = mockExecuteCheckpoint.mock.invocationCallOrder[0];
+    // compaction.
+    const fallbackCall = mockForcedFallback.mock.invocationCallOrder[0];
     const pausedWakeCall = mockUpdateStatus.mock.invocationCallOrder.find((_, idx) => {
       const args = mockUpdateStatus.mock.calls[idx];
       return args && args[1] === "paused_wake";
     });
-    expect(checkpointCall).toBeDefined();
+    expect(fallbackCall).toBeDefined();
     expect(pausedWakeCall).toBeDefined();
-    expect(checkpointCall).toBeLessThan(pausedWakeCall!);
+    expect(fallbackCall).toBeLessThan(pausedWakeCall!);
   });
 });

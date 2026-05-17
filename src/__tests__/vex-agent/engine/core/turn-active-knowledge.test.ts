@@ -35,17 +35,21 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
 vi.mock("@vex-agent/db/repos/knowledge.js", () => ({
   listActiveForHotContext: (...a: unknown[]) => mockListActive(...a),
   listKnownKinds: (...a: unknown[]) => mockListKinds(...a),
+  // PR2 cutover: executeTurn pre-fetches an active count for the
+  // knowledge-state banner alongside the curated Active Knowledge block.
+  countActiveHotContextEntries: vi.fn().mockResolvedValue(0),
 }));
 
-vi.mock("@vex-agent/db/repos/session-episodes.js", () => ({
-  recallTopK: vi.fn().mockResolvedValue([]),
-  insertEpisodes: vi.fn(),
-  listRecentBySession: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("@vex-agent/embeddings/client.js", () => ({
-  embedDocument: vi.fn(),
-  embedQuery: vi.fn().mockResolvedValue({ embedding: [0], providerModel: "test" }),
+// PR2 cutover: executeTurn pre-fetches session-memory stats for the
+// memory-state banner. Default = empty so existing assertions stay focused on
+// the Active Knowledge block.
+vi.mock("@vex-agent/db/repos/session-memories/index.js", () => ({
+  getSessionMemoryStats: vi.fn().mockResolvedValue({
+    activeCount: 0,
+    compactCount: 0,
+    recentThemes: [],
+    unresolvedOutstandingCount: 0,
+  }),
 }));
 
 vi.mock("@vex-agent/db/client.js", () => ({

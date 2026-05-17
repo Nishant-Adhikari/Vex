@@ -6,8 +6,15 @@
  * Sourced entirely from DB (no LLM calls, no embeddings). Includes:
  *   - The fresh rolling summary from `sessions.summary` (agent's own
  *     conversation_summary input to compact_now).
- *   - The `preserve_md` field from the most recent `compact_jobs` row, lightly
- *     sanitized (preserve is data not instructions).
+ *   - The `preserve_md` field from the most recent `compact_jobs` row,
+ *     sanitized via `sanitizePreserveMd` before injection. preserve_md is
+ *     attacker-influenced data (agent supplied it, redaction stripped raw
+ *     secrets, but the model could still embed pseudo-system tags or fence
+ *     escapes to alter the prompt structure). A markdown fence is NOT
+ *     enough — triple-backtick fences are themselves emit-able. The
+ *     sanitizer neutralizes triple backticks, `<system>` / `<assistant>` /
+ *     `<user>` pseudo-tags, and `[INST]` / `[/INST]` /
+ *     `<|im_start|>` / `<|im_end|>` chat-template artifacts.
  *   - Up to N unresolved outstanding items aggregated across active chunks.
  *   - Last 3 assistant decisions and last 3 tool outcomes (best-effort from
  *     the post-archive `messages` table, which is now the post-compact tail
@@ -18,6 +25,11 @@
 
 import { query, queryOne } from "@vex-agent/db/client.js";
 import { getBySessionAndGeneration } from "@vex-agent/db/repos/compact-jobs/index.js";
+import { sanitizeForSystemPrompt } from "./sanitize.js";
+
+/** Re-export so the regression suite that already imports `sanitizePreserveMd`
+ *  from this module keeps compiling after the helper moved to `./sanitize.ts`. */
+export { sanitizePreserveMd } from "./sanitize.js";
 
 const MAX_UNRESOLVED_LINES = 10;
 const MAX_DECISIONS = 3;
@@ -75,22 +87,31 @@ export async function buildResumePacket(
   const lines: string[] = [];
   lines.push(`[Resume packet — generation ${session.checkpoint_generation}, just compacted]`);
   lines.push("");
+  // Every DB-derived string below is funneled through
+  // `sanitizeForSystemPrompt` because the resume packet ends up as a system
+  // prompt layer. `sessions.summary` and `compact_jobs.preserve_md` are
+  // LLM-emitted prose (post-redaction); outstanding-item text and recent
+  // assistant/tool content can also embed fence escapes or pseudo role
+  // tags. Without per-field sanitization the durable rolling context would
+  // be a prompt-injection vector. (codex P1 — round 2.)
   lines.push("## Rolling summary");
-  lines.push(session.summary?.trim() || "(empty)");
+  const summary = session.summary?.trim();
+  lines.push(summary ? sanitizeForSystemPrompt(summary) : "(empty)");
   lines.push("");
   if (compactJob?.preserveMd && compactJob.preserveMd.trim().length > 0) {
     lines.push("## Preserve");
-    // preserve_md is treated as data, not instructions. Wrap in fenced block
-    // so any embedded markdown / pseudo-tags do not influence the prompt.
+    const safe = sanitizeForSystemPrompt(compactJob.preserveMd.trim());
     lines.push("```");
-    lines.push(compactJob.preserveMd.trim());
+    lines.push(safe);
     lines.push("```");
     lines.push("");
   }
   if (outstandingRows.length > 0) {
     lines.push(`## Outstanding follow-ups (${outstandingRows.length})`);
     for (const r of outstandingRows) {
-      lines.push(`- [${r.theme}] (memory_id=${r.memory_id}, item_id=${r.item_id}) ${r.text}`);
+      const safeText = sanitizeForSystemPrompt(r.text);
+      const safeTheme = sanitizeForSystemPrompt(r.theme);
+      lines.push(`- [${safeTheme}] (memory_id=${r.memory_id}, item_id=${r.item_id}) ${safeText}`);
     }
     lines.push("");
   }
@@ -98,7 +119,7 @@ export async function buildResumePacket(
     lines.push(`## Recent decisions (last ${decisionRows.length})`);
     for (const r of decisionRows) {
       const compact = r.content.replace(/\s+/g, " ").trim().slice(0, 280);
-      lines.push(`- (${r.created_at}) ${compact}`);
+      lines.push(`- (${r.created_at}) ${sanitizeForSystemPrompt(compact)}`);
     }
     lines.push("");
   }
@@ -106,7 +127,7 @@ export async function buildResumePacket(
     lines.push(`## Recent tool outcomes (last ${toolRows.length})`);
     for (const r of toolRows) {
       const compact = r.content.replace(/\s+/g, " ").trim().slice(0, 240);
-      lines.push(`- (${r.created_at}) ${compact}`);
+      lines.push(`- (${r.created_at}) ${sanitizeForSystemPrompt(compact)}`);
     }
   }
   return lines.join("\n");

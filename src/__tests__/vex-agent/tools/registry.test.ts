@@ -162,10 +162,9 @@ describe("registry", () => {
     expect(namespace?.description).toContain("khalani");
   });
 
-  it("mutating tools are wallet_send_confirm, polymarket_setup, checkpoint_handoff_prepare", () => {
+  it("mutating tools are wallet_send_confirm, polymarket_setup (PR2 cutover dropped checkpoint_handoff_prepare)", () => {
     const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
     expect(mutating).toEqual([
-      "checkpoint_handoff_prepare",
       "polymarket_setup",
       "wallet_send_confirm",
     ]);
@@ -210,6 +209,93 @@ describe("registry", () => {
       expect(names).toContain("mission_stop");
       expect(names).toContain("subagent_spawn");
       expect(names).toContain("subagent_reply");
+    });
+
+    // ── PR2-cutover catalog-level pressure-safety filter (codex P1 #4) ──
+    //
+    // `getOpenAITools` must drop `pressureSafety: "mutating"` tools at
+    // `barrier`/`critical` bands and drop `pressureSafety: "compact_only"`
+    // tools at `normal`/`warning`. The dispatcher's hard-deny is the runtime
+    // safety net; this is the catalog projection that keeps the model from
+    // seeing tools it cannot use.
+    it("at barrier band: mutating tools are hidden from the LLM catalog", () => {
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: "barrier",
+      }));
+      const names = tools.map(t => t.function.name);
+      // wallet_send_confirm + polymarket_setup are the canonical mutating
+      // tools (registry-completeness asserts the list).
+      expect(names).not.toContain("wallet_send_confirm");
+      expect(names).not.toContain("polymarket_setup");
+    });
+
+    it("at critical band: mutating tools are hidden from the LLM catalog", () => {
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: "critical",
+      }));
+      const names = tools.map(t => t.function.name);
+      expect(names).not.toContain("wallet_send_confirm");
+      expect(names).not.toContain("polymarket_setup");
+    });
+
+    it("at barrier band: compact_only tools (compact_now) ARE visible", () => {
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: "barrier",
+      }));
+      const names = tools.map(t => t.function.name);
+      expect(names).toContain("compact_now");
+    });
+
+    it("at normal band: compact_only tools (compact_now) are hidden", () => {
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: "normal",
+      }));
+      const names = tools.map(t => t.function.name);
+      expect(names).not.toContain("compact_now");
+    });
+
+    it("at warning band: compact_only tools (compact_now) are hidden but mutating tools remain", () => {
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: "warning",
+      }));
+      const names = tools.map(t => t.function.name);
+      expect(names).not.toContain("compact_now");
+      expect(names).toContain("wallet_send_confirm");
+    });
+
+    it("read_only tools (memory_recall, mark_outstanding_resolved) are visible at every band", () => {
+      for (const band of ["normal", "warning", "barrier", "critical"] as const) {
+        const tools = getOpenAITools(defaultVisibilityContext({
+          permission: "full",
+          role: "parent",
+          sessionKind: "mission",
+          missionRunActive: true,
+          contextUsageBand: band,
+        }));
+        const names = tools.map(t => t.function.name);
+        expect(names, `band=${band}`).toContain("memory_recall");
+        expect(names, `band=${band}`).toContain("mark_outstanding_resolved");
+      }
     });
 
     it("mission_stop is hidden in agent sessions (hiddenInAgent visibility gate)", () => {
@@ -294,7 +380,7 @@ describe("registry", () => {
     });
 
     // Single-tool exclusion test for `mission_stop`. The full agent-only freeze
-    // for `loop_defer`, `checkpoint_handoff_prepare`, `tool_output_read` lives in
+    // for `loop_defer`, `tool_output_read`, `compact_now` lives in
     // `__tests__/mcp/docs/no-autonomy-leak.test.ts` (broader: also gates docs/manifest).
     it("excludes mission_stop (vex-agent runtime concept)", () => {
       const names = getProductionMcpTools().map((t) => t.name);
