@@ -1,5 +1,5 @@
 /**
- * Sessions repo — session lifecycle, compaction, scope, memory language.
+ * Sessions repo — session lifecycle, compaction, scope.
  *
  * Compaction model:
  *   - `setRollingSummary` updates only the summary text.
@@ -13,20 +13,12 @@
  *     tool output in the tail is the sole source of context pressure.
  *
  * Transaction coordination (PR2):
- *   `setRollingSummary`, `setMemoryLanguageCode`, and `archivePrefix` accept
- *   an optional `PoolClient`. When provided, they run inside the caller's
- *   transaction instead of opening their own. `executeCompactNow` (Track 1)
- *   uses this to atomically apply the whole write phase (summary +
- *   generation bump + compact_jobs enqueue + archive) under a single
- *   BEGIN/COMMIT — a crash rolls back the entire set together.
- *
- * Memory language contract (PR2, migration 008):
- *   `sessions.memory_language_code` holds a per-session language marker set
- *   once by the first checkpoint. Values are 2-3 lowercase letters, optional
- *   "-REGION" suffix (e.g. "en", "pl", "fr", "zh", "vi", "pt-BR"), or the
- *   literal "und" for mixed/unclear. Validation is at the code boundary
- *   (`setMemoryLanguageCode`) — no DB CHECK so adding a language later does
- *   not require a migration.
+ *   `setRollingSummary` and `archivePrefix` accept an optional `PoolClient`.
+ *   When provided, they run inside the caller's transaction instead of
+ *   opening their own. `executeCompactNow` (Track 1) uses this to atomically
+ *   apply the whole write phase (summary + generation bump + compact_jobs
+ *   enqueue + archive) under a single BEGIN/COMMIT — a crash rolls back the
+ *   entire set together.
  */
 
 import type { PoolClient } from "pg";
@@ -54,8 +46,6 @@ interface SessionRow {
   compacted: boolean;
   message_count: number;
   token_count: number;
-  memory_scope_key: string | null;
-  memory_language_code: string | null;
   checkpoint_generation: number;
   /**
    * Session-level mode discriminator. `mapRow` normalises unexpected values
@@ -92,13 +82,11 @@ export interface Session {
   compacted: boolean;
   messageCount: number;
   tokenCount: number;
-  memoryScopeKey: string | null;
-  memoryLanguageCode: string | null;
   /**
    * Monotonic counter bumped once per successful checkpoint (see
-   * `runCheckpointWriteTx`). Stamped on every episode written in that
-   * checkpoint's batch so recall can surface recency as `gen:N`. Starts at 0
-   * for a freshly-created session; the first checkpoint lands episodes at
+   * `runCheckpointWriteTx`). Stamped on every session_memories row written
+   * during that checkpoint so recall can surface recency as `gen:N`. Starts
+   * at 0 for a freshly-created session; the first checkpoint lands rows at
    * generation 1.
    */
   checkpointGeneration: number;
@@ -117,19 +105,6 @@ export interface Session {
   initialGoal: string | null;
 }
 
-/**
- * Acceptable shape for `sessions.memory_language_code`:
- *   - 2-3 lowercase letters, optional "-REGION" suffix (e.g. "en", "pl",
- *     "fr", "zh", "vi", "pt-BR"),
- *   - or the literal "und" for mixed/unclear.
- *
- * Validation lives at the code boundary (this file's
- * {@link setMemoryLanguageCode}); `knowledge_entries` does not own this
- * schema. Adding a language later does not require a DB migration — just
- * new prompt cases in `extract.ts` / `merge.ts`.
- */
-export const LANG_CODE_RE = /^([a-z]{2,3}(-[A-Z]{2})?|und)$/;
-
 function mapRow(r: SessionRow): Session {
   return {
     id: r.id,
@@ -140,8 +115,6 @@ function mapRow(r: SessionRow): Session {
     compacted: r.compacted,
     messageCount: r.message_count,
     tokenCount: r.token_count,
-    memoryScopeKey: r.memory_scope_key,
-    memoryLanguageCode: r.memory_language_code,
     checkpointGeneration: r.checkpoint_generation,
     mode: r.mode === "mission" ? "mission" : "agent",
     permission: r.permission === "full" ? "full" : "restricted",
@@ -213,27 +186,6 @@ export async function setScope(id: string, scope: string): Promise<void> {
   await executeWith(getPool(), "UPDATE sessions SET scope = $1 WHERE id = $2", [scope, id]);
 }
 
-/**
- * Set the semantic memory scope key — used by subagent isolation (parent
- * and child sessions share a scope when subagents should see the parent's
- * memories, and diverge otherwise). `session_memories` is per-session and
- * does not consume this field on the recall path; the column stays as the
- * stable contract for subagent provisioning (`tools/internal/subagent`).
- *
- * Separate from `scope` (which is coarse: `chat` / `mcp` / `subagent`). The
- * scope key is the identity that subagent provisioning groups on — typically the
- * session id itself (isolated default for subagents post-PR3), but subagents
- * spawned with `scope_strategy: "shared"` inherit the parent's scope so
- * their checkpoints contribute to the parent's memory.
- */
-export async function setMemoryScopeKey(id: string, memoryScopeKey: string): Promise<void> {
-  await executeWith(
-    getPool(),
-    "UPDATE sessions SET memory_scope_key = $2 WHERE id = $1",
-    [id, memoryScopeKey],
-  );
-}
-
 /** SET token count — latest prompt size for checkpoint pressure evaluation. Not cumulative. */
 export async function updateTokenCount(id: string, tokenCount: number): Promise<void> {
   await executeWith(
@@ -259,55 +211,6 @@ export async function setRollingSummary(
 ): Promise<void> {
   const exec: Executor = client ?? getPool();
   await executeWith(exec, "UPDATE sessions SET summary = $2 WHERE id = $1", [id, summary]);
-}
-
-/**
- * Read the per-session memory language marker.
- *
- * Returns null when the session has not yet been checkpointed — the first
- * checkpoint infers and persists a value via {@link setMemoryLanguageCode}.
- */
-export async function getMemoryLanguageCode(id: string): Promise<string | null> {
-  const row = await queryOneWith<{ memory_language_code: string | null }>(
-    getPool(),
-    "SELECT memory_language_code FROM sessions WHERE id = $1",
-    [id],
-  );
-  return row?.memory_language_code ?? null;
-}
-
-/**
- * Persist the per-session memory language marker.
- *
- * Validates `code` against {@link LANG_CODE_RE} and throws on invalid input
- * — callers should never pass raw untrusted values here. The intent is that
- * the LLM's `session_language_inferred` field is the only source of truth,
- * and it is validated at this boundary.
- *
- * The UPDATE is guarded by `WHERE memory_language_code IS NULL` so a session
- * that already has a persisted value is not silently overwritten by a later
- * checkpoint — this honours the v5 invariant "raz ustawiony kod zostaje do
- * końca sesji". Callers that need to intentionally change the value must
- * first NULL it out (deferred UX; not supported via this function in v1).
- *
- * When `client` is provided, runs inside the caller's transaction.
- */
-export async function setMemoryLanguageCode(
-  id: string,
-  code: string,
-  client?: PoolClient,
-): Promise<void> {
-  if (!LANG_CODE_RE.test(code)) {
-    throw new Error(
-      `setMemoryLanguageCode: invalid code "${code}" — expected ^([a-z]{2,3}(-[A-Z]{2})?|und)$`,
-    );
-  }
-  const exec: Executor = client ?? getPool();
-  await executeWith(
-    exec,
-    "UPDATE sessions SET memory_language_code = $2 WHERE id = $1 AND memory_language_code IS NULL",
-    [id, code],
-  );
 }
 
 export async function listSessions(scope?: string, limit = 50): Promise<Session[]> {

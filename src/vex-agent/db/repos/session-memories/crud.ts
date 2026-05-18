@@ -115,39 +115,40 @@ export async function insertPreparedMemory(
   const exec = client ?? getPool();
   const persistedItems = prep.outstandingItems.map(toPersistedItem);
 
+  // ON CONFLICT DO UPDATE with a no-op SET reliably returns a row whether
+  // INSERT or conflict path wins, AND uses postgres' `(xmax = 0)` system-column
+  // signal to distinguish freshly-inserted (xmax=0) from conflict-merged rows.
+  // This replaces the earlier CTE + UNION ALL fallback, which under concurrent
+  // same-hash INSERTs could return zero rows because the conflict's SELECT
+  // fallback fired before the winning transaction committed under READ COMMITTED.
+  // Codex PR1-PR4 audit P2.2.
   const upserted = await queryOneWith<SessionMemoryRow & { inserted: boolean }>(
     exec,
-    `WITH ins AS (
-       INSERT INTO session_memories (
-         session_id, checkpoint_generation,
-         theme, theme_source, entities, protocols, error_classes, chains, tasks,
-         happened_md, did_md, tried_md, body_md, body_md_schema_version, body_md_hash,
-         outstanding_items,
-         source_start_message_id, source_end_message_id,
-         language_code, inference_model,
-         importance, confidence,
-         embedding, embedding_model, embedding_dim,
-         content_hash
-       )
-       VALUES (
-         $1, $2,
-         $3, $4, $5, $6, $7, $8, $9,
-         $10, $11, $12, $13, $14, $15,
-         $16::jsonb,
-         $17, $18,
-         $19, $20,
-         COALESCE($21::int, 5), COALESCE($22::numeric, 0.5),
-         $23::vector, $24, $25,
-         $26
-       )
-       ON CONFLICT (session_id, content_hash) WHERE status = 'active' DO NOTHING
-       RETURNING *
+    `INSERT INTO session_memories (
+       session_id, checkpoint_generation,
+       theme, theme_source, entities, protocols, error_classes, chains, tasks,
+       happened_md, did_md, tried_md, body_md, body_md_schema_version, body_md_hash,
+       outstanding_items,
+       source_start_message_id, source_end_message_id,
+       inference_model,
+       importance, confidence,
+       embedding, embedding_model, embedding_dim,
+       content_hash
      )
-     SELECT *, true AS inserted FROM ins
-     UNION ALL
-     SELECT m.*, false AS inserted FROM session_memories m
-       WHERE m.session_id = $1 AND m.content_hash = $26 AND m.status = 'active'
-         AND NOT EXISTS (SELECT 1 FROM ins)`,
+     VALUES (
+       $1, $2,
+       $3, $4, $5, $6, $7, $8, $9,
+       $10, $11, $12, $13, $14, $15,
+       $16::jsonb,
+       $17, $18,
+       $19,
+       COALESCE($20::int, 5), COALESCE($21::numeric, 0.5),
+       $22::vector, $23, $24,
+       $25
+     )
+     ON CONFLICT (session_id, content_hash) WHERE status = 'active'
+     DO UPDATE SET updated_at = session_memories.updated_at
+     RETURNING *, (xmax = 0) AS inserted`,
     [
       row.sessionId,
       row.checkpointGeneration,
@@ -167,7 +168,6 @@ export async function insertPreparedMemory(
       jsonb(persistedItems),
       row.sourceStartMessageId,
       row.sourceEndMessageId,
-      row.languageCode,
       row.inferenceModel,
       row.importance ?? null,
       row.confidence ?? null,

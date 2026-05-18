@@ -111,7 +111,6 @@ describe("mission activation message", () => {
         missionRunId: null,
         isSubagent: false,
         loadedDocuments: new Map(),
-        memoryScopeKey: "session-1",
       },
       messages: [],
       summary: null,

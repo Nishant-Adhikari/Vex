@@ -61,7 +61,6 @@ beforeEach(() => {
       missionRunId: "run-1",
       isSubagent: false,
       loadedDocuments: new Map(),
-      memoryScopeKey: "s1",
     },
     messages: [],
     summary: null,

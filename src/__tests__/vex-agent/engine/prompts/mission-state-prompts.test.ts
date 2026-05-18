@@ -17,7 +17,6 @@ function makeMissionContext(overrides: Partial<EngineContext> = {}): EngineConte
     missionRunId: null,
     isSubagent: false,
     loadedDocuments: new Map(),
-    memoryScopeKey: "session-1",
     ...overrides,
   };
 }

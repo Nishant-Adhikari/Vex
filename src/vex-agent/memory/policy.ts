@@ -19,10 +19,13 @@
 
 // ── Chunking limits ──────────────────────────────────────────────
 
-/** Maximum number of chunks the chunker may emit per compact. Anything beyond is dropped (lowest importance first). */
-export const MAX_CHUNKS_PER_COMPACT = 3;
-
-/** Maximum number of `thread_themes_hints` the agent may pass to `compact_now`. */
+/**
+ * Maximum number of `thread_themes_hints` the agent may pass to `compact_now`.
+ * Chunk count itself is intentionally UNCAPPED — the chunker LLM decides how
+ * many narrative chunks the archived prefix warrants. Slicing or rejecting
+ * past a hard cap would throw away the model's deliberate signal; see codex
+ * PR5 audit and the user instruction "wtf slice, truncate".
+ */
 export const MAX_THEME_HINTS = 3;
 
 /** Maximum length of any single chunk markdown section (`happened_md`, `did_md`, `tried_md`). */

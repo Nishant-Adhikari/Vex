@@ -54,7 +54,6 @@ function newMemoryWithOutstanding(
     outstandingTexts: [...outstandingTexts],
     sourceStartMessageId: null,
     sourceEndMessageId: null,
-    languageCode: "en",
     inferenceModel: "test-llm",
     embeddingModel: EMBEDDING_MODEL,
     embeddingDim: EMBEDDING_DIM,

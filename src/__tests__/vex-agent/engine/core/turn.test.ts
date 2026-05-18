@@ -49,7 +49,6 @@ describe("turn", () => {
       missionRunId: null,
       isSubagent: false,
       loadedDocuments: new Map<string, string>(),
-      memoryScopeKey: "session-1",
     };
   }
 

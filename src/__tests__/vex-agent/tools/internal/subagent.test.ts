@@ -24,7 +24,6 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   createSession: (...args: unknown[]) => mockCreateSession(...args),
   setScope: (...args: unknown[]) => mockSetScope(...args),
   getSession: (...args: unknown[]) => mockGetSessionForSubagent(...args),
-  setMemoryScopeKey: (...args: unknown[]) => mockSetMemoryScopeKeyForSubagent(...args),
 }));
 
 const mockLinkSessions = vi.fn().mockResolvedValue({ id: 1 });
@@ -179,82 +178,10 @@ describe("subagent handlers", () => {
       expect(insertArg.maxIterations).toBe(50);
     });
 
-    // ── scope_strategy resolution ────────────────────────────────────
-
-    it("defaults memory scope to isolated (own childSessionId) when scope_strategy is omitted", async () => {
-      const result = await handleSubagentSpawn(
-        { name: "VexIsoDefault", task: "test" },
-        baseContext,
-      );
-      expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-
-      // Child session id is unique per spawn; memory scope key must equal it.
-      expect(mockSetMemoryScopeKeyForSubagent).toHaveBeenCalledTimes(1);
-      const [childSessionId, scopeKey] = mockSetMemoryScopeKeyForSubagent.mock.calls[0];
-      expect(childSessionId).toBe(parsed.sessionId);
-      expect(scopeKey).toBe(parsed.sessionId);
-      expect(parsed.scopeStrategy).toBe("isolated");
-      // Parent session is not read in the isolated path.
-      expect(mockGetSessionForSubagent).not.toHaveBeenCalled();
-    });
-
-    it("accepts explicit scope_strategy=isolated (same outcome as default)", async () => {
-      const result = await handleSubagentSpawn(
-        { name: "VexIsoExplicit", task: "test", scope_strategy: "isolated" },
-        baseContext,
-      );
-      expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      const [childSessionId, scopeKey] = mockSetMemoryScopeKeyForSubagent.mock.calls[0];
-      expect(childSessionId).toBe(parsed.sessionId);
-      expect(scopeKey).toBe(parsed.sessionId);
-      expect(parsed.scopeStrategy).toBe("isolated");
-    });
-
-    it("inherits parent's memoryScopeKey when scope_strategy=shared", async () => {
-      mockGetSessionForSubagent.mockResolvedValueOnce({
-        id: "test-session",
-        memoryScopeKey: "parent-scope-xyz",
-      });
-      const result = await handleSubagentSpawn(
-        { name: "VexShared", task: "test", scope_strategy: "shared" },
-        baseContext,
-      );
-      expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-
-      expect(mockGetSessionForSubagent).toHaveBeenCalledWith("test-session");
-      const [childSessionId, scopeKey] = mockSetMemoryScopeKeyForSubagent.mock.calls[0];
-      expect(childSessionId).toBe(parsed.sessionId);
-      expect(scopeKey).toBe("parent-scope-xyz");
-      expect(parsed.scopeStrategy).toBe("shared");
-    });
-
-    it("shared scope falls back to parent sessionId when parent has no memoryScopeKey", async () => {
-      mockGetSessionForSubagent.mockResolvedValueOnce({
-        id: "test-session",
-        memoryScopeKey: null,
-      });
-      await handleSubagentSpawn(
-        { name: "VexSharedFallback", task: "test", scope_strategy: "shared" },
-        baseContext,
-      );
-      const [, scopeKey] = mockSetMemoryScopeKeyForSubagent.mock.calls[0];
-      expect(scopeKey).toBe("test-session");
-    });
-
-    it("rejects invalid scope_strategy by falling back to isolated default", async () => {
-      const result = await handleSubagentSpawn(
-        { name: "VexBadScope", task: "test", scope_strategy: "garbage" },
-        baseContext,
-      );
-      expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.scopeStrategy).toBe("isolated");
-      const [childSessionId, scopeKey] = mockSetMemoryScopeKeyForSubagent.mock.calls[0];
-      expect(scopeKey).toBe(childSessionId);
-    });
+    // scope_strategy resolution removed in PR5 — memory_scope_key
+    // infrastructure was deleted because session_memories recall filters
+    // strictly by session_id, so subagent-shared memory pools never wired
+    // through. Subagents are per-session-isolated by construction.
 
     it("rejects duplicate active name", async () => {
       await handleSubagentSpawn({ name: "VexDup", task: "first" }, baseContext);

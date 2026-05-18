@@ -129,7 +129,6 @@ export interface SessionMemory {
   outstandingItems: OutstandingItem[];
   sourceStartMessageId: number | null;
   sourceEndMessageId: number | null;
-  languageCode: string | null;
   inferenceModel: string | null;
   importance: number;
   confidence: number;
@@ -158,7 +157,6 @@ export interface NewSessionMemory {
   outstandingTexts: string[]; // chunker emits raw strings; repo wraps as OutstandingItem
   sourceStartMessageId: number | null;
   sourceEndMessageId: number | null;
-  languageCode: string | null;
   inferenceModel: string | null;
   importance?: number;
   confidence?: number;
@@ -206,7 +204,6 @@ export interface SessionMemoryRow {
   outstanding_items: OutstandingItemPersisted[] | null;
   source_start_message_id: number | null;
   source_end_message_id: number | null;
-  language_code: string | null;
   inference_model: string | null;
   importance: number;
   confidence: string; // pg numeric → string in driver
@@ -246,7 +243,6 @@ export function mapRow(r: SessionMemoryRow): SessionMemory {
     outstandingItems: (r.outstanding_items ?? []).map(fromPersistedItem),
     sourceStartMessageId: r.source_start_message_id,
     sourceEndMessageId: r.source_end_message_id,
-    languageCode: r.language_code,
     inferenceModel: r.inference_model,
     importance: r.importance,
     confidence: Number.parseFloat(r.confidence),
@@ -268,7 +264,7 @@ export const MEMORY_COLUMNS = `
   happened_md, did_md, tried_md, body_md, body_md_schema_version, body_md_hash,
   outstanding_items,
   source_start_message_id, source_end_message_id,
-  language_code, inference_model,
+  inference_model,
   importance, confidence,
   status, superseded_by_id,
   embedding_model, embedding_dim,

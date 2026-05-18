@@ -184,11 +184,9 @@ describe("engine types", () => {
         missionRunId: null,
         isSubagent: false,
         loadedDocuments: new Map(),
-        memoryScopeKey: "session-1",
       };
       expect(ctx.sessionId).toBe("session-1");
       expect(ctx.isSubagent).toBe(false);
-      expect(ctx.memoryScopeKey).toBe("session-1");
     });
 
     it("supports mission context", () => {
@@ -200,7 +198,6 @@ describe("engine types", () => {
         missionRunId: "run-1",
         isSubagent: false,
         loadedDocuments: new Map([["doc/strategy", "# Strategy"]]),
-        memoryScopeKey: "session-2",
       };
       expect(ctx.missionId).toBe("mission-1");
       expect(ctx.loadedDocuments.size).toBe(1);
@@ -215,10 +212,8 @@ describe("engine types", () => {
         missionRunId: "run-1",
         isSubagent: true,
         loadedDocuments: new Map(),
-        memoryScopeKey: "parent-session",
       };
       expect(ctx.isSubagent).toBe(true);
-      expect(ctx.memoryScopeKey).toBe("parent-session");
     });
   });
 

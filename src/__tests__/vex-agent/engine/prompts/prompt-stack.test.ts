@@ -20,7 +20,6 @@ function makeContext(overrides: Partial<EngineContext> = {}): EngineContext {
     missionRunId: null,
     isSubagent: false,
     loadedDocuments: new Map(),
-    memoryScopeKey: "session-1",
     ...overrides,
   };
 }

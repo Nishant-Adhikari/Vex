@@ -57,8 +57,6 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     compacted: false,
     messageCount: 4,
     tokenCount: 0,
-    memoryScopeKey: null,
-    memoryLanguageCode: null,
     checkpointGeneration: 0,
     mode: "agent",
     permission: "restricted",

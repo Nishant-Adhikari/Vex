@@ -393,8 +393,8 @@ ${renderWorstSection(report.worstPerLang, pairsById)}
 - **Mode B pool**: all ${report.datasetSize} native documents. Each pair has
   a unique native summary, so target matching is by pair id. Distractors
   include same-topic docs in other languages — deliberately harder than
-  production, where \`memory_scope_key\` narrows the pool to a single
-  session's episodes. Random baseline: 1/${report.datasetSize} ≈ ${((1 / report.datasetSize) * 100).toFixed(1)}% Recall@1.
+  production, where recall is scoped by \`session_id\` (per-session strict
+  isolation). Random baseline: 1/${report.datasetSize} ≈ ${((1 / report.datasetSize) * 100).toFixed(1)}% Recall@1.
 - Cosine similarity is computed with full normalization (robust to providers
   that may not L2-normalize).
 - Title input to \`embedDocument\` simulates the LLM-generated title PR2

@@ -54,8 +54,6 @@ describe("runTool", () => {
       summary: null,
       compacted: false,
       messageCount: 3,
-      memoryScopeKey: "sess-1",
-      memoryLanguageCode: null,
       checkpointGeneration: 0,
     });
     mockGetActiveRun.mockResolvedValueOnce({
@@ -109,8 +107,6 @@ describe("runTool", () => {
       summary: null,
       compacted: false,
       messageCount: 0,
-      memoryScopeKey: "sess-2",
-      memoryLanguageCode: null,
       checkpointGeneration: 0,
     });
     mockGetActiveRun.mockResolvedValueOnce(null);
@@ -140,8 +136,6 @@ describe("runTool", () => {
       summary: null,
       compacted: false,
       messageCount: 0,
-      memoryScopeKey: "sess-3",
-      memoryLanguageCode: null,
       checkpointGeneration: 0,
     });
     mockGetActiveRun.mockResolvedValueOnce(null);

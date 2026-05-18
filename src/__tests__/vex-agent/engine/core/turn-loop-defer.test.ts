@@ -52,7 +52,6 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   setRollingSummary: vi.fn(),
   archivePrefix: vi.fn(),
   forkToolMessageToArchive: vi.fn(),
-  setMemoryScopeKey: vi.fn(),
   getSession: (...a: unknown[]) => mockGetSessionForLoop(...a),
 }));
 
@@ -101,7 +100,6 @@ function makeContext(overrides = {}) {
     missionRunId: "run-1",
     isSubagent: false,
     loadedDocuments: new Map<string, string>(),
-    memoryScopeKey: "session-1",
     ...overrides,
   };
 }

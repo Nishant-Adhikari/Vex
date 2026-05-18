@@ -93,7 +93,7 @@ export async function handleMemoryRecall(
 
   logger.info("memory_recall.completed", {
     sessionId: context.sessionId,
-    query_len: query.length,
+    queryLen: query.length,
     hits: hits.length,
     activeCount: stats.activeCount,
   });

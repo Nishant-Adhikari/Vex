@@ -123,7 +123,6 @@ function newMemory(
     outstandingTexts: overrides.outstandingTexts ?? [],
     sourceStartMessageId: overrides.sourceStartMessageId ?? null,
     sourceEndMessageId: overrides.sourceEndMessageId ?? null,
-    languageCode: overrides.languageCode ?? "en",
     inferenceModel: overrides.inferenceModel ?? "test-llm",
     embeddingModel: TEST_EMBEDDING_MODEL,
     embeddingDim: EMBEDDING_DIM,

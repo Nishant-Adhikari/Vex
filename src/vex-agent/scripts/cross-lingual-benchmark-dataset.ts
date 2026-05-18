@@ -20,13 +20,13 @@
  *
  * Shape — per pair:
  *   id:            unique identifier (lang-topic)
- *   lang:          ISO code (matches `memory_language_code` contract from PR2)
+ *   lang:          ISO code (2-3 letter, e.g. "en", "pl", "zh")
  *   topic:         semantic theme — also serves as distractor control
  *   queryNative:   what the user types in their native language (recall side)
- *   titleEn:       simulated LLM-generated episode title, English
- *   titleNative:   simulated LLM-generated episode title, native language
- *   summaryEn:     episode summary as it currently lives in `session_episodes.summary_en`
- *   summaryNative: what the summary will look like post-PR2 in the same language as the session
+ *   titleEn:       simulated LLM-generated chunk title, English
+ *   titleNative:   simulated LLM-generated chunk title, native language
+ *   summaryEn:     chunk summary in English (post-PR5 contract: chunker writes English)
+ *   summaryNative: native-language baseline for cross-lingual benchmark comparison
  *
  * Mode A (cross-lingual, legacy EN corpus): query=queryNative, doc=(titleEn, summaryEn).
  *   Measures whether we can cut the hot-path translation today without losing

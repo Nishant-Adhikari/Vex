@@ -10,7 +10,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { execute, query } from "@vex-agent/db/client.js";
-import { createSession, setMemoryScopeKey } from "@vex-agent/db/repos/sessions.js";
+import { createSession } from "@vex-agent/db/repos/sessions.js";
 import type { Message, MessageMetadata } from "@vex-agent/db/repos/messages.js";
 import { embedQuery } from "@vex-agent/embeddings/client.js";
 
@@ -28,22 +28,13 @@ export async function resetDb(): Promise<void> {
   await execute(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`);
 }
 
-export interface MakeSessionOptions {
-  memoryScopeKey?: string;
-}
-
 /**
- * Create a session and return its id. Optionally pins `memory_scope_key` so
- * recall filters have a stable target.
+ * Create a session and return its id.
  */
 export async function makeSession(
   id: string = randomUUID(),
-  opts: MakeSessionOptions = {},
 ): Promise<string> {
   await createSession(id);
-  if (opts.memoryScopeKey) {
-    await setMemoryScopeKey(id, opts.memoryScopeKey);
-  }
   return id;
 }
 

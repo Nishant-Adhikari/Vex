@@ -135,11 +135,6 @@ CREATE INDEX idx_recall_cache_expires ON recall_cache_entries(expires_at);
 -- UPDATE sits after a `SELECT checkpoint_generation ... FOR UPDATE` so two
 -- concurrent checkpoints on the same session serialize). Stamped onto each
 -- batch of `session_memories` so recall can surface recency (`gen:N`).
--- `memory_scope_key` enables per-subagent memory isolation: parent and child
--- sessions share a scope when subagents should see the parent's memories,
--- and diverge otherwise. The column lived in `007_session_episodes.sql`
--- originally; PR4 sunset relocated it here so the legacy migration can be
--- deleted without losing the subagent-scoping contract.
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
   scope TEXT DEFAULT 'chat',
@@ -153,7 +148,6 @@ CREATE TABLE sessions (
   mode TEXT NOT NULL DEFAULT 'agent' CHECK (mode IN ('agent', 'mission')),
   permission TEXT NOT NULL DEFAULT 'restricted' CHECK (permission IN ('restricted', 'full')),
   initial_goal TEXT,
-  memory_scope_key TEXT,
   CONSTRAINT sessions_mission_requires_initial_goal
     CHECK (mode <> 'mission' OR (initial_goal IS NOT NULL AND btrim(initial_goal) <> ''))
 );

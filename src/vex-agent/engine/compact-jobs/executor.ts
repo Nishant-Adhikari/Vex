@@ -43,7 +43,6 @@ import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
 import { validateTheme, buildFallbackTheme } from "@vex-agent/memory/theme-validation.js";
 import { shouldEmitHeartbeatFailure } from "./heartbeat-rate-limit.js";
 import {
-  MAX_CHUNKS_PER_COMPACT,
   MAX_OUTSTANDING_ITEMS_PER_CHUNK,
   TRACK2_RETRY_BACKOFF_BASE_MS,
   TRACK2_TIMEOUT_MS,
@@ -73,6 +72,12 @@ export function startCompactJobsExecutor(
   let inFlight: Promise<void> | null = null;
   let timer: NodeJS.Timeout | null = null;
   const sessionMutex = new Set<string>(); // per-session in-flight set
+  // Rate-limit `compact-worker.skip_no_provider_config` to one log per
+  // missing-config streak. Without this the warning fires every poll interval
+  // for the entire window the operator hasn't supplied OPENROUTER_API_KEY /
+  // AGENT_MODEL — flooding logs and obscuring real issues. Reset to false the
+  // moment config becomes present so a regression after recovery surfaces.
+  let warnedNoProviderConfig = false;
 
   // Bootstrap stale recovery — handles app-crash leftovers. DB failures
   // here are non-fatal for the executor lifecycle (next tick will retry
@@ -99,9 +104,13 @@ export function startCompactJobsExecutor(
       // permanently_failed. Stay idle until env is wired (operator unlocks
       // OPENROUTER_API_KEY / sets AGENT_MODEL → next tick claims normally).
       if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
-        logger.warn("compact-worker.skip_no_provider_config", { workerId });
+        if (!warnedNoProviderConfig) {
+          logger.warn("compact-worker.skip_no_provider_config", { workerId });
+          warnedNoProviderConfig = true;
+        }
         return;
       }
+      warnedNoProviderConfig = false;
       const job = await claimNextDueJob(workerId);
       if (!job) return;
       if (sessionMutex.has(job.sessionId)) {
@@ -210,7 +219,7 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
     let inserted = 0;
     let rejectedExclusion = 0;
 
-    for (const raw of chunkerOutput.slice(0, MAX_CHUNKS_PER_COMPACT)) {
+    for (const raw of chunkerOutput) {
       // Redaction across ALL generated string fields the chunker emitted —
       // narrative + outstanding items + entities/protocols/error_classes/
       // chains/tasks/theme. Anything that lands in the row's structured
@@ -318,7 +327,6 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
           outstandingTexts: rOuts.map((r) => r.text),
           sourceStartMessageId: job.sourceStartMessageId,
           sourceEndMessageId: job.sourceEndMessageId,
-          languageCode: null,
           inferenceModel: process.env.AGENT_MODEL ?? null,
           embedding: embedded.embedding,
           embeddingModel: embedded.providerModel,
@@ -449,7 +457,7 @@ const ChunkerOutputSchema = z.object({
       tried_md: z.string().optional().default(""),
       outstanding_items: z.array(z.string()).optional().default([]),
     }),
-  ).max(MAX_CHUNKS_PER_COMPACT),
+  ),
 });
 
 type ChunkerChunk = z.infer<typeof ChunkerOutputSchema>["chunks"][number];
@@ -483,7 +491,8 @@ async function callChunkerLLM(
 
   const systemPrompt = [
     "You are a chunker for per-session agent memory. You receive a conversation prefix that was just archived.",
-    "Produce 1-3 narrative chunks describing WHAT HAPPENED, WHAT THE AGENT DID, WHAT IT TRIED, and OUTSTANDING follow-ups.",
+    "Produce as many narrative chunks as the prefix warrants — typically 1-3, but emit more when distinct themes are present. There is no enforced upper cap; quality beats quantity, so do NOT pad.",
+    "Write all narrative fields (theme, happened_md, did_md, tried_md, outstanding_items, entities, protocols, error_classes, chains, tasks) in ENGLISH regardless of the conversation's language. Memory recall queries against this content are English-by-contract.",
     "EXCLUDE live state: balances, prices, gas, intent IDs, transaction hashes, position values. These are queryable live and would just become stale.",
     "INCLUDE: decisions and rationale, observed patterns, lessons learned, user signals, mission state.",
     "Output strict JSON: { chunks: [ { theme, entities[], protocols[], error_classes[], chains[], tasks[], happened_md, did_md, tried_md, outstanding_items[] } ] }",

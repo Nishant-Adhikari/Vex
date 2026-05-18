@@ -26,6 +26,7 @@ import {
 } from "@vex-agent/db/repos/session-memories/index.js";
 import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { OUTSTANDING_ITEM_TEXT_MAX } from "@vex-agent/memory/policy.js";
+import { redact } from "@vex-agent/memory/redaction.js";
 import logger from "@utils/logger.js";
 
 const MarkResolvedSchema = z.object({
@@ -47,9 +48,18 @@ export async function handleMarkOutstandingResolved(
   }
   const { memory_id, outstanding_item_id, resolution_note } = parsed.data;
 
+  // Redact secrets / identifiers from the resolution note BEFORE it lands in
+  // the JSONB outstanding_items column, the materialized body_md, or the
+  // embedding input. Compact-time writes already pass through redact() in the
+  // Track 2 worker; this is the symmetrical guard for the agent-driven
+  // resolution path that the cross-PR audit flagged as a leak surface.
+  const redactedNote = redact(resolution_note);
+
   logger.info("mark_outstanding_resolved.called", {
     sessionId: context.sessionId,
     memoryId: memory_id,
+    redactionHardCount: redactedNote.hardRedactCount,
+    redactionMaskCount: redactedNote.maskCount,
   });
 
   // Verify the chunk belongs to this session (defense-in-depth).
@@ -67,7 +77,7 @@ export async function handleMarkOutstandingResolved(
   const result = await markOutstandingResolved(
     memory_id,
     outstanding_item_id,
-    resolution_note,
+    redactedNote.text,
     "agent",
   );
   if (!result.ok) {

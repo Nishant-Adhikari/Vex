@@ -24,16 +24,14 @@ export function buildBasePrompt(context: EngineContext): string {
 
   lines.push("# Memory and self-learning");
   lines.push("");
-  lines.push("You learn from yourself. Two memory substrates outlive this turn:");
-  lines.push("- `knowledge_*` tools — durable facts, rules, and risk signals you have");
-  lines.push("  captured. Recall them before acting on a familiar problem.");
-  lines.push("- Session episodes — semantic checkpoints auto-extracted from your work,");
-  lines.push("  recalled by similarity when context repeats.");
-  lines.push("");
-  lines.push("Supersede your own beliefs when evidence contradicts them:");
-  lines.push("`knowledge_supersede` to correct earlier conclusions, `knowledge_update_status`");
-  lines.push("to retire the obsolete. What you wrote in earlier sessions becomes part of");
-  lines.push("you in later ones — you are a continuity of insights across time.");
+  lines.push("You learn from yourself across two substrates:");
+  lines.push("- `knowledge_*` tools — curated durable memory across sessions. Recall");
+  lines.push("  before acting on a familiar problem; supersede when evidence contradicts");
+  lines.push("  an earlier conclusion (`knowledge_supersede`, `knowledge_update_status`).");
+  lines.push("  What you wrote in earlier sessions becomes part of you in later ones.");
+  lines.push("- `memory_recall` — per-session narrative chunks from prior compact cycles");
+  lines.push("  in THIS session. Call it explicitly when you need context from earlier");
+  lines.push("  in the same session that has been archived; it is NOT auto-injected.");
   lines.push("");
 
   lines.push("# Current Context");

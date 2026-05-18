@@ -74,7 +74,6 @@ CREATE TABLE IF NOT EXISTS session_memories (
   -- Provenance
   source_start_message_id         INTEGER,
   source_end_message_id           INTEGER,
-  language_code                   TEXT,
   inference_model                 TEXT,
 
   -- Quality signals

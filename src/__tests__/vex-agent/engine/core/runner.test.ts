@@ -112,7 +112,6 @@ function makeHydratedSession(overrides = {}) {
       missionRunId: null,
       isSubagent: false,
       loadedDocuments: new Map(),
-      memoryScopeKey: "session-1",
       ...overrides,
     },
     messages: [],

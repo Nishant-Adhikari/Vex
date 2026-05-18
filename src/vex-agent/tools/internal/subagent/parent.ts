@@ -10,7 +10,7 @@ import * as subagentMessagesRepo from "@vex-agent/db/repos/subagent-messages.js"
 import { loadEnvConfig, loadSubagentConfig } from "@vex-agent/inference/config.js";
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
-import { str, num, bool, enumField, ok, fail } from "../types.js";
+import { str, num, bool, ok, fail } from "../types.js";
 import logger from "@utils/logger.js";
 import {
   activeSubagents,
@@ -45,14 +45,6 @@ export async function handleSubagentSpawn(
 
   const allowTrades = bool(params, "allow_trades");
   const maxIterations = num(params, "max_iterations") ?? subConfig.maxIterations;
-  // Memory scope strategy — default is "isolated" (server-enforced, not schema
-  // default, because LLMs frequently omit even declared defaults). 'shared' is
-  // the legacy opt-in for delegate-style subagents whose checkpoints should
-  // contribute to the parent's episode pool. 'isolated' gives the subagent its
-  // own memory_scope_key so parent recall never surfaces subagent episodes
-  // (and vice versa) — this avoids context leaks between unrelated sibling
-  // subagents running concurrently.
-  const scopeStrategy = enumField(params, "scope_strategy", ["isolated", "shared"] as const) ?? "isolated";
   const subagentId = `subagent-${randomUUID()}`;
   const childSessionId = `session-${randomUUID()}`;
 
@@ -74,21 +66,6 @@ export async function handleSubagentSpawn(
     permission: childPermission,
   });
   await sessionsRepo.setScope(childSessionId, "subagent");
-  // Resolve memory_scope_key from the chosen strategy:
-  //   - isolated: new scope keyed on the child session (own pool)
-  //   - shared:   inherit parent's memoryScopeKey (fallback: parent sessionId)
-  // Isolation is NOT transitive — a grandchild spawned as 'isolated' from a
-  // 'shared' child still gets its own scope; a grandchild spawned as 'shared'
-  // from an 'isolated' child inherits the child's (isolated) scope, not the
-  // grandparent's. 'shared' semantics are per-level.
-  let resolvedScope: string;
-  if (scopeStrategy === "shared") {
-    const parentSession = await sessionsRepo.getSession(context.sessionId);
-    resolvedScope = parentSession?.memoryScopeKey ?? context.sessionId;
-  } else {
-    resolvedScope = childSessionId;
-  }
-  await sessionsRepo.setMemoryScopeKey(childSessionId, resolvedScope);
   await sessionLinksRepo.linkSessions(context.sessionId, childSessionId, "subagent", subagentId);
 
   logger.info("subagent.spawned", {
@@ -99,8 +76,6 @@ export async function handleSubagentSpawn(
     childPermission,
     parentPermission: context.sessionPermission,
     maxIterations,
-    scopeStrategy,
-    resolvedScope,
   });
 
   startSubagentExecution(subagentId, name);
@@ -112,8 +87,7 @@ export async function handleSubagentSpawn(
     task: task.slice(0, 200),
     allowTrades,
     maxIterations,
-    scopeStrategy,
-    message: `Subagent "${name}" spawned (ID: ${subagentId}, scope: ${scopeStrategy}). Use subagent_status to check progress.`,
+    message: `Subagent "${name}" spawned (ID: ${subagentId}). Use subagent_status to check progress.`,
   });
 }
 
