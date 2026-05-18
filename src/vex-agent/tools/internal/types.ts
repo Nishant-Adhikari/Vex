@@ -45,8 +45,8 @@ export interface InternalToolContext {
   sessionKind: SessionKind;
   /**
    * Context-usage band at dispatch time — derived from the previous prompt's
-   * token count. Used by band-scoped handlers (`checkpoint_handoff_prepare`
-   * in PR-9) for defense-in-depth against calls outside their intended band.
+   * token count. Used by band-scoped handlers (`compact_now` at barrier+)
+   * for defense-in-depth against calls outside their intended band.
    */
   contextUsageBand: "normal" | "warning" | "barrier" | "critical";
   /**

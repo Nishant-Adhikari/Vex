@@ -1,7 +1,7 @@
 /**
  * Sessions repo — session lifecycle, compaction, scope, memory language.
  *
- * Compaction model (post-session-episodes rollout):
+ * Compaction model:
  *   - `setRollingSummary` updates only the summary text.
  *   - `archivePrefix` moves a bounded prefix of messages into `messages_archive`
  *     (partial compact) and sets the new live `message_count`. `token_count`
@@ -124,10 +124,9 @@ export interface Session {
  *   - or the literal "und" for mixed/unclear.
  *
  * Validation lives at the code boundary (this file's
- * {@link setMemoryLanguageCode}); `knowledge_entries` (legacy
- * `session_episodes` is sunsetting in PR4)
- * do not own this schema. Adding a language later does not require a DB
- * migration — just new prompt cases in `extract.ts` / `merge.ts`.
+ * {@link setMemoryLanguageCode}); `knowledge_entries` does not own this
+ * schema. Adding a language later does not require a DB migration — just
+ * new prompt cases in `extract.ts` / `merge.ts`.
  */
 export const LANG_CODE_RE = /^([a-z]{2,3}(-[A-Z]{2})?|und)$/;
 
@@ -215,12 +214,14 @@ export async function setScope(id: string, scope: string): Promise<void> {
 }
 
 /**
- * Set the semantic memory scope key — legacy `session_episodes` recall key,
- * retained until PR4 drops the table. New `session_memories` is per-session
- * (scope key not used) so this setter only affects the legacy read path.
+ * Set the semantic memory scope key — used by subagent isolation (parent
+ * and child sessions share a scope when subagents should see the parent's
+ * memories, and diverge otherwise). `session_memories` is per-session and
+ * does not consume this field on the recall path; the column stays as the
+ * stable contract for subagent provisioning (`tools/internal/subagent`).
  *
  * Separate from `scope` (which is coarse: `chat` / `mcp` / `subagent`). The
- * scope key is the identity that episodic recall groups on — typically the
+ * scope key is the identity that subagent provisioning groups on — typically the
  * session id itself (isolated default for subagents post-PR3), but subagents
  * spawned with `scope_strategy: "shared"` inherit the parent's scope so
  * their checkpoints contribute to the parent's memory.

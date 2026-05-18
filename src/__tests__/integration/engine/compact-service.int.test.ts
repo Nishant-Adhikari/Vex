@@ -30,6 +30,8 @@ import {
 } from "@vex-agent/db/repos/compact-jobs/index.js";
 import { execute, query, queryOne } from "@vex-agent/db/client.js";
 import { resetCompactMutexForTests } from "@vex-agent/engine/compact-jobs/state.js";
+import { GIANT_TOOL_THRESHOLD } from "@vex-agent/engine/checkpoint/prefix.js";
+import { getAllMessages } from "@vex-agent/db/repos/messages.js";
 import { insertMessage, makeSession, resetDb } from "../setup/fixtures.js";
 
 function newJob(sessionId: string, gen: number, overrides: Partial<NewCompactJob> = {}): NewCompactJob {
@@ -158,6 +160,86 @@ describe("compact-worker missing-config gate (integration)", () => {
     // Status untouched, attempt_count still 0 — the executor never claimed.
     expect(after!.status).toBe("pending");
     expect(after!.attemptCount).toBe(0);
+  });
+});
+
+describe("executeCompactNow giant_tool plan (integration)", () => {
+  // Replaces the deleted `giant-tool-chain.int.test.ts` coverage: when a
+  // single bloated tool message exceeds GIANT_TOOL_THRESHOLD, the compact
+  // path forks that one row to messages_archive and leaves a placeholder
+  // (referencing the compact_job_id + memory_recall) in the live transcript.
+  // This is the codex-required regression test for the PR4 sunset.
+
+  beforeEach(async () => {
+    await resetDb();
+    resetCompactMutexForTests();
+  });
+
+  it("forks single bloated tool result to archive, leaves placeholder pointing at compact_job", async () => {
+    const sid = await makeSession();
+
+    // Small head conversation + one bloated tool message + small tail.
+    await insertMessage(sid, "user", "fetch a big dump");
+    await insertMessage(sid, "assistant", "calling tool", { toolCalls: [{ id: "tc-bloat-1", type: "function", function: { name: "demo", arguments: "{}" } }] });
+    const bloatedId = await insertMessage(
+      sid,
+      "tool",
+      "x".repeat(GIANT_TOOL_THRESHOLD + 1000),
+      { toolCallId: "tc-bloat-1" },
+    );
+    await insertMessage(sid, "assistant", "tool result received; proceeding");
+
+    const result = await executeCompactNow({
+      sessionId: sid,
+      agentSummary: "compact summary",
+      preserveMd: null,
+      threadThemesHints: [],
+      source: "agent_tool",
+    });
+
+    expect(result.kind).toBe("committed");
+    if (result.kind !== "committed") throw new Error("unreachable");
+    expect(result.planMode).toBe("giant_tool");
+    expect(result.archivedMessages).toBe(1);
+
+    // Original bloated payload in messages_archive.
+    const archivedRow = await queryOne<{ content: string }>(
+      `SELECT content FROM messages_archive WHERE id = $1`,
+      [bloatedId],
+    );
+    expect(archivedRow).not.toBeNull();
+    expect(archivedRow!.content.length).toBeGreaterThan(GIANT_TOOL_THRESHOLD);
+    expect(archivedRow!.content.startsWith("xxxx")).toBe(true);
+
+    // Live row replaced by placeholder mentioning compact_job_id + memory_recall.
+    const liveRow = await queryOne<{ content: string }>(
+      `SELECT content FROM messages WHERE id = $1`,
+      [bloatedId],
+    );
+    expect(liveRow).not.toBeNull();
+    expect(liveRow!.content).toContain(String(result.jobId));
+    expect(liveRow!.content.toLowerCase()).toContain("memory_recall");
+    // Placeholder is bounded — much smaller than the original payload.
+    expect(liveRow!.content.length).toBeLessThan(GIANT_TOOL_THRESHOLD);
+
+    // compact_job source range points at the forked message id (single-row range).
+    const job = await queryOne<{
+      source_start_message_id: number;
+      source_end_message_id: number;
+    }>(
+      `SELECT source_start_message_id, source_end_message_id FROM compact_jobs WHERE id = $1`,
+      [result.jobId],
+    );
+    expect(job?.source_start_message_id).toBe(bloatedId);
+    expect(job?.source_end_message_id).toBe(bloatedId);
+
+    // getAllMessages returns canonical archived payload once, NOT the placeholder.
+    // This is the consumer-side proof that the fork is visible-as-archived to
+    // any code reading through getAllMessages (recall-seed, history viewers).
+    const allMessages = await getAllMessages(sid);
+    const matchingRows = allMessages.filter((m) => m.id === bloatedId);
+    expect(matchingRows).toHaveLength(1);
+    expect(matchingRows[0].content.startsWith("xxxx")).toBe(true);
   });
 });
 

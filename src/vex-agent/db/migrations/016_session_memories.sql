@@ -1,15 +1,11 @@
 -- Session memories — per-session narrative chunks produced by Track 2 of the
--- compact pipeline. Replaces the auto-injected `[Session episode recall]`
--- block in `turn.ts` with agent-driven `memory_recall` semantic retrieval.
+-- compact pipeline. Sole per-session memory tier after PR4 sunset; agent
+-- retrieves them via the `memory_recall` tool (no auto-injection at prompt
+-- build time).
 --
--- Layered alongside (not replacing) `session_episodes` for one release cycle:
--- legacy episodes table remains for backwards compat until PR4 sunsets it
--- after two weeks of green telemetry.
---
--- Embedding contract mirrors `session_episodes` and `knowledge_entries`:
--- vector column has NO typmod, per-row `embedding_model` + `embedding_dim`
--- are authoritative, and recall MUST filter on both — mixed-dim `<=>`
--- crashes pgvector.
+-- Embedding contract mirrors `knowledge_entries`: vector column has NO typmod,
+-- per-row `embedding_model` + `embedding_dim` are authoritative, and recall
+-- MUST filter on both — mixed-dim `<=>` crashes pgvector.
 --
 -- Dedupe is per-session and content-hash based: `(session_id, content_hash)`
 -- UNIQUE WHERE `status='active'`. content_hash is computed from the

@@ -5,27 +5,22 @@
  * Historic behaviour was "use the last user input". For mission / full-
  * autonomous runs that breaks after compaction (there may be no recent user
  * input — the engine loops on its own), and for wake resume the last user
- * input predates the wait entirely. The resolver uses 5 priorities:
+ * input predates the wait entirely. The resolver uses 4 priorities:
  *
- *   1. Active checkpoint handoff — legacy path; the PR2 cutover removed the
- *      writer (`checkpoint_handoff_prepare`), so this branch is effectively
- *      unreachable in new sessions but is kept defensively until PR4 drops
- *      the table outright.
- *   2. Post-wake — a wake_due banner just landed, so the handoff reason +
+ *   1. Post-wake — a wake_due banner just landed, so the wake reason +
  *      mission objective + open loops are the relevant seed.
- *   3. Mission / full-autonomous with history — last meaningful assistant
+ *   2. Mission / full-autonomous with history — last meaningful assistant
  *      plan + open loops + tool summary.
- *   4. Empty full-autonomous — first turn of a fresh full-autonomous run;
+ *   3. Empty full-autonomous — first turn of a fresh full-autonomous run;
  *      there is no user input to fall back to. Use recent session-memory
  *      themes, or return `null` to skip the recall block entirely.
- *   5. Chat / fallback — last user input (the pre-PR-10 behaviour).
+ *   4. Chat / fallback — last user input (the pre-PR-10 behaviour).
  *
  * The resolver is intentionally small and pure so it is easy to test in
  * isolation. The turn-time wiring in `turn.ts` composes the inputs (last
- * engine message, open loops, handoff, recent themes).
+ * engine message, open loops, recent themes).
  */
 
-import type { CheckpointHandoff } from "@vex-agent/db/repos/checkpoint-handoffs.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 
 export interface EffectiveRecallSeedInput {
@@ -33,7 +28,6 @@ export interface EffectiveRecallSeedInput {
   missionRunActive: boolean;
   messages: readonly Message[];
   missionObjective?: string | null;
-  activeHandoff?: CheckpointHandoff | null;
   lastEngineMessage?: LastEngineMessageHint | null;
   openLoops?: readonly string[];
   /**
@@ -59,7 +53,7 @@ export interface LastEngineMessageHint {
 const EMPTY_OBJECTIVE_FALLBACK = "Resume autonomous session";
 
 /**
- * Resolve the recall seed. PR2-cutover note: the only production caller
+ * Resolve the recall seed. PR2-cutover note: the original production caller
  * (`fetchSessionEpisodeRecallBlock`) was deleted with the legacy auto-
  * recall pipeline; this function survives as a pure utility for future
  * consumers (PR3 telemetry / PR4 eval-harness seeds). Returns `null` to
@@ -67,13 +61,7 @@ const EMPTY_OBJECTIVE_FALLBACK = "Resume autonomous session";
  * with zero history and no hint sources.
  */
 export function effectiveRecallSeed(input: EffectiveRecallSeedInput): string | null {
-  // 1. Active handoff — PR-9 guarantees a non-empty preferredRecallQuery.
-  if (input.activeHandoff) {
-    const query = input.activeHandoff.payload.preferredRecallQuery.trim();
-    if (query.length > 0) return query;
-  }
-
-  // 2. Post-wake signal — the last engine message is a wake_due banner. The
+  // 1. Post-wake signal — the last engine message is a wake_due banner. The
   //    reason field was the model's own hint; mission objective + open loops
   //    help anchor recall to the ongoing work.
   if (input.lastEngineMessage?.messageType === "wake_due") {
@@ -86,7 +74,7 @@ export function effectiveRecallSeed(input: EffectiveRecallSeedInput): string | n
     if (combined.length > 0) return combined;
   }
 
-  // 3. Mission run with session history — pull the last meaningful assistant
+  // 2. Mission run with session history — pull the last meaningful assistant
   //    content (a plan / continuation note), plus any open loops the caller
   //    threaded through. Agent mode is one-shot; this branch never fires
   //    there because there's no recurring recall surface.
@@ -99,7 +87,7 @@ export function effectiveRecallSeed(input: EffectiveRecallSeedInput): string | n
     }
   }
 
-  // 4. Mission with no live messages — fall back to recent narrative-memory
+  // 3. Mission with no live messages — fall back to recent narrative-memory
   //    themes so a fresh run wakes into a recall pool seeded by prior work.
   //    Themes are slugs (e.g. `kyber_quote_timeout_pattern`); rendering them
   //    as a natural-language seed is the chunker's job at write time, so we
@@ -114,7 +102,7 @@ export function effectiveRecallSeed(input: EffectiveRecallSeedInput): string | n
     return null;
   }
 
-  // 5. Chat / fallback — last user input (legacy behaviour).
+  // 4. Chat / fallback — last user input (legacy behaviour).
   return findLastUserInput(input.messages);
 }
 

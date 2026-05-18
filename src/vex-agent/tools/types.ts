@@ -92,7 +92,7 @@ export interface ToolDef {
    * - `"agent"` → only the Vex Agent runtime sees it (agent / mission).
    *   `getProductionMcpTools` filters it out. Use for tools
    *   that only make sense inside the agent loop (`mission_stop`, `loop_defer`,
-   *   `checkpoint_handoff_prepare`, `tool_output_read`).
+   *   `tool_output_read`).
    * - `"mcp"` → only the MCP server (`getProductionMcpTools`) advertises it.
    *   `getOpenAITools` filters it out. Use for self-documentation tools whose
    *   content the agent already gets via system prompt (`vex_introduction`,

@@ -1,66 +1,27 @@
 /**
  * `effectiveRecallSeed` priority tests.
  *
- * Covers the 5-priority resolver:
- *   1. Active handoff (handoff.payload.preferredRecallQuery)
- *   2. Post-wake (lastEngineMessage.messageType === "wake_due")
- *   3. Mission with history (assistant plan + open loops)
- *   4. Mission with no history (recent narrative-memory themes OR null)
- *   5. Agent / fallback (last user input)
+ * Covers the 4-priority resolver:
+ *   1. Post-wake (lastEngineMessage.messageType === "wake_due")
+ *   2. Mission with history (assistant plan + open loops)
+ *   3. Mission with no history (recent narrative-memory themes OR null)
+ *   4. Agent / fallback (last user input)
  *
- * PR2 cutover: priority 4 was `recentEpisodeTitles` → now `recentThemes`
- * sourced from `session_memories` via `getSessionMemoryStats`. Priorities
- * 1, 2, 3, 5 unchanged.
+ * PR2 cutover: priority 3 was `recentEpisodeTitles` → now `recentThemes`
+ * sourced from `session_memories` via `getSessionMemoryStats`.
+ * PR4 sunset: priority 1 used to be "active checkpoint handoff" — removed
+ * along with the `checkpoint_handoffs` table.
  */
 
 import { describe, it, expect } from "vitest";
 import { effectiveRecallSeed } from "../../../../vex-agent/engine/core/recall-seed.js";
 import type { Message } from "../../../../vex-agent/db/repos/messages.js";
-import type { CheckpointHandoff } from "../../../../vex-agent/db/repos/checkpoint-handoffs.js";
 
 function msg(role: Message["role"], content: string, extra: Partial<Message> = {}): Message {
   return { role, content, timestamp: "2026-04-20T12:00:00.000Z", ...extra };
 }
 
-function handoff(query: string): CheckpointHandoff {
-  return {
-    id: "h-1",
-    sessionId: "s1",
-    targetCheckpointGeneration: 3,
-    status: "active",
-    createdAt: "2026-04-20T11:00:00.000Z",
-    consumedAt: null,
-    payload: {
-      preserveMd: "",
-      preferredRecallQuery: query,
-      importantEntities: [],
-      openLoops: [],
-    },
-  };
-}
-
 describe("effectiveRecallSeed", () => {
-  it("picks handoff.preferredRecallQuery first when available", () => {
-    const seed = effectiveRecallSeed({
-      sessionKind: "mission",
-      missionRunActive: true,
-      messages: [msg("user", "old message")],
-      activeHandoff: handoff("resume bet monitoring"),
-    });
-    expect(seed).toBe("resume bet monitoring");
-  });
-
-  it("ignores handoff when preferredRecallQuery is empty (falls to next priority)", () => {
-    const empty = handoff("");
-    const seed = effectiveRecallSeed({
-      sessionKind: "agent",
-      missionRunActive: false,
-      messages: [msg("user", "last chat line")],
-      activeHandoff: empty,
-    });
-    expect(seed).toBe("last chat line");
-  });
-
   it("combines wake_due reason + mission objective + open loops after wake", () => {
     const seed = effectiveRecallSeed({
       sessionKind: "mission",
@@ -144,7 +105,7 @@ describe("effectiveRecallSeed", () => {
     expect(seed).toBeNull();
   });
 
-  it("handoff beats wake_due beats history beats user input", () => {
+  it("wake_due beats history beats user input", () => {
     const seed = effectiveRecallSeed({
       sessionKind: "mission",
       missionRunActive: true,
@@ -155,8 +116,9 @@ describe("effectiveRecallSeed", () => {
       missionObjective: "objective",
       openLoops: ["loop"],
       lastEngineMessage: { messageType: "wake_due", reason: "wake reason" },
-      activeHandoff: handoff("handoff seed"),
     });
-    expect(seed).toBe("handoff seed");
+    expect(seed).toContain("wake reason");
+    expect(seed).toContain("objective");
+    expect(seed).toContain("loop");
   });
 });
