@@ -18,6 +18,7 @@ import { hydrateEngineSession } from "../core/hydrate.js";
 import { runTurnLoop, type TurnLoopConfig } from "../core/turn-loop.js";
 import { getOpenAITools } from "@vex-agent/tools/registry.js";
 import type { ToolDefinition } from "@vex-agent/inference/types.js";
+import { computeBand, type ContextUsageBand } from "../core/context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { loadEnvConfig, loadSubagentConfig } from "@vex-agent/inference/config.js";
 import * as subagentsRepo from "@vex-agent/db/repos/subagents.js";
@@ -103,26 +104,40 @@ export async function runSubagentEngine(
     },
   };
 
-  const openAITools = getOpenAITools({
-    permission: effectivePermission,
-    role: "subagent",
-    sessionKind: "agent", // subagents run in isolated agent-like sessions
-    missionRunActive: false,
-    contextUsageBand: "normal",
-  });
-  const tools: ToolDefinition[] = openAITools.map(t => ({
-    type: "function" as const,
-    function: { name: t.function.name, description: t.function.description, parameters: t.function.parameters },
-  }));
-
-  // Use ENV-backed subagent config, with subagent.maxIterations as override
+  // Use ENV-backed subagent config, with subagent.maxIterations as override.
+  // `contextLimit` is needed BEFORE the tool projection so the per-band
+  // builder sees the right denominator for `computeBand`.
   const envConfig = loadEnvConfig();
   const subConfig = loadSubagentConfig(envConfig);
+
+  // PR3-clarity: build OpenAI tools PER-BAND, same shape as the agent /
+  // mission runners. Without this, the subagent's `tools` array stays at
+  // normal-band for the lifetime of the run while the Tool Map (rendered
+  // per-iteration from the live band by `runTurnLoop`) reflects
+  // barrier/critical-band restrictions — catalog and map drift. Dispatcher
+  // hard-deny would still backstop safety, but PR3's contract is "Tool Map
+  // matches the actual visible catalog". Codex P1, PR3 final review.
+  function buildSubagentToolsForBand(band: ContextUsageBand): ToolDefinition[] {
+    const openAITools = getOpenAITools({
+      permission: effectivePermission,
+      role: "subagent",
+      sessionKind: "agent", // subagents run in isolated agent-like sessions
+      missionRunActive: false,
+      contextUsageBand: band,
+    });
+    return openAITools.map(t => ({
+      type: "function" as const,
+      function: { name: t.function.name, description: t.function.description, parameters: t.function.parameters },
+    }));
+  }
+  const initialBand = computeBand(hydrated.tokenCount, subConfig.contextLimit);
+  const tools = buildSubagentToolsForBand(initialBand);
 
   const loopConfig: TurnLoopConfig = {
     maxIterations: subagent.maxIterations || subConfig.maxIterations,
     timeoutMs: subConfig.timeoutMs,
     contextLimit: subConfig.contextLimit,
+    buildToolsForBand: buildSubagentToolsForBand,
   };
 
   // Runner does NOT manage lifecycle status — caller (subagent.ts) does.

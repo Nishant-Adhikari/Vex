@@ -40,12 +40,19 @@ describe("mission state prompts", () => {
     expect(prompt).toContain("Do not turn a partial mission idea into a token/market research session");
   });
 
-  it("lets mode-specific instructions override generic research workflow", () => {
+  it("research workflow acknowledges mode-specific behavior (PR3 reorg)", () => {
+    // PR3-clarity reorg: "Mode-specific instructions override this generic
+    // research workflow" + the per-mode paragraphs were folded into a
+    // single "Research workflow varies by mode" sentence + a Mission SETUP
+    // / Mission RUN / Chat per-mode breakdown. Contract preserved (mission
+    // setup is draft-first, mission run ends in an actionable decision,
+    // chat answers and stops); phrasing tighter.
     const prompt = buildToolUsagePrompt();
 
-    expect(prompt).toContain("Mode-specific instructions override this generic research workflow");
-    expect(prompt).toMatch(/In mission\s+setup, default to draft-first behavior/);
-    expect(prompt).toMatch(/In mission run, research must end\s+in an actionable decision/);
+    expect(prompt).toMatch(/Research workflow varies by mode/i);
+    expect(prompt).toMatch(/Mission SETUP.*do not do broad market research/i);
+    expect(prompt).toMatch(/Mission RUN.*end in an actionable decision/i);
+    expect(prompt).toMatch(/Chat.*answer the current request/i);
   });
 
   it("makes active mission runs ignore stale setup start instructions", () => {

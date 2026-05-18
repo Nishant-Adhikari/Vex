@@ -10,17 +10,27 @@ import type { ToolDef } from "../types.js";
 export const DOCUMENT_TOOLS: readonly ToolDef[] = [
   {
     name: "document_read", kind: "internal", mutating: false, pressureSafety: "read_only",
-    description: "Read a freeform note from the notes space. For canonical structured memory use knowledge_get. Use preview=true for first 1000 chars without context load.",
+    description:
+      "Read a freeform note from the notes scratchpad by exact slug. Documents are NOT semantically searchable and NOT embedded — slug-keyed retrieval only. "
+      + "For durable cross-session knowledge (rules, lessons, strategies that should surface via semantic recall) use knowledge_recall / knowledge_get. "
+      + "For per-session narrative chunks (what happened earlier in THIS conversation) use memory_recall. "
+      + "✓ document_read(slug=\"risk-notes\", folder=\"notes\") — retrieves the exact note you previously wrote. "
+      + "✗ \"find notes about risk\" — documents have no semantic index; use knowledge_recall for that. "
+      + "Use preview=true for first 1000 chars without context load.",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space (only 'notes' is exposed)" },
-      slug: { type: "string", description: "Document slug" },
+      slug: { type: "string", description: "Exact document slug (no fuzzy match)" },
       folder: { type: "string", description: "Folder slug (optional, default: root)" },
       preview: { type: "boolean", description: "Preview mode (first 1000 chars, no context load)" },
     }, required: ["slug"] },
   },
   {
     name: "document_write", kind: "internal", mutating: false, pressureSafety: "mutating",
-    description: "Create or update a freeform note in the notes space. For canonical structured memory (rules, observations, strategies) use knowledge_write instead — it embeds and is retrievable.",
+    description:
+      "Create or update a freeform note in the notes scratchpad. Scratchpad — NOT searchable, NOT embedded; future retrieval needs the exact slug. "
+      + "For content that should be retrievable later by semantic intent (distilled rules, observed strategies, lessons from failure, user preferences with evidence) use knowledge_write instead — that path embeds and surfaces via knowledge_recall. "
+      + "For per-session narrative memory: that lands automatically on `compact_now` via Track 2 chunking; do not write it manually here. "
+      + "Pressure-band rule: blocked at barrier+ (catalog filter hides this from the LLM-visible tools then; compact_now first).",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space (only 'notes' is exposed)" },
       folder: { type: "string", description: "Folder slug (optional)" },
@@ -31,7 +41,10 @@ export const DOCUMENT_TOOLS: readonly ToolDef[] = [
   },
   {
     name: "document_list", kind: "internal", mutating: false, pressureSafety: "read_only",
-    description: "List notes in a space, optionally filtered by folder.",
+    description:
+      "Enumerate notes in the scratchpad space, optionally filtered by folder. Returns slugs + metadata only — NOT a search; do not rely on this to \"remember\" content. "
+      + "✓ document_list(folder=\"notes\") — gives you the slug list you can later read. "
+      + "✗ relying on this to find content by topic — use knowledge_recall (semantic) for that.",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space (only 'notes' is exposed)" },
       folder: { type: "string", description: "Folder slug filter" },
@@ -39,10 +52,12 @@ export const DOCUMENT_TOOLS: readonly ToolDef[] = [
   },
   {
     name: "document_delete", kind: "internal", mutating: false, pressureSafety: "mutating",
-    description: "Archive (soft-delete) a note.",
+    description:
+      "Archive (soft-delete) a scratchpad note. Reversible by writing the same slug again. "
+      + "For durable knowledge entries use knowledge_update_status (status='archived') instead — knowledge has lifecycle (active / superseded / invalidated / archived) and a lineage chain; documents are just a flat slug→content scratchpad.",
     parameters: { type: "object", properties: {
       space: { type: "string", enum: ["notes"], description: "Document space" },
-      slug: { type: "string", description: "Document slug" },
+      slug: { type: "string", description: "Exact document slug" },
       folder: { type: "string", description: "Folder slug" },
     }, required: ["slug"] },
   },

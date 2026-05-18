@@ -14,12 +14,16 @@ export const KNOWLEDGE_TOOLS: readonly ToolDef[] = [
   {
     name: "knowledge_write", kind: "internal", mutating: false, pressureSafety: "mutating",
     description:
-      "Write a NEW canonical knowledge entry: a distilled rule, observation, or fact that should be retrievable later. " +
-      "Use this ONLY for net-new facts — if you are replacing or updating an existing entry, use knowledge_supersede(previous_id) instead. " +
-      "title, summary, and content_md MUST be in English regardless of conversation language — the embedding model achieves significantly better retrieval on English text. " +
-      "kind is free-form snake_case (e.g. pumpfun_entry_pattern, risk_rule). Reuse a kind from Active Knowledge → Known kinds before creating a new one. " +
-      "Use pinned=true for evergreen rules (no TTL), or ttl_hours to override the default 7-day TTL for time-bounded observations. " +
-      "Fails loud if the local embeddings service is unavailable.",
+      "Write a NEW entry to curated cross-session knowledge: a distilled rule, observation, lesson from failure, observed user preference, or mastered protocol fact that the next session should be able to recall. "
+      + "Use ONLY for net-new content — replacing or updating an existing entry uses knowledge_supersede(previous_id). "
+      + ""
+      + "Save: persona facts (user goals, risk tolerance, signing constraints), observed strategies that worked, lessons from failures, observed user preferences with evidence, mastered protocols (rate limits, parameter quirks, gas patterns). "
+      + "Do not save: balances, prices, gas, open positions, quotes, tx hashes — those are live state, queried via wallet_read / evm_read / khalani_* / portfolio_inspect each turn. Anything already in proj_* / mission_runs / approval_queue is structured DB state, not knowledge. Raw secrets / mnemonics / private keys NEVER. "
+      + ""
+      + "Provenance via the `source` field: 'observed' (default — directly seen in this session) or 'user_confirmed' (user explicitly stated as fact) reach Active Knowledge hot context; 'inferred' (derived from observation) or 'hypothesis' (thin-evidence guess) remain recallable via knowledge_recall but are NEVER auto-injected. Use 'hypothesis' for guesses you want remembered but NOT surfaced as fact next turn. "
+      + ""
+      + "title, summary, content_md MUST be in English (embedding retrieval is significantly stronger on English; translate user intent before writing). kind is free-form snake_case — reuse from Active Knowledge → Known kinds before inventing a new one. Pin evergreen rules (no TTL); ttl_hours overrides the default 7-day window for time-bounded observations. "
+      + "Fails loud if the local embeddings service is unavailable. Pressure-band rule: blocked at barrier+ (compact first; the catalog filter hides this from the LLM-visible tools then).",
     parameters: { type: "object", properties: {
       kind: { type: "string", description: "Free-form snake_case kind, English. Reuse from Known kinds when possible (e.g. pumpfun_entry_pattern, risk_rule, bridge_observation)." },
       title: { type: "string", description: "Single thesis or rule, in English." },
@@ -27,9 +31,15 @@ export const KNOWLEDGE_TOOLS: readonly ToolDef[] = [
       content_md: { type: "string", description: "Optional full markdown body in English (defaults to summary). Returned by recall and knowledge_get." },
       tags: { type: "array", items: { type: "string" }, description: "Optional string tags (e.g. ['solana', 'memecoin'])." },
       confidence: { type: "number", description: "Agent confidence in 0..1." },
+      source: {
+        type: "string",
+        enum: ["observed", "user_confirmed", "inferred", "hypothesis"],
+        description:
+          "Provenance tier — defaults to 'observed' when omitted. Only 'observed' and 'user_confirmed' enter Active Knowledge hot context. Use 'inferred' for conclusions you derived but didn't see directly; 'hypothesis' for thin-evidence guesses you want remembered but NOT surfaced as fact.",
+      },
       source_refs: { type: "object", description: "Provenance: { protocol_executions:[ids], proj_activity:[ids], proj_pnl_lots:[ids] }." },
       ttl_hours: { type: "number", description: "Override default 7-day TTL (1..8760). Ignored if pinned=true." },
-      pinned: { type: "boolean", description: "Evergreen rule — bypasses TTL and stays in Active Knowledge." },
+      pinned: { type: "boolean", description: "Evergreen rule — bypasses TTL and stays in Active Knowledge (only for source='observed' or 'user_confirmed')." },
     }, required: ["kind", "title", "summary"] },
   },
   {
@@ -49,6 +59,12 @@ export const KNOWLEDGE_TOOLS: readonly ToolDef[] = [
       content_md: { type: "string", description: "Optional full markdown body, English (defaults to summary)." },
       tags: { type: "array", items: { type: "string" }, description: "Optional string tags." },
       confidence: { type: "number", description: "Agent confidence in 0..1." },
+      source: {
+        type: "string",
+        enum: ["observed", "user_confirmed", "inferred", "hypothesis"],
+        description:
+          "Provenance tier for the NEW version (defaults to 'observed'). Same rules as knowledge_write — only 'observed' / 'user_confirmed' reach Active Knowledge hot context.",
+      },
       source_refs: { type: "object", description: "Provenance for the new version." },
       ttl_hours: { type: "number", description: "Override default 7-day TTL (1..8760). Ignored if pinned=true." },
       pinned: { type: "boolean", description: "Evergreen rule — bypasses TTL." },
@@ -60,13 +76,20 @@ export const KNOWLEDGE_TOOLS: readonly ToolDef[] = [
   {
     name: "knowledge_recall", kind: "internal", mutating: false, pressureSafety: "read_only",
     description:
-      "Semantic recall over canonical knowledge. Returns up to 10 entries inline (with full content_md) and writes any overflow to a tmp cache (see overflow.cacheKey, readable via knowledge_recall_overflow for ~15 minutes). " +
-      "query MUST be in English (translate intent first) — the embedding model achieves best retrieval on English text. " +
-      "ACTIVE-ONLY by design: superseded/invalidated/archived entries are excluded. To browse historical entries use knowledge_history; to trace a version chain use knowledge_lineage. " +
-      "NOT 100% read-only: lazily cleans up expired cache entries and writes overflow when results exceed 10 entries or 50000 chars. " +
-      "Fails loud if the local embeddings service is unavailable.",
+      "Semantic recall over curated cross-session knowledge. Returns the top-K entries inline (with content_md); overflow lands in a 15-minute tmp cache readable via knowledge_recall_overflow. "
+      + ""
+      + "Write SEMANTIC INTENT, not keywords. "
+      + "✓ \"user trading risk preferences and position sizing rules\" "
+      + "✗ \"risk\" "
+      + "✓ \"past lessons from Kyber DEX integration timeouts\" "
+      + "✗ \"kyber\" "
+      + ""
+      + "query MUST be in English (translate intent first — embedding retrieval is significantly stronger on English). ACTIVE-ONLY by design: superseded/invalidated/archived entries are excluded — for those use knowledge_history; for a specific id's version chain use knowledge_lineage. "
+      + ""
+      + "Skip when the [Knowledge: empty] banner is in the system prompt — nothing to find. "
+      + "Fails loud if the local embeddings service is unavailable.",
     parameters: { type: "object", properties: {
-      query: { type: "string", description: "Search query in English (translate user's intent first)." },
+      query: { type: "string", description: "Semantic intent in English. Translate user's intent first; write the way you'd ask an expert who knows the codebase." },
       k: { type: "number", description: "Max results (default 8, hard max 15)." },
       kind: { type: "string", description: "Optional kind filter — reuse from Active Knowledge → Known kinds." },
       include_expired: { type: "boolean", description: "Include entries past their TTL (default true; TTL is hot-context cutoff, not existence)." },

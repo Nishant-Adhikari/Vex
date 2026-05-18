@@ -64,6 +64,22 @@ export interface PromptStackOptions {
    * curated entries. Built async in `executeTurn`.
    */
   knowledgeStateBanner?: string;
+  /**
+   * Pre-rendered Memory Routing Rule (4-line static decision hierarchy
+   * from `buildMemoryRoutingRule`). Built by `runTurnLoop` once per loop
+   * — the content is static so the prompt-stack option is the cheapest
+   * delivery vector.
+   */
+  memoryRoutingPrompt?: string;
+  /**
+   * Pre-rendered Tool Map for the current `ToolVisibilityContext` from
+   * `buildToolCatalogPrompt`. Built in `runTurnLoop` using the SAME
+   * visibility context that drives `loopConfig.buildToolsForBand`, so
+   * the LLM-visible tool catalog and the system-prompt Tool Map stay
+   * in lockstep. Empty string omits the section (e.g. no agent-surface
+   * tools visible).
+   */
+  toolCatalogPrompt?: string;
 }
 
 /**
@@ -103,6 +119,19 @@ export function buildPromptStack(
   }
   if (options.activeKnowledgeBlock && options.activeKnowledgeBlock.length > 0) {
     layers.push(options.activeKnowledgeBlock);
+  }
+  // Memory Routing Rule sits between the memory/knowledge state signals
+  // and the Tool Map so the model has the substrate decision hierarchy
+  // primed BEFORE it scans the catalog for "what can I call right now".
+  if (options.memoryRoutingPrompt && options.memoryRoutingPrompt.length > 0) {
+    layers.push(options.memoryRoutingPrompt);
+  }
+  // Visibility-aware Tool Map — built in turn-loop from the same
+  // `ToolVisibilityContext` that drives `loopConfig.buildToolsForBand`,
+  // so the catalog the LLM sees in the `tools` array and the map it
+  // sees in the prompt cannot drift.
+  if (options.toolCatalogPrompt && options.toolCatalogPrompt.length > 0) {
+    layers.push(options.toolCatalogPrompt);
   }
 
   layers.push(buildToolUsagePrompt());

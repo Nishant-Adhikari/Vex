@@ -130,19 +130,26 @@ export function getAllTools(): readonly ToolDef[] {
 }
 
 /**
- * Get tools as OpenAI format, filtered for the given session context.
+ * Filter the master TOOLS array for a given session context, returning
+ * `ToolDef` rows (not the OpenAI projection). Shared upstream of
+ * `getOpenAITools` AND of `buildToolCatalogPrompt` so the LLM-visible
+ * catalog and the system-prompt Tool Map never drift — both layers
+ * consume the same filter output for the same `ToolVisibilityContext`.
  *
- * Filter chain (in order):
+ * Filter chain (order matters):
  *   1. `requiresEnv` / `showOnlyWhenEnvMissing` — env-var gates.
- *   2. `proactive` — hidden when `sessionKind === "agent"` (one-shot
- *      conversation; proactive tools are for mission loops).
+ *   2. `proactive` — hidden when `sessionKind === "agent"`.
  *   3. `excludeRoles` — hard role gate.
- *   4. `visibility` — session-aware gates (band / mission-active /
- *      agent-hidden / mission-setup-hidden). When a ToolDef has no
- *      `visibility`, it's visible unconditionally at this step.
+ *   4. `passesVisibility` — band gate + mission-setup/run / agent-hidden /
+ *      mission-setup-hidden / requiresMissionActiveRun gates.
+ *   5. `passesPressureSafety` — PR2 cutover catalog-level filter
+ *      (drops `mutating` at barrier+, drops `compact_only` below barrier).
+ *   6. `isVisibleOnSurface(t, "agent")` — drops `surface: "mcp"` tools
+ *      (`vex_introduction`, `vex_namespace_tools`) for the agent runtime;
+ *      they remain visible via `getProductionMcpTools()` for MCP consumers.
  */
-export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
-  const filtered = TOOLS
+export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
+  return TOOLS
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
@@ -150,7 +157,16 @@ export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => passesPressureSafety(t, ctx.contextUsageBand))
     .filter(t => isVisibleOnSurface(t, "agent"));
-  return toOpenAITools(filtered);
+}
+
+/**
+ * Get tools as OpenAI format, filtered for the given session context.
+ *
+ * Thin wrapper over `getVisibleToolDefs` + the OpenAI projection — keeps
+ * the filter chain in one place.
+ */
+export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
+  return toOpenAITools(getVisibleToolDefs(ctx));
 }
 
 /**
@@ -265,4 +281,105 @@ export function isToolBlockedForRole(name: string, role: "parent" | "subagent"):
   const def = byName.get(name);
   if (!def) return false;
   return def.excludeRoles?.includes(role) ?? false;
+}
+
+// ── Tool Map (system-prompt-facing categorization) ───────────────
+
+/**
+ * Ordered, visibility-coherent categorization of the agent-surface tools
+ * used to render the `# Available Tool Map` system-prompt section. The
+ * map's ORDER carries model-priority intent (e.g. protocol discovery /
+ * execution first because everything mutating routes through them; reads
+ * before writes within each substrate; runtime safety nets like
+ * `compact_now` next to the substrate they protect). Do NOT alphabetize
+ * within categories — the declaration order is the LLM-facing order.
+ *
+ * MCP-surface-only tools (`vex_introduction`, `vex_namespace_tools`,
+ * declared with `surface: "mcp"` in `registry/vex.ts`) intentionally have
+ * NO entry here — the agent runtime does not advertise them. They remain
+ * visible to MCP consumers via `getProductionMcpTools()`.
+ *
+ * Subagent tools (`registry/subagents.ts`) are dormant (empty array); if
+ * re-enabled in the future, add a `Subagent control` category here and
+ * extend the integrity test in
+ * `__tests__/vex-agent/tools/registry-tool-map.test.ts`.
+ */
+export interface ToolMapCategory {
+  /** Visible label rendered before the comma-separated tool names. */
+  label: string;
+  /** Tool names in render order. Must resolve to registered ToolDefs. */
+  toolNames: readonly string[];
+}
+
+export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
+  { label: "Protocol discovery/execution", toolNames: ["discover_tools", "execute_tool"] },
+  { label: "Live state reads", toolNames: ["wallet_read", "evm_read", "portfolio_inspect"] },
+  {
+    label: "Khalani read shortcuts",
+    toolNames: [
+      "khalani_chains_list",
+      "khalani_tokens_top",
+      "khalani_tokens_search",
+      "khalani_tokens_balances",
+    ],
+  },
+  { label: "Research", toolNames: ["web_research", "twitter_account"] },
+  { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },
+  {
+    label: "Session memory — this conversation/mission only",
+    toolNames: ["memory_recall", "mark_outstanding_resolved"],
+  },
+  { label: "Context compaction — pressure only", toolNames: ["compact_now"] },
+  {
+    label: "Knowledge recall/history — curated across sessions",
+    toolNames: [
+      "knowledge_recall",
+      "knowledge_recall_overflow",
+      "knowledge_get",
+      "knowledge_lineage",
+      "knowledge_history",
+    ],
+  },
+  {
+    label: "Knowledge write/lifecycle",
+    toolNames: ["knowledge_write", "knowledge_supersede", "knowledge_update_status"],
+  },
+  {
+    label: "Documents read — scratchpad, not semantic memory",
+    toolNames: ["document_read", "document_list"],
+  },
+  {
+    label: "Documents write — scratchpad, not semantic memory",
+    toolNames: ["document_write", "document_delete"],
+  },
+  { label: "Wallet transfers", toolNames: ["wallet_send_prepare", "wallet_send_confirm"] },
+  { label: "Mission setup draft", toolNames: ["mission_draft_update"] },
+  { label: "Mission run stop", toolNames: ["mission_stop"] },
+  { label: "Mission run scheduling", toolNames: ["loop_defer"] },
+  { label: "Setup/onboarding", toolNames: ["polymarket_setup"] },
+];
+
+/**
+ * Project the Tool Map for a given visibility context — drops categories
+ * whose every tool is hidden by the filter chain, preserves declared
+ * order within each surviving category. Consumed by
+ * `buildToolCatalogPrompt` to render the system-prompt Tool Map section.
+ */
+export interface VisibleToolMapCategory {
+  label: string;
+  toolNames: readonly string[];
+}
+
+export function getVisibleToolsByCategory(
+  ctx: ToolVisibilityContext,
+): readonly VisibleToolMapCategory[] {
+  const visibleNames = new Set(getVisibleToolDefs(ctx).map(t => t.name));
+  const result: VisibleToolMapCategory[] = [];
+  for (const category of TOOL_MAP_CATEGORIES) {
+    const surviving = category.toolNames.filter(name => visibleNames.has(name));
+    if (surviving.length > 0) {
+      result.push({ label: category.label, toolNames: surviving });
+    }
+  }
+  return result;
 }

@@ -157,31 +157,47 @@ describe("turn — Active Knowledge drift guard", () => {
 
   // ── Knowledge Layer Rules drift guards ──────────────────────
 
-  it("system prompt always includes the Knowledge Layer Rules section (decision #23)", async () => {
+  it("system prompt always includes the Memory Layers section (PR3 reorg — was Knowledge Layer Rules)", async () => {
+    // The PR3-clarity reorg restructured tool-usage.ts around decisions
+    // rather than domains; the "Knowledge Layer Rules" heading became
+    // "Memory Layers", folding the substrate boundaries (live state /
+    // memory / knowledge / documents) into one cross-cutting section.
     const provider = makeProvider();
     await executeTurn(makeContext(), [], null, provider as any, makeConfig() as any, []);
     const systemPrompt = getSystemPrompt(provider);
-    expect(systemPrompt).toContain("Knowledge Layer Rules");
+    expect(systemPrompt).toContain("## 5. Memory Layers");
   });
 
-  it("Knowledge Layer Rules section explicitly says English-only (decision #23)", async () => {
+  it("Memory Layers section explicitly says knowledge is ENGLISH-ONLY (decision #23)", async () => {
     const provider = makeProvider();
     await executeTurn(makeContext(), [], null, provider as any, makeConfig() as any, []);
     const systemPrompt = getSystemPrompt(provider);
-    // Section exists; the word "English" appears in the rules.
-    const rulesIdx = systemPrompt.indexOf("Knowledge Layer Rules");
-    expect(rulesIdx).toBeGreaterThan(0);
-    const rulesSection = systemPrompt.slice(rulesIdx);
-    expect(rulesSection).toContain("English");
+    const memIdx = systemPrompt.indexOf("Memory Layers");
+    expect(memIdx).toBeGreaterThan(0);
+    const memSection = systemPrompt.slice(memIdx);
+    // PR3 reorg copy: "ENGLISH-ONLY for embeddings"
+    expect(memSection).toMatch(/ENGLISH-ONLY|English-only|english/i);
   });
 
-  it("Knowledge Layer Rules section explicitly says to reuse existing kinds (decision #7)", async () => {
+  it("reuse-existing-kinds rule survived the reorg (decision #7 — now on knowledge_write ToolDef.description)", async () => {
+    // Codex PR3 plan-review (5b–5d): heavy knowledge-lifecycle prose
+    // moves OUT of tool-usage.ts and INTO the relevant ToolDef
+    // descriptions so the model sees the rule at tool-choice time, not
+    // just in the system prompt. "Reuse a kind from Known kinds before
+    // creating a new one" now lives on knowledge_write's description.
     const provider = makeProvider();
     await executeTurn(makeContext(), [], null, provider as any, makeConfig() as any, []);
-    const systemPrompt = getSystemPrompt(provider);
-    const rulesIdx = systemPrompt.indexOf("Knowledge Layer Rules");
-    const rulesSection = systemPrompt.slice(rulesIdx);
-    expect(rulesSection.toLowerCase()).toContain("reuse");
+    // Use a token-budget-equivalent assertion: any of the three knowledge
+    // surfaces (system prompt OR the knowledge_write tool description in
+    // the openAI tools array) must enforce reuse. Reading the registry
+    // directly is the cleanest path since the ToolDef payload is what
+    // the model actually sees.
+    const { getToolDef } = await import(
+      "../../../../vex-agent/tools/registry.js"
+    );
+    const knowledgeWriteDef = getToolDef("knowledge_write");
+    expect(knowledgeWriteDef?.description.toLowerCase()).toContain("reuse");
+    expect(knowledgeWriteDef?.description).toMatch(/Known kinds|known kinds/i);
   });
 
   // ── Pre-fetch parameters ─────────────────────────────────────

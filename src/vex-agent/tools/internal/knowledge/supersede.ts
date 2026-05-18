@@ -30,6 +30,7 @@ import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { loadEmbeddingConfig } from "@vex-agent/embeddings/config.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { computeValidUntil, isValidKind } from "@vex-agent/knowledge/policy.js";
+import { isKnowledgeSource, type KnowledgeSource } from "@vex-agent/memory/policy.js";
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { str, num, bool, ok, fail } from "../types.js";
@@ -67,6 +68,18 @@ export async function handleKnowledgeSupersede(
   const confidence = readClampedNumber(params, "confidence", 0, 1);
   const pinned = bool(params, "pinned");
   const ttlHours = num(params, "ttl_hours");
+  // Successor provenance tier — same shape + validation as knowledge_write.
+  // Defaults to 'observed' inside the repo when omitted.
+  const sourceRaw = params["source"];
+  let source: KnowledgeSource | undefined;
+  if (sourceRaw !== undefined && sourceRaw !== null) {
+    if (!isKnowledgeSource(sourceRaw)) {
+      return fail(
+        `Invalid source "${String(sourceRaw)}". Allowed: observed, user_confirmed, inferred, hypothesis.`,
+      );
+    }
+    source = sourceRaw;
+  }
 
   // Optional narrative fields for the successor row.
   const rawChange = str(params, "change_summary");
@@ -128,6 +141,9 @@ export async function handleKnowledgeSupersede(
           embedding,
           sourceSurface: context.sourceSurface,
           sourceSession: context.sourceSession,
+          // Provenance tier — see knowledge_write for the hot-context filter
+          // semantics (only 'observed' / 'user_confirmed' auto-inject).
+          source,
           reason,
           changeSummary,
           whatFailed,

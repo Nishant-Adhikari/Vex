@@ -71,8 +71,13 @@ import {
 import { maybeRunForcedCompactFallback } from "@vex-agent/engine/compact-jobs/forced-fallback.js";
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
+import { buildMemoryRoutingRule } from "../prompts/memory-routing.js";
+import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
+import type { ToolVisibilityContext } from "@vex-agent/tools/registry.js";
 import { POST_COMPACT_BRIDGE_CYCLES } from "@vex-agent/memory/policy.js";
 import logger from "@utils/logger.js";
+
+const MEMORY_ROUTING_PROMPT = buildMemoryRoutingRule();
 
 export interface TurnLoopConfig {
   maxIterations: number;
@@ -321,7 +326,20 @@ export async function runTurnLoop(
     }
 
     // ── Tool projection per band ──────────────────────────────
+    // Shared visibility context for BOTH `buildToolsForBand` (the OpenAI
+    // tools array) AND `buildToolCatalogPrompt` (the system-prompt Tool
+    // Map). Constructing it once here is the single-source-of-truth
+    // guarantee — catalog and map cannot drift.
+    const turnVisibilityCtx: ToolVisibilityContext = {
+      permission: context.sessionPermission,
+      role: context.isSubagent ? "subagent" : "parent",
+      sessionKind: context.sessionKind,
+      missionRunActive: context.missionRunId !== null,
+      contextUsageBand: turnBand,
+    };
     const turnTools = loopConfig.buildToolsForBand?.(turnBand) ?? tools;
+    turnPromptOptions.toolCatalogPrompt = buildToolCatalogPrompt(turnVisibilityCtx);
+    turnPromptOptions.memoryRoutingPrompt = MEMORY_ROUTING_PROMPT;
 
     // Execute turn
     const turnResult = await executeTurn(

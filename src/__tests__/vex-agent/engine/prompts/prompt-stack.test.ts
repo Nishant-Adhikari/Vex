@@ -141,8 +141,8 @@ describe("prompt-stack", () => {
       expect(setupProtocols).toBe(fullProtocols);
 
       // Both should have the same tool-usage prompt
-      const setupToolUsage = setupStack.find(s => s.includes("# Tool System"));
-      const fullToolUsage = fullStack.find(s => s.includes("# Tool System"));
+      const setupToolUsage = setupStack.find(s => s.includes("# Tool Usage"));
+      const fullToolUsage = fullStack.find(s => s.includes("# Tool Usage"));
       expect(setupToolUsage).toBe(fullToolUsage);
     });
 
@@ -439,10 +439,13 @@ describe("prompt-stack", () => {
       expect(joined).toContain("Fresh balance before each mutation");
     });
 
-    it("contains quote before execute rule", () => {
+    it("contains quote / preview before mutation rule (PR3 reorg)", () => {
+      // PR3-clarity moved the rule into the Protocol Execution section
+      // and rephrased it as "Quote / preview before mutation" — the
+      // contract (read-only dryRun pass first) is preserved.
       const stack = buildPromptStack(makeContext());
       const joined = stack.join("\n");
-      expect(joined).toContain("Quote before execute");
+      expect(joined).toMatch(/Quote\s*\/\s*preview before mutation/i);
     });
 
     it("contains address-first rule", () => {

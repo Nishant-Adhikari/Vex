@@ -24,6 +24,7 @@ import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { loadEmbeddingConfig } from "@vex-agent/embeddings/config.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { computeValidUntil, isValidKind } from "@vex-agent/knowledge/policy.js";
+import { isKnowledgeSource, type KnowledgeSource } from "@vex-agent/memory/policy.js";
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { str, num, bool, ok, fail } from "../types.js";
@@ -52,6 +53,19 @@ export async function handleKnowledgeWrite(
   const confidence = readClampedNumber(params, "confidence", 0, 1);
   const pinned = bool(params, "pinned");
   const ttlHours = num(params, "ttl_hours");
+  // Provenance tier — agent-supplied. Validated via the same predicate used
+  // by the repo so an invalid value fails loud instead of silently coercing
+  // to 'observed' (which would falsely promote a hypothesis into hot context).
+  const sourceRaw = params["source"];
+  let source: KnowledgeSource | undefined;
+  if (sourceRaw !== undefined && sourceRaw !== null) {
+    if (!isKnowledgeSource(sourceRaw)) {
+      return fail(
+        `Invalid source "${String(sourceRaw)}". Allowed: observed, user_confirmed, inferred, hypothesis. Defaults to 'observed' when omitted.`,
+      );
+    }
+    source = sourceRaw;
+  }
 
   const validUntil = computeValidUntil(ttlHours, pinned, new Date());
 
@@ -139,6 +153,11 @@ export async function handleKnowledgeWrite(
           // and its own session id via makeProductionContext.
           sourceSurface: context.sourceSurface,
           sourceSession: context.sourceSession,
+          // Provenance tier — agent's own classification. Defaults to
+          // 'observed' inside the repo when omitted; only 'observed' /
+          // 'user_confirmed' enter Active Knowledge hot context. See PR1
+          // migration 018 + memory/policy.ts HOT_CONTEXT_SOURCES.
+          source,
         },
         tx,
       ),

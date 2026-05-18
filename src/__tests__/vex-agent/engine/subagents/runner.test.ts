@@ -184,4 +184,28 @@ describe("subagent runner", () => {
     expect(context.sessionPermission).toBe("restricted");
     expect(context.isSubagent).toBe(true);
   });
+
+  it("passes buildToolsForBand to runTurnLoop so Tool Map + catalog stay in sync under pressure (codex PR3 P1)", async () => {
+    // PR3-clarity catalog/Tool Map invariant: subagents must rebuild the
+    // OpenAI tools array per-band, otherwise the system-prompt Tool Map
+    // (rendered per-iteration from live band) and the actual visible
+    // tools array (rendered once at startup) drift at barrier/critical.
+    // The dispatcher hard-deny still backstops safety, but the contract
+    // is that what the agent SEES in the Tool Map matches what it can
+    // CALL — that invariant has to hold for subagents too.
+    mockRunTurnLoop.mockResolvedValue({
+      text: "Done",
+      toolCallsMade: 0,
+      pendingApprovals: [],
+      stopReason: null,
+    });
+
+    await runSubagentEngine("subagent-1");
+
+    // runTurnLoop(context, messages, summary, tokenCount, provider,
+    // config, tools, loopConfig, promptOptions?, signal?)
+    const args = mockRunTurnLoop.mock.calls[0];
+    const loopConfig = args[7] as { buildToolsForBand?: unknown };
+    expect(loopConfig.buildToolsForBand).toBeTypeOf("function");
+  });
 });
