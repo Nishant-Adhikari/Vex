@@ -27,6 +27,7 @@ import { jsonb } from "../../params.js";
 import { vectorLiteral } from "../knowledge/types.js";
 import {
   BODY_MD_SCHEMA_VERSION,
+  computeBodyMdHash,
   computeContentHash,
   fromPersistedItem,
   MEMORY_COLUMNS,
@@ -62,6 +63,7 @@ export interface InsertResult {
 export interface PreparedMemoryRender {
   outstandingItems: readonly OutstandingItem[];
   bodyMd: string;
+  bodyMdHash: string;
   contentHash: string;
 }
 
@@ -79,13 +81,14 @@ export function prepareMemoryRender(parts: {
     triedMd: parts.triedMd,
     outstandingItems,
   });
+  const bodyMdHash = computeBodyMdHash(bodyMd);
   const contentHash = computeContentHash({
     theme: parts.theme,
     happenedMd: parts.happenedMd,
     didMd: parts.didMd,
     triedMd: parts.triedMd,
   });
-  return { outstandingItems, bodyMd, contentHash };
+  return { outstandingItems, bodyMd, bodyMdHash, contentHash };
 }
 
 /**
@@ -118,7 +121,7 @@ export async function insertPreparedMemory(
        INSERT INTO session_memories (
          session_id, checkpoint_generation,
          theme, theme_source, entities, protocols, error_classes, chains, tasks,
-         happened_md, did_md, tried_md, body_md, body_md_schema_version,
+         happened_md, did_md, tried_md, body_md, body_md_schema_version, body_md_hash,
          outstanding_items,
          source_start_message_id, source_end_message_id,
          language_code, inference_model,
@@ -129,13 +132,13 @@ export async function insertPreparedMemory(
        VALUES (
          $1, $2,
          $3, $4, $5, $6, $7, $8, $9,
-         $10, $11, $12, $13, $14,
-         $15::jsonb,
-         $16, $17,
-         $18, $19,
-         COALESCE($20::int, 5), COALESCE($21::numeric, 0.5),
-         $22::vector, $23, $24,
-         $25
+         $10, $11, $12, $13, $14, $15,
+         $16::jsonb,
+         $17, $18,
+         $19, $20,
+         COALESCE($21::int, 5), COALESCE($22::numeric, 0.5),
+         $23::vector, $24, $25,
+         $26
        )
        ON CONFLICT (session_id, content_hash) WHERE status = 'active' DO NOTHING
        RETURNING *
@@ -143,7 +146,7 @@ export async function insertPreparedMemory(
      SELECT *, true AS inserted FROM ins
      UNION ALL
      SELECT m.*, false AS inserted FROM session_memories m
-       WHERE m.session_id = $1 AND m.content_hash = $25 AND m.status = 'active'
+       WHERE m.session_id = $1 AND m.content_hash = $26 AND m.status = 'active'
          AND NOT EXISTS (SELECT 1 FROM ins)`,
     [
       row.sessionId,
@@ -160,6 +163,7 @@ export async function insertPreparedMemory(
       row.triedMd,
       prep.bodyMd,
       BODY_MD_SCHEMA_VERSION,
+      prep.bodyMdHash,
       jsonb(persistedItems),
       row.sourceStartMessageId,
       row.sourceEndMessageId,
@@ -181,15 +185,18 @@ export async function insertPreparedMemory(
 }
 
 /**
- * Batch insert. Each row's `embedding.length` is validated against
- * `embeddingDim` before SQL runs so the DB CHECK constraint never has to
- * reject. Dedup uses `(session_id, content_hash)` partial unique index;
- * conflicts return the existing row with `inserted: false`.
+ * Batch insert. Delegates to `prepareMemoryRender` + `insertPreparedMemory`
+ * per row so there is exactly one body/hash materialization path in the
+ * repo (codex PR3-final P1: collapse the previous standalone SQL into the
+ * shared pair).
  *
- * NOTE: this function generates outstanding-item UUIDs internally and re-
- * renders body_md. Callers that need the embedded text to match persisted
- * body_md byte-for-byte (Track 2 worker) MUST use the
- * `prepareMemoryRender` + `insertPreparedMemory` pair instead.
+ * Each row's `embedding.length === embeddingDim` is validated upfront so a
+ * mismatched batch fails fast before any DB writes.
+ *
+ * Callers that need byte-identical body_md vs embedding input (Track 2
+ * worker) should call `prepareMemoryRender` + `insertPreparedMemory`
+ * directly — `insertMemories` is for non-embedding-critical batches where
+ * the repo generates outstanding-item UUIDs.
  */
 export async function insertMemories(
   rows: readonly NewSessionMemory[],
@@ -206,93 +213,17 @@ export async function insertMemories(
     }
   }
 
-  const exec = client ?? getPool();
   const results: InsertResult[] = [];
   for (const r of rows) {
-    const outstandingItems: OutstandingItem[] = r.outstandingTexts.map(newOutstandingItem);
-    const bodyMd = renderBodyMd({
-      happenedMd: r.happenedMd,
-      didMd: r.didMd,
-      triedMd: r.triedMd,
-      outstandingItems,
-    });
-    // content_hash is computed from the immutable narrative core only —
-    // outstanding_items and body_md are excluded because they mutate via
-    // markOutstandingResolved (see types.ts contract docs).
-    const contentHash = computeContentHash({
+    const prep = prepareMemoryRender({
       theme: r.theme,
       happenedMd: r.happenedMd,
       didMd: r.didMd,
       triedMd: r.triedMd,
+      outstandingTexts: r.outstandingTexts,
     });
-    const persistedItems = outstandingItems.map(toPersistedItem);
-
-    const row = await queryOneWith<SessionMemoryRow & { inserted: boolean }>(
-      exec,
-      `WITH ins AS (
-         INSERT INTO session_memories (
-           session_id, checkpoint_generation,
-           theme, theme_source, entities, protocols, error_classes, chains, tasks,
-           happened_md, did_md, tried_md, body_md, body_md_schema_version,
-           outstanding_items,
-           source_start_message_id, source_end_message_id,
-           language_code, inference_model,
-           importance, confidence,
-           embedding, embedding_model, embedding_dim,
-           content_hash
-         )
-         VALUES (
-           $1, $2,
-           $3, $4, $5, $6, $7, $8, $9,
-           $10, $11, $12, $13, $14,
-           $15::jsonb,
-           $16, $17,
-           $18, $19,
-           COALESCE($20::int, 5), COALESCE($21::numeric, 0.5),
-           $22::vector, $23, $24,
-           $25
-         )
-         ON CONFLICT (session_id, content_hash) WHERE status = 'active' DO NOTHING
-         RETURNING *
-       )
-       SELECT *, true AS inserted FROM ins
-       UNION ALL
-       SELECT m.*, false AS inserted FROM session_memories m
-         WHERE m.session_id = $1 AND m.content_hash = $25 AND m.status = 'active'
-           AND NOT EXISTS (SELECT 1 FROM ins)`,
-      [
-        r.sessionId,
-        r.checkpointGeneration,
-        r.theme,
-        r.themeSource,
-        r.entities,
-        r.protocols,
-        r.errorClasses,
-        r.chains,
-        r.tasks,
-        r.happenedMd,
-        r.didMd,
-        r.triedMd,
-        bodyMd,
-        BODY_MD_SCHEMA_VERSION,
-        jsonb(persistedItems),
-        r.sourceStartMessageId,
-        r.sourceEndMessageId,
-        r.languageCode,
-        r.inferenceModel,
-        r.importance ?? null,
-        r.confidence ?? null,
-        vectorLiteral(r.embedding),
-        r.embeddingModel,
-        r.embeddingDim,
-        contentHash,
-      ],
-    );
-    if (!row) {
-      throw new Error(`insertMemories: upsert returned no row for session=${r.sessionId}`);
-    }
-    const { inserted, ...rest } = row;
-    results.push({ memory: mapRow(rest as SessionMemoryRow), inserted });
+    const inserted = await insertPreparedMemory(r, prep, client);
+    results.push(inserted);
   }
   return results;
 }
@@ -462,20 +393,24 @@ export async function markOutstandingResolved(
       triedMd: existing.triedMd,
       outstandingItems: updatedItems,
     });
+    const newBodyMdHash = computeBodyMdHash(newBodyMd);
 
     // Persist via snake_case JSONB (matches migration 016 + unresolved-count
     // SQL). content_hash is NOT updated because the immutable narrative core
-    // didn't change (see types.ts content-hash contract).
+    // didn't change (see types.ts content-hash contract). body_md_hash IS
+    // updated so a stale `updateEmbedding` call from a concurrent resolution
+    // path can be rejected by its WHERE clause (codex PR3-final race fix).
     const persistedItems = updatedItems.map(toPersistedItem);
     const updated = await queryOneWith<SessionMemoryRow>(
       tx,
       `UPDATE session_memories
        SET outstanding_items = $2::jsonb,
            body_md           = $3,
+           body_md_hash      = $4,
            updated_at        = NOW()
        WHERE id = $1
        RETURNING ${MEMORY_COLUMNS}`,
-      [memoryId, jsonb(persistedItems), newBodyMd],
+      [memoryId, jsonb(persistedItems), newBodyMd, newBodyMdHash],
     );
     await tx.query("COMMIT");
     if (!updated) return { ok: false, reason: "memory_not_found" };
@@ -494,12 +429,23 @@ export async function markOutstandingResolved(
  * Update only the embedding columns. Used by the resolution path once the
  * caller has produced a fresh embedding for the new body. Body_md is NOT
  * updated here; call `markOutstandingResolved` first.
+ *
+ * Race-safety: the UPDATE is conditional on `body_md_hash = $expectedHash`.
+ * The caller passes the hash of the body the embedding was computed against
+ * (`result.memory.bodyMdHash` from the same `markOutstandingResolved` call).
+ * If a concurrent resolution rewrote `body_md` (and bumped its hash) between
+ * the embed call and this UPDATE, the WHERE clause excludes the row and the
+ * function returns `false` — the embedding was computed against a body that
+ * is no longer current, so writing it would leave a stale vector on a fresh
+ * body. The losing caller logs `mark_outstanding_resolved.embed_stale`; the
+ * winning caller's embedding lands. (codex PR2 round-3 P2 / PR3-final race fix.)
  */
 export async function updateEmbedding(
   memoryId: number,
   embedding: number[],
   embeddingModel: string,
   embeddingDim: number,
+  expectedBodyMdHash: string,
 ): Promise<boolean> {
   if (embedding.length !== embeddingDim) {
     throw new Error(
@@ -512,8 +458,8 @@ export async function updateEmbedding(
          embedding_model = $3,
          embedding_dim   = $4,
          updated_at      = NOW()
-     WHERE id = $1`,
-    [memoryId, vectorLiteral(embedding), embeddingModel, embeddingDim],
+     WHERE id = $1 AND body_md_hash = $5`,
+    [memoryId, vectorLiteral(embedding), embeddingModel, embeddingDim, expectedBodyMdHash],
   );
   return rowCount === 1;
 }

@@ -81,12 +81,33 @@ export async function handleMarkOutstandingResolved(
   // persists in DB — the vector becomes stale until a future re-embed.
   try {
     const embedded = await embedDocument(result.memory.theme, result.memory.bodyMd);
-    await updateEmbedding(
+    // Race-safety: pass the body_md_hash of the body we embedded so a
+    // concurrent resolution that rewrote body_md (and bumped its hash)
+    // rejects this UPDATE. False return = stale embedding, do NOT retry —
+    // the winning concurrent path already wrote a fresh vector for the
+    // current body. (codex PR3-final race fix.)
+    const updated = await updateEmbedding(
       memory_id,
       embedded.embedding,
       embedded.providerModel,
       embedded.embedding.length,
+      result.memory.bodyMdHash,
     );
+    if (!updated) {
+      logger.info("mark_outstanding_resolved.embed_stale", {
+        memoryId: memory_id,
+        sessionId: context.sessionId,
+      });
+      return {
+        success: true,
+        output:
+          `Outstanding item ${outstanding_item_id} resolved on chunk ${memory_id}. ` +
+          "NOTE: a concurrent resolution rewrote the chunk body; this embedding " +
+          "was discarded as stale (the concurrent path already wrote a fresh vector). " +
+          "Resolution itself is durable.",
+        data: { resolved: true, embedding_stale: true },
+      };
+    }
   } catch (err) {
     logger.warn("mark_outstanding_resolved.embed_failed", {
       memoryId: memory_id,

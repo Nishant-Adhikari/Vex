@@ -122,6 +122,7 @@ async function routeToolCall(
       query: typeof call.args.query === "string" ? call.args.query : undefined,
       namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
+      contextUsageBand: context.contextUsageBand,
     };
     const result = await discoverProtocolCapabilities(discoveryRequest);
     logDiscoveryTelemetry({

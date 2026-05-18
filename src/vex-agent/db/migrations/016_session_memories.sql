@@ -52,6 +52,15 @@ CREATE TABLE IF NOT EXISTS session_memories (
   tried_md                        TEXT NOT NULL DEFAULT '',
   body_md                         TEXT NOT NULL,
   body_md_schema_version          TEXT NOT NULL DEFAULT 'v1',
+  -- sha256(body_md). Distinct from `content_hash` (immutable narrative core,
+  -- dedup key): body_md_hash MUTATES on every markOutstandingResolved when
+  -- the body re-renders. Used by updateEmbedding's WHERE clause to reject
+  -- stale embeddings after a concurrent resolution rewrote body_md — without
+  -- it, T1 (resolved item A → embedded) could overwrite T2 (resolved item B
+  -- → re-rendered body, embedded fresh) and leave the final row with stale
+  -- vector vs fresh body. Caller-opaque, repo-owned: set by prepareMemoryRender,
+  -- updated atomically inside markOutstandingResolved tx, read via mapRow.
+  body_md_hash                    CHAR(64) NOT NULL,
 
   -- Outstanding items — structured JSONB array.
   -- Each element shape (enforced in Zod at write boundary, not via DB CHECK

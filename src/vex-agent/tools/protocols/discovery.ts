@@ -16,8 +16,11 @@ import type { ScoredManifest } from "./lexical-score.js";
 
 const DEFAULT_DISCOVERY_LIMIT = 5;
 
-function toDiscoveryItem(entry: ScoredManifest): ProtocolDiscoveryItem {
-  return {
+function toDiscoveryItem(
+  entry: ScoredManifest,
+  contextUsageBand: ProtocolDiscoveryRequest["contextUsageBand"],
+): ProtocolDiscoveryItem {
+  const item: ProtocolDiscoveryItem = {
     toolId: entry.manifest.toolId,
     namespace: entry.manifest.namespace,
     lifecycle: entry.manifest.lifecycle,
@@ -28,6 +31,15 @@ function toDiscoveryItem(entry: ScoredManifest): ProtocolDiscoveryItem {
     score: entry.score,
     whyMatched: entry.whyMatched,
   };
+  // Only emit the advisory flag when it would be true — keeps payloads
+  // minimal and gives the model a clear "absent = available" rule.
+  if (
+    entry.manifest.mutating &&
+    (contextUsageBand === "barrier" || contextUsageBand === "critical")
+  ) {
+    item.unavailable_at_pressure = true;
+  }
+  return item;
 }
 
 function buildDiscoveryFailure(message: string): ProtocolDiscoveryResult {
@@ -91,7 +103,7 @@ export async function discoverProtocolCapabilities(
     retrievalMeta = outcome.meta;
   }
 
-  const tools = scoredTools.slice(0, limit).map(toDiscoveryItem);
+  const tools = scoredTools.slice(0, limit).map((entry) => toDiscoveryItem(entry, request.contextUsageBand));
   const warnings: string[] = [];
   if (tools.length === 0) {
     warnings.push("No protocol capabilities matched the query/filter.");

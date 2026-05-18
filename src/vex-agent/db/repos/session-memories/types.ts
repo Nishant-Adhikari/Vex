@@ -118,6 +118,14 @@ export interface SessionMemory {
   triedMd: string;
   bodyMd: string;
   bodyMdSchemaVersion: string;
+  /**
+   * sha256(body_md) — used by `updateEmbedding` to reject stale embeddings
+   * after a concurrent `markOutstandingResolved` rewrote `body_md`. See
+   * `computeBodyMdHash` below and `crud.ts:updateEmbedding` for the race
+   * fix. Repo-owned: set by `prepareMemoryRender`, read back via `mapRow`,
+   * never accepted from external callers.
+   */
+  bodyMdHash: string;
   outstandingItems: OutstandingItem[];
   sourceStartMessageId: number | null;
   sourceEndMessageId: number | null;
@@ -193,6 +201,7 @@ export interface SessionMemoryRow {
   tried_md: string;
   body_md: string;
   body_md_schema_version: string;
+  body_md_hash: string;
   /** JSONB column — persistence shape is snake_case (see migration 016 comment). */
   outstanding_items: OutstandingItemPersisted[] | null;
   source_start_message_id: number | null;
@@ -233,6 +242,7 @@ export function mapRow(r: SessionMemoryRow): SessionMemory {
     triedMd: r.tried_md,
     bodyMd: r.body_md,
     bodyMdSchemaVersion: r.body_md_schema_version,
+    bodyMdHash: r.body_md_hash,
     outstandingItems: (r.outstanding_items ?? []).map(fromPersistedItem),
     sourceStartMessageId: r.source_start_message_id,
     sourceEndMessageId: r.source_end_message_id,
@@ -255,7 +265,7 @@ export function mapRow(r: SessionMemoryRow): SessionMemory {
 export const MEMORY_COLUMNS = `
   id, session_id, checkpoint_generation,
   theme, theme_source, entities, protocols, error_classes, chains, tasks,
-  happened_md, did_md, tried_md, body_md, body_md_schema_version,
+  happened_md, did_md, tried_md, body_md, body_md_schema_version, body_md_hash,
   outstanding_items,
   source_start_message_id, source_end_message_id,
   language_code, inference_model,
@@ -327,4 +337,19 @@ export function computeContentHash(parts: {
     `${parts.triedMd.length}:${parts.triedMd}`,
   ].join("|");
   return createHash("sha256").update(encoded).digest("hex");
+}
+
+/**
+ * sha256(body_md) for the row's currently-rendered body. Distinct from
+ * `computeContentHash` (which hashes only the immutable narrative core for
+ * dedup): this hash MUTATES on every `markOutstandingResolved` because the
+ * body re-renders. Used by `updateEmbedding` to guard against a concurrent
+ * resolution overwriting a fresh body with a stale embedding (codex PR2
+ * round-3 P2 race).
+ *
+ * Single-field input — length-prefix encoding from `computeContentHash`
+ * isn't needed (no field-boundary ambiguity).
+ */
+export function computeBodyMdHash(bodyMd: string): string {
+  return createHash("sha256").update(bodyMd).digest("hex");
 }

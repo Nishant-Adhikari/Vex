@@ -35,6 +35,7 @@ export const PROTOCOL_TOOLS: readonly ToolDef[] = [
       "Examples: 'estimate moving 250 USDC from Ethereum to Solana', 'use KyberSwap to preview a USDC to ETH swap on Base', 'use Jupiter to see USDC earn rates', 'show the orderbook for a yes no market', 'show trending meme coins on Solana'.",
       "Optional namespace narrows search to one active namespace: khalani, kyberswap, solana, polymarket, dexscreener. Empty query returns an unranked catalog slice; prefer a refined intent query for normal use.",
       "Results include toolId, mutating, score, whyMatched, params, exampleParams, warnings, hasMore, totalCount, and retrieval.method (dense|lexical|catalog). Use the returned toolId with execute_tool in the same session.",
+      "Pressure advisory: when context usage is at barrier or critical (≥ 88%), mutating result rows are tagged `unavailable_at_pressure: true`. The dispatcher will hard-deny `execute_tool` on those rows — call `compact_now` first to free context, or stay on read-only / preview variants in the same namespace. Absent flag means available at the current band.",
     ].join(" "),
     parameters: { type: "object", properties: {
       query: { type: "string", description: "Short English intent/capability phrase. Include protocol/product names when useful (Khalani, KyberSwap, Jupiter, Polymarket, DexScreener), but do not pass dotted tool IDs or internal implementation names." },

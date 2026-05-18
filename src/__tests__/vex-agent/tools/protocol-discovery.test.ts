@@ -245,4 +245,64 @@ describe("protocol discovery", () => {
   });
 
   // ── Facet-driven discovery (audit follow-up) ─────────────────────
+
+  // ── Pressure advisory (PR3-final) ────────────────────────────────
+  //
+  // At pressure band ≥ barrier, mutating tools get `unavailable_at_pressure: true`
+  // in the output row. Soft companion to the dispatcher hard-deny + Tool Map
+  // omission that already restrict mutating-tool execution at the same bands.
+  // Absent flag === "available at the current band" — keeps payloads minimal.
+
+  it("does NOT flag mutating tools at normal band", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "khalani",
+      limit: 50,
+      contextUsageBand: "normal",
+    });
+    const bridge = result.tools.find((t) => t.toolId === "khalani.bridge");
+    expect(bridge).toBeDefined();
+    expect(bridge!.mutating).toBe(true);
+    expect(bridge!.unavailable_at_pressure).toBeUndefined();
+  });
+
+  it("does NOT flag mutating tools at warning band", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "khalani",
+      limit: 50,
+      contextUsageBand: "warning",
+    });
+    const bridge = result.tools.find((t) => t.toolId === "khalani.bridge");
+    expect(bridge).toBeDefined();
+    expect(bridge!.unavailable_at_pressure).toBeUndefined();
+  });
+
+  it("flags mutating tools at barrier band", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "khalani",
+      limit: 50,
+      contextUsageBand: "barrier",
+    });
+    const bridge = result.tools.find((t) => t.toolId === "khalani.bridge");
+    expect(bridge).toBeDefined();
+    expect(bridge!.unavailable_at_pressure).toBe(true);
+  });
+
+  it("flags mutating tools at critical band, but NOT non-mutating ones in the same batch", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "khalani",
+      limit: 50,
+      contextUsageBand: "critical",
+    });
+    // Every mutating row tagged.
+    const mutating = result.tools.filter((t) => t.mutating);
+    expect(mutating.length).toBeGreaterThan(0);
+    for (const t of mutating) {
+      expect(t.unavailable_at_pressure).toBe(true);
+    }
+    // Every non-mutating row NOT tagged — flag is mutating-only advisory.
+    const nonMutating = result.tools.filter((t) => !t.mutating);
+    for (const t of nonMutating) {
+      expect(t.unavailable_at_pressure).toBeUndefined();
+    }
+  });
 });

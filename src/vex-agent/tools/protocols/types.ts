@@ -121,6 +121,14 @@ export interface ProtocolDiscoveryRequest {
   query?: string;
   namespace?: string;
   limit?: number;
+  /**
+   * Context-pressure band at dispatch time (threaded by the dispatcher).
+   * When `barrier` or `critical`, the assembly flags `mutating` tools with
+   * `unavailable_at_pressure: true` so the LLM sees the advisory before
+   * even attempting `execute_tool` — soft companion to dispatcher hard-deny
+   * + Tool Map omission already in force at the same bands.
+   */
+  contextUsageBand?: "normal" | "warning" | "barrier" | "critical";
 }
 
 export interface ProtocolDiscoveryItem {
@@ -138,6 +146,15 @@ export interface ProtocolDiscoveryItem {
    * Useful for the LLM to disambiguate between similarly-scored shortlists.
    */
   whyMatched: string[];
+  /**
+   * Only present and `true` when the current context-usage band is `barrier`
+   * or `critical` AND this tool is `mutating: true`. Tells the LLM the
+   * dispatcher will hard-deny `execute_tool` for this row right now — either
+   * call `compact_now` first, or stick to read-only / preview variants in
+   * the same namespace. Omitted on read-only tools and at normal/warning bands
+   * to keep payloads minimal.
+   */
+  unavailable_at_pressure?: boolean;
 }
 
 /**
