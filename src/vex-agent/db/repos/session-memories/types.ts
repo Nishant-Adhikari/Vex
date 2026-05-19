@@ -7,7 +7,7 @@
  *   - `mapRow` — only place snake_case → camelCase translation lives.
  *   - `MEMORY_COLUMNS` — shared column list for INSERT RETURNING and SELECT.
  *
- * Embedding contract (mirrors `knowledge_entries`, `session_episodes`):
+ * Embedding contract (mirrors `knowledge_entries`):
  *   - vector column has NO typmod; per-row `embedding_model` + `embedding_dim`
  *     are authoritative.
  *   - `embedding.length === embeddingDim` guard runs before SQL so the CHECK

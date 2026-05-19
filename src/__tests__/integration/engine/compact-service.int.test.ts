@@ -18,6 +18,7 @@
  *     flagged).
  */
 
+import { execFile } from "node:child_process";
 import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
 
 import { executeCompactNow } from "@vex-agent/engine/compact-jobs/service.js";
@@ -54,6 +55,53 @@ async function seedLongConversation(sessionId: string): Promise<void> {
     const role = i % 2 === 0 ? "user" : "assistant";
     await insertMessage(sessionId, role, `turn ${i}: realistic conversation content`);
   }
+}
+
+function execFilePromise(
+  file: string,
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(Object.assign(error, { stdout, stderr }));
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+async function runChildCompact(sessionId: string, summary: string): Promise<unknown> {
+  const script = [
+    "import { executeCompactNow } from '@vex-agent/engine/compact-jobs/service.js';",
+    "const result = await executeCompactNow({",
+    "  sessionId: process.env.VEX_CHILD_SESSION_ID,",
+    "  agentSummary: process.env.VEX_CHILD_SUMMARY,",
+    "  preserveMd: null,",
+    "  threadThemesHints: [],",
+    "  source: 'agent_tool',",
+    "});",
+    "console.log(JSON.stringify(result));",
+  ].join("\n");
+
+  const { stdout } = await execFilePromise(
+    "pnpm",
+    ["exec", "tsx", "-e", script],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        VEX_CHILD_SESSION_ID: sessionId,
+        VEX_CHILD_SUMMARY: summary,
+      },
+      timeout: 20_000,
+    },
+  );
+  const line = stdout.trim().split(/\r?\n/).findLast((candidate) => candidate.startsWith("{"));
+  if (!line) throw new Error(`child compact produced no JSON stdout: ${stdout}`);
+  return JSON.parse(line);
 }
 
 describe("executeCompactNow concurrency (integration)", () => {
@@ -118,6 +166,34 @@ describe("executeCompactNow concurrency (integration)", () => {
     );
     expect(tokRow?.token_count).toBe(0);
   });
+
+  it("two child-process compact calls serialize on the session row lock and do not double-bump generation", async () => {
+    const sid = await makeSession();
+    await seedLongConversation(sid);
+
+    const [a, b] = await Promise.all([
+      runChildCompact(sid, "Child process compact attempt A"),
+      runChildCompact(sid, "Child process compact attempt B"),
+    ]) as Array<{ kind: string; generation?: number; jobId?: number }>;
+
+    const committed = [a, b].filter((r) => r.kind === "committed");
+    const noop = [a, b].filter((r) => r.kind === "noop");
+    expect(committed).toHaveLength(1);
+    expect(noop).toHaveLength(1);
+
+    const sessionRow = await queryOne<{ checkpoint_generation: number }>(
+      "SELECT checkpoint_generation FROM sessions WHERE id = $1",
+      [sid],
+    );
+    expect(sessionRow?.checkpoint_generation).toBe(1);
+
+    const jobRows = await query<{ id: number; checkpoint_generation: number }>(
+      "SELECT id, checkpoint_generation FROM compact_jobs WHERE session_id = $1",
+      [sid],
+    );
+    expect(jobRows).toHaveLength(1);
+    expect(jobRows[0].checkpoint_generation).toBe(1);
+  }, 30_000);
 });
 
 describe("compact-worker missing-config gate (integration)", () => {

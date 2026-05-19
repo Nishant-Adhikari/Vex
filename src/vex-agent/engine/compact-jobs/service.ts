@@ -5,8 +5,8 @@
  *   - the `compact_now` tool handler (agent-driven path)
  *   - the forced-fallback path at critical band (runtime-driven path)
  *
- * Phase II semantics — everything below runs in a single atomic transaction
- * under `withCheckpointMutex` so handoff/wake/ingress paths cannot observe a
+ * Track 1 semantics — everything below runs in a single atomic transaction
+ * under `withCheckpointMutex` so wake/ingress paths cannot observe a
  * half-archived transcript:
  *   1. Redact summary / preserve / themes via memory/redaction
  *   2. SELECT session FOR UPDATE; compute `nextGen = checkpoint_generation + 1`

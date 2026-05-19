@@ -98,10 +98,10 @@ describe("turn-loop", () => {
   });
 
   // PR-2: promotion hook was removed — lint against regression that
-  // would silently reintroduce the session_episodes → knowledge_entries
-  // auto-promotion pipeline on checkpoint. Memory contract:
+  // would silently reintroduce session-memory → knowledge_entries
+  // auto-promotion on compact. Memory contract:
   // `knowledge_*` is manual-write-only via `knowledge_write` /
-  // `knowledge_supersede`. session_episodes are recall-only.
+  // `knowledge_supersede`. Session memory is recall-only.
   it("does not call runPromotionForSession or import the removed promotion module", () => {
     const src = readFileSync(
       resolve(process.cwd(), "src/vex-agent/engine/core/turn-loop.ts"),
@@ -662,6 +662,40 @@ describe("turn-loop", () => {
       expect(mockGetSessionForLoop).toHaveBeenCalled();
     });
 
+    it("injects the resume packet for exactly the first two turns after a compacted-session resume", async () => {
+      const dbClient = await import("@vex-agent/db/client.js");
+      vi.mocked(dbClient.queryOne).mockResolvedValue({
+        summary: "bridge summary from compact",
+        checkpoint_generation: 2,
+      });
+      vi.mocked(dbClient.query).mockResolvedValue([]);
+      mockGetSessionForLoop.mockResolvedValue({
+        tokenCount: 1_000,
+        checkpointGeneration: 2,
+        summary: "bridge summary from compact",
+      });
+
+      const provider = makeProvider([
+        { content: "turn one" },
+        { content: "turn two" },
+        { content: "turn three" },
+      ]);
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 3 },
+      );
+
+      const calls = provider.chatCompletion.mock.calls.map(
+        (call) => call[0] as Array<{ role: string; content: string }>,
+      );
+      expect(calls).toHaveLength(3);
+      expect(calls[0].some((m) => m.content.includes("[Resume packet"))).toBe(true);
+      expect(calls[1].some((m) => m.content.includes("[Resume packet"))).toBe(true);
+      expect(calls[2].some((m) => m.content.includes("[Resume packet"))).toBe(false);
+    });
+
     it("does NOT arm bridge counter when session has never been compacted (checkpoint_generation === 0)", async () => {
       mockGetSessionForLoop.mockResolvedValue({
         tokenCount: 1_000,
@@ -812,6 +846,103 @@ describe("turn-loop", () => {
 
       // Post-compact bookkeeping: mission_runs.last_checkpoint_at bumped.
       expect(mockSetLastCheckpoint).toHaveBeenCalledWith("run-1");
+    });
+
+    it("merges operator interrupts that land during compact before the next provider call", async () => {
+      mockDispatchTool.mockResolvedValue({
+        success: true,
+        output: "compact committed",
+        engineSignal: {
+          type: "compact_committed",
+          reason: "context_pressure_compact",
+          summary: "compacted",
+          generation: 2,
+          jobId: 11,
+        },
+      });
+      mockGetLiveMessages.mockResolvedValueOnce([
+        {
+          id: 10,
+          role: "assistant",
+          content: "post-compact live tail",
+          timestamp: "2026-05-04T08:00:00.000Z",
+        },
+      ]);
+      mockGetOperatorInstructionsAfter.mockResolvedValueOnce([
+        {
+          id: 43,
+          role: "user",
+          content: "pause risky route and re-check allowance",
+          timestamp: "2026-05-04T08:01:00.000Z",
+          metadata: {
+            source: "user",
+            messageType: "operator_interrupt",
+            visibility: "user",
+            payload: { operatorInstruction: true },
+          },
+        },
+      ]);
+
+      const provider = makeProvider([
+        {
+          toolCalls: [
+            { id: "tc-compact", name: "compact_now", arguments: { conversation_summary: "..." } },
+          ],
+        },
+        { content: "Applying operator instruction after compact." },
+      ]);
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 50_000, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 2 },
+      );
+
+      const secondMessages = provider.chatCompletion.mock.calls[1]![0] as Array<{ role: string; content: string }>;
+      expect(secondMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: "user", content: "pause risky route and re-check allowance" }),
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining("operator_interrupt"),
+          }),
+        ]),
+      );
+      expect(mockAddEngineMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.stringContaining("operator_interrupt"),
+        expect.objectContaining({ messageType: "operator_interrupt" }),
+      );
+    });
+
+    it("does not bump last_checkpoint_at for agent sessions after compact_committed", async () => {
+      mockDispatchTool.mockResolvedValue({
+        success: true,
+        output: "compact committed",
+        engineSignal: {
+          type: "compact_committed",
+          reason: "context_pressure_compact",
+          summary: "compacted",
+          generation: 2,
+          jobId: 11,
+        },
+      });
+
+      const provider = makeProvider([
+        {
+          toolCalls: [
+            { id: "tc-compact", name: "compact_now", arguments: { conversation_summary: "..." } },
+          ],
+        },
+      ]);
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "agent", missionRunId: null }),
+        [], null, 50_000, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1 },
+      );
+
+      expect(mockSetLastCheckpoint).not.toHaveBeenCalled();
     });
 
     it("uses the latest promptTokens for tool dispatch context band", async () => {

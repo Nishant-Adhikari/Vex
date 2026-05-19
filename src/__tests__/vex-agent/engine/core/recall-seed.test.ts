@@ -9,8 +9,8 @@
  *
  * PR2 cutover: priority 3 was `recentEpisodeTitles` → now `recentThemes`
  * sourced from `session_memories` via `getSessionMemoryStats`.
- * PR4 sunset: priority 1 used to be "active checkpoint handoff" — removed
- * along with the `checkpoint_handoffs` table.
+ * PR4 sunset: priority 1 used to be an active compact handoff path; removed
+ * with the legacy handoff table.
  */
 
 import { describe, it, expect } from "vitest";

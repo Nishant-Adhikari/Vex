@@ -130,11 +130,11 @@ CREATE INDEX idx_recall_cache_expires ON recall_cache_entries(expires_at);
 -- ══════════════════════════════════════════════════════════════════
 
 -- Sessions (no parent_session_id — session_links is canonical)
--- `checkpoint_generation` is a monotonic counter bumped inside the Phase II
--- checkpoint tx (see `engine/core/checkpoint.ts:runCheckpointWriteTx` — the
+-- `checkpoint_generation` is a monotonic counter bumped inside the compact
+-- transaction (see `engine/compact-jobs/service.ts:executeCompactNow` — the
 -- UPDATE sits after a `SELECT checkpoint_generation ... FOR UPDATE` so two
--- concurrent checkpoints on the same session serialize). Stamped onto each
--- batch of `session_memories` so recall can surface recency (`gen:N`).
+-- concurrent compacts on the same session serialize). Stamped onto each batch
+-- of `session_memories` so recall can surface recency (`gen:N`).
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
   scope TEXT DEFAULT 'chat',
@@ -239,7 +239,7 @@ CREATE INDEX idx_subagents_status ON subagents(status);
 
 -- Session links — canonical parent-child session relationships
 -- Replaces parent_session_id on sessions/subagents.
--- Covers: subagent, scheduler, loop, handoff relationships.
+-- Covers: subagent, scheduler, loop, resume relationships.
 CREATE TABLE session_links (
   id SERIAL PRIMARY KEY,
   parent_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

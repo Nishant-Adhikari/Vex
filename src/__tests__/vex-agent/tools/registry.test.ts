@@ -162,7 +162,7 @@ describe("registry", () => {
     expect(namespace?.description).toContain("khalani");
   });
 
-  it("mutating tools are wallet_send_confirm, polymarket_setup (PR2 cutover dropped checkpoint_handoff_prepare)", () => {
+  it("mutating tools are wallet_send_confirm, polymarket_setup", () => {
     const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
     expect(mutating).toEqual([
       "polymarket_setup",

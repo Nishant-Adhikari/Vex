@@ -59,7 +59,7 @@ export const FORMATTER_VERSION = "v1-gemma-title-text";
 /** Mode tag describing what's being embedded — used by callers and future formatters. */
 export type EmbedMode = "document" | "query" | "tool";
 
-/** Format the document side of an embedding (write path — knowledge/episodes). */
+/** Format the document side of an embedding (write path — knowledge/session memory). */
 export function formatDocumentInput(title: string, summary: string): string {
   return `title: ${title} | text: ${summary}`;
 }

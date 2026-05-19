@@ -7,7 +7,7 @@
  * Helpers come in two flavors:
  *   - `queryWith` / `queryOneWith` / `executeWith` accept an explicit
  *     `Executor` (Pool | PoolClient). Callers running inside a transaction
- *     (e.g. checkpoint.ts Phase II, PR4 maintenance-lease writers) pass their
+ *     (e.g. compact service, PR4 maintenance-lease writers) pass their
  *     own `PoolClient` so statements join the same tx.
  *   - `query` / `queryOne` / `execute` are thin wrappers that delegate to the
  *     `*With` variant using `getPool()` as the executor. They exist for the

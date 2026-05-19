@@ -1,10 +1,10 @@
 /**
  * PR-12 — MCP hiding freeze for autonomy internals.
  *
- * `loop_defer`, `checkpoint_handoff_prepare`, and `tool_output_read` are
- * Vex Agent runtime primitives. The MCP surface must not mention them in
- * any form — not in `tools/list`, not in any `docs://*` resource, not in
- * `surface://manifest`, not in the initialize `instructions` preamble.
+ * `loop_defer`, `compact_now`, and `tool_output_read` are Vex Agent runtime
+ * primitives and must not appear as MCP-callable tools. `compact_now` may be
+ * mentioned as a pressure advisory for agent memory, but `loop_defer` and
+ * `tool_output_read` must not be named in MCP-facing prose.
  *
  * The existing design already hides them via `surface: "agent"` +
  * `getProductionMcpTools()`. This test locks the invariant so a future
@@ -24,14 +24,19 @@ import {
 } from "../../../mcp/docs/registry-projection.js";
 
 /** Tools that must never appear on any MCP-facing surface. */
-const HIDDEN_TOOLS = [
+const HIDDEN_TOOL_NAMES = [
   "loop_defer",
-  "checkpoint_handoff_prepare",
+  "compact_now",
+  "tool_output_read",
+] as const;
+
+const FORBIDDEN_MCP_MENTIONS = [
+  "loop_defer",
   "tool_output_read",
 ] as const;
 
 function expectNoHiddenMentions(label: string, text: string): void {
-  for (const name of HIDDEN_TOOLS) {
+  for (const name of FORBIDDEN_MCP_MENTIONS) {
     expect(
       text.includes(name),
       `${label} must not mention '${name}' (autonomy internals are hidden from MCP)`,
@@ -42,7 +47,7 @@ function expectNoHiddenMentions(label: string, text: string): void {
 describe("MCP hiding freeze — autonomy internals", () => {
   it("getProductionMcpTools filters every hidden tool", () => {
     const names = getProductionMcpTools().map((t) => t.name);
-    for (const hidden of HIDDEN_TOOLS) {
+    for (const hidden of HIDDEN_TOOL_NAMES) {
       expect(names, `'${hidden}' leaked into getProductionMcpTools`).not.toContain(hidden);
     }
   });
@@ -54,7 +59,7 @@ describe("MCP hiding freeze — autonomy internals", () => {
   it("buildToolGroups projection never names a hidden tool", () => {
     const groups = buildToolGroups();
     const allNames = groups.flatMap((g) => g.tools.map((t) => t.name));
-    for (const hidden of HIDDEN_TOOLS) {
+    for (const hidden of HIDDEN_TOOL_NAMES) {
       expect(allNames, `'${hidden}' leaked into buildToolGroups`).not.toContain(hidden);
     }
     // Belt-and-braces: also scan the descriptions in case someone adds a

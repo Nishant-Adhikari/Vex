@@ -2,8 +2,8 @@
  * Cross-lingual benchmark dataset — curated retrieval pairs.
  *
  * Each pair represents one realistic Vex session memory lookup: a user query
- * in their native language that should retrieve ONE specific episode summary
- * from a pool of ~N episodes across various topics.
+ * in their native language that should retrieve one specific session-memory
+ * summary from a pool of ~N memory records across various topics.
  *
  * Languages covered: en, pl, fr, zh, vi (5 × 6 pairs = 30 pairs total).
  * Topic distribution per language is identical — for every topic there is
@@ -11,10 +11,10 @@
  * across languages: the English document pool is the same regardless of
  * which query language is being probed.
  *
- * Title fields (titleEn / titleNative) simulate the LLM-generated title that
- * PR2 introduces into extractEpisodes JSON output. They are ≤100 characters,
- * content-aware, and in the document's language. We test the planned PR2
- * shape — NOT the legacy `summary.slice(0, 120)` that production uses today.
+ * Title fields (titleEn / titleNative) simulate LLM-generated memory titles.
+ * They are <=100 characters, content-aware, and in the document's language.
+ * The native-title variant is retained as historical benchmark data; current
+ * production session memory is English-by-contract.
  * Rationale: if we benchmark the old slice-based title, we measure a baseline
  * we're about to abandon, and then have to redo the benchmark post-PR2.
  *
@@ -32,9 +32,9 @@
  *   Measures whether we can cut the hot-path translation today without losing
  *   recall on sessions that still have English summaries.
  *
- * Mode B (same-language, post-PR2 target): query=queryNative, doc=(titleNative, summaryNative).
- *   Measures whether the multilingual session-memory rewrite retrieves cleanly
- *   in each language.
+ * Mode B (same-language, historical native-document comparison):
+ *   query=queryNative, doc=(titleNative, summaryNative). Useful for embedding
+ *   model evaluation; production session memory now stores English text.
  *
  * NOT machine-translated. Every non-English variant is a natural-sounding
  * equivalent, not a word-for-word render — that's the whole point of testing

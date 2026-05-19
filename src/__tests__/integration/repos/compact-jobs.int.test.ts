@@ -284,6 +284,50 @@ describe("recoverStaleRunning (integration)", () => {
     const after = await getBySessionAndGeneration(sid, 1);
     expect(after?.status).toBe("running");
   });
+
+  it("recovers an abandoned Track 2 claim so the next worker can complete it", async () => {
+    const sid = await makeSession();
+    const enq = await enqueueJob(newJob(sid, 1));
+    const firstClaim = await claimNextDueJob("worker-before-restart");
+    expect(firstClaim?.id).toBe(enq.job.id);
+
+    await execute(
+      "UPDATE compact_jobs SET heartbeat_at = NOW() - interval '2 minutes 5 seconds' WHERE id = $1",
+      [enq.job.id],
+    );
+    const reset = await recoverStaleRunning(2 * 60_000);
+    expect(reset).toBeGreaterThanOrEqual(1);
+
+    const secondClaim = await claimNextDueJob("worker-after-restart");
+    expect(secondClaim?.id).toBe(enq.job.id);
+    expect(secondClaim?.attemptCount).toBe(2);
+
+    const staleComplete = await markCompleted(enq.job.id, "worker-before-restart", {
+      chunksInserted: 1,
+      chunksRejectedByExclusion: 0,
+      chunksRejectedByRedaction: 0,
+      inferenceProvider: "openrouter",
+      inferenceModel: "stale-worker",
+      costUsd: null,
+    });
+    expect(staleComplete).toBe(false);
+
+    const recoveredComplete = await markCompleted(enq.job.id, "worker-after-restart", {
+      chunksInserted: 1,
+      chunksRejectedByExclusion: 0,
+      chunksRejectedByRedaction: 0,
+      inferenceProvider: "openrouter",
+      inferenceModel: "recovered-worker",
+      costUsd: null,
+    });
+    expect(recoveredComplete).toBe(true);
+
+    const after = await getById(enq.job.id);
+    expect(after?.status).toBe("completed");
+    expect(after?.lockedAt).toBeNull();
+    expect(after?.heartbeatAt).toBeNull();
+    expect(after?.inferenceModel).toBe("recovered-worker");
+  });
 });
 
 describe("listPendingForSession (integration)", () => {

@@ -213,7 +213,8 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
       throw new Error("compact_worker_empty_archive_range");
     }
 
-    const chunkerOutput = await callChunkerLLM(job, archivedPrefix);
+    const chunkerCall = await callChunkerLLM(job, archivedPrefix);
+    const chunkerOutput = chunkerCall.chunks;
     if (claimLost) return;
 
     let inserted = 0;
@@ -368,6 +369,8 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
         chunksInserted: inserted,
         chunksRejectedByExclusion: rejectedExclusion,
         chunksRejectedByRedaction: 0,
+        transcriptRedactionHardCount: chunkerCall.transcriptRedactionCounts.hard,
+        transcriptRedactionMaskCount: chunkerCall.transcriptRedactionCounts.mask,
         durationMs: Date.now() - startMs,
         inferenceModel,
       });
@@ -462,10 +465,32 @@ const ChunkerOutputSchema = z.object({
 
 type ChunkerChunk = z.infer<typeof ChunkerOutputSchema>["chunks"][number];
 
+interface ChunkerCallResult {
+  chunks: ChunkerChunk[];
+  transcriptRedactionCounts: { hard: number; mask: number };
+}
+
+function renderRedactedArchivedTranscript(
+  archivedPrefix: ReadonlyArray<{ role: string; content: string; tool_call_id: string | null }>,
+): { transcript: string; redactionCounts: { hard: number; mask: number } } {
+  let hard = 0;
+  let mask = 0;
+  const transcript = archivedPrefix
+    .map((m) => {
+      const redacted = redact(m.content);
+      hard += redacted.hardRedactCount;
+      mask += redacted.maskCount;
+      return `[${m.role}${m.tool_call_id ? ` tool=${m.tool_call_id}` : ""}] ${redacted.text}`;
+    })
+    .join("\n");
+
+  return { transcript, redactionCounts: { hard, mask } };
+}
+
 async function callChunkerLLM(
   job: CompactJob,
   archivedPrefix: ReadonlyArray<{ role: string; content: string; tool_call_id: string | null }>,
-): Promise<ChunkerChunk[]> {
+): Promise<ChunkerCallResult> {
   // Use the same env-driven OpenRouter constructor the in-turn provider
   // uses. Worker calls it on-demand so settings changes after restart
   // pick up the new model. If env is missing or the loader can't produce a
@@ -485,9 +510,12 @@ async function callChunkerLLM(
     throw new Error("compact_worker_provider_config_load_failed");
   }
 
-  const transcript = archivedPrefix
-    .map((m) => `[${m.role}${m.tool_call_id ? ` tool=${m.tool_call_id}` : ""}] ${m.content}`)
-    .join("\n");
+  // Transcript-side scrubber: archived live messages may contain wallet
+  // identifiers, tx hashes, API tokens, or key material that pre-date the
+  // memory layer's output-side redaction. Re-scrub before the remote chunker
+  // provider sees the prompt; output-side redaction below remains the DB and
+  // embedding guard.
+  const { transcript, redactionCounts } = renderRedactedArchivedTranscript(archivedPrefix);
 
   const systemPrompt = [
     "You are a chunker for per-session agent memory. You receive a conversation prefix that was just archived.",
@@ -534,5 +562,8 @@ async function callChunkerLLM(
   if (!validated.success) {
     throw new Error(`chunker_schema_invalid: ${validated.error.message}`);
   }
-  return validated.data.chunks;
+  return {
+    chunks: validated.data.chunks,
+    transcriptRedactionCounts: redactionCounts,
+  };
 }

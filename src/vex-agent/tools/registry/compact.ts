@@ -2,11 +2,8 @@
  * Compact tools — PR2 cutover.
  *
  * `compact_now` is the agent-driven entry point for compaction. Hidden when
- * pressure band is below `barrier` (≥ 88% of context limit) via
- * `pressureSafety: "compact_only"` + `visibility.band: "critical"` (uses
- * existing band gate; critical here means "at-or-past barrier" because the
- * old visibility.band enum had only "warning" | "critical" and we map our
- * 4-band system onto the existing soft filter).
+ * pressure band is below `barrier` (>= 88% of context limit) via
+ * `pressureSafety: "compact_only"` + `visibility.band: "barrier"`.
  *
  * Dispatcher hard-deny gives the strict semantics: at barrier/critical the
  * tool dispatches; below it the dispatcher returns an error. The visibility

@@ -50,8 +50,7 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   getSession: vi.fn().mockResolvedValue({ tokenCount: 0 }),
 }));
 
-// PR2 cutover: legacy `engine/core/checkpoint.js` (executeCheckpoint /
-// maybeRunCheckpoint) was removed. Turn-loop no longer auto-compacts on
+// PR2 cutover: the legacy checkpoint module was removed. Turn-loop no longer auto-compacts on
 // token threshold; compaction is agent-driven via `compact_now` or runtime
 // forced fallback at `critical` band (covered in separate tests). For this
 // overflow-focused test we only need to keep the dispatcher / messages /

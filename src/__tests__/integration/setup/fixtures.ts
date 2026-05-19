@@ -2,7 +2,7 @@
  * Integration test fixtures — helpers that hit the real Postgres instance
  * started by `globalSetup.ts`.
  *
- * Scope: table reset, session/message/episode seeding, deterministic vector
+ * Scope: table reset, session/message/memory seeding, deterministic vector
  * generation, and a live `embedQuery` delegate. Nothing here is safe against
  * concurrent tests — the integration suite runs single-threaded by design.
  */
@@ -108,9 +108,8 @@ export function randVector(dim: number, seed = "seed"): number[] {
 }
 
 /**
- * Stable hash matching `checkpoint/extract.ts::computeEpisodeHash`. Exposed
- * here so integration tests can construct episode rows that either collide
- * with (dedupe proof) or diverge from (two-row proof) a prior row.
+ * Stable legacy hash helper retained for old fixtures that need deterministic
+ * row-collision data.
  */
 export function episodeHash(kind: string, summaryText: string): string {
   return createHash("sha256").update(kind).update("\n").update(summaryText).digest("hex");

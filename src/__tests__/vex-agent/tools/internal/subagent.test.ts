@@ -178,10 +178,9 @@ describe("subagent handlers", () => {
       expect(insertArg.maxIterations).toBe(50);
     });
 
-    // scope_strategy resolution removed in PR5 — memory_scope_key
-    // infrastructure was deleted because session_memories recall filters
-    // strictly by session_id, so subagent-shared memory pools never wired
-    // through. Subagents are per-session-isolated by construction.
+    // Shared memory pool selection was removed in PR5. session_memories recall
+    // filters strictly by session_id, so subagents are per-session-isolated by
+    // construction.
 
     it("rejects duplicate active name", async () => {
       await handleSubagentSpawn({ name: "VexDup", task: "first" }, baseContext);

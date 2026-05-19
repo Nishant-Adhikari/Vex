@@ -6,9 +6,9 @@
  * No DB, no embeddings, no I/O. Tested as plain unit tests.
  *
  * Design notes:
- * - All chunk text is in the session's language (multilingual via
- *   EmbeddingGemma's native multilingual support). Knowledge entries stay
- *   English-only — promotion across that boundary is out of scope here.
+ * - All chunk text is English-by-contract. The chunker translates narrative
+ *   fields into English before persistence so session memory and knowledge
+ *   recall share one embedding-language convention.
  * - `theme` is a free-form slug, not an enum. Structured fields (entities,
  *   protocols, error_classes, chains, tasks) carry the discriminators that
  *   would otherwise force a rigid kind taxonomy.

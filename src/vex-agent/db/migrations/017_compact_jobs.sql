@@ -4,7 +4,7 @@
 -- `session_memories` via a separate LLM call (uses the same OpenRouter
 -- provider configured by the user — no extra env vars). Failure of Track 2
 -- MUST NOT block the compact itself; the agent's summary (Track 1) and
--- archive land synchronously in Phase II of `executeCheckpoint`, while this
+-- archive land synchronously in `executeCompactNow`, while this
 -- table accumulates pending chunking work for async retry.
 --
 -- Crash recovery contract:

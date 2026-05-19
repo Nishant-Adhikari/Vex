@@ -5,13 +5,12 @@
  * EmbeddingGemma endpoint (or whatever EMBEDDING_BASE_URL points at) and
  * produces a markdown report covering two retrieval modes:
  *
- *   Mode A — raw native query → English episode summary:
- *     validates that PR1 can cut the hot-path translation without regressing
- *     recall on sessions whose summaries are still in English.
+ *   Mode A — raw native query → English session-memory summary:
+ *     validates recall against the current English-by-contract memory corpus.
  *
- *   Mode B — native query → native episode summary:
- *     validates that the PR2 multilingual session-memory rewrite retrieves
- *     cleanly in each language.
+ *   Mode B — native query → native session-memory summary:
+ *     retains the historical native-document comparison data. It is useful for
+ *     model evaluation, but production session memory now stores English text.
  *
  * Metrics: Recall@1, Recall@3, average and minimum margin vs the best
  * distractor in the candidate pool. No hard threshold is encoded — the
@@ -346,19 +345,18 @@ function renderReport(report: BenchmarkReport): string {
 
 ---
 
-## Mode A — raw native query → English episode summary
+## Mode A — raw native query → English session-memory summary
 
-Validates that PR1 can cut the hot-path translation without regressing recall
-on sessions whose summaries are still in English (legacy corpus).
+Validates recall against the current English-by-contract session-memory corpus.
 
 ${renderModeTable(report.perLang, "A")}
 
 ---
 
-## Mode B — native query → native episode summary
+## Mode B — native query → native session-memory summary
 
-Validates that the PR2 multilingual session-memory rewrite retrieves cleanly
-in each language (post-pivot target).
+Retains the historical native-document comparison data for embedding model
+evaluation. Production session memory now stores English text.
 
 ${renderModeTable(report.perLang, "B")}
 
@@ -386,7 +384,7 @@ ${renderWorstSection(report.worstPerLang, pairsById)}
 
 - **Mode A pool**: 6 canonical English documents — one per topic. We dedupe
   because summaryEn/titleEn are identical across language variants of the
-  same topic (they represent the same legacy episode seen from different
+  same topic (they represent the same memory scenario seen from different
   user-side queries). Mode A scores every query (all ${report.datasetSize}
   across 5 languages) against the same 6-doc EN pool; target match is by
   topic. Random baseline: 1/6 = 16.7% Recall@1.
