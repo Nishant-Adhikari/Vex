@@ -10,17 +10,32 @@
  */
 
 import { useCallback } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Settings02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "../../components/ui/button.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
-export function EditInfrastructureButton(): JSX.Element {
+interface EditInfrastructureButtonProps {
+  readonly compact?: boolean;
+}
+
+export function EditInfrastructureButton({
+  compact = false,
+}: EditInfrastructureButtonProps): JSX.Element {
   const openWizard = useUiStore((s) => s.openWizard);
   const onClick = useCallback((): void => {
     openWizard("reconfigure");
   }, [openWizard]);
   return (
-    <Button variant="outline" size="sm" onClick={onClick}>
-      Edit infrastructure
+    <Button
+      variant="ghost"
+      size={compact ? "icon" : "sm"}
+      onClick={onClick}
+      aria-label="Edit infrastructure"
+      className="border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-secondary)] hover:bg-white/[0.08] hover:text-foreground"
+    >
+      <HugeiconsIcon icon={Settings02Icon} size={16} aria-hidden />
+      {compact ? null : <span>Settings</span>}
     </Button>
   );
 }

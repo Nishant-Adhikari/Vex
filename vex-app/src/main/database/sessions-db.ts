@@ -32,6 +32,8 @@ import { randomUUID } from "node:crypto";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   VEX_APP_SESSION_SCOPE,
+  missionRunStatusSchema,
+  type MissionRunStatus,
   type SessionCreateInput,
   type SessionListItem,
   type SessionMode,
@@ -42,6 +44,12 @@ import { log } from "../logger/index.js";
 
 const CONNECT_TIMEOUT_MS = 2_000;
 const QUERY_TIMEOUT_MS = 5_000;
+const ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES: readonly MissionRunStatus[] = [
+  "running",
+  "paused_approval",
+  "paused_wake",
+  "paused_error",
+];
 
 function dbUnavailable(): Result<never, VexError> {
   return err({
@@ -131,9 +139,15 @@ function normalisePermission(raw: string): SessionPermission {
   return raw === "full" ? "full" : "restricted";
 }
 
+function normaliseMissionStatus(raw: string | null | undefined): MissionRunStatus | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = missionRunStatusSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 function toListItem(
   row: SessionRow,
-  missionStatus: string | null,
+  missionStatus: MissionRunStatus | null,
 ): SessionListItem {
   return {
     id: row.id,
@@ -227,16 +241,16 @@ export async function getSessionById(
       );
       const row = sessionResult.rows[0];
       if (!row) return ok(null);
-      let missionStatus: string | null = null;
+      let missionStatus: MissionRunStatus | null = null;
       if (normaliseMode(row.mode) === "mission") {
         const runResult = await client.query<{ status: string }>(
           `SELECT status FROM mission_runs
            WHERE session_id = $1
-             AND status NOT IN ('completed', 'failed', 'cancelled')
+             AND status = ANY($2::text[])
            ORDER BY started_at DESC LIMIT 1`,
-          [id],
+          [id, ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES],
         );
-        missionStatus = runResult.rows[0]?.status ?? null;
+        missionStatus = normaliseMissionStatus(runResult.rows[0]?.status);
       }
       return ok(toListItem(row, missionStatus));
     } catch (cause) {
@@ -270,7 +284,7 @@ export async function listSessions(
         .filter((r) => normaliseMode(r.mode) === "mission")
         .map((r) => r.id);
 
-      const statusBySession = new Map<string, string>();
+      const statusBySession = new Map<string, MissionRunStatus>();
       if (missionSessionIds.length > 0) {
         // Single query, latest active run per session. DISTINCT ON keeps
         // the most recent active/paused row per session_id.
@@ -278,12 +292,13 @@ export async function listSessions(
           `SELECT DISTINCT ON (session_id) session_id, status
            FROM mission_runs
            WHERE session_id = ANY($1::text[])
-             AND status NOT IN ('completed', 'failed', 'cancelled')
+             AND status = ANY($2::text[])
            ORDER BY session_id, started_at DESC`,
-          [missionSessionIds],
+          [missionSessionIds, ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES],
         );
         for (const r of runsResult.rows) {
-          statusBySession.set(r.session_id, r.status);
+          const status = normaliseMissionStatus(r.status);
+          if (status !== null) statusBySession.set(r.session_id, status);
         }
       }
 

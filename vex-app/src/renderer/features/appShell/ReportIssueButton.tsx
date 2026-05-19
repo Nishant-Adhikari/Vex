@@ -8,10 +8,18 @@
 
 import { useCallback, useState } from "react";
 import type { JSX } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Bug02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "../../components/ui/button.js";
 import { ReportIssueDialog } from "./ReportIssueDialog.js";
 
-export function ReportIssueButton(): JSX.Element {
+interface ReportIssueButtonProps {
+  readonly compact?: boolean;
+}
+
+export function ReportIssueButton({
+  compact = false,
+}: ReportIssueButtonProps): JSX.Element {
   const [open, setOpen] = useState<boolean>(false);
   const openDialog = useCallback(() => setOpen(true), []);
   const onOpenChange = useCallback((next: boolean) => setOpen(next), []);
@@ -19,11 +27,14 @@ export function ReportIssueButton(): JSX.Element {
     <>
       <Button
         variant="ghost"
-        size="sm"
+        size={compact ? "icon" : "sm"}
         onClick={openDialog}
+        aria-label="Report an issue"
         aria-haspopup="dialog"
+        className="border border-white/[0.08] bg-white/[0.03] text-[var(--color-text-secondary)] hover:bg-white/[0.08] hover:text-foreground"
       >
-        Report an issue
+        <HugeiconsIcon icon={Bug02Icon} size={16} aria-hidden />
+        {compact ? null : <span>Report issue</span>}
       </Button>
       <ReportIssueDialog open={open} onOpenChange={onOpenChange} />
     </>

@@ -30,6 +30,7 @@ export type View =
 
 export type WizardEntryMode = "setup" | "reconfigure";
 export type UnlockReturnView = "wizard" | "appShell";
+export type SessionModeFilter = "all" | "agent" | "mission";
 
 export interface UiLogEntry {
   readonly id: string;
@@ -44,6 +45,7 @@ interface UiState {
   readonly wizardEntryMode: WizardEntryMode;
   readonly unlockReturnView: UnlockReturnView;
   readonly logBuffer: ReadonlyArray<UiLogEntry>;
+  readonly sessionModeFilter: SessionModeFilter;
   /**
    * Currently-selected session in the app shell sidebar. `null` means
    * the welcome state is shown (no session opened yet). NOT persisted —
@@ -52,6 +54,7 @@ interface UiState {
    */
   readonly activeSessionId: string | null;
   readonly setSidebarOpen: (value: boolean) => void;
+  readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
   readonly openWizard: (mode: WizardEntryMode) => void;
   readonly openUnlock: (returnView: UnlockReturnView) => void;
@@ -68,8 +71,10 @@ export const useUiStore = create<UiState>()(
       wizardEntryMode: "setup",
       unlockReturnView: "appShell",
       logBuffer: [],
+      sessionModeFilter: "all",
       activeSessionId: null,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
       openWizard: (wizardEntryMode) =>
         set({ currentView: "wizard", wizardEntryMode }),

@@ -21,6 +21,7 @@ function resetStoreToDefaults(): void {
     wizardEntryMode: "setup",
     unlockReturnView: "appShell",
     logBuffer: [],
+    sessionModeFilter: "all",
     activeSessionId: null,
   });
 }
@@ -42,12 +43,19 @@ describe("uiStore", () => {
     expect(state.currentView).toBe("splash");
     expect(state.wizardEntryMode).toBe("setup");
     expect(state.unlockReturnView).toBe("appShell");
+    expect(state.sessionModeFilter).toBe("all");
+    expect(state.activeSessionId).toBeNull();
     expect(state.logBuffer).toEqual([]);
   });
 
   it("setSidebarOpen mutates and reflects new value", () => {
     useUiStore.getState().setSidebarOpen(false);
     expect(useUiStore.getState().sidebarOpen).toBe(false);
+  });
+
+  it("setSessionModeFilter mutates and reflects new value", () => {
+    useUiStore.getState().setSessionModeFilter("mission");
+    expect(useUiStore.getState().sessionModeFilter).toBe("mission");
   });
 
   it("openWizard sets the wizard view and entry mode together", () => {
@@ -92,7 +100,9 @@ describe("uiStore", () => {
 
   it("persists ONLY sidebarOpen to localStorage (never logBuffer / transient navigation state)", () => {
     useUiStore.getState().setSidebarOpen(false);
-    useUiStore.getState().setCurrentView("placeholder");
+    useUiStore.getState().setCurrentView("systemCheck");
+    useUiStore.getState().setSessionModeFilter("mission");
+    useUiStore.getState().setActiveSessionId("64dd70f7-0ff6-462e-90c0-e528681d7e5d");
     useUiStore.getState().openWizard("reconfigure");
     useUiStore.getState().openUnlock("wizard");
     useUiStore.getState().appendLog({
@@ -111,6 +121,8 @@ describe("uiStore", () => {
     expect(parsed.state.currentView).toBeUndefined();
     expect(parsed.state.wizardEntryMode).toBeUndefined();
     expect(parsed.state.unlockReturnView).toBeUndefined();
+    expect(parsed.state.sessionModeFilter).toBeUndefined();
+    expect(parsed.state.activeSessionId).toBeUndefined();
     // Belt-and-braces: the message text must not appear anywhere serialized.
     expect(raw).not.toContain("private payload");
     expect(raw).not.toContain("secret-log");

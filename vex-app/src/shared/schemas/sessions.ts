@@ -26,6 +26,18 @@ export type SessionMode = z.infer<typeof sessionModeSchema>;
 export const sessionPermissionSchema = z.enum(["restricted", "full"]);
 export type SessionPermission = z.infer<typeof sessionPermissionSchema>;
 
+export const missionRunStatusSchema = z.enum([
+  "running",
+  "paused_approval",
+  "paused_wake",
+  "paused_error",
+  "completed",
+  "failed",
+  "stopped",
+  "cancelled",
+]);
+export type MissionRunStatus = z.infer<typeof missionRunStatusSchema>;
+
 /**
  * IPC input for `vex.sessions.create`. Discriminated union on `mode`:
  *   - agent: no goal field at all (typed `never` blocks accidental sends)
@@ -81,7 +93,7 @@ export const sessionListItemSchema = z
      * active/paused. Null for agent sessions, mission sessions that haven't
      * started a run yet, and completed/cancelled runs.
      */
-    missionStatus: z.string().nullable(),
+    missionStatus: missionRunStatusSchema.nullable(),
   })
   .strict();
 export type SessionListItem = z.infer<typeof sessionListItemSchema>;

@@ -13,6 +13,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import {
+  AiChat01Icon,
+  Shield02Icon,
+  Target02Icon,
+  ZapIcon,
+} from "@hugeicons/core-free-icons";
 import {
   INITIAL_GOAL_MAX_LENGTH,
   type SessionCreateInput,
@@ -43,6 +50,7 @@ interface ModeOption {
   readonly value: SessionMode;
   readonly title: string;
   readonly description: string;
+  readonly icon: IconSvgElement;
 }
 
 const MODE_OPTIONS: ReadonlyArray<ModeOption> = [
@@ -50,12 +58,14 @@ const MODE_OPTIONS: ReadonlyArray<ModeOption> = [
     value: "agent",
     title: "Agent",
     description: "One-shot conversation. Vex stays in chat, no loop.",
+    icon: AiChat01Icon,
   },
   {
     value: "mission",
     title: "Mission",
     description:
       "Goal-driven loop. Vex pursues a target and can self-schedule wakes.",
+    icon: Target02Icon,
   },
 ];
 
@@ -63,6 +73,7 @@ interface PermissionOption {
   readonly value: SessionPermission;
   readonly title: string;
   readonly description: string;
+  readonly icon: IconSvgElement;
 }
 
 const PERMISSION_OPTIONS: ReadonlyArray<PermissionOption> = [
@@ -70,11 +81,13 @@ const PERMISSION_OPTIONS: ReadonlyArray<PermissionOption> = [
     value: "restricted",
     title: "Restricted",
     description: "Every mutating transaction requires your approval.",
+    icon: Shield02Icon,
   },
   {
     value: "full",
-    title: "Full",
+    title: "Full access",
     description: "Auto-execute approved tools without prompting per call.",
+    icon: ZapIcon,
   },
 ];
 
@@ -147,19 +160,19 @@ export function SessionCreator({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl border-white/[0.10] bg-[#071024]/92 text-foreground shadow-[0_0_80px_rgba(22,68,190,0.28)] backdrop:bg-black/70 backdrop:backdrop-blur-sm">
         <form onSubmit={onSubmit} className="flex flex-col">
-          <DialogHeader>
-            <DialogTitle>New session</DialogTitle>
-            <DialogDescription>
+          <DialogHeader className="border-white/[0.08]">
+            <DialogTitle className="text-xl">New session</DialogTitle>
+            <DialogDescription className="text-[var(--color-text-secondary)]">
               Choose how the session behaves. Mode and permission are
               locked once the session is created.
             </DialogDescription>
           </DialogHeader>
 
-          <DialogBody>
+          <DialogBody className="gap-5">
             <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Mode</legend>
+              <legend className="text-sm font-medium text-foreground">Mode</legend>
               <div className="grid grid-cols-2 gap-2">
                 {MODE_OPTIONS.map((opt) => (
                   <RadioCard
@@ -170,13 +183,16 @@ export function SessionCreator({
                     onChange={() => setMode(opt.value)}
                     title={opt.title}
                     description={opt.description}
+                    icon={opt.icon}
                   />
                 ))}
               </div>
             </fieldset>
 
             <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Permission</legend>
+              <legend className="text-sm font-medium text-foreground">
+                Permission
+              </legend>
               <div className="grid grid-cols-2 gap-2">
                 {PERMISSION_OPTIONS.map((opt) => (
                   <RadioCard
@@ -187,6 +203,7 @@ export function SessionCreator({
                     onChange={() => setPermission(opt.value)}
                     title={opt.title}
                     description={opt.description}
+                    icon={opt.icon}
                   />
                 ))}
               </div>
@@ -205,9 +222,9 @@ export function SessionCreator({
                   rows={4}
                   placeholder="Describe what you want the mission to accomplish."
                   className={cn(
-                    "min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm",
+                    "min-h-24 w-full rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-sm shadow-sm",
                     "placeholder:text-muted-foreground",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
                   )}
                 />
                 <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
@@ -227,16 +244,21 @@ export function SessionCreator({
             ) : null}
           </DialogBody>
 
-          <DialogFooter>
+          <DialogFooter className="border-white/[0.08]">
             <Button
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
+              className="text-[var(--color-text-secondary)] hover:bg-white/[0.06] hover:text-foreground"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitDisabled}>
+            <Button
+              type="submit"
+              disabled={submitDisabled}
+              className="bg-[#3758ff] text-white hover:bg-[#4668ff]"
+            >
               {createMutation.isPending ? "Creating…" : "Create"}
             </Button>
           </DialogFooter>
@@ -253,6 +275,7 @@ interface RadioCardProps {
   readonly onChange: () => void;
   readonly title: string;
   readonly description: string;
+  readonly icon: IconSvgElement;
 }
 
 function RadioCard({
@@ -262,14 +285,15 @@ function RadioCard({
   onChange,
   title,
   description,
+  icon,
 }: RadioCardProps): JSX.Element {
   return (
     <label
       className={cn(
-        "flex cursor-pointer flex-col gap-1 rounded-md border border-border bg-background px-3 py-2 text-sm transition-colors",
+        "flex min-h-[112px] cursor-pointer flex-col gap-2 rounded-lg border bg-white/[0.035] px-3 py-3 text-sm transition-colors",
         checked
-          ? "border-primary bg-primary/10 ring-1 ring-primary"
-          : "hover:bg-accent",
+          ? "border-[#3275f8]/55 bg-[#3275f8]/14 ring-1 ring-[#3275f8]/55"
+          : "border-white/[0.08] hover:bg-white/[0.06]",
       )}
     >
       <input
@@ -280,6 +304,9 @@ function RadioCard({
         onChange={onChange}
         className="sr-only"
       />
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-black/[0.18] text-[#8da5ff]">
+        <HugeiconsIcon icon={icon} size={17} aria-hidden />
+      </span>
       <span className="font-medium text-foreground">{title}</span>
       <span className="text-xs text-[var(--color-text-secondary)]">
         {description}
