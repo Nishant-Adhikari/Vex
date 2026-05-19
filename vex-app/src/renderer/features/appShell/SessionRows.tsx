@@ -1,8 +1,9 @@
-import type { JSX } from "react";
+import type { JSX, MouseEvent } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AiChat01Icon,
   Archive02Icon,
+  StarIcon,
   StopCircleIcon,
   Target02Icon,
 } from "@hugeicons/core-free-icons";
@@ -22,6 +23,15 @@ interface SessionGroupsProps {
   readonly activeSessionId: string | null;
   readonly sidebarOpen: boolean;
   readonly onSelect: (id: string) => void;
+  readonly onTogglePin: (id: string, nextPinned: boolean) => void;
+  readonly pendingPinId: string | null;
+  /**
+   * Namespace for `<section aria-labelledby>` / `<h2 id>` pairs so the
+   * sidebar and the library view can coexist on the same page without
+   * duplicate IDs. Required because both screens render `SessionGroups`
+   * with the same group keys (pinned/today/yesterday/older).
+   */
+  readonly idPrefix: string;
 }
 
 export function SessionGroups({
@@ -29,15 +39,27 @@ export function SessionGroups({
   activeSessionId,
   sidebarOpen,
   onSelect,
+  onTogglePin,
+  pendingPinId,
+  idPrefix,
 }: SessionGroupsProps): JSX.Element {
   return (
     <div className="flex flex-col gap-4">
-      {groups.map((group) =>
-        group.rows.length > 0 ? (
-          <section key={group.key} aria-labelledby={`sessions-${group.key}`}>
+      {groups.map((group) => {
+        if (group.rows.length === 0) return null;
+        // When the sidebar is collapsed we hide the <h2>, so referring
+        // back to it via aria-labelledby would point at nothing. Fall
+        // back to an aria-label that names the section directly.
+        const sectionId = `${idPrefix}-${group.key}`;
+        return (
+          <section
+            key={group.key}
+            aria-labelledby={sidebarOpen ? sectionId : undefined}
+            aria-label={sidebarOpen ? undefined : group.title}
+          >
             {sidebarOpen ? (
               <h2
-                id={`sessions-${group.key}`}
+                id={sectionId}
                 className="mb-2 px-2 text-[11px] font-semibold text-[#6f91ff]"
               >
                 {group.title}
@@ -51,12 +73,14 @@ export function SessionGroups({
                   selected={row.id === activeSessionId}
                   sidebarOpen={sidebarOpen}
                   onSelect={onSelect}
+                  onTogglePin={onTogglePin}
+                  pinPending={pendingPinId === row.id}
                 />
               ))}
             </ol>
           </section>
-        ) : null,
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -166,79 +190,150 @@ function SessionRow({
   selected,
   sidebarOpen,
   onSelect,
+  onTogglePin,
+  pinPending,
 }: {
   readonly row: SessionListItem;
   readonly selected: boolean;
   readonly sidebarOpen: boolean;
   readonly onSelect: (id: string) => void;
+  readonly onTogglePin: (id: string, nextPinned: boolean) => void;
+  readonly pinPending: boolean;
 }): JSX.Element {
   const startedLabel = formatSessionTime(row.startedAt);
   const title = getSessionTitle(row);
   const subtitle = getSessionSubtitle(row);
   const activity = getMissionActivity(row);
   const Icon = row.mode === "mission" ? Target02Icon : AiChat01Icon;
+  const isPinned = row.pinnedAt !== null;
 
+  const handlePinClick = (event: MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (pinPending) return;
+    onTogglePin(row.id, !isPinned);
+  };
+
+  // Row select control and pin toggle are SIBLINGS inside a non-interactive
+  // wrapper. This is the only safe layout: a button inside a button is
+  // invalid HTML, and a custom `role="button"` parent would let Enter/Space
+  // bubble from the pin into a row-level keydown handler. Container holds
+  // the visual styling; both children focus / click independently.
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => onSelect(row.id)}
-        aria-current={selected ? "true" : undefined}
+      <div
         className={cn(
-          "group relative flex w-full rounded-lg border text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+          "group relative flex w-full rounded-lg border transition-colors",
           selected
             ? "border-[#3275f8]/42 bg-[#3275f8]/13 shadow-[0_0_24px_rgba(50,117,248,0.12)]"
-            : "border-transparent bg-transparent hover:border-white/[0.055] hover:bg-white/[0.035]",
-          sidebarOpen ? "min-h-[68px] gap-3 px-3 py-3" : "h-11 items-center justify-center px-0",
+            : "border-transparent hover:border-white/[0.055] hover:bg-white/[0.035]",
+          // Fixed height drives the fit-to-height packer; see
+          // SIDEBAR_ROW_HEIGHT_PX in sessionListLayout.ts.
+          sidebarOpen ? "h-[88px]" : "h-11",
         )}
-        title={sidebarOpen ? undefined : title}
       >
-        <span
+        <button
+          type="button"
+          onClick={() => onSelect(row.id)}
+          aria-current={selected ? "true" : undefined}
+          aria-label={!sidebarOpen ? title : undefined}
           className={cn(
-            "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.035] text-[#8da5ff]",
-            selected && "border-[#3275f8]/42 bg-[#3275f8]/13 text-[#adc0ff]",
+            "flex h-full w-full rounded-lg text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+            // pr-12 (sidebarOpen) reserves space for the absolutely
+            // positioned pin button so the title flex never paints under
+            // it. Collapsed sidebar has no pin, so no reservation.
+            sidebarOpen ? "gap-3 px-3 py-3 pr-12" : "items-center justify-center px-0",
           )}
+          title={sidebarOpen ? undefined : title}
         >
-          <HugeiconsIcon icon={Icon} size={17} aria-hidden />
-          {activity !== null ? (
-            <span
-              aria-hidden
-              className={cn(
-                "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-black/60",
-                activity.dotClass,
-              )}
-            />
+          <span
+            className={cn(
+              "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.035] text-[#8da5ff]",
+              selected && "border-[#3275f8]/42 bg-[#3275f8]/13 text-[#adc0ff]",
+            )}
+          >
+            <HugeiconsIcon icon={Icon} size={17} aria-hidden />
+            {activity !== null ? (
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-black/60",
+                  activity.dotClass,
+                )}
+              />
+            ) : null}
+          </span>
+
+          {sidebarOpen ? (
+            <span className="min-w-0 flex-1">
+              <span className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                  {title}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-[var(--color-text-muted)]">
+                  {startedLabel}
+                </span>
+              </span>
+              <span className="mt-1 block truncate text-xs text-[var(--color-text-secondary)]">
+                {subtitle}
+              </span>
+              <span className="mt-2 flex items-center gap-2">
+                <Badge tone={row.mode === "mission" ? "mission" : "agent"}>
+                  {row.mode}
+                </Badge>
+                <Badge tone={row.permission === "full" ? "full" : "restricted"}>
+                  {row.permission}
+                </Badge>
+                {activity !== null ? (
+                  <Badge tone={activity.tone}>{activity.label}</Badge>
+                ) : null}
+              </span>
+            </span>
           ) : null}
-        </span>
+        </button>
 
         {sidebarOpen ? (
-          <span className="min-w-0 flex-1">
-            <span className="flex items-start gap-2">
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                {title}
-              </span>
-              <span className="shrink-0 font-mono text-[10px] text-[var(--color-text-muted)]">
-                {startedLabel}
-              </span>
-            </span>
-            <span className="mt-1 block truncate text-xs text-[var(--color-text-secondary)]">
-              {subtitle}
-            </span>
-            <span className="mt-2 flex items-center gap-2">
-              <Badge tone={row.mode === "mission" ? "mission" : "agent"}>
-                {row.mode}
-              </Badge>
-              <Badge tone={row.permission === "full" ? "full" : "restricted"}>
-                {row.permission}
-              </Badge>
-              {activity !== null ? (
-                <Badge tone={activity.tone}>{activity.label}</Badge>
-              ) : null}
-            </span>
-          </span>
+          <PinToggle
+            pinned={isPinned}
+            pending={pinPending}
+            onClick={handlePinClick}
+            className="absolute right-3 top-3"
+          />
         ) : null}
-      </button>
+      </div>
     </li>
+  );
+}
+
+function PinToggle({
+  pinned,
+  pending,
+  onClick,
+  className,
+}: {
+  readonly pinned: boolean;
+  readonly pending: boolean;
+  readonly onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly className?: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pinned}
+      aria-label={pinned ? "Unpin session" : "Pin session"}
+      disabled={pending}
+      className={cn(
+        "inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+        pinned
+          ? "border-[#ffd35c]/40 bg-[#ffd35c]/10 text-[#ffd35c] hover:bg-[#ffd35c]/16"
+          : "border-transparent text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/[0.06] hover:text-foreground",
+        pending && "cursor-wait opacity-60",
+        className,
+      )}
+    >
+      <HugeiconsIcon icon={StarIcon} size={13} aria-hidden />
+    </button>
   );
 }
 

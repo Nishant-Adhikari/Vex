@@ -31,6 +31,13 @@ export type View =
 export type WizardEntryMode = "setup" | "reconfigure";
 export type UnlockReturnView = "wizard" | "appShell";
 export type SessionModeFilter = "all" | "agent" | "mission";
+/**
+ * Sub-view of the app shell panel area. `session` is the default chat/
+ * welcome panel; `sessionsLibrary` is the dedicated "browse all sessions"
+ * screen with custom scrollbar. NOT persisted — view selection is
+ * launch-ephemeral, like `activeSessionId`.
+ */
+export type AppShellView = "session" | "sessionsLibrary";
 
 export interface UiLogEntry {
   readonly id: string;
@@ -53,12 +60,14 @@ interface UiState {
    * TanStack Query.
    */
   readonly activeSessionId: string | null;
+  readonly appShellView: AppShellView;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
   readonly openWizard: (mode: WizardEntryMode) => void;
   readonly openUnlock: (returnView: UnlockReturnView) => void;
   readonly setActiveSessionId: (value: string | null) => void;
+  readonly setAppShellView: (value: AppShellView) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -73,6 +82,7 @@ export const useUiStore = create<UiState>()(
       logBuffer: [],
       sessionModeFilter: "all",
       activeSessionId: null,
+      appShellView: "session",
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
@@ -81,6 +91,7 @@ export const useUiStore = create<UiState>()(
       openUnlock: (unlockReturnView) =>
         set({ currentView: "unlock", unlockReturnView }),
       setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
+      setAppShellView: (appShellView) => set({ appShellView }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),

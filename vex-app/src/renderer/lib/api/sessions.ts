@@ -26,6 +26,8 @@ import type {
   SessionCreateResult,
   SessionList,
   SessionListItem,
+  SessionSetPinnedInput,
+  SessionSetPinnedResult,
 } from "@shared/schemas/sessions.js";
 
 export const sessionKeys = {
@@ -84,7 +86,37 @@ export function useCreateSession(): UseMutationResult<
         { ok: true, data: result.data } satisfies Result<SessionListItem>,
       );
       // List query gets invalidated so the sidebar re-fetches in order
-      // (most-recent-first DB ordering is the source of truth).
+      // (pinned-first then started_at DESC).
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
+    },
+  });
+}
+
+/**
+ * Pin/unpin a session. The DB helper returns a canonical `SessionListItem`
+ * with `missionStatus` already enriched, so seeding the detail cache is
+ * safe — no risk of wiping an active mission status with `null`.
+ *
+ * List invalidation fires every time so the sidebar re-sorts (pinned
+ * rows surface in the new Pinned bucket and disappear from time buckets).
+ */
+export function useSetSessionPinned(): UseMutationResult<
+  Result<SessionSetPinnedResult>,
+  Error,
+  SessionSetPinnedInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SessionSetPinnedInput) =>
+      window.vex.sessions.setPinned(input),
+    onSuccess: (result) => {
+      if (!result.ok) return;
+      if (result.data !== null) {
+        queryClient.setQueryData(
+          sessionKeys.detail(result.data.id),
+          { ok: true, data: result.data } satisfies Result<SessionListItem>,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
     },
   });

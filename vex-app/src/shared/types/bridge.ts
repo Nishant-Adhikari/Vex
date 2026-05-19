@@ -71,6 +71,8 @@ import type {
   SessionGetInput,
   SessionList,
   SessionListItem,
+  SessionSetPinnedInput,
+  SessionSetPinnedResult,
 } from "../schemas/sessions.js";
 import type {
   HealthReport,
@@ -258,6 +260,14 @@ export interface VexBridge {
     readonly get: (
       input: SessionGetInput
     ) => Promise<Result<SessionListItem | null>>;
+    /**
+     * Pin/unpin a session. Idempotent on both sides: re-pinning preserves
+     * the existing `pinnedAt`, re-unpinning is a no-op. Returns `null`
+     * when the id is unknown (stale renderer cache).
+     */
+    readonly setPinned: (
+      input: SessionSetPinnedInput
+    ) => Promise<Result<SessionSetPinnedResult>>;
   };
 
   readonly settings: {

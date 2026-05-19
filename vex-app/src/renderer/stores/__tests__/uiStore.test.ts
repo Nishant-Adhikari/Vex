@@ -23,6 +23,7 @@ function resetStoreToDefaults(): void {
     logBuffer: [],
     sessionModeFilter: "all",
     activeSessionId: null,
+    appShellView: "session",
   });
 }
 
@@ -45,7 +46,13 @@ describe("uiStore", () => {
     expect(state.unlockReturnView).toBe("appShell");
     expect(state.sessionModeFilter).toBe("all");
     expect(state.activeSessionId).toBeNull();
+    expect(state.appShellView).toBe("session");
     expect(state.logBuffer).toEqual([]);
+  });
+
+  it("setAppShellView mutates and reflects new value", () => {
+    useUiStore.getState().setAppShellView("sessionsLibrary");
+    expect(useUiStore.getState().appShellView).toBe("sessionsLibrary");
   });
 
   it("setSidebarOpen mutates and reflects new value", () => {
@@ -103,6 +110,7 @@ describe("uiStore", () => {
     useUiStore.getState().setCurrentView("systemCheck");
     useUiStore.getState().setSessionModeFilter("mission");
     useUiStore.getState().setActiveSessionId("64dd70f7-0ff6-462e-90c0-e528681d7e5d");
+    useUiStore.getState().setAppShellView("sessionsLibrary");
     useUiStore.getState().openWizard("reconfigure");
     useUiStore.getState().openUnlock("wizard");
     useUiStore.getState().appendLog({
@@ -123,6 +131,7 @@ describe("uiStore", () => {
     expect(parsed.state.unlockReturnView).toBeUndefined();
     expect(parsed.state.sessionModeFilter).toBeUndefined();
     expect(parsed.state.activeSessionId).toBeUndefined();
+    expect(parsed.state.appShellView).toBeUndefined();
     // Belt-and-braces: the message text must not appear anywhere serialized.
     expect(raw).not.toContain("private payload");
     expect(raw).not.toContain("secret-log");

@@ -120,6 +120,8 @@ interface SessionRow {
   readonly initial_goal: string | null;
   readonly started_at: string | Date;
   readonly ended_at: string | Date | null;
+  readonly title: string | null;
+  readonly pinned_at: string | Date | null;
 }
 
 interface MissionRunStatusRow {
@@ -127,8 +129,15 @@ interface MissionRunStatusRow {
   readonly status: string;
 }
 
+const SESSION_ROW_COLUMNS =
+  "id, mode, permission, initial_goal, started_at, ended_at, title, pinned_at";
+
 function toIsoString(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
+}
+
+function toIsoStringOrNull(value: string | Date | null): string | null {
+  return value === null ? null : toIsoString(value);
 }
 
 function normaliseMode(raw: string): SessionMode {
@@ -153,11 +162,33 @@ function toListItem(
     id: row.id,
     mode: normaliseMode(row.mode),
     permission: normalisePermission(row.permission),
+    title: row.title,
     initialGoal: row.initial_goal,
     startedAt: toIsoString(row.started_at),
-    endedAt: row.ended_at === null ? null : toIsoString(row.ended_at),
+    endedAt: toIsoStringOrNull(row.ended_at),
     missionStatus,
+    pinnedAt: toIsoStringOrNull(row.pinned_at),
   };
+}
+
+/**
+ * Load the active mission_run status for a single session id. Shared by
+ * `getSessionById` and `setSessionPinned` so a freshly-pinned mission row
+ * never gets returned with a wiped `missionStatus`. `listSessions` keeps
+ * its batch DISTINCT ON query — single-row lookups here would be N+1.
+ */
+async function loadMissionStatus(
+  client: Client,
+  sessionId: string,
+): Promise<MissionRunStatus | null> {
+  const result = await client.query<{ status: string }>(
+    `SELECT status FROM mission_runs
+       WHERE session_id = $1
+         AND status = ANY($2::text[])
+       ORDER BY started_at DESC LIMIT 1`,
+    [sessionId, ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES],
+  );
+  return normaliseMissionStatus(result.rows[0]?.status);
 }
 
 /**
@@ -180,6 +211,7 @@ export async function createSession(
   const id = randomUUID();
   const mode: SessionMode = input.mode;
   const permission: SessionPermission = input.permission;
+  const title: string = input.name;
   const initialGoal: string | null =
     input.mode === "mission" ? input.initialGoal : null;
 
@@ -187,8 +219,8 @@ export async function createSession(
     try {
       await client.query("BEGIN");
       await client.query(
-        "INSERT INTO sessions (id, scope, mode, permission, initial_goal) VALUES ($1, $2, $3, $4, $5)",
-        [id, VEX_APP_SESSION_SCOPE, mode, permission, initialGoal],
+        "INSERT INTO sessions (id, scope, mode, permission, initial_goal, title) VALUES ($1, $2, $3, $4, $5, $6)",
+        [id, VEX_APP_SESSION_SCOPE, mode, permission, initialGoal, title],
       );
       if (mode === "mission") {
         // Seed missions.goal with the user's initial intent — the
@@ -204,7 +236,7 @@ export async function createSession(
         );
       }
       const sessionResult = await client.query<SessionRow>(
-        "SELECT id, mode, permission, initial_goal, started_at, ended_at FROM sessions WHERE id = $1 AND scope = $2",
+        `SELECT ${SESSION_ROW_COLUMNS} FROM sessions WHERE id = $1 AND scope = $2`,
         [id, VEX_APP_SESSION_SCOPE],
       );
       await client.query("COMMIT");
@@ -236,22 +268,15 @@ export async function getSessionById(
   return withClient(async (client) => {
     try {
       const sessionResult = await client.query<SessionRow>(
-        "SELECT id, mode, permission, initial_goal, started_at, ended_at FROM sessions WHERE id = $1 AND scope = $2",
+        `SELECT ${SESSION_ROW_COLUMNS} FROM sessions WHERE id = $1 AND scope = $2`,
         [id, VEX_APP_SESSION_SCOPE],
       );
       const row = sessionResult.rows[0];
       if (!row) return ok(null);
-      let missionStatus: MissionRunStatus | null = null;
-      if (normaliseMode(row.mode) === "mission") {
-        const runResult = await client.query<{ status: string }>(
-          `SELECT status FROM mission_runs
-           WHERE session_id = $1
-             AND status = ANY($2::text[])
-           ORDER BY started_at DESC LIMIT 1`,
-          [id, ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES],
-        );
-        missionStatus = normaliseMissionStatus(runResult.rows[0]?.status);
-      }
+      const missionStatus: MissionRunStatus | null =
+        normaliseMode(row.mode) === "mission"
+          ? await loadMissionStatus(client, id)
+          : null;
       return ok(toListItem(row, missionStatus));
     } catch (cause) {
       return dbError("getSessionById failed", cause);
@@ -270,10 +295,10 @@ export async function listSessions(
   return withClient(async (client) => {
     try {
       const sessionsResult = await client.query<SessionRow>(
-        `SELECT id, mode, permission, initial_goal, started_at, ended_at
+        `SELECT ${SESSION_ROW_COLUMNS}
          FROM sessions
          WHERE scope = $1
-         ORDER BY started_at DESC
+         ORDER BY pinned_at DESC NULLS LAST, started_at DESC
          LIMIT $2`,
         [VEX_APP_SESSION_SCOPE, limit],
       );
@@ -309,6 +334,46 @@ export async function listSessions(
       );
     } catch (cause) {
       return dbError("listSessions failed", cause);
+    }
+  });
+}
+
+/**
+ * Pin or unpin a session. Idempotent semantics on both sides:
+ *   - re-pinning a pinned row keeps the existing `pinned_at` (via
+ *     `COALESCE`) so the sidebar's "most recently pinned first" order
+ *     does NOT shuffle on accidental double-clicks.
+ *   - re-unpinning an already-unpinned row is a no-op.
+ *
+ * Returns the updated `SessionListItem` (enriched with `missionStatus`)
+ * or `null` when the id is unknown — caller had a stale view, treating
+ * it as an error would be hostile.
+ */
+export async function setSessionPinned(
+  id: string,
+  pinned: boolean,
+): Promise<Result<SessionListItem | null, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const updateResult = await client.query<SessionRow>(
+        `UPDATE sessions
+            SET pinned_at = CASE
+                  WHEN $2::boolean THEN COALESCE(pinned_at, NOW())
+                  ELSE NULL
+                END
+          WHERE id = $1 AND scope = $3
+          RETURNING ${SESSION_ROW_COLUMNS}`,
+        [id, pinned, VEX_APP_SESSION_SCOPE],
+      );
+      const row = updateResult.rows[0];
+      if (!row) return ok(null);
+      const missionStatus: MissionRunStatus | null =
+        normaliseMode(row.mode) === "mission"
+          ? await loadMissionStatus(client, id)
+          : null;
+      return ok(toListItem(row, missionStatus));
+    } catch (cause) {
+      return dbError("setSessionPinned failed", cause);
     }
   });
 }

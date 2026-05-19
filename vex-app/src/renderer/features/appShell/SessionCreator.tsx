@@ -22,6 +22,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import {
   INITIAL_GOAL_MAX_LENGTH,
+  SESSION_TITLE_MAX_LENGTH,
   type SessionCreateInput,
   type SessionMode,
   type SessionPermission,
@@ -98,20 +99,34 @@ export function SessionCreator({
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
   const createMutation = useCreateSession();
 
+  const [name, setName] = useState<string>("");
   const [mode, setMode] = useState<SessionMode>("agent");
   const [permission, setPermission] = useState<SessionPermission>("restricted");
   const [goal, setGoal] = useState<string>("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement | null>(null);
   const goalRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Reset state on every (re)open so the next opening starts clean.
   useEffect(() => {
     if (open) {
+      setName("");
       setMode("agent");
       setPermission("restricted");
       setGoal("");
       setSubmitError(null);
     }
+  }, [open]);
+
+  // Focus the Name input first when the dialog opens — it is the first
+  // required field. Mission goal autofocus stays as-is and takes
+  // precedence below once the user switches into mission mode.
+  useEffect(() => {
+    if (!open) return;
+    const id = requestAnimationFrame(() => {
+      nameRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
   }, [open]);
 
   // Mission mode: focus the goal textarea so the keyboard user can type
@@ -125,10 +140,12 @@ export function SessionCreator({
     return () => cancelAnimationFrame(id);
   }, [mode, open]);
 
+  const trimmedName = name.trim();
   const trimmedGoal = goal.trim();
-  const formInvalid =
-    mode === "mission" ? trimmedGoal.length === 0 : false;
-  const submitDisabled = formInvalid || createMutation.isPending;
+  const nameInvalid = trimmedName.length === 0;
+  const goalInvalid = mode === "mission" ? trimmedGoal.length === 0 : false;
+  const submitDisabled =
+    nameInvalid || goalInvalid || createMutation.isPending;
 
   const onSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -137,8 +154,13 @@ export function SessionCreator({
       setSubmitError(null);
       const input: SessionCreateInput =
         mode === "mission"
-          ? { mode: "mission", permission, initialGoal: trimmedGoal }
-          : { mode: "agent", permission };
+          ? {
+              mode: "mission",
+              name: trimmedName,
+              permission,
+              initialGoal: trimmedGoal,
+            }
+          : { mode: "agent", name: trimmedName, permission };
       const outcome = await createMutation.mutateAsync(input);
       if (!outcome.ok) {
         setSubmitError(outcome.error.message);
@@ -155,6 +177,7 @@ export function SessionCreator({
       setActiveSessionId,
       submitDisabled,
       trimmedGoal,
+      trimmedName,
     ],
   );
 
@@ -171,6 +194,31 @@ export function SessionCreator({
           </DialogHeader>
 
           <DialogBody className="gap-5">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="vex-session-name">Name</Label>
+              <input
+                ref={nameRef}
+                id="vex-session-name"
+                type="text"
+                required
+                maxLength={SESSION_TITLE_MAX_LENGTH}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Give this session a short name."
+                className={cn(
+                  "h-10 w-full rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 text-sm shadow-sm",
+                  "placeholder:text-muted-foreground",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+                )}
+              />
+              <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
+                <p>The sidebar uses this as the session title.</p>
+                <span aria-live="polite">
+                  {name.length} / {SESSION_TITLE_MAX_LENGTH}
+                </span>
+              </div>
+            </div>
+
             <fieldset className="flex flex-col gap-2">
               <legend className="text-sm font-medium text-foreground">Mode</legend>
               <div className="grid grid-cols-2 gap-2">

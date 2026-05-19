@@ -13,12 +13,33 @@
  * The `sessionCreateInputSchema` is a discriminated union on `mode` so the
  * Goal textarea in the renderer is structurally tied to mission mode —
  * preload + main can't accept a goal on an agent row by mistake.
+ *
+ * Migration 020 adds two GUI-only columns: `title` (user-entered display
+ * name, mandatory at create time, capped at 80 chars on UI side / 120 on
+ * the DB CHECK) and `pinned_at` (NULL or timestamp; used for the sidebar's
+ * Pinned bucket ordering).
  */
 
 import { z } from "zod";
 
 export const VEX_APP_SESSION_SCOPE = "vex_app" as const;
 export const INITIAL_GOAL_MAX_LENGTH = 2000;
+export const SESSION_TITLE_MAX_LENGTH = 80;
+
+/**
+ * User-entered session name. Required for both agent and mission sessions —
+ * the sidebar always renders the user's title, even when a mission row also
+ * carries `initialGoal`. Trimmed + bounded; DB CHECK gives a 40-char safety
+ * margin (120) over the UI cap (80).
+ */
+export const sessionTitleSchema = z
+  .string()
+  .trim()
+  .min(1, "Name is required.")
+  .max(
+    SESSION_TITLE_MAX_LENGTH,
+    `Name must be ${SESSION_TITLE_MAX_LENGTH} characters or less.`,
+  );
 
 export const sessionModeSchema = z.enum(["agent", "mission"]);
 export type SessionMode = z.infer<typeof sessionModeSchema>;
@@ -47,12 +68,14 @@ export const sessionCreateInputSchema = z.discriminatedUnion("mode", [
   z
     .object({
       mode: z.literal("agent"),
+      name: sessionTitleSchema,
       permission: sessionPermissionSchema,
     })
     .strict(),
   z
     .object({
       mode: z.literal("mission"),
+      name: sessionTitleSchema,
       permission: sessionPermissionSchema,
       initialGoal: z
         .string()
@@ -85,6 +108,12 @@ export const sessionListItemSchema = z
     id: z.string().uuid(),
     mode: sessionModeSchema,
     permission: sessionPermissionSchema,
+    /**
+     * User-entered display name for the session. `null` only for rows
+     * created before migration 020 landed; new rows always carry a value.
+     * Renderer falls back to `initialGoal` or a mode default when null.
+     */
+    title: z.string().nullable(),
     initialGoal: z.string().nullable(),
     startedAt: z.string().datetime(),
     endedAt: z.string().datetime().nullable(),
@@ -94,6 +123,12 @@ export const sessionListItemSchema = z
      * started a run yet, and completed/cancelled runs.
      */
     missionStatus: missionRunStatusSchema.nullable(),
+    /**
+     * `null` when not pinned. When set, the sidebar surfaces the row in a
+     * dedicated Pinned bucket ordered by `pinnedAt DESC` (most recently
+     * pinned first). The timestamp double as ordering key.
+     */
+    pinnedAt: z.string().datetime().nullable(),
   })
   .strict();
 export type SessionListItem = z.infer<typeof sessionListItemSchema>;
@@ -108,3 +143,20 @@ export type SessionList = z.infer<typeof sessionListSchema>;
  */
 export const sessionCreateResultSchema = sessionListItemSchema;
 export type SessionCreateResult = z.infer<typeof sessionCreateResultSchema>;
+
+/**
+ * IPC input for `vex.sessions.setPinned`. Pin/unpin is idempotent — pinning
+ * an already-pinned row keeps the existing `pinned_at`, and unpinning an
+ * already-unpinned row is a no-op. Pinning a non-existent id returns
+ * `ok(null)` rather than an error (caller had a stale view).
+ */
+export const sessionSetPinnedInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    pinned: z.boolean(),
+  })
+  .strict();
+export type SessionSetPinnedInput = z.infer<typeof sessionSetPinnedInputSchema>;
+
+export const sessionSetPinnedResultSchema = sessionListItemSchema.nullable();
+export type SessionSetPinnedResult = z.infer<typeof sessionSetPinnedResultSchema>;

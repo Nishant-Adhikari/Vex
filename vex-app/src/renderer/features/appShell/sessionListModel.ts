@@ -4,8 +4,10 @@ import type {
 } from "@shared/schemas/sessions.js";
 import type { SessionModeFilter } from "../../stores/uiStore.js";
 
+export type SessionGroupKey = "pinned" | "today" | "yesterday" | "older";
+
 export interface SessionGroup {
-  readonly key: "today" | "yesterday" | "older";
+  readonly key: SessionGroupKey;
   readonly title: string;
   readonly rows: readonly SessionListItem[];
 }
@@ -47,31 +49,73 @@ export function filterSessionsByMode(
 }
 
 export function groupSessions(rows: readonly SessionListItem[]): readonly SessionGroup[] {
-  const groups: SessionGroup[] = [
-    { key: "today", title: "Today", rows: [] },
-    { key: "yesterday", title: "Yesterday", rows: [] },
-    { key: "older", title: "Older", rows: [] },
-  ];
-  const mutableRows = new Map<SessionGroup["key"], SessionListItem[]>(
-    groups.map((g) => [g.key, []]),
-  );
+  // Pinned rows live in their own bucket and are excluded from the time
+  // buckets — a pinned row should not appear twice. Within the bucket we
+  // sort by pinnedAt DESC so the most recently pinned row surfaces first.
+  const pinned: SessionListItem[] = [];
+  const today: SessionListItem[] = [];
+  const yesterday: SessionListItem[] = [];
+  const older: SessionListItem[] = [];
 
   for (const row of rows) {
-    mutableRows.get(getSessionBucket(row.startedAt))?.push(row);
+    if (row.pinnedAt !== null) {
+      pinned.push(row);
+      continue;
+    }
+    const bucket = getSessionBucket(row.startedAt);
+    if (bucket === "today") today.push(row);
+    else if (bucket === "yesterday") yesterday.push(row);
+    else older.push(row);
   }
 
-  return groups.map((g) => ({
-    ...g,
-    rows: mutableRows.get(g.key) ?? [],
-  }));
+  pinned.sort((a, b) => comparePinnedDesc(a.pinnedAt, b.pinnedAt));
+
+  return [
+    { key: "pinned", title: "Pinned", rows: pinned },
+    { key: "today", title: "Today", rows: today },
+    { key: "yesterday", title: "Yesterday", rows: yesterday },
+    { key: "older", title: "Older", rows: older },
+  ];
 }
 
+function comparePinnedDesc(a: string | null, b: string | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  // ISO 8601 strings are lexicographically comparable.
+  if (a > b) return -1;
+  if (a < b) return 1;
+  return 0;
+}
+
+const SESSION_TITLE_DISPLAY_MAX = 48;
+
+/**
+ * Display title resolution for a session row. Priority:
+ *   1. User-entered `title` (new rows post-migration 020).
+ *   2. `initialGoal` (legacy mission rows before users started typing names).
+ *   3. Mode-specific default ("Mission setup" / "Agent session").
+ *
+ * The title is truncated with an ellipsis past 48 chars — the sidebar's
+ * single-line truncation handles overflow visually but a hard cap here
+ * keeps tooltips / aria-labels predictable.
+ */
 export function getSessionTitle(row: SessionListItem): string {
-  if (row.initialGoal !== null && row.initialGoal.trim().length > 0) {
-    const title = row.initialGoal.trim();
-    return title.length > 48 ? `${title.slice(0, 48)}...` : title;
+  if (row.title !== null) {
+    const trimmed = row.title.trim();
+    if (trimmed.length > 0) return truncateForDisplay(trimmed);
+  }
+  if (row.initialGoal !== null) {
+    const trimmed = row.initialGoal.trim();
+    if (trimmed.length > 0) return truncateForDisplay(trimmed);
   }
   return row.mode === "mission" ? "Mission setup" : "Agent session";
+}
+
+function truncateForDisplay(value: string): string {
+  return value.length > SESSION_TITLE_DISPLAY_MAX
+    ? `${value.slice(0, SESSION_TITLE_DISPLAY_MAX)}...`
+    : value;
 }
 
 export function getSessionSubtitle(row: SessionListItem): string {
@@ -129,7 +173,7 @@ export function formatSessionTime(iso: string): string {
   }
 }
 
-function getSessionBucket(iso: string): SessionGroup["key"] {
+function getSessionBucket(iso: string): "today" | "yesterday" | "older" {
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return "older";
 

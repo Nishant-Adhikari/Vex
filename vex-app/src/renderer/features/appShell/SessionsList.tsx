@@ -1,14 +1,18 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
+  ArrowRight01Icon,
   FilterHorizontalIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "../../lib/utils.js";
-import { useSessionsList } from "../../lib/api/sessions.js";
+import {
+  useSessionsList,
+  useSetSessionPinned,
+} from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { EditInfrastructureButton } from "./EditInfrastructureButton.js";
 import { ReportIssueButton } from "./ReportIssueButton.js";
@@ -24,6 +28,7 @@ import {
   groupSessions,
   SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
+import { computeVisibleGroups } from "./sessionListLayout.js";
 
 interface SessionsListProps {
   readonly onCreate: () => void;
@@ -32,11 +37,37 @@ interface SessionsListProps {
 export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const setAppShellView = useUiStore((s) => s.setAppShellView);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
   const setSessionModeFilter = useUiStore((s) => s.setSessionModeFilter);
   const query = useSessionsList();
+  const pinMutation = useSetSessionPinned();
+  // TanStack Query exposes the last variables sent to the mutation; we
+  // use it to disable the star button on the in-flight row only.
+  const pendingPinId =
+    pinMutation.isPending && pinMutation.variables
+      ? pinMutation.variables.id
+      : null;
+
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [containerHeight, setContainerHeight] = useState<number>(0);
+
+  useEffect((): (() => void) | undefined => {
+    const el = scrollContainerRef.current;
+    if (el === null) return undefined;
+    // jsdom (tests) does not implement ResizeObserver. We leave
+    // containerHeight at 0 so computeVisibleGroups returns the full list.
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      setContainerHeight(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const visibleRows = useMemo(() => {
     if (!query.data?.ok) return [];
@@ -45,16 +76,42 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
 
   const groups = useMemo(() => groupSessions(visibleRows), [visibleRows]);
 
+  const { visible: visibleGroups, hiddenCount } = useMemo(
+    () => computeVisibleGroups(groups, containerHeight),
+    [groups, containerHeight],
+  );
+
   const handleSelect = useCallback(
     (id: string): void => {
       setActiveSessionId(id);
+      // Selecting from the sidebar should ALWAYS return the panel area
+      // to the session view, even if the user was browsing the library.
+      setAppShellView("session");
     },
-    [setActiveSessionId],
+    [setActiveSessionId, setAppShellView],
   );
+
+  const handleTogglePin = useCallback(
+    (id: string, nextPinned: boolean): void => {
+      pinMutation.mutate({ id, pinned: nextPinned });
+    },
+    [pinMutation],
+  );
+
+  const handleBrowseAll = useCallback((): void => {
+    setAppShellView("sessionsLibrary");
+  }, [setAppShellView]);
 
   const toggleSidebar = useCallback((): void => {
     setSidebarOpen(!sidebarOpen);
   }, [setSidebarOpen, sidebarOpen]);
+
+  const totalRows = visibleRows.length;
+  const browseAllLabel = sidebarOpen
+    ? hiddenCount > 0
+      ? `Browse all sessions (${hiddenCount} more)`
+      : "Browse all sessions"
+    : "Browse all sessions";
 
   return (
     <aside
@@ -141,7 +198,10 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 [scrollbar-gutter:stable]">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 overflow-hidden px-2 py-3"
+      >
         {query.isLoading ? (
           <SessionsLoadingPlaceholder sidebarOpen={sidebarOpen} />
         ) : query.data && query.data.ok === false ? (
@@ -154,14 +214,45 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
             <SessionsEmptyPlaceholder sidebarOpen={sidebarOpen} />
           ) : (
             <SessionGroups
-              groups={groups}
+              groups={visibleGroups}
               activeSessionId={activeSessionId}
               sidebarOpen={sidebarOpen}
               onSelect={handleSelect}
+              onTogglePin={handleTogglePin}
+              pendingPinId={pendingPinId}
+              idPrefix="sidebar-sessions"
             />
           )
         ) : null}
       </div>
+
+      {totalRows > 0 ? (
+        <div
+          className={cn(
+            "border-t border-white/[0.045] px-3 py-3",
+            !sidebarOpen && "px-2",
+          )}
+        >
+          <button
+            type="button"
+            onClick={handleBrowseAll}
+            aria-label={
+              hiddenCount > 0
+                ? `Browse all ${totalRows} sessions (${hiddenCount} hidden)`
+                : "Open sessions library"
+            }
+            className={cn(
+              "flex h-10 w-full items-center justify-center gap-2 rounded-lg border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+              hiddenCount > 0
+                ? "border-[#3275f8]/32 bg-[#3275f8]/10 text-[#8da5ff] hover:bg-[#3275f8]/16 hover:text-[#adc0ff]"
+                : "border-white/[0.045] bg-transparent text-[var(--color-text-muted)] hover:bg-white/[0.035] hover:text-foreground",
+            )}
+          >
+            {sidebarOpen ? <span className="truncate">{browseAllLabel}</span> : null}
+            <HugeiconsIcon icon={ArrowRight01Icon} size={13} aria-hidden />
+          </button>
+        </div>
+      ) : null}
 
       <footer
         className={cn(

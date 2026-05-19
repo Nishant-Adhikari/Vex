@@ -20,6 +20,7 @@ import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
 import { cn } from "../../lib/utils.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { getSessionTitle } from "./sessionListModel.js";
 
 interface QuickAction {
   readonly label: string;
@@ -269,12 +270,9 @@ function SessionContext({
 
   if (activeSession !== null) {
     const Icon = activeSession.mode === "mission" ? Target02Icon : AiChat01Icon;
-    const title =
-      activeSession.initialGoal !== null && activeSession.initialGoal.trim().length > 0
-        ? activeSession.initialGoal.trim()
-        : activeSession.mode === "mission"
-          ? "Mission setup"
-          : "Agent session";
+    // Single-source title resolution so sidebar / library / panel agree
+    // on what each session is called (skill: codex turn 1, condition #1).
+    const title = getSessionTitle(activeSession);
     return (
       <div className="mt-7 flex max-w-[620px] flex-wrap items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs text-[var(--color-text-secondary)] backdrop-blur-xl">
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#3275f8]/12 text-[#8da5ff]">

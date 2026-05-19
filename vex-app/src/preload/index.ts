@@ -50,6 +50,7 @@ import {
 import {
   sessionCreateInputSchema,
   sessionGetInputSchema,
+  sessionSetPinnedInputSchema,
 } from "../shared/schemas/sessions.js";
 import type { VexBridge } from "../shared/types/bridge.js";
 
@@ -416,6 +417,15 @@ const api = {
         CH.sessions.get,
         input,
         sessionGetInputSchema
+      );
+    },
+    setPinned(
+      input: import("../shared/schemas/sessions.js").SessionSetPinnedInput
+    ) {
+      return invokeWithSchema(
+        CH.sessions.setPinned,
+        input,
+        sessionSetPinnedInputSchema
       );
     },
   },

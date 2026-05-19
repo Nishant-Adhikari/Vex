@@ -5,13 +5,16 @@ import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport } from "@shared/schemas/system.js";
 import { cn } from "../../lib/utils.js";
 import { useSystemHealth } from "../../lib/api/system.js";
+import { useUiStore } from "../../stores/uiStore.js";
 import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
+import { SessionsLibrary } from "./SessionsLibrary.js";
 import { SessionsList } from "./SessionsList.js";
 
 export function AppShell(): JSX.Element {
   const [creatorOpen, setCreatorOpen] = useState<boolean>(false);
   const openCreator = useCallback(() => setCreatorOpen(true), []);
+  const appShellView = useUiStore((s) => s.appShellView);
   const healthQuery = useSystemHealth();
   const runtime = getRuntimeStatus({
     loading: healthQuery.isLoading,
@@ -43,7 +46,7 @@ export function AppShell(): JSX.Element {
         <SessionsList onCreate={openCreator} />
 
         <section className="min-w-0 flex-1 pb-12">
-          <SessionPanel />
+          {appShellView === "sessionsLibrary" ? <SessionsLibrary /> : <SessionPanel />}
         </section>
       </div>
 
