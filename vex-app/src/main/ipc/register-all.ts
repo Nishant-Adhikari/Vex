@@ -19,6 +19,7 @@ import { registerPolymarketSetupHandler } from "./onboarding/polymarket-setup.js
 import { registerProviderHandler } from "./onboarding/provider.js";
 import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
+import { registerSessionsDeleteHandler } from "./sessions/delete.js";
 import { registerSessionsGetHandler } from "./sessions/get.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
 import { registerSessionsSetPinnedHandler } from "./sessions/set-pinned.js";
@@ -51,6 +52,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsListHandler());
   teardowns.push(registerSessionsGetHandler());
   teardowns.push(registerSessionsSetPinnedHandler());
+  teardowns.push(registerSessionsDeleteHandler());
   teardowns.push(...registerSettingsHandlers());
   teardowns.push(registerTelemetryHandler());
   teardowns.push(registerSupportHandler());

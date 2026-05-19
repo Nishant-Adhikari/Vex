@@ -3,6 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AiChat01Icon,
   Archive02Icon,
+  Delete02Icon,
   StarIcon,
   StopCircleIcon,
   Target02Icon,
@@ -24,6 +25,7 @@ interface SessionGroupsProps {
   readonly sidebarOpen: boolean;
   readonly onSelect: (id: string) => void;
   readonly onTogglePin: (id: string, nextPinned: boolean) => void;
+  readonly onRequestRemove: (row: SessionListItem) => void;
   readonly pendingPinId: string | null;
   /**
    * Namespace for `<section aria-labelledby>` / `<h2 id>` pairs so the
@@ -40,6 +42,7 @@ export function SessionGroups({
   sidebarOpen,
   onSelect,
   onTogglePin,
+  onRequestRemove,
   pendingPinId,
   idPrefix,
 }: SessionGroupsProps): JSX.Element {
@@ -74,6 +77,7 @@ export function SessionGroups({
                   sidebarOpen={sidebarOpen}
                   onSelect={onSelect}
                   onTogglePin={onTogglePin}
+                  onRequestRemove={onRequestRemove}
                   pinPending={pendingPinId === row.id}
                 />
               ))}
@@ -191,6 +195,7 @@ function SessionRow({
   sidebarOpen,
   onSelect,
   onTogglePin,
+  onRequestRemove,
   pinPending,
 }: {
   readonly row: SessionListItem;
@@ -198,6 +203,7 @@ function SessionRow({
   readonly sidebarOpen: boolean;
   readonly onSelect: (id: string) => void;
   readonly onTogglePin: (id: string, nextPinned: boolean) => void;
+  readonly onRequestRemove: (row: SessionListItem) => void;
   readonly pinPending: boolean;
 }): JSX.Element {
   const startedLabel = formatSessionTime(row.startedAt);
@@ -212,6 +218,12 @@ function SessionRow({
     event.preventDefault();
     if (pinPending) return;
     onTogglePin(row.id, !isPinned);
+  };
+
+  const handleRemoveClick = (event: MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    event.preventDefault();
+    onRequestRemove(row);
   };
 
   // Row select control and pin toggle are SIBLINGS inside a non-interactive
@@ -239,10 +251,11 @@ function SessionRow({
           aria-label={!sidebarOpen ? title : undefined}
           className={cn(
             "flex h-full w-full rounded-lg text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
-            // pr-12 (sidebarOpen) reserves space for the absolutely
-            // positioned pin button so the title flex never paints under
-            // it. Collapsed sidebar has no pin, so no reservation.
-            sidebarOpen ? "gap-3 px-3 py-3 pr-12" : "items-center justify-center px-0",
+            // pr-16 (sidebarOpen) reserves 64px on the right for the
+            // absolutely positioned Trash + Pin sibling cluster so the
+            // title flex never paints under them. Collapsed sidebar
+            // hides both actions, so no reservation.
+            sidebarOpen ? "gap-3 px-3 py-3 pr-16" : "items-center justify-center px-0",
           )}
           title={sidebarOpen ? undefined : title}
         >
@@ -293,15 +306,43 @@ function SessionRow({
         </button>
 
         {sidebarOpen ? (
-          <PinToggle
-            pinned={isPinned}
-            pending={pinPending}
-            onClick={handlePinClick}
-            className="absolute right-3 top-3"
-          />
+          // Trash + Pin live in a sibling cluster outside the select
+          // button. Native buttons inside a non-interactive wrapper —
+          // no nested buttons, no role="button" parent, so Enter/Space
+          // on either action cannot bubble into a row-select handler.
+          <div className="absolute right-3 top-3 flex items-center gap-1">
+            <RemoveButton onClick={handleRemoveClick} />
+            <PinToggle
+              pinned={isPinned}
+              pending={pinPending}
+              onClick={handlePinClick}
+            />
+          </div>
         ) : null}
       </div>
     </li>
+  );
+}
+
+function RemoveButton({
+  onClick,
+}: {
+  readonly onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Remove session"
+      className={cn(
+        "inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-[var(--color-text-muted)] transition-colors",
+        "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+        "hover:bg-destructive/10 hover:text-destructive",
+        "focus-visible:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+      )}
+    >
+      <HugeiconsIcon icon={Delete02Icon} size={13} aria-hidden />
+    </button>
   );
 }
 

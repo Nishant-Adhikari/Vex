@@ -160,3 +160,46 @@ export type SessionSetPinnedInput = z.infer<typeof sessionSetPinnedInputSchema>;
 
 export const sessionSetPinnedResultSchema = sessionListItemSchema.nullable();
 export type SessionSetPinnedResult = z.infer<typeof sessionSetPinnedResultSchema>;
+
+/**
+ * IPC input for `vex.sessions.delete` (soft delete). The renderer asks
+ * to hide a session; main decides whether that is safe.
+ */
+export const sessionDeleteInputSchema = z
+  .object({
+    id: z.string().uuid(),
+  })
+  .strict();
+export type SessionDeleteInput = z.infer<typeof sessionDeleteInputSchema>;
+
+/**
+ * Discriminated outcome of `vex.sessions.delete`. The renderer switches
+ * cache cleanup on the value:
+ *   - terminal hidden ("removed" | "not_found" | "already_removed") →
+ *     remove detail cache + invalidate list + clear `activeSessionId`
+ *     if it matches the input id.
+ *   - blocked ("blocked_active_mission" | "blocked_pending_approval"
+ *     | "state_changed") → leave caches untouched, surface actionable
+ *     copy in the confirmation dialog so the user can resolve the
+ *     blocker and retry.
+ *
+ * `state_changed` is the race-loser outcome: the atomic guarded UPDATE
+ * saw a blocker, but by the time classification ran the blocker had
+ * disappeared. The retry path is "re-click Remove", not an error toast.
+ */
+export const sessionDeleteOutcomeSchema = z.enum([
+  "removed",
+  "not_found",
+  "already_removed",
+  "blocked_active_mission",
+  "blocked_pending_approval",
+  "state_changed",
+]);
+export type SessionDeleteOutcome = z.infer<typeof sessionDeleteOutcomeSchema>;
+
+export const sessionDeleteResultSchema = z
+  .object({
+    outcome: sessionDeleteOutcomeSchema,
+  })
+  .strict();
+export type SessionDeleteResult = z.infer<typeof sessionDeleteResultSchema>;

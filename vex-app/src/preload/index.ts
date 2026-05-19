@@ -49,6 +49,7 @@ import {
 } from "../shared/schemas/secrets.js";
 import {
   sessionCreateInputSchema,
+  sessionDeleteInputSchema,
   sessionGetInputSchema,
   sessionSetPinnedInputSchema,
 } from "../shared/schemas/sessions.js";
@@ -426,6 +427,15 @@ const api = {
         CH.sessions.setPinned,
         input,
         sessionSetPinnedInputSchema
+      );
+    },
+    delete(
+      input: import("../shared/schemas/sessions.js").SessionDeleteInput
+    ) {
+      return invokeWithSchema(
+        CH.sessions.delete,
+        input,
+        sessionDeleteInputSchema
       );
     },
   },

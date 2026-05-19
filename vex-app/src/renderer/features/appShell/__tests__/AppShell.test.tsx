@@ -2,7 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
-import type { SessionCreateInput, SessionListItem } from "@shared/schemas/sessions.js";
+import type {
+  SessionCreateInput,
+  SessionDeleteResult,
+  SessionListItem,
+} from "@shared/schemas/sessions.js";
 import type { HealthReport } from "@shared/schemas/system.js";
 import { sessionKeys } from "../../../lib/api/sessions.js";
 import { createQueryClient } from "../../../app/queryClient.js";
@@ -28,6 +32,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
   Clock03Icon: "Clock03Icon",
   DatabaseLightningIcon: "DatabaseLightningIcon",
+  Delete02Icon: "Delete02Icon",
   Exchange01Icon: "Exchange01Icon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   Knowledge01Icon: "Knowledge01Icon",
@@ -61,6 +66,9 @@ const sessionsCreateMock = vi.fn<
 >();
 const sessionsSetPinnedMock = vi.fn<
   (input: { readonly id: string; readonly pinned: boolean }) => Promise<Result<SessionListItem | null>>
+>();
+const sessionsDeleteMock = vi.fn<
+  (input: { readonly id: string }) => Promise<Result<SessionDeleteResult>>
 >();
 const healthMock = vi.fn<() => Promise<Result<HealthReport>>>();
 
@@ -108,6 +116,7 @@ beforeEach(() => {
   sessionsGetMock.mockReset();
   sessionsCreateMock.mockReset();
   sessionsSetPinnedMock.mockReset();
+  sessionsDeleteMock.mockReset();
   healthMock.mockReset();
   useUiStore.setState({
     sidebarOpen: true,
@@ -151,6 +160,7 @@ beforeEach(() => {
       },
     };
   });
+  sessionsDeleteMock.mockResolvedValue({ ok: true, data: { outcome: "removed" } });
   healthMock.mockResolvedValue({ ok: true, data: makeHealthReport("ok") });
   Object.defineProperty(window, "vex", {
     configurable: true,
@@ -160,6 +170,7 @@ beforeEach(() => {
         get: sessionsGetMock,
         create: sessionsCreateMock,
         setPinned: sessionsSetPinnedMock,
+        delete: sessionsDeleteMock,
       },
       system: {
         health: healthMock,
@@ -440,7 +451,171 @@ describe("AppShell", () => {
       "fb7bf453-df76-43e9-b756-02c3b717f242",
     );
   });
+
+  it("opens the remove dialog when the trash button is clicked", async () => {
+    sessionsListMock.mockResolvedValueOnce({
+      ok: true,
+      data: [makeAgentRow("Remove me")],
+    });
+    renderShell();
+    const trashButtons = await screen.findAllByRole("button", { name: "Remove session" });
+    fireEvent.click(trashButtons[0]!);
+    expect(await screen.findByRole("dialog", { name: /Remove session\?/i })).not.toBeNull();
+    expect(screen.getByText(/Remove "Remove me"/)).not.toBeNull();
+  });
+
+  it("confirms removal, calls IPC, clears active session, and closes the dialog", async () => {
+    const row = makeAgentRow("Goodbye");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    const trashButtons = await screen.findAllByRole("button", { name: "Remove session" });
+    fireEvent.click(trashButtons[0]!);
+    const confirmBtn = await screen.findByRole("button", { name: "Remove" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => expect(sessionsDeleteMock).toHaveBeenCalledTimes(1));
+    expect(sessionsDeleteMock).toHaveBeenCalledWith({ id: row.id });
+    await waitFor(() => expect(useUiStore.getState().activeSessionId).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /Remove session\?/i })).toBeNull(),
+    );
+  });
+
+  it("keeps the dialog open and surfaces blocked-active copy when main refuses removal", async () => {
+    const row = makeAgentRow("Mission alive");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsDeleteMock.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "blocked_active_mission" },
+    });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    fireEvent.click((await screen.findAllByRole("button", { name: "Remove session" }))[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(sessionsDeleteMock).toHaveBeenCalledTimes(1));
+    await screen.findByText(/this mission is still active/i);
+    expect(useUiStore.getState().activeSessionId).toBe(row.id);
+  });
+
+  it("surfaces blocked-pending copy without mutating cache", async () => {
+    const row = makeAgentRow("Awaiting your nod");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsDeleteMock.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "blocked_pending_approval" },
+    });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    fireEvent.click((await screen.findAllByRole("button", { name: "Remove session" }))[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+
+    await screen.findByText(/pending approval/i);
+    expect(useUiStore.getState().activeSessionId).toBe(row.id);
+  });
+
+  it("surfaces state_changed copy without mutating cache and lets the user retry", async () => {
+    const row = makeAgentRow("Race-loser");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsDeleteMock.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "state_changed" },
+    });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    fireEvent.click((await screen.findAllByRole("button", { name: "Remove session" }))[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+
+    await screen.findByText(/state changed/i);
+    expect(useUiStore.getState().activeSessionId).toBe(row.id);
+  });
+
+  it("clears active session + closes dialog when outcome is already_removed", async () => {
+    const row = makeAgentRow("Stale list");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsDeleteMock.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "already_removed" },
+    });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    fireEvent.click((await screen.findAllByRole("button", { name: "Remove session" }))[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(useUiStore.getState().activeSessionId).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /Remove session\?/i })).toBeNull(),
+    );
+  });
+
+  it("clears active session when outcome is not_found", async () => {
+    const row = makeAgentRow("Ghost row");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsDeleteMock.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "not_found" },
+    });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    fireEvent.click((await screen.findAllByRole("button", { name: "Remove session" }))[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(useUiStore.getState().activeSessionId).toBeNull());
+  });
+
+  it("Library view removes through the same dialog + IPC path", async () => {
+    const row = makeAgentRow("Library-resident");
+    sessionsListMock.mockResolvedValue({ ok: true, data: [row] });
+
+    renderShell();
+    useUiStore.setState({ appShellView: "sessionsLibrary" });
+
+    // After switching to the library, both sidebar and library render the
+    // same row → two trash buttons total. Click the library one (last).
+    const trashButtons = await screen.findAllByRole("button", { name: "Remove session" });
+    expect(trashButtons.length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(trashButtons[trashButtons.length - 1]!);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(sessionsDeleteMock).toHaveBeenCalledWith({ id: row.id }));
+  });
+
+  it("Cancel button closes the dialog without calling IPC", async () => {
+    const row = makeAgentRow("Cancel me");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+
+    renderShell();
+    fireEvent.click((await screen.findAllByRole("button", { name: "Remove session" }))[0]!);
+    const cancel = await screen.findByRole("button", { name: "Cancel" });
+    fireEvent.click(cancel);
+
+    expect(sessionsDeleteMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /Remove session\?/i })).toBeNull(),
+    );
+  });
 });
+
+function makeAgentRow(title: string): SessionListItem {
+  return {
+    id: "44444444-4444-4444-8444-444444444444",
+    mode: "agent",
+    permission: "restricted",
+    title,
+    initialGoal: null,
+    startedAt: localIsoDaysAgo(0),
+    endedAt: null,
+    missionStatus: null,
+    pinnedAt: null,
+  };
+}
 
 function renderShell(): ReturnType<typeof render> & {
   readonly queryClient: QueryClient;

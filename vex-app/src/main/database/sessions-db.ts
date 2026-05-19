@@ -35,6 +35,7 @@ import {
   missionRunStatusSchema,
   type MissionRunStatus,
   type SessionCreateInput,
+  type SessionDeleteResult,
   type SessionListItem,
   type SessionMode,
   type SessionPermission,
@@ -268,7 +269,7 @@ export async function getSessionById(
   return withClient(async (client) => {
     try {
       const sessionResult = await client.query<SessionRow>(
-        `SELECT ${SESSION_ROW_COLUMNS} FROM sessions WHERE id = $1 AND scope = $2`,
+        `SELECT ${SESSION_ROW_COLUMNS} FROM sessions WHERE id = $1 AND scope = $2 AND deleted_at IS NULL`,
         [id, VEX_APP_SESSION_SCOPE],
       );
       const row = sessionResult.rows[0];
@@ -297,7 +298,7 @@ export async function listSessions(
       const sessionsResult = await client.query<SessionRow>(
         `SELECT ${SESSION_ROW_COLUMNS}
          FROM sessions
-         WHERE scope = $1
+         WHERE scope = $1 AND deleted_at IS NULL
          ORDER BY pinned_at DESC NULLS LAST, started_at DESC
          LIMIT $2`,
         [VEX_APP_SESSION_SCOPE, limit],
@@ -339,6 +340,98 @@ export async function listSessions(
 }
 
 /**
+ * Race-safe soft delete for the GUI sidebar. The "remove" semantics:
+ *
+ *   - Atomic guarded UPDATE flips `deleted_at` only when no active mission
+ *     run and no pending approval reference the session. PG evaluates both
+ *     NOT EXISTS clauses inside the same statement, so the success path
+ *     cannot lose a race to a freshly-started mission run.
+ *   - When the UPDATE returns 0 rows, classification queries figure out
+ *     why and surface a discriminated `SessionDeleteOutcome` so the
+ *     renderer can show actionable copy.
+ *
+ * Hard delete is intentionally NOT implemented — `mission_runs`, `missions`,
+ * `approval_queue`, `usage_log`, and `loop_wake_requests` all reference
+ * `sessions(id)` without `ON DELETE CASCADE`, so a hard DELETE would
+ * either error on FK constraints or require coordinated cleanup that
+ * races with in-flight engine cycles.
+ *
+ * The function is split into `*WithClient` + thin wrapper so the
+ * outcome-classification branching can be unit-tested with a fake
+ * `pg.Client` (see `__tests__/sessions-db.test.ts`).
+ */
+export async function softDeleteSessionWithClient(
+  client: Client,
+  id: string,
+): Promise<Result<SessionDeleteResult, VexError>> {
+  try {
+    // 1. Atomic guarded UPDATE — single statement; PG evaluates the
+    //    NOT EXISTS clauses against the same snapshot as the UPDATE.
+    const updateResult = await client.query<{ id: string }>(
+      `UPDATE sessions
+          SET deleted_at = NOW()
+        WHERE id = $1
+          AND scope = $2
+          AND deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM mission_runs
+             WHERE session_id = $1
+               AND status = ANY($3::text[])
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM approval_queue
+             WHERE session_id = $1 AND status = 'pending'
+          )
+        RETURNING id`,
+      [id, VEX_APP_SESSION_SCOPE, ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES],
+    );
+    if ((updateResult.rowCount ?? 0) > 0) return ok({ outcome: "removed" });
+
+    // 2. Classification — explicit per branch, no default tail.
+    const rowResult = await client.query<{ deleted_at: Date | null }>(
+      "SELECT deleted_at FROM sessions WHERE id = $1 AND scope = $2",
+      [id, VEX_APP_SESSION_SCOPE],
+    );
+    if (rowResult.rows.length === 0) return ok({ outcome: "not_found" });
+    if (rowResult.rows[0].deleted_at !== null) {
+      return ok({ outcome: "already_removed" });
+    }
+
+    const activeMission = await client.query(
+      `SELECT 1 FROM mission_runs
+         WHERE session_id = $1
+           AND status = ANY($2::text[])
+         LIMIT 1`,
+      [id, ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES],
+    );
+    if (activeMission.rows.length > 0) {
+      return ok({ outcome: "blocked_active_mission" });
+    }
+
+    const pendingApproval = await client.query(
+      "SELECT 1 FROM approval_queue WHERE session_id = $1 AND status = 'pending' LIMIT 1",
+      [id],
+    );
+    if (pendingApproval.rows.length > 0) {
+      return ok({ outcome: "blocked_pending_approval" });
+    }
+
+    // Atomic UPDATE saw a blocker that disappeared by classification time
+    // (engine completed a mission_run / approval got resolved). Neutral
+    // retry: re-clicking Remove will succeed on the next atomic UPDATE.
+    return ok({ outcome: "state_changed" });
+  } catch (cause) {
+    return dbError("softDeleteSession failed", cause);
+  }
+}
+
+export async function softDeleteSession(
+  id: string,
+): Promise<Result<SessionDeleteResult, VexError>> {
+  return withClient((client) => softDeleteSessionWithClient(client, id));
+}
+
+/**
  * Pin or unpin a session. Idempotent semantics on both sides:
  *   - re-pinning a pinned row keeps the existing `pinned_at` (via
  *     `COALESCE`) so the sidebar's "most recently pinned first" order
@@ -349,31 +442,41 @@ export async function listSessions(
  * or `null` when the id is unknown — caller had a stale view, treating
  * it as an error would be hostile.
  */
+export async function setSessionPinnedWithClient(
+  client: Client,
+  id: string,
+  pinned: boolean,
+): Promise<Result<SessionListItem | null, VexError>> {
+  try {
+    // `AND deleted_at IS NULL` keeps soft-deleted sessions unreachable from
+    // the pin path — a stale star click or hostile renderer call can no
+    // longer resurrect a row that delete already classified as terminal
+    // hidden. Unknown id and soft-deleted id both collapse to `ok(null)`.
+    const updateResult = await client.query<SessionRow>(
+      `UPDATE sessions
+          SET pinned_at = CASE
+                WHEN $2::boolean THEN COALESCE(pinned_at, NOW())
+                ELSE NULL
+              END
+        WHERE id = $1 AND scope = $3 AND deleted_at IS NULL
+        RETURNING ${SESSION_ROW_COLUMNS}`,
+      [id, pinned, VEX_APP_SESSION_SCOPE],
+    );
+    const row = updateResult.rows[0];
+    if (!row) return ok(null);
+    const missionStatus: MissionRunStatus | null =
+      normaliseMode(row.mode) === "mission"
+        ? await loadMissionStatus(client, id)
+        : null;
+    return ok(toListItem(row, missionStatus));
+  } catch (cause) {
+    return dbError("setSessionPinned failed", cause);
+  }
+}
+
 export async function setSessionPinned(
   id: string,
   pinned: boolean,
 ): Promise<Result<SessionListItem | null, VexError>> {
-  return withClient(async (client) => {
-    try {
-      const updateResult = await client.query<SessionRow>(
-        `UPDATE sessions
-            SET pinned_at = CASE
-                  WHEN $2::boolean THEN COALESCE(pinned_at, NOW())
-                  ELSE NULL
-                END
-          WHERE id = $1 AND scope = $3
-          RETURNING ${SESSION_ROW_COLUMNS}`,
-        [id, pinned, VEX_APP_SESSION_SCOPE],
-      );
-      const row = updateResult.rows[0];
-      if (!row) return ok(null);
-      const missionStatus: MissionRunStatus | null =
-        normaliseMode(row.mode) === "mission"
-          ? await loadMissionStatus(client, id)
-          : null;
-      return ok(toListItem(row, missionStatus));
-    } catch (cause) {
-      return dbError("setSessionPinned failed", cause);
-    }
-  });
+  return withClient((client) => setSessionPinnedWithClient(client, id, pinned));
 }

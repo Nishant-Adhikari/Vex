@@ -76,6 +76,7 @@ export const CH = {
     list: "vex:sessions:list",
     get: "vex:sessions:get",
     setPinned: "vex:sessions:setPinned",
+    delete: "vex:sessions:delete",
   },
 
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)

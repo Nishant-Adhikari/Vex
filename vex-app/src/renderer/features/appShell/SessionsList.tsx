@@ -8,12 +8,18 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from "@hugeicons/core-free-icons";
+import type {
+  SessionDeleteOutcome,
+  SessionListItem,
+} from "@shared/schemas/sessions.js";
 import { cn } from "../../lib/utils.js";
 import {
+  useDeleteSession,
   useSessionsList,
   useSetSessionPinned,
 } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { EditInfrastructureButton } from "./EditInfrastructureButton.js";
 import { ReportIssueButton } from "./ReportIssueButton.js";
 import {
@@ -44,12 +50,16 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
   const setSessionModeFilter = useUiStore((s) => s.setSessionModeFilter);
   const query = useSessionsList();
   const pinMutation = useSetSessionPinned();
+  const deleteMutation = useDeleteSession();
   // TanStack Query exposes the last variables sent to the mutation; we
   // use it to disable the star button on the in-flight row only.
   const pendingPinId =
     pinMutation.isPending && pinMutation.variables
       ? pinMutation.variables.id
       : null;
+  const [removeTarget, setRemoveTarget] = useState<SessionListItem | null>(null);
+  const [removeBlocked, setRemoveBlocked] =
+    useState<SessionDeleteOutcome | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState<number>(0);
@@ -97,6 +107,37 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
     },
     [pinMutation],
   );
+
+  const handleRequestRemove = useCallback((row: SessionListItem): void => {
+    setRemoveTarget(row);
+    setRemoveBlocked(null);
+  }, []);
+
+  const handleCancelRemove = useCallback((): void => {
+    setRemoveTarget(null);
+    setRemoveBlocked(null);
+  }, []);
+
+  const handleConfirmRemove = useCallback(async (): Promise<void> => {
+    if (removeTarget === null) return;
+    const result = await deleteMutation.mutateAsync({ id: removeTarget.id });
+    if (!result.ok) {
+      setRemoveBlocked("state_changed");
+      return;
+    }
+    const outcome = result.data.outcome;
+    if (
+      outcome === "removed" ||
+      outcome === "not_found" ||
+      outcome === "already_removed"
+    ) {
+      setRemoveTarget(null);
+      setRemoveBlocked(null);
+      return;
+    }
+    // blocked_active_mission | blocked_pending_approval | state_changed
+    setRemoveBlocked(outcome);
+  }, [deleteMutation, removeTarget]);
 
   const handleBrowseAll = useCallback((): void => {
     setAppShellView("sessionsLibrary");
@@ -219,6 +260,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
               sidebarOpen={sidebarOpen}
               onSelect={handleSelect}
               onTogglePin={handleTogglePin}
+              onRequestRemove={handleRequestRemove}
               pendingPinId={pendingPinId}
               idPrefix="sidebar-sessions"
             />
@@ -263,6 +305,16 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         <EditInfrastructureButton compact={!sidebarOpen} />
         <ReportIssueButton compact={!sidebarOpen} />
       </footer>
+
+      <SessionDeleteDialog
+        session={removeTarget}
+        blockedOutcome={removeBlocked}
+        pending={deleteMutation.isPending}
+        onCancel={handleCancelRemove}
+        onConfirm={() => {
+          void handleConfirmRemove();
+        }}
+      />
     </aside>
   );
 }

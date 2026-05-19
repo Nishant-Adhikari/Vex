@@ -68,6 +68,8 @@ import type {
 import type {
   SessionCreateInput,
   SessionCreateResult,
+  SessionDeleteInput,
+  SessionDeleteResult,
   SessionGetInput,
   SessionList,
   SessionListItem,
@@ -268,6 +270,14 @@ export interface VexBridge {
     readonly setPinned: (
       input: SessionSetPinnedInput
     ) => Promise<Result<SessionSetPinnedResult>>;
+    /**
+     * Soft-delete a session. Main enforces fail-closed against active
+     * mission runs and pending approvals; the discriminated outcome
+     * tells the renderer whether cache cleanup is appropriate.
+     */
+    readonly delete: (
+      input: SessionDeleteInput
+    ) => Promise<Result<SessionDeleteResult>>;
   };
 
   readonly settings: {

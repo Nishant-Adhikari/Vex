@@ -24,11 +24,14 @@ import type { Result } from "@shared/ipc/result.js";
 import type {
   SessionCreateInput,
   SessionCreateResult,
+  SessionDeleteInput,
+  SessionDeleteResult,
   SessionList,
   SessionListItem,
   SessionSetPinnedInput,
   SessionSetPinnedResult,
 } from "@shared/schemas/sessions.js";
+import { useUiStore } from "../../stores/uiStore.js";
 
 export const sessionKeys = {
   all: ["sessions"] as const,
@@ -118,6 +121,49 @@ export function useSetSessionPinned(): UseMutationResult<
         );
       }
       void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
+    },
+  });
+}
+
+/**
+ * Terminal hidden outcomes — the session is no longer reachable from
+ * the app. The hook cleans detail cache, invalidates the list, and
+ * clears `activeSessionId` if it matches the deleted id. Blocked /
+ * state_changed outcomes leave everything intact so the dialog can
+ * surface actionable copy and the user can retry.
+ */
+const TERMINAL_DELETE_OUTCOMES = new Set<SessionDeleteResult["outcome"]>([
+  "removed",
+  "not_found",
+  "already_removed",
+]);
+
+/**
+ * Soft-delete a session via main. Main fails closed when a mission run
+ * is active/paused or an approval is pending — the discriminated
+ * `outcome` tells callers what happened so the confirmation dialog can
+ * either close (terminal outcomes) or surface a blocked-state message
+ * with a retry path.
+ */
+export function useDeleteSession(): UseMutationResult<
+  Result<SessionDeleteResult>,
+  Error,
+  SessionDeleteInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SessionDeleteInput) =>
+      window.vex.sessions.delete(input),
+    onSuccess: (result, variables) => {
+      if (!result.ok) return;
+      if (!TERMINAL_DELETE_OUTCOMES.has(result.data.outcome)) return;
+      queryClient.removeQueries({
+        queryKey: sessionKeys.detail(variables.id),
+      });
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
+      if (useUiStore.getState().activeSessionId === variables.id) {
+        useUiStore.getState().setActiveSessionId(null);
+      }
     },
   });
 }

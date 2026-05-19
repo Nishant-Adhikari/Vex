@@ -11,19 +11,25 @@
  * stay visually consistent with the sidebar rows.
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AlertCircleIcon,
   ArrowLeft01Icon,
 } from "@hugeicons/core-free-icons";
+import type {
+  SessionDeleteOutcome,
+  SessionListItem,
+} from "@shared/schemas/sessions.js";
 import { cn } from "../../lib/utils.js";
 import {
+  useDeleteSession,
   useSessionsList,
   useSetSessionPinned,
 } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { SessionGroups } from "./SessionRows.js";
 import {
   filterSessionsByMode,
@@ -37,10 +43,14 @@ export function SessionsLibrary(): JSX.Element {
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
   const query = useSessionsList();
   const pinMutation = useSetSessionPinned();
+  const deleteMutation = useDeleteSession();
   const pendingPinId =
     pinMutation.isPending && pinMutation.variables
       ? pinMutation.variables.id
       : null;
+  const [removeTarget, setRemoveTarget] = useState<SessionListItem | null>(null);
+  const [removeBlocked, setRemoveBlocked] =
+    useState<SessionDeleteOutcome | null>(null);
 
   const groups = useMemo(() => {
     if (!query.data?.ok) return [];
@@ -72,6 +82,36 @@ export function SessionsLibrary(): JSX.Element {
     },
     [pinMutation],
   );
+
+  const handleRequestRemove = useCallback((row: SessionListItem): void => {
+    setRemoveTarget(row);
+    setRemoveBlocked(null);
+  }, []);
+
+  const handleCancelRemove = useCallback((): void => {
+    setRemoveTarget(null);
+    setRemoveBlocked(null);
+  }, []);
+
+  const handleConfirmRemove = useCallback(async (): Promise<void> => {
+    if (removeTarget === null) return;
+    const result = await deleteMutation.mutateAsync({ id: removeTarget.id });
+    if (!result.ok) {
+      setRemoveBlocked("state_changed");
+      return;
+    }
+    const outcome = result.data.outcome;
+    if (
+      outcome === "removed" ||
+      outcome === "not_found" ||
+      outcome === "already_removed"
+    ) {
+      setRemoveTarget(null);
+      setRemoveBlocked(null);
+      return;
+    }
+    setRemoveBlocked(outcome);
+  }, [deleteMutation, removeTarget]);
 
   return (
     <div
@@ -125,11 +165,22 @@ export function SessionsLibrary(): JSX.Element {
             sidebarOpen
             onSelect={handleSelect}
             onTogglePin={handleTogglePin}
+            onRequestRemove={handleRequestRemove}
             pendingPinId={pendingPinId}
             idPrefix="library-sessions"
           />
         )}
       </section>
+
+      <SessionDeleteDialog
+        session={removeTarget}
+        blockedOutcome={removeBlocked}
+        pending={deleteMutation.isPending}
+        onCancel={handleCancelRemove}
+        onConfirm={() => {
+          void handleConfirmRemove();
+        }}
+      />
     </div>
   );
 }
