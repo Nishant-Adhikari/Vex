@@ -96,6 +96,34 @@ export async function tick(
         missionRunId: wake.missionRunId,
         error: message,
       });
+      // Phase 2 BUG-REPORTING emit (puzzle 03): wake resume failures
+      // surface as `wake_resume_failure` automatic reports. Fail-closed
+      // through `emitBugReportSafe` — a support DB outage cannot break
+      // the wake executor.
+      const { getBugReportSink } = await import(
+        "../support/bug-report-registry.js"
+      );
+      const { emitBugReportSafe } = await import(
+        "../../../lib/diagnostics/bug-report-sink.js"
+      );
+      await emitBugReportSafe(
+        getBugReportSink(),
+        {
+          source: "agent",
+          category: "wake_resume_failure",
+          severity: "error",
+          title: "wake.executor.handle_failed",
+          description: message,
+          refs: {
+            sessionId: wake.sessionId,
+            missionRunId: wake.missionRunId,
+          },
+          agentContext: {
+            stopReason: "system_error",
+          },
+        },
+        logger,
+      );
       results.push({ wake, outcome: { kind: "error", message } });
     }
   }
@@ -123,18 +151,57 @@ async function handleClaimed(
     return { kind: "skipped_stale_status", currentStatus: run.status };
   }
 
-  const claimed = await deps.casFlipToRunning(run.id, ["paused_wake"]);
-  if (claimed === null) {
-    logger.info("wake.executor.skip_claim_lost", {
+  // Puzzle 03 — atomic claim lease + flip status in a single tx.
+  // Replaces the non-atomic CAS-then-acquireLease that could leave
+  // the run as `running` with no runner if the lease acquire failed
+  // (codex blocker). Also handles the `paused_wake → consumed_by_resume`
+  // wake cleanup inside the same transaction.
+  const ownerId = `wake-executor-${wake.id}`;
+  const { claimRunLeaseAndFlipToRunning } = await import(
+    "../runtime/lease-and-status.js"
+  );
+  const claim = await claimRunLeaseAndFlipToRunning({
+    sessionId: wake.sessionId,
+    missionRunId: run.id,
+    fromStatuses: ["paused_wake"],
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: 5 * 60_000,
+  });
+  if (claim.outcome === "lease_busy") {
+    logger.info("wake.executor.skip_lease_busy", {
       wakeId: wake.id,
       runId: run.id,
     });
     return { kind: "skipped_claim_lost" };
   }
+  if (claim.outcome === "status_mismatch") {
+    logger.info("wake.executor.skip_claim_lost", {
+      wakeId: wake.id,
+      runId: run.id,
+      currentStatus: claim.currentStatus,
+    });
+    return { kind: "skipped_claim_lost" };
+  }
 
-  await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
-  await deps.resumeMissionRun(run.id);
-  return { kind: "resumed", runId: run.id };
+  const { createLeaseHandle } = await import("../runtime/lease-handle.js");
+  const handle = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: 5 * 60_000,
+  });
+  try {
+    await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
+    await deps.resumeMissionRun(run.id);
+    return { kind: "resumed", runId: run.id };
+  } finally {
+    const { releaseLeaseAndEmitControlState } = await import(
+      "../runtime/release-and-emit.js"
+    );
+    await releaseLeaseAndEmitControlState(handle, wake.sessionId, {
+      missionRunId: run.id,
+    });
+  }
 }
 
 // ── Scheduler ──────────────────────────────────────────────────────

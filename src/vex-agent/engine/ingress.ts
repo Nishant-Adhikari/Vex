@@ -120,12 +120,29 @@ async function resumeMissionRunWithPreempt(
   userInput: string,
   runId: string,
 ): Promise<TurnResult> {
-  // Flip out of paused_wake BEFORE saving the user message so the wake
-  // executor, if it races us into `claimDue`, sees the run is no longer
-  // `paused_wake` in its own re-check and skips banner injection.
-  const previous = await missionRunsRepo.casFlipToRunning(runId, ["paused_wake"]);
-  if (previous === null) {
-    logger.info("ingress.preempt_claim_lost", { sessionId, runId });
+  // Puzzle 03 — atomic claim lease + flip status. Replaces the
+  // non-atomic `casFlipToRunning` + appendMessage pattern so a
+  // concurrent IPC `requestResume` / retry / wake can't end up with
+  // two runners writing to the same session (codex blocker #2 covers
+  // this entry point).
+  const ownerId = `ingress-preempt-${runId}`;
+  const { claimRunLeaseAndFlipToRunning } = await import(
+    "./runtime/lease-and-status.js"
+  );
+  const claim = await claimRunLeaseAndFlipToRunning({
+    sessionId,
+    missionRunId: runId,
+    fromStatuses: ["paused_wake"],
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: 5 * 60_000,
+  });
+  if (claim.outcome === "lease_busy" || claim.outcome === "status_mismatch") {
+    logger.info("ingress.preempt_claim_lost", {
+      sessionId,
+      runId,
+      outcome: claim.outcome,
+    });
     await addOperatorInstruction(sessionId, userInput, {
       target: "mission_run",
       runId,
@@ -140,15 +157,37 @@ async function resumeMissionRunWithPreempt(
     };
   }
 
-  await addOperatorInstruction(sessionId, userInput, {
-    target: "mission_run",
-    runId,
-    preempt: "wake",
+  const { createLeaseHandle } = await import(
+    "./runtime/lease-handle.js"
+  );
+  const handle = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: 5 * 60_000,
   });
-  await addOperatorCue(sessionId);
+  try {
+    await addOperatorInstruction(sessionId, userInput, {
+      target: "mission_run",
+      runId,
+      preempt: "wake",
+    });
+    await addOperatorCue(sessionId);
 
-  logger.info("ingress.preempt_resume", { sessionId, runId });
-  // `resumeMissionRun` refreshes tool_output_blob TTLs internally (PR-13
-  // S-2), so we don't double-call here.
-  return resumeMissionRun(runId);
+    logger.info("ingress.preempt_resume", {
+      sessionId,
+      runId,
+      previousStatus: claim.previousStatus,
+      wakeCancelledCount: claim.wakeCancelledCount,
+    });
+    // `resumeMissionRun` refreshes tool_output_blob TTLs internally (PR-13
+    // S-2), so we don't double-call here.
+    return await resumeMissionRun(runId);
+  } finally {
+    const { releaseLeaseAndEmitControlState } = await import(
+      "./runtime/release-and-emit.js"
+    );
+    await releaseLeaseAndEmitControlState(handle, sessionId, {
+      missionRunId: runId,
+    });
+  }
 }

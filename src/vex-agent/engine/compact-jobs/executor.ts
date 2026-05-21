@@ -395,6 +395,36 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
       terminal: result.terminal,
       ok: result.ok,
     });
+    // Phase 2 BUG-REPORTING emit (puzzle 03): a TERMINAL compact-job
+    // failure (max retries hit) becomes a `compact_unable_at_critical`
+    // automatic bug report. Non-terminal failures are operational
+    // noise (the job will retry); we only surface the permanent one.
+    if (result.terminal) {
+      const { getBugReportSink } = await import(
+        "../support/bug-report-registry.js"
+      );
+      const { emitBugReportSafe } = await import(
+        "../../../lib/diagnostics/bug-report-sink.js"
+      );
+      await emitBugReportSafe(
+        getBugReportSink(),
+        {
+          source: "worker",
+          category: "compact_unable_at_critical",
+          severity: "critical",
+          title: "compact-worker.permanently_failed",
+          description: errorMsg,
+          refs: {
+            sessionId: job.sessionId,
+            compactJobId: job.id,
+          },
+          agentContext: {
+            stopReason: "compact_unable_at_critical",
+          },
+        },
+        logger,
+      );
+    }
   } finally {
     clearInterval(heartbeatTimer);
   }

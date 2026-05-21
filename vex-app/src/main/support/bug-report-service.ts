@@ -127,13 +127,34 @@ export async function createBugReport(
     toolCallId: safeRefs.toolCallId ?? null,
     protocolNamespace: safeRefs.protocolNamespace ?? null,
     compactJobId: safeRefs.compactJobId ?? null,
-    // Phase 2 will populate these from agent runtime context.
-    stopReason: null,
-    runtimeStatus: null,
-    contextPressureBand: null as ContextPressureBand | null,
-    contextPressureFraction: null,
-    checkpointGeneration: null,
-    postCompactBridgeActive: null,
+    // Phase 2 (puzzle 03): persist agent runtime context — but only for
+    // agent/worker source. A `user` / `renderer` / `main` source row
+    // shouldn't carry runtime state it has no authority to claim, so
+    // we drop the field on those branches even if it was passed in.
+    stopReason:
+      (input.source === "agent" || input.source === "worker")
+        ? (input.agentContext?.stopReason ?? null)
+        : null,
+    runtimeStatus:
+      (input.source === "agent" || input.source === "worker")
+        ? (input.agentContext?.runtimeStatus ?? null)
+        : null,
+    contextPressureBand:
+      ((input.source === "agent" || input.source === "worker")
+        ? (input.agentContext?.contextPressureBand ?? null)
+        : null) as ContextPressureBand | null,
+    contextPressureFraction:
+      (input.source === "agent" || input.source === "worker")
+        ? (input.agentContext?.contextPressureFraction ?? null)
+        : null,
+    checkpointGeneration:
+      (input.source === "agent" || input.source === "worker")
+        ? (input.agentContext?.checkpointGeneration ?? null)
+        : null,
+    postCompactBridgeActive:
+      (input.source === "agent" || input.source === "worker")
+        ? (input.agentContext?.postCompactBridgeActive ?? null)
+        : null,
     redactionHardCount: redacted.hardRedactCount,
     redactionMaskCount: redacted.maskCount,
     sanitizedContext: redacted.value.context,

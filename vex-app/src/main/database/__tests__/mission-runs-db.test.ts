@@ -62,7 +62,17 @@ afterEach(() => {
 
 describe("mission-runs-db mapper", () => {
   it("returns inactive shape when session has no active/paused mission run", async () => {
+    // Puzzle 03 — getActiveRunForSession does TWO queries when no row
+    // matches: (1) joined active-run lookup returns empty, (2) fallback
+    // query pulls session-only lease + pending control kind.
     mocks.query.mockResolvedValueOnce({ rows: [] });
+    mocks.query.mockResolvedValueOnce({
+      rows: [{
+        lease_active: false,
+        lease_expires_at: null,
+        pending_control_kind: null,
+      }],
+    });
     const result = await getActiveRunForSession(SESSION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -75,10 +85,13 @@ describe("mission-runs-db mapper", () => {
       lastCheckpointAt: null,
       startedAt: null,
       iterationCount: null,
+      leaseActive: false,
+      leaseExpiresAt: null,
+      pendingControlKind: null,
     });
   });
 
-  it("maps an active mission run row", async () => {
+  it("maps an active mission run row (with puzzle 03 lease + pending fields)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
         {
@@ -89,6 +102,9 @@ describe("mission-runs-db mapper", () => {
           last_checkpoint_at: "2026-05-21T10:00:00.000Z",
           stop_reason: null,
           iteration_count: "12",
+          lease_active: true,
+          lease_expires_at: new Date("2026-05-21T10:05:00.000Z"),
+          pending_control_kind: null,
         },
       ],
     });
@@ -99,28 +115,35 @@ describe("mission-runs-db mapper", () => {
     expect(result.data.missionRunId).toBe("run-1");
     expect(result.data.status).toBe("running");
     expect(result.data.iterationCount).toBe(12);
+    expect(result.data.leaseActive).toBe(true);
+    expect(result.data.leaseExpiresAt).toBe("2026-05-21T10:05:00.000Z");
+    expect(result.data.pendingControlKind).toBeNull();
   });
 
-  it("collapses unknown status to null (defensive, hasActiveRun false)", async () => {
+  it("accepts paused_user as a valid active status (puzzle 03)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
         {
           id: "run-2",
           session_id: SESSION,
-          status: "paused_user", // adds in puzzle 03
+          status: "paused_user",
           started_at: "2026-05-21T09:00:00.000Z",
           last_checkpoint_at: null,
-          stop_reason: null,
+          stop_reason: "user_paused",
           iteration_count: 0,
+          lease_active: false,
+          lease_expires_at: null,
+          pending_control_kind: null,
         },
       ],
     });
     const result = await getActiveRunForSession(SESSION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.status).toBeNull();
-    expect(result.data.hasActiveRun).toBe(false);
+    expect(result.data.status).toBe("paused_user");
+    expect(result.data.hasActiveRun).toBe(true);
     expect(result.data.missionRunId).toBe("run-2");
+    expect(result.data.stopReason).toBe("user_paused");
   });
 
   it("dbUnavailable maps to internal.unexpected with domain=runtime", async () => {

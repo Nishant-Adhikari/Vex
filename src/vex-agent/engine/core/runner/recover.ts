@@ -31,34 +31,76 @@ export async function recoverFailedMissionRun(sessionId: string): Promise<TurnRe
     throw new Error(`Mission ${failed.missionId} not found for failed run ${failed.id}.`);
   }
 
-  await missionsRepo.setStatus(mission.id, "running");
-  await missionsRepo.setApprovedAt(mission.id);
-
-  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await missionRunsRepo.createRun(runId, mission.id, sessionId, {
-    contractSnapshotJson: failed.contractSnapshotJson,
-    recoveredFromRunId: failed.id,
+  // Puzzle 03 — claim session lease BEFORE the first state mutation
+  // (codex blocker #2). A concurrent `requestResume` / `startMission`
+  // / chat submit on the same session must not interleave with the
+  // mission flip + new-run create + activation message.
+  const ownerId = `recover-${failed.id}`;
+  const { claimSessionLease } = await import(
+    "@vex-agent/engine/runtime/lease-and-status.js"
+  );
+  const claim = await claimSessionLease({
+    sessionId,
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: 5 * 60_000,
+  });
+  if (claim.outcome === "lease_busy") {
+    throw new Error(
+      `Session ${sessionId} runner lease busy — another runner is active.`,
+    );
+  }
+  const { createLeaseHandle } = await import(
+    "@vex-agent/engine/runtime/lease-handle.js"
+  );
+  const sessionLease = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: 5 * 60_000,
   });
 
-  await appendEngineMessage(
-    sessionId,
-    [
-      "[Engine: mission_recovered — The operator requested recovery from a failed mission run.",
-      "This is a new run using the failed run's frozen Mission Contract.",
-      "The old failed run remains terminal audit history. Execute the recovered Mission Contract now.]",
-    ].join(" "),
-    {
-      source: "engine",
-      messageType: "mission_recovered",
-      visibility: "internal",
-      payload: {
-        missionId: mission.id,
-        recoveredRunId: runId,
-        recoveredFromRunId: failed.id,
-      },
-    },
-  );
+  let createdRunId: string | null = null;
+  try {
+    await missionsRepo.setStatus(mission.id, "running");
+    await missionsRepo.setApprovedAt(mission.id);
 
-  const { resumeMissionRun } = await import("./mission.js");
-  return resumeMissionRun(runId);
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    createdRunId = runId;
+    await missionRunsRepo.createRun(runId, mission.id, sessionId, {
+      contractSnapshotJson: failed.contractSnapshotJson,
+      recoveredFromRunId: failed.id,
+    });
+
+    await appendEngineMessage(
+      sessionId,
+      [
+        "[Engine: mission_recovered — The operator requested recovery from a failed mission run.",
+        "This is a new run using the failed run's frozen Mission Contract.",
+        "The old failed run remains terminal audit history. Execute the recovered Mission Contract now.]",
+      ].join(" "),
+      {
+        source: "engine",
+        messageType: "mission_recovered",
+        visibility: "internal",
+        payload: {
+          missionId: mission.id,
+          recoveredRunId: runId,
+          recoveredFromRunId: failed.id,
+        },
+      },
+    );
+
+    const { resumeMissionRun } = await import("./mission.js");
+    return await resumeMissionRun(runId);
+  } finally {
+    const { releaseLeaseAndEmitControlState } = await import(
+      "@vex-agent/engine/runtime/release-and-emit.js"
+    );
+    await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
+      // Pass the created runId so the post-release event references the
+      // recovered run even after it lands in a terminal status that the
+      // active-run lookup would filter out (codex non-blocking cleanup).
+      missionRunId: createdRunId,
+    });
+  }
 }

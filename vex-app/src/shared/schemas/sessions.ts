@@ -46,11 +46,17 @@ export type SessionMode = z.infer<typeof sessionModeSchema>;
 export const sessionPermissionSchema = z.enum(["restricted", "full"]);
 export type SessionPermission = z.infer<typeof sessionPermissionSchema>;
 
+// Mirror of `src/vex-agent/engine/types.ts MISSION_RUN_STATUSES`. The
+// runtime-status drift test in
+// `src/__tests__/lib/diagnostics/runtime-status-sync.test.ts` pins the
+// two enums via `.options` against the canonical engine const. Adding a
+// new status MUST update both this enum and engine types in lock-step.
 export const missionRunStatusSchema = z.enum([
   "running",
   "paused_approval",
   "paused_wake",
   "paused_error",
+  "paused_user",
   "completed",
   "failed",
   "stopped",

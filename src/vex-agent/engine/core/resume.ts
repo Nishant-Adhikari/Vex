@@ -130,12 +130,54 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
   const missionRunId = hydrated?.context.missionRunId ?? null;
 
   if (missionRunId) {
-    await missionRunsRepo.updateStatus(missionRunId, "running");
+    // Puzzle 03 — atomically claim the runner lease + flip status
+    // from `paused_approval` to `running`. Replaces the bare
+    // `updateStatus(missionRunId, "running")` so a concurrent IPC
+    // `requestResume` / retry / wake can't start a second runner.
+    const ownerId = `approve-${approvalId}`;
+    const { claimRunLeaseAndFlipToRunning } = await import(
+      "@vex-agent/engine/runtime/lease-and-status.js"
+    );
+    const claim = await claimRunLeaseAndFlipToRunning({
+      sessionId,
+      missionRunId,
+      fromStatuses: ["paused_approval", "running"], // accept already_running idempotently
+      ownerId,
+      processKind: "electron_main",
+      ttlMs: 5 * 60_000,
+    });
+    if (claim.outcome === "lease_busy") {
+      throw new Error(
+        `Approval ${approvalId} cannot resume: runner lease busy.`,
+      );
+    }
+    if (claim.outcome === "status_mismatch") {
+      throw new Error(
+        `Approval ${approvalId} cannot resume: run status changed.`,
+      );
+    }
     logger.info("engine.resume.re_entering_loop", { missionRunId, approvalId });
 
-    // Lazy import to avoid circular dependency (resume → runner → resume)
-    const { resumeMissionRun } = await import("./runner.js");
-    return resumeMissionRun(missionRunId);
+    const { createLeaseHandle } = await import(
+      "@vex-agent/engine/runtime/lease-handle.js"
+    );
+    const handle = createLeaseHandle({
+      lease: claim.lease,
+      ownerId,
+      ttlMs: 5 * 60_000,
+    });
+    try {
+      // Lazy import to avoid circular dependency (resume → runner → resume)
+      const { resumeMissionRun } = await import("./runner.js");
+      return await resumeMissionRun(missionRunId);
+    } finally {
+      const { releaseLeaseAndEmitControlState } = await import(
+        "@vex-agent/engine/runtime/release-and-emit.js"
+      );
+      await releaseLeaseAndEmitControlState(handle, sessionId, {
+        missionRunId,
+      });
+    }
   }
 
   // No mission run — return tool result as chat response

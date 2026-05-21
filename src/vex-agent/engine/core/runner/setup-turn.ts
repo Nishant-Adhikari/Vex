@@ -43,12 +43,36 @@ export async function processMissionSetupTurn(
   const config = await provider.loadConfig();
   if (!config) throw new Error("No inference config available");
 
-  // Save user message
-  await appendMessage(
+  // Puzzle 03 — claim the session lease BEFORE the first state
+  // mutation (codex blocker #2). A concurrent setup turn / chat
+  // submit on the same session must not interleave.
+  const ownerId = `setup-turn-${Math.random().toString(36).slice(2, 12)}`;
+  const { claimSessionLease } = await import("../../runtime/lease-and-status.js");
+  const claim = await claimSessionLease({
     sessionId,
-    { role: "user", content: userInput, timestamp: new Date().toISOString() },
-    { source: "user", messageType: "mission_setup", visibility: "user" },
-  );
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: 5 * 60_000,
+  });
+  if (claim.outcome === "lease_busy") {
+    throw new Error(
+      `Session ${sessionId} runner lease busy — another runner is active.`,
+    );
+  }
+  const { createLeaseHandle } = await import("../../runtime/lease-handle.js");
+  const sessionLease = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: 5 * 60_000,
+  });
+
+  try {
+    // Save user message (FIRST state mutation, under lease)
+    await appendMessage(
+      sessionId,
+      { role: "user", content: userInput, timestamp: new Date().toISOString() },
+      { source: "user", messageType: "mission_setup", visibility: "user" },
+    );
 
   // Hydrate
   const hydrated = await hydrateEngineSession(sessionId);
@@ -152,11 +176,17 @@ export async function processMissionSetupTurn(
     );
   }
 
-  return {
-    text,
-    toolCallsMade: result.toolCallsMade,
-    pendingApprovals: [],
-    stopReason: null,
-    missionStatus,
-  };
+    return {
+      text,
+      toolCallsMade: result.toolCallsMade,
+      pendingApprovals: [],
+      stopReason: null,
+      missionStatus,
+    };
+  } finally {
+    const { releaseLeaseAndEmitControlState } = await import(
+      "../../runtime/release-and-emit.js"
+    );
+    await releaseLeaseAndEmitControlState(sessionLease, sessionId);
+  }
 }

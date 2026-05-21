@@ -103,25 +103,87 @@ export async function startMission(missionId: string): Promise<TurnResult> {
     throw new Error(`Mission ${missionId} already has an active run: ${existingRun.id}`);
   }
 
-  // Transition: ready → running
-  await missionsRepo.setStatus(missionId, "running");
-  await missionsRepo.setApprovedAt(missionId);
-
-  // Create run
-  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // Puzzle 03 — claim the session lease BEFORE any state mutation
+  // (codex blocker #2): a concurrent `startMission` / `chat.submit` /
+  // `requestResume` against the same session must not interleave with
+  // the mission flip + run create + activation message.
   const sessionId = mission.rootSessionId;
-
-  // Permission comes from the session row — immutable per session, set at
-  // session creation by the wizard / main app session creator.
-  const session = await sessionsRepo.getSession(sessionId);
-  if (!session) throw new Error(`Session ${sessionId} not found`);
-  const permission: Permission = session.permission;
-
-  const contractSnapshot = buildMissionRunContractSnapshot(mission);
-  await missionRunsRepo.createRun(runId, missionId, sessionId, {
-    contractSnapshotJson: contractSnapshot,
+  const ownerId = `start-mission-${missionId}-${Math.random().toString(36).slice(2, 10)}`;
+  const { claimSessionLease } = await import("../../runtime/lease-and-status.js");
+  const claim = await claimSessionLease({
+    sessionId,
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: 5 * 60_000,
+  });
+  if (claim.outcome === "lease_busy") {
+    throw new Error(
+      `Session ${sessionId} runner lease busy — another runner is active.`,
+    );
+  }
+  const { createLeaseHandle } = await import("../../runtime/lease-handle.js");
+  const sessionLease = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: 5 * 60_000,
   });
 
+  let runId: string | null = null;
+  try {
+    // Transition: ready → running (FIRST state mutation, under lease)
+    await missionsRepo.setStatus(missionId, "running");
+    await missionsRepo.setApprovedAt(missionId);
+
+    // Create run
+    runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Permission comes from the session row — immutable per session, set at
+    // session creation by the wizard / main app session creator.
+    const session = await sessionsRepo.getSession(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    const permission: Permission = session.permission;
+
+    const contractSnapshot = buildMissionRunContractSnapshot(mission);
+    await missionRunsRepo.createRun(runId, missionId, sessionId, {
+      contractSnapshotJson: contractSnapshot,
+    });
+
+    return await startMissionRunBody({
+      missionId,
+      runId,
+      sessionId,
+      mission,
+      permission,
+      contractSnapshot,
+      provider,
+      config,
+    });
+  } finally {
+    const { releaseLeaseAndEmitControlState } = await import(
+      "../../runtime/release-and-emit.js"
+    );
+    await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
+      missionRunId: runId,
+    });
+  }
+}
+
+/**
+ * Continuation body for `startMission` — extracted so the lease
+ * release in `startMission` covers the entire continuation including
+ * `runTurnLoop`. Internal helper; not exported.
+ */
+async function startMissionRunBody(args: {
+  readonly missionId: string;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly mission: NonNullable<Awaited<ReturnType<typeof missionsRepo.getMission>>>;
+  readonly permission: Permission;
+  readonly contractSnapshot: ReturnType<typeof buildMissionRunContractSnapshot>;
+  readonly provider: NonNullable<Awaited<ReturnType<typeof resolveProvider>>>;
+  readonly config: NonNullable<Awaited<ReturnType<NonNullable<Awaited<ReturnType<typeof resolveProvider>>>["loadConfig"]>>>;
+}): Promise<TurnResult> {
+  const { missionId, runId, sessionId, permission, contractSnapshot, provider, config } = args;
   const controller = registerMissionRunAbortController(runId);
   // Wrap the entire post-`createRun` block. Any throw — hydrate failure,
   // prompt prep, runTurnLoop (provider 4xx/5xx, network), even

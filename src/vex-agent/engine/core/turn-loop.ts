@@ -104,6 +104,50 @@ const BATCH_ABORTED_BY_COMPACT_OUTPUT =
 const COMPACT_MAX_CONSECUTIVE_NOOPS = 2;
 
 /**
+ * Helper — broadcast the engine.control.state event after a runner-
+ * checkpoint observe applied a pause/stop. Lazy imports keep the
+ * turn-loop module graph cheap; the bus singleton is the same one
+ * subscribed by the vex-app main bridge.
+ *
+ * The runner still owns the lease at this point — `leaseActive: true`,
+ * `leaseExpiresAt` from the lease row. After the outer runner releases
+ * (in `mission-finalize.ts`) a SECOND event fires with the final state
+ * (terminal vs paused_*, lease cleared). Two emits = two refresh
+ * signals; renderer sees the final transition.
+ */
+async function emitTurnLoopControlState(
+  sessionId: string,
+  missionRunId: string,
+  runStatus: "paused_user" | "stopped",
+  stopReason: "user_paused" | "user_stopped",
+  correlationId: string | null,
+): Promise<void> {
+  try {
+    const { controlStateBus, CONTROL_STATE_EVENT_TYPE } = await import(
+      "../runtime/control-bus.js"
+    );
+    const { getLease } = await import("../../db/repos/runner-leases.js");
+    const lease = await getLease(sessionId);
+    controlStateBus.emit({
+      type: CONTROL_STATE_EVENT_TYPE,
+      sessionId,
+      missionRunId,
+      runStatus,
+      stopReason,
+      pendingControlKind: null,
+      leaseActive: lease !== null && lease.expiresAt >= new Date(),
+      leaseExpiresAt:
+        lease !== null && lease.expiresAt >= new Date()
+          ? lease.expiresAt.toISOString()
+          : null,
+      correlationId,
+    });
+  } catch {
+    // intentionally swallowed — runtime path must not break on bus errors
+  }
+}
+
+/**
  * Run the turn loop.
  *
  * Iterates inference turns until a stop condition or chat response.
@@ -245,6 +289,59 @@ export async function runTurnLoop(
       break;
     }
 
+    // Puzzle 03 — observe pending pause / stop control requests at
+    // the safest checkpoint we have today (iteration boundary). When
+    // an IPC `requestPause` / `requestStop` writes a `pending` row,
+    // the next iteration here picks it up via `observeAndApplyControl`
+    // and exits the loop cleanly — no half-iteration leaks. Wake
+    // cancellation already happens inside the helper for `paused_wake`
+    // transitions (atomic with the status flip).
+    //
+    // After commit, broadcast through `controlStateBus` so the
+    // renderer's `runtime.getState` cache invalidates and the UI
+    // observes the transition (codex review blocker #3).
+    if (context.missionRunId) {
+      try {
+        const { observeAndApplyControl } = await import(
+          "../runtime/lease-and-status.js"
+        );
+        const outcome = await observeAndApplyControl({
+          sessionId: context.sessionId,
+          kinds: ["pause_after_step", "stop_terminal"],
+        });
+        if (outcome.outcome === "paused_user_applied") {
+          await emitTurnLoopControlState(
+            context.sessionId,
+            context.missionRunId,
+            "paused_user",
+            "user_paused",
+            outcome.request.correlationId,
+          );
+          stopReason = "user_paused";
+          break;
+        }
+        if (outcome.outcome === "stop_applied") {
+          await emitTurnLoopControlState(
+            context.sessionId,
+            context.missionRunId,
+            "stopped",
+            "user_stopped",
+            outcome.request.correlationId,
+          );
+          stopReason = "user_stopped";
+          break;
+        }
+      } catch (err) {
+        // Best-effort observe — a DB issue here must not break the
+        // turn loop. Log + continue; the next iteration will retry.
+        logger.warn("turn-loop.observe_control_failed", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     // Check runtime stop conditions
     const runtimeStop = evaluateRuntimeStopConditions({
       iterationCount: iteration,
@@ -319,6 +416,42 @@ export async function runTurnLoop(
             sessionId: context.sessionId,
             consecutiveNoops: criticalNoopCounter,
           });
+          // Phase 2 BUG-REPORTING emit (puzzle 03): the compact loop
+          // gave up at critical pressure. Stamp `runtime_status`,
+          // `stop_reason`, and the pressure band so support records
+          // distinguish this from regular failures.
+          {
+            const { getBugReportSink } = await import(
+              "../support/bug-report-registry.js"
+            );
+            const { emitBugReportSafe } = await import(
+              "../../../lib/diagnostics/bug-report-sink.js"
+            );
+            await emitBugReportSafe(
+              getBugReportSink(),
+              {
+                source: "agent",
+                category: "compact_unable_at_critical",
+                severity: "critical",
+                title: "turn-loop.compact_unable_at_critical",
+                description: `consecutive_noops=${criticalNoopCounter}`,
+                refs: {
+                  sessionId: context.sessionId,
+                  missionRunId: context.missionRunId ?? undefined,
+                },
+                agentContext: {
+                  stopReason: runtimeReason,
+                  runtimeStatus: "paused_error",
+                  contextPressureBand: "critical",
+                  contextPressureFraction: pressureFraction(
+                    currentTokenCount,
+                    loopConfig.contextLimit,
+                  ),
+                },
+              },
+              logger,
+            );
+          }
           break;
         }
       }

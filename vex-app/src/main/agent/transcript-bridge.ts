@@ -34,6 +34,7 @@ import {
 } from "@vex-agent/engine/events/transcript-bus.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { log } from "../logger/index.js";
+import { createBugReport } from "../support/bug-report-service.js";
 
 /**
  * Subscribe the transcript bus to the IPC broadcaster. Returns the
@@ -52,6 +53,32 @@ export function setupTranscriptBridge(): () => void {
         "[agent:transcript-bridge] dropped invalid engine.transcriptAppend payload",
         { issues: parsed.error.issues },
       );
+      // Back-fill puzzle 2 (BUG-REPORTING phase 2): record the drop as
+      // an `ipc_validation_failure` automatic bug report. Fail-closed:
+      // a support DB outage must not crash the bridge.
+      //
+      // Source is `main` here (not `agent`) because the bridge runs in
+      // vex-app/main, not engine — using `createBugReport` directly
+      // matches the trust boundary instead of going through the
+      // engine-side `BugReportSink`.
+      void createBugReport({
+        reportKind: "automatic",
+        source: "main",
+        category: "ipc_validation_failure",
+        severity: "warning",
+        title: "transcript-bridge.invalid_payload_dropped",
+        description: "",
+        context: { issueCount: parsed.error.issues.length },
+        refs:
+          typeof (event as { sessionId?: unknown }).sessionId === "string"
+            ? { sessionId: (event as { sessionId: string }).sessionId }
+            : {},
+      }).catch((err) => {
+        log.warn(
+          "[agent:transcript-bridge] back-fill bug report failed",
+          err,
+        );
+      });
       return;
     }
     broadcastToAllWindows(EV.engine.transcriptAppend, parsed.data);

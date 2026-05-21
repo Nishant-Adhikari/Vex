@@ -32,6 +32,7 @@ const ACTIVE_OR_PAUSED_STATUSES: readonly MissionRunStatus[] = [
   "paused_approval",
   "paused_wake",
   "paused_error",
+  "paused_user",
 ];
 
 // `correlationId` intentionally omitted; `registerHandler` stamps
@@ -121,6 +122,22 @@ function normaliseStatus(raw: string): MissionRunStatus | null {
   return parsed.success ? parsed.data : null;
 }
 
+const PENDING_CONTROL_KINDS = new Set([
+  "pause_after_step",
+  "stop_terminal",
+  "resume",
+  "cancel_wake",
+]);
+
+function normalisePendingControlKind(
+  raw: string | null,
+): "pause_after_step" | "stop_terminal" | "resume" | "cancel_wake" | null {
+  if (raw === null) return null;
+  return PENDING_CONTROL_KINDS.has(raw)
+    ? (raw as "pause_after_step" | "stop_terminal" | "resume" | "cancel_wake")
+    : null;
+}
+
 function toIntOrNull(value: number | string | null): number | null {
   if (value === null) return null;
   if (typeof value === "number") {
@@ -135,18 +152,65 @@ export async function getActiveRunForSession(
 ): Promise<Result<RuntimeStateDto, VexError>> {
   return withClient(async (client) => {
     try {
-      const result = await client.query<MissionRunRow>(
-        `SELECT id, session_id, status, started_at, last_checkpoint_at,
-                stop_reason, iteration_count
-           FROM mission_runs
-          WHERE session_id = $1
-            AND status = ANY($2::text[])
-          ORDER BY started_at DESC
+      // Puzzle 03: one round-trip pulls the active run + the runner
+      // lease summary + the top pending control kind so the renderer
+      // doesn't need three IPC calls to gate pause/stop/resume
+      // buttons. `LEFT JOIN` keeps the row when no lease / no pending
+      // request exists for the session.
+      const result = await client.query<
+        MissionRunRow & {
+          lease_active: boolean | null;
+          lease_expires_at: Date | null;
+          pending_control_kind: string | null;
+        }
+      >(
+        `SELECT m.id, m.session_id, m.status, m.started_at, m.last_checkpoint_at,
+                m.stop_reason, m.iteration_count,
+                CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
+                     THEN TRUE ELSE FALSE END               AS lease_active,
+                CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
+                     THEN l.expires_at ELSE NULL END        AS lease_expires_at,
+                r.kind                                       AS pending_control_kind
+           FROM mission_runs m
+           LEFT JOIN runner_leases l ON l.session_id = m.session_id
+           LEFT JOIN LATERAL (
+             SELECT kind FROM runtime_control_requests
+              WHERE session_id = m.session_id
+                AND status IN ('pending', 'observed')
+              ORDER BY created_at ASC
+              LIMIT 1
+           ) r ON TRUE
+          WHERE m.session_id = $1
+            AND m.status = ANY($2::text[])
+          ORDER BY m.started_at DESC
           LIMIT 1`,
         [sessionId, ACTIVE_OR_PAUSED_STATUSES],
       );
       const row = result.rows[0];
       if (!row) {
+        // No active run for this session — also surface session-only
+        // lease + pending control state (chat-only flow can hold a
+        // lease + a stop_terminal request even without a mission run).
+        const fallback = await client.query<{
+          lease_active: boolean | null;
+          lease_expires_at: Date | null;
+          pending_control_kind: string | null;
+        }>(
+          `SELECT
+              CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
+                   THEN TRUE ELSE FALSE END           AS lease_active,
+              CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
+                   THEN l.expires_at ELSE NULL END    AS lease_expires_at,
+              (SELECT kind FROM runtime_control_requests
+                 WHERE session_id = $1
+                   AND status IN ('pending', 'observed')
+                 ORDER BY created_at ASC
+                 LIMIT 1)                              AS pending_control_kind
+            FROM (SELECT $1::text AS session_id) s
+            LEFT JOIN runner_leases l ON l.session_id = s.session_id`,
+          [sessionId],
+        );
+        const f = fallback.rows[0];
         return ok({
           sessionId,
           hasActiveRun: false,
@@ -156,6 +220,11 @@ export async function getActiveRunForSession(
           lastCheckpointAt: null,
           startedAt: null,
           iterationCount: null,
+          leaseActive: Boolean(f?.lease_active),
+          leaseExpiresAt: f?.lease_expires_at ? toIso(f.lease_expires_at) : null,
+          pendingControlKind: normalisePendingControlKind(
+            f?.pending_control_kind ?? null,
+          ),
         });
       }
       const status = normaliseStatus(row.status);
@@ -168,6 +237,13 @@ export async function getActiveRunForSession(
         lastCheckpointAt: toIsoOrNull(row.last_checkpoint_at),
         startedAt: toIso(row.started_at),
         iterationCount: toIntOrNull(row.iteration_count),
+        leaseActive: Boolean(row.lease_active),
+        leaseExpiresAt: row.lease_expires_at
+          ? toIso(row.lease_expires_at)
+          : null,
+        pendingControlKind: normalisePendingControlKind(
+          row.pending_control_kind,
+        ),
       });
     } catch (cause) {
       return dbError("getActiveRunForSession query failed", cause);

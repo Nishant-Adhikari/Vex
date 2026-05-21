@@ -38,12 +38,37 @@ export async function processAgentTurn(
   const config = await provider.loadConfig();
   if (!config) throw new Error("No inference config available");
 
-  // Save user message
-  await appendMessage(
+  // Puzzle 03 — claim the session lease BEFORE the first state
+  // mutation (codex blocker #2): two rapid `chat.submit` IPC calls
+  // on the same session must not both append user messages + fork
+  // the turn loop.
+  const ownerId = `agent-turn-${Math.random().toString(36).slice(2, 12)}`;
+  const { claimSessionLease } = await import("../../runtime/lease-and-status.js");
+  const claim = await claimSessionLease({
     sessionId,
-    { role: "user", content: userInput, timestamp: new Date().toISOString() },
-    { source: "user", messageType: "chat", visibility: "user" },
-  );
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: 5 * 60_000,
+  });
+  if (claim.outcome === "lease_busy") {
+    throw new Error(
+      `Session ${sessionId} runner lease busy — another agent turn is in progress.`,
+    );
+  }
+  const { createLeaseHandle } = await import("../../runtime/lease-handle.js");
+  const sessionLease = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: 5 * 60_000,
+  });
+
+  try {
+    // Save user message (FIRST state mutation, under lease)
+    await appendMessage(
+      sessionId,
+      { role: "user", content: userInput, timestamp: new Date().toISOString() },
+      { source: "user", messageType: "chat", visibility: "user" },
+    );
 
   // Hydrate
   const hydrated = await hydrateEngineSession(sessionId);
@@ -84,11 +109,17 @@ export async function processAgentTurn(
     loopConfig,
   );
 
-  return {
-    text: result.text,
-    toolCallsMade: result.toolCallsMade,
-    pendingApprovals: result.pendingApprovals,
-    stopReason: result.stopReason,
-    missionStatus: null,
-  };
+    return {
+      text: result.text,
+      toolCallsMade: result.toolCallsMade,
+      pendingApprovals: result.pendingApprovals,
+      stopReason: result.stopReason,
+      missionStatus: null,
+    };
+  } finally {
+    const { releaseLeaseAndEmitControlState } = await import(
+      "../../runtime/release-and-emit.js"
+    );
+    await releaseLeaseAndEmitControlState(sessionLease, sessionId);
+  }
 }

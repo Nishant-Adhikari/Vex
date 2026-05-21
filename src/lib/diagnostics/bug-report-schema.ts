@@ -96,6 +96,46 @@ export const bugReportRefsSchema = z
   })
   .strict();
 
+// Mirror of `src/vex-agent/engine/types.ts MISSION_RUN_STATUSES`.
+// Kept local to `src/lib/diagnostics` so the lib stays standalone (no
+// import from `src/vex-agent`). A drift test in
+// `src/__tests__/lib/diagnostics/runtime-status-sync.test.ts` pins the
+// two arrays via `.options` against the canonical engine const so
+// adding a new status here fails CI if the lib mirror is out of sync.
+export const runtimeStatusSchema = z.enum([
+  "running",
+  "paused_approval",
+  "paused_wake",
+  "paused_error",
+  "paused_user",
+  "completed",
+  "failed",
+  "stopped",
+  "cancelled",
+]);
+export type RuntimeStatus = z.infer<typeof runtimeStatusSchema>;
+
+/**
+ * Phase 2 agent-context fields (BUG-REPORTING §13.1). Stamped on rows
+ * emitted by the agent runtime; ignored / null for renderer- or
+ * user-originated reports. `bug-report-service` persists these into the
+ * matching columns on `bug_reports`.
+ */
+export const agentBugReportContextSchema = z
+  .object({
+    stopReason: z.string().min(1).max(40).nullable().optional(),
+    runtimeStatus: runtimeStatusSchema.nullable().optional(),
+    contextPressureBand: z
+      .enum(["normal", "warning", "barrier", "critical"])
+      .nullable()
+      .optional(),
+    contextPressureFraction: z.number().min(0).max(1).nullable().optional(),
+    checkpointGeneration: z.number().int().nonnegative().nullable().optional(),
+    postCompactBridgeActive: z.boolean().nullable().optional(),
+  })
+  .strict();
+export type AgentBugReportContext = z.infer<typeof agentBugReportContextSchema>;
+
 export const createBugReportInputSchema = z
   .object({
     reportKind: bugReportReportKindSchema,
@@ -106,6 +146,14 @@ export const createBugReportInputSchema = z
     description: z.string().max(8000).default(""),
     context: z.record(z.string(), z.unknown()).default({}),
     refs: bugReportRefsSchema.default({}),
+    /**
+     * Phase 2 agent runtime stamping (puzzle 03). Only persisted when
+     * `source` is `agent` or `worker` — for `user` / `renderer` /
+     * `main` source the field is ignored by `bug-report-service` so a
+     * malicious or confused emitter can't smuggle made-up agent state
+     * into a renderer-originated row.
+     */
+    agentContext: agentBugReportContextSchema.optional(),
   })
   .strict();
 

@@ -220,14 +220,23 @@ export const EV = {
     available: "vex:event:updater:available",
   },
   /**
-   * Engine spine (agent integration puzzle 2). `transcriptAppend` fires
-   * after every committed `messages` INSERT — renderer invalidates the
-   * matching session's TanStack query prefix and re-fetches DTOs through
-   * `messages.getTail`. DB remains source of truth; payload carries only
-   * meta (messageId + role + createdAt + messageType + correlationId).
+   * Engine spine (agent integration puzzle 2 + puzzle 3).
+   *
+   *  - `transcriptAppend` (puzzle 02) fires after every committed
+   *    `messages` INSERT — renderer invalidates the matching session's
+   *    TanStack query prefix and re-fetches DTOs through
+   *    `messages.getTail`.
+   *  - `controlState` (puzzle 03) fires after a committed runtime
+   *    control transition (pause/stop/resume/lease change). Payload is
+   *    a signal; renderer invalidates the session's runtime state
+   *    query. Lease metadata is bounded to `leaseActive` +
+   *    `leaseExpiresAt` — owner IDs are internal runtime state.
+   *
+   * DB remains source of truth for both.
    */
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",
+    controlState: "vex:event:engine:controlState",
   },
 } as const;
 

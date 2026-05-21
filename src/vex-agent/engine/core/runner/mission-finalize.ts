@@ -27,6 +27,46 @@ import {
 
 const ERROR_MESSAGE_LIMIT = 4096;
 
+/**
+ * Helper — broadcast the post-finalize control-state event (puzzle 03).
+ * Codex review acceptance: turn-loop emits at observe time with the
+ * still-active lease; this helper fires AFTER finalize so the renderer
+ * sees the canonical terminal status (e.g. `stopped` → `cancelled`)
+ * and the lease cleared. Wraps a DB re-read for canonical state.
+ */
+async function emitFinalizeControlState(
+  sessionId: string,
+  runId: string,
+): Promise<void> {
+  try {
+    const { controlStateBus, CONTROL_STATE_EVENT_TYPE } = await import(
+      "../../runtime/control-bus.js"
+    );
+    const { getLease } = await import(
+      "../../../db/repos/runner-leases.js"
+    );
+    const run = await missionRunsRepo.getRun(runId);
+    const lease = await getLease(sessionId);
+    if (run === null) return;
+    controlStateBus.emit({
+      type: CONTROL_STATE_EVENT_TYPE,
+      sessionId,
+      missionRunId: runId,
+      runStatus: run.status,
+      stopReason: run.stopReason ?? null,
+      pendingControlKind: null,
+      leaseActive: lease !== null && lease.expiresAt >= new Date(),
+      leaseExpiresAt:
+        lease !== null && lease.expiresAt >= new Date()
+          ? lease.expiresAt.toISOString()
+          : null,
+      correlationId: null,
+    });
+  } catch {
+    // intentionally swallowed — finalize must not break on bus errors
+  }
+}
+
 export async function finalizeMissionRunStatus(
   missionId: string,
   runId: string,
@@ -43,6 +83,7 @@ export async function finalizeMissionRunStatus(
       await missionRunsRepo.updateStatus(runId, "stopped", stopReason, stopPayload);
       await missionsRepo.clearApprovedAt(missionId);
       await missionsRepo.setStatus(missionId, "draft");
+      await emitFinalizeControlState(sessionId, runId);
       return "draft";
     }
 
@@ -53,6 +94,7 @@ export async function finalizeMissionRunStatus(
         : "failed";
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
+    await emitFinalizeControlState(sessionId, runId);
     return status;
   }
 
@@ -76,6 +118,36 @@ export async function finalizeMissionRunStatus(
   if (stopReason === "system_error") {
     await missionsRepo.setStatus(missionId, "failed");
     await missionRunsRepo.updateStatus(runId, "failed", stopReason);
+    await emitFinalizeControlState(sessionId, runId);
+    // Phase 2 BUG-REPORTING emit (puzzle 03): terminal `system_error`
+    // is a hard failure surface — record the mission state. Fail-
+    // closed so a sink outage cannot mask the terminal flip.
+    const { getBugReportSink } = await import(
+      "../../support/bug-report-registry.js"
+    );
+    const { emitBugReportSafe } = await import(
+      "../../../../lib/diagnostics/bug-report-sink.js"
+    );
+    await emitBugReportSafe(
+      getBugReportSink(),
+      {
+        source: "agent",
+        category: "mission_system_error",
+        severity: "critical",
+        title: "mission.system_error",
+        description: stopPayload?.summary ?? "system_error terminal",
+        refs: {
+          sessionId,
+          missionId,
+          missionRunId: runId,
+        },
+        agentContext: {
+          stopReason: "system_error",
+          runtimeStatus: "failed",
+        },
+      },
+      logger,
+    );
     return "failed";
   }
 
@@ -134,6 +206,38 @@ export async function finalizeMissionRunError(
         runId,
       },
     });
+    await emitFinalizeControlState(sessionId, runId);
+    // Phase 2 BUG-REPORTING emit (puzzle 03): persisting `paused_error`
+    // is the canonical recoverable-failure surface — emit so support
+    // records carry the error class + agent context. Fail-closed
+    // through `emitBugReportSafe` so a support outage cannot mask the
+    // original runtime failure.
+    const { getBugReportSink } = await import(
+      "../../support/bug-report-registry.js"
+    );
+    const { emitBugReportSafe } = await import(
+      "../../../../lib/diagnostics/bug-report-sink.js"
+    );
+    await emitBugReportSafe(
+      getBugReportSink(),
+      {
+        source: "agent",
+        category: "mission_paused_error",
+        severity: "error",
+        title: `mission.${errorClass}`,
+        description: errorMessage,
+        refs: {
+          sessionId,
+          missionId,
+          missionRunId: runId,
+        },
+        agentContext: {
+          stopReason: "provider_error",
+          runtimeStatus: "paused_error",
+        },
+      },
+      logger,
+    );
   } catch (dbErr: unknown) {
     logger.error("engine.mission.paused_error_persist_failed", {
       runId,

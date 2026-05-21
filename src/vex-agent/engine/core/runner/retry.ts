@@ -12,16 +12,14 @@
  *   - `running`         → loop already in progress; nothing to retry.
  *   - no active run     → nothing to retry.
  *
- * Race safety: pending wakes for the session are cancelled FIRST so the
- * wake executor can't claim the run between our status read and the CAS.
- * The CAS itself (`casFlipToRunning`) takes a row-level lock and only
- * fires when the locked status is in the allowed set — if a wake snuck
- * through anyway, we get `null` back and refuse cleanly instead of
- * double-resuming.
+ * Race safety (puzzle 03): the lease + status + pending-wake cleanup
+ * are committed in a SINGLE `claimRunLeaseAndFlipToRunning` transaction
+ * (codex review acceptance). If the claim fails (`lease_busy` /
+ * `status_mismatch`) the run + wakes stay untouched, so a failed retry
+ * can't strand the session in a partial state.
  */
 
 import type { TurnResult, MissionRunStatus } from "../../types.js";
-import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import {
   ACTIVE_RUN_STATUSES,
@@ -65,21 +63,30 @@ export async function retryActiveMissionRun(sessionId: string): Promise<TurnResu
     throw new Error(`Mission run is in an unrecognised state (${run.status}).`);
   }
 
-  // Cancel pending wakes BEFORE the CAS so the wake executor can't claim
-  // this run while we're transitioning. cancelForSession is a single
-  // statement; even when it loses a race with claimDue, the CAS below
-  // still fails closed with a clear error.
-  const cancelled = await loopWakeRepo.cancelForSession(sessionId, "user_retry");
-  if (cancelled > 0) {
-    logger.info("engine.retry.cancelled_wakes", {
-      sessionId,
-      runId: run.id,
-      count: cancelled,
-    });
+  // Puzzle 03 — atomic claim lease + flip status in ONE transaction
+  // so a concurrent IPC `requestResume` / wake executor can't leave
+  // the run in `running` with no runner if our lease acquire later
+  // fails (codex blocker: previous CAS-then-acquire-lease was a
+  // non-atomic two-step). Single-tx helper also handles the
+  // `paused_wake → consumed_by_resume` wake cleanup when applicable.
+  const ownerId = `retry-${run.id}`;
+  const { claimRunLeaseAndFlipToRunning } = await import(
+    "@vex-agent/engine/runtime/lease-and-status.js"
+  );
+  const claim = await claimRunLeaseAndFlipToRunning({
+    sessionId,
+    missionRunId: run.id,
+    fromStatuses: RETRYABLE_FROM_STATUSES,
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: 5 * 60_000,
+  });
+  if (claim.outcome === "lease_busy") {
+    throw new Error(
+      "Mission run lease was claimed by another runner. Re-check status with /status.",
+    );
   }
-
-  const previous = await missionRunsRepo.casFlipToRunning(run.id, RETRYABLE_FROM_STATUSES);
-  if (previous === null) {
+  if (claim.outcome === "status_mismatch") {
     throw new Error(
       "Mission run was claimed by another resumer. Re-check status with /status.",
     );
@@ -88,10 +95,28 @@ export async function retryActiveMissionRun(sessionId: string): Promise<TurnResu
   logger.info("engine.retry.flipped_to_running", {
     sessionId,
     runId: run.id,
-    previousStatus: previous,
+    previousStatus: claim.previousStatus,
+    wakeCancelledCount: claim.wakeCancelledCount,
   });
 
-  // Lazy import to break the runner ↔ retry circular dependency.
-  const { resumeMissionRun } = await import("./mission.js");
-  return resumeMissionRun(run.id);
+  const { createLeaseHandle } = await import(
+    "@vex-agent/engine/runtime/lease-handle.js"
+  );
+  const handle = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: 5 * 60_000,
+  });
+  try {
+    // Lazy import to break the runner ↔ retry circular dependency.
+    const { resumeMissionRun } = await import("./mission.js");
+    return await resumeMissionRun(run.id);
+  } finally {
+    const { releaseLeaseAndEmitControlState } = await import(
+      "@vex-agent/engine/runtime/release-and-emit.js"
+    );
+    await releaseLeaseAndEmitControlState(handle, sessionId, {
+      missionRunId: run.id,
+    });
+  }
 }

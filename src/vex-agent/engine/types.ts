@@ -44,20 +44,36 @@ export type MissionStatus =
   | "failed"
   | "cancelled";
 
-export type MissionRunStatus =
-  | "running"
-  | "paused_approval"
-  | "paused_wake"
-  | "paused_error"
-  | "completed"
-  | "failed"
-  | "stopped"
-  | "cancelled";
+/**
+ * Canonical list of `MissionRunStatus` literals — single source of truth.
+ * Engine repos, `vex-app` shared schemas, app DB whitelists, and the
+ * `src/lib/diagnostics/bug-report-schema.ts` runtime status enum mirror
+ * this array. A drift test pins them against each other so adding a new
+ * status here fails CI if any mirror is out of sync.
+ *
+ * `paused_user` (puzzle 03) is the durable status for a user-requested
+ * pause at the next safe checkpoint — distinct from `paused_approval`
+ * (waiting on a queued tool approval) and `paused_wake` (sleeping
+ * between iterations of an autonomous loop).
+ */
+export const MISSION_RUN_STATUSES = [
+  "running",
+  "paused_approval",
+  "paused_wake",
+  "paused_error",
+  "paused_user",
+  "completed",
+  "failed",
+  "stopped",
+  "cancelled",
+] as const;
+
+export type MissionRunStatus = (typeof MISSION_RUN_STATUSES)[number];
 
 /**
  * Centralised classification of `MissionRunStatus` values. Engine, repo,
  * ingress router and UI cockpit MUST consult these sets rather than
- * enumerating literals so a new arm (e.g. `paused_error`) flows through
+ * enumerating literals so a new arm (e.g. `paused_user`) flows through
  * every decision point automatically.
  */
 export const ACTIVE_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set(["running"]);
@@ -65,6 +81,7 @@ export const PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "paused_approval",
   "paused_wake",
   "paused_error",
+  "paused_user",
 ]);
 export const TERMINAL_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "completed",
@@ -126,7 +143,9 @@ export type RuntimeStopReason =
   | "waiting_for_wake"
   | "waiting_for_compact_commit"
   | "compact_unable_at_critical"
-  | "system_error";
+  | "system_error"
+  /** User requested pause at the next safe checkpoint (puzzle 03). */
+  | "user_paused";
 
 export type StopReason = BusinessStopReason | RuntimeStopReason;
 

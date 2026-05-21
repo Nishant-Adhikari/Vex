@@ -221,7 +221,7 @@ describe("usage handlers", () => {
 });
 
 describe("runtime handlers", () => {
-  it("getState returns the mission-runs-db state", async () => {
+  it("getState returns the mission-runs-db state (incl. puzzle 03 lease + pending fields)", async () => {
     mocks.getActiveRunForSession.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -233,28 +233,31 @@ describe("runtime handlers", () => {
         lastCheckpointAt: null,
         startedAt: null,
         iterationCount: null,
+        leaseActive: false,
+        leaseExpiresAt: null,
+        pendingControlKind: null,
       },
     });
     const result = await call(CH.runtime.getState, { sessionId: SESSION });
     expect(result.ok).toBe(true);
   });
 
-  it("requestPause fails closed with runtime.feature_unavailable", async () => {
-    const result = await call(CH.runtime.requestPause, { sessionId: SESSION });
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("runtime.feature_unavailable");
-    expect(result.error?.domain).toBe("runtime");
-  });
-
-  it("requestStop / requestResume / cancelWake also fail closed", async () => {
+  it("requestPause/Stop/Resume/cancelWake reach the DB layer (puzzle 03 wires real handlers)", async () => {
+    // Puzzle 03 replaced the `feature_unavailable` stubs with real
+    // DB-backed handlers. In this unit test environment there is no
+    // Postgres connection, so the handlers fail at `ensureEngineDbUrl`
+    // and surface `internal.unexpected`. This confirms the handlers
+    // are no longer fail-closed by contract — they actually run.
     for (const ch of [
+      CH.runtime.requestPause,
       CH.runtime.requestStop,
       CH.runtime.requestResume,
       CH.runtime.cancelWake,
     ]) {
       const result = await call(ch, { sessionId: SESSION });
       expect(result.ok).toBe(false);
-      expect(result.error?.code).toBe("runtime.feature_unavailable");
+      // `runtime.feature_unavailable` would mean the stub still runs.
+      expect(result.error?.code).not.toBe("runtime.feature_unavailable");
     }
   });
 });
