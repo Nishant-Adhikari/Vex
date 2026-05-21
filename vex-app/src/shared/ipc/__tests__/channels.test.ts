@@ -1,0 +1,79 @@
+/**
+ * Channel constant format check.
+ *
+ * Catches the lead-dev gate from puzzle 01 §Lead-dev: every channel
+ * string must follow `vex:<domain>:<action>` (or `vex:event:...`,
+ * `vex:stream:...`, or the literal `vex:cancel`). Adding a new
+ * `CH.foo.bar` constant with the wrong shape fails this test before
+ * the renderer sees it.
+ */
+
+import { describe, expect, it } from "vitest";
+import { CH, EV } from "../channels.js";
+
+const REQUEST_PATTERN = /^vex:[a-z]+:[a-zA-Z]+$/;
+const EVENT_PATTERN = /^vex:event:[a-z]+:[a-zA-Z]+$/;
+
+function collectStrings(group: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const value of Object.values(group)) {
+    if (typeof value === "string") out.push(value);
+    else if (typeof value === "object" && value !== null) {
+      out.push(...collectStrings(value as Record<string, unknown>));
+    }
+  }
+  return out;
+}
+
+describe("CH / EV channel constants", () => {
+  it("every CH.* request constant matches vex:<domain>:<action>", () => {
+    const requests = collectStrings(CH).filter((c) => c !== CH.cancel);
+    expect(requests.length).toBeGreaterThan(0);
+    for (const channel of requests) {
+      expect(channel, channel).toMatch(REQUEST_PATTERN);
+    }
+  });
+
+  it("CH.cancel uses the dedicated cancellation channel", () => {
+    expect(CH.cancel).toBe("vex:cancel");
+  });
+
+  it("every EV.* event constant matches vex:event:<domain>:<topic>", () => {
+    const events = collectStrings(EV);
+    expect(events.length).toBeGreaterThan(0);
+    for (const channel of events) {
+      expect(channel, channel).toMatch(EVENT_PATTERN);
+    }
+  });
+
+  it("does not expose any vex:event:engine:* channel in puzzle 1", () => {
+    // Event spine lives in puzzle 02. Adding `EV.engine.*` here without
+    // a publishing path would mislead the renderer into wiring listeners
+    // that never fire.
+    const events = collectStrings(EV);
+    for (const channel of events) {
+      expect(channel).not.toMatch(/^vex:event:engine:/);
+    }
+  });
+
+  it("CH.messages/runtime/mission/approvals/wallets/models/usage namespaces exist", () => {
+    expect(typeof CH.messages.getTail).toBe("string");
+    expect(typeof CH.runtime.getState).toBe("string");
+    expect(typeof CH.mission.getDraft).toBe("string");
+    expect(typeof CH.approvals.listPending).toBe("string");
+    expect(typeof CH.wallets.listSessionWallets).toBe("string");
+    expect(typeof CH.models.listAvailable).toBe("string");
+    expect(typeof CH.usage.getSessionTotals).toBe("string");
+    expect(typeof CH.sessions.getModel).toBe("string");
+    expect(typeof CH.sessions.setModel).toBe("string");
+  });
+
+  it("channels are unique (no duplicate values across namespaces)", () => {
+    const all = [CH.cancel, ...collectStrings(CH).filter((c) => c !== CH.cancel), ...collectStrings(EV)];
+    const seen = new Set<string>();
+    for (const channel of all) {
+      expect(seen.has(channel), `Duplicate channel: ${channel}`).toBe(false);
+      seen.add(channel);
+    }
+  });
+});

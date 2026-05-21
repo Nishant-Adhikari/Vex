@@ -1,0 +1,229 @@
+/**
+ * Approvals DB helper for the approval queue panels.
+ *
+ * Mirrors `sessions-db.ts` decoupling: own `pg.Client` per call. The
+ * mapper here is the *only* place where `approval_queue.tool_call`
+ * JSONB gets reduced to an allow-listed renderer DTO. Raw `tool_call`
+ * (which can carry wallet addresses, amounts, transfer args) never
+ * leaves this module.
+ *
+ *   approval_queue(
+ *     id TEXT PK, tool_call JSONB, reasoning TEXT,
+ *     status, session_id, tool_call_id,
+ *     permission_at_enqueue, source, pending_context JSONB,
+ *     created_at, resolved_at
+ *   )
+ */
+
+import { Client, type ClientConfig } from "pg";
+import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
+import {
+  APPROVAL_REASONING_PREVIEW_MAX,
+  approvalPermissionSchema,
+  approvalStatusSchema,
+  type ApprovalPermission,
+  type ApprovalStatus,
+  type ApprovalSummaryDto,
+} from "@shared/schemas/approvals.js";
+import { buildPoolConfig } from "./db-config.js";
+import { log } from "../logger/index.js";
+
+const CONNECT_TIMEOUT_MS = 2_000;
+const QUERY_TIMEOUT_MS = 5_000;
+
+// `correlationId` intentionally omitted; `registerHandler` stamps
+// `ctx.requestId` downstream. See `messages-db.ts` for full rationale.
+function dbUnavailable(): Result<never, VexError> {
+  return err({
+    code: "internal.unexpected",
+    domain: "approvals",
+    message: "Database unavailable. Verify services are running and retry.",
+    retryable: true,
+    userActionable: true,
+    redacted: true,
+  });
+}
+
+function dbError(reason: string, cause?: unknown): Result<never, VexError> {
+  log.warn(`[approvals-db] ${reason}`, cause);
+  return err({
+    code: "internal.unexpected",
+    domain: "approvals",
+    message: "Unable to load approvals.",
+    retryable: true,
+    userActionable: false,
+    redacted: true,
+  });
+}
+
+async function withClient<T>(
+  fn: (client: Client) => Promise<Result<T, VexError>>,
+): Promise<Result<T, VexError>> {
+  let cfg: Awaited<ReturnType<typeof buildPoolConfig>>;
+  try {
+    cfg = await buildPoolConfig();
+  } catch (cause) {
+    log.warn("[approvals-db] buildPoolConfig threw", cause);
+    return dbUnavailable();
+  }
+  if (cfg === null) return dbUnavailable();
+
+  const clientConfig: ClientConfig = {
+    host: cfg.host,
+    port: cfg.port,
+    database: cfg.database,
+    user: cfg.user,
+    password: cfg.password,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    statement_timeout: QUERY_TIMEOUT_MS,
+  };
+  const client = new Client(clientConfig);
+  try {
+    await client.connect();
+  } catch (cause) {
+    log.warn("[approvals-db] client.connect failed", cause);
+    return dbUnavailable();
+  }
+  try {
+    return await fn(client);
+  } finally {
+    try {
+      await client.end();
+    } catch (cause) {
+      log.warn("[approvals-db] client.end failed (non-fatal)", cause);
+    }
+  }
+}
+
+interface ApprovalRow {
+  readonly id: string;
+  readonly status: string;
+  readonly session_id: string | null;
+  readonly tool_call_id: string | null;
+  readonly tool_call: unknown;
+  readonly reasoning: string | null;
+  readonly permission_at_enqueue: string;
+  readonly created_at: string | Date;
+  readonly resolved_at: string | Date | null;
+}
+
+const APPROVAL_ROW_COLUMNS =
+  "id, status, session_id, tool_call_id, tool_call, reasoning, permission_at_enqueue, created_at, resolved_at";
+
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function toIsoOrNull(value: string | Date | null): string | null {
+  return value === null ? null : toIso(value);
+}
+
+function normaliseStatus(raw: string): ApprovalStatus {
+  const parsed = approvalStatusSchema.safeParse(raw);
+  // Engine should only emit canonical statuses; an exotic value
+  // collapses to `pending` so the renderer renders the row as actionable
+  // rather than disappearing it silently. The structural log line on
+  // unexpected values flows through the dispatcher path.
+  return parsed.success ? parsed.data : "pending";
+}
+
+function normalisePermission(raw: string): ApprovalPermission {
+  const parsed = approvalPermissionSchema.safeParse(raw);
+  return parsed.success ? parsed.data : "restricted";
+}
+
+/**
+ * Best-effort tool identifier extraction from `tool_call` JSONB. Same
+ * allowlist as the messages mapper: string fields only, never recurses
+ * into nested objects, never returns the raw blob.
+ */
+function extractToolName(raw: unknown): string | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const rec = raw as Record<string, unknown>;
+  const ns = typeof rec["namespace"] === "string" ? rec["namespace"] : null;
+  const cmd = typeof rec["command"] === "string" ? rec["command"] : null;
+  if (ns !== null && cmd !== null) return `${ns}:${cmd}`;
+  if (cmd !== null) return cmd;
+  const name = typeof rec["name"] === "string" ? rec["name"] : null;
+  return name;
+}
+
+function reasoningPreview(raw: string | null): string {
+  if (raw === null) return "";
+  if (raw.length <= APPROVAL_REASONING_PREVIEW_MAX) return raw;
+  return raw.slice(0, APPROVAL_REASONING_PREVIEW_MAX);
+}
+
+function toDto(row: ApprovalRow): ApprovalSummaryDto {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    toolCallId: row.tool_call_id,
+    toolName: extractToolName(row.tool_call),
+    status: normaliseStatus(row.status),
+    permissionAtEnqueue: normalisePermission(row.permission_at_enqueue),
+    createdAt: toIso(row.created_at),
+    resolvedAt: toIsoOrNull(row.resolved_at),
+    reasoningPreview: reasoningPreview(row.reasoning),
+  };
+}
+
+export async function listPendingForSession(
+  sessionId: string,
+): Promise<Result<ReadonlyArray<ApprovalSummaryDto>, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<ApprovalRow>(
+        `SELECT ${APPROVAL_ROW_COLUMNS}
+           FROM approval_queue
+          WHERE session_id = $1 AND status = 'pending'
+          ORDER BY created_at ASC`,
+        [sessionId],
+      );
+      return ok(result.rows.map(toDto));
+    } catch (cause) {
+      return dbError("listPendingForSession query failed", cause);
+    }
+  });
+}
+
+export async function getApprovalById(
+  id: string,
+): Promise<Result<ApprovalSummaryDto | null, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<ApprovalRow>(
+        `SELECT ${APPROVAL_ROW_COLUMNS}
+           FROM approval_queue
+          WHERE id = $1
+          LIMIT 1`,
+        [id],
+      );
+      const row = result.rows[0];
+      return ok(row ? toDto(row) : null);
+    } catch (cause) {
+      return dbError("getApprovalById query failed", cause);
+    }
+  });
+}
+
+export async function getHistoryForSession(
+  sessionId: string,
+  limit: number,
+): Promise<Result<ReadonlyArray<ApprovalSummaryDto>, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<ApprovalRow>(
+        `SELECT ${APPROVAL_ROW_COLUMNS}
+           FROM approval_queue
+          WHERE session_id = $1
+          ORDER BY created_at DESC
+          LIMIT $2`,
+        [sessionId, limit],
+      );
+      return ok(result.rows.map(toDto));
+    } catch (cause) {
+      return dbError("getHistoryForSession query failed", cause);
+    }
+  });
+}

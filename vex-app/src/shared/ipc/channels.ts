@@ -77,11 +77,104 @@ export const CH = {
     get: "vex:sessions:get",
     setPinned: "vex:sessions:setPinned",
     delete: "vex:sessions:delete",
+    /**
+     * Agent integration puzzle 1 — per-session model contract. `getModel`
+     * is read-only and returns the resolved source (global default vs.
+     * unconfigured) without touching DB columns that don't exist yet.
+     * `setModel` fail-closes with `sessions.feature_unavailable` until
+     * puzzle 06 adds the `sessions.model_id` migration.
+     */
+    getModel: "vex:sessions:getModel",
+    setModel: "vex:sessions:setModel",
   },
 
   // Chat — operator text routed to agent or mission setup/run.
   chat: {
     submit: "vex:chat:submit",
+  },
+
+  // ── Agent integration puzzle 1 (typed bridge surface) ─────────────────
+  // Each namespace is a new VexDomain with paired Zod shared schemas.
+  // Read-only handlers serve real DB data; mutating handlers fail-closed
+  // with the per-domain `*.feature_unavailable` code until the matching
+  // puzzle ships its backing runtime. Renderer never sees raw DB JSONB —
+  // every mapper is allowlist + Zod validated in main.
+
+  // Messages — paginated transcript reads. Live transcript only (archive
+  // rows are out of scope until restore/history view in puzzle 04).
+  messages: {
+    list: "vex:messages:list",
+    getTail: "vex:messages:getTail",
+    getAround: "vex:messages:getAround",
+  },
+
+  // Runtime — durable control plane for an active mission run. `getState`
+  // resolves the active run row for the session; control mutations fail
+  // closed until puzzle 03 adds DB-backed pause/stop/resume + leases.
+  runtime: {
+    getState: "vex:runtime:getState",
+    requestPause: "vex:runtime:requestPause",
+    requestStop: "vex:runtime:requestStop",
+    requestResume: "vex:runtime:requestResume",
+    cancelWake: "vex:runtime:cancelWake",
+  },
+
+  // Mission — draft/contract/command surface. `getDraft` is read-only;
+  // `getDiff` and the command mutations fail closed until puzzle 04 lands
+  // host-only acceptance + `/rewind`/`/restore`/`/mission-renew`.
+  mission: {
+    getDraft: "vex:mission:getDraft",
+    updateDraft: "vex:mission:updateDraft",
+    getDiff: "vex:mission:getDiff",
+    acceptContract: "vex:mission:acceptContract",
+    start: "vex:mission:start",
+    continue: "vex:mission:continue",
+    recover: "vex:mission:recover",
+    rewind: "vex:mission:rewind",
+    restore: "vex:mission:restore",
+    renew: "vex:mission:renew",
+    stop: "vex:mission:stop",
+  },
+
+  // Approvals — queue browsing + decisions. Pending/get/history are
+  // read-only (renderer never receives raw `tool_call` JSONB — mapper
+  // extracts toolName/permissionAtEnqueue/reasoningPreview only).
+  // approve/reject fail closed until puzzle 05 wires durable approval
+  // intents + runtime continuation.
+  approvals: {
+    listPending: "vex:approvals:listPending",
+    get: "vex:approvals:get",
+    approve: "vex:approvals:approve",
+    reject: "vex:approvals:reject",
+    getHistory: "vex:approvals:getHistory",
+  },
+
+  // Wallets — per-session wallet scope contract. `listSessionWallets`
+  // returns an empty scope until puzzle 05 introduces the DB-backed
+  // wallet scope rows. setSessionWalletScope / prepared-intent mutations
+  // fail closed (provider hot-wallet keys never live in the Electron
+  // process — provider-signed actions need a backend signer).
+  wallets: {
+    listSessionWallets: "vex:wallets:listSessionWallets",
+    setSessionWalletScope: "vex:wallets:setSessionWalletScope",
+    getPreparedIntent: "vex:wallets:getPreparedIntent",
+    cancelPreparedIntent: "vex:wallets:cancelPreparedIntent",
+  },
+
+  // Models — provider/model picker. Puzzle 1 returns a single "configured
+  // global default" derived from `AGENT_PROVIDER`/`AGENT_MODEL` in env;
+  // OpenRouter `/models` catalogue arrives in puzzle 06. No network call
+  // and no pricing/context claims in puzzle 1.
+  models: {
+    listAvailable: "vex:models:listAvailable",
+  },
+
+  // Usage — last-turn + session totals from `usage_log`. Currency
+  // defaults to USD; provider/model columns from the DB row pass through
+  // as `nullable` for older sessions.
+  usage: {
+    getSessionTotals: "vex:usage:getSessionTotals",
+    getLastTurn: "vex:usage:getLastTurn",
   },
 
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)

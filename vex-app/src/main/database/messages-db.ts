@@ -1,0 +1,359 @@
+/**
+ * Messages DB helper for the agent integration chat panel.
+ *
+ * Mirrors the `sessions-db.ts` decoupling pattern: `vex-app` owns its
+ * own `pg.Client` per call and never imports `@vex-agent/db/repos/*`,
+ * keeping the GUI build's module graph disjoint from the engine.
+ *
+ * SQL is the contract here. The base Vex Agent migrations create
+ * (selected for this helper):
+ *
+ *   messages(
+ *     id SERIAL PK,
+ *     session_id TEXT REFERENCES sessions ON DELETE CASCADE,
+ *     role, content,
+ *     tool_call_id, tool_calls JSONB,
+ *     created_at,
+ *     -- migration 002 additions:
+ *     source, message_type, visibility, origin_session_id, subagent_id,
+ *     metadata JSONB
+ *   )
+ *
+ * The renderer receives an allow-listed `SessionMessageDto`. The
+ * mapper here is the *only* place where `tool_calls` / `metadata`
+ * JSONB get reduced:
+ *   - `toolName` = best-effort `namespace:command` extraction (string
+ *     fields only; rejects nested objects so a malicious blob can't
+ *     leak through).
+ *   - `metadata` is dropped entirely until puzzle 02 introduces the
+ *     controlled metadata DTO union. The mapper still inspects
+ *     `metadata.message_type` to derive the renderer-visible `kind`
+ *     ("runtime_notice"), but never forwards the JSONB.
+ */
+
+import { Client, type ClientConfig } from "pg";
+import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
+import {
+  MESSAGES_TAIL_DEFAULT_LIMIT,
+  messageCursorSchema,
+  type MessageCursor,
+  type MessageKind,
+  type MessageRole,
+  type MessagePage,
+  type SessionMessageDto,
+} from "@shared/schemas/messages.js";
+import { buildPoolConfig } from "./db-config.js";
+import { log } from "../logger/index.js";
+
+const CONNECT_TIMEOUT_MS = 2_000;
+const QUERY_TIMEOUT_MS = 5_000;
+
+// `correlationId` is intentionally omitted from these error literals.
+// `registerHandler` stamps `ctx.requestId` downstream when the field is
+// absent; an empty-string `correlationId` would be rejected by
+// `isValidVexErrorShape` (length === 0) and downgrade the public error
+// to `internal.contract_violation`. Mirror the `sessions-db.ts` pattern.
+function dbUnavailable(): Result<never, VexError> {
+  return err({
+    code: "internal.unexpected",
+    domain: "messages",
+    message: "Database unavailable. Verify services are running and retry.",
+    retryable: true,
+    userActionable: true,
+    redacted: true,
+  });
+}
+
+function dbError(reason: string, cause?: unknown): Result<never, VexError> {
+  log.warn(`[messages-db] ${reason}`, cause);
+  return err({
+    code: "internal.unexpected",
+    domain: "messages",
+    message: "Unable to load messages.",
+    retryable: true,
+    userActionable: false,
+    redacted: true,
+  });
+}
+
+async function withClient<T>(
+  fn: (client: Client) => Promise<Result<T, VexError>>,
+): Promise<Result<T, VexError>> {
+  let cfg: Awaited<ReturnType<typeof buildPoolConfig>>;
+  try {
+    cfg = await buildPoolConfig();
+  } catch (cause) {
+    log.warn("[messages-db] buildPoolConfig threw", cause);
+    return dbUnavailable();
+  }
+  if (cfg === null) return dbUnavailable();
+
+  const clientConfig: ClientConfig = {
+    host: cfg.host,
+    port: cfg.port,
+    database: cfg.database,
+    user: cfg.user,
+    password: cfg.password,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    statement_timeout: QUERY_TIMEOUT_MS,
+  };
+  const client = new Client(clientConfig);
+  try {
+    await client.connect();
+  } catch (cause) {
+    log.warn("[messages-db] client.connect failed", cause);
+    return dbUnavailable();
+  }
+  try {
+    return await fn(client);
+  } finally {
+    try {
+      await client.end();
+    } catch (cause) {
+      log.warn("[messages-db] client.end failed (non-fatal)", cause);
+    }
+  }
+}
+
+interface MessageRow {
+  readonly id: number;
+  readonly session_id: string;
+  readonly role: string;
+  readonly content: string | null;
+  readonly tool_call_id: string | null;
+  readonly tool_calls: unknown;
+  readonly created_at: string | Date;
+  readonly source: string | null;
+  readonly message_type: string | null;
+}
+
+// `metadata` JSONB is deliberately NOT in the SELECT list. Puzzle 1
+// holds the strict "metadata completely omitted" decision — the
+// controlled metadata DTO union arrives in puzzle 02 (event spine +
+// transcript markers). Until then, the only discriminator we read is
+// the top-level `message_type` column (added in migration 002), which
+// is the engine's authoritative source for marker rows.
+const MESSAGE_ROW_COLUMNS =
+  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type";
+
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function normaliseRole(raw: string): MessageRole {
+  if (raw === "user" || raw === "assistant" || raw === "tool") return raw;
+  return "system";
+}
+
+/**
+ * Best-effort tool identifier extraction from `messages.tool_calls`
+ * JSONB. Allow-listed: only string-typed fields ever feed back into the
+ * DTO. Anything else (numbers, arrays, nested objects) is treated as
+ * absent so a malicious payload can't smuggle data past the boundary.
+ *
+ * Preference order: `namespace:command` (when both are strings) →
+ * `command` → `name` → `null`.
+ */
+function extractToolName(raw: unknown): string | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const first = raw[0];
+  if (first === null || typeof first !== "object") return null;
+  const rec = first as Record<string, unknown>;
+  const ns = typeof rec["namespace"] === "string" ? rec["namespace"] : null;
+  const cmd = typeof rec["command"] === "string" ? rec["command"] : null;
+  if (ns !== null && cmd !== null) return `${ns}:${cmd}`;
+  if (cmd !== null) return cmd;
+  const name = typeof rec["name"] === "string" ? rec["name"] : null;
+  return name;
+}
+
+function hasToolCalls(raw: unknown): boolean {
+  return Array.isArray(raw) && raw.length > 0;
+}
+
+/**
+ * Derive renderer-visible `kind` from row shape using only the
+ * top-level `message_type` column. `metadata` JSONB is intentionally
+ * not selected (puzzle 02 introduces the controlled metadata DTO).
+ */
+function deriveKind(row: MessageRow): MessageKind {
+  if (row.role === "tool") return "tool_result";
+  if (hasToolCalls(row.tool_calls)) return "tool_call";
+  if (row.message_type !== null && row.message_type !== "chat") {
+    // Engine markers (wake banners, overflow stubs, runtime notices)
+    // surface as the catch-all "runtime_notice" kind until puzzle 02
+    // introduces the controlled metadata DTO union.
+    return "runtime_notice";
+  }
+  return "text";
+}
+
+function toDto(row: MessageRow): SessionMessageDto {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    role: normaliseRole(row.role),
+    kind: deriveKind(row),
+    content: row.content ?? "",
+    createdAt: toIso(row.created_at),
+    toolCallId: row.tool_call_id,
+    toolName: extractToolName(row.tool_calls),
+  };
+}
+
+function nextCursorFor(items: readonly SessionMessageDto[]): MessageCursor | null {
+  if (items.length === 0) return null;
+  const last = items[items.length - 1];
+  if (!last) return null;
+  return { createdAt: last.createdAt, id: last.id };
+}
+
+export async function getMessageTail(
+  sessionId: string,
+  limit: number = MESSAGES_TAIL_DEFAULT_LIMIT,
+): Promise<Result<MessagePage, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<MessageRow>(
+        `SELECT ${MESSAGE_ROW_COLUMNS}
+           FROM messages
+          WHERE session_id = $1
+          ORDER BY created_at DESC, id DESC
+          LIMIT $2`,
+        [sessionId, limit + 1],
+      );
+      const rows = result.rows.map(toDto);
+      // Renderer renders bottom-to-top with TanStack virtual list — we
+      // return tail in chronological order (oldest → newest) so the
+      // list mounts at the bottom and the next page is "older above".
+      const overflow = rows.length > limit;
+      const trimmed = overflow ? rows.slice(0, limit) : rows;
+      const items = trimmed.slice().reverse();
+      const nextCursor = overflow ? nextCursorFor(trimmed) : null;
+      return ok({
+        items,
+        nextCursor,
+        hasMore: overflow,
+      });
+    } catch (cause) {
+      return dbError("getMessageTail query failed", cause);
+    }
+  });
+}
+
+export async function listMessages(
+  sessionId: string,
+  cursor: MessageCursor | null,
+  limit: number = MESSAGES_TAIL_DEFAULT_LIMIT,
+): Promise<Result<MessagePage, VexError>> {
+  // Defense-in-depth: even though shared schema validated this already,
+  // re-parse the cursor before composing SQL. A malformed cursor must
+  // resolve to "treat as no cursor" rather than poisoning the query.
+  let safeCursor: MessageCursor | null = null;
+  if (cursor !== null) {
+    const parsed = messageCursorSchema.safeParse(cursor);
+    safeCursor = parsed.success ? parsed.data : null;
+  }
+  return withClient(async (client) => {
+    try {
+      const result = safeCursor === null
+        ? await client.query<MessageRow>(
+            `SELECT ${MESSAGE_ROW_COLUMNS}
+               FROM messages
+              WHERE session_id = $1
+              ORDER BY created_at DESC, id DESC
+              LIMIT $2`,
+            [sessionId, limit + 1],
+          )
+        : await client.query<MessageRow>(
+            `SELECT ${MESSAGE_ROW_COLUMNS}
+               FROM messages
+              WHERE session_id = $1
+                AND (created_at, id) < ($2::timestamptz, $3::integer)
+              ORDER BY created_at DESC, id DESC
+              LIMIT $4`,
+            [sessionId, safeCursor.createdAt, safeCursor.id, limit + 1],
+          );
+      const rows = result.rows.map(toDto);
+      const overflow = rows.length > limit;
+      const trimmed = overflow ? rows.slice(0, limit) : rows;
+      const items = trimmed.slice().reverse();
+      const nextCursor = overflow ? nextCursorFor(trimmed) : null;
+      return ok({
+        items,
+        nextCursor,
+        hasMore: overflow,
+      });
+    } catch (cause) {
+      return dbError("listMessages query failed", cause);
+    }
+  });
+}
+
+export async function getMessageAround(
+  sessionId: string,
+  messageId: number,
+  before: number,
+  after: number,
+): Promise<Result<MessagePage, VexError>> {
+  return withClient(async (client) => {
+    try {
+      // Anchor: load the row to learn its `created_at`. If the message
+      // doesn't exist (or belongs to another session), we return an
+      // empty page rather than an error — the UI surfaces "message not
+      // found" without a toast.
+      const anchorResult = await client.query<{
+        created_at: string | Date;
+        id: number;
+      }>(
+        `SELECT created_at, id
+           FROM messages
+          WHERE id = $1 AND session_id = $2`,
+        [messageId, sessionId],
+      );
+      const anchor = anchorResult.rows[0];
+      if (!anchor) {
+        return ok({ items: [], nextCursor: null, hasMore: false });
+      }
+      const anchorIso = toIso(anchor.created_at);
+
+      const beforeRows = before === 0
+        ? { rows: [] as MessageRow[] }
+        : await client.query<MessageRow>(
+            `SELECT ${MESSAGE_ROW_COLUMNS}
+               FROM messages
+              WHERE session_id = $1
+                AND (created_at, id) < ($2::timestamptz, $3::integer)
+              ORDER BY created_at DESC, id DESC
+              LIMIT $4`,
+            [sessionId, anchorIso, anchor.id, before],
+          );
+      const anchorRow = await client.query<MessageRow>(
+        `SELECT ${MESSAGE_ROW_COLUMNS}
+           FROM messages
+          WHERE id = $1 AND session_id = $2`,
+        [messageId, sessionId],
+      );
+      const afterRows = after === 0
+        ? { rows: [] as MessageRow[] }
+        : await client.query<MessageRow>(
+            `SELECT ${MESSAGE_ROW_COLUMNS}
+               FROM messages
+              WHERE session_id = $1
+                AND (created_at, id) > ($2::timestamptz, $3::integer)
+              ORDER BY created_at ASC, id ASC
+              LIMIT $4`,
+            [sessionId, anchorIso, anchor.id, after],
+          );
+
+      const items = [
+        ...beforeRows.rows.slice().reverse(),
+        ...anchorRow.rows,
+        ...afterRows.rows,
+      ].map(toDto);
+      return ok({ items, nextCursor: null, hasMore: false });
+    } catch (cause) {
+      return dbError("getMessageAround query failed", cause);
+    }
+  });
+}

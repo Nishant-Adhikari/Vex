@@ -30,6 +30,29 @@ export type VexDomain =
   | "onboarding"
   | "embedding"
   | "capabilities"
+  /**
+   * Agent integration puzzle 1 — dedicated domains for the typed bridge
+   * surface (`vex.<domain>.<method>`). Each owns its DTO contracts and any
+   * `<domain>.feature_unavailable` codes the read-only or fail-closed
+   * handlers emit. Adding a handler under one of these domains MUST go
+   * through the matching shared schema; ad-hoc dot-property strings in
+   * channel constants without a paired schema/DTO are rejected by review.
+   */
+  | "messages"
+  | "runtime"
+  | "mission"
+  | "approvals"
+  | "wallets"
+  | "models"
+  | "usage"
+  /**
+   * Reserved for new sessions handlers (`sessions.getModel`,
+   * `sessions.setModel`). Existing sessions handlers
+   * (`vex:sessions:create|list|get|setPinned|delete`) deliberately keep
+   * `domain: "internal"` as a historical marker — migrating them is a
+   * separate follow-up, not part of puzzle 1.
+   */
+  | "sessions"
   /** Used by the preload boundary when input fails its own Zod schema before reaching main. */
   | "preload"
   /** Reserved for unexpected internal errors that don't fit a specific domain. */
@@ -71,6 +94,22 @@ export type VexErrorCode =
   | "provider.unavailable"
   | "provider.test_failed"
   | "support.persist_failed"
+  /**
+   * Agent integration puzzle 1 — per-domain `feature_unavailable` codes.
+   * Emitted by fail-closed mutating handlers whose backing runtime lands
+   * in a later puzzle (runtime control = 03, mission contract/commands =
+   * 04, approval queue runtime = 05, wallet scope/intents = 05/10,
+   * per-session model write = 06). These are `retryable: false,
+   * userActionable: true` so the renderer surfaces "not yet available"
+   * without triggering an automatic bug report. Read-only handlers do
+   * not return these codes — DB unavailability still maps to
+   * `internal.unexpected` via the per-domain wrapper.
+   */
+  | "runtime.feature_unavailable"
+  | "mission.feature_unavailable"
+  | "approvals.feature_unavailable"
+  | "wallets.feature_unavailable"
+  | "sessions.feature_unavailable"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";
@@ -145,6 +184,11 @@ export const VEX_ERROR_CODES = [
   "provider.unavailable",
   "provider.test_failed",
   "support.persist_failed",
+  "runtime.feature_unavailable",
+  "mission.feature_unavailable",
+  "approvals.feature_unavailable",
+  "wallets.feature_unavailable",
+  "sessions.feature_unavailable",
   "internal.contract_violation",
   "internal.cancelled",
   "internal.unexpected",
@@ -168,6 +212,14 @@ export const VEX_DOMAINS = [
   "onboarding",
   "embedding",
   "capabilities",
+  "messages",
+  "runtime",
+  "mission",
+  "approvals",
+  "wallets",
+  "models",
+  "usage",
+  "sessions",
   "preload",
   "internal",
 ] as const satisfies readonly VexDomain[];

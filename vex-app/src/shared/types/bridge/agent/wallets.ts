@@ -1,0 +1,33 @@
+import type { Result } from "../../../ipc/result.js";
+import type {
+  PreparedIntentDto,
+  SessionWalletScopeDto,
+  WalletsActionResult,
+  WalletsCancelPreparedIntentInput,
+  WalletsGetPreparedIntentInput,
+  WalletsListSessionInput,
+  WalletsSetScopeInput,
+  WalletsSetScopeResult,
+} from "../../../schemas/wallets.js";
+
+/**
+ * Per-session wallet scope. Puzzle 1 returns an empty scope (no DB
+ * column yet); puzzle 05/10 lands the wallet scope rows + audit
+ * trail. Mutations fail closed with `wallets.feature_unavailable`.
+ * Provider hot-wallet signing NEVER lives in the Electron process —
+ * provider-signed flows route through a backend signer client.
+ */
+export interface WalletsBridge {
+  readonly listSessionWallets: (
+    input: WalletsListSessionInput
+  ) => Promise<Result<SessionWalletScopeDto>>;
+  readonly setSessionWalletScope: (
+    input: WalletsSetScopeInput
+  ) => Promise<Result<WalletsSetScopeResult>>;
+  readonly getPreparedIntent: (
+    input: WalletsGetPreparedIntentInput
+  ) => Promise<Result<PreparedIntentDto | null>>;
+  readonly cancelPreparedIntent: (
+    input: WalletsCancelPreparedIntentInput
+  ) => Promise<Result<WalletsActionResult>>;
+}

@@ -1,0 +1,234 @@
+/**
+ * Usage DB helper for the chat panel meter + per-session totals modal.
+ *
+ * Mirrors `sessions-db.ts` decoupling: own `pg.Client` per call, no
+ * `@vex-agent/db/repos/*` import. Maps `usage_log` rows into renderer-
+ * safe DTOs with explicit `null` handling for the `NUMERIC cost` column.
+ *
+ *   usage_log(
+ *     id SERIAL PK,
+ *     session_id, prompt_tokens, completion_tokens, total_tokens,
+ *     cached_tokens, reasoning_tokens,
+ *     cost NUMERIC, provider, model, currency, created_at
+ *   )
+ */
+
+import { Client, type ClientConfig } from "pg";
+import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
+import {
+  USAGE_DEFAULT_CURRENCY,
+  type LastTurnUsageResult,
+  type SessionUsageTotalsDto,
+  type TurnUsageDto,
+} from "@shared/schemas/usage.js";
+import { buildPoolConfig } from "./db-config.js";
+import { log } from "../logger/index.js";
+
+const CONNECT_TIMEOUT_MS = 2_000;
+const QUERY_TIMEOUT_MS = 5_000;
+
+// `correlationId` intentionally omitted; `registerHandler` stamps
+// `ctx.requestId` downstream. See `messages-db.ts` for full rationale.
+function dbUnavailable(): Result<never, VexError> {
+  return err({
+    code: "internal.unexpected",
+    domain: "usage",
+    message: "Database unavailable. Verify services are running and retry.",
+    retryable: true,
+    userActionable: true,
+    redacted: true,
+  });
+}
+
+function dbError(reason: string, cause?: unknown): Result<never, VexError> {
+  log.warn(`[usage-db] ${reason}`, cause);
+  return err({
+    code: "internal.unexpected",
+    domain: "usage",
+    message: "Unable to load usage.",
+    retryable: true,
+    userActionable: false,
+    redacted: true,
+  });
+}
+
+async function withClient<T>(
+  fn: (client: Client) => Promise<Result<T, VexError>>,
+): Promise<Result<T, VexError>> {
+  let cfg: Awaited<ReturnType<typeof buildPoolConfig>>;
+  try {
+    cfg = await buildPoolConfig();
+  } catch (cause) {
+    log.warn("[usage-db] buildPoolConfig threw", cause);
+    return dbUnavailable();
+  }
+  if (cfg === null) return dbUnavailable();
+
+  const clientConfig: ClientConfig = {
+    host: cfg.host,
+    port: cfg.port,
+    database: cfg.database,
+    user: cfg.user,
+    password: cfg.password,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    statement_timeout: QUERY_TIMEOUT_MS,
+  };
+  const client = new Client(clientConfig);
+  try {
+    await client.connect();
+  } catch (cause) {
+    log.warn("[usage-db] client.connect failed", cause);
+    return dbUnavailable();
+  }
+  try {
+    return await fn(client);
+  } finally {
+    try {
+      await client.end();
+    } catch (cause) {
+      log.warn("[usage-db] client.end failed (non-fatal)", cause);
+    }
+  }
+}
+
+interface UsageRow {
+  readonly session_id: string;
+  readonly prompt_tokens: number | string;
+  readonly completion_tokens: number | string;
+  readonly total_tokens: number | string;
+  readonly cached_tokens: number | string | null;
+  readonly reasoning_tokens: number | string | null;
+  readonly cost: number | string | null;
+  readonly provider: string | null;
+  readonly model: string | null;
+  readonly currency: string | null;
+  readonly created_at: string | Date;
+}
+
+interface UsageTotalsRow {
+  readonly total_prompt: number | string | null;
+  readonly total_completion: number | string | null;
+  readonly total_total: number | string | null;
+  readonly total_cost: number | string | null;
+  readonly request_count: number | string;
+  readonly last_request_at: string | Date | null;
+}
+
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function toIsoOrNull(value: string | Date | null): string | null {
+  return value === null ? null : toIso(value);
+}
+
+function toInt(value: number | string | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+/**
+ * `NUMERIC` columns come back from `pg` as strings to preserve
+ * precision. We coerce to a finite JS number when safe; out-of-range
+ * or unparseable values collapse to `null` so the DTO stays JSON-safe.
+ */
+function toCost(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toTurnDto(row: UsageRow): TurnUsageDto {
+  return {
+    sessionId: row.session_id,
+    promptTokens: toInt(row.prompt_tokens),
+    completionTokens: toInt(row.completion_tokens),
+    totalTokens: toInt(row.total_tokens),
+    cachedTokens: toInt(row.cached_tokens),
+    reasoningTokens: toInt(row.reasoning_tokens),
+    cost: toCost(row.cost),
+    currency: row.currency ?? USAGE_DEFAULT_CURRENCY,
+    provider: row.provider,
+    model: row.model,
+    createdAt: toIso(row.created_at),
+  };
+}
+
+export async function getSessionTotals(
+  sessionId: string,
+  currency: string,
+): Promise<Result<SessionUsageTotalsDto, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<UsageTotalsRow>(
+        `SELECT
+            COALESCE(SUM(prompt_tokens), 0)     AS total_prompt,
+            COALESCE(SUM(completion_tokens), 0) AS total_completion,
+            COALESCE(SUM(total_tokens), 0)      AS total_total,
+            SUM(cost)                            AS total_cost,
+            COUNT(*)                             AS request_count,
+            MAX(created_at)                      AS last_request_at
+           FROM usage_log
+          WHERE session_id = $1
+            AND currency = $2`,
+        [sessionId, currency],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        return ok({
+          sessionId,
+          totalPromptTokens: 0,
+          totalCompletionTokens: 0,
+          totalTokens: 0,
+          totalCost: null,
+          currency,
+          requestCount: 0,
+          lastRequestAt: null,
+        });
+      }
+      return ok({
+        sessionId,
+        totalPromptTokens: toInt(row.total_prompt),
+        totalCompletionTokens: toInt(row.total_completion),
+        totalTokens: toInt(row.total_total),
+        totalCost: toCost(row.total_cost),
+        currency,
+        requestCount: toInt(row.request_count),
+        lastRequestAt: toIsoOrNull(row.last_request_at),
+      });
+    } catch (cause) {
+      return dbError("getSessionTotals query failed", cause);
+    }
+  });
+}
+
+export async function getLastTurn(
+  sessionId: string,
+  currency: string,
+): Promise<Result<LastTurnUsageResult, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<UsageRow>(
+        `SELECT session_id, prompt_tokens, completion_tokens, total_tokens,
+                cached_tokens, reasoning_tokens, cost, provider, model,
+                currency, created_at
+           FROM usage_log
+          WHERE session_id = $1
+            AND currency = $2
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [sessionId, currency],
+      );
+      const row = result.rows[0];
+      if (!row) return ok(null);
+      return ok(toTurnDto(row));
+    } catch (cause) {
+      return dbError("getLastTurn query failed", cause);
+    }
+  });
+}

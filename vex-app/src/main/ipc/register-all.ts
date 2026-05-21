@@ -6,11 +6,15 @@
  */
 
 import { globalCleanup } from "../lifecycle/cleanup-registry.js";
+import { registerApprovalsHandlers } from "./approvals.js";
 import { registerCancelHandler } from "./cancel.js";
 import { registerCapabilitiesHandler } from "./capabilities.js";
 import { registerChatSubmitHandler } from "./chat.js";
 import { registerDatabaseHandlers } from "./database.js";
 import { registerDockerHandlers } from "./docker.js";
+import { registerMessagesHandlers } from "./messages.js";
+import { registerMissionHandlers } from "./mission.js";
+import { registerModelsHandlers } from "./models.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
 import { registerAgentCoreHandler } from "./onboarding/agent-core.js";
 import { registerApiKeysHandler } from "./onboarding/api-keys.js";
@@ -19,17 +23,22 @@ import { registerFinalizeHandler } from "./onboarding/finalize.js";
 import { registerPolymarketSetupHandler } from "./onboarding/polymarket-setup.js";
 import { registerProviderHandler } from "./onboarding/provider.js";
 import { registerWalletHandlers } from "./onboarding/wallets.js";
+import { registerRuntimeHandlers } from "./runtime.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
 import { registerSessionsDeleteHandler } from "./sessions/delete.js";
 import { registerSessionsGetHandler } from "./sessions/get.js";
+import { registerSessionsGetModelHandler } from "./sessions/get-model.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
+import { registerSessionsSetModelHandler } from "./sessions/set-model.js";
 import { registerSessionsSetPinnedHandler } from "./sessions/set-pinned.js";
 import { registerSecretsHandlers } from "./secrets.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerSupportHandler } from "./support.js";
 import { registerSystemHandlers } from "./system.js";
 import { registerTelemetryHandler } from "./telemetry.js";
+import { registerUsageHandlers } from "./usage.js";
 import { registerWalletExportHandler } from "./wallet-export.js";
+import { registerWalletsSessionHandlers } from "./wallets-session.js";
 
 export function registerAllIpcHandlers(): void {
   const teardowns: Array<() => void> = [];
@@ -54,6 +63,20 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsGetHandler());
   teardowns.push(registerSessionsSetPinnedHandler());
   teardowns.push(registerSessionsDeleteHandler());
+  // Agent integration puzzle 1: typed bridge surface for the chat panel,
+  // runtime control, mission contract/commands, approvals, wallet scope,
+  // model picker, and usage meter. Read-only handlers serve real DB
+  // data; mutating handlers fail-close per the per-domain code until
+  // the backing runtime ships in puzzles 03/04/05/06.
+  teardowns.push(...registerMessagesHandlers());
+  teardowns.push(...registerUsageHandlers());
+  teardowns.push(...registerRuntimeHandlers());
+  teardowns.push(...registerMissionHandlers());
+  teardowns.push(...registerApprovalsHandlers());
+  teardowns.push(...registerWalletsSessionHandlers());
+  teardowns.push(...registerModelsHandlers());
+  teardowns.push(registerSessionsGetModelHandler());
+  teardowns.push(registerSessionsSetModelHandler());
   teardowns.push(registerChatSubmitHandler());
   teardowns.push(...registerSettingsHandlers());
   teardowns.push(registerTelemetryHandler());

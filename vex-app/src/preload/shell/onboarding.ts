@@ -1,0 +1,147 @@
+import { CH } from "../../shared/ipc/channels.js";
+import {
+  apiKeysSetInputSchema,
+  polymarketAutoSetupInputSchema,
+} from "../../shared/schemas/api-keys.js";
+import type {
+  ApiKeysSetInput,
+  PolymarketAutoSetupInput,
+} from "../../shared/schemas/api-keys.js";
+import { agentCoreConfigureInputSchema } from "../../shared/schemas/agent-core.js";
+import type { AgentCoreConfigureInput } from "../../shared/schemas/agent-core.js";
+import { embeddingConfigureInputSchema } from "../../shared/schemas/embedding.js";
+import type { EmbeddingConfigureInput } from "../../shared/schemas/embedding.js";
+import { completeSetupInputSchema } from "../../shared/schemas/finalize.js";
+import type { CompleteSetupInput } from "../../shared/schemas/finalize.js";
+import { providerPersistInputSchema } from "../../shared/schemas/provider.js";
+import type { ProviderPersistInput } from "../../shared/schemas/provider.js";
+import {
+  walletGenerateInputSchema,
+  walletImportEvmInputSchema,
+  walletImportSolanaInputSchema,
+  walletOpenBackupFolderInputSchema,
+  walletRestoreInputSchema,
+} from "../../shared/schemas/wallets.js";
+import type {
+  WalletImportEvmInput,
+  WalletImportSolanaInput,
+  WalletOpenBackupFolderInput,
+  WalletRestoreInput,
+} from "../../shared/schemas/wallets.js";
+import {
+  keystoreSetInputSchema,
+  setWizardStateInputSchema,
+} from "../../shared/schemas/wizard.js";
+import type {
+  KeystoreSetInput,
+  SetWizardStateInput,
+} from "../../shared/schemas/wizard.js";
+import type { OnboardingBridge } from "../../shared/types/bridge/shell/onboarding.js";
+import { invokeWithSchema } from "../_dispatch.js";
+
+export const onboarding = {
+  getEnvState() {
+    return invokeWithSchema(CH.onboarding.getEnvState, {});
+  },
+  getWizardState() {
+    return invokeWithSchema(CH.onboarding.getWizardState, {});
+  },
+  setWizardState(input: SetWizardStateInput) {
+    return invokeWithSchema(
+      CH.onboarding.setWizardState,
+      input,
+      setWizardStateInputSchema
+    );
+  },
+  keystoreSet(input: KeystoreSetInput) {
+    return invokeWithSchema(
+      CH.onboarding.keystoreSet,
+      input,
+      keystoreSetInputSchema
+    );
+  },
+  walletGenerateEvm() {
+    return invokeWithSchema(
+      CH.onboarding.walletGenerateEvm,
+      {},
+      walletGenerateInputSchema
+    );
+  },
+  walletGenerateSolana() {
+    return invokeWithSchema(
+      CH.onboarding.walletGenerateSolana,
+      {},
+      walletGenerateInputSchema
+    );
+  },
+  walletImportEvm(input: WalletImportEvmInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletImportEvm,
+      input,
+      walletImportEvmInputSchema
+    );
+  },
+  walletImportSolana(input: WalletImportSolanaInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletImportSolana,
+      input,
+      walletImportSolanaInputSchema
+    );
+  },
+  walletRestoreFromBackup(input: WalletRestoreInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletRestoreFromBackup,
+      input,
+      walletRestoreInputSchema
+    );
+  },
+  walletOpenBackupFolder(input: WalletOpenBackupFolderInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletOpenBackupFolder,
+      input,
+      walletOpenBackupFolderInputSchema
+    );
+  },
+  apiKeysSet(input: ApiKeysSetInput) {
+    return invokeWithSchema(
+      CH.onboarding.apiKeysSet,
+      input,
+      apiKeysSetInputSchema
+    );
+  },
+  polymarketAutoSetup(input: PolymarketAutoSetupInput) {
+    return invokeWithSchema(
+      CH.onboarding.polymarketAutoSetup,
+      input,
+      polymarketAutoSetupInputSchema
+    );
+  },
+  embeddingConfigure(input: EmbeddingConfigureInput) {
+    return invokeWithSchema(
+      CH.onboarding.embeddingConfigure,
+      input,
+      embeddingConfigureInputSchema
+    );
+  },
+  agentCoreConfigure(input: AgentCoreConfigureInput) {
+    return invokeWithSchema(
+      CH.onboarding.agentCoreConfigure,
+      input,
+      agentCoreConfigureInputSchema
+    );
+  },
+  providerPersist(input: ProviderPersistInput) {
+    return invokeWithSchema(
+      CH.onboarding.providerPersist,
+      input,
+      providerPersistInputSchema
+    );
+  },
+  completeSetup(input: CompleteSetupInput) {
+    return invokeWithSchema(
+      CH.onboarding.completeSetup,
+      input,
+      completeSetupInputSchema
+    );
+  },
+} satisfies OnboardingBridge;

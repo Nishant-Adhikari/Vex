@@ -162,3 +162,110 @@ export const walletExportPrivateKeyResultSchema = z
 export type WalletExportPrivateKeyResult = z.infer<
   typeof walletExportPrivateKeyResultSchema
 >;
+
+// ── Agent integration puzzle 1: per-session wallet scope ─────────────────
+//
+// Per-session wallet scope DB rows don't exist yet (planned for puzzle 05/10
+// when wallet scope + mission contract hash + audit storage land together).
+// In puzzle 1 the read-only handler returns an empty scope so the renderer
+// hooks compile end-to-end; the mutating handlers fail closed with
+// `wallets.feature_unavailable`. The DTO shapes ship now so the bridge
+// surface is stable for the puzzle 05/10 UI work.
+//
+// Field names match the canonical refs vocabulary in `BUG-REPORTING.md §3`
+// — `sessionId` is the canonical identifier, never `session_id` snake_case.
+//
+// Provider hot-wallet keys NEVER ship in the Electron app: `intent_id`
+// shape here is local-wallet only. Provider-signed actions still flow
+// through `engine/tools/internal/wallet` paths that puzzle 05 will wrap
+// with a backend signer client; nothing in `vex-app` ever holds provider
+// private keys.
+
+export const WALLET_INTENT_MAX_LIST = 16;
+
+export const sessionWalletScopeDtoSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    /**
+     * Allowed wallet identifiers for this session. Empty array in
+     * puzzle 1; populated once puzzle 05 introduces the wallet scope
+     * rows. UI treats `[]` as "no scope configured yet", not as
+     * "no access".
+     */
+    allowedWalletIds: z.array(z.string().max(128)).max(WALLET_INTENT_MAX_LIST),
+    /**
+     * Default wallet to surface in tool param picker / mission
+     * contract. `null` until the user (or mission contract acceptance)
+     * picks one.
+     */
+    defaultWalletId: z.string().max(128).nullable(),
+  })
+  .strict();
+export type SessionWalletScopeDto = z.infer<typeof sessionWalletScopeDtoSchema>;
+
+export const walletsListSessionInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+  })
+  .strict();
+export type WalletsListSessionInput = z.infer<
+  typeof walletsListSessionInputSchema
+>;
+
+export const walletsSetScopeInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    allowedWalletIds: z.array(z.string().max(128)).max(WALLET_INTENT_MAX_LIST),
+    defaultWalletId: z.string().max(128).nullable(),
+  })
+  .strict();
+export type WalletsSetScopeInput = z.infer<typeof walletsSetScopeInputSchema>;
+
+/**
+ * Prepared-intent placeholder. Puzzle 05 fills the body when DB-backed
+ * `wallet_intents`/`transfer_intents` ship. Puzzle 1 fail-closes with
+ * `wallets.feature_unavailable`; the shape exists so the renderer hook
+ * surface compiles + so puzzle 05 swaps the handler without breaking
+ * the contract.
+ */
+export const preparedIntentDtoSchema = z
+  .object({
+    intentId: z.string().min(1),
+    sessionId: z.string().uuid(),
+    expiresAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type PreparedIntentDto = z.infer<typeof preparedIntentDtoSchema>;
+
+export const walletsGetPreparedIntentInputSchema = z
+  .object({
+    intentId: z.string().min(1),
+  })
+  .strict();
+export type WalletsGetPreparedIntentInput = z.infer<
+  typeof walletsGetPreparedIntentInputSchema
+>;
+
+export const walletsCancelPreparedIntentInputSchema =
+  walletsGetPreparedIntentInputSchema;
+export type WalletsCancelPreparedIntentInput = z.infer<
+  typeof walletsCancelPreparedIntentInputSchema
+>;
+
+export const walletsActionResultSchema = z
+  .object({
+    intentId: z.string().min(1),
+    status: z.enum(["queued", "already_terminal", "unavailable"]),
+    message: z.string(),
+  })
+  .strict();
+export type WalletsActionResult = z.infer<typeof walletsActionResultSchema>;
+
+export const walletsSetScopeResultSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    status: z.enum(["updated", "unchanged", "unavailable"]),
+    message: z.string(),
+  })
+  .strict();
+export type WalletsSetScopeResult = z.infer<typeof walletsSetScopeResultSchema>;

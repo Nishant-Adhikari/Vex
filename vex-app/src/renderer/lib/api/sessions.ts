@@ -28,9 +28,13 @@ import type {
   SessionDeleteResult,
   SessionList,
   SessionListItem,
+  SessionModelDto,
+  SessionSetModelInput,
+  SessionSetModelResult,
   SessionSetPinnedInput,
   SessionSetPinnedResult,
 } from "@shared/schemas/sessions.js";
+import { sessionModelKeys } from "./queryKeys.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
 export const sessionKeys = {
@@ -165,5 +169,43 @@ export function useDeleteSession(): UseMutationResult<
         useUiStore.getState().setActiveSessionId(null);
       }
     },
+  });
+}
+
+// ── Agent integration puzzle 1: per-session model picker ─────────────────
+//
+// `useSessionModel` is read-only and resolves the global env default
+// (`AGENT_PROVIDER`/`AGENT_MODEL`). `useSetSessionModel` fail-closes
+// with `sessions.feature_unavailable` until puzzle 06 lands the
+// `sessions.model_id` migration + engine session context loader.
+//
+// No optimistic update for `useSetSessionModel`: a fail-closed mutation
+// must not seed the cache with a value the runtime can't honour yet.
+
+const SESSION_MODEL_STALE_MS = 30_000;
+
+function sessionModelOptions(sessionId: string) {
+  return queryOptions({
+    queryKey: sessionModelKeys.detail(sessionId),
+    queryFn: () => window.vex.sessions.getModel({ sessionId }),
+    staleTime: SESSION_MODEL_STALE_MS,
+    enabled: sessionId.length > 0,
+  });
+}
+
+export function useSessionModel(
+  sessionId: string | null,
+): UseQueryResult<Result<SessionModelDto>> {
+  return useQuery(sessionModelOptions(sessionId ?? ""));
+}
+
+export function useSetSessionModel(): UseMutationResult<
+  Result<SessionSetModelResult>,
+  Error,
+  SessionSetModelInput
+> {
+  return useMutation({
+    mutationFn: (input) => window.vex.sessions.setModel(input),
+    retry: false,
   });
 }

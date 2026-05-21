@@ -1,0 +1,149 @@
+/**
+ * Bridge surface test — preload exposes only domain-namespaced methods.
+ *
+ * Catches the lead-dev gate: no raw `ipcRenderer.invoke/send/on`
+ * leaking through `contextBridge.exposeInMainWorld`, plus the
+ * shell/agent composer policy from the refactor (must-fix Codex
+ * 1+3): a single composer file, explicit named composition, no
+ * namespace import / `export *` reaching `window.vex`.
+ *
+ * Done as a recursive static scan over the entire preload tree so
+ * the test stays meaningful as new domain files are added under
+ * `shell/` or `agent/`.
+ */
+
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PRELOAD_ROOT = path.resolve(__dirname, "..");
+const PRELOAD_INDEX = path.join(PRELOAD_ROOT, "index.ts");
+
+function walkPreload(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (entry === "__tests__" || entry === "node_modules") continue;
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      out.push(...walkPreload(full));
+    } else if (/\.(ts|tsx)$/.test(entry)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+const PRELOAD_FILES = walkPreload(PRELOAD_ROOT);
+
+describe("preload bridge surface", () => {
+  it("exposes the bridge through exactly one contextBridge.exposeInMainWorld call (target 'vex', in preload/index.ts)", () => {
+    let callCount = 0;
+    let matchedTarget: string | null = null;
+    let matchedFile: string | null = null;
+    // Require the second positional arg to be a bare identifier (the
+    // assembled api object) rather than a string or `ipcRenderer`. A
+    // loose comment with the text "contextBridge.exposeInMainWorld" is
+    // discounted by also requiring `(\s*["']vex["']\s*,\s*<ident>\s*)`.
+    const callPattern =
+      /contextBridge\.exposeInMainWorld\(\s*(["'])([^"']+)\1\s*,\s*([A-Za-z_$][\w$]*)\s*\)/;
+
+    for (const file of PRELOAD_FILES) {
+      const src = readFileSync(file, "utf8");
+      const occurrences = src.match(/contextBridge\.exposeInMainWorld/g);
+      if (occurrences) callCount += occurrences.length;
+      const matched = src.match(callPattern);
+      if (matched) {
+        matchedTarget = matched[2] ?? null;
+        matchedFile = file;
+      }
+    }
+    expect(callCount).toBe(1);
+    expect(matchedTarget).toBe("vex");
+    expect(matchedFile).toBe(PRELOAD_INDEX);
+  });
+
+  it("no preload file exposes raw invoke:/send:/on:/ipcRenderer: keys", () => {
+    // These patterns catch object keys of the shape `invoke:`, `send:`,
+    // `on:`, `ipcRenderer:`. Subscription helpers like `onProgress:`,
+    // `onComposeLog:`, `onInstallProgress:` are safe because the regex
+    // anchors the `on` word boundary against `\s*:` directly.
+    const forbiddenKeyPatterns: ReadonlyArray<RegExp> = [
+      /\binvoke\s*:/,
+      /\bsend\s*:/,
+      /\bon\s*:/,
+      /\bipcRenderer\s*:/,
+    ];
+    for (const file of PRELOAD_FILES) {
+      const src = readFileSync(file, "utf8");
+      for (const pattern of forbiddenKeyPatterns) {
+        expect(src, `${file} matched forbidden key ${pattern}`).not.toMatch(
+          pattern,
+        );
+      }
+    }
+  });
+
+  it("no preload barrel uses export * (policy: explicit named exports only)", () => {
+    for (const file of PRELOAD_FILES) {
+      const src = readFileSync(file, "utf8");
+      expect(src, `${file} uses export *`).not.toMatch(/\bexport\s*\*\s/);
+    }
+  });
+
+  it("composer in preload/index.ts uses explicit shellBridge + agentBridge spread and satisfies VexBridge", () => {
+    const src = readFileSync(PRELOAD_INDEX, "utf8");
+    // No namespace imports (`import * as foo from "..."`) — Codex policy.
+    expect(src).not.toMatch(/\bimport\s*\*\s+as\b/);
+    // Explicit spread of the two group composers.
+    expect(src).toMatch(/\{\s*\.\.\.shellBridge\s*,\s*\.\.\.agentBridge\s*\}/);
+    // Pinned type guard.
+    expect(src).toMatch(/satisfies\s+VexBridge/);
+    // Imports the group barrels by name, not as namespace.
+    expect(src).toMatch(/from\s+["']\.\/shell\/index\.js["']/);
+    expect(src).toMatch(/from\s+["']\.\/agent\/index\.js["']/);
+  });
+
+  it("every puzzle-1 CH.* channel is referenced somewhere in the preload tree", () => {
+    const expected = [
+      "CH.messages.list",
+      "CH.messages.getTail",
+      "CH.messages.getAround",
+      "CH.runtime.getState",
+      "CH.runtime.requestPause",
+      "CH.runtime.requestStop",
+      "CH.runtime.requestResume",
+      "CH.runtime.cancelWake",
+      "CH.mission.getDraft",
+      "CH.mission.updateDraft",
+      "CH.mission.getDiff",
+      "CH.mission.acceptContract",
+      "CH.mission.start",
+      "CH.mission.continue",
+      "CH.mission.recover",
+      "CH.mission.rewind",
+      "CH.mission.restore",
+      "CH.mission.renew",
+      "CH.mission.stop",
+      "CH.approvals.listPending",
+      "CH.approvals.get",
+      "CH.approvals.approve",
+      "CH.approvals.reject",
+      "CH.approvals.getHistory",
+      "CH.wallets.listSessionWallets",
+      "CH.wallets.setSessionWalletScope",
+      "CH.wallets.getPreparedIntent",
+      "CH.wallets.cancelPreparedIntent",
+      "CH.models.listAvailable",
+      "CH.usage.getSessionTotals",
+      "CH.usage.getLastTurn",
+      "CH.sessions.getModel",
+      "CH.sessions.setModel",
+    ];
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    for (const channel of expected) {
+      expect(corpus, `missing reference: ${channel}`).toContain(channel);
+    }
+  });
+});

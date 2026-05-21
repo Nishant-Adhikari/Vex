@@ -196,3 +196,73 @@ export const sessionDeleteResultSchema = z
   })
   .strict();
 export type SessionDeleteResult = z.infer<typeof sessionDeleteResultSchema>;
+
+// ── Agent integration puzzle 1: per-session model contract ───────────────
+//
+// `sessions.model_id` column does NOT exist yet — puzzle 06 adds the
+// migration. Puzzle 1 ships the contract so the renderer model picker
+// can wire end-to-end now and so the read-only handler can resolve the
+// global default without faking DB state.
+//
+// `source` is the canonical discriminator: `"global_default"` means
+// the resolver fell back to `AGENT_PROVIDER`/`AGENT_MODEL` env;
+// `"unconfigured"` means neither a per-session value nor a global
+// default is set (renderer surfaces "Provider not configured"). The
+// `"explicit"` variant is reserved for puzzle 06 once `sessions.model_id`
+// lands — including it here keeps the type closed against silent
+// migration drift.
+
+export const sessionModelSourceSchema = z.enum([
+  "global_default",
+  "unconfigured",
+  "explicit",
+]);
+export type SessionModelSource = z.infer<typeof sessionModelSourceSchema>;
+
+export const sessionModelDtoSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    /** Resolved provider id (e.g. `"openrouter"`). `null` when source = "unconfigured". */
+    provider: z.string().nullable(),
+    /** Resolved model id. `null` when source = "unconfigured". */
+    modelId: z.string().nullable(),
+    source: sessionModelSourceSchema,
+    /**
+     * Per-session override timestamp. Always `null` in puzzle 1 (no DB
+     * column yet); puzzle 06 will populate it when the user picks a
+     * model in the chat header.
+     */
+    updatedAt: z.string().datetime({ offset: true }).nullable(),
+  })
+  .strict();
+export type SessionModelDto = z.infer<typeof sessionModelDtoSchema>;
+
+export const sessionGetModelInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+  })
+  .strict();
+export type SessionGetModelInput = z.infer<typeof sessionGetModelInputSchema>;
+
+export const sessionSetModelInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    /** Provider-qualified model identifier (e.g. `"openrouter/anthropic/claude-opus-4.7"`). */
+    modelId: z.string().min(1).max(200),
+  })
+  .strict();
+export type SessionSetModelInput = z.infer<typeof sessionSetModelInputSchema>;
+
+/**
+ * Future-shape contract for `sessions.setModel`. Puzzle 1 fail-closes
+ * with `sessions.feature_unavailable`; puzzle 06 fills the body.
+ */
+export const sessionSetModelResultSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    modelId: z.string().min(1).max(200),
+    status: z.enum(["updated", "unchanged", "unavailable"]),
+    message: z.string(),
+  })
+  .strict();
+export type SessionSetModelResult = z.infer<typeof sessionSetModelResultSchema>;
