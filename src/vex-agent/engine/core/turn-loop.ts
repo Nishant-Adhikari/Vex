@@ -61,6 +61,7 @@ import { persistToolResultWithOverflow } from "./tool-output-overflow.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
@@ -594,7 +595,7 @@ export async function runTurnLoop(
       if (context.missionRunId) {
         await mergeOperatorInstructions();
 
-        await messagesRepo.addEngineMessage(
+        await appendEngineMessage(
           context.sessionId,
           "[Engine: continue — no stop condition met. Proceed with next action.]",
           { source: "engine", messageType: "continue", visibility: "internal" },

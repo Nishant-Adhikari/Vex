@@ -146,4 +146,15 @@ describe("preload bridge surface", () => {
       expect(corpus, `missing reference: ${channel}`).toContain(channel);
     }
   });
+
+  it("agent integration puzzle 2 exposes EV.engine.transcriptAppend and a bridge method", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus, "EV.engine.transcriptAppend not referenced in preload").toContain(
+      "EV.engine.transcriptAppend",
+    );
+    expect(
+      corpus,
+      "onTranscriptAppend not exposed by the preload composer",
+    ).toContain("onTranscriptAppend");
+  });
 });

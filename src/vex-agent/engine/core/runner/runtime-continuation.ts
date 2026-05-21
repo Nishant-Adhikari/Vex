@@ -11,7 +11,7 @@
  */
 
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import { currentDate } from "@vex-agent/engine/runtime-clock.js";
 import type { RuntimeStopReason, StopReason } from "../../types.js";
 
@@ -54,7 +54,7 @@ export async function scheduleRuntimeContinuation(
   const scheduledAt = pending?.dueAt ?? dueAt.toISOString();
   const action = row ? "scheduled" : "existing pending wake retained";
 
-  await messagesRepo.addEngineMessage(
+  await appendEngineMessage(
     input.sessionId,
     `[Engine: runtime_yield - ${input.trigger}; ${action}; next check: ${scheduledAt}]`,
     {

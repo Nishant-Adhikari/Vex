@@ -15,7 +15,7 @@ import { runTurnLoop } from "../turn-loop.js";
 import { getOpenAITools } from "@vex-agent/tools/registry.js";
 import { computeBand, type ContextUsageBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
 
@@ -39,7 +39,7 @@ export async function processAgentTurn(
   if (!config) throw new Error("No inference config available");
 
   // Save user message
-  await messagesRepo.addMessage(
+  await appendMessage(
     sessionId,
     { role: "user", content: userInput, timestamp: new Date().toISOString() },
     { source: "user", messageType: "chat", visibility: "user" },

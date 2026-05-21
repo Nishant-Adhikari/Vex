@@ -217,7 +217,7 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
 
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 
 function buildProductionDeps(): WakeDeps {
   return {
@@ -226,7 +226,7 @@ function buildProductionDeps(): WakeDeps {
     casFlipToRunning: (runId, fromStatuses) =>
       missionRunsRepo.casFlipToRunning(runId, fromStatuses),
     injectWakeBanner: async (sessionId, reason, dueAt) => {
-      await messagesRepo.addEngineMessage(
+      await appendEngineMessage(
         sessionId,
         `[Engine: wake_due — ${reason ?? "no reason provided"} (scheduled: ${dueAt})]`,
         {

@@ -24,7 +24,7 @@ import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools } from "@vex-agent/tools/registry.js";
 import { computeBand, type ContextUsageBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
@@ -60,7 +60,7 @@ async function addMissionActivationMessage(
     "Execute the frozen Mission Contract now.]",
   ].join(" ");
 
-  await messagesRepo.addEngineMessage(
+  await appendEngineMessage(
     input.sessionId,
     content,
     {

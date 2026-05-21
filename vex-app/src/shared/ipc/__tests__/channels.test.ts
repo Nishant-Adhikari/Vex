@@ -46,14 +46,14 @@ describe("CH / EV channel constants", () => {
     }
   });
 
-  it("does not expose any vex:event:engine:* channel in puzzle 1", () => {
-    // Event spine lives in puzzle 02. Adding `EV.engine.*` here without
-    // a publishing path would mislead the renderer into wiring listeners
-    // that never fire.
-    const events = collectStrings(EV);
-    for (const channel of events) {
-      expect(channel).not.toMatch(/^vex:event:engine:/);
-    }
+  it("puzzle 02 ships EV.engine.transcriptAppend with the canonical channel name", () => {
+    // Event spine arrived in puzzle 02 — `setupTranscriptBridge` (in
+    // `main/agent/transcript-bridge.ts`) is its publishing path. The
+    // renderer subscribes through `window.vex.engine.onTranscriptAppend`,
+    // which validates the payload through `transcriptAppendEventSchema`
+    // before invoking the callback.
+    expect(EV.engine.transcriptAppend).toBe("vex:event:engine:transcriptAppend");
+    expect(EV.engine.transcriptAppend).toMatch(EVENT_PATTERN);
   });
 
   it("CH.messages/runtime/mission/approvals/wallets/models/usage namespaces exist", () => {

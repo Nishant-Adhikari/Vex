@@ -9,7 +9,7 @@
 import type { TurnResult } from "../../types.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import { requireMissionPromptContextFromSnapshot } from "../../mission/run-contract.js";
 
 export async function recoverFailedMissionRun(sessionId: string): Promise<TurnResult> {
@@ -40,7 +40,7 @@ export async function recoverFailedMissionRun(sessionId: string): Promise<TurnRe
     recoveredFromRunId: failed.id,
   });
 
-  await messagesRepo.addEngineMessage(
+  await appendEngineMessage(
     sessionId,
     [
       "[Engine: mission_recovered — The operator requested recovery from a failed mission run.",

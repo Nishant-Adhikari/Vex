@@ -17,6 +17,7 @@
 import type { VexAgentBridge } from "../../shared/types/bridge/agent/index.js";
 import { approvals } from "./approvals.js";
 import { chat } from "./chat.js";
+import { engine } from "./engine.js";
 import { messages } from "./messages.js";
 import { mission } from "./mission.js";
 import { models } from "./models.js";
@@ -35,4 +36,5 @@ export const agentBridge = {
   wallets,
   models,
   usage,
+  engine,
 } satisfies VexAgentBridge;

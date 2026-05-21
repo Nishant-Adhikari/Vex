@@ -1,5 +1,5 @@
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import type { MessageMetadata } from "@vex-agent/db/repos/messages.js";
+import { appendMessage } from "@vex-agent/engine/events/index.js";
 import * as toolOutputBlobsRepo from "@vex-agent/db/repos/tool-output-blobs.js";
 import type { ToolOutputShapeKind } from "@vex-agent/db/repos/tool-output-blobs.js";
 import {
@@ -51,7 +51,7 @@ export async function persistToolResultWithOverflow(
       visibility: "internal",
       payload: { success },
     };
-    await messagesRepo.addMessage(
+    await appendMessage(
       sessionId,
       { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
       metadata,
@@ -93,7 +93,7 @@ export async function persistToolResultWithOverflow(
       visibility: "internal",
       payload: { success },
     };
-    await messagesRepo.addMessage(
+    await appendMessage(
       sessionId,
       { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
       metadata,
@@ -114,7 +114,7 @@ export async function persistToolResultWithOverflow(
     },
   };
 
-  await messagesRepo.addMessage(
+  await appendMessage(
     sessionId,
     { role: "tool", content: stub, toolCallId, timestamp: new Date().toISOString() },
     metadata,

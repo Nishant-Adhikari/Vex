@@ -219,6 +219,16 @@ export const EV = {
   updater: {
     available: "vex:event:updater:available",
   },
+  /**
+   * Engine spine (agent integration puzzle 2). `transcriptAppend` fires
+   * after every committed `messages` INSERT — renderer invalidates the
+   * matching session's TanStack query prefix and re-fetches DTOs through
+   * `messages.getTail`. DB remains source of truth; payload carries only
+   * meta (messageId + role + createdAt + messageType + correlationId).
+   */
+  engine: {
+    transcriptAppend: "vex:event:engine:transcriptAppend",
+  },
 } as const;
 
 export type ChannelName = string;

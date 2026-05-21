@@ -14,7 +14,7 @@ import { buildKnowledgeStateBanner } from "../prompts/knowledge-state.js";
 import { buildMemoryStateBanner } from "../prompts/memory-state.js";
 import { sanitizeForSystemPrompt } from "../prompts/sanitize.js";
 import { repairOrphanedToolCalls } from "./transcript-integrity.js";
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendMessage } from "@vex-agent/engine/events/index.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
@@ -229,7 +229,7 @@ export async function saveAssistantMessage(
     visibility: "user",
   };
 
-  await messagesRepo.addMessage(
+  await appendMessage(
     sessionId,
     {
       role: "assistant",

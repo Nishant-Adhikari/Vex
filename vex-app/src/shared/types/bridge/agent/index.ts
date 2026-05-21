@@ -15,6 +15,7 @@
 
 import type { ApprovalsBridge } from "./approvals.js";
 import type { ChatBridge } from "./chat.js";
+import type { EngineEventsBridge } from "./engine.js";
 import type { MessagesBridge } from "./messages.js";
 import type { MissionBridge } from "./mission.js";
 import type { ModelsBridge } from "./models.js";
@@ -25,6 +26,7 @@ import type { WalletsBridge } from "./wallets.js";
 
 export type { ApprovalsBridge } from "./approvals.js";
 export type { ChatBridge } from "./chat.js";
+export type { EngineEventsBridge } from "./engine.js";
 export type { MessagesBridge } from "./messages.js";
 export type { MissionBridge } from "./mission.js";
 export type { ModelsBridge } from "./models.js";
@@ -43,4 +45,10 @@ export interface VexAgentBridge {
   readonly wallets: WalletsBridge;
   readonly models: ModelsBridge;
   readonly usage: UsageBridge;
+  /**
+   * Engine -> renderer push events (transcript spine, future runtime
+   * deltas, etc.). The namespace mirrors `EV.engine.<topic>` so the
+   * channel-name <-> bridge-method mapping stays grep-friendly.
+   */
+  readonly engine: EngineEventsBridge;
 }

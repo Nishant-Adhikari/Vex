@@ -147,3 +147,37 @@ export const messagesGetAroundInputSchema = z
 export type MessagesGetAroundInput = z.infer<
   typeof messagesGetAroundInputSchema
 >;
+
+// ── Live event spine (agent integration puzzle 2) ─────────────────────
+// `transcript-bus.ts` in `src/vex-agent/engine/events` emits a
+// `TranscriptAppendEvent` after every committed `messages` INSERT. The
+// main-process bridge revalidates the payload through this schema before
+// `broadcastToAllWindows` — the preload re-validates per event so the
+// renderer never trusts a malformed payload.
+//
+// Event = signal. DB stays source of truth. Renderer must fetch the DTO
+// through `messages.getTail` after invalidation; it must NOT reconstruct
+// the message row from the event payload.
+
+/** Literal kept in sync with the engine `TRANSCRIPT_APPEND_EVENT_TYPE`. */
+export const TRANSCRIPT_APPEND_EVENT_TYPE = "engine.transcript.append" as const;
+
+export const transcriptAppendEventSchema = z
+  .object({
+    type: z.literal(TRANSCRIPT_APPEND_EVENT_TYPE),
+    sessionId: z.string().uuid(),
+    /** Inserted `messages.id` SERIAL PK — stable across restarts. */
+    messageId: z.number().int().positive(),
+    role: messageRoleSchema,
+    /** Canonical ISO timestamp returned by the INSERT RETURNING clause. */
+    createdAt: z.string().datetime({ offset: true }),
+    /**
+     * Engine marker discriminator — mirrors `messages.message_type`.
+     * `null` means a plain chat row.
+     */
+    messageType: z.string().nullable(),
+    /** Optional caller correlation id (chat turn, mission run, wake job). */
+    correlationId: z.string().nullable(),
+  })
+  .strict();
+export type TranscriptAppendEvent = z.infer<typeof transcriptAppendEventSchema>;

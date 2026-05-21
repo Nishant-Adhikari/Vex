@@ -30,19 +30,32 @@ export const onboardingKeys = {
 // handlers do NOT invalidate query caches — there is no state change to
 // surface until the matching puzzle ships the runtime.
 
+// Puzzle 02 re-key: `sessionId` lives at position 1 so the live-event
+// hook (`useTranscriptLiveSync`) can call
+// `queryClient.invalidateQueries({ queryKey: messagesKeys.forSession(s) })`
+// and match every tail / list / around variant for that session at once.
+// Previous layout had `sessionId` at position 2 (after "tail"/"list"/
+// "around"), which forced a per-variant + per-limit invalidation walk.
 export const messagesKeys = {
   all: ["messages"] as const,
+  /**
+   * Prefix for every messages query of a session. Used as the
+   * invalidation target on `engine.transcriptAppend` so any active
+   * variant (tail with any limit, list with any cursor, around with any
+   * window) refetches in one call.
+   */
+  forSession: (sessionId: string) => ["messages", sessionId] as const,
   tail: (sessionId: string, limit: number) =>
-    ["messages", "tail", sessionId, { limit }] as const,
+    ["messages", sessionId, "tail", { limit }] as const,
   list: (sessionId: string, limit: number, cursorId: number | null) =>
-    ["messages", "list", sessionId, { limit, cursorId }] as const,
+    ["messages", sessionId, "list", { limit, cursorId }] as const,
   around: (
     sessionId: string,
     messageId: number,
     before: number,
     after: number,
   ) =>
-    ["messages", "around", sessionId, messageId, { before, after }] as const,
+    ["messages", sessionId, "around", messageId, { before, after }] as const,
 };
 
 export const usageKeys = {

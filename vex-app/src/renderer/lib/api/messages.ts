@@ -1,14 +1,19 @@
 /**
- * Messages TanStack Query hooks (agent integration puzzle 1).
+ * Messages TanStack Query hooks (agent integration puzzle 1) + live
+ * transcript sync hook (puzzle 02).
  *
- * Read-only — the renderer pulls paginated transcript pages through
- * `window.vex.messages.*`. Mutation paths land in puzzle 02 once the
- * event spine + transcript append wrapper exist.
+ * The transcript reads are read-only: renderer pulls paginated pages
+ * through `window.vex.messages.*`. Puzzle 02 adds the event spine —
+ * `useTranscriptLiveSync` subscribes to `EV.engine.transcriptAppend`,
+ * invalidates the session's TanStack query prefix on a matching event,
+ * and runs a 30s fallback poll so a missed event still surfaces.
  */
 
+import { useEffect } from "react";
 import {
   queryOptions,
   useQuery,
+  useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
@@ -100,4 +105,53 @@ export function useMessageAround(
       after,
     }),
   );
+}
+
+/**
+ * 30s fallback invalidation cadence used when the in-process bus event
+ * is missed (engine writer outside main, dropped IPC payload, etc.).
+ * Exported for tests.
+ */
+export const TRANSCRIPT_LIVE_FALLBACK_POLL_MS = 30_000;
+
+/**
+ * Subscribe the active session to the engine transcript event spine.
+ *
+ * Two refresh layers (codex review constraint #2):
+ *  - **event-driven**: matching `EV.engine.transcriptAppend` payload
+ *    invalidates `messagesKeys.forSession(sessionId)` so every active
+ *    `useMessageTail` / `useMessageList` / `useMessageAround` for that
+ *    session refetches at once;
+ *  - **30s fallback poll**: `staleTime: 5s` only marks cache as stale;
+ *    it does NOT trigger a refetch on its own. A missed event in an
+ *    active, focused window could otherwise leave the UI stuck. The
+ *    interval invalidation re-uses the same prefix so the cost is one
+ *    `invalidateQueries` call per 30s while the session is active.
+ *
+ * Hook is a pure side effect — no render output. Mount once per active
+ * session (puzzle 02 mounts it in `SessionPanel`).
+ */
+export function useTranscriptLiveSync(sessionId: string | null): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (sessionId === null || sessionId.length === 0) return;
+
+    const off = window.vex.engine.onTranscriptAppend((event) => {
+      if (event.sessionId !== sessionId) return;
+      void queryClient.invalidateQueries({
+        queryKey: messagesKeys.forSession(sessionId),
+      });
+    });
+
+    const intervalId = window.setInterval(() => {
+      void queryClient.invalidateQueries({
+        queryKey: messagesKeys.forSession(sessionId),
+      });
+    }, TRANSCRIPT_LIVE_FALLBACK_POLL_MS);
+
+    return () => {
+      off();
+      window.clearInterval(intervalId);
+    };
+  }, [sessionId, queryClient]);
 }

@@ -10,7 +10,7 @@ import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
-import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import { appendMessage } from "@vex-agent/engine/events/index.js";
 import { hydrateEngineSession } from "./hydrate.js";
 import { refreshBlobTtlForRecentMessages } from "@vex-agent/engine/wake/blob-refresh.js";
 import logger from "@utils/logger.js";
@@ -114,7 +114,7 @@ export async function approveAndResume(approvalId: string): Promise<TurnResult> 
     toolContext,
   );
 
-  await messagesRepo.addMessage(
+  await appendMessage(
     sessionId,
     {
       role: "tool",

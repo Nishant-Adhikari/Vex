@@ -5,6 +5,7 @@
  * so app quit / reload removes them cleanly.
  */
 
+import { setupAgentBridges } from "../agent/index.js";
 import { globalCleanup } from "../lifecycle/cleanup-registry.js";
 import { registerApprovalsHandlers } from "./approvals.js";
 import { registerCancelHandler } from "./cancel.js";
@@ -78,6 +79,10 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsGetModelHandler());
   teardowns.push(registerSessionsSetModelHandler());
   teardowns.push(registerChatSubmitHandler());
+  // Agent integration puzzle 2: engine -> renderer transcript event spine.
+  // Subscribes the in-process transcript bus to the IPC broadcaster so
+  // committed `messages` INSERTs surface as `EV.engine.transcriptAppend`.
+  teardowns.push(setupAgentBridges());
   teardowns.push(...registerSettingsHandlers());
   teardowns.push(registerTelemetryHandler());
   teardowns.push(registerSupportHandler());

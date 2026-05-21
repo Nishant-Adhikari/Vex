@@ -8,6 +8,8 @@ import {
   messagesGetTailInputSchema,
   messagesListInputSchema,
   sessionMessageDtoSchema,
+  transcriptAppendEventSchema,
+  TRANSCRIPT_APPEND_EVENT_TYPE,
 } from "../messages.js";
 
 const ISO = "2026-05-21T10:00:00.000Z";
@@ -116,5 +118,73 @@ describe("messages schemas", () => {
       hasMore: false,
     });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("transcriptAppendEventSchema (agent integration puzzle 02)", () => {
+  const VALID = {
+    type: TRANSCRIPT_APPEND_EVENT_TYPE,
+    sessionId: SESSION,
+    messageId: 7,
+    role: "assistant" as const,
+    createdAt: ISO,
+    messageType: "chat",
+    correlationId: null,
+  };
+
+  it("accepts a canonical engine.transcript.append payload", () => {
+    expect(transcriptAppendEventSchema.safeParse(VALID).success).toBe(true);
+  });
+
+  it("rejects payloads with the wrong literal type", () => {
+    expect(
+      transcriptAppendEventSchema.safeParse({
+        ...VALID,
+        type: "engine.transcript.update",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects non-positive messageId", () => {
+    expect(
+      transcriptAppendEventSchema.safeParse({ ...VALID, messageId: 0 }).success,
+    ).toBe(false);
+    expect(
+      transcriptAppendEventSchema.safeParse({ ...VALID, messageId: -1 }).success,
+    ).toBe(false);
+  });
+
+  it("rejects non-UUID sessionId", () => {
+    expect(
+      transcriptAppendEventSchema.safeParse({
+        ...VALID,
+        sessionId: "not-a-uuid",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects role outside the canonical enum", () => {
+    expect(
+      transcriptAppendEventSchema.safeParse({ ...VALID, role: "hacker" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects extra fields (.strict)", () => {
+    expect(
+      transcriptAppendEventSchema.safeParse({
+        ...VALID,
+        extra: "smuggle",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts null messageType and null correlationId", () => {
+    expect(
+      transcriptAppendEventSchema.safeParse({
+        ...VALID,
+        messageType: null,
+        correlationId: null,
+      }).success,
+    ).toBe(true);
   });
 });

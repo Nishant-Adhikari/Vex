@@ -6,6 +6,10 @@
 
 import type { Message, MessageWithId } from "@vex-agent/db/repos/messages.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
+import {
+  appendEngineMessage,
+  appendMessage,
+} from "@vex-agent/engine/events/index.js";
 
 export const OPERATOR_INTERRUPT_MESSAGE_TYPE = "operator_interrupt";
 
@@ -35,7 +39,7 @@ export async function addOperatorInstruction(
   content: string,
   payload: Record<string, unknown> = {},
 ): Promise<void> {
-  await messagesRepo.addMessage(
+  await appendMessage(
     sessionId,
     { role: "user", content, timestamp: new Date().toISOString() },
     {
@@ -48,7 +52,7 @@ export async function addOperatorInstruction(
 }
 
 export async function addOperatorCue(sessionId: string): Promise<void> {
-  await messagesRepo.addEngineMessage(
+  await appendEngineMessage(
     sessionId,
     OPERATOR_INTERRUPT_CUE,
     {

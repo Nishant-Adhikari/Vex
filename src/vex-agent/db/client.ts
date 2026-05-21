@@ -107,6 +107,38 @@ export async function execute(sql: string, params?: unknown[]): Promise<number> 
   return executeWith(getPool(), sql, params);
 }
 
+/**
+ * Run `fn` inside a `BEGIN`/`COMMIT` block on a dedicated `PoolClient`.
+ * Rollback on throw, always release the client. Returns whatever `fn`
+ * resolves with.
+ *
+ * The wrapper exists so callers that need atomicity across multiple
+ * statements (e.g. `appendMessage` — INSERT messages + UPDATE
+ * sessions.message_count, then emit-after-commit) get one obvious entry
+ * point instead of hand-rolling `getPool().connect()` + try/finally
+ * everywhere. ROLLBACK errors are swallowed with `.catch(() => undefined)`
+ * so they cannot mask the original failure — the original throw is what
+ * the caller cares about.
+ */
+export async function withTransaction<T>(
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    // Swallow rollback errors so they cannot mask the original failure
+    // (the rethrow below carries the actionable diagnostic).
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /** Graceful shutdown — drain the pool. */
 export async function closePool(): Promise<void> {
   if (pool) {

@@ -18,6 +18,7 @@ import {
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
 import { useSubmitChat } from "../../lib/api/chat.js";
+import { useTranscriptLiveSync } from "../../lib/api/messages.js";
 import { cn } from "../../lib/utils.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -73,6 +74,11 @@ const TRUST_BADGES: ReadonlyArray<{
 
 export function SessionPanel(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
+  // Agent integration puzzle 2: subscribe the active session to the
+  // engine transcript event spine + 30s fallback poll. Pure side
+  // effect — no UI surface here. Visible transcript UI lands in
+  // puzzle 08 (chat panel).
+  useTranscriptLiveSync(activeSessionId);
   const detailQuery = useSession(activeSessionId);
   const submitChat = useSubmitChat();
   const [draft, setDraft] = useState<string>("");
