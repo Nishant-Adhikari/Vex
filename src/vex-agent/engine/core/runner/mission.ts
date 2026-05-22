@@ -15,7 +15,7 @@ import {
 import { hydrateEngineSession } from "../hydrate.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
 import { runTurnLoop } from "../turn-loop.js";
-import { isReadyToStart } from "../../mission/validator.js";
+import { commitMissionStart } from "../../mission/commit-start.js";
 import {
   buildMissionRunContractSnapshot,
   resolveMissionPromptContext,
@@ -89,25 +89,18 @@ export async function startMission(missionId: string): Promise<TurnResult> {
   const config = await provider.loadConfig();
   if (!config) throw new Error("No inference config available");
 
-  // Load and validate
-  const mission = await missionsRepo.getMission(missionId);
-  if (!mission) throw new Error(`Mission ${missionId} not found`);
-
-  if (!isReadyToStart(mission)) {
-    throw new Error(`Mission ${missionId} is not ready — missing required fields`);
-  }
-
-  // Guard: no overlapping active runs
-  const existingRun = await missionRunsRepo.getActiveRun(missionId);
-  if (existingRun) {
-    throw new Error(`Mission ${missionId} already has an active run: ${existingRun.id}`);
-  }
+  // Unlocked preflight read — confirms the row exists + surfaces
+  // `rootSessionId` for the lease claim. The locked re-read inside
+  // `commitMissionStart` is the source of truth for acceptance,
+  // readiness, and snapshot building.
+  const preflightMission = await missionsRepo.getMission(missionId);
+  if (!preflightMission) throw new Error(`Mission ${missionId} not found`);
 
   // Puzzle 03 — claim the session lease BEFORE any state mutation
   // (codex blocker #2): a concurrent `startMission` / `chat.submit` /
   // `requestResume` against the same session must not interleave with
   // the mission flip + run create + activation message.
-  const sessionId = mission.rootSessionId;
+  const sessionId = preflightMission.rootSessionId;
   const ownerId = `start-mission-${missionId}-${Math.random().toString(36).slice(2, 10)}`;
   const { claimSessionLease } = await import("../../runtime/lease-and-status.js");
   const claim = await claimSessionLease({
@@ -128,25 +121,52 @@ export async function startMission(missionId: string): Promise<TurnResult> {
     ttlMs: 5 * 60_000,
   });
 
+  // Hold `runId` in the outer scope so the `finally` lease release can
+  // attribute the lease drop to the run that was actually created.
+  // CRITICAL: this MUST stay null until `commitMissionStart` returns
+  // `committed` — otherwise a rejection branch would let the release
+  // path emit a phantom `missionRunId` for a run that never reached
+  // the DB.
   let runId: string | null = null;
   try {
-    // Transition: ready → running (FIRST state mutation, under lease)
-    await missionsRepo.setStatus(missionId, "running");
-    await missionsRepo.setApprovedAt(missionId);
-
-    // Create run
-    runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Puzzle 04 — atomic gate + state flip + createRun. The row lock
+    // is held across acceptance check → readiness → no-active-run →
+    // status flip → snapshot → createRun, so a concurrent
+    // `updateDraft` between gate and flip cannot stale the contract.
+    const candidateRunId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const commit = await commitMissionStart({ missionId, runId: candidateRunId });
+    switch (commit.outcome) {
+      case "mission_not_found":
+        throw new Error(`Mission ${missionId} not found`);
+      case "not_accepted":
+        throw new Error(
+          `Mission ${missionId} has not been accepted — open the contract card and click Accept contract before starting.`,
+        );
+      case "stale_acceptance":
+        throw new Error(
+          `Mission ${missionId} contract changed since acceptance — re-accept the current contract before starting.`,
+        );
+      case "not_ready":
+        throw new Error(
+          `Mission ${missionId} is not ready — missing required fields: ${commit.missingFields.join(", ")}`,
+        );
+      case "active_run_exists":
+        throw new Error(
+          `Mission ${missionId} already has an active run: ${commit.missionRunId}`,
+        );
+      case "committed":
+        break;
+    }
+    // Only assign the outer scope id AFTER the COMMIT succeeded.
+    runId = commit.runId;
+    const mission = commit.mission;
+    const contractSnapshot = commit.contractSnapshot;
 
     // Permission comes from the session row — immutable per session, set at
     // session creation by the wizard / main app session creator.
     const session = await sessionsRepo.getSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
     const permission: Permission = session.permission;
-
-    const contractSnapshot = buildMissionRunContractSnapshot(mission);
-    await missionRunsRepo.createRun(runId, missionId, sessionId, {
-      contractSnapshotJson: contractSnapshot,
-    });
 
     return await startMissionRunBody({
       missionId,

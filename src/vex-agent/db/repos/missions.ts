@@ -162,18 +162,29 @@ export async function updateDraft(id: string, fields: MissionDraftRow): Promise<
   );
 }
 
-export async function setStatus(id: string, status: string): Promise<void> {
-  await execute(
-    "UPDATE missions SET status = $1, updated_at = NOW() WHERE id = $2",
-    [status, id],
-  );
+export async function setStatus(
+  id: string,
+  status: string,
+  client?: PoolClient,
+): Promise<void> {
+  const sql = "UPDATE missions SET status = $1, updated_at = NOW() WHERE id = $2";
+  if (client) {
+    await executeWith(client, sql, [status, id]);
+  } else {
+    await execute(sql, [status, id]);
+  }
 }
 
-export async function setApprovedAt(id: string): Promise<void> {
-  await execute(
-    "UPDATE missions SET approved_at = NOW(), updated_at = NOW() WHERE id = $1",
-    [id],
-  );
+export async function setApprovedAt(
+  id: string,
+  client?: PoolClient,
+): Promise<void> {
+  const sql = "UPDATE missions SET approved_at = NOW(), updated_at = NOW() WHERE id = $1";
+  if (client) {
+    await executeWith(client, sql, [id]);
+  } else {
+    await execute(sql, [id]);
+  }
 }
 
 export async function clearApprovedAt(id: string): Promise<void> {

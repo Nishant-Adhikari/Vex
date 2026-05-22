@@ -47,10 +47,25 @@ vi.mock("../../../../vex-agent/engine/core/turn-loop.js", () => ({
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   createDraft: (...a: unknown[]) => mockCreateDraft(...a),
   getMission: (...a: unknown[]) => mockGetMission(...a),
+  // Puzzle 04 acceptance gate uses a tx-aware lookup; reuse the same
+  // mock so fixtures shape both reads consistently.
+  getMissionForUpdate: (...a: unknown[]) => mockGetMission(a[1]),
   updateDraft: (...a: unknown[]) => mockUpdateDraft(...a),
   setStatus: (...a: unknown[]) => mockSetMissionStatus(...a),
   setApprovedAt: (...a: unknown[]) => mockSetApprovedAt(...a),
+  updateAcceptance: vi.fn(),
+  clearAcceptance: vi.fn(),
   getMissionBySession: vi.fn().mockResolvedValue(null),
+}));
+
+// Puzzle 04 atomic gate + flip + createRun. Default = committed
+// (matches `makeReadyMission()` happy path). The mock's `committed`
+// outcome carries the same mission row + a synthetic snapshot so the
+// downstream `startMissionRunBody` flow stays unchanged. Tests that
+// exercise gate-rejection paths override this.
+const mockCommitMissionStart = vi.fn();
+vi.mock("../../../../vex-agent/engine/mission/commit-start.js", () => ({
+  commitMissionStart: (...a: unknown[]) => mockCommitMissionStart(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -255,6 +270,19 @@ describe("runner", () => {
       permission: "restricted",
       tokenCount: 0,
     } as unknown as Awaited<ReturnType<typeof sessionsRepoMockedSetup.getSession>>);
+    // Puzzle 04 — default the atomic gate to `committed`. Individual
+    // tests override to exercise rejection paths.
+    mockCommitMissionStart.mockImplementation(async (input: { missionId: string; runId: string }) => ({
+      outcome: "committed" as const,
+      mission: makeReadyMission(),
+      runId: input.runId,
+      contractSnapshot: {
+        version: 1,
+        capturedAt: "2026-05-22T11:00:00.000Z",
+        missionPromptContext: "# Mission",
+        frozenMission: {},
+      },
+    }));
   });
 
   // ── processAgentTurn ─────────────────────────────────────────
@@ -341,9 +369,16 @@ describe("runner", () => {
 
       const result = await startMission("mission-1");
 
-      expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-1", "running");
-      expect(mockSetApprovedAt).toHaveBeenCalledWith("mission-1");
-      expect(mockCreateRun).toHaveBeenCalled();
+      // Puzzle 04: state mutations live inside `commitMissionStart`,
+      // which is mocked here. We assert the helper was called with the
+      // expected (missionId, runId) pair and that the turn loop ran
+      // afterwards. Direct setStatus/createRun assertions move into
+      // `commit-start.test.ts` where the helper is exercised.
+      expect(mockCommitMissionStart).toHaveBeenCalledTimes(1);
+      const commitArgs = mockCommitMissionStart.mock.calls[0]![0];
+      expect(commitArgs.missionId).toBe("mission-1");
+      expect(commitArgs.runId).toMatch(/^run-/);
+      expect(mockRunTurnLoop).toHaveBeenCalled();
       expect(result.text).toBe("Starting mission...");
       expect(result.missionStatus).toBe("running");
     });
@@ -489,7 +524,11 @@ describe("runner", () => {
 
       await expect(startMission("mission-1")).rejects.toBeInstanceOf(MissionRunPausedError);
 
-      expect(mockCreateRun).toHaveBeenCalled();
+      // The atomic helper runs first; its mocked `committed` outcome
+      // returns the synthetic runId. Hydration then fails inside
+      // `startMissionRunBody`, which flips the run to paused_error
+      // via `finalizeMissionRunError`.
+      expect(mockCommitMissionStart).toHaveBeenCalledTimes(1);
       expect(mockUpdateRunStatus).toHaveBeenCalledWith(
         expect.any(String),
         "paused_error",
@@ -502,20 +541,135 @@ describe("runner", () => {
       );
     });
 
-    it("throws if mission not found", async () => {
+    it("throws if mission not found (preflight, before lease claim)", async () => {
       mockGetMission.mockResolvedValueOnce(null);
       await expect(startMission("nonexistent")).rejects.toThrow("not found");
     });
 
-    it("throws if mission not ready", async () => {
-      mockGetMission.mockResolvedValueOnce({
-        id: "mission-1", status: "draft", title: null, goal: null,
-        capitalSourceJson: {}, allowedWallets: [], allowedChains: [],
-        allowedProtocols: [], riskProfile: null, successCriteriaJson: [],
-        stopConditionsJson: [], constraintsJson: {},
-        rootSessionId: "s", createdAt: "", updatedAt: "", approvedAt: null,
+    // ── Puzzle 04 atomic gate + flip + createRun ────────────────
+
+    it("rejects an unaccepted mission with a host-accept message", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockCommitMissionStart.mockResolvedValueOnce({
+        outcome: "not_accepted",
+        missionId: "mission-1",
+      });
+      await expect(startMission("mission-1")).rejects.toThrow(
+        "has not been accepted",
+      );
+      // Atomic helper handles the flip; rejection means createRun
+      // never fires (no run row leaked). The atomic helper itself is
+      // mocked, so we assert against the runtime side-effects that
+      // would follow a committed start — they're absent.
+      expect(mockCreateRun).not.toHaveBeenCalled();
+      expect(mockRunTurnLoop).not.toHaveBeenCalled();
+    });
+
+    it("rejects a mission whose contract drifted since acceptance", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockCommitMissionStart.mockResolvedValueOnce({
+        outcome: "stale_acceptance",
+        acceptedHash: "0".repeat(64),
+        currentHash: "1".repeat(64),
+      });
+      await expect(startMission("mission-1")).rejects.toThrow(
+        "contract changed since acceptance",
+      );
+      expect(mockRunTurnLoop).not.toHaveBeenCalled();
+    });
+
+    it("rejects when the locked re-read finds the mission gone (race)", async () => {
+      // Initial unlocked `getMission` returns the row, but the atomic
+      // gate's row-locked re-read finds it deleted by a concurrent
+      // tx between the preflight + lease claim + atomic gate.
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockCommitMissionStart.mockResolvedValueOnce({
+        outcome: "mission_not_found",
+      });
+      await expect(startMission("mission-1")).rejects.toThrow("not found");
+      expect(mockRunTurnLoop).not.toHaveBeenCalled();
+    });
+
+    it("rejects when the locked row fails isReadyToStart", async () => {
+      // Should not normally happen if `clearAcceptance` runs on
+      // `updateDraft` (phase 6), but the atomic gate defends against
+      // a stale acceptance whose draft fields were emptied out before
+      // the lock — phase 6 closes the timing window, this test pins
+      // that the helper still rejects fail-closed if it ever happens.
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockCommitMissionStart.mockResolvedValueOnce({
+        outcome: "not_ready",
+        missingFields: ["goal", "successCriteria"],
       });
       await expect(startMission("mission-1")).rejects.toThrow("not ready");
+      expect(mockRunTurnLoop).not.toHaveBeenCalled();
+    });
+
+    it("rejects when an active run was created by a concurrent tx", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockCommitMissionStart.mockResolvedValueOnce({
+        outcome: "active_run_exists",
+        missionRunId: "run-existing",
+        runStatus: "running",
+      });
+      await expect(startMission("mission-1")).rejects.toThrow(
+        "already has an active run",
+      );
+      expect(mockRunTurnLoop).not.toHaveBeenCalled();
+    });
+
+    it("releases the lease with missionRunId=null when the gate rejects (no phantom run id)", async () => {
+      // Codex blocker: the outer `runId` MUST stay null until
+      // `commitMissionStart` returns `committed`. Otherwise the
+      // `finally` would attribute the lease drop to a run that was
+      // never created — phantom missionRunId emitted to the control
+      // bus.
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockCommitMissionStart.mockResolvedValueOnce({
+        outcome: "not_accepted",
+        missionId: "mission-1",
+      });
+
+      const releaseModule = await import(
+        "../../../../vex-agent/engine/runtime/release-and-emit.js"
+      );
+      const releaseMock = vi.mocked(releaseModule.releaseLeaseAndEmitControlState);
+      releaseMock.mockClear();
+
+      await expect(startMission("mission-1")).rejects.toThrow();
+
+      expect(releaseMock).toHaveBeenCalledTimes(1);
+      const releaseArgs = releaseMock.mock.calls[0]!;
+      // Signature: (handle, sessionId, { missionRunId })
+      expect(releaseArgs[2]).toEqual({ missionRunId: null });
+    });
+
+    it("releases the lease with the real missionRunId on the committed path", async () => {
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "ok", toolCallsMade: 1, pendingApprovals: [], stopReason: null,
+      });
+
+      const releaseModule = await import(
+        "../../../../vex-agent/engine/runtime/release-and-emit.js"
+      );
+      const releaseMock = vi.mocked(releaseModule.releaseLeaseAndEmitControlState);
+      releaseMock.mockClear();
+
+      await startMission("mission-1");
+
+      expect(releaseMock).toHaveBeenCalledTimes(1);
+      const releaseArgs = releaseMock.mock.calls[0]!;
+      const releaseRunId = (releaseArgs[2] as { missionRunId: string | null }).missionRunId;
+      expect(releaseRunId).toMatch(/^run-/);
+      // The id matches whatever the (mocked) commitMissionStart
+      // returned for this invocation — the mock implementation
+      // echoes its input `runId`, so the outer scope picked up the
+      // real id only AFTER the commit-outcome switch fell through.
+      const commitCall = mockCommitMissionStart.mock.calls[0]!;
+      const candidateRunId = (commitCall[0] as { runId: string }).runId;
+      expect(releaseRunId).toBe(candidateRunId);
     });
   });
 

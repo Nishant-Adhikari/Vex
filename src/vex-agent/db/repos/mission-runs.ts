@@ -89,19 +89,23 @@ export async function createRun(
     contractSnapshotJson?: Record<string, unknown> | null;
     recoveredFromRunId?: string | null;
   } = {},
+  client?: PoolClient,
 ): Promise<void> {
-  await execute(
-    `INSERT INTO mission_runs (
+  const sql = `INSERT INTO mission_runs (
        id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id
-     ) VALUES ($1, $2, $3, $4::jsonb, $5)`,
-    [
-      id,
-      missionId,
-      sessionId,
-      nullableJsonb(options.contractSnapshotJson ?? null),
-      options.recoveredFromRunId ?? null,
-    ],
-  );
+     ) VALUES ($1, $2, $3, $4::jsonb, $5)`;
+  const params = [
+    id,
+    missionId,
+    sessionId,
+    nullableJsonb(options.contractSnapshotJson ?? null),
+    options.recoveredFromRunId ?? null,
+  ];
+  if (client) {
+    await client.query(sql, params);
+  } else {
+    await execute(sql, params);
+  }
 }
 
 export async function updateStatus(

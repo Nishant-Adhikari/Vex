@@ -50,6 +50,81 @@ const ACCEPTABLE_MISSION_STATUSES = new Set<string>(["draft", "ready"]);
  */
 const ACCEPTANCE_ACTOR = "host" as const;
 
+// ── Acceptance gate (used by startMission) ───────────────────────
+
+export interface AcceptanceGateInput {
+  readonly missionId: string;
+}
+
+export type AcceptanceGateOutcome =
+  | {
+    readonly outcome: "accepted";
+    readonly contractHash: string;
+    readonly contractHashVersion: number;
+  }
+  | { readonly outcome: "mission_not_found" }
+  | {
+    readonly outcome: "not_accepted";
+    readonly missionId: string;
+  }
+  | {
+    readonly outcome: "stale_acceptance";
+    readonly currentHash: string;
+    readonly acceptedHash: string;
+  };
+
+/**
+ * Read-only row-locked acceptance check.
+ *
+ * `startMission` itself uses the larger `commitMissionStart` helper
+ * (`./commit-start.ts`), which holds the row lock across the entire
+ * gate → flip → createRun pipeline. `assertAcceptedContract` is the
+ * narrower read-only version for callers that only need to answer
+ * "is this contract currently accepted?" without mutating state —
+ * e.g. the phase 6 IPC layer can use it to decide whether to expose
+ * the Start button.
+ *
+ * Opens its own short tx, locks the missions row via SELECT FOR
+ * UPDATE, recomputes the canonical hash from the locked draft, and
+ * confirms the prior `acceptContract` four-tuple still matches.
+ * Releases the lock on COMMIT.
+ */
+export async function assertAcceptedContract(
+  input: AcceptanceGateInput,
+): Promise<AcceptanceGateOutcome> {
+  return withTransaction(async (client): Promise<AcceptanceGateOutcome> => {
+    const mission = await getMissionForUpdate(client, input.missionId);
+    if (!mission) {
+      return { outcome: "mission_not_found" };
+    }
+    // `contractHashVersion` must equal the current `CONTRACT_HASH_VERSION`
+    // — a non-current version means the row was accepted under an older
+    // canonical-material shape and the host needs to re-accept under
+    // the new shape. The four-tuple CHECK constraint catches NULL
+    // partial state too.
+    if (
+      mission.acceptedContractHash === null
+      || mission.contractHashVersion === null
+      || mission.contractHashVersion !== CONTRACT_HASH_VERSION
+    ) {
+      return { outcome: "not_accepted", missionId: mission.id };
+    }
+    const currentHash = computeContractHash(missionToDraft(mission));
+    if (currentHash !== mission.acceptedContractHash) {
+      return {
+        outcome: "stale_acceptance",
+        currentHash,
+        acceptedHash: mission.acceptedContractHash,
+      };
+    }
+    return {
+      outcome: "accepted",
+      contractHash: mission.acceptedContractHash,
+      contractHashVersion: mission.contractHashVersion,
+    };
+  });
+}
+
 export interface AcceptContractInput {
   readonly sessionId: string;
   readonly missionId: string;

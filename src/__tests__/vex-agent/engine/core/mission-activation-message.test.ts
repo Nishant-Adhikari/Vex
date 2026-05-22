@@ -90,8 +90,53 @@ vi.mock("../../../../vex-agent/engine/core/turn-loop.js", () => ({
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   getMission: (...args: unknown[]) => mockGetMission(...args),
+  // Puzzle 04 — gate's row-locked re-read forwards through the same
+  // fixture so the gate sees the accepted contract this test sets up.
+  getMissionForUpdate: (...args: unknown[]) => mockGetMission(args[1]),
   setStatus: (...args: unknown[]) => mockSetMissionStatus(...args),
   setApprovedAt: (...args: unknown[]) => mockSetApprovedAt(...args),
+  updateAcceptance: vi.fn(),
+  clearAcceptance: vi.fn(),
+}));
+
+// Puzzle 04 atomic gate — default = committed for these tests. The
+// activation-message test verifies the system message wording, not
+// gate enforcement; gate-rejection paths are covered in
+// `runner.test.ts`.
+vi.mock("../../../../vex-agent/engine/mission/commit-start.js", () => ({
+  commitMissionStart: vi.fn().mockImplementation(async (input: { missionId: string; runId: string }) => ({
+    outcome: "committed" as const,
+    mission: {
+      id: input.missionId,
+      rootSessionId: "session-1",
+      status: "running",
+      title: "SOL Sprint",
+      goal: "Double mission capital",
+      constraintsJson: {},
+      successCriteriaJson: ["Portfolio reaches 16 USD"],
+      stopConditionsJson: ["deadline_reached"],
+      riskProfile: "aggressive",
+      capitalSourceJson: { type: "wallet", amount: "8 USD" },
+      allowedProtocols: ["jupiter"],
+      allowedChains: ["solana"],
+      allowedWallets: ["solana-wallet"],
+      createdAt: "2026-05-04T00:00:00.000Z",
+      updatedAt: "2026-05-04T00:00:00.000Z",
+      approvedAt: "2026-05-04T00:00:00.000Z",
+      acceptedContractHash: "0".repeat(64),
+      acceptedContractAt: "2026-05-04T00:00:00.000Z",
+      acceptedContractBy: "host",
+      contractHashVersion: 1,
+      renewedFromMissionId: null,
+    },
+    runId: input.runId,
+    contractSnapshot: {
+      version: 1 as const,
+      capturedAt: "2026-05-04T00:00:00.000Z",
+      missionPromptContext: "# Mission",
+      frozenMission: {},
+    },
+  })),
 }));
 
 vi.mock("@vex-agent/db/repos/sessions.js", () => ({
@@ -195,6 +240,16 @@ describe("mission activation message", () => {
   });
 
   it("writes a mission_started banner before hydrating the first active turn", async () => {
+    // Puzzle 04 — the atomic `commitMissionStart` helper internally
+    // performs setStatus + setApprovedAt + createRun, then returns.
+    // The activation message must land AFTER the helper resolves but
+    // BEFORE hydration. We grab the helper's call order via the
+    // module mock surface instead of the legacy createRun mock.
+    const acceptanceModule = await import(
+      "../../../../vex-agent/engine/mission/commit-start.js"
+    );
+    const commitMissionStartMock = vi.mocked(acceptanceModule.commitMissionStart);
+
     await startMission("mission-1");
 
     expect(mockAddEngineMessage).toHaveBeenCalledWith(
@@ -210,7 +265,7 @@ describe("mission activation message", () => {
         }),
       }),
     );
-    expect(mockCreateRun.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(commitMissionStartMock.mock.invocationCallOrder[0]).toBeLessThan(
       mockAddEngineMessage.mock.invocationCallOrder[0],
     );
     expect(mockAddEngineMessage.mock.invocationCallOrder[0]).toBeLessThan(
