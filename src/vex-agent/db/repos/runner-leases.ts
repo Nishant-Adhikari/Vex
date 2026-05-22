@@ -141,13 +141,16 @@ export async function releaseLease(
 }
 
 /** Read-only — current lease for a session (or null). */
-export async function getLease(sessionId: string): Promise<RunnerLease | null> {
-  const row = await queryOne<RunnerLeaseRow>(
-    `SELECT session_id, mission_run_id, owner_id, process_kind,
-            acquired_at, heartbeat_at, expires_at
-       FROM runner_leases
-      WHERE session_id = $1`,
-    [sessionId],
-  );
+export async function getLease(
+  sessionId: string,
+  exec?: Executor,
+): Promise<RunnerLease | null> {
+  const sql = `SELECT session_id, mission_run_id, owner_id, process_kind,
+                      acquired_at, heartbeat_at, expires_at
+               FROM runner_leases
+               WHERE session_id = $1`;
+  const row = exec
+    ? await queryOneWith<RunnerLeaseRow>(exec, sql, [sessionId])
+    : await queryOne<RunnerLeaseRow>(sql, [sessionId]);
   return row === null ? null : mapRow(row);
 }

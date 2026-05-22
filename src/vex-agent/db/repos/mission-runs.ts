@@ -12,7 +12,9 @@ import {
   TERMINAL_RUN_STATUSES,
   ACTIVE_OR_PAUSED_RUN_STATUSES,
 } from "../../engine/types.js";
-import { queryOne, execute, getPool } from "../client.js";
+import type { PoolClient } from "pg";
+
+import { queryOne, queryOneWith, execute, getPool } from "../client.js";
 import { nullableJsonb } from "../params.js";
 import logger from "@utils/logger.js";
 
@@ -160,11 +162,14 @@ export async function incrementIterations(id: string): Promise<number> {
   return row?.iteration_count ?? 0;
 }
 
-export async function getActiveRun(missionId: string): Promise<MissionRun | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    `SELECT * FROM mission_runs WHERE mission_id = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN}) ORDER BY started_at DESC LIMIT 1`,
-    [missionId],
-  );
+export async function getActiveRun(
+  missionId: string,
+  client?: PoolClient,
+): Promise<MissionRun | null> {
+  const sql = `SELECT * FROM mission_runs WHERE mission_id = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN}) ORDER BY started_at DESC LIMIT 1`;
+  const row = client
+    ? await queryOneWith<Record<string, unknown>>(client, sql, [missionId])
+    : await queryOne<Record<string, unknown>>(sql, [missionId]);
   return row ? mapRow(row) : null;
 }
 
@@ -176,11 +181,14 @@ export async function getActiveRun(missionId: string): Promise<MissionRun | null
  * work at all. `getRunBySession` is intentionally statusless and unsuitable
  * for routing decisions; `getActiveRun(missionId)` is keyed by mission id.
  */
-export async function getActiveRunBySession(sessionId: string): Promise<MissionRun | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    `SELECT * FROM mission_runs WHERE session_id = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN}) ORDER BY started_at DESC LIMIT 1`,
-    [sessionId],
-  );
+export async function getActiveRunBySession(
+  sessionId: string,
+  client?: PoolClient,
+): Promise<MissionRun | null> {
+  const sql = `SELECT * FROM mission_runs WHERE session_id = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN}) ORDER BY started_at DESC LIMIT 1`;
+  const row = client
+    ? await queryOneWith<Record<string, unknown>>(client, sql, [sessionId])
+    : await queryOne<Record<string, unknown>>(sql, [sessionId]);
   return row ? mapRow(row) : null;
 }
 

@@ -6,7 +6,9 @@
  * and reads it back. Domain ↔ row conversion is mapper's responsibility.
  */
 
-import { query, queryOne, execute } from "../client.js";
+import type { PoolClient } from "pg";
+
+import { query, queryOne, execute, queryOneWith, executeWith } from "../client.js";
 import { jsonb, jsonbPlaceholder } from "../params.js";
 
 const MISSION_DRAFT_COLUMN_KINDS = {
@@ -203,4 +205,81 @@ export async function getActiveMission(rootSessionId: string): Promise<Mission |
     [rootSessionId],
   );
   return row ? mapRow(row) : null;
+}
+
+// ── Tx-aware helpers (puzzle 04) ────────────────────────────────
+// These accept an explicit PoolClient so the engine acceptance flow
+// can lock the missions row and recompute the contract hash inside
+// a single transaction. All four acceptance columns are touched
+// together per the CHECK constraint `chk_missions_acceptance_atomicity`
+// added in migration 023.
+
+/** Row-locked read of a mission inside an existing tx. */
+export async function getMissionForUpdate(
+  client: PoolClient,
+  id: string,
+): Promise<Mission | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    "SELECT * FROM missions WHERE id = $1 FOR UPDATE",
+    [id],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * Stamp acceptance metadata on a mission. The caller MUST hold a row
+ * lock (via `getMissionForUpdate`) so concurrent `clearAcceptance`
+ * / `startMission` see the freshly-committed state.
+ *
+ * `by` is free-form host identifier; MVP writes `'host'`. A future
+ * multi-actor world (delegated approver, mission template owner)
+ * would widen this without a schema change.
+ *
+ * `contractHashVersion` mirrors `CONTRACT_HASH_VERSION` from
+ * `engine/mission/contract-hash.ts` at the moment of acceptance.
+ */
+export async function updateAcceptance(
+  client: PoolClient,
+  id: string,
+  hash: string,
+  by: string,
+  contractHashVersion: number,
+): Promise<void> {
+  await executeWith(
+    client,
+    `UPDATE missions
+        SET accepted_contract_hash = $2,
+            accepted_contract_at = NOW(),
+            accepted_contract_by = $3,
+            contract_hash_version = $4,
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id, hash, by, contractHashVersion],
+  );
+}
+
+/**
+ * Clear acceptance metadata back to the unaccepted state. Called by
+ * the host `updateDraft` path (phase 6) so any mission-relevant field
+ * change forces re-acceptance.
+ *
+ * Writes all four columns to NULL together — partial state is
+ * rejected by the DB CHECK constraint.
+ */
+export async function clearAcceptance(
+  client: PoolClient,
+  id: string,
+): Promise<void> {
+  await executeWith(
+    client,
+    `UPDATE missions
+        SET accepted_contract_hash = NULL,
+            accepted_contract_at = NULL,
+            accepted_contract_by = NULL,
+            contract_hash_version = NULL,
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id],
+  );
 }
