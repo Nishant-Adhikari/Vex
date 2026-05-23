@@ -266,11 +266,15 @@ export async function getRun(
   return row ? mapRow(row) : null;
 }
 
-export async function getRunBySession(sessionId: string): Promise<MissionRun | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM mission_runs WHERE session_id = $1 ORDER BY started_at DESC LIMIT 1",
-    [sessionId],
-  );
+export async function getRunBySession(
+  sessionId: string,
+  client?: PoolClient,
+): Promise<MissionRun | null> {
+  const sql =
+    "SELECT * FROM mission_runs WHERE session_id = $1 ORDER BY started_at DESC LIMIT 1";
+  const row = client
+    ? await queryOneWith<Record<string, unknown>>(client, sql, [sessionId])
+    : await queryOne<Record<string, unknown>>(sql, [sessionId]);
   return row ? mapRow(row) : null;
 }
 

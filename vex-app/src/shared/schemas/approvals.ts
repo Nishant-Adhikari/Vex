@@ -190,18 +190,36 @@ export const approvalActionInputSchema = z
 export type ApprovalActionInput = z.infer<typeof approvalActionInputSchema>;
 
 /**
- * Future-shape contract for `approvals.approve`/`approvals.reject`.
- * Puzzle 1 fail-closes with `approvals.feature_unavailable`; puzzle 05
- * fills the body. The Result-typed contract is exported so renderer
- * hooks + preload validators compile against the eventual shape.
+ * Result contract for `approvals.approve`/`approvals.reject`.
+ *
+ * Puzzle 5 phase 3 fills the body. Field semantics:
+ *   - `status`            — final `approval_queue.status` after the IPC call.
+ *   - `resolvedAt`        — when the queue row was resolved (ISO-8601).
+ *   - `runtimeOutcome`    — `'resumed'` when a background mission-run
+ *                           continuation was scheduled, `'stopped'` for
+ *                           chat sessions / dispatched tool with no run,
+ *                           `'unavailable'` reserved for the old phase-1
+ *                           fail-closed path.
+ *   - `executionStatus`   — tool dispatch outcome (`'succeeded'`/`'failed'`
+ *                           for approve; null for reject). Independent of
+ *                           `runtimeOutcome`: a mission run can resume even
+ *                           after a failed dispatch (agent sees the error
+ *                           in transcript and decides next).
+ *   - `missionRunId`      — set when a mission run was involved; null for
+ *                           chat-session approvals.
+ *   - `cached`            — `true` when the response is an idempotent
+ *                           replay of a prior decision (no new dispatch).
+ *   - `message`           — short human-readable summary for the UI toast.
  */
 export const approvalActionResultSchema = z
   .object({
     id: z.string().min(1),
     status: approvalStatusSchema,
     resolvedAt: z.string().datetime({ offset: true }).nullable(),
-    /** Action outcome: did the decision actually resume runtime / dispatch the tool? */
     runtimeOutcome: z.enum(["resumed", "stopped", "unavailable"]),
+    executionStatus: approvalExecutionStatusSchema.nullable(),
+    missionRunId: z.string().nullable(),
+    cached: z.boolean(),
     message: z.string(),
   })
   .strict();

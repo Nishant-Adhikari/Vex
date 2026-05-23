@@ -17,6 +17,26 @@ export { approveAndResume } from "./core/resume.js";
 export { rejectApproval } from "./core/reject.js";
 export { runTool } from "./core/run-tool.js";
 
+// Puzzle 5 phase 3 — bounded prepare/runPrepared split for IPC handlers.
+// Back-compat wrappers (`approveAndResume`/`rejectApproval`) keep their
+// inline semantics for non-IPC callers; IPC must use these directly to
+// avoid blocking the renderer on a full resumed turn loop.
+export {
+  prepareApprove,
+  prepareReject,
+  expireApproval,
+  runResumeAfterDecision,
+  discardContinuation,
+  sweepExpiredApprovals,
+  ApprovalDispatchError,
+  ApprovalDecisionInconsistencyError,
+  ApprovalPostDecisionError,
+  type ApprovePrepareOutcome,
+  type RejectPrepareOutcome,
+  type PreparedContinuation,
+  type SweepResult,
+} from "./core/approval-runtime.js";
+
 export { runSubagentEngine } from "./subagents/runner.js";
 
 export { routeUserMessage, submitOperatorInstruction } from "./ingress.js";

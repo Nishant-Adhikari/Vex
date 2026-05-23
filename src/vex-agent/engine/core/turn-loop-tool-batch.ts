@@ -55,6 +55,15 @@ const BATCH_ABORTED_BY_COMPACT_OUTPUT =
   "batch_aborted_by_compact: this tool call was emitted in the same batch as compact_now and was not dispatched. "
   + "The conversation has been compacted; re-emit this call on the next turn if it is still relevant.";
 
+/**
+ * Puzzle 5 phase 3 — TTL stamped at enqueue (not at approve). The approve
+ * gate (`prepareApprove` snapshot) and the scheduled sweep both rely on a
+ * DB-visible `expires_at` so a stale approval gets auto-rejected even
+ * without operator action. Single 1h default for all action kinds; phase 7
+ * will introduce per-kind TTLs if real workloads need them.
+ */
+const APPROVAL_TTL_MS = 60 * 60 * 1000;
+
 interface BatchTurnResult {
   readonly content: string | null;
   readonly toolCalls: ParsedToolCall[];
@@ -173,6 +182,12 @@ export async function processTurnToolBatch(args: {
       const intentRiskLevel = riskLevelFromActionKind(intentActionKind);
       const intentPreview = buildIntentPreview(toolCall.name, toolCall.arguments);
       const intentPolicy = buildPolicySnapshot(toolContext);
+      // Phase 3: stamp `expires_at` at enqueue so the approve gate +
+      // scheduled sweep have a DB-visible TTL boundary (see APPROVAL_TTL_MS
+      // header). `CreateIntentInput.previewJson/policyJson` were widened in
+      // phase 3 to accept the structured builder shapes directly — no
+      // `as unknown as Record<string, unknown>` cast needed.
+      const intentExpiresAt = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
 
       // Single transaction: queue + intent + mission-status flip. A
       // partial state (queue without intent, or queue+intent without
@@ -197,8 +212,9 @@ export async function processTurnToolBatch(args: {
           toolCallId: toolCall.id ?? null,
           actionKind: intentActionKind,
           riskLevel: intentRiskLevel,
-          previewJson: intentPreview as unknown as Record<string, unknown>,
-          policyJson: intentPolicy as unknown as Record<string, unknown>,
+          previewJson: intentPreview,
+          policyJson: intentPolicy,
+          expiresAt: intentExpiresAt,
         });
         if (context.missionRunId) {
           await missionRunsRepo.updateStatus(

@@ -116,14 +116,43 @@ describe("approvals schemas", () => {
     expect(approvalActionInputSchema.safeParse({ id: "approval-1" }).success).toBe(
       true,
     );
+    // Phase 3: result schema gained `executionStatus`, `missionRunId`, and
+    // `cached` REQUIRED fields. The old payload shape is now invalid; the
+    // new fixture below pins the canonical approve path response.
     expect(
       approvalActionResultSchema.safeParse({
         id: "approval-1",
         status: "approved",
         resolvedAt: ISO,
         runtimeOutcome: "resumed",
+        executionStatus: "succeeded",
+        missionRunId: "run-1",
+        cached: false,
         message: "ok",
       }).success,
     ).toBe(true);
+    // Reject path: no dispatch, executionStatus null, mission run optional.
+    expect(
+      approvalActionResultSchema.safeParse({
+        id: "approval-2",
+        status: "rejected",
+        resolvedAt: ISO,
+        runtimeOutcome: "resumed",
+        executionStatus: null,
+        missionRunId: null,
+        cached: false,
+        message: "Rejected",
+      }).success,
+    ).toBe(true);
+    // Pre-phase-3 payload (missing new fields) must FAIL strict parse.
+    expect(
+      approvalActionResultSchema.safeParse({
+        id: "approval-3",
+        status: "approved",
+        resolvedAt: ISO,
+        runtimeOutcome: "resumed",
+        message: "ok",
+      }).success,
+    ).toBe(false);
   });
 });

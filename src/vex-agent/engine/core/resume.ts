@@ -1,191 +1,106 @@
 /**
- * Resume — approval resume and checkpoint resume.
+ * `approveAndResume` — back-compat wrapper over the puzzle-5 phase-3
+ * `prepareApprove` + `runResumeAfterDecision` pair.
  *
- * approveAndResume: atomically approve via approval_queue.id,
- * then dispatch the approved tool call and re-enter the turn loop.
+ * Existing non-IPC callers (engine tests, CLI/MCP if any) keep their
+ * synchronous-resume semantics: the function awaits the mission-run turn
+ * loop and returns the resulting `TurnResult`. IPC handlers should use
+ * `prepareApprove` + `dispatchPreparedApprovalDecision(runResumeAfterDecision)`
+ * directly to avoid blocking the renderer on a full turn loop (Codex
+ * puzzle-5 phase-3 review point 5).
+ *
+ * Decision shape: all phase-3 outcomes from `prepareApprove` map onto the
+ * existing throw semantics that `approveAndResume`'s callers already
+ * expect — `cached_approved` collapses to a synthesised "already resolved"
+ * `TurnResult` (no re-dispatch), `expired` / `already_rejected` /
+ * `run_terminated` throw with the same messages the legacy implementation
+ * used.
  */
 
-import { type TurnResult, TERMINAL_RUN_STATUSES } from "../types.js";
-import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
-import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
-import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
-import { appendMessage } from "@vex-agent/engine/events/index.js";
-import { hydrateEngineSession } from "./hydrate.js";
-import { refreshBlobTtlForRecentMessages } from "@vex-agent/engine/wake/blob-refresh.js";
+import { type TurnResult } from "../types.js";
+import {
+  prepareApprove,
+  runResumeAfterDecision,
+  discardContinuation,
+  ApprovalDispatchError,
+} from "./approval-runtime.js";
 import logger from "@utils/logger.js";
 
-/**
- * Approve a pending tool call and resume the engine.
- *
- * Flow:
- * 1. approvals.approve(approvalId) — atomistic CAS on approval_queue.id
- * 2. Extract toolCall + toolCallId + sessionId from the approved record
- * 3. Dispatch the tool with approved=true
- * 4. Save tool result to messages
- * 5. Update mission run status from paused_approval → running
- */
-export async function approveAndResume(approvalId: string): Promise<TurnResult> {
-  const approval = await approvalsRepo.approve(approvalId);
-  if (!approval) {
-    throw new Error(`Approval ${approvalId} not found or already resolved`);
+export async function approveAndResume(
+  approvalId: string,
+): Promise<TurnResult> {
+  let outcome: Awaited<ReturnType<typeof prepareApprove>>;
+  try {
+    outcome = await prepareApprove(approvalId);
+  } catch (cause) {
+    if (cause instanceof ApprovalDispatchError) {
+      throw cause;
+    }
+    throw cause;
   }
 
-  const sessionId = approval.sessionId;
-  if (!sessionId) {
-    throw new Error(`Approval ${approvalId} has no associated session`);
-  }
+  switch (outcome.kind) {
+    case "dispatched": {
+      if (outcome.continuation !== null) {
+        logger.info("engine.resume.re_entering_loop", {
+          approvalId,
+          missionRunId: outcome.missionRunId,
+        });
+        return await runResumeAfterDecision(outcome.continuation);
+      }
+      // Chat session — no mission run, no continuation. Return the
+      // dispatched tool result as the TurnResult text payload (matches the
+      // legacy "no mission run" branch in the original approveAndResume).
+      return {
+        text: outcome.toolResult.output,
+        toolCallsMade: 1,
+        pendingApprovals: [],
+        stopReason: null,
+        missionStatus: null,
+      };
+    }
 
-  // Defensive: a concurrent operator-driven `abortMissionRun` could have
-  // finalised the run between our approval CAS and dispatch. The CAS in
-  // `approvalsRepo.approve` catches an approval that the abort had already
-  // rejected; this catches the narrower window where abort hadn't yet
-  // visited the queue but had already finalised the run. Without this,
-  // dispatch would execute a tool against a cancelled mission.
-  //
-  // `getRunBySession` returns the most recent run regardless of status —
-  // `getActiveRunBySession` filters terminal out, which is exactly the case
-  // we need to detect here. We also gate on `endedAt > approval.createdAt`
-  // so an old terminal mission run on the same session does not block an
-  // unrelated newer chat approval (approvals are session-scoped, not
-  // run-scoped, until the schema carries `mission_run_id`).
-  const recentRunForGuard = await missionRunsRepo.getRunBySession(sessionId);
-  if (
-    recentRunForGuard &&
-    TERMINAL_RUN_STATUSES.has(recentRunForGuard.status) &&
-    recentRunForGuard.endedAt !== null &&
-    recentRunForGuard.endedAt > approval.createdAt
-  ) {
-    throw new Error(
-      `Approval ${approvalId} cannot be applied: mission run ${recentRunForGuard.id} is ${recentRunForGuard.status}`,
-    );
-  }
+    case "cached_approved":
+      return {
+        text: `Approval ${approvalId} already resolved (executionStatus=${outcome.executionStatus})`,
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+        missionStatus: null,
+      };
 
-  // Refresh tool_output_blob TTLs before dispatching the approved tool. A
-  // long paused_approval window could otherwise leave blobs referenced by
-  // recent messages expired, and the dispatched tool (or a follow-up turn)
-  // may need to read them. Idempotent; the mission branch below re-enters
-  // `resumeMissionRun` which refreshes again — cheap no-op. Covers the
-  // chat-approval branch too, which doesn't delegate to a runner.
-  await refreshBlobTtlForRecentMessages(sessionId);
-
-  // approval.toolCall is the JSONB object stored at enqueue time
-  // approval.toolCallId is the tool_call_id column (round-trip identifier)
-  // approval.pendingContext may contain { toolCallId } for extra context
-  const toolCall = approval.toolCall;
-  const toolCallId = approval.toolCallId
-    ?? (approval.pendingContext as Record<string, unknown> | null)?.toolCallId as string
-    ?? approvalId;
-
-  // Extract tool name and args from the stored toolCall object
-  // Shape depends on enqueue caller: {command, args} or {name, args}
-  const toolName = (toolCall.command ?? toolCall.name) as string;
-  const toolArgs = (toolCall.args ?? toolCall.arguments ?? {}) as Record<string, unknown>;
-
-  if (!toolName) {
-    throw new Error(`Approval ${approvalId} has no tool name in toolCall record`);
-  }
-
-  logger.info("engine.resume.approve", { approvalId, sessionId, toolName, toolCallId });
-
-  // loadedDocuments is ephemeral — not persisted across approval pauses.
-  // The agent can re-read documents via document_read after resume.
-  // `sessionPermission` reads the audit snapshot from the approval row —
-  // permission is immutable per session, so this is just an explicit pass-
-  // through for the dispatch (the gate is bypassed via `approved: true`).
-  const toolContext: InternalToolContext = {
-    sessionId,
-    loadedDocuments: new Map(),
-    sessionPermission: approval.permissionAtEnqueue,
-    approved: true,
-    role: "parent", // Approval resume is always parent context
-    missionRunId: null, // Will be populated from hydrated context if needed
-    missionId: null, // Will be populated by the resumed loop when needed
-    // Approval resume dispatches a single tool call — band recomputation
-    // happens at the next turn-loop iteration. Safe default for one-shot dispatch.
-    sessionKind: "agent",
-    contextUsageBand: "normal",
-    sourceSurface: "vex_agent",
-    sourceSession: sessionId,
-  };
-
-  const result = await dispatchTool(
-    { name: toolName, args: toolArgs, toolCallId },
-    toolContext,
-  );
-
-  await appendMessage(
-    sessionId,
-    {
-      role: "tool",
-      content: result.output,
-      toolCallId,
-      timestamp: new Date().toISOString(),
-    },
-    { source: "tool", messageType: "tool_result", visibility: "internal", payload: { success: result.success } },
-  );
-
-  // Resume mission run — re-enter turn loop
-  const hydrated = await hydrateEngineSession(sessionId);
-  const missionRunId = hydrated?.context.missionRunId ?? null;
-
-  if (missionRunId) {
-    // Puzzle 03 — atomically claim the runner lease + flip status
-    // from `paused_approval` to `running`. Replaces the bare
-    // `updateStatus(missionRunId, "running")` so a concurrent IPC
-    // `requestResume` / retry / wake can't start a second runner.
-    const ownerId = `approve-${approvalId}`;
-    const { claimRunLeaseAndFlipToRunning } = await import(
-      "@vex-agent/engine/runtime/lease-and-status.js"
-    );
-    const claim = await claimRunLeaseAndFlipToRunning({
-      sessionId,
-      missionRunId,
-      fromStatuses: ["paused_approval", "running"], // accept already_running idempotently
-      ownerId,
-      processKind: "electron_main",
-      ttlMs: 5 * 60_000,
-    });
-    if (claim.outcome === "lease_busy") {
+    case "expired": {
+      // Auto-rejection has already written tool-result + claim+flip. If it
+      // produced a continuation, the back-compat wrapper must consume it
+      // (else the lease leaks until TTL) — non-IPC callers that aren't
+      // expecting a background dispatch get the chained resume here.
+      if (
+        outcome.autoRejection.kind === "rejected"
+        && outcome.autoRejection.continuation !== null
+      ) {
+        await runResumeAfterDecision(outcome.autoRejection.continuation);
+      }
       throw new Error(
-        `Approval ${approvalId} cannot resume: runner lease busy.`,
+        `Approval ${approvalId} expired at ${outcome.expiresAt} — auto-rejected`,
       );
     }
-    if (claim.outcome === "status_mismatch") {
+
+    case "already_rejected":
       throw new Error(
-        `Approval ${approvalId} cannot resume: run status changed.`,
+        `Approval ${approvalId} cannot be applied: already ${outcome.decision}`,
       );
-    }
-    logger.info("engine.resume.re_entering_loop", { missionRunId, approvalId });
 
-    const { createLeaseHandle } = await import(
-      "@vex-agent/engine/runtime/lease-handle.js"
-    );
-    const handle = createLeaseHandle({
-      lease: claim.lease,
-      ownerId,
-      ttlMs: 5 * 60_000,
-    });
-    try {
-      // Lazy import to avoid circular dependency (resume → runner → resume)
-      const { resumeMissionRun } = await import("./runner.js");
-      return await resumeMissionRun(missionRunId);
-    } finally {
-      const { releaseLeaseAndEmitControlState } = await import(
-        "@vex-agent/engine/runtime/release-and-emit.js"
+    case "run_terminated":
+      throw new Error(
+        `Approval ${approvalId} cannot be applied: mission run ${outcome.missionRunId} is ${outcome.runStatus}`,
       );
-      await releaseLeaseAndEmitControlState(handle, sessionId, {
-        missionRunId,
-      });
-    }
   }
-
-  // No mission run — return tool result as chat response
-  return {
-    text: result.output,
-    toolCallsMade: 1,
-    pendingApprovals: [],
-    stopReason: null,
-    missionStatus: null,
-  };
 }
+
+// Re-export the error so legacy callers can `instanceof`-check it.
+export { ApprovalDispatchError } from "./approval-runtime.js";
+
+// Defensive cleanup re-export — back-compat callers don't use this, but
+// keeping it accessible via the resume module surface mirrors the
+// continuation lifecycle responsibilities.
+export { discardContinuation };

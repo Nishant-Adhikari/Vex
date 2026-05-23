@@ -41,10 +41,17 @@ function resetMocks() {
     .mockResolvedValue(null);
 }
 
+let mockPoolExecute: Mock<(sql: string, params?: unknown[]) => Promise<number>>;
+function resetExecuteMock() {
+  mockPoolExecute = vi.fn<(sql: string, params?: unknown[]) => Promise<number>>()
+    .mockResolvedValue(1);
+}
+resetExecuteMock();
+
 vi.mock("@vex-agent/db/client.js", () => ({
   query: (sql: string, params?: unknown[]) => mockPoolQuery(sql, params),
   queryOne: (sql: string, params?: unknown[]) => mockPoolQueryOne(sql, params),
-  execute: vi.fn(),
+  execute: (sql: string, params?: unknown[]) => mockPoolExecute(sql, params),
   queryWith: vi.fn(),
   queryOneWith: vi.fn(),
   executeWith: vi.fn(),
@@ -56,6 +63,7 @@ const intents = await import("@vex-agent/db/repos/approval-intents.js");
 
 beforeEach(() => {
   resetMocks();
+  resetExecuteMock();
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────
@@ -252,6 +260,161 @@ describe("getByApprovalId", () => {
     const [sql, params] = mockPoolQueryOne.mock.calls[0]!;
     expect(sql).toContain("WHERE approval_id = $1");
     expect(params).toEqual([APPROVAL_ID]);
+  });
+});
+
+// ── markDecisionWith (phase 3) ─────────────────────────────────────────
+
+describe("markDecisionWith", () => {
+  it("CAS UPDATE — only fires when decision IS NULL, returns true on rowCount > 0", async () => {
+    const mockClient = {
+      query: vi.fn().mockResolvedValue({ rowCount: 1, rows: [{ approval_id: APPROVAL_ID }] }),
+    };
+    const ok = await intents.markDecisionWith(mockClient as never, {
+      approvalId: APPROVAL_ID,
+      kind: "approved",
+      idempotencyKey: APPROVAL_ID,
+    });
+    expect(ok).toBe(true);
+    expect(mockClient.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockClient.query.mock.calls[0];
+    expect(sql).toContain("UPDATE approval_intents");
+    expect(sql).toContain("decision        = $2");
+    expect(sql).toContain("AND decision IS NULL");
+    expect(sql).toContain("RETURNING approval_id");
+    expect(params).toEqual([APPROVAL_ID, "approved", null, APPROVAL_ID]);
+  });
+
+  it("returns false when CAS misses (rowCount = 0)", async () => {
+    const mockClient = {
+      query: vi.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+    };
+    const ok = await intents.markDecisionWith(mockClient as never, {
+      approvalId: APPROVAL_ID,
+      kind: "rejected",
+      reason: "test",
+    });
+    expect(ok).toBe(false);
+  });
+
+  it("forwards reason + idempotencyKey to the SQL params", async () => {
+    const mockClient = {
+      query: vi.fn().mockResolvedValue({ rowCount: 1, rows: [{ approval_id: APPROVAL_ID }] }),
+    };
+    await intents.markDecisionWith(mockClient as never, {
+      approvalId: APPROVAL_ID,
+      kind: "rejected",
+      reason: "expired_ttl",
+      idempotencyKey: "custom-key-123",
+    });
+    const [, params] = mockClient.query.mock.calls[0];
+    expect(params).toEqual([APPROVAL_ID, "rejected", "expired_ttl", "custom-key-123"]);
+  });
+});
+
+// ── markExecutionStatus(With) (phase 3) ────────────────────────────────
+
+describe("markExecutionStatusWith / markExecutionStatus", () => {
+  it("markExecutionStatusWith writes status + COALESCE(hash)", async () => {
+    const mockClient = {
+      query: vi.fn().mockResolvedValue({ rowCount: 1 }),
+    };
+    await intents.markExecutionStatusWith(
+      mockClient as never,
+      APPROVAL_ID,
+      "succeeded",
+      "abc123",
+    );
+    expect(mockClient.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockClient.query.mock.calls[0];
+    expect(sql).toContain("UPDATE approval_intents");
+    expect(sql).toContain("execution_status      = $2");
+    expect(sql).toContain("execution_result_hash = COALESCE($3, execution_result_hash)");
+    expect(params).toEqual([APPROVAL_ID, "succeeded", "abc123"]);
+  });
+
+  it("markExecutionStatusWith passes null hash when omitted (COALESCE preserves existing)", async () => {
+    const mockClient = {
+      query: vi.fn().mockResolvedValue({ rowCount: 1 }),
+    };
+    await intents.markExecutionStatusWith(
+      mockClient as never,
+      APPROVAL_ID,
+      "dispatching",
+    );
+    const [, params] = mockClient.query.mock.calls[0];
+    expect(params).toEqual([APPROVAL_ID, "dispatching", null]);
+  });
+
+  it("markExecutionStatus uses pool execute (non-tx variant)", async () => {
+    await intents.markExecutionStatus(APPROVAL_ID, "failed", "deadbeef");
+    expect(mockPoolExecute).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockPoolExecute.mock.calls[0];
+    expect(sql).toContain("UPDATE approval_intents");
+    expect(params).toEqual([APPROVAL_ID, "failed", "deadbeef"]);
+  });
+});
+
+// ── getExpired (phase 3) ───────────────────────────────────────────────
+
+describe("getExpired", () => {
+  it("JOINs queue, filters expires_at < now AND decision IS NULL AND queue.status = 'pending'", async () => {
+    mockPoolQuery.mockResolvedValue([]);
+    const now = new Date("2026-05-23T20:00:00Z");
+    await intents.getExpired(now);
+
+    const [sql, params] = mockPoolQuery.mock.calls[0]!;
+    expect(sql).toContain("FROM approval_intents i");
+    expect(sql).toContain("JOIN approval_queue q ON q.id = i.approval_id");
+    expect(sql).toContain("WHERE i.expires_at IS NOT NULL");
+    expect(sql).toContain("AND i.expires_at < $1");
+    expect(sql).toContain("AND i.decision IS NULL");
+    expect(sql).toContain("AND q.status = 'pending'");
+    expect(sql).toContain("ORDER BY i.created_at ASC");
+    expect(sql).toContain("LIMIT $2");
+    expect(params).toEqual([now.toISOString(), 50]);
+  });
+
+  it("accepts custom limit", async () => {
+    mockPoolQuery.mockResolvedValue([]);
+    await intents.getExpired(new Date(), 200);
+    const [, params] = mockPoolQuery.mock.calls[0]!;
+    expect(params![1]).toBe(200);
+  });
+
+  it("normalises Date input to ISO string", async () => {
+    mockPoolQuery.mockResolvedValue([]);
+    const now = new Date("2026-05-23T20:00:00.000Z");
+    await intents.getExpired(now);
+    const [, params] = mockPoolQuery.mock.calls[0]!;
+    expect(params![0]).toBe("2026-05-23T20:00:00.000Z");
+  });
+
+  it("maps multiple expired rows through the row mapper", async () => {
+    mockPoolQuery.mockResolvedValue([
+      {
+        approval_id: "a-1",
+        session_id: SESSION_ID,
+        mission_run_id: "run-1",
+        tool_call_id: "call-1",
+        action_kind: "user_wallet_broadcast",
+        risk_level: "high",
+        preview_json: {},
+        policy_json: {},
+        expires_at: new Date("2026-05-23T19:00:00.000Z"),
+        idempotency_key: null,
+        created_at: new Date("2026-05-23T18:00:00.000Z"),
+        decided_at: null,
+        decision: null,
+        decision_reason: null,
+        execution_status: "not_started",
+        execution_result_hash: null,
+      },
+    ]);
+    const result = await intents.getExpired(new Date());
+    expect(result).toHaveLength(1);
+    expect(result[0]!.approvalId).toBe("a-1");
+    expect(result[0]!.expiresAt).toBe("2026-05-23T19:00:00.000Z");
   });
 });
 

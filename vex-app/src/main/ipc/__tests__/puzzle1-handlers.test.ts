@@ -284,12 +284,14 @@ describe("approvals handlers", () => {
     expect(result.data).toEqual([]);
   });
 
-  it("approve / reject fail closed with approvals.feature_unavailable", async () => {
-    for (const ch of [CH.approvals.approve, CH.approvals.reject]) {
-      const result = await call(ch, { id: "approval-1" });
-      expect(result.ok).toBe(false);
-      expect(result.error?.code).toBe("approvals.feature_unavailable");
-    }
+  // Phase 3 wires approve/reject — fail-closed assertions moved out.
+  // Focused phase-3 behavior pinned in `approvals-phase3.test.ts`; this
+  // file keeps the smoke-level "handlers registered" coverage only.
+  it("approve / reject handlers are registered (phase 3 wired)", () => {
+    // `handlers` map is the registered-handler shape from the `electron`
+    // mock; presence here means register{Approve,Reject}Handler ran.
+    expect(handlers.has(CH.approvals.approve)).toBe(true);
+    expect(handlers.has(CH.approvals.reject)).toBe(true);
   });
 });
 

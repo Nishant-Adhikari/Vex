@@ -97,22 +97,67 @@ export async function enqueueWith(
   await client.query(INSERT_APPROVAL_SQL, enqueueParams(id, toolCall, reasoning, sessionId, toolCallId, permission));
 }
 
-/** Atomically approve — returns null if already resolved. */
-export async function approve(id: string): Promise<(ApprovalItem & { pendingContext: Record<string, unknown> | null }) | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    "UPDATE approval_queue SET status = 'approved', resolved_at = NOW() WHERE id = $1 AND status = 'pending' RETURNING *",
-    [id],
-  );
-  if (!row) return null;
+const APPROVE_CAS_SQL =
+  "UPDATE approval_queue SET status = 'approved', resolved_at = NOW() " +
+  "WHERE id = $1 AND status = 'pending' RETURNING *";
+
+const REJECT_CAS_SQL =
+  "UPDATE approval_queue SET status = 'rejected', resolved_at = NOW() " +
+  "WHERE id = $1 AND status = 'pending' RETURNING *";
+
+function mapWithPendingContext(
+  row: Record<string, unknown>,
+): ApprovalItem & { pendingContext: Record<string, unknown> | null } {
   const ctx = row.pending_context as Record<string, unknown> | null;
   return { ...mapRow(row), pendingContext: ctx };
 }
 
-export async function reject(id: string): Promise<ApprovalItem | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    "UPDATE approval_queue SET status = 'rejected', resolved_at = NOW() WHERE id = $1 AND status = 'pending' RETURNING *",
+/** Atomically approve — returns null if already resolved. */
+export async function approve(
+  id: string,
+): Promise<
+  (ApprovalItem & { pendingContext: Record<string, unknown> | null }) | null
+> {
+  const row = await queryOne<Record<string, unknown>>(APPROVE_CAS_SQL, [id]);
+  return row ? mapWithPendingContext(row) : null;
+}
+
+/**
+ * Transactional CAS variant — required for the puzzle-5 phase-3 decision
+ * tx where `approveWith` + `approvalIntentsRepo.markDecisionWith` must
+ * succeed or fail together. Caller is responsible for `BEGIN`/`COMMIT`;
+ * pass the `PoolClient` yielded by `withTransaction(fn)`. Returns null
+ * with the same semantics as `approve(id)` when CAS misses.
+ */
+export async function approveWith(
+  client: PoolClient,
+  id: string,
+): Promise<
+  (ApprovalItem & { pendingContext: Record<string, unknown> | null }) | null
+> {
+  const res = await client.query<Record<string, unknown>>(
+    APPROVE_CAS_SQL,
     [id],
   );
+  const row = res.rows[0];
+  return row ? mapWithPendingContext(row) : null;
+}
+
+export async function reject(id: string): Promise<ApprovalItem | null> {
+  const row = await queryOne<Record<string, unknown>>(REJECT_CAS_SQL, [id]);
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * Transactional CAS variant for the phase-3 reject/expire decision tx.
+ * Same caller contract as `approveWith`.
+ */
+export async function rejectWith(
+  client: PoolClient,
+  id: string,
+): Promise<ApprovalItem | null> {
+  const res = await client.query<Record<string, unknown>>(REJECT_CAS_SQL, [id]);
+  const row = res.rows[0];
   return row ? mapRow(row) : null;
 }
 

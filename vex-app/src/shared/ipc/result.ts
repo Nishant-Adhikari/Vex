@@ -110,6 +110,26 @@ export type VexErrorCode =
   | "approvals.feature_unavailable"
   | "wallets.feature_unavailable"
   | "sessions.feature_unavailable"
+  /**
+   * Puzzle 5 phase 3 — approve/reject runtime semantics. Surfaced when the
+   * IPC handler observes a non-actionable state of the approval intent or
+   * its mission run; the renderer renders a "cannot proceed" toast rather
+   * than retrying. `retryable: false, userActionable: true, redacted: true`.
+   *
+   *  - `approvals.expired`           — `expires_at` lapsed before approve;
+   *                                    auto-rejection applied + run resumed.
+   *  - `approvals.already_resolved`  — concurrent decision wrote first
+   *                                    (race with another operator or sweep).
+   *  - `approvals.run_terminated`    — mission run reached a terminal status
+   *                                    after the approval was enqueued.
+   *  - `approvals.dispatch_failed`   — approved tool dispatch threw an
+   *                                    unhandled exception; run flipped to
+   *                                    `paused_error`.
+   */
+  | "approvals.expired"
+  | "approvals.already_resolved"
+  | "approvals.run_terminated"
+  | "approvals.dispatch_failed"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";
@@ -189,6 +209,10 @@ export const VEX_ERROR_CODES = [
   "approvals.feature_unavailable",
   "wallets.feature_unavailable",
   "sessions.feature_unavailable",
+  "approvals.expired",
+  "approvals.already_resolved",
+  "approvals.run_terminated",
+  "approvals.dispatch_failed",
   "internal.contract_violation",
   "internal.cancelled",
   "internal.unexpected",

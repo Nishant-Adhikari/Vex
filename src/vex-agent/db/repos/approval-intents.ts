@@ -4,28 +4,47 @@
  * Plan: agents_dm/plan-integration/05-approvals-wallet-policy.md §"Approval DB model".
  * Migration: `src/vex-agent/db/migrations/024_approval_intents.sql`.
  *
- * Puzzle 5 phase 2 (this commit) writes the snapshot columns at enqueue
- * time (`action_kind`, `risk_level`, `preview_json`, `policy_json`, plus
- * `mission_run_id`, `tool_call_id`). Phase 3 will populate `decision`,
- * `decision_reason`, `decided_at`, `execution_status`,
- * `execution_result_hash`, and use `idempotency_key` / `expires_at` for
- * the approve/reject runtime semantics.
+ * Puzzle 5 phase 2 wrote the snapshot columns at enqueue time (`action_kind`,
+ * `risk_level`, `preview_json`, `policy_json`, `mission_run_id`, `tool_call_id`).
+ * Phase 3 wires the runtime: `expires_at` is stamped at enqueue
+ * (NOT at approve — corrects the phase-2 misalignment comment), and the
+ * approve/reject/expire path populates `decision`, `decision_reason`,
+ * `decided_at`, `execution_status`, `execution_result_hash`, and
+ * `idempotency_key` via the CAS helpers below.
  *
- * Transactional contract: `createWith(client, ...)` is the supported call
- * path; the enqueue site wraps `approval_queue` INSERT + this INSERT +
- * `mission_runs.updateStatus` in one `withTransaction` so a partial state
- * (queue without intent, or queue+intent without `paused_approval`) is
- * unrepresentable.
+ * Transactional contracts:
+ *   - `createWith(client, ...)`               — INSERT at enqueue tx.
+ *   - `markDecisionWith(client, ...)`         — CAS UPDATE; only flips a row
+ *                                               whose `decision IS NULL`.
+ *   - `markExecutionStatusWith(client, ...)`  — in-tx variant of below.
+ *   - `markExecutionStatus(...)`              — non-tx; called AFTER the
+ *                                               decision tx commits so audit
+ *                                               drift can't roll back the
+ *                                               decision itself.
+ *   - `getExpired(now)`                       — non-tx scan used by the
+ *                                               scheduled TTL sweep.
+ *
+ * All scalar columns expose ISO-8601 strings; `pg` returns `Date` for
+ * `TIMESTAMPTZ` so `toIso{,OrNull}` normalise before the value crosses
+ * the repo interface.
  */
 
 import type { PoolClient } from "pg";
 import type { ActionKind } from "../../tools/taxonomy.js";
 import type { RiskLevel } from "../../tools/risk-level.js";
-import { query, queryOne } from "../client.js";
+import type {
+  IntentPreview,
+  PolicySnapshot,
+} from "../../engine/core/approval-intent-preview.js";
+import { query, queryOne, execute } from "../client.js";
 import { jsonb } from "../params.js";
 
 export type ApprovalDecision = "approved" | "rejected" | "rejected_stop";
-export type ApprovalExecutionStatus = "not_started" | "dispatching" | "succeeded" | "failed";
+export type ApprovalExecutionStatus =
+  | "not_started"
+  | "dispatching"
+  | "succeeded"
+  | "failed";
 
 export interface ApprovalIntent {
   approvalId: string;
@@ -46,6 +65,13 @@ export interface ApprovalIntent {
   executionResultHash: string | null;
 }
 
+/**
+ * `previewJson` / `policyJson` accept either the structured builder output
+ * (`IntentPreview` / `PolicySnapshot` from `approval-intent-preview.ts`) or a
+ * raw `Record<string, unknown>` so future callers can pass through pre-built
+ * JSONB payloads without an `as unknown as` cast at the call site. Both shapes
+ * round-trip through `jsonb()` unchanged. Codex puzzle-5 phase-3 cleanup.
+ */
 export interface CreateIntentInput {
   approvalId: string;
   sessionId: string;
@@ -53,11 +79,19 @@ export interface CreateIntentInput {
   toolCallId: string | null;
   actionKind: ActionKind;
   riskLevel: RiskLevel;
-  previewJson: Record<string, unknown>;
-  policyJson: Record<string, unknown>;
-  /** Phase 3 sets via approve. Phase 2 always passes null. */
+  previewJson: IntentPreview | Record<string, unknown>;
+  policyJson: PolicySnapshot | Record<string, unknown>;
+  /**
+   * Phase 3 stamps this at enqueue (NOT at approve — see file header) so the
+   * approve gate and the scheduled sweep can both rely on a DB-visible TTL.
+   * Callers without a TTL pass `null`.
+   */
   expiresAt?: string | null;
-  /** Phase 3 sets via approve. Phase 2 always passes null. */
+  /**
+   * Phase 3 stamps this at approve via `markDecisionWith` (defense-in-depth
+   * audit for the dedup gate; `idx_approval_intents_idempotency` UNIQUE
+   * partial index guards cross-approval reuse). Phase 2 inserts pass `null`.
+   */
   idempotencyKey?: string | null;
 }
 
@@ -67,7 +101,7 @@ const INSERT_INTENT_SQL = `INSERT INTO approval_intents (
   expires_at, idempotency_key
 ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)`;
 
-function toParams(input: CreateIntentInput): unknown[] {
+function toCreateParams(input: CreateIntentInput): unknown[] {
   return [
     input.approvalId,
     input.sessionId,
@@ -92,7 +126,84 @@ export async function createWith(
   client: PoolClient,
   input: CreateIntentInput,
 ): Promise<void> {
-  await client.query(INSERT_INTENT_SQL, toParams(input));
+  await client.query(INSERT_INTENT_SQL, toCreateParams(input));
+}
+
+/**
+ * Decision write — CAS-guarded `UPDATE` that only fires when `decision IS
+ * NULL`. Returns `true` if this call flipped the row, `false` if another
+ * writer (concurrent approve, sweep, expire) had already set a decision.
+ *
+ * Caller MUST run inside the same `withTransaction(fn)` that lock-acquired
+ * the intent row via `SELECT ... FOR UPDATE` — without that lock the CAS is
+ * still safe (RETURNING discriminates) but the surrounding queue/intent
+ * snapshot can drift, which the phase-3 prepare paths require to hold.
+ */
+export interface MarkDecisionInput {
+  approvalId: string;
+  kind: ApprovalDecision;
+  reason?: string | null;
+  idempotencyKey?: string | null;
+}
+
+const MARK_DECISION_SQL = `UPDATE approval_intents
+   SET decision        = $2,
+       decided_at      = NOW(),
+       decision_reason = $3,
+       idempotency_key = $4
+ WHERE approval_id = $1
+   AND decision IS NULL
+ RETURNING approval_id`;
+
+export async function markDecisionWith(
+  client: PoolClient,
+  input: MarkDecisionInput,
+): Promise<boolean> {
+  const res = await client.query(MARK_DECISION_SQL, [
+    input.approvalId,
+    input.kind,
+    input.reason ?? null,
+    input.idempotencyKey ?? null,
+  ]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+/**
+ * Execution-status write — UPDATE that always overwrites the column. Audit
+ * eventual consistency: if the post-dispatch write fails the IPC caller can
+ * still tell the user "your decision was applied" because the queue+intent
+ * decision tx already committed. The `transition` table the runtime walks
+ * through is `not_started → dispatching → (succeeded|failed)`; a `failed`
+ * row never transitions back so the audit trail is monotonic.
+ */
+const MARK_EXECUTION_STATUS_SQL = `UPDATE approval_intents
+   SET execution_status      = $2,
+       execution_result_hash = COALESCE($3, execution_result_hash)
+ WHERE approval_id = $1`;
+
+export async function markExecutionStatusWith(
+  client: PoolClient,
+  approvalId: string,
+  status: ApprovalExecutionStatus,
+  resultHash?: string | null,
+): Promise<void> {
+  await client.query(MARK_EXECUTION_STATUS_SQL, [
+    approvalId,
+    status,
+    resultHash ?? null,
+  ]);
+}
+
+export async function markExecutionStatus(
+  approvalId: string,
+  status: ApprovalExecutionStatus,
+  resultHash?: string | null,
+): Promise<void> {
+  await execute(MARK_EXECUTION_STATUS_SQL, [
+    approvalId,
+    status,
+    resultHash ?? null,
+  ]);
 }
 
 const SELECT_COLUMNS =
@@ -132,12 +243,15 @@ function mapRow(r: Record<string, unknown>): ApprovalIntent {
     decidedAt: toIsoOrNull(r.decided_at as string | Date | null),
     decision: r.decision as ApprovalDecision | null,
     decisionReason: r.decision_reason as string | null,
-    executionStatus: (r.execution_status as ApprovalExecutionStatus) ?? "not_started",
+    executionStatus:
+      (r.execution_status as ApprovalExecutionStatus) ?? "not_started",
     executionResultHash: r.execution_result_hash as string | null,
   };
 }
 
-export async function getByApprovalId(approvalId: string): Promise<ApprovalIntent | null> {
+export async function getByApprovalId(
+  approvalId: string,
+): Promise<ApprovalIntent | null> {
   const row = await queryOne<Record<string, unknown>>(
     `SELECT ${SELECT_COLUMNS} FROM approval_intents WHERE approval_id = $1`,
     [approvalId],
@@ -145,7 +259,9 @@ export async function getByApprovalId(approvalId: string): Promise<ApprovalInten
   return row ? mapRow(row) : null;
 }
 
-export async function getPendingForSession(sessionId: string): Promise<ApprovalIntent[]> {
+export async function getPendingForSession(
+  sessionId: string,
+): Promise<ApprovalIntent[]> {
   const rows = await query<Record<string, unknown>>(
     `SELECT i.${SELECT_COLUMNS.replace(/, /g, ", i.")}
        FROM approval_intents i
@@ -153,6 +269,37 @@ export async function getPendingForSession(sessionId: string): Promise<ApprovalI
       WHERE i.session_id = $1 AND q.status = 'pending'
       ORDER BY i.created_at ASC`,
     [sessionId],
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Lookup for the scheduled TTL sweep: only intents that BOTH still have a
+ * pending queue row AND have an `expires_at` strictly less than `now` AND
+ * have not yet been decided. The JOIN on `approval_queue.status = 'pending'`
+ * is the race-defense against a concurrent approve/reject having already
+ * resolved the row (`expireApproval` would then see `decision != NULL` and
+ * skip).
+ *
+ * Returned in `created_at` order so the oldest expired rows get processed
+ * first — bounded by the caller's `LIMIT` to avoid a single-cycle stall.
+ */
+export async function getExpired(
+  now: Date | string,
+  limit = 50,
+): Promise<ApprovalIntent[]> {
+  const nowIso = typeof now === "string" ? now : now.toISOString();
+  const rows = await query<Record<string, unknown>>(
+    `SELECT i.${SELECT_COLUMNS.replace(/, /g, ", i.")}
+       FROM approval_intents i
+       JOIN approval_queue q ON q.id = i.approval_id
+      WHERE i.expires_at IS NOT NULL
+        AND i.expires_at < $1
+        AND i.decision IS NULL
+        AND q.status = 'pending'
+      ORDER BY i.created_at ASC
+      LIMIT $2`,
+    [nowIso, limit],
   );
   return rows.map(mapRow);
 }
