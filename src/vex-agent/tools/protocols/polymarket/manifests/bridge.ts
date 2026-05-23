@@ -8,6 +8,7 @@ export const BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List supported chains and tokens for Polymarket bridge — chain IDs, token addresses, decimals, minimum checkout amount in USD.",
     mutating: false,
+    actionKind: "read",
     params: [],
     exampleParams: {},
     discovery: POLYMARKET_BRIDGE_DISCOVERY["polymarket.bridge.assets"],
@@ -18,6 +19,7 @@ export const BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Create a deposit address for funding Polymarket account. Returns EVM, Solana, and/or BTC deposit addresses.",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "address", type: "string", required: true, description: "Your Polymarket (Polygon) wallet address." },
     ],
@@ -30,6 +32,7 @@ export const BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Create a withdrawal from Polymarket to another chain. Returns deposit address to send USDC.e to.",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "address", type: "string", required: true, description: "Your Polymarket (Polygon) wallet address." },
       { key: "toChainId", type: "string", required: true, description: "Destination chain ID." },
@@ -45,6 +48,7 @@ export const BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get bridge quote — estimated output, fees, checkout time for a cross-chain transfer to/from Polymarket.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "fromAmountBaseUnit", type: "string", required: true, description: "Input amount in smallest units (e.g. USDC 6 decimals: 1000000 = 1 USDC)." },
       { key: "fromChainId", type: "string", required: true, description: "Source chain ID." },
@@ -62,6 +66,7 @@ export const BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Check status of bridge transactions for an address — DEPOSIT_DETECTED, PROCESSING, COMPLETED, FAILED.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", required: true, description: "Deposit or withdrawal address to check." },
     ],

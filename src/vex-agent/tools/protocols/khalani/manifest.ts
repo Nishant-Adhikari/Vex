@@ -16,6 +16,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List all Khalani-supported chains with metadata (40+ chains, EVM + Solana).",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "refresh", type: "boolean", description: "Force refresh chain cache." },
     ],
@@ -28,6 +29,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List top Khalani tokens, optionally filtered by chain IDs.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases (e.g. '1,solana')." },
     ],
@@ -40,6 +42,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Search Khalani tokens by symbol, name, or address. This is the canonical cross-chain token resolver — use before any EVM mutation to get exact contract addresses.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Search phrase or token address." },
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
@@ -53,6 +56,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Semantic token autocomplete — understands '100 usdc on ethereum'.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "keyword", type: "string", required: true, description: "Autocomplete keyword." },
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
@@ -67,6 +71,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Read your token balances on Khalani-supported chains for one wallet family (EVM or Solana). Defaults to your personal wallet — pass `address` to override with a different one. Returns balances with USD prices, scanned per chain for complete multi-chain results.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", description: "Optional. Pass a different wallet address to check; omit to use your personal wallet." },
       { key: "wallet", type: "string", description: "Wallet family: eip155 or solana (default: eip155)." },
@@ -81,6 +86,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get cross-chain bridge quote with routes, pricing, and ETA. Resolve fromToken/toToken addresses via khalani.tokens.search first.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "fromChain", type: "string", required: true, description: "Source chain ID or alias." },
       { key: "fromToken", type: "string", required: true, description: "Source token address." },
@@ -110,6 +116,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List Khalani bridge orders for an address with pagination and filters.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", description: "Wallet address (optional — uses configured wallet)." },
       { key: "wallet", type: "string", description: "Wallet family: eip155 or solana." },
@@ -129,6 +136,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get a single Khalani bridge order by ID with full lifecycle details.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "orderId", type: "string", required: true, description: "Khalani order ID." },
     ],
@@ -141,6 +149,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Execute a cross-chain bridge: quote → build deposit → sign → broadcast → submit. Requires wallet access. Resolve fromToken/toToken addresses via khalani.tokens.search first.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "fromChain", type: "string", required: true, description: "Source chain ID or alias." },
       { key: "fromToken", type: "string", required: true, description: "Source token address." },

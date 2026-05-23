@@ -8,6 +8,7 @@ export const TOKENS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Search EVM tokens by name/symbol across KyberSwap-supported chains. Returns address, decimals, marketCap, verification status.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias (e.g. ethereum, arb, base)." },
       { key: "query", type: "string", description: "Token name or symbol to search." },
@@ -23,6 +24,7 @@ export const TOKENS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Check if a token is a honeypot or has fee-on-transfer tax. Essential safety check before trading.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "address", type: "string", required: true, description: "Token contract address." },

@@ -11,6 +11,7 @@
  */
 
 import type { ToolResult } from "../types.js";
+import type { ActionKind } from "../taxonomy.js";
 import type { Permission } from "@vex-agent/engine/types.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
@@ -78,6 +79,19 @@ export interface ProtocolToolManifest {
   description: string;
   /** Whether this tool modifies state */
   mutating: boolean;
+  /**
+   * Action taxonomy — explicit side-effect classification (see `../taxonomy.ts`).
+   * REQUIRED — every protocol tool MUST be deliberately classified. Mirrors
+   * the `ToolDef.actionKind` invariant; the compiler enforces classification
+   * at registration time so puzzle 5 phase 2+ (approval intents, audit) can
+   * make policy decisions from a stable per-manifest classifier.
+   *
+   * Read by `executeProtocolTool` in `./runtime.ts` and stamped on every
+   * known-manifest return path of `ToolResult.actionKind`. The wrapper
+   * overrides to `"read"` when `isPreviewExecution(...)` is true (preview /
+   * dryRun is read-only simulation regardless of mutating intent).
+   */
+  actionKind: ActionKind;
   /** Parameter definitions */
   params: ProtocolParamDef[];
   /** Example params for LLM guidance */

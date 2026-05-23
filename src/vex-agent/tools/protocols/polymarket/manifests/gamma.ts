@@ -10,6 +10,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Browse prediction market events — filter by tag, status, liquidity/volume bounds, date range. Includes nested markets with prices.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "limit", type: "number", description: "Max results." },
       { key: "offset", type: "number", description: "Pagination offset." },
@@ -46,6 +47,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single event by ID — title, description, volume, liquidity, markets, tags.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Event ID." },
       { key: "includeChat", type: "boolean", description: "Include chat data." },
@@ -60,6 +62,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single event by URL slug.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "slug", type: "string", required: true, description: "Event slug." },
       { key: "includeChat", type: "boolean", description: "Include chat data." },
@@ -74,6 +77,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get tags associated with an event.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Event ID." },
     ],
@@ -89,6 +93,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Browse prediction markets — filter by status, liquidity/volume bounds, date range, sports, tags. Includes prices, clobTokenIds.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "limit", type: "number", description: "Max results." },
       { key: "offset", type: "number", description: "Pagination offset." },
@@ -125,6 +130,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single market by condition ID — question, outcomes, prices, clobTokenIds, negRisk.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Market condition ID or numeric ID." },
       { key: "includeTag", type: "boolean", description: "Include tag data." },
@@ -138,6 +144,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single market by URL slug.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "slug", type: "string", required: true, description: "Market slug." },
       { key: "includeTag", type: "boolean", description: "Include tag data." },
@@ -151,6 +158,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get tags associated with a market.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Market condition ID." },
     ],
@@ -166,6 +174,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Cross-entity search across events, tags, and profiles on Polymarket. Rich filtering and sorting.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Search query." },
       { key: "limitPerType", type: "number", description: "Max results per entity type." },
@@ -194,6 +203,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List all tags (categories) on Polymarket with pagination and sorting.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "limit", type: "number", description: "Max results." },
       { key: "offset", type: "number", description: "Pagination offset." },
@@ -211,6 +221,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single tag by ID.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Tag ID." },
       { key: "includeTemplate", type: "boolean", description: "Include template data." },
@@ -224,6 +235,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single tag by slug.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "slug", type: "string", required: true, description: "Tag slug." },
       { key: "includeTemplate", type: "boolean", description: "Include template data." },
@@ -237,6 +249,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get related tag IDs for a tag by ID.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Tag ID." },
       { key: "status", type: "string", description: "Filter: active, closed, all." },
@@ -251,6 +264,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get related tag IDs for a tag by slug.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "slug", type: "string", required: true, description: "Tag slug." },
       { key: "status", type: "string", description: "Filter: active, closed, all." },
@@ -265,6 +279,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get full tag objects related to a tag by ID.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Tag ID." },
       { key: "status", type: "string", description: "Filter: active, closed, all." },
@@ -279,6 +294,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get full tag objects related to a tag by slug.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "slug", type: "string", required: true, description: "Tag slug." },
       { key: "status", type: "string", description: "Filter: active, closed, all." },
@@ -296,6 +312,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List event series — grouped recurring events. Filter by category, slug, recurrence.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "limit", type: "number", description: "Max results." },
       { key: "offset", type: "number", description: "Pagination offset." },
@@ -318,6 +335,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single series by ID with nested events.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Series ID." },
       { key: "includeChat", type: "boolean", description: "Include chat data." },
@@ -334,6 +352,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Browse comments on Polymarket — filter by entity type, entity ID, holders only. Pagination and sorting.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "parentEntityType", type: "string", description: "Entity type: Event, Series, market." },
       { key: "parentEntityId", type: "number", description: "Entity ID." },
@@ -353,6 +372,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get single comment by ID.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", required: true, description: "Comment ID." },
       { key: "getPositions", type: "boolean", description: "Include position data." },
@@ -366,6 +386,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get comments by a specific user address with pagination and sorting.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", required: true, description: "User wallet address." },
       { key: "limit", type: "number", description: "Max results." },
@@ -385,6 +406,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get public profile — name, pseudonym, bio, X username, verified badge.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", required: true, description: "User wallet address." },
     ],
@@ -400,6 +422,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get sports categories metadata — sport names, images, resolutions.",
     mutating: false,
+    actionKind: "read",
     params: [],
     exampleParams: {},
     discovery: POLYMARKET_GAMMA_DISCOVERY["polymarket.gamma.sportsMetadata"],
@@ -410,6 +433,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get available sports market types (e.g. moneyline, spread, total).",
     mutating: false,
+    actionKind: "read",
     params: [],
     exampleParams: {},
     discovery: POLYMARKET_GAMMA_DISCOVERY["polymarket.gamma.sportsMarketTypes"],
@@ -420,6 +444,7 @@ export const GAMMA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List sports teams with league, record, logo. Filter by name or abbreviation.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "league", type: "string", description: "Filter by league (comma-separated for multiple)." },
       { key: "name", type: "string", description: "Filter by team name(s), comma-separated." },

@@ -8,6 +8,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List prediction market events — crypto, sports, politics, culture, economics, tech.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "category", type: "string", description: "Category filter." },
       { key: "filter", type: "string", description: "Filter: trending, live, new." },
@@ -22,6 +23,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Search prediction events by keyword.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Search query." },
     ],
@@ -35,6 +37,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get prediction market details — YES/NO prices, volume, status.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "marketId", type: "string", required: true, description: "Market ID." },
     ],
@@ -48,6 +51,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get open prediction positions with PnL for a wallet.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", required: true, description: "Wallet address." },
     ],
@@ -61,6 +65,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get prediction trade history — buys, sells, claims, realized PnL.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", required: true, description: "Wallet address." },
       { key: "limit", type: "number", description: "Max results." },
@@ -76,6 +81,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Buy YES or NO shares in a prediction market.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "marketId", type: "string", required: true, description: "Market ID." },
       { key: "side", type: "string", required: true, description: "Side: yes or no." },
@@ -91,6 +97,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Sell (close) a prediction position.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
     ],
@@ -104,6 +111,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Claim winnings from a resolved prediction position.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
     ],
@@ -117,6 +125,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Close (sell) all open prediction positions.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [],
     exampleParams: {},
     requiresEnv: "JUPITER_API_KEY",
@@ -128,6 +137,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get a single prediction event by ID with all its markets.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "eventId", type: "string", required: true, description: "Event ID." },
     ],
@@ -141,6 +151,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get a single prediction position detail by pubkey.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "positionPubkey", type: "string", required: true, description: "Position public key." },
     ],

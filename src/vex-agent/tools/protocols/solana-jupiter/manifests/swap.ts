@@ -8,6 +8,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get swap quote — price, route, price impact, slippage. No execution.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "inputToken", type: "string", required: true, description: "Input token symbol or mint." },
       { key: "outputToken", type: "string", required: true, description: "Output token symbol or mint." },
@@ -24,6 +25,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Execute a token swap via Jupiter Swap API V2 — routes through 400+ DEXs with MEV protection.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "inputToken", type: "string", required: true, description: "Input token symbol or mint." },
       { key: "outputToken", type: "string", required: true, description: "Output token symbol or mint." },

@@ -8,6 +8,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Search DEX pairs across all chains by token name, symbol, or address. Returns price, volume, liquidity, FDV, market cap.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Search term — token name, symbol, or contract address." },
     ],
@@ -20,6 +21,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get detailed pair data by chain and pair address — price, volume, liquidity, transactions, FDV, market cap, boosts.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chainId", type: "string", required: true, description: "Chain identifier (e.g. solana, ethereum, bsc, base)." },
       { key: "pairAddress", type: "string", required: true, description: "DEX pool/pair contract address." },
@@ -33,6 +35,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get pair data for up to 30 tokens at once (comma-separated addresses). Useful for batch pricing and portfolio lookups.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chainId", type: "string", required: true, description: "Chain identifier (e.g. solana, ethereum, bsc, base)." },
       { key: "tokenAddresses", type: "string", required: true, description: "Comma-separated token addresses (max 30)." },
@@ -46,6 +49,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get all DEX pools/pairs for a specific token — find best liquidity, compare across DEXes.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chainId", type: "string", required: true, description: "Chain identifier (e.g. solana, ethereum, bsc, base)." },
       { key: "tokenAddress", type: "string", required: true, description: "Token contract address." },

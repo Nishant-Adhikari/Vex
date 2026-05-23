@@ -8,6 +8,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get lending rates — APY (supply + rewards), TVL, total supply per token.",
     mutating: false,
+    actionKind: "read",
     params: [],
     exampleParams: {},
     requiresEnv: "JUPITER_API_KEY",
@@ -19,6 +20,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get lending positions and accrued earnings for a wallet.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "address", type: "string", required: true, description: "Wallet address." },
     ],
@@ -32,6 +34,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Deposit tokens into Jupiter Lend Earn vault.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "asset", type: "string", required: true, description: "Token address to deposit." },
       { key: "amount", type: "string", required: true, description: "Amount in atomic units." },
@@ -46,6 +49,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Withdraw tokens from Jupiter Lend Earn vault.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "asset", type: "string", required: true, description: "Token address to withdraw." },
       { key: "amount", type: "string", required: true, description: "Amount in atomic units." },

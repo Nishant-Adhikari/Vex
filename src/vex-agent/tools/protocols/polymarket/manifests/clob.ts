@@ -10,6 +10,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get full orderbook for a token — bids, asks, tick size, last trade price, neg risk flag.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID (outcome token asset ID)." },
     ],
@@ -22,6 +23,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get orderbooks for multiple tokens in one call.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenIds", type: "string", required: true, description: "Comma-separated CLOB token IDs." },
     ],
@@ -34,6 +36,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get best available price for a token on BUY or SELL side.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID." },
       { key: "side", type: "string", required: true, description: "Side: BUY or SELL." },
@@ -47,6 +50,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get prices for multiple tokens and sides in one call.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenIds", type: "string", required: true, description: "Comma-separated CLOB token IDs." },
       { key: "sides", type: "string", required: true, description: "Comma-separated sides (BUY/SELL) matching tokenIds order." },
@@ -60,6 +64,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get midpoint price (average of best bid and best ask) for a token.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID." },
     ],
@@ -72,6 +77,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get midpoint prices for multiple tokens in one call.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenIds", type: "string", required: true, description: "Comma-separated CLOB token IDs." },
     ],
@@ -84,6 +90,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get bid-ask spread for a token.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID." },
     ],
@@ -96,6 +103,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get spreads for multiple tokens in one call.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenIds", type: "string", required: true, description: "Comma-separated CLOB token IDs." },
     ],
@@ -108,6 +116,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get last trade price and side for a token.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID." },
     ],
@@ -120,6 +129,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get last trade prices for multiple tokens in one call.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenIds", type: "string", required: true, description: "Comma-separated CLOB token IDs." },
     ],
@@ -132,6 +142,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get price history time-series for a market — OHLC data with configurable interval and fidelity.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "market", type: "string", required: true, description: "Market condition ID." },
       { key: "interval", type: "string", description: "Time interval: 1h, 6h, 1d, 1w, 1m, all." },
@@ -148,6 +159,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get price history for multiple markets in one call (max 20). POST endpoint.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "markets", type: "string", required: true, description: "Comma-separated market asset IDs (max 20)." },
       { key: "interval", type: "string", description: "Time interval: 1h, 6h, 1d, 1w, 1m, all, max." },
@@ -164,6 +176,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get Polymarket CLOB server time (unix timestamp).",
     mutating: false,
+    actionKind: "read",
     params: [],
     exampleParams: {},
     discovery: POLYMARKET_CLOB_DISCOVERY["polymarket.clob.serverTime"],
@@ -175,6 +188,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get minimum tick size (price increment) for a token.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID." },
     ],
@@ -187,6 +201,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get trading fee rate in basis points for a token.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "tokenId", type: "string", required: true, description: "CLOB token ID." },
     ],
@@ -202,6 +217,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Buy YES or NO outcome shares on Polymarket. Resolves market, builds EIP-712 signed order, submits to CLOB.",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "conditionId", type: "string", required: true, description: "Market condition ID." },
       { key: "outcome", type: "string", required: true, description: "Outcome to buy: yes or no." },
@@ -221,6 +237,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Sell YES or NO outcome shares on Polymarket. EIP-712 signed order submitted to CLOB.",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "conditionId", type: "string", required: true, description: "Market condition ID." },
       { key: "outcome", type: "string", required: true, description: "Outcome to sell: yes or no." },
@@ -240,6 +257,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Cancel a single open order by order ID.",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "orderId", type: "string", required: true, description: "Order ID to cancel." },
     ],
@@ -253,6 +271,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Cancel all open orders on Polymarket.",
     mutating: true,
+    actionKind: "external_post",
     params: [],
     exampleParams: {},
     requiresEnv: "POLYMARKET_API_KEY",
@@ -264,6 +283,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Cancel all open orders in a specific market.",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "market", type: "string", required: true, description: "Market condition ID." },
       { key: "assetId", type: "string", required: true, description: "Asset/token ID." },
@@ -278,6 +298,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List open orders with optional market/asset filter. Paginated.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", description: "Filter by specific order ID (hash)." },
       { key: "market", type: "string", description: "Filter by market condition ID." },
@@ -294,6 +315,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get details of a single order by order ID.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "orderId", type: "string", required: true, description: "Order ID." },
     ],
@@ -307,6 +329,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List your CLOB trades with optional market/time filter. Paginated.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "id", type: "string", description: "Filter by specific trade ID." },
       { key: "market", type: "string", description: "Filter by market condition ID." },
@@ -325,6 +348,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Lightweight paginated market list — condition_id, active/closed status, tokens with prices, rewards. Faster than full markets.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "cursor", type: "string", description: "Pagination cursor." },
     ],
@@ -337,6 +361,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get current rebated fees for a maker address on a given date.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "date", type: "string", required: true, description: "Date in YYYY-MM-DD format." },
       { key: "makerAddress", type: "string", required: true, description: "Maker wallet address." },
@@ -350,6 +375,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Send heartbeat to keep automated orders alive. Orders auto-cancel if heartbeats stop.",
     mutating: true,
+    actionKind: "external_post",
     params: [],
     exampleParams: {},
     requiresEnv: "POLYMARKET_API_KEY",
@@ -361,6 +387,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Cancel multiple orders by IDs in one call (max 3000).",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "orderIds", type: "string", required: true, description: "Comma-separated order IDs to cancel." },
     ],
@@ -374,6 +401,7 @@ export const CLOB_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Check if an order is being scored for rewards.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "orderId", type: "string", required: true, description: "Order ID." },
     ],

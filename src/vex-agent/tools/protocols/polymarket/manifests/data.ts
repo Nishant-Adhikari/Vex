@@ -10,6 +10,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get open prediction market positions — size, avgPrice, PnL, redeemable/mergeable status.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
       { key: "market", type: "string", description: "Filter by market condition ID." },
@@ -32,6 +33,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get closed prediction market positions with realized PnL.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
       { key: "market", type: "string", description: "Filter by market condition ID." },
@@ -51,6 +53,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get user activity history — trades, splits, merges, redeems, rewards, conversions, maker rebates, referral rewards.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
       { key: "market", type: "string", description: "Filter by market condition ID (mutually exclusive with eventId)." },
@@ -73,6 +76,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get trades with tx hashes, prices, sizes — by user, market, or event.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "user", type: "string", description: "Filter by user address." },
       { key: "market", type: "string", description: "Filter by market condition ID (mutually exclusive with eventId)." },
@@ -93,6 +97,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get total portfolio value in USD for a user.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
       { key: "market", type: "string", description: "Filter by specific market." },
@@ -106,6 +111,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get total number of markets a user has traded in.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
     ],
@@ -121,6 +127,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get top holders per outcome token for a market — amounts, pseudonyms, profile images.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "market", type: "string", required: true, description: "Market condition ID." },
       { key: "limit", type: "number", description: "Max holders per token." },
@@ -135,6 +142,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get open interest (total value locked) per market. Omit market for all.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "market", type: "string", description: "Market condition ID (optional — omit for all)." },
     ],
@@ -147,6 +155,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get live trading volume for an event — total and per-market breakdown.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "eventId", type: "number", required: true, description: "Event ID." },
     ],
@@ -159,6 +168,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get all positions in a specific market — per-user size, PnL, avgPrice.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "market", type: "string", required: true, description: "Market condition ID." },
       { key: "user", type: "string", description: "Filter by user." },
@@ -180,6 +190,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get trader leaderboard ranked by PnL or volume. Filter by category, user, or username.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "category", type: "string", description: "Category: OVERALL, POLITICS, SPORTS, CRYPTO, CULTURE, MENTIONS, WEATHER, ECONOMICS, TECH, FINANCE." },
       { key: "timePeriod", type: "string", description: "Period: DAY, WEEK, MONTH, ALL." },
@@ -198,6 +209,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get builder (API integrator) leaderboard by volume and active users.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "timePeriod", type: "string", description: "Period: DAY, WEEK, MONTH, ALL." },
       { key: "limit", type: "number", description: "Max entries." },
@@ -212,6 +224,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get builder volume time-series — daily volume and active users per builder.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "timePeriod", type: "string", description: "Period: DAY, WEEK, MONTH, ALL." },
     ],
@@ -227,6 +240,7 @@ export const DATA_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get URL for downloading full accounting snapshot (CSV) for a user.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "user", type: "string", required: true, description: "User wallet or proxy address." },
     ],

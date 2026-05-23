@@ -10,6 +10,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List maker's limit orders on a chain — active, filled, cancelled, expired.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "status", type: "string", description: "Filter by status: active, filled, cancelled, expired." },
@@ -23,6 +24,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get total active making amount locked in open orders for a token (for allowance planning). Resolve makerAsset address via khalani.tokens.search first.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "makerAsset", type: "string", required: true, description: "Maker token address." },
@@ -36,6 +38,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Create a gasless EIP-712 signed limit order. Off-chain relay, on-chain settlement. Resolve token addresses via khalani.tokens.search first.",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "makerAsset", type: "string", required: true, description: "Token to sell (address or symbol)." },
@@ -54,6 +57,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Cancel a limit order (gasless — operator signature lapses within ~5 minutes).",
     mutating: true,
+    actionKind: "external_post",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "orderId", type: "number", required: true, description: "Order ID to cancel." },
@@ -67,6 +71,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Hard-cancel a limit order on-chain (immediate, costs gas).",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "orderId", type: "number", required: true, description: "Order ID to hard-cancel." },
@@ -83,6 +88,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List supported trading pairs for limit order filling on a chain.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
     ],
@@ -95,6 +101,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Query available limit orders to fill as a taker.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "makerAsset", type: "string", description: "Filter by maker token address." },
@@ -109,6 +116,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Fill a limit order as a taker (on-chain execution).",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "orderId", type: "number", required: true, description: "Order ID to fill." },
@@ -125,6 +133,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Fill multiple limit orders as a taker in one on-chain transaction.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "orderIds", type: "string", required: true, description: "Comma-separated order IDs." },
@@ -141,6 +150,7 @@ export const LIMIT_ORDER_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Cancel ALL open limit orders on a chain by increasing the nonce (on-chain, costs gas).",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
     ],

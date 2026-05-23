@@ -10,6 +10,7 @@ export const REWARDS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get current active reward configurations — daily rates, min size, max spread per market. Paginated.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "sponsored", type: "boolean", description: "Return sponsored configs instead of standard." },
       { key: "cursor", type: "string", description: "Pagination cursor." },
@@ -23,6 +24,7 @@ export const REWARDS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get raw reward configs for a specific market — rates, competitiveness, token prices.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "conditionId", type: "string", required: true, description: "Market condition ID." },
       { key: "sponsored", type: "boolean", description: "Fold sponsored rates into config." },
@@ -37,6 +39,7 @@ export const REWARDS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Search markets with rewards — filter by tag, volume, spread, price. Rich sorting options.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "query", type: "string", description: "Text search on question/description." },
       { key: "tagSlug", type: "string", description: "Filter by tag slug." },
@@ -65,6 +68,7 @@ export const REWARDS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get your reward earnings per market for a specific date. Paginated.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "date", type: "string", required: true, description: "Date in YYYY-MM-DD format." },
       { key: "signatureType", type: "number", description: "Address type: 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE." },
@@ -82,6 +86,7 @@ export const REWARDS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get total aggregated reward earnings for a date (all markets combined).",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "date", type: "string", required: true, description: "Date in YYYY-MM-DD format." },
       { key: "signatureType", type: "number", description: "Address type: 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE." },
@@ -98,6 +103,7 @@ export const REWARDS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get your reward percentage share per market — shows what % of rewards you earn.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "signatureType", type: "number", description: "Address type: 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE." },
       { key: "makerAddress", type: "string", description: "Override maker address." },
@@ -112,6 +118,7 @@ export const REWARDS_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get your earnings combined with market configs — search, filter, paginate. Full reward dashboard.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "date", type: "string", description: "Date (YYYY-MM-DD, default: today)." },
       { key: "signatureType", type: "number", description: "Address type: 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE." },

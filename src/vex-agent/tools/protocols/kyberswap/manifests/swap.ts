@@ -19,6 +19,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get best swap route across 400+ DEXs — price, route, gas estimate, price impact. Read-only, no execution.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "tokenIn", type: "string", required: true, description: "Input token address or symbol." },
@@ -34,6 +35,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Sell tokens via KyberSwap — exact-input swap: spend amountIn of tokenIn to receive tokenOut. Use when reducing/exiting a position. Routes through 400+ DEXs on 18 EVM chains. Resolve token addresses via khalani.tokens.search first.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: SWAP_EXECUTION_PARAMS,
     exampleParams: { chain: "base", tokenIn: "ETH", tokenOut: "USDC", amountIn: "0.5", slippageBps: 50 },
     discovery: KYBERSWAP_SWAP_DISCOVERY["kyberswap.swap.sell"],
@@ -44,6 +46,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Buy tokens via KyberSwap — exact-input swap: spend amountIn of tokenIn to acquire tokenOut. Same routing as sell, but marks trade as a buy for portfolio tracking (lot opens on tokenOut side). Resolve token addresses via khalani.tokens.search first.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: SWAP_EXECUTION_PARAMS,
     exampleParams: { chain: "base", tokenIn: "USDC", tokenOut: "ETH", amountIn: "100", slippageBps: 50 },
     discovery: KYBERSWAP_SWAP_DISCOVERY["kyberswap.swap.buy"],

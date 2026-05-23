@@ -8,6 +8,7 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Add liquidity to a concentrated LP position via one-click zap. Handles routing, swaps, and position creation. Resolve tokenIn via khalani.tokens.search. Find pool address via dexscreener.tokenPairs. Use DEX_* IDs for dex param (query kyberswap.zap.list for options).",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "dex", type: "string", required: true, description: "DEX identifier — use official KyberSwap ZaaS DEX_* IDs (e.g. DEX_UNISWAPV3, DEX_QUICKSWAPV3ALGEBRA, DEX_PANCAKESWAPV3). Query kyberswap.zap.list for supported DEXes per chain." },
@@ -30,6 +31,7 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Remove liquidity from a concentrated LP position — converts to a single output token. Resolve tokenOut via khalani.tokens.search.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "dex", type: "string", required: true, description: "DEX identifier — use official KyberSwap ZaaS DEX_* IDs. Query kyberswap.zap.list for options." },
@@ -50,6 +52,7 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Migrate LP position between pools or DEXes in a single transaction.",
     mutating: true,
+    actionKind: "user_wallet_broadcast",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
       { key: "dexFrom", type: "string", required: true, description: "Source DEX — use official DEX_* IDs." },
@@ -73,6 +76,7 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "List supported ZaaS DEX protocols on a chain for zap-in/out/migrate. Returns official DEX_* IDs that can be passed directly to zap tools.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias (e.g. polygon, ethereum, base, arbitrum)." },
     ],

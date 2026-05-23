@@ -8,6 +8,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get real-time USD prices for one or more token mints.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "mints", type: "string", required: true, description: "Comma-separated mint addresses." },
     ],
@@ -21,6 +22,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Search Solana tokens by name or symbol via Jupiter.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Token name, symbol, or mint address." },
     ],
@@ -34,6 +36,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description: "Get trending Solana tokens — top traded, top organic, recent, LST, verified.",
     mutating: false,
+    actionKind: "read",
     params: [
       { key: "category", type: "string", description: "Category: toptrending, toptraded, toporganicscore, recent, lst, verified." },
       { key: "interval", type: "string", description: "Time interval: 5m, 1h, 6h, 24h." },
