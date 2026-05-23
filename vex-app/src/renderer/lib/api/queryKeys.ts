@@ -81,6 +81,14 @@ export const missionKeys = {
    */
   diff: (sessionId: string, missionId: string) =>
     ["mission", "diff", sessionId, missionId] as const,
+  /**
+   * Puzzle 04 phase 7 — latest terminal accepted mission for
+   * `/mission-renew`. Returns `{ missionId }` or null. Invalidated on
+   * any mutation that may flip a mission to terminal (start, stop,
+   * recover) or accept a new contract.
+   */
+  renewableSource: (sessionId: string) =>
+    ["mission", "renewableSource", sessionId] as const,
 };
 
 export const approvalsKeys = {

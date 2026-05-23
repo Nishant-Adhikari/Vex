@@ -55,6 +55,7 @@ const ISO = "2026-05-21T10:00:00.000Z";
 
 interface RowOverrides {
   readonly id?: string;
+  readonly status?: string;
   readonly accepted_contract_hash?: string | null;
   readonly accepted_contract_at?: string | null;
   readonly accepted_contract_by?: string | null;
@@ -66,7 +67,7 @@ function makeRow(overrides: RowOverrides = {}): Record<string, unknown> {
   return {
     id: overrides.id ?? "mission-acc",
     root_session_id: SESSION,
-    status: "draft",
+    status: overrides.status ?? "draft",
     title: null,
     goal: null,
     constraints_json: {},
@@ -174,5 +175,51 @@ describe("missions-db acceptance projection (puzzle 04 phase 6)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok || result.data === null) return;
     expect(result.data.renewedFromMissionId).toBe("mission-source");
+  });
+
+  it("returns row with status='ready' so the contract card survives acceptance (phase 7 #1)", async () => {
+    // Before phase 7 the filter was `status = 'draft'`, which dropped
+    // the card the moment the engine flipped the row to `ready`. The
+    // mapper must now expose ready rows so the Accept button can stay
+    // mounted right through host acceptance.
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        makeRow({
+          id: "mission-ready",
+          status: "ready",
+          accepted_contract_hash: "a".repeat(64),
+          accepted_contract_at: "2026-05-22T08:00:00.000Z",
+          accepted_contract_by: "host",
+          contract_hash_version: 1,
+        }),
+      ],
+    });
+    const result = await getDraftForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) {
+      expect.fail("Expected ready row to be returned");
+      return;
+    }
+    expect(result.data.status).toBe("ready");
+    expect(result.data.acceptance).not.toBeNull();
+  });
+
+  it("returns row with status='ready' even when acceptance is null (dirty contract case)", async () => {
+    // status=ready + acceptance=null happens when the draft was edited
+    // after a previous acceptance was wiped. Card needs to render so
+    // the user can re-accept.
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        makeRow({
+          id: "mission-ready-unacc",
+          status: "ready",
+        }),
+      ],
+    });
+    const result = await getDraftForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) return;
+    expect(result.data.status).toBe("ready");
+    expect(result.data.acceptance).toBeNull();
   });
 });

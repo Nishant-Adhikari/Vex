@@ -8,6 +8,8 @@ import type {
   MissionGetDiffResult,
   MissionGetDraftInput,
   MissionGetDraftResult,
+  MissionGetRenewableSourceInput,
+  MissionGetRenewableSourceResult,
   MissionRecoverInput,
   MissionRecoverResult,
   MissionRenewInput,
@@ -27,7 +29,8 @@ import type {
 /**
  * Mission draft + contract + command surface. Phase 6 ships 9 real
  * handlers + 1 fail-closed (`updateDraft` — structured setup form
- * lands in phase 7+).
+ * lands in phase 7+). Phase 7 adds `getRenewableSource` so the
+ * renderer can resolve the previousMissionId before calling `renew`.
  */
 export interface MissionBridge {
   readonly getDraft: (
@@ -63,4 +66,7 @@ export interface MissionBridge {
   readonly stop: (
     input: MissionStopInput,
   ) => Promise<Result<MissionStopResult>>;
+  readonly getRenewableSource: (
+    input: MissionGetRenewableSourceInput,
+  ) => Promise<Result<MissionGetRenewableSourceResult>>;
 }

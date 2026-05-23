@@ -21,6 +21,7 @@ const mockRestoreLatestCheckpoint = vi.fn();
 const mockRenewMission = vi.fn();
 const mockEnsureEngineDbUrl = vi.fn();
 const mockEmitControlStateAfterChange = vi.fn();
+const mockGetRenewableSourceForSession = vi.fn();
 
 vi.mock("electron", () => {
   const handlers = new Map<string, (e: IpcMainInvokeEvent, p: unknown) => unknown>();
@@ -49,6 +50,14 @@ vi.mock("@vex-agent/engine/mission/restore.js", () => ({
 
 vi.mock("@vex-agent/engine/mission/renew.js", () => ({
   renewMission: (...a: unknown[]) => mockRenewMission(...a),
+}));
+
+vi.mock("../../../database/missions-db.js", () => ({
+  // `get-draft.ts` uses getDraftForSession; transcript suite doesn't
+  // call it, but the import must exist so the module evaluates.
+  getDraftForSession: vi.fn().mockResolvedValue({ ok: true, data: null }),
+  getRenewableSourceForSession: (...a: unknown[]) =>
+    mockGetRenewableSourceForSession(...a),
 }));
 
 vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
@@ -213,5 +222,60 @@ describe("mission.renew", () => {
       outcome: "renewed",
       newMissionId: "mission-2",
     });
+  });
+});
+
+describe("mission.getRenewableSource (puzzle 04 phase 7)", () => {
+  it("returns the resolved missionId from the DB helper", async () => {
+    mockGetRenewableSourceForSession.mockResolvedValueOnce({
+      ok: true,
+      data: { missionId: "mission-finished" },
+    });
+    const result = await call(CH.mission.getRenewableSource, {
+      sessionId: SESSION,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.data).toEqual({ missionId: "mission-finished" });
+    expect(mockGetRenewableSourceForSession).toHaveBeenCalledWith(SESSION);
+  });
+
+  it("returns null when no terminal accepted mission exists", async () => {
+    mockGetRenewableSourceForSession.mockResolvedValueOnce({
+      ok: true,
+      data: null,
+    });
+    const result = await call(CH.mission.getRenewableSource, {
+      sessionId: SESSION,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.data).toBeNull();
+  });
+
+  it("rejects malformed input via schema (non-uuid sessionId)", async () => {
+    const result = await call(CH.mission.getRenewableSource, {
+      sessionId: "not-a-uuid",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("validation.invalid_input");
+    expect(mockGetRenewableSourceForSession).not.toHaveBeenCalled();
+  });
+
+  it("passes a DB error through with the error result shape", async () => {
+    mockGetRenewableSourceForSession.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "internal.unexpected",
+        domain: "mission",
+        message: "Unable to resolve renewable mission source.",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+      },
+    });
+    const result = await call(CH.mission.getRenewableSource, {
+      sessionId: SESSION,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("internal.unexpected");
   });
 });

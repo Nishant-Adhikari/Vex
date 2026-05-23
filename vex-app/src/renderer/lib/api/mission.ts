@@ -35,6 +35,7 @@ import type {
   MissionGetDiffInput,
   MissionGetDiffResult,
   MissionGetDraftResult,
+  MissionGetRenewableSourceResult,
   MissionRecoverInput,
   MissionRecoverResult,
   MissionRenewInput,
@@ -96,6 +97,26 @@ export function useMissionDiff(
     sessionId: sessionId ?? "",
     missionId: missionId ?? "",
   }));
+}
+
+/**
+ * Phase 7 — resolve the latest terminal accepted mission for
+ * `/mission-renew`. Returns `{ missionId }` when one exists, `null`
+ * otherwise. Renderer calls this before dispatching `useMissionRenew`.
+ */
+function renewableSourceOptions(sessionId: string) {
+  return queryOptions({
+    queryKey: missionKeys.renewableSource(sessionId),
+    queryFn: () => window.vex.mission.getRenewableSource({ sessionId }),
+    staleTime: STALE_MS,
+    enabled: sessionId.length > 0,
+  });
+}
+
+export function useRenewableMissionSource(
+  sessionId: string | null,
+): UseQueryResult<Result<MissionGetRenewableSourceResult>> {
+  return useQuery(renewableSourceOptions(sessionId ?? ""));
 }
 
 // ── Mutations ───────────────────────────────────────────────────
@@ -162,6 +183,12 @@ export function useMissionStart(): UseMutationResult<
         queryKey: missionKeys.diff(input.sessionId, input.missionId),
       });
       qc.invalidateQueries({ queryKey: runtimeKeys.state(input.sessionId) });
+      // Start lifts the source mission OUT of terminal-latest state, so
+      // its renewable status changes. Invalidate so `/mission-renew`
+      // re-evaluates from the new mission_runs state.
+      qc.invalidateQueries({
+        queryKey: missionKeys.renewableSource(input.sessionId),
+      });
     },
   });
 }
@@ -193,6 +220,11 @@ export function useMissionRecover(): UseMutationResult<
     onSuccess: (_result, input) => {
       qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
       qc.invalidateQueries({ queryKey: runtimeKeys.state(input.sessionId) });
+      // Recover replaces the latest mission_run, so source eligibility
+      // for `/mission-renew` may shift (terminal latest run is gone).
+      qc.invalidateQueries({
+        queryKey: missionKeys.renewableSource(input.sessionId),
+      });
     },
   });
 }
@@ -215,6 +247,12 @@ export function useMissionRewind(): UseMutationResult<
       });
       qc.invalidateQueries({ queryKey: runtimeKeys.state(input.sessionId) });
       qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
+      // Rewind can flip the live mission_run to `stopped` (terminal), or
+      // shuffle the draft back. Either way `/mission-renew` eligibility
+      // for this session changes.
+      qc.invalidateQueries({
+        queryKey: missionKeys.renewableSource(input.sessionId),
+      });
     },
   });
 }
@@ -269,6 +307,12 @@ export function useMissionStop(): UseMutationResult<
     retry: false,
     onSuccess: (_result, input) => {
       qc.invalidateQueries({ queryKey: runtimeKeys.state(input.sessionId) });
+      // Stop flips the latest mission_run terminal → mission becomes
+      // a renewable source candidate (or stops being one if the new
+      // terminal is `cancelled` rather than `completed`). Invalidate.
+      qc.invalidateQueries({
+        queryKey: missionKeys.renewableSource(input.sessionId),
+      });
     },
   });
 }

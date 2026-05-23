@@ -29,6 +29,7 @@ import {
   useMissionRewind,
   useMissionStart,
   useMissionStop,
+  useRenewableMissionSource,
 } from "../mission.js";
 import {
   messagesKeys,
@@ -52,6 +53,7 @@ const mockMissionBridge = {
   restore: vi.fn(),
   renew: vi.fn(),
   stop: vi.fn(),
+  getRenewableSource: vi.fn(),
 };
 
 beforeEach(() => {
@@ -141,6 +143,10 @@ describe("mission hook invalidations", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: missionKeys.diff(SESSION, MISSION),
     });
+    // Phase 7 — start lifts source out of terminal-latest state.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: missionKeys.renewableSource(SESSION),
+    });
   });
 
   it("useMissionRewind invalidates messagesKeys.forSession (prefix match)", async () => {
@@ -165,6 +171,10 @@ describe("mission hook invalidations", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: runtimeKeys.state(SESSION),
+    });
+    // Phase 7 — rewind can flip mission_run terminal.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: missionKeys.renewableSource(SESSION),
     });
   });
 
@@ -229,6 +239,10 @@ describe("mission hook invalidations", () => {
         queryKey: runtimeKeys.state(SESSION),
       });
     });
+    // Phase 7 — stop flips mission_run terminal → renewable source shifts.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: missionKeys.renewableSource(SESSION),
+    });
   });
 
   it("useMissionRecover invalidates draft + runtime state", async () => {
@@ -250,6 +264,10 @@ describe("mission hook invalidations", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: runtimeKeys.state(SESSION),
+    });
+    // Phase 7 — recover replaces latest mission_run → terminal-latest may shift.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: missionKeys.renewableSource(SESSION),
     });
   });
 
@@ -277,5 +295,32 @@ describe("mission hook invalidations", () => {
         queryKey: missionKeys.all,
       });
     });
+  });
+
+  it("useRenewableMissionSource queries the bridge with the session", async () => {
+    mockMissionBridge.getRenewableSource.mockResolvedValue({
+      ok: true,
+      data: { missionId: MISSION },
+    });
+    const { client } = makeClient();
+    const { result } = renderHook(() => useRenewableMissionSource(SESSION), {
+      wrapper: makeWrapper(client),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockMissionBridge.getRenewableSource).toHaveBeenCalledWith({
+      sessionId: SESSION,
+    });
+    if (result.current.data?.ok === true) {
+      expect(result.current.data.data).toEqual({ missionId: MISSION });
+    }
+  });
+
+  it("useRenewableMissionSource is disabled when sessionId is null", () => {
+    const { client } = makeClient();
+    const { result } = renderHook(() => useRenewableMissionSource(null), {
+      wrapper: makeWrapper(client),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(mockMissionBridge.getRenewableSource).not.toHaveBeenCalled();
   });
 });

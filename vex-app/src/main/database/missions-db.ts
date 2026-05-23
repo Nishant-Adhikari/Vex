@@ -1,12 +1,9 @@
 /**
- * Missions DB helper for `mission.getDraft`.
+ * Missions DB helpers for `mission.getDraft` + `mission.getRenewableSource`.
  *
- * Mirrors `sessions-db.ts` decoupling: own `pg.Client` per call. The
- * mapper here is the *only* place where `missions.*_json` JSONB
- * columns get reduced to allow-listed DTO fields. Each JSONB column
- * is validated against its Zod schema; unparseable payloads collapse
- * to safe defaults with a structural log line, so the renderer never
- * sees a raw passthrough that could carry secrets.
+ * Mirrors `sessions-db.ts` decoupling: own `pg.Client` per call. JSONB
+ * column normalisation lives in `missions-db-normalize.ts`; this file
+ * owns the query surface plus the per-call connection lifecycle.
  *
  *   missions(
  *     id TEXT PK, root_session_id, status, title, goal,
@@ -14,31 +11,44 @@
  *     stop_conditions_json JSONB, risk_profile,
  *     capital_source_json JSONB, allowed_protocols TEXT[],
  *     allowed_chains TEXT[], allowed_wallets TEXT[],
- *     created_at, updated_at, approved_at
+ *     created_at, updated_at, approved_at,
+ *     accepted_contract_hash, accepted_contract_at, accepted_contract_by,
+ *     contract_hash_version, renewed_from_mission_id
  *   )
+ *
+ * Phase 7 changes:
+ *   - `getDraftForSession` now accepts `status IN ('draft', 'ready')`
+ *     so the contract card stays mounted right through host acceptance
+ *     (codex phase 7 review #1).
+ *   - New `getRenewableSourceForSession` resolves the most recent
+ *     terminal accepted mission so `/mission-renew` has an explicit
+ *     `previousMissionId` (codex phase 7 review #3, LATERAL JOIN
+ *     against latest mission_run).
  */
 
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
-import {
-  MISSION_DRAFT_LIST_ITEM_MAX,
-  MISSION_DRAFT_LIST_MAX,
-  missionConstraintsSchema,
-  missionListEntrySchema,
-  missionStatusSchema,
-  type MissionAcceptance,
-  type MissionConstraints,
-  type MissionDraftDto,
-  type MissionGetDraftResult,
-  type MissionStatus,
+import type {
+  MissionDraftDto,
+  MissionGetDraftResult,
+  MissionGetRenewableSourceResult,
 } from "@shared/schemas/mission.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
+import {
+  MISSION_ROW_COLUMNS,
+  normaliseConstraints,
+  normalisePgArray,
+  normaliseStatus,
+  normaliseStringList,
+  projectAcceptance,
+  toIso,
+  toIsoOrNull,
+  type MissionRow,
+} from "./missions-db-normalize.js";
 
 const CONNECT_TIMEOUT_MS = 2_000;
 const QUERY_TIMEOUT_MS = 5_000;
-
-const EMPTY_CONSTRAINTS: MissionConstraints = {};
 
 // `correlationId` intentionally omitted; `registerHandler` stamps
 // `ctx.requestId` downstream. See `messages-db.ts` for full rationale.
@@ -104,181 +114,6 @@ async function withClient<T>(
   }
 }
 
-interface MissionRow {
-  readonly id: string;
-  readonly root_session_id: string;
-  readonly status: string;
-  readonly title: string | null;
-  readonly goal: string | null;
-  readonly constraints_json: unknown;
-  readonly success_criteria_json: unknown;
-  readonly stop_conditions_json: unknown;
-  readonly risk_profile: string | null;
-  readonly allowed_protocols: unknown;
-  readonly allowed_chains: unknown;
-  readonly allowed_wallets: unknown;
-  readonly created_at: string | Date;
-  readonly updated_at: string | Date;
-  readonly approved_at: string | Date | null;
-  // Puzzle 04 phase 6 — acceptance four-tuple from mig 023. DB CHECK
-  // (`chk_missions_acceptance_atomicity`) guarantees all-null or
-  // all-non-null; the mapper still defends against partial state by
-  // collapsing any leak into `acceptance: null` + a warn log.
-  readonly accepted_contract_hash: string | null;
-  readonly accepted_contract_at: string | Date | null;
-  readonly accepted_contract_by: string | null;
-  readonly contract_hash_version: number | null;
-  /** `/mission-renew` lineage — id of the mission this one was renewed from. */
-  readonly renewed_from_mission_id: string | null;
-}
-
-const MISSION_ROW_COLUMNS =
-  "id, root_session_id, status, title, goal, constraints_json, success_criteria_json, stop_conditions_json, risk_profile, allowed_protocols, allowed_chains, allowed_wallets, created_at, updated_at, approved_at, accepted_contract_hash, accepted_contract_at, accepted_contract_by, contract_hash_version, renewed_from_mission_id";
-
-function toIso(value: string | Date): string {
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-function toIsoOrNull(value: string | Date | null): string | null {
-  return value === null ? null : toIso(value);
-}
-
-function normaliseStatus(raw: string): MissionStatus {
-  const parsed = missionStatusSchema.safeParse(raw);
-  // An exotic status collapses to `draft` so the read-only handler
-  // still returns something renderable. The structural log on the
-  // unexpected value will surface in the dispatcher's logs.
-  if (!parsed.success) {
-    log.warn(`[missions-db] unknown mission status: ${raw}`);
-    return "draft";
-  }
-  return parsed.data;
-}
-
-/**
- * Allowlist + Zod parse `constraints_json`. Falls back to `{}` on any
- * failure (column null, not object, fails strict schema). Unknown keys
- * are silently dropped — schema is `.strict()`.
- *
- * The projection path is allowlist-only: each constraint key is copied
- * over only when the source has a value of the expected primitive type.
- * Missing or wrong-typed inputs result in the key being absent from
- * the DTO (not `null`-padded) so the renderer's "Show optional fields"
- * affordance can rely on key presence as a signal.
- */
-function normaliseConstraints(raw: unknown): MissionConstraints {
-  if (raw === null || raw === undefined) return EMPTY_CONSTRAINTS;
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    log.warn("[missions-db] constraints_json not an object — using empty");
-    return EMPTY_CONSTRAINTS;
-  }
-  const parsed = missionConstraintsSchema.safeParse(raw);
-  if (parsed.success) return parsed.data;
-  // Allow-listed projection: a single offending key shouldn't drop the
-  // whole constraint set. We copy each key over only when the source
-  // value's type matches the schema; everything else is omitted so the
-  // DTO stays compact and `undefined`-fields don't leak as `null`.
-  const rec = raw as Record<string, unknown>;
-  const projection: Partial<MissionConstraints> = {};
-  if (typeof rec["maxSpendUsd"] === "number") {
-    projection.maxSpendUsd = rec["maxSpendUsd"];
-  }
-  if (typeof rec["maxLossUsd"] === "number") {
-    projection.maxLossUsd = rec["maxLossUsd"];
-  }
-  if (typeof rec["maxIterations"] === "number") {
-    projection.maxIterations = rec["maxIterations"];
-  }
-  if (typeof rec["deadlineAt"] === "string") {
-    projection.deadlineAt = rec["deadlineAt"];
-  }
-  if (typeof rec["notes"] === "string") {
-    projection.notes = rec["notes"];
-  }
-  const reparsed = missionConstraintsSchema.safeParse(projection);
-  if (reparsed.success) return reparsed.data;
-  log.warn("[missions-db] constraints_json projection failed Zod parse");
-  return EMPTY_CONSTRAINTS;
-}
-
-function normaliseStringList(raw: unknown, label: string): string[] {
-  if (!Array.isArray(raw)) {
-    if (raw !== null && raw !== undefined) {
-      log.warn(`[missions-db] ${label} not an array — using empty`);
-    }
-    return [];
-  }
-  const out: string[] = [];
-  for (const entry of raw) {
-    if (out.length >= MISSION_DRAFT_LIST_MAX) break;
-    if (typeof entry !== "string") continue;
-    const parsed = missionListEntrySchema.safeParse(entry);
-    if (parsed.success) {
-      out.push(parsed.data);
-    } else if (entry.length <= MISSION_DRAFT_LIST_ITEM_MAX) {
-      // Loose recovery: trimmed non-empty strings still pass through.
-      const trimmed = entry.trim();
-      if (trimmed.length > 0) out.push(trimmed);
-    }
-  }
-  return out;
-}
-
-function normalisePgArray(raw: unknown, label: string, maxLen: number): string[] {
-  if (raw === null || raw === undefined) return [];
-  if (!Array.isArray(raw)) {
-    log.warn(`[missions-db] ${label} not an array — using empty`);
-    return [];
-  }
-  const out: string[] = [];
-  for (const entry of raw) {
-    if (out.length >= MISSION_DRAFT_LIST_MAX) break;
-    if (typeof entry !== "string") continue;
-    const trimmed = entry.trim();
-    if (trimmed.length === 0 || trimmed.length > maxLen) continue;
-    out.push(trimmed);
-  }
-  return out;
-}
-
-/**
- * Project the acceptance four-tuple from a missions row. Strict
- * 4-of-4 — any partial state (which `chk_missions_acceptance_atomicity`
- * rejects at the DB level but might slip in via a manual SQL edit)
- * collapses to `acceptance: null` plus a warn log so the renderer
- * never shows a partial "accepted" badge.
- *
- * Puzzle 04 phase 6 codex review #4.
- */
-function projectAcceptance(row: MissionRow): MissionAcceptance | null {
-  // Coerce undefined → null so a missing column (e.g. fixture row in
-  // tests, or pre-mig 023 row read against a fresh schema during a
-  // partial rollout) collapses to the unaccepted branch.
-  const h = row.accepted_contract_hash ?? null;
-  const at = row.accepted_contract_at ?? null;
-  const by = row.accepted_contract_by ?? null;
-  const v = row.contract_hash_version ?? null;
-  // All four null → unaccepted (canonical empty state).
-  if (h === null && at === null && by === null && v === null) return null;
-  // All four set → accepted (project a typed block).
-  if (h !== null && at !== null && by !== null && v !== null) {
-    return {
-      contractHash: h,
-      acceptedAt: toIso(at),
-      acceptedBy: by,
-      contractHashVersion: v,
-    };
-  }
-  // Partial (defensive — DB CHECK should prevent this). Refuse to
-  // surface a malformed acceptance object to the renderer.
-  log.warn(
-    `[missions-db] partial acceptance row for mission ${row.id} ` +
-      `(hash=${h !== null} at=${at !== null} by=${by !== null} v=${v !== null}) ` +
-      `— projecting null`,
-  );
-  return null;
-}
-
 function toDraftDto(row: MissionRow): MissionDraftDto {
   return {
     missionId: row.id,
@@ -320,11 +155,16 @@ export async function getDraftForSession(
 ): Promise<Result<MissionGetDraftResult, VexError>> {
   return withClient(async (client) => {
     try {
+      // `status IN ('draft', 'ready')` so the contract card survives
+      // the draft→ready transition that lands on host acceptance.
+      // Anything past `ready` (running/completed/failed/cancelled) is
+      // intentionally excluded — those go through `getRenewableSource`
+      // for `/mission-renew` lineage instead.
       const result = await client.query<MissionRow>(
         `SELECT ${MISSION_ROW_COLUMNS}
            FROM missions
           WHERE root_session_id = $1
-            AND status = 'draft'
+            AND status IN ('draft', 'ready')
           ORDER BY created_at DESC
           LIMIT 1`,
         [sessionId],
@@ -333,6 +173,62 @@ export async function getDraftForSession(
       return ok(row ? toDraftDto(row) : null);
     } catch (cause) {
       return dbError("getDraftForSession query failed", cause);
+    }
+  });
+}
+
+/**
+ * Resolve the latest terminal accepted mission for `/mission-renew`.
+ *
+ * Latest-run semantics (codex phase 7 review §Q1): a mission counts as
+ * renewable iff its acceptance four-tuple is complete AND its NEWEST
+ * `mission_runs` row sits in a terminal status. An older terminal run
+ * with a newer active run on top does NOT qualify — only the truly
+ * finished missions surface.
+ *
+ * Returns `null` when no eligible mission exists; the renderer maps
+ * that to the friendly "No completed mission to renew" notice without
+ * round-tripping through the engine's `previous_mission_not_found`
+ * outcome.
+ */
+export async function getRenewableSourceForSession(
+  sessionId: string,
+): Promise<Result<MissionGetRenewableSourceResult, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<{ readonly mission_id: string }>(
+        `SELECT m.id AS mission_id
+           FROM missions m
+           JOIN LATERAL (
+             SELECT r.status, r.started_at, r.ended_at
+               FROM mission_runs r
+              WHERE r.mission_id = m.id
+              ORDER BY r.started_at DESC
+              LIMIT 1
+           ) latest ON true
+          WHERE m.root_session_id = $1
+            AND m.accepted_contract_hash IS NOT NULL
+            AND m.accepted_contract_at IS NOT NULL
+            AND m.accepted_contract_by IS NOT NULL
+            AND m.contract_hash_version IS NOT NULL
+            AND latest.status IN ('completed', 'failed', 'stopped', 'cancelled')
+          ORDER BY COALESCE(latest.ended_at, latest.started_at) DESC,
+                   m.updated_at DESC
+          LIMIT 1`,
+        [sessionId],
+      );
+      const row = result.rows[0];
+      return ok(row ? { missionId: row.mission_id } : null);
+    } catch (cause) {
+      log.warn("[missions-db] getRenewableSourceForSession failed", cause);
+      return err({
+        code: "internal.unexpected",
+        domain: "mission",
+        message: "Unable to resolve renewable mission source.",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+      });
     }
   });
 }

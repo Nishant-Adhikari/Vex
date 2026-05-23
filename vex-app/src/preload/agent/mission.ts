@@ -15,6 +15,7 @@ import {
   missionContinueInputSchema,
   missionGetDiffInputSchema,
   missionGetDraftInputSchema,
+  missionGetRenewableSourceInputSchema,
   missionRecoverInputSchema,
   missionRenewInputSchema,
   missionRestoreInputSchema,
@@ -28,6 +29,7 @@ import type {
   MissionContinueInput,
   MissionGetDiffInput,
   MissionGetDraftInput,
+  MissionGetRenewableSourceInput,
   MissionRecoverInput,
   MissionRenewInput,
   MissionRestoreInput,
@@ -115,6 +117,13 @@ export const mission = {
       CH.mission.stop,
       input,
       missionStopInputSchema,
+    );
+  },
+  getRenewableSource(input: MissionGetRenewableSourceInput) {
+    return invokeWithSchema(
+      CH.mission.getRenewableSource,
+      input,
+      missionGetRenewableSourceInputSchema,
     );
   },
 } satisfies MissionBridge;

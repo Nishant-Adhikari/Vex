@@ -1,10 +1,16 @@
 /**
- * Transcript + lineage commands — `rewind`, `restore`, `renew`.
+ * Transcript + lineage commands — `rewind`, `restore`, `renew`,
+ * `getRenewableSource`.
  *
  * Rewind archives the suffix from the Nth-most-recent user message
  * onwards; restore unarchives the latest unrestored rewind
  * checkpoint (LIFO, idempotent on `idempotencyKey`); renew clones
  * a terminal accepted mission into a fresh draft.
+ *
+ * Phase 7: `getRenewableSource` is a read-only resolver the renderer
+ * calls before dispatching `renew` so the engine receives an explicit
+ * `previousMissionId`. Latest-run semantics — see
+ * `getRenewableSourceForSession` in `vex-app/src/main/database/missions-db.ts`.
  */
 
 import { z } from "zod";
@@ -148,3 +154,26 @@ export const missionRenewResultSchema = z.discriminatedUnion("outcome", [
     .strict(),
 ]);
 export type MissionRenewResult = z.infer<typeof missionRenewResultSchema>;
+
+// ── getRenewableSource ──────────────────────────────────────────
+
+export const missionGetRenewableSourceInputSchema = z
+  .object({
+    sessionId: sessionIdField,
+  })
+  .strict();
+export type MissionGetRenewableSourceInput = z.infer<
+  typeof missionGetRenewableSourceInputSchema
+>;
+
+/**
+ * `null` when no terminal accepted mission exists for the session;
+ * otherwise the missionId the renderer hands back to `mission.renew`.
+ */
+export const missionGetRenewableSourceResultSchema = z
+  .object({ missionId: z.string().min(1) })
+  .strict()
+  .nullable();
+export type MissionGetRenewableSourceResult = z.infer<
+  typeof missionGetRenewableSourceResultSchema
+>;
