@@ -74,6 +74,13 @@ export const runtimeKeys = {
 export const missionKeys = {
   all: ["mission"] as const,
   draft: (sessionId: string) => ["mission", "draft", sessionId] as const,
+  /**
+   * Puzzle 04 phase 6 — contract status (current vs. accepted hash +
+   * isAccepted/isDirty booleans). Used by MissionContractCard to
+   * gate the Accept button.
+   */
+  diff: (sessionId: string, missionId: string) =>
+    ["mission", "diff", sessionId, missionId] as const,
 };
 
 export const approvalsKeys = {

@@ -1,11 +1,40 @@
+/**
+ * Mission preload bridge — per-command input validation (puzzle 04
+ * phase 6). Each method validates its input against the matching
+ * `missionXxxInputSchema` and forwards via `invokeWithSchema`.
+ *
+ * The output type comes from the shared per-command result schema
+ * (the discriminated union); preload-side input validation is the
+ * first guard, main-side `registerHandler` re-validates input + the
+ * output before returning to renderer.
+ */
+
 import { CH } from "../../shared/ipc/channels.js";
 import {
-  missionCommandInputSchema,
+  missionAcceptContractInputSchema,
+  missionContinueInputSchema,
+  missionGetDiffInputSchema,
   missionGetDraftInputSchema,
+  missionRecoverInputSchema,
+  missionRenewInputSchema,
+  missionRestoreInputSchema,
+  missionRewindInputSchema,
+  missionStartInputSchema,
+  missionStopInputSchema,
+  missionUpdateDraftInputSchema,
 } from "../../shared/schemas/mission.js";
 import type {
-  MissionCommandInput,
+  MissionAcceptContractInput,
+  MissionContinueInput,
+  MissionGetDiffInput,
   MissionGetDraftInput,
+  MissionRecoverInput,
+  MissionRenewInput,
+  MissionRestoreInput,
+  MissionRewindInput,
+  MissionStartInput,
+  MissionStopInput,
+  MissionUpdateDraftInput,
 } from "../../shared/schemas/mission.js";
 import type { MissionBridge } from "../../shared/types/bridge/agent/mission.js";
 import { invokeWithSchema } from "../_dispatch.js";
@@ -15,77 +44,77 @@ export const mission = {
     return invokeWithSchema(
       CH.mission.getDraft,
       input,
-      missionGetDraftInputSchema
+      missionGetDraftInputSchema,
     );
   },
-  updateDraft(input: MissionCommandInput) {
+  updateDraft(input: MissionUpdateDraftInput) {
     return invokeWithSchema(
       CH.mission.updateDraft,
       input,
-      missionCommandInputSchema
+      missionUpdateDraftInputSchema,
     );
   },
-  getDiff(input: MissionCommandInput) {
+  getDiff(input: MissionGetDiffInput) {
     return invokeWithSchema(
       CH.mission.getDiff,
       input,
-      missionCommandInputSchema
+      missionGetDiffInputSchema,
     );
   },
-  acceptContract(input: MissionCommandInput) {
+  acceptContract(input: MissionAcceptContractInput) {
     return invokeWithSchema(
       CH.mission.acceptContract,
       input,
-      missionCommandInputSchema
+      missionAcceptContractInputSchema,
     );
   },
-  start(input: MissionCommandInput) {
+  start(input: MissionStartInput) {
     return invokeWithSchema(
       CH.mission.start,
       input,
-      missionCommandInputSchema
+      missionStartInputSchema,
     );
   },
-  continue(input: MissionCommandInput) {
+  continue(input: MissionContinueInput) {
     return invokeWithSchema(
       CH.mission.continue,
       input,
-      missionCommandInputSchema
+      missionContinueInputSchema,
     );
   },
-  recover(input: MissionCommandInput) {
+  recover(input: MissionRecoverInput) {
     return invokeWithSchema(
       CH.mission.recover,
       input,
-      missionCommandInputSchema
+      missionRecoverInputSchema,
     );
   },
-  rewind(input: MissionCommandInput) {
+  rewind(input: MissionRewindInput) {
     return invokeWithSchema(
       CH.mission.rewind,
       input,
-      missionCommandInputSchema
+      missionRewindInputSchema,
     );
   },
-  restore(input: MissionCommandInput) {
+  restore(input: MissionRestoreInput) {
     return invokeWithSchema(
       CH.mission.restore,
       input,
-      missionCommandInputSchema
+      missionRestoreInputSchema,
     );
   },
-  renew(input: MissionCommandInput) {
+  renew(input: MissionRenewInput) {
     return invokeWithSchema(
       CH.mission.renew,
       input,
-      missionCommandInputSchema
+      missionRenewInputSchema,
     );
   },
-  stop(input: MissionCommandInput) {
+  stop(input: MissionStopInput) {
     return invokeWithSchema(
       CH.mission.stop,
       input,
-      missionCommandInputSchema
+      missionStopInputSchema,
     );
   },
 } satisfies MissionBridge;

@@ -270,30 +270,10 @@ describe("mission handlers", () => {
     expect(result.data).toBeNull();
   });
 
-  it("getDiff fails closed with mission.feature_unavailable (not ok+available:false)", async () => {
-    const result = await call(CH.mission.getDiff, { sessionId: SESSION });
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("mission.feature_unavailable");
-  });
-
-  it("every mutating mission command returns mission.feature_unavailable", async () => {
-    const mutating = [
-      CH.mission.updateDraft,
-      CH.mission.acceptContract,
-      CH.mission.start,
-      CH.mission.continue,
-      CH.mission.recover,
-      CH.mission.rewind,
-      CH.mission.restore,
-      CH.mission.renew,
-      CH.mission.stop,
-    ];
-    for (const ch of mutating) {
-      const result = await call(ch, { sessionId: SESSION });
-      expect(result.ok, `${ch}`).toBe(false);
-      expect(result.error?.code, `${ch}`).toBe("mission.feature_unavailable");
-    }
-  });
+  // Puzzle 04 phase 6 mission-handler coverage (per-command schema
+  // validation + updateDraft fail-closed) lives in the focused files
+  // under `__tests__/mission/` so this suite does not exceed the
+  // 350-LOC budget (codex puzzle 04 phase 6 review #2).
 });
 
 describe("approvals handlers", () => {

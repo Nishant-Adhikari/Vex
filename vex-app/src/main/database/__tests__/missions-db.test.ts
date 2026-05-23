@@ -209,6 +209,10 @@ describe("missions-db mapper", () => {
     expect(result.data.allowedWallets).toEqual([]);
   });
 
+  // Phase-6 acceptance projection + renewedFromMissionId coverage
+  // lives in the focused `missions-db.acceptance.test.ts` file so this
+  // suite stays under the 350-LOC budget (codex puzzle 04 phase 6 #2).
+
   it("collapses unknown status to 'draft' (defensive)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [

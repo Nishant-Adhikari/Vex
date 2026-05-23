@@ -1,50 +1,66 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
-  MissionCommandInput,
-  MissionCommandResult,
+  MissionAcceptContractInput,
+  MissionAcceptContractResult,
+  MissionContinueInput,
+  MissionContinueResult,
+  MissionGetDiffInput,
+  MissionGetDiffResult,
   MissionGetDraftInput,
   MissionGetDraftResult,
+  MissionRecoverInput,
+  MissionRecoverResult,
+  MissionRenewInput,
+  MissionRenewResult,
+  MissionRestoreInput,
+  MissionRestoreResult,
+  MissionRewindInput,
+  MissionRewindResult,
+  MissionStartInput,
+  MissionStartResult,
+  MissionStopInput,
+  MissionStopResult,
+  MissionUpdateDraftInput,
+  MissionUpdateDraftResult,
 } from "../../../schemas/mission.js";
 
 /**
- * Mission draft + contract + command surface. `getDraft` reads the
- * latest `status = 'draft'` mission row for the session; every
- * other method fail-closes with `mission.feature_unavailable` until
- * puzzle 04 lands host-only acceptance + `/rewind`/`/restore`/
- * `/mission-renew`.
+ * Mission draft + contract + command surface. Phase 6 ships 9 real
+ * handlers + 1 fail-closed (`updateDraft` — structured setup form
+ * lands in phase 7+).
  */
 export interface MissionBridge {
   readonly getDraft: (
-    input: MissionGetDraftInput
+    input: MissionGetDraftInput,
   ) => Promise<Result<MissionGetDraftResult>>;
   readonly updateDraft: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionUpdateDraftInput,
+  ) => Promise<Result<MissionUpdateDraftResult>>;
   readonly getDiff: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionGetDiffInput,
+  ) => Promise<Result<MissionGetDiffResult>>;
   readonly acceptContract: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionAcceptContractInput,
+  ) => Promise<Result<MissionAcceptContractResult>>;
   readonly start: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionStartInput,
+  ) => Promise<Result<MissionStartResult>>;
   readonly continue: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionContinueInput,
+  ) => Promise<Result<MissionContinueResult>>;
   readonly recover: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionRecoverInput,
+  ) => Promise<Result<MissionRecoverResult>>;
   readonly rewind: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionRewindInput,
+  ) => Promise<Result<MissionRewindResult>>;
   readonly restore: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionRestoreInput,
+  ) => Promise<Result<MissionRestoreResult>>;
   readonly renew: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionRenewInput,
+  ) => Promise<Result<MissionRenewResult>>;
   readonly stop: (
-    input: MissionCommandInput
-  ) => Promise<Result<MissionCommandResult>>;
+    input: MissionStopInput,
+  ) => Promise<Result<MissionStopResult>>;
 }

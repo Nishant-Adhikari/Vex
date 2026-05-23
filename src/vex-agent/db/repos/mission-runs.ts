@@ -249,11 +249,14 @@ export async function casFlipToRunning(
   }
 }
 
-export async function getRun(id: string): Promise<MissionRun | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM mission_runs WHERE id = $1",
-    [id],
-  );
+export async function getRun(
+  id: string,
+  client?: PoolClient,
+): Promise<MissionRun | null> {
+  const sql = "SELECT * FROM mission_runs WHERE id = $1";
+  const row = client
+    ? await queryOneWith<Record<string, unknown>>(client, sql, [id])
+    : await queryOne<Record<string, unknown>>(sql, [id]);
   return row ? mapRow(row) : null;
 }
 

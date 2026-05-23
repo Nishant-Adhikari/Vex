@@ -26,6 +26,7 @@ import {
   missionConstraintsSchema,
   missionListEntrySchema,
   missionStatusSchema,
+  type MissionAcceptance,
   type MissionConstraints,
   type MissionDraftDto,
   type MissionGetDraftResult,
@@ -119,10 +120,20 @@ interface MissionRow {
   readonly created_at: string | Date;
   readonly updated_at: string | Date;
   readonly approved_at: string | Date | null;
+  // Puzzle 04 phase 6 — acceptance four-tuple from mig 023. DB CHECK
+  // (`chk_missions_acceptance_atomicity`) guarantees all-null or
+  // all-non-null; the mapper still defends against partial state by
+  // collapsing any leak into `acceptance: null` + a warn log.
+  readonly accepted_contract_hash: string | null;
+  readonly accepted_contract_at: string | Date | null;
+  readonly accepted_contract_by: string | null;
+  readonly contract_hash_version: number | null;
+  /** `/mission-renew` lineage — id of the mission this one was renewed from. */
+  readonly renewed_from_mission_id: string | null;
 }
 
 const MISSION_ROW_COLUMNS =
-  "id, root_session_id, status, title, goal, constraints_json, success_criteria_json, stop_conditions_json, risk_profile, allowed_protocols, allowed_chains, allowed_wallets, created_at, updated_at, approved_at";
+  "id, root_session_id, status, title, goal, constraints_json, success_criteria_json, stop_conditions_json, risk_profile, allowed_protocols, allowed_chains, allowed_wallets, created_at, updated_at, approved_at, accepted_contract_hash, accepted_contract_at, accepted_contract_by, contract_hash_version, renewed_from_mission_id";
 
 function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -230,6 +241,44 @@ function normalisePgArray(raw: unknown, label: string, maxLen: number): string[]
   return out;
 }
 
+/**
+ * Project the acceptance four-tuple from a missions row. Strict
+ * 4-of-4 — any partial state (which `chk_missions_acceptance_atomicity`
+ * rejects at the DB level but might slip in via a manual SQL edit)
+ * collapses to `acceptance: null` plus a warn log so the renderer
+ * never shows a partial "accepted" badge.
+ *
+ * Puzzle 04 phase 6 codex review #4.
+ */
+function projectAcceptance(row: MissionRow): MissionAcceptance | null {
+  // Coerce undefined → null so a missing column (e.g. fixture row in
+  // tests, or pre-mig 023 row read against a fresh schema during a
+  // partial rollout) collapses to the unaccepted branch.
+  const h = row.accepted_contract_hash ?? null;
+  const at = row.accepted_contract_at ?? null;
+  const by = row.accepted_contract_by ?? null;
+  const v = row.contract_hash_version ?? null;
+  // All four null → unaccepted (canonical empty state).
+  if (h === null && at === null && by === null && v === null) return null;
+  // All four set → accepted (project a typed block).
+  if (h !== null && at !== null && by !== null && v !== null) {
+    return {
+      contractHash: h,
+      acceptedAt: toIso(at),
+      acceptedBy: by,
+      contractHashVersion: v,
+    };
+  }
+  // Partial (defensive — DB CHECK should prevent this). Refuse to
+  // surface a malformed acceptance object to the renderer.
+  log.warn(
+    `[missions-db] partial acceptance row for mission ${row.id} ` +
+      `(hash=${h !== null} at=${at !== null} by=${by !== null} v=${v !== null}) ` +
+      `— projecting null`,
+  );
+  return null;
+}
+
 function toDraftDto(row: MissionRow): MissionDraftDto {
   return {
     missionId: row.id,
@@ -261,6 +310,8 @@ function toDraftDto(row: MissionRow): MissionDraftDto {
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     approvedAt: toIsoOrNull(row.approved_at),
+    acceptance: projectAcceptance(row),
+    renewedFromMissionId: row.renewed_from_mission_id ?? null,
   };
 }
 

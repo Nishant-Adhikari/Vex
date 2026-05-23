@@ -47,8 +47,7 @@ vi.mock("../../../../vex-agent/engine/core/turn-loop.js", () => ({
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   createDraft: (...a: unknown[]) => mockCreateDraft(...a),
   getMission: (...a: unknown[]) => mockGetMission(...a),
-  // Puzzle 04 acceptance gate uses a tx-aware lookup; reuse the same
-  // mock so fixtures shape both reads consistently.
+  // Puzzle 04 acceptance gate uses a tx-aware lookup — reuse the same mock.
   getMissionForUpdate: (...a: unknown[]) => mockGetMission(a[1]),
   updateDraft: (...a: unknown[]) => mockUpdateDraft(...a),
   setStatus: (...a: unknown[]) => mockSetMissionStatus(...a),
@@ -73,6 +72,8 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getRun: (...a: unknown[]) => mockGetRun(...a),
   updateStatus: (...a: unknown[]) => mockUpdateRunStatus(...a),
   getActiveRun: vi.fn().mockResolvedValue(null),
+  getActiveRunBySession: vi.fn().mockResolvedValue(null),
+  getLatestFailedRunBySession: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
@@ -155,12 +156,9 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
   PROTOCOL_NAMESPACE_ALLOWLIST: [],
 }));
 
-const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = await import(
-  "../../../../vex-agent/engine/core/runner.js"
-);
-const { MissionRunPausedError } = await import(
-  "../../../../vex-agent/engine/types.js"
-);
+const runnerModule = await import("../../../../vex-agent/engine/core/runner.js");
+const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
+const { MissionRunPausedError } = await import("../../../../vex-agent/engine/types.js");
 
 function makeProvider() {
   return {

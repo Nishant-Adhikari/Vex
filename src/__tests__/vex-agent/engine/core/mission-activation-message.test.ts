@@ -151,6 +151,10 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   createRun: (...args: unknown[]) => mockCreateRun(...args),
   getActiveRun: (...args: unknown[]) => mockGetActiveRun(...args),
+  // Puzzle 04 phase 6 — `prepareMissionStart` calls these session-level
+  // gates before commit; default = no active run / no failed run.
+  getActiveRunBySession: vi.fn().mockResolvedValue(null),
+  getLatestFailedRunBySession: vi.fn().mockResolvedValue(null),
   updateStatus: vi.fn(),
 }));
 

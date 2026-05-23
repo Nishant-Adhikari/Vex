@@ -50,6 +50,8 @@ describe("mission schemas", () => {
       createdAt: ISO,
       updatedAt: ISO,
       approvedAt: null,
+      acceptance: null,
+      renewedFromMissionId: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -71,8 +73,38 @@ describe("mission schemas", () => {
       createdAt: ISO,
       updatedAt: ISO,
       approvedAt: null,
+      acceptance: null,
+      renewedFromMissionId: null,
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it("missionDraftDtoSchema accepts a populated acceptance block", () => {
+    const parsed = missionDraftDtoSchema.safeParse({
+      missionId: "mission-1",
+      sessionId: SESSION,
+      status: "ready",
+      title: null,
+      goal: null,
+      constraints: {},
+      successCriteria: [],
+      stopConditions: [],
+      riskProfile: null,
+      allowedChains: [],
+      allowedProtocols: [],
+      allowedWallets: [],
+      createdAt: ISO,
+      updatedAt: ISO,
+      approvedAt: null,
+      acceptance: {
+        contractHash: "a".repeat(64),
+        acceptedAt: ISO,
+        acceptedBy: "host",
+        contractHashVersion: 1,
+      },
+      renewedFromMissionId: "mission-source",
+    });
+    expect(parsed.success).toBe(true);
   });
 
   it("missionGetDraftInputSchema requires uuid sessionId", () => {

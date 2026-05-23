@@ -1,399 +1,172 @@
 /**
- * Engine runner — mission setup, start, resume, and finalization.
+ * Mission lifecycle entry points — thin composition of the
+ * prepare + run split (puzzle 04 phase 6).
  *
- * Permission semantics: post-M12 missions inherit their approval permission
- * from the owning session (`sessions.permission`), hydrated once at session
- * load. Mission runs no longer carry their own `loop_mode` column.
+ * `startMission(missionId)` and `resumeMissionRun(runId)` exist for
+ * non-IPC callers (CLI / tests / direct engine consumers) that don't
+ * have the sessionId or pre-resolved provider/config in scope. The
+ * IPC layer in `vex-app/src/main/ipc/mission/` calls
+ * `prepareMissionStart` directly to keep durable dispatch semantics
+ * (codex blocker: `dispatched` must not return until a durable
+ * `mission_runs` row exists).
+ *
+ * Permission semantics: post-M12 missions inherit their approval
+ * permission from the owning session (`sessions.permission`),
+ * hydrated once at session load. Mission runs no longer carry their
+ * own `loop_mode` column.
  */
 
 import {
-  type TurnResult,
-  type Permission,
   MissionRunPausedError,
   TERMINAL_RUN_STATUSES,
+  type TurnResult,
 } from "../../types.js";
-import { hydrateEngineSession } from "../hydrate.js";
-import type { TurnLoopConfig } from "../turn-loop.js";
-import { runTurnLoop } from "../turn-loop.js";
-import { commitMissionStart } from "../../mission/commit-start.js";
-import {
-  buildMissionRunContractSnapshot,
-  resolveMissionPromptContext,
-} from "../../mission/run-contract.js";
-import type { PromptStackOptions } from "../../prompts/index.js";
-import { getOpenAITools } from "@vex-agent/tools/registry.js";
-import { computeBand, type ContextUsageBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
-import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
-import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
-import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
+import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import logger from "@utils/logger.js";
-import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
+import { finalizeMissionRunError } from "./mission-finalize.js";
+
 import {
-  registerMissionRunAbortController,
-  unregisterMissionRunAbortController,
-} from "./abort.js";
+  prepareMissionStart,
+  type PrepareMissionStartOutcome,
+} from "./mission-prepare.js";
 import {
-  finalizeMissionRunError,
-  finalizeMissionRunStatus,
-} from "./mission-finalize.js";
+  resumePreparedMissionRun,
+  runPreparedMissionStart,
+} from "./mission-run.js";
 
-// ── startMission ────────────────────────────────────────────────
-
-interface MissionActivationMessageInput {
-  sessionId: string;
-  missionId: string;
-  runId: string;
-  permission: Permission;
-}
-
-async function addMissionActivationMessage(
-  input: MissionActivationMessageInput,
-): Promise<void> {
-  const content = [
-    "[Engine: mission_started — The operator accepted the mission draft and the shell activation command has already been executed.",
-    "You are now inside an active mission run.",
-    "Do not ask the operator to run `/mission start` or `/mission continue` again.",
-    "Treat earlier setup messages asking for `/mission start` as historical context only.",
-    "Execute the frozen Mission Contract now.]",
-  ].join(" ");
-
-  await appendEngineMessage(
-    input.sessionId,
-    content,
-    {
-      source: "engine",
-      messageType: "mission_started",
-      visibility: "internal",
-      payload: {
-        missionId: input.missionId,
-        runId: input.runId,
-        permission: input.permission,
-      },
-    },
-  );
-}
+// Re-export the prepare + run halves so the IPC layer can lazy-import
+// from this canonical module path.
+export {
+  prepareMissionStart,
+  type PrepareMissionStartOutcome,
+  type PreparedMissionStart,
+  type PrepareMissionStartInput,
+} from "./mission-prepare.js";
+export {
+  runPreparedMissionStart,
+  resumePreparedMissionRun,
+  type PreparedResumeRun,
+} from "./mission-run.js";
 
 /**
- * Start a mission — validate, freeze, create run, enter turn loop.
- * Permission is read from the session row (immutable) rather than passed in.
+ * Start a mission — non-IPC entry. Composes the prepare + run halves
+ * for callers without sessionId in scope. The IPC layer calls
+ * `prepareMissionStart` directly so it can return `dispatched`
+ * synchronously after the durable `mission_runs` row exists.
  */
 export async function startMission(missionId: string): Promise<TurnResult> {
   logger.info("engine.mission.start", { missionId });
 
-  const provider = await resolveProvider();
-  if (!provider) throw new Error("No inference provider available");
-
-  const config = await provider.loadConfig();
-  if (!config) throw new Error("No inference config available");
-
-  // Unlocked preflight read — confirms the row exists + surfaces
-  // `rootSessionId` for the lease claim. The locked re-read inside
-  // `commitMissionStart` is the source of truth for acceptance,
-  // readiness, and snapshot building.
-  const preflightMission = await missionsRepo.getMission(missionId);
-  if (!preflightMission) throw new Error(`Mission ${missionId} not found`);
-
-  // Puzzle 03 — claim the session lease BEFORE any state mutation
-  // (codex blocker #2): a concurrent `startMission` / `chat.submit` /
-  // `requestResume` against the same session must not interleave with
-  // the mission flip + run create + activation message.
-  const sessionId = preflightMission.rootSessionId;
-  const ownerId = `start-mission-${missionId}-${Math.random().toString(36).slice(2, 10)}`;
-  const { claimSessionLease } = await import("../../runtime/lease-and-status.js");
-  const claim = await claimSessionLease({
-    sessionId,
-    ownerId,
-    processKind: "electron_main",
-    ttlMs: 5 * 60_000,
+  // Non-IPC entry: no host-supplied sessionId — engine derives the
+  // canonical session id from the mission row inside
+  // `prepareMissionStart`. The IPC layer passes its own sessionId to
+  // get the cross-session ownership check.
+  const outcome: PrepareMissionStartOutcome = await prepareMissionStart({
+    missionId,
   });
-  if (claim.outcome === "lease_busy") {
-    throw new Error(
-      `Session ${sessionId} runner lease busy — another runner is active.`,
-    );
-  }
-  const { createLeaseHandle } = await import("../../runtime/lease-handle.js");
-  const sessionLease = createLeaseHandle({
-    lease: claim.lease,
-    ownerId,
-    ttlMs: 5 * 60_000,
-  });
-
-  // Hold `runId` in the outer scope so the `finally` lease release can
-  // attribute the lease drop to the run that was actually created.
-  // CRITICAL: this MUST stay null until `commitMissionStart` returns
-  // `committed` — otherwise a rejection branch would let the release
-  // path emit a phantom `missionRunId` for a run that never reached
-  // the DB.
-  let runId: string | null = null;
-  try {
-    // Puzzle 04 — atomic gate + state flip + createRun. The row lock
-    // is held across acceptance check → readiness → no-active-run →
-    // status flip → snapshot → createRun, so a concurrent
-    // `updateDraft` between gate and flip cannot stale the contract.
-    const candidateRunId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const commit = await commitMissionStart({ missionId, runId: candidateRunId });
-    switch (commit.outcome) {
-      case "mission_not_found":
-        throw new Error(`Mission ${missionId} not found`);
-      case "not_accepted":
-        throw new Error(
-          `Mission ${missionId} has not been accepted — open the contract card and click Accept contract before starting.`,
-        );
-      case "stale_acceptance":
-        throw new Error(
-          `Mission ${missionId} contract changed since acceptance — re-accept the current contract before starting.`,
-        );
-      case "not_ready":
-        throw new Error(
-          `Mission ${missionId} is not ready — missing required fields: ${commit.missingFields.join(", ")}`,
-        );
-      case "active_run_exists":
-        throw new Error(
-          `Mission ${missionId} already has an active run: ${commit.missionRunId}`,
-        );
-      case "committed":
-        break;
-    }
-    // Only assign the outer scope id AFTER the COMMIT succeeded.
-    runId = commit.runId;
-    const mission = commit.mission;
-    const contractSnapshot = commit.contractSnapshot;
-
-    // Permission comes from the session row — immutable per session, set at
-    // session creation by the wizard / main app session creator.
-    const session = await sessionsRepo.getSession(sessionId);
-    if (!session) throw new Error(`Session ${sessionId} not found`);
-    const permission: Permission = session.permission;
-
-    return await startMissionRunBody({
-      missionId,
-      runId,
-      sessionId,
-      mission,
-      permission,
-      contractSnapshot,
-      provider,
-      config,
-    });
-  } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "../../runtime/release-and-emit.js"
-    );
-    await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
-      missionRunId: runId,
-    });
+  switch (outcome.outcome) {
+    case "prepared":
+      return runPreparedMissionStart(outcome.prepared);
+    case "mission_not_found":
+      throw new Error(`Mission ${missionId} not found`);
+    case "session_mismatch":
+      // Unreachable on the no-sessionId path; kept for type exhaustiveness.
+      throw new Error(
+        `Mission ${missionId} session mismatch (expected ${outcome.expectedSessionId})`,
+      );
+    case "session_has_active_run":
+      throw new Error(
+        `Session has an active mission run: ${outcome.missionRunId} (${outcome.runStatus})`,
+      );
+    case "session_not_found":
+      throw new Error(`Session for mission ${missionId} not found`);
+    case "not_accepted":
+      throw new Error(
+        `Mission ${missionId} has not been accepted — accept the contract before starting.`,
+      );
+    case "stale_acceptance":
+      throw new Error(
+        `Mission ${missionId} contract changed since acceptance — re-accept the current contract before starting.`,
+      );
+    case "not_ready":
+      throw new Error(
+        `Mission ${missionId} is not ready — missing required fields: ${outcome.missingFields.join(", ")}`,
+      );
+    case "active_run_exists":
+      throw new Error(
+        `Mission ${missionId} already has an active run: ${outcome.missionRunId}`,
+      );
+    case "lease_busy":
+      throw new Error(
+        "Session runner lease busy — another runner is active.",
+      );
+    case "provider_unavailable":
+      throw new Error("No inference provider available");
   }
 }
 
 /**
- * Continuation body for `startMission` — extracted so the lease
- * release in `startMission` covers the entire continuation including
- * `runTurnLoop`. Internal helper; not exported.
+ * Resume a mission run after checkpoint or restart. Non-IPC entry —
+ * the IPC layer's resume path goes through the shared runtime
+ * dispatcher (`request-resume.ts` / `_shared/runtime-resume-dispatch`).
  */
-async function startMissionRunBody(args: {
-  readonly missionId: string;
-  readonly runId: string;
-  readonly sessionId: string;
-  readonly mission: NonNullable<Awaited<ReturnType<typeof missionsRepo.getMission>>>;
-  readonly permission: Permission;
-  readonly contractSnapshot: ReturnType<typeof buildMissionRunContractSnapshot>;
-  readonly provider: NonNullable<Awaited<ReturnType<typeof resolveProvider>>>;
-  readonly config: NonNullable<Awaited<ReturnType<NonNullable<Awaited<ReturnType<typeof resolveProvider>>>["loadConfig"]>>>;
-}): Promise<TurnResult> {
-  const { missionId, runId, sessionId, permission, contractSnapshot, provider, config } = args;
-  const controller = registerMissionRunAbortController(runId);
-  // Wrap the entire post-`createRun` block. Any throw — hydrate failure,
-  // prompt prep, runTurnLoop (provider 4xx/5xx, network), even
-  // finalizeMissionRunStatus — must land the run in `paused_error` instead
-  // of orphaning it at `running`. Caller maps `MissionRunPausedError` into
-  // `{ ok: false, error, hint }` via the shell action wrapper.
-  try {
-    await addMissionActivationMessage({ sessionId, missionId, runId, permission });
-
-    const hydrated = await hydrateEngineSession(sessionId);
-    if (!hydrated) throw new Error(`Session ${sessionId} not found`);
-
-    // Build mission-specific prompt options.
-    const missionPromptContext = contractSnapshot.missionPromptContext;
-
-    const promptOptions: PromptStackOptions = {
-      missionRunContext: {
-        missionPromptContext,
-        iterationCount: 0,
-      },
-    };
-
-    const buildToolsForBand = (contextUsageBand: ContextUsageBand) => toToolDefinitions(getOpenAITools({
-      permission,
-      role: "parent",
-      sessionKind: "mission",
-      missionRunActive: true,
-      contextUsageBand,
-    }));
-    const tools = buildToolsForBand(computeBand(hydrated.tokenCount, config.contextLimit));
-
-    const loopConfig: TurnLoopConfig = {
-      ...DEFAULT_LOOP_CONFIG,
-      contextLimit: config.contextLimit,
-      buildToolsForBand,
-    };
-
-    const result = await runTurnLoop(
-      { ...hydrated.context, missionRunId: runId, sessionKind: "mission" },
-      hydrated.messages,
-      hydrated.summary,
-      hydrated.tokenCount,
-      provider,
-      config,
-      tools,
-      loopConfig,
-      promptOptions,
-      controller.signal,
-    );
-
-    const missionStatus = await finalizeMissionRunStatus(
-      missionId,
-      runId,
-      sessionId,
-      result.stopReason,
-      result.stopPayload,
-    );
-
-    return {
-      text: result.text,
-      toolCallsMade: result.toolCallsMade,
-      pendingApprovals: result.pendingApprovals,
-      stopReason: result.stopReason,
-      missionStatus,
-    };
-  } catch (err: unknown) {
-    await finalizeMissionRunError(missionId, runId, sessionId, err);
-    throw new MissionRunPausedError({ runId, missionId, sessionId, cause: err });
-  } finally {
-    unregisterMissionRunAbortController(runId);
-  }
-}
-
-// ── resumeMissionRun ────────────────────────────────────────────
-
-/**
- * Resume a mission run after checkpoint or restart.
- * Permission is re-read from session row (still immutable per session).
- */
-export async function resumeMissionRun(
-  runId: string,
-): Promise<TurnResult> {
+export async function resumeMissionRun(runId: string): Promise<TurnResult> {
   logger.info("engine.mission.resume", { runId });
 
-  const provider = await resolveProvider();
-  if (!provider) throw new Error("No inference provider available");
-
-  const config = await provider.loadConfig();
-  if (!config) throw new Error("No inference config available");
-
+  // Read run + check terminal status OUTSIDE the finalize-on-error try.
+  // A terminal row is immutable audit history — finalizing it would
+  // corrupt the durable status (codex puzzle 04 phase 6 review #1).
   const run = await missionRunsRepo.getRun(runId);
   if (!run) throw new Error(`Run ${runId} not found`);
-
-  // Guard: cannot resume terminal runs. `cancelled` is included so an
-  // operator-driven `abortMissionRun` is permanent — without this guard a
-  // late approval/resume could revive a run the operator had finalised.
   if (TERMINAL_RUN_STATUSES.has(run.status)) {
     throw new Error(`Run ${runId} is terminal (${run.status}) — cannot resume`);
   }
 
-  const mission = await missionsRepo.getMission(run.missionId);
-  if (!mission) throw new Error(`Mission ${run.missionId} not found`);
-
-  const controller = registerMissionRunAbortController(runId);
-  // Wrap the entire resumable section. Same recovery contract as
-  // `startMission`: any throw lands in `paused_error` so the operator can
-  // `/retry` once the underlying issue is resolved.
   try {
-    // Resume run
-    await missionRunsRepo.updateStatus(runId, "running");
+    const provider = await resolveProvider();
+    if (!provider) throw new Error("No inference provider available");
+    const config = await provider.loadConfig();
+    if (!config) throw new Error("No inference config available");
 
-    // Refresh tool_output_blob TTLs on the session's recent messages so a
-    // long paused_wake / paused_approval window doesn't leave the model
-    // with expired overflow pointers. Idempotent — callers that already
-    // refreshed (ingress preempt, wake executor) pay a cheap no-op.
-    await refreshBlobTtlForRecentMessages(run.sessionId);
+    const mission = await missionsRepo.getMission(run.missionId);
+    if (!mission) throw new Error(`Mission ${run.missionId} not found`);
 
-    const hydrated = await hydrateEngineSession(run.sessionId);
-    if (!hydrated) throw new Error(`Session ${run.sessionId} not found`);
-
-    const permission = hydrated.context.sessionPermission;
-
-    const missionPromptContext = resolveMissionPromptContext({
-      snapshot: run.contractSnapshotJson,
-      fallbackMission: mission,
-    });
-    const promptOptions: PromptStackOptions = {
-      missionRunContext: {
-        missionPromptContext,
-        iterationCount: run.iterationCount,
-      },
-    };
-
-    // Resume — compute the band from the lagging token count so
-    // warning-band tools are visible if the previous turn already
-    // pushed the window past 80%. Turn-loop recomputes per iteration for
-    // dispatch context.
-    const buildToolsForBand = (contextUsageBand: ContextUsageBand) => toToolDefinitions(getOpenAITools({
-      permission,
-      role: "parent",
-      sessionKind: "mission",
-      missionRunActive: true,
-      contextUsageBand,
-    }));
-    const resumeBand = computeBand(hydrated.tokenCount, config.contextLimit);
-    const tools = buildToolsForBand(resumeBand);
-
-    const loopConfig: TurnLoopConfig = {
-      ...DEFAULT_LOOP_CONFIG,
-      contextLimit: config.contextLimit,
-      buildToolsForBand,
-    };
-
-    const result = await runTurnLoop(
-      { ...hydrated.context, missionRunId: runId, sessionKind: "mission" },
-      hydrated.messages,
-      hydrated.summary,
-      hydrated.tokenCount,
+    // Permission read from session is deferred to
+    // `resumePreparedMissionRun`'s `hydrateEngineSession` so a missing
+    // session row lands in `paused_error` via the protected try/catch
+    // rather than throwing here mid-resume.
+    return await resumePreparedMissionRun({
+      runId,
+      run,
+      mission,
       provider,
       config,
-      tools,
-      loopConfig,
-      promptOptions,
-      controller.signal,
-    );
-
-    const missionStatus = await finalizeMissionRunStatus(
-      run.missionId,
-      runId,
-      run.sessionId,
-      result.stopReason,
-      result.stopPayload,
-    );
-
-    return {
-      text: result.text,
-      toolCallsMade: result.toolCallsMade,
-      pendingApprovals: result.pendingApprovals,
-      stopReason: result.stopReason,
-      missionStatus,
-    };
-  } catch (err: unknown) {
-    await finalizeMissionRunError(run.missionId, runId, run.sessionId, err);
-    throw new MissionRunPausedError({
-      runId,
-      missionId: run.missionId,
-      sessionId: run.sessionId,
-      cause: err,
     });
-  } finally {
-    unregisterMissionRunAbortController(runId);
+  } catch (err) {
+    // Skip double-finalize: `resumePreparedMissionRun` already wraps
+    // its internal turn loop in a try/catch that calls
+    // `finalizeMissionRunError` and throws `MissionRunPausedError`.
+    // Re-finalizing here would emit duplicate bug reports and rewrite
+    // the already-set `paused_error` row.
+    if (err instanceof MissionRunPausedError) {
+      throw err;
+    }
+    // Pre-resume reads failed (provider/config/mission lookup) AFTER
+    // the caller already flipped the run to `running`. Finalize as
+    // `paused_error` so the row doesn't stay stranded at `running`.
+    try {
+      await finalizeMissionRunError(run.missionId, runId, run.sessionId, err);
+    } catch (finalizeErr) {
+      logger.warn("engine.mission.resume.finalize_failed", {
+        runId,
+        sessionId: run.sessionId,
+        error: finalizeErr instanceof Error
+          ? finalizeErr.message
+          : String(finalizeErr),
+      });
+    }
+    throw err;
   }
 }
