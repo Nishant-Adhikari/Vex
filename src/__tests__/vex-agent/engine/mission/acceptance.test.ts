@@ -227,6 +227,41 @@ describe("acceptContract", () => {
     expect(sqlCalls).toContain("BEGIN");
     expect(sqlCalls).toContain("COMMIT");
   });
+
+  // Phase 8 lock-order invariant: `getMissionForUpdate` (SELECT FOR
+  // UPDATE) MUST run before `updateAcceptance` AND both share the
+  // same tx client. A regression that drops FOR UPDATE or routes the
+  // write through the pool would let concurrent acceptContract calls
+  // race past each other.
+  it("acquires the row lock (FOR UPDATE) before writing acceptance", async () => {
+    const mission = makeMission();
+    const hash = computeContractHash(missionToDraft(mission));
+    mockGetMissionForUpdate
+      .mockResolvedValueOnce(mission)
+      .mockResolvedValueOnce(makeMission({
+        acceptedContractHash: hash,
+        acceptedContractAt: "2026-05-22T11:00:00.000Z",
+        acceptedContractBy: "host",
+        contractHashVersion: 1,
+      }));
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    await acceptContract({
+      sessionId: "session-1",
+      missionId: "mission-1",
+      contractHash: hash,
+    });
+
+    const lockOrder = mockGetMissionForUpdate.mock.invocationCallOrder[0];
+    const writeOrder = mockUpdateAcceptance.mock.invocationCallOrder[0];
+    expect(lockOrder).toBeDefined();
+    expect(writeOrder).toBeDefined();
+    expect(lockOrder).toBeLessThan(writeOrder!);
+
+    const lockClient = mockGetMissionForUpdate.mock.calls[0]?.[0];
+    const writeClient = mockUpdateAcceptance.mock.calls[0]?.[0];
+    expect(lockClient).toBeDefined();
+    expect(writeClient).toBe(lockClient);
+  });
 });
 
 // ── assertAcceptedContract (puzzle 04 phase 4 gate) ──────────────
