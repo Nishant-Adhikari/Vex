@@ -41,7 +41,7 @@ describe("getAllMessages (integration)", () => {
     });
     await insertMessage(sid, "user", "after", { timestamp: "2026-04-17T00:00:03Z" });
 
-    await forkToolMessageToArchive(giantId, "[placeholder]");
+    await forkToolMessageToArchive(sid, giantId, "[placeholder]");
 
     const result = await getAllMessages(sid);
     expect(result).toHaveLength(3);
@@ -60,7 +60,7 @@ describe("getAllMessages (integration)", () => {
     });
     await insertMessage(sid, "user", "tail", { timestamp: "2026-04-17T00:00:03Z" });
 
-    await forkToolMessageToArchive(giantId, "[placeholder]");
+    await forkToolMessageToArchive(sid, giantId, "[placeholder]");
     // Age the prefix covering the forked id. Archive already has giantId with
     // the original payload; the prefix archive INSERT must be a no-op for
     // that id (ON CONFLICT DO NOTHING). getAllMessages should still see the

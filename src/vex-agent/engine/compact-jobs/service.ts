@@ -174,7 +174,7 @@ async function executeCompactNowInner(input: CompactCommitArgs): Promise<Compact
       // 2 will produce the narrative chunk asynchronously). Placeholder text
       // mentions memory_recall as the recovery path per codex guardrail.
       const placeholder = buildGiantToolPlaceholder(plan.bloatedMessageId, enq.job.id);
-      await forkToolMessageToArchive(plan.bloatedMessageId, placeholder, tx);
+      await forkToolMessageToArchive(input.sessionId, plan.bloatedMessageId, placeholder, tx);
       archivedMessages = 1;
     }
 

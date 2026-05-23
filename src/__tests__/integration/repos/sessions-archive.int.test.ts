@@ -87,7 +87,7 @@ describe("sessions forkToolMessageToArchive (integration)", () => {
       timestamp: "2026-04-17T00:00:10Z",
     });
 
-    await forkToolMessageToArchive(giantId, "[placeholder]");
+    await forkToolMessageToArchive(sid, giantId, "[placeholder]");
 
     const archived = await archiveRows(sid);
     const live = await liveRows(sid);
@@ -103,10 +103,10 @@ describe("sessions forkToolMessageToArchive (integration)", () => {
       timestamp: "2026-04-17T00:00:10Z",
     });
 
-    await forkToolMessageToArchive(giantId, "[placeholder-1]");
+    await forkToolMessageToArchive(sid, giantId, "[placeholder-1]");
     // Retry: live content is now "[placeholder-1]"; a second fork must NOT
     // overwrite the archived canonical payload with the placeholder.
-    await forkToolMessageToArchive(giantId, "[placeholder-2]");
+    await forkToolMessageToArchive(sid, giantId, "[placeholder-2]");
 
     const archived = await archiveRows(sid);
     expect(archived).toHaveLength(1);
@@ -122,7 +122,7 @@ describe("sessions forkToolMessageToArchive (integration)", () => {
     });
     await insertMessage(sid, "user", "m3", { timestamp: "2026-04-17T00:00:03Z" });
 
-    await forkToolMessageToArchive(giantId, "[placeholder]");
+    await forkToolMessageToArchive(sid, giantId, "[placeholder]");
     // Now age the whole prefix including the forked (placeholder) row into
     // archive. The archive insert for `giantId` must be a no-op — ON CONFLICT
     // DO NOTHING — so the archive still holds ORIGINAL_BIG, not the placeholder.
