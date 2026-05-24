@@ -1,14 +1,38 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
-// ── Mocks for zap.in positionKey regression test ──────────────────
+// ── Per-session wallet resolution mock (5D-protocols p1) ──────────
+// Handlers now resolve the session wallet via resolve.js (NOT the zero-arg
+// requireEvmWallet primary). Spy on the resolvers to assert the session wallet
+// is used and that preview/dryRun never decrypts a signing key.
 
-vi.mock("@tools/wallet/multi-auth.js", () => ({
-  requireEvmWallet: () => ({
-    family: "eip155",
-    address: "0x1234567890abcdef1234567890abcdef12345678",
-    privateKey: "0x" + "ab".repeat(32),
+const SESSION_EVM = {
+  family: "eip155" as const,
+  address: "0x1234567890abcdef1234567890abcdef12345678",
+  privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
+};
+const mockResolveSigningWallet = vi.fn(() => SESSION_EVM);
+const mockResolveSelectedAddress = vi.fn(() => SESSION_EVM.address);
+
+vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
+  resolveSigningWallet: (...args: unknown[]) => mockResolveSigningWallet(...args),
+  resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
+  walletScopeErrorToResult: (err: unknown) => ({
+    success: false,
+    output: err instanceof Error ? err.message : String(err),
   }),
 }));
+
+/** Type-complete ProtocolExecutionContext for handler tests. */
+function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
+  return {
+    sessionPermission: "full",
+    approved: true,
+    walletResolution: { source: "default" },
+    walletPolicy: { kind: "none" },
+    ...over,
+  };
+}
 
 const mockGetZapInRoute = vi.fn();
 const mockBuildZapIn = vi.fn();
@@ -92,7 +116,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.tokens.search fails without chain", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.tokens.search"]!(
       {},
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chain");
@@ -101,7 +125,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.tokens.check fails without chain and address", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.tokens.check"]!(
       {},
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chain");
@@ -110,7 +134,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.swap.quote fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.swap.quote"]!(
       { chain: "ethereum" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -119,7 +143,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.swap.sell fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.swap.sell"]!(
       { chain: "ethereum", tokenIn: "ETH" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -128,7 +152,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.swap.buy fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.swap.buy"]!(
       { chain: "ethereum", tokenIn: "USDC" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -137,7 +161,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.list fails without chain", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.list"]!(
       {},
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chain");
@@ -146,7 +170,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.activeMakingAmount fails without chain and makerAsset", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.activeMakingAmount"]!(
       { chain: "ethereum" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("makerAsset");
@@ -155,7 +179,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.create fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.create"]!(
       { chain: "ethereum", makerAsset: "USDC" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -164,7 +188,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.cancel fails without chain and orderId", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.cancel"]!(
       { chain: "ethereum" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("orderId");
@@ -173,7 +197,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.hardCancel fails without chain and orderId", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.hardCancel"]!(
       {},
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chain");
@@ -182,7 +206,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.pairs fails without chain", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.pairs"]!(
       {},
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chain");
@@ -191,7 +215,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.fill fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.fill"]!(
       { chain: "ethereum", orderId: 123 },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -200,7 +224,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.batchFill fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.batchFill"]!(
       { chain: "ethereum" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -209,7 +233,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.limitOrder.cancelAll fails without chain", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.limitOrder.cancelAll"]!(
       {},
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("chain");
@@ -218,7 +242,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.zap.in fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
       { chain: "ethereum", dex: "uniswapv3" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -227,7 +251,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.zap.out fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.zap.out"]!(
       { chain: "ethereum" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -236,7 +260,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.zap.migrate fails without required params", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.zap.migrate"]!(
       { chain: "ethereum", dexFrom: "uniswapv3" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -247,7 +271,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.chains returns chain list", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.chains"]!(
       {},
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
@@ -263,7 +287,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.zap.out fails with old positionId param name", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.zap.out"]!(
       { chain: "polygon", dex: "DEX_UNISWAPV3", pool: "0xPool", positionId: "123", tokenOut: "0xToken" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -272,7 +296,7 @@ describe("kyberswap handlers", () => {
   it("kyberswap.zap.migrate fails with old positionId param name", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.zap.migrate"]!(
       { chain: "polygon", dexFrom: "DEX_UNISWAPV3", dexTo: "DEX_UNISWAPV3", poolFrom: "0xA", poolTo: "0xB", positionId: "123" },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required");
@@ -286,7 +310,7 @@ describe("kyberswap handlers", () => {
         chain: "polygon", dex: "DEX_NONEXISTENT", pool: "0xPool",
         tokenIn: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", amountIn: "100",
       },
-      { sessionPermission: "restricted", approved: false },
+      ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("Unknown DEX");
@@ -317,7 +341,7 @@ describe("kyberswap handlers", () => {
         tokenIn: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
         amountIn: "1000000000000000000",
       },
-      { sessionPermission: "full", approved: true },
+      ctx({ sessionPermission: "full", approved: true }),
     );
 
     expect(result.success).toBe(true);
@@ -355,7 +379,7 @@ describe("kyberswap handlers", () => {
         poolFrom: "0xB6e57ed85c4c9dbfEF2a68711e9d6f36c56e0FcB", poolTo: "0xA374094527e1673A86dE625aa7147BeE868d0D1a",
         sourcePositionRef: "12345",
       },
-      { sessionPermission: "full", approved: true },
+      ctx({ sessionPermission: "full", approved: true }),
     );
 
     expect(result.success).toBe(true);
@@ -397,12 +421,60 @@ describe("kyberswap handlers", () => {
         positionRef: "12345",
         tokenOut: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       },
-      { sessionPermission: "full", approved: true },
+      ctx({ sessionPermission: "full", approved: true }),
     );
 
     expect(result.success).toBe(true);
     // ensureErc721Approval should have been called (ERC-721 DEX)
     const { ensureErc721Approval } = await import("@tools/kyberswap/evm-utils.js");
     expect(ensureErc721Approval).toHaveBeenCalled();
+  });
+});
+
+// ── Per-session signing wallet (5D-protocols p1) ─────────────────
+
+describe("kyberswap session wallet resolution (5D-protocols p1)", () => {
+  const SESSION_CTX = ctx({
+    walletResolution: { source: "session", evm: { id: "w-evm-1", address: SESSION_EVM.address }, solana: null },
+    walletPolicy: { kind: "none" },
+  });
+
+  beforeEach(() => {
+    mockResolveSigningWallet.mockClear();
+    mockResolveSelectedAddress.mockClear();
+  });
+
+  it("zap.in resolves the SESSION signing wallet (not the zero-arg primary)", async () => {
+    mockGetZapInRoute.mockResolvedValueOnce({
+      data: { route: { r: 1 }, routerAddress: "0x2f1E23e0A5A56e7746E1Ae42d5c3112B2d0cf09B", zapDetails: { initialAmountUsd: "10.00", actions: [] } },
+    });
+    mockBuildZapIn.mockResolvedValueOnce({
+      data: { routerAddress: "0x2f1E23e0A5A56e7746E1Ae42d5c3112B2d0cf09B", callData: "0xabcd", value: "0" },
+    });
+
+    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
+      { chain: "polygon", dex: "DEX_UNISWAPV3", pool: "0xPool", tokenIn: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", amountIn: "1000000000000000000" },
+      SESSION_CTX,
+    );
+
+    expect(result.success).toBe(true);
+    // Signer resolved from the SESSION resolution + policy, family eip155.
+    expect(mockResolveSigningWallet).toHaveBeenCalledWith(
+      SESSION_CTX.walletResolution, SESSION_CTX.walletPolicy, "eip155",
+    );
+  });
+
+  it("zap.in dryRun (preview) does NOT decrypt a signing wallet", async () => {
+    mockGetZapInRoute.mockResolvedValueOnce({
+      data: { route: { r: 1 }, routerAddress: "0x2f1E23e0A5A56e7746E1Ae42d5c3112B2d0cf09B", zapDetails: { initialAmountUsd: "10.00", actions: [] } },
+    });
+
+    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
+      { chain: "polygon", dex: "DEX_UNISWAPV3", pool: "0xPool", tokenIn: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", amountIn: "1000000000000000000", dryRun: true },
+      SESSION_CTX,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockResolveSigningWallet).not.toHaveBeenCalled();
   });
 });

@@ -23,10 +23,11 @@ import type { ZapDexEntry } from "@tools/kyberswap/zaas/zap-dexes/types.js";
 import type { ZapRouteResponse } from "@tools/kyberswap/zaas/types.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
-import { requireEvmWallet } from "@tools/wallet/multi-auth.js";
+import type { ChainWallet } from "@tools/wallet/multi-auth.js";
+import { resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 
 import { isAddress, getAddress, maxUint256, type Address, type Hex } from "viem";
-import type { ProtocolHandler } from "../../types.js";
+import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 // ── Approval target resolution (R1: approvalTargetKind → concrete address) ──
@@ -92,7 +93,7 @@ function buildPositionKey(
 // ── Handler map ──────────────────────────────────────────────────
 
 export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
-  "kyberswap.zap.in": async (p) => {
+  "kyberswap.zap.in": async (p, ctx) => {
     const chain = str(p, "chain"), dex = str(p, "dex"), pool = str(p, "pool");
     const tokenIn = str(p, "tokenIn"), amountIn = str(p, "amountIn");
     if (!chain || !dex || !pool || !tokenIn || !amountIn) return fail("Missing required: chain, dex, pool, tokenIn, amountIn");
@@ -113,8 +114,6 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
     if (zapDexEntry.verification === "tbd") return fail(`DEX ${dex} classified as TBD — not yet safe for automated execution. Report to maintainers.`);
     if (!zapDexEntry.supports.includes("zap-in")) return fail(`DEX ${dex} on ${slug} is source-only — cannot be used as zap-in destination.`);
 
-    const wallet = requireEvmWallet();
-
     const routeResp = await getKyberZaasClient().getZapInRoute(slug, {
       dex,
       "pool.id": pool,
@@ -133,12 +132,21 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
     if (!routeResp.data.route || !routeResp.data.routerAddress) return fail("No zap route returned");
     verifyRouterAddress(routeResp.data.routerAddress, KS_ZAP_ROUTER_POSITION);
 
-    const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
+    // Per-session signing wallet (5D-protocols) — after dryRun gate, real exec only.
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
+
+    const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
     if (tokenIn.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
       await ensureKyberAllowance(publicClient, walletClient, getAddress(tokenIn), routeResp.data.routerAddress, BigInt(amountIn), p.approveExact === true);
     }
 
-    const buildResp = await getKyberZaasClient().buildZapIn(slug, { sender: wallet.address, recipient: wallet.address, route: routeResp.data.route });
+    const buildResp = await getKyberZaasClient().buildZapIn(slug, { sender: signer.address, recipient: signer.address, route: routeResp.data.route });
     const { hash: txHash, receipt } = await sendKyberTransactionWithReceipt(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
     // Capture position ref from receipt based on DEX family (R11: reuse zapDexEntry from above)
@@ -146,10 +154,10 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
     if (!positionRef) {
       switch (zapDexEntry.captureKind) {
         case "receiptNftMint":
-          positionRef = extractMintedNftId(receipt.logs, wallet.address) ?? undefined;
+          positionRef = extractMintedNftId(receipt.logs, signer.address) ?? undefined;
           break;
         case "receiptErc1155":
-          positionRef = extractErc1155Position(receipt.logs, wallet.address) ?? undefined;
+          positionRef = extractErc1155Position(receipt.logs, signer.address) ?? undefined;
           break;
         case "shareBalance":
         case "none":
@@ -159,10 +167,10 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
 
     const zapDetails = routeResp.data.zapDetails;
     const vaultAddr = routeResp.data.poolDetails?.address;
-    const positionKey = buildPositionKey(zapDexEntry, slug, pool, wallet.address, positionRef, vaultAddr);
+    const positionKey = buildPositionKey(zapDexEntry, slug, pool, signer.address, positionRef, vaultAddr);
 
     return { success: true, output: JSON.stringify({ txHash, chain: slug, dex, pool, positionRef, positionKey }, null, 2), data: { txHash, _tradeCapture: {
-      type: "lp", chain: slug, status: "executed", walletAddress: wallet.address,
+      type: "lp", chain: slug, status: "executed", walletAddress: signer.address,
       positionKey, instrumentKey: `${slug}:lp:${pool}`,
       inputValueUsd: zapDetails?.initialAmountUsd,
       valuationSource: zapDetails?.initialAmountUsd ? "zaas_estimate" : "none",
@@ -170,7 +178,7 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
     } } };
   },
 
-  "kyberswap.zap.out": async (p) => {
+  "kyberswap.zap.out": async (p, ctx) => {
     const chain = str(p, "chain"), dex = str(p, "dex"), pool = str(p, "pool");
     const positionRef = str(p, "positionRef"), tokenOut = str(p, "tokenOut");
     if (!chain || !dex || !pool || !positionRef || !tokenOut) return fail("Missing required: chain, dex, pool, positionRef, tokenOut");
@@ -182,7 +190,6 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
 
     const slug = resolveChainSlug(chain);
     requireFeature(slug, "zaas");
-    const wallet = requireEvmWallet();
 
     // Lookup DEX family for approval routing
     const { getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
@@ -210,7 +217,16 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
     if (!routeResp.data.route || !routeResp.data.routerAddress) return fail("No zap route returned");
     const routerAddress = routeResp.data.routerAddress;
     verifyRouterAddress(routerAddress, KS_ZAP_ROUTER_POSITION);
-    const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
+
+    // Per-session signing wallet (5D-protocols) — after dryRun gate, real exec only.
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
+    const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
 
     // Family-aware approval — resolve target from approvalTargetKind (R1)
     const approvalTarget = resolveZapApprovalTarget(dexEntry, pool, routeResp);
@@ -228,14 +244,14 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
         break;
     }
 
-    const buildResp = await getKyberZaasClient().buildZapOut(slug, { sender: wallet.address, recipient: wallet.address, route: routeResp.data.route });
+    const buildResp = await getKyberZaasClient().buildZapOut(slug, { sender: signer.address, recipient: signer.address, route: routeResp.data.route });
     const txHash = await sendKyberTransaction(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
     const zapDetails = routeResp.data.zapDetails;
     const outVaultAddr = routeResp.data.poolDetails?.address;
-    const positionKey = buildPositionKey(dexEntry, slug, pool, wallet.address, positionRef, outVaultAddr);
+    const positionKey = buildPositionKey(dexEntry, slug, pool, signer.address, positionRef, outVaultAddr);
     return { success: true, output: JSON.stringify({ txHash, chain: slug, positionRef, positionKey, collectFee }, null, 2), data: { txHash, _tradeCapture: {
-      type: "lp", chain: slug, status: "executed", walletAddress: wallet.address,
+      type: "lp", chain: slug, status: "executed", walletAddress: signer.address,
       positionKey, instrumentKey: `${slug}:lp:${pool}`,
       outputValueUsd: zapDetails?.finalAmountUsd,
       valuationSource: zapDetails?.finalAmountUsd ? "zaas_estimate" : "none",
@@ -243,7 +259,7 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
     } } };
   },
 
-  "kyberswap.zap.migrate": async (p) => {
+  "kyberswap.zap.migrate": async (p, ctx) => {
     const chain = str(p, "chain"), dexFrom = str(p, "dexFrom"), dexTo = str(p, "dexTo");
     const poolFrom = str(p, "poolFrom"), poolTo = str(p, "poolTo"), sourcePositionRef = str(p, "sourcePositionRef");
     if (!chain || !dexFrom || !dexTo || !poolFrom || !poolTo || !sourcePositionRef)
@@ -251,7 +267,6 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
 
     const slug = resolveChainSlug(chain);
     requireFeature(slug, "zaas");
-    const wallet = requireEvmWallet();
 
     // Validate source and destination DEXes
     const { getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
@@ -286,7 +301,16 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
     if (!routeResp.data.route || !routeResp.data.routerAddress) return fail("No zap route returned");
     const routerAddress = routeResp.data.routerAddress;
     verifyRouterAddress(routerAddress, KS_ZAP_ROUTER_POSITION);
-    const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
+
+    // Per-session signing wallet (5D-protocols) — after dryRun gate, real exec only.
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
+    const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
 
     // Family-aware approval for source position — resolve target from approvalTargetKind (R1)
     const srcApprovalTarget = resolveZapApprovalTarget(srcEntry, poolFrom, routeResp);
@@ -304,31 +328,31 @@ export const ZAP_HANDLERS: Record<string, ProtocolHandler> = {
         break;
     }
 
-    const buildResp = await getKyberZaasClient().buildZapMigrate(slug, { sender: wallet.address, recipient: wallet.address, route: routeResp.data.route });
+    const buildResp = await getKyberZaasClient().buildZapMigrate(slug, { sender: signer.address, recipient: signer.address, route: routeResp.data.route });
     const { hash: txHash, receipt } = await sendKyberTransactionWithReceipt(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
     // Capture new position ref from receipt for destination DEX
     let newPositionRef: string | undefined;
     if (dstEntry.captureKind === "receiptNftMint") {
-      newPositionRef = extractMintedNftId(receipt.logs, wallet.address) ?? undefined;
+      newPositionRef = extractMintedNftId(receipt.logs, signer.address) ?? undefined;
     } else if (dstEntry.captureKind === "receiptErc1155") {
-      newPositionRef = extractErc1155Position(receipt.logs, wallet.address) ?? undefined;
+      newPositionRef = extractErc1155Position(receipt.logs, signer.address) ?? undefined;
     }
 
     const zapDetails = routeResp.data.zapDetails;
-    const sourcePositionKey = buildPositionKey(srcEntry, slug, poolFrom, wallet.address, sourcePositionRef);
+    const sourcePositionKey = buildPositionKey(srcEntry, slug, poolFrom, signer.address, sourcePositionRef);
     const dstVaultAddr = routeResp.data.poolDetails?.address;
-    const newPositionKey = buildPositionKey(dstEntry, slug, poolTo, wallet.address, newPositionRef, dstVaultAddr);
+    const newPositionKey = buildPositionKey(dstEntry, slug, poolTo, signer.address, newPositionRef, dstVaultAddr);
 
     // R6: Emit two capture items — close source + open destination
     const closeCapture = {
-      type: "lp" as const, chain: slug, status: "executed" as const, walletAddress: wallet.address,
+      type: "lp" as const, chain: slug, status: "executed" as const, walletAddress: signer.address,
       positionKey: sourcePositionKey, instrumentKey: `${slug}:lp:${poolFrom}`,
       valuationSource: "none" as const,
       meta: { dex: dexFrom, pool: poolFrom, action: "zap-out", positionRef: sourcePositionRef, collectFee, zapDetails },
     };
     const openCapture = {
-      type: "lp" as const, chain: slug, status: "executed" as const, walletAddress: wallet.address,
+      type: "lp" as const, chain: slug, status: "executed" as const, walletAddress: signer.address,
       positionKey: newPositionKey, instrumentKey: `${slug}:lp:${poolTo}`,
       inputValueUsd: zapDetails?.finalAmountUsd,
       valuationSource: (zapDetails?.finalAmountUsd ? "zaas_estimate" : "none") as string,

@@ -17,23 +17,23 @@ import {
 import { META_AGGREGATION_ROUTER_V2, NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { resolveTokenMetadata, resolveTokenMetadataStrict, requireFeature, resolveChainWithId } from "@tools/kyberswap/helpers.js";
 import logger from "@utils/logger.js";
-import { requireEvmWallet } from "@tools/wallet/multi-auth.js";
+import type { ChainWallet } from "@tools/wallet/multi-auth.js";
+import { resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
-import type { ProtocolHandler } from "../../types.js";
+import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 // ── Shared swap execution (sell + buy use same routing, differ in trade_side) ──
 
-async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"): Promise<ToolResult> {
+async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell", context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
 
   const slug = resolveChainSlug(chain);
   requireFeature(slug, "aggregator");
   const chainId = slugToChainId(slug);
-  const wallet = requireEvmWallet();
   // Strict: address-only for mutating swaps — symbols rejected
   const tokenIn = await resolveTokenMetadataStrict(tokenInRaw, chainId);
   const tokenOut = await resolveTokenMetadataStrict(tokenOutRaw, chainId);
@@ -65,7 +65,17 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
     return ok({ dryRun: true, side, chain: slug, routeSummary, routerAddress });
   }
 
-  const { publicClient, walletClient } = getKyberEvmClients(slug, wallet.privateKey);
+  // Per-session signing wallet (puzzle 5 phase 5D-protocols) — resolved AFTER the
+  // dryRun gate so a preview never decrypts a key. Real broadcast only.
+  let signer: ChainWallet;
+  try {
+    signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+  } catch (err) {
+    return walletScopeErrorToResult(err);
+  }
+  if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
+
+  const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
   if (tokenIn.address.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
     await ensureKyberAllowance(publicClient, walletClient, tokenIn.address, routerAddress, amountIn, p.approveExact === true);
   }
@@ -73,8 +83,8 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
   const slippage = num(p, "slippageBps") ?? 50;
   const buildResp = await getKyberAggregatorClient().buildRoute(slug, {
     routeSummary,
-    sender: wallet.address,
-    recipient: (str(p, "recipient") || wallet.address) as Address,
+    sender: signer.address,
+    recipient: (str(p, "recipient") || signer.address) as Address,
     slippageTolerance: slippage,
   });
 
@@ -100,7 +110,7 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
       inputToken: tokenIn.symbol, outputToken: tokenOut.symbol,
       inputTokenAddress: tokenIn.address, outputTokenAddress: tokenOut.address,
       inputAmount: buildResp.data.amountIn, outputAmount: buildResp.data.amountOut,
-      signature: txHash, walletAddress: wallet.address, tradeSide: side,
+      signature: txHash, walletAddress: signer.address, tradeSide: side,
       instrumentKey: `${slug}:${side === "buy" ? tokenOut.address : tokenIn.address}`,
       inputValueUsd: buildResp.data.amountInUsd, outputValueUsd: buildResp.data.amountOutUsd,
       feeValueUsd: buildResp.data.gasUsd, valuationSource: "kyberswap_exact",
@@ -167,6 +177,6 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     });
   },
 
-  "kyberswap.swap.sell": (p) => executeKyberSwap(p, "sell"),
-  "kyberswap.swap.buy": (p) => executeKyberSwap(p, "buy"),
+  "kyberswap.swap.sell": (p, ctx) => executeKyberSwap(p, "sell", ctx),
+  "kyberswap.swap.buy": (p, ctx) => executeKyberSwap(p, "buy", ctx),
 };
