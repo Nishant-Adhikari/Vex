@@ -95,7 +95,7 @@ describe("position-projector", () => {
       await projectPosition(makeActivity({
         productType: "perps", positionKey: "PK1", captureStatus: "closed",
       }));
-      expect(mockClosePosition).toHaveBeenCalledWith("solana", "perps", "PK1", "closed");
+      expect(mockClosePosition).toHaveBeenCalledWith("solana", "perps", "solana", "0xWallet", "PK1", "closed");
     });
 
     it("skips when no positionKey", async () => {
@@ -123,14 +123,14 @@ describe("position-projector", () => {
       await projectPosition(makeActivity({
         productType: "prediction", positionKey: "PK_pred", captureStatus: "claimed",
       }));
-      expect(mockClosePosition).toHaveBeenCalledWith("solana", "prediction", "PK_pred", "closed");
+      expect(mockClosePosition).toHaveBeenCalledWith("solana", "prediction", "solana", "0xWallet", "PK_pred", "closed");
     });
 
     it("cancels on captureStatus=cancelled", async () => {
       await projectPosition(makeActivity({
         productType: "prediction", positionKey: "PK_pred", captureStatus: "cancelled",
       }));
-      expect(mockClosePosition).toHaveBeenCalledWith("solana", "prediction", "PK_pred", "cancelled");
+      expect(mockClosePosition).toHaveBeenCalledWith("solana", "prediction", "solana", "0xWallet", "PK_pred", "cancelled");
     });
   });
 
@@ -150,14 +150,14 @@ describe("position-projector", () => {
       await projectPosition(makeActivity({
         productType: "order", positionKey: "orderKey123", captureStatus: "cancelled",
       }));
-      expect(mockClosePosition).toHaveBeenCalledWith("solana", "order", "orderKey123", "cancelled");
+      expect(mockClosePosition).toHaveBeenCalledWith("solana", "order", "solana", "0xWallet", "orderKey123", "cancelled");
     });
 
     it("closes order on captureStatus=executed", async () => {
       await projectPosition(makeActivity({
         productType: "order", positionKey: "orderKey123", captureStatus: "executed",
       }));
-      expect(mockClosePosition).toHaveBeenCalledWith("solana", "order", "orderKey123", "filled");
+      expect(mockClosePosition).toHaveBeenCalledWith("solana", "order", "solana", "0xWallet", "orderKey123", "filled");
       expect(mockUpsertPosition).not.toHaveBeenCalled();
     });
 
@@ -187,7 +187,7 @@ describe("position-projector", () => {
         productType: "lp", positionKey: "LP_123",
         meta: { action: "zap-out" }, namespace: "kyberswap", chain: "ethereum",
       }));
-      expect(mockClosePosition).toHaveBeenCalledWith("kyberswap", "lp", "LP_123", "closed");
+      expect(mockClosePosition).toHaveBeenCalledWith("kyberswap", "lp", "ethereum", "0xWallet", "LP_123", "closed");
     });
 
     it("close old + open new on zap-migrate", async () => {
@@ -196,7 +196,7 @@ describe("position-projector", () => {
         meta: { action: "zap-migrate", poolTo: "0xNewPool" },
         namespace: "kyberswap", chain: "ethereum",
       }));
-      expect(mockClosePosition).toHaveBeenCalledWith("kyberswap", "lp", "LP_123", "migrated");
+      expect(mockClosePosition).toHaveBeenCalledWith("kyberswap", "lp", "ethereum", "0xWallet", "LP_123", "migrated");
       expect(mockUpsertPosition).toHaveBeenCalledTimes(1);
     });
   });
@@ -358,7 +358,7 @@ describe("position-projector", () => {
       }));
 
       // Old position closed
-      expect(mockClosePosition).toHaveBeenCalledWith("kyberswap", "lp", "LP_MIGRATE", "migrated");
+      expect(mockClosePosition).toHaveBeenCalledWith("kyberswap", "lp", "ethereum", "0xWallet", "LP_MIGRATE", "migrated");
       // New position opened with carried notionalUsd
       expect(mockUpsertPosition).toHaveBeenCalledTimes(1);
       expect(mockUpsertPosition.mock.calls[0][0].notionalUsd).toBe("500.00");

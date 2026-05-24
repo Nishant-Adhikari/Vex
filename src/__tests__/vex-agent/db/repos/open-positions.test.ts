@@ -1,0 +1,69 @@
+/**
+ * open-positions repo — multi-wallet identity (puzzle 5 phase 5E-1).
+ *
+ * The position identity is (namespace, position_type, chain, wallet_address,
+ * external_id): two wallets holding a position with the same external_id must
+ * NOT collide. Mocks the db client to assert the ON CONFLICT / WHERE shape
+ * without a live Postgres.
+ */
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+
+let mockExecute: Mock<(sql: string, params?: unknown[]) => Promise<number>>;
+
+function resetMocks() {
+  mockExecute = vi.fn<(sql: string, params?: unknown[]) => Promise<number>>().mockResolvedValue(1);
+}
+resetMocks();
+
+vi.mock("@vex-agent/db/client.js", () => ({
+  query: vi.fn().mockResolvedValue([]),
+  queryOne: vi.fn().mockResolvedValue(null),
+  execute: (sql: string, params?: unknown[]) => mockExecute(sql, params),
+  getPool: vi.fn(),
+}));
+
+const repo = await import("@vex-agent/db/repos/open-positions.js");
+
+beforeEach(() => {
+  resetMocks();
+});
+
+describe("upsertPosition — multi-wallet identity", () => {
+  it("conflict target includes chain + wallet_address (no cross-wallet overwrite)", async () => {
+    await repo.upsertPosition({
+      namespace: "khalani",
+      positionType: "perps",
+      chain: "base",
+      externalId: "ext-1",
+      walletAddress: "0xWalletA",
+    });
+
+    const [sql, params] = mockExecute.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain(
+      "ON CONFLICT (namespace, position_type, chain, wallet_address, external_id) WHERE external_id IS NOT NULL",
+    );
+    // INSERT params: namespace, position_type, chain, external_id, wallet_address, …
+    expect(params[2]).toBe("base"); // chain
+    expect(params[4]).toBe("0xWalletA"); // wallet_address
+  });
+
+  it("two wallets sharing an external_id resolve to DISTINCT conflict keys", async () => {
+    await repo.upsertPosition({ namespace: "khalani", positionType: "perps", chain: "base", externalId: "ext-1", walletAddress: "0xWalletA" });
+    await repo.upsertPosition({ namespace: "khalani", positionType: "perps", chain: "base", externalId: "ext-1", walletAddress: "0xWalletB" });
+
+    const walletParams = mockExecute.mock.calls.map((c) => (c[1] as unknown[])[4]);
+    expect(walletParams).toEqual(["0xWalletA", "0xWalletB"]);
+    // Same external_id, different wallet_address → the conflict key differs, so
+    // the DB stores two rows instead of the second overwriting the first.
+  });
+});
+
+describe("closePosition — full identity", () => {
+  it("matches on namespace + type + chain + wallet + external_id", async () => {
+    await repo.closePosition("khalani", "perps", "base", "0xWalletA", "ext-1", "closed");
+
+    const [sql, params] = mockExecute.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("chain = $3 AND wallet_address = $4 AND external_id = $5");
+    expect(params).toEqual(["khalani", "perps", "base", "0xWalletA", "ext-1", "closed"]);
+  });
+});

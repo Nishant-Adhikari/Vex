@@ -54,10 +54,11 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const chainHints = await collectChainHints(runs);
 
         if (chainHints.size === 0) {
-          // No chain info — selective for both families without filter
+          // No chain info — selective for both families without filter. Each
+          // call now syncs every inventory wallet for that family (≤3).
           const evm = await selectiveBalanceSync("eip155");
           const sol = await selectiveBalanceSync("solana");
-          const totalTokens = (evm?.tokensUpdated ?? 0) + (sol?.tokensUpdated ?? 0);
+          const totalTokens = evm.tokensUpdated + sol.tokensUpdated;
           result = { selective: true, families: ["eip155", "solana"], tokensUpdated: totalTokens };
           rowsAffected = totalTokens;
         } else {
@@ -67,10 +68,8 @@ export async function drainPendingRuns(): Promise<DrainResult> {
           for (const [family, chainIds] of chainHints) {
             const hint = chainIds.length > 0 ? chainIds.join(",") : family;
             const syncResult = await selectiveBalanceSync(hint);
-            if (syncResult) {
-              totalTokens += syncResult.tokensUpdated;
-              families.push(family);
-            }
+            totalTokens += syncResult.tokensUpdated;
+            families.push(family);
           }
           result = { selective: true, families, tokensUpdated: totalTokens };
           rowsAffected = totalTokens;
@@ -138,8 +137,7 @@ export async function processNextRun(): Promise<boolean> {
       // Derive chain hint from execution
       const chainHint = await getChainHintFromExecution(run.executionId);
       const syncResult = await selectiveBalanceSync(chainHint);
-      const resultObj: Record<string, unknown> = syncResult ? { ...syncResult } : { skipped: true };
-      await syncRepo.completeRun(run.id, resultObj, syncResult?.tokensUpdated ?? 0);
+      await syncRepo.completeRun(run.id, { ...syncResult }, syncResult.tokensUpdated);
     } else if (job.syncType === "prediction_settlement") {
       const { reconcilePredictionSettlements } = await import("./prediction-settlement-sync.js");
       const settlementResult = await reconcilePredictionSettlements();

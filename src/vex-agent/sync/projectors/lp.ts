@@ -31,7 +31,7 @@ export async function projectLpLifecycle(activity: Activity): Promise<void> {
     logger.debug("sync.lp.opened", { positionKey });
 
   } else if (action === "zap-out") {
-    await openPositionsRepo.closePosition(activity.namespace, "lp", positionKey, "closed");
+    await openPositionsRepo.closePosition(activity.namespace, "lp", activity.chain, walletAddress ?? "", positionKey, "closed");
     logger.debug("sync.lp.closed", { positionKey });
 
   } else if (action === "zap-migrate") {
@@ -40,7 +40,7 @@ export async function projectLpLifecycle(activity: Activity): Promise<void> {
     const carriedNotionalUsd = oldPosition?.notionalUsd ?? undefined;
 
     // Close old position
-    await openPositionsRepo.closePosition(activity.namespace, "lp", positionKey, "migrated");
+    await openPositionsRepo.closePosition(activity.namespace, "lp", activity.chain, walletAddress ?? "", positionKey, "migrated");
 
     // New position opened with new instrumentKey (from meta.poolTo) + carried cost basis
     const newPool = meta?.poolTo as string | undefined;

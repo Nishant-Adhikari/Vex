@@ -37,7 +37,8 @@ export async function initSync(): Promise<void> {
     logger.info("sync.init.completed", {
       totalUsd: result.totalUsd.toFixed(2),
       wallets: result.wallets.length,
-      snapshotId: result.snapshotId,
+      snapshots: result.snapshots.length,
+      snapshotGroupId: result.snapshotGroupId,
     });
   } catch (err) {
     logger.error("sync.init.balance_sync_failed", {

@@ -5,13 +5,19 @@
  * chain. Absent tokens are removed only for chains that were actually scanned.
  */
 
+import { randomUUID } from "node:crypto";
 import { getTokenBalancesAcrossChains } from "@tools/khalani/balances.js";
-import { requireEvmWallet, requireSolanaWallet } from "@tools/wallet/multi-auth.js";
+import { listWallets, type InventoryFamily } from "@tools/wallet/inventory.js";
 import type { KhalaniToken, ChainFamily } from "@tools/khalani/types.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import { resolveChainHint } from "./chains.js";
 import logger from "@utils/logger.js";
+
+/** ChainFamily ("eip155"|"solana") → inventory family ("evm"|"solana"). */
+function toInventoryFamily(family: ChainFamily): InventoryFamily {
+  return family === "solana" ? "solana" : "evm";
+}
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -23,11 +29,28 @@ export interface SyncResult {
   totalUsd: number;
 }
 
+export interface WalletSnapshotResult {
+  walletFamily: string;
+  walletAddress: string;
+  snapshotId: number;
+  totalUsd: number;
+  pnlVsPrev: number | null;
+}
+
 export interface FullSyncResult {
   wallets: SyncResult[];
+  /** One row per inventory wallet snapshotted this cycle. */
+  snapshots: WalletSnapshotResult[];
+  /** Aggregate USD across every synced wallet. */
   totalUsd: number;
-  snapshotId: number;
-  pnlVsPrev: number | null;
+  /** Shared id tying this cycle's per-wallet snapshot rows together. */
+  snapshotGroupId: string;
+}
+
+export interface SelectiveSyncResult {
+  wallets: SyncResult[];
+  tokensUpdated: number;
+  families: ChainFamily[];
 }
 
 // ── Core sync ───────────────────────────────────────────────────
@@ -38,18 +61,11 @@ export interface FullSyncResult {
  */
 export async function syncWalletBalances(
   family: ChainFamily,
+  address: string,
   chainIds?: number[],
-): Promise<SyncResult | null> {
-  // Resolve wallet address — skip if not configured
-  let address: string;
-  try {
-    address = family === "solana"
-      ? requireSolanaWallet().address
-      : requireEvmWallet().address;
-  } catch {
-    logger.debug("sync.balance.wallet_not_configured", { family });
-    return null;
-  }
+): Promise<SyncResult> {
+  // `address` is supplied by the caller (inventory iteration). Address-only —
+  // the sync path never touches key material.
 
   // Fetch from Khalani. Scanning per chain avoids incomplete multi-chain
   // balance responses and lets cleanup distinguish "empty" from "not scanned".
@@ -110,38 +126,48 @@ export async function syncWalletBalances(
  * Full balance sync — both wallet families + portfolio snapshot.
  */
 export async function fullBalanceSync(): Promise<FullSyncResult> {
+  // One group id ties every per-wallet snapshot row from this cycle together,
+  // so an aggregate view can stitch a cycle back despite distinct created_at.
+  const snapshotGroupId = randomUUID();
   const wallets: SyncResult[] = [];
+  const snapshots: WalletSnapshotResult[] = [];
+  let aggregateTotalUsd = 0;
 
-  // Try EVM
-  const evm = await syncWalletBalances("eip155");
-  if (evm) wallets.push(evm);
+  // Project EVERY inventory wallet (≤3 EVM + ≤3 Solana), one snapshot each.
+  for (const family of ["eip155", "solana"] as const) {
+    for (const entry of listWallets(toInventoryFamily(family))) {
+      const sync = await syncWalletBalances(family, entry.address);
+      wallets.push(sync);
+      aggregateTotalUsd += sync.totalUsd;
 
-  // Try Solana
-  const sol = await syncWalletBalances("solana");
-  if (sol) wallets.push(sol);
+      const positions = await buildPositionsBreakdown(family, entry.address);
+      const positionData = positions as { chains?: Array<{ chainId: number }> };
+      const chainSet = new Set<string>();
+      for (const c of positionData.chains ?? []) chainSet.add(String(c.chainId));
 
-  // Build snapshot
-  const totalUsd = await balancesRepo.getTotalUsd();
-  const positions = await buildPositionsBreakdown();
-
-  // Extract active chains from positions
-  const positionData = positions as { wallets?: Array<{ chains?: Array<{ chainId: number }> }> };
-  const chainSet = new Set<string>();
-  for (const w of positionData.wallets ?? []) {
-    for (const c of w.chains ?? []) {
-      chainSet.add(String(c.chainId));
+      const { snapshotId, pnlVsPrev } = await balancesRepo.insertSnapshot({
+        walletFamily: family,
+        walletAddress: entry.address,
+        snapshotGroupId,
+        totalUsd: sync.totalUsd,
+        positions,
+        activeChains: [...chainSet],
+      });
+      snapshots.push({
+        walletFamily: family,
+        walletAddress: entry.address,
+        snapshotId,
+        totalUsd: sync.totalUsd,
+        pnlVsPrev,
+      });
     }
   }
 
-  const prev = await balancesRepo.getLatestSnapshot();
-  const pnlVsPrev = prev ? totalUsd - prev.totalUsd : null;
-  const snapshotId = await balancesRepo.insertSnapshot(totalUsd, positions, [...chainSet], "sync");
-
   logger.info("sync.balance.full_completed", {
     wallets: wallets.length,
-    totalUsd: totalUsd.toFixed(2),
-    snapshotId,
-    pnlVsPrev: pnlVsPrev?.toFixed(2) ?? "first",
+    snapshots: snapshots.length,
+    totalUsd: aggregateTotalUsd.toFixed(2),
+    snapshotGroupId,
   });
 
   // Refresh prediction mark-to-market after balance update
@@ -154,16 +180,26 @@ export async function fullBalanceSync(): Promise<FullSyncResult> {
     });
   }
 
-  return { wallets, totalUsd, snapshotId, pnlVsPrev };
+  return { wallets, snapshots, totalUsd: aggregateTotalUsd, snapshotGroupId };
 }
 
 /**
- * Selective sync — only affected chains after a trade.
- * Does NOT create a snapshot (snapshot only on full sync).
+ * Selective sync — only affected chains after a trade. Syncs EVERY inventory
+ * wallet for the affected family (bounded ≤3) because the background pipeline
+ * has no session context to know which wallet traded. Does NOT snapshot
+ * (snapshots are produced only by full sync).
  */
-export async function selectiveBalanceSync(chainHint: string): Promise<SyncResult | null> {
+export async function selectiveBalanceSync(chainHint: string): Promise<SelectiveSyncResult> {
   const { family, chainIds } = await resolveChainHint(chainHint);
-  return syncWalletBalances(family, chainIds.length > 0 ? chainIds : undefined);
+  const ids = chainIds.length > 0 ? chainIds : undefined;
+  const wallets: SyncResult[] = [];
+  let tokensUpdated = 0;
+  for (const entry of listWallets(toInventoryFamily(family))) {
+    const sync = await syncWalletBalances(family, entry.address, ids);
+    wallets.push(sync);
+    tokensUpdated += sync.tokensUpdated;
+  }
+  return { wallets, tokensUpdated, families: [family] };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -198,42 +234,30 @@ function mapTokenToBalance(family: ChainFamily, walletAddress: string, token: Kh
   };
 }
 
-/** Build per-wallet, per-chain breakdown for snapshot positions. */
-async function buildPositionsBreakdown(): Promise<Record<string, unknown>> {
-  const wallets: Array<Record<string, unknown>> = [];
+/** Build the per-chain token breakdown for ONE wallet's snapshot row. */
+async function buildPositionsBreakdown(
+  family: ChainFamily,
+  address: string,
+): Promise<Record<string, unknown>> {
+  const chainSummaries = await balancesRepo.getBalancesByChain(address);
+  const chains: Array<Record<string, unknown>> = [];
 
-  for (const family of ["eip155", "solana"] as const) {
-    let address: string;
-    try {
-      address = family === "solana"
-        ? requireSolanaWallet().address
-        : requireEvmWallet().address;
-    } catch {
-      continue;
-    }
-
-    const chainSummaries = await balancesRepo.getBalancesByChain(address);
-    const chains: Array<Record<string, unknown>> = [];
-
-    for (const summary of chainSummaries) {
-      const tokens = await balancesRepo.getBalances(address, summary.chainId);
-      chains.push({
-        chainId: summary.chainId,
-        totalUsd: summary.totalUsd,
-        tokens: tokens.map(t => ({
-          address: t.tokenAddress,
-          symbol: t.tokenSymbol,
-          balanceRaw: t.balanceRaw,
-          balanceUsd: t.balanceUsd,
-          priceUsd: t.priceUsd,
-          decimals: t.decimals,
-        })),
-      });
-    }
-
-    const walletTotalUsd = chainSummaries.reduce((sum, c) => sum + c.totalUsd, 0);
-    wallets.push({ family, address, totalUsd: walletTotalUsd, chains });
+  for (const summary of chainSummaries) {
+    const tokens = await balancesRepo.getBalances(address, summary.chainId);
+    chains.push({
+      chainId: summary.chainId,
+      totalUsd: summary.totalUsd,
+      tokens: tokens.map(t => ({
+        address: t.tokenAddress,
+        symbol: t.tokenSymbol,
+        balanceRaw: t.balanceRaw,
+        balanceUsd: t.balanceUsd,
+        priceUsd: t.priceUsd,
+        decimals: t.decimals,
+      })),
+    });
   }
 
-  return { wallets };
+  const walletTotalUsd = chainSummaries.reduce((sum, c) => sum + c.totalUsd, 0);
+  return { family, address, totalUsd: walletTotalUsd, chains };
 }

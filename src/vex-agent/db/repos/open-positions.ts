@@ -52,7 +52,7 @@ export async function upsertPosition(row: UpsertPositionRow): Promise<void> {
   await execute(
     `INSERT INTO proj_open_positions (namespace, position_type, chain, external_id, wallet_address, instrument_key, position_key, entry_price_usd, notional_usd, fee_usd, contracts, settlement_asset_key, data, status, opened_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, NOW())
-     ON CONFLICT (namespace, position_type, external_id) WHERE external_id IS NOT NULL
+     ON CONFLICT (namespace, position_type, chain, wallet_address, external_id) WHERE external_id IS NOT NULL
      DO UPDATE SET status = COALESCE($14, proj_open_positions.status),
        data = COALESCE($13::jsonb, proj_open_positions.data),
        instrument_key = COALESCE($6, proj_open_positions.instrument_key),
@@ -71,11 +71,23 @@ export async function upsertPosition(row: UpsertPositionRow): Promise<void> {
   );
 }
 
-/** Close a position by marking status and closed_at. Nulls out MTM fields. */
-export async function closePosition(namespace: string, positionType: string, externalId: string, status = "closed"): Promise<boolean> {
+/**
+ * Close a position by marking status and closed_at. Nulls out MTM fields.
+ * Keyed on the full position identity (namespace, type, chain, wallet,
+ * external_id) — matching the unique index — so one wallet's close never
+ * touches another wallet's same-external_id position (puzzle 5 phase 5E-1).
+ */
+export async function closePosition(
+  namespace: string,
+  positionType: string,
+  chain: string,
+  walletAddress: string,
+  externalId: string,
+  status = "closed",
+): Promise<boolean> {
   const n = await execute(
-    "UPDATE proj_open_positions SET status = $4, closed_at = NOW(), current_value_usd = NULL, unrealized_pnl_usd = NULL, last_refresh_at = NULL, synced_at = NOW() WHERE namespace = $1 AND position_type = $2 AND external_id = $3 AND status = 'open'",
-    [namespace, positionType, externalId, status],
+    "UPDATE proj_open_positions SET status = $6, closed_at = NOW(), current_value_usd = NULL, unrealized_pnl_usd = NULL, last_refresh_at = NULL, synced_at = NOW() WHERE namespace = $1 AND position_type = $2 AND chain = $3 AND wallet_address = $4 AND external_id = $5 AND status = 'open'",
+    [namespace, positionType, chain, walletAddress, externalId, status],
   );
   return n > 0;
 }

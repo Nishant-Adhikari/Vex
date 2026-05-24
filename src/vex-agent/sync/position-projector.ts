@@ -75,7 +75,7 @@ async function projectLifecyclePosition(activity: Activity): Promise<void> {
 
   } else if (CLOSE_STATUSES.has(status)) {
     const closeStatus = status === "cancelled" ? "cancelled" : "closed";
-    const closed = await openPositionsRepo.closePosition(activity.namespace, productType, positionKey, closeStatus);
+    const closed = await openPositionsRepo.closePosition(activity.namespace, productType, activity.chain, walletAddress ?? "", positionKey, closeStatus);
     if (closed) {
       logger.debug("sync.position.closed", { positionKey, productType, closeStatus });
     }
@@ -91,12 +91,12 @@ async function projectOrderLifecycle(activity: Activity): Promise<void> {
   const status = captureStatus ?? "unknown";
 
   if (status === "cancelled") {
-    await openPositionsRepo.closePosition(activity.namespace, "order", positionKey, "cancelled");
+    await openPositionsRepo.closePosition(activity.namespace, "order", activity.chain, walletAddress ?? "", positionKey, "cancelled");
     logger.debug("sync.order.cancelled", { positionKey });
 
   } else if (status === "executed" || status === "filled") {
     // Order filled — close the order position
-    await openPositionsRepo.closePosition(activity.namespace, "order", positionKey, "filled");
+    await openPositionsRepo.closePosition(activity.namespace, "order", activity.chain, walletAddress ?? "", positionKey, "filled");
     logger.debug("sync.order.filled", { positionKey });
 
   } else if (OPEN_STATUSES.has(status)) {
