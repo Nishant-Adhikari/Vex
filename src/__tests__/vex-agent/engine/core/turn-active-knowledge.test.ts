@@ -73,6 +73,9 @@ function makeContext() {
     missionId: null,
     missionRunId: null,
     isSubagent: false,
+    selectedEvmWallet: null,
+    selectedSolanaWallet: null,
+    walletPolicy: { kind: "none" as const },
     loadedDocuments: new Map<string, string>(),
   };
 }

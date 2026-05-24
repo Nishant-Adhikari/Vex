@@ -18,6 +18,7 @@ import { buildAgentPrompt } from "./agent.js";
 import { buildMissionSetupPrompt, type MissionSetupContext } from "./mission-setup.js";
 import { buildMissionRunPrompt, type MissionRunContext } from "./mission-run.js";
 import { buildSubagentPrompt, type SubagentContext } from "./subagent.js";
+import { buildWalletStateBanner } from "./wallet-state.js";
 import {
   buildRuntimeClockPrompt,
   buildRuntimeClockSnapshot,
@@ -139,6 +140,10 @@ export function buildPromptStack(
 
   // ── VARIABLE — per mode + permission ──────────────────────
   layers.push(buildPermissionPrompt({ mode: context.sessionKind, permission: context.sessionPermission }));
+
+  // Active session wallet addresses — agent awareness. Mirrors the tool
+  // resolution path exactly (buildSessionWalletResolution + resolveSelectedAddressSet).
+  layers.push(buildWalletStateBanner(context));
 
   // ── CONTEXTUAL — per sessionKind ──────────────────────────
   if (context.sessionKind === "agent" && !context.missionRunId) {

@@ -19,6 +19,9 @@ function makeContext(overrides: Partial<EngineContext> = {}): EngineContext {
     missionId: null,
     missionRunId: null,
     isSubagent: false,
+    selectedEvmWallet: null,
+    selectedSolanaWallet: null,
+    walletPolicy: { kind: "none" },
     loadedDocuments: new Map(),
     ...overrides,
   };
