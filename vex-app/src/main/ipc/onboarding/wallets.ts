@@ -17,9 +17,14 @@ import { BACKUPS_DIR } from "@vex-lib/wallet.js";
 import { CH } from "@shared/ipc/channels.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
+  walletAddInputSchema,
+  walletAddResultSchema,
+  walletExportAllInputSchema,
+  walletExportAllResultSchema,
   walletGenerateInputSchema,
   walletGenerateEvmResultSchema,
   walletGenerateSolanaResultSchema,
+  walletImportAddInputSchema,
   walletImportEvmInputSchema,
   walletImportSolanaInputSchema,
   walletImportEvmResultSchema,
@@ -28,7 +33,9 @@ import {
   walletOpenBackupFolderResultSchema,
   walletRestoreInputSchema,
   walletRestoreResultSchema,
+  type WalletAddResult,
   type WalletChain,
+  type WalletExportAllResult,
   type WalletGenerateEvmResult,
   type WalletGenerateSolanaResult,
   type WalletImportEvmResult,
@@ -37,9 +44,14 @@ import {
   type WalletRestoreResult,
 } from "@shared/schemas/wallets.js";
 import {
+  addEvmWallet,
+  addSolanaWallet,
+  exportAllWalletsRunner,
   generateEvmWallet,
   generateSolanaWallet,
   importEvmWallet,
+  importEvmWalletInventory,
+  importSolanaWalletInventory,
   importSolanaWalletRunner,
 } from "../../onboarding/wallets-runner.js";
 import { restoreWalletFromFile } from "../../onboarding/wallet-restore.js";
@@ -341,6 +353,165 @@ export function registerWalletHandlers(): Array<() => void> {
           });
         }
         return ok({ ok: true });
+      },
+    })
+  );
+
+  // ── Multi-wallet inventory (puzzle 5 phase 5D) ───────────────────────────
+  // Append a wallet to the per-family inventory (≤3). Same lock + fresh-
+  // password wrap as generate/import: the engine encrypts a new keystore.
+
+  handlers.push(
+    registerHandler({
+      channel: CH.onboarding.walletAddEvm,
+      domain: "onboarding",
+      inputSchema: walletAddInputSchema,
+      outputSchema: walletAddResultSchema,
+      handle: async (input, ctx): Promise<Result<WalletAddResult>> => {
+        return withWalletLock(async () => {
+          const outcome = await withFreshKeystorePassword(async () => {
+            return addEvmWallet(input.label);
+          });
+          if (isPasswordSetupError(outcome)) return outcome;
+          if (outcome.ok) {
+            log.info(
+              `[ipc:vex:onboarding:walletAddEvm] ` +
+                `id=${outcome.data.id} address=${truncateAddress(outcome.data.address)} ` +
+                `correlationId=${ctx.requestId}`
+            );
+          }
+          return outcome;
+        });
+      },
+    })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.onboarding.walletAddSolana,
+      domain: "onboarding",
+      inputSchema: walletAddInputSchema,
+      outputSchema: walletAddResultSchema,
+      handle: async (input, ctx): Promise<Result<WalletAddResult>> => {
+        return withWalletLock(async () => {
+          const outcome = await withFreshKeystorePassword(async () => {
+            return addSolanaWallet(input.label);
+          });
+          if (isPasswordSetupError(outcome)) return outcome;
+          if (outcome.ok) {
+            log.info(
+              `[ipc:vex:onboarding:walletAddSolana] ` +
+                `id=${outcome.data.id} address=${truncateAddress(outcome.data.address)} ` +
+                `correlationId=${ctx.requestId}`
+            );
+          }
+          return outcome;
+        });
+      },
+    })
+  );
+
+  // Import-add: rawKey is a SECRET — NEVER logged (only id + truncated addr).
+  handlers.push(
+    registerHandler({
+      channel: CH.onboarding.walletImportAddEvm,
+      domain: "onboarding",
+      inputSchema: walletImportAddInputSchema,
+      outputSchema: walletAddResultSchema,
+      handle: async (input, ctx): Promise<Result<WalletAddResult>> => {
+        return withWalletLock(async () => {
+          const outcome = await withFreshKeystorePassword(async () => {
+            return importEvmWalletInventory(input.rawKey, input.label);
+          });
+          if (isPasswordSetupError(outcome)) return outcome;
+          if (outcome.ok) {
+            log.info(
+              `[ipc:vex:onboarding:walletImportAddEvm] ` +
+                `id=${outcome.data.id} address=${truncateAddress(outcome.data.address)} ` +
+                `correlationId=${ctx.requestId}`
+            );
+          }
+          return outcome;
+        });
+      },
+    })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.onboarding.walletImportAddSolana,
+      domain: "onboarding",
+      inputSchema: walletImportAddInputSchema,
+      outputSchema: walletAddResultSchema,
+      handle: async (input, ctx): Promise<Result<WalletAddResult>> => {
+        return withWalletLock(async () => {
+          const outcome = await withFreshKeystorePassword(async () => {
+            return importSolanaWalletInventory(input.rawKey, input.label);
+          });
+          if (isPasswordSetupError(outcome)) return outcome;
+          if (outcome.ok) {
+            log.info(
+              `[ipc:vex:onboarding:walletImportAddSolana] ` +
+                `id=${outcome.data.id} address=${truncateAddress(outcome.data.address)} ` +
+                `correlationId=${ctx.requestId}`
+            );
+          }
+          return outcome;
+        });
+      },
+    })
+  );
+
+  // Export all: copies ENCRYPTED keystores + a sanitized manifest to a
+  // user-chosen folder. No plaintext key material is read, so NO fresh
+  // keystore password — withWalletLock alone (Codex 5D review). Main owns the
+  // directory picker; the renderer never receives the path (result = filenames).
+  handlers.push(
+    registerHandler({
+      channel: CH.onboarding.walletExportAll,
+      domain: "onboarding",
+      inputSchema: walletExportAllInputSchema,
+      outputSchema: walletExportAllResultSchema,
+      handle: async (_input, ctx): Promise<Result<WalletExportAllResult>> => {
+        const parentWindow = BrowserWindow.fromWebContents(ctx.event.sender);
+        const dialogResult = await dialog.showOpenDialog(
+          parentWindow ?? undefined,
+          {
+            title: "Export all wallets to a folder",
+            properties: ["openDirectory", "createDirectory"],
+          }
+        );
+        if (dialogResult.canceled) {
+          return err({
+            code: "internal.cancelled",
+            domain: "onboarding",
+            message: "Export cancelled.",
+            retryable: false,
+            userActionable: false,
+            redacted: true,
+          });
+        }
+        const destDir = dialogResult.filePaths[0];
+        if (!destDir) {
+          return err({
+            code: "internal.cancelled",
+            domain: "onboarding",
+            message: "No folder selected.",
+            retryable: false,
+            userActionable: false,
+            redacted: true,
+          });
+        }
+        return withWalletLock(async () => {
+          const outcome = await exportAllWalletsRunner(destDir);
+          if (outcome.ok) {
+            log.info(
+              `[ipc:vex:onboarding:walletExportAll] ` +
+                `files=${outcome.data.files.length} correlationId=${ctx.requestId}`
+            );
+          }
+          return outcome;
+        });
       },
     })
   );

@@ -16,13 +16,19 @@ import type { CompleteSetupInput } from "../../shared/schemas/finalize.js";
 import { providerPersistInputSchema } from "../../shared/schemas/provider.js";
 import type { ProviderPersistInput } from "../../shared/schemas/provider.js";
 import {
+  walletAddInputSchema,
+  walletExportAllInputSchema,
   walletGenerateInputSchema,
+  walletImportAddInputSchema,
   walletImportEvmInputSchema,
   walletImportSolanaInputSchema,
   walletOpenBackupFolderInputSchema,
   walletRestoreInputSchema,
 } from "../../shared/schemas/wallets.js";
 import type {
+  WalletAddInput,
+  WalletExportAllInput,
+  WalletImportAddInput,
   WalletImportEvmInput,
   WalletImportSolanaInput,
   WalletOpenBackupFolderInput,
@@ -100,6 +106,41 @@ export const onboarding = {
       CH.onboarding.walletOpenBackupFolder,
       input,
       walletOpenBackupFolderInputSchema
+    );
+  },
+  walletAddEvm(input: WalletAddInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletAddEvm,
+      input,
+      walletAddInputSchema
+    );
+  },
+  walletAddSolana(input: WalletAddInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletAddSolana,
+      input,
+      walletAddInputSchema
+    );
+  },
+  walletImportAddEvm(input: WalletImportAddInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletImportAddEvm,
+      input,
+      walletImportAddInputSchema
+    );
+  },
+  walletImportAddSolana(input: WalletImportAddInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletImportAddSolana,
+      input,
+      walletImportAddInputSchema
+    );
+  },
+  walletExportAll(input: WalletExportAllInput) {
+    return invokeWithSchema(
+      CH.onboarding.walletExportAll,
+      input,
+      walletExportAllInputSchema
     );
   },
   apiKeysSet(input: ApiKeysSetInput) {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { privateKeyToAddress } from "viem/accounts";
 
 const { testDir, testConfigFile, testKeystoreFile, testSolanaKeystoreFile } = vi.hoisted(() => {
@@ -202,17 +203,52 @@ describe("wallet inventory (stage 1)", () => {
   });
 
   describe("exportAll", () => {
-    it("returns filenames only and never key material", () => {
-      importEvmWalletEntry(KEY_A);
+    it("writes a sanitized manifest + encrypted keystores, never config.json or its secrets", () => {
+      const a = importEvmWalletEntry(KEY_A);
+
+      // Inject a non-wallet secret into config.json on disk (the kind of value
+      // the OLD whole-config export leaked). Done AFTER the import so the
+      // append's saveConfig doesn't overwrite it; export only reads config.
+      const rawCfg = JSON.parse(readFileSync(testConfigFile, "utf-8"));
+      rawCfg.solana = { ...(rawCfg.solana ?? {}), jupiterApiKey: "SECRET_JUPITER_KEY" };
+      writeFileSync(testConfigFile, JSON.stringify(rawCfg), "utf-8");
+
       const destDir = `${testDir}/export`;
       const result = exportAllWallets(destDir);
 
-      expect(result.files).toContain("config.json");
+      // Return value: filenames only — manifest present, config.json absent.
+      expect(result.files).toContain("manifest.json");
+      expect(result.files).not.toContain("config.json");
       expect(result.files.some((f) => f.startsWith("wallet-") && f.endsWith(".json"))).toBe(true);
 
-      const serialized = JSON.stringify(result);
-      expect(serialized).not.toContain("ciphertext");
-      expect(serialized).not.toContain(KEY_A.slice(2));
+      // The encrypted keystore was copied; config.json was NOT.
+      expect(existsSync(join(destDir, `wallet-${a.id}.json`))).toBe(true);
+      expect(existsSync(join(destDir, "config.json"))).toBe(false);
+
+      // Manifest CONTENT (read from disk) carries inventory metadata only.
+      const manifestRaw = readFileSync(join(destDir, "manifest.json"), "utf-8");
+      const manifest = JSON.parse(manifestRaw) as {
+        version: number;
+        wallets: Array<Record<string, unknown>>;
+      };
+      expect(manifest.version).toBe(1);
+      expect(manifest.wallets).toEqual([
+        {
+          id: a.id,
+          family: "evm",
+          address: a.address,
+          label: a.label,
+          createdAt: a.createdAt,
+          legacy: false,
+        },
+      ]);
+
+      // SECURITY: the manifest leaks neither the config secret, the raw private
+      // key, nor keystore ciphertext field names.
+      expect(manifestRaw).not.toContain("SECRET_JUPITER_KEY");
+      expect(manifestRaw).not.toContain("jupiterApiKey");
+      expect(manifestRaw).not.toContain(KEY_A.slice(2));
+      expect(manifestRaw).not.toContain("ciphertext");
     });
   });
 });

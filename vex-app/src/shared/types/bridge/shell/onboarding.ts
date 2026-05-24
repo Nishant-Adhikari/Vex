@@ -7,8 +7,13 @@ import type {
   WizardState,
 } from "../../../schemas/wizard.js";
 import type {
+  WalletAddInput,
+  WalletAddResult,
+  WalletExportAllInput,
+  WalletExportAllResult,
   WalletGenerateEvmResult,
   WalletGenerateSolanaResult,
+  WalletImportAddInput,
   WalletImportEvmInput,
   WalletImportEvmResult,
   WalletImportSolanaInput,
@@ -64,6 +69,22 @@ export interface OnboardingBridge {
   readonly walletOpenBackupFolder: (
     input: WalletOpenBackupFolderInput
   ) => Promise<Result<WalletOpenBackupFolderResult>>;
+  // Multi-wallet inventory (puzzle 5 phase 5D) — append ≤3/family + export all.
+  readonly walletAddEvm: (
+    input: WalletAddInput
+  ) => Promise<Result<WalletAddResult>>;
+  readonly walletAddSolana: (
+    input: WalletAddInput
+  ) => Promise<Result<WalletAddResult>>;
+  readonly walletImportAddEvm: (
+    input: WalletImportAddInput
+  ) => Promise<Result<WalletAddResult>>;
+  readonly walletImportAddSolana: (
+    input: WalletImportAddInput
+  ) => Promise<Result<WalletAddResult>>;
+  readonly walletExportAll: (
+    input: WalletExportAllInput
+  ) => Promise<Result<WalletExportAllResult>>;
   readonly apiKeysSet: (
     input: ApiKeysSetInput
   ) => Promise<Result<ApiKeysSetResult>>;

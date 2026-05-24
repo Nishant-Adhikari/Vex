@@ -49,6 +49,7 @@ import type { WalletChain } from "@shared/schemas/wallets.js";
 import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import { ChainActions } from "./wallets/ChainActions.js";
+import { ExportAllWallets } from "./wallets/ExportAllWallets.js";
 
 interface ChainState {
   readonly evm?: string;
@@ -84,6 +85,8 @@ export function WalletsStep({
   const solanaReady =
     solanaAddress !== null || envData?.walletStatus.solana === "present";
   const bothReady = evmReady && solanaReady;
+  // Export is cross-family — offer it as soon as ANY wallet exists.
+  const anyWallet = evmReady || solanaReady;
 
   const advanceToApiKeys = useCallback(async (): Promise<void> => {
     setAdvanceError(null);
@@ -186,6 +189,7 @@ export function WalletsStep({
               )}
             </div>
           </div>
+          <ExportAllWallets />
           {advanceError !== null ? (
             <p className="text-sm text-[var(--color-danger)]" role="alert">
               {advanceError}
@@ -232,6 +236,11 @@ export function WalletsStep({
           />
         </TabsContent>
       </Tabs>
+      {anyWallet ? (
+        <div className="mt-4 border-t border-white/[0.08] pt-4">
+          <ExportAllWallets />
+        </div>
+      ) : null}
     </WizardStepPanel>
   );
 }

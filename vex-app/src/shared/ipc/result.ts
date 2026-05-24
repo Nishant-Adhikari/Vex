@@ -72,6 +72,8 @@ export type VexErrorCode =
   | "wallet.keystore_missing"
   | "wallet.password_invalid"
   | "wallet.vault_not_configured"
+  | "wallet.cap_reached"
+  | "wallet.address_exists"
   | "secrets.unlock_throttled"
   | "services.docker_unavailable"
   | "services.port_in_use"
@@ -183,6 +185,8 @@ export const VEX_ERROR_CODES = [
   "wallet.keystore_missing",
   "wallet.password_invalid",
   "wallet.vault_not_configured",
+  "wallet.cap_reached",
+  "wallet.address_exists",
   "secrets.unlock_throttled",
   "services.docker_unavailable",
   "services.port_in_use",

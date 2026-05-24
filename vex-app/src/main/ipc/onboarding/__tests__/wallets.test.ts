@@ -25,6 +25,11 @@ const mockGenerateSolana = vi.fn();
 const mockImportEvm = vi.fn();
 const mockImportSolana = vi.fn();
 const mockRestore = vi.fn();
+const mockAddEvm = vi.fn();
+const mockAddSolana = vi.fn();
+const mockImportAddEvm = vi.fn();
+const mockImportAddSolana = vi.fn();
+const mockExportAll = vi.fn();
 const mockShowOpenDialog = vi.fn();
 const mockShowMessageBox = vi.fn();
 const mockShellOpenPath = vi.fn();
@@ -65,6 +70,13 @@ vi.mock("../../../onboarding/wallets-runner.js", () => ({
   generateSolanaWallet: () => mockGenerateSolana(),
   importEvmWallet: (rawKey: string) => mockImportEvm(rawKey),
   importSolanaWalletRunner: (rawKey: string) => mockImportSolana(rawKey),
+  addEvmWallet: (label?: string) => mockAddEvm(label),
+  addSolanaWallet: (label?: string) => mockAddSolana(label),
+  importEvmWalletInventory: (rawKey: string, label?: string) =>
+    mockImportAddEvm(rawKey, label),
+  importSolanaWalletInventory: (rawKey: string, label?: string) =>
+    mockImportAddSolana(rawKey, label),
+  exportAllWalletsRunner: (destDir: string) => mockExportAll(destDir),
 }));
 
 vi.mock("../../../onboarding/wallet-restore.js", () => ({
@@ -114,6 +126,11 @@ beforeEach(() => {
   mockImportEvm.mockReset();
   mockImportSolana.mockReset();
   mockRestore.mockReset();
+  mockAddEvm.mockReset();
+  mockAddSolana.mockReset();
+  mockImportAddEvm.mockReset();
+  mockImportAddSolana.mockReset();
+  mockExportAll.mockReset();
   mockShowOpenDialog.mockReset();
   mockShowMessageBox.mockReset();
   mockShellOpenPath.mockReset();
@@ -317,6 +334,145 @@ describe("walletOpenBackupFolder handler", () => {
     );
     expect(mockShellOpenPath).not.toHaveBeenCalledWith(
       "/home/user/.config/vex/backups/symlink-alias"
+    );
+  });
+});
+
+// ── Multi-wallet inventory handlers (puzzle 5 phase 5D) ─────────────────────
+
+describe("walletAddEvm handler (inventory generate-add)", () => {
+  it("returns ok({id,address,label}) and forwards the label", async () => {
+    mockAddEvm.mockResolvedValue({
+      ok: true,
+      data: {
+        id: "evm_abc",
+        address: "0xabcdef0123456789abcdef0123456789abcdef01",
+        label: "EVM 2",
+      },
+    });
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletAddEvm)!;
+    const result = (await fn(trustedSender, {
+      requestId: "ra1",
+      payload: { label: "EVM 2" },
+    })) as { ok: boolean; data?: { id: string } };
+    expect(result.ok).toBe(true);
+    expect(result.data?.id).toBe("evm_abc");
+    expect(mockAddEvm).toHaveBeenCalledWith("EVM 2");
+  });
+
+  it("propagates wallet.cap_reached unchanged", async () => {
+    mockAddEvm.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "wallet.cap_reached",
+        domain: "wallet",
+        message: "cap",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+      },
+    });
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletAddEvm)!;
+    const result = (await fn(trustedSender, {
+      requestId: "ra2",
+      payload: {},
+    })) as { ok: boolean; error?: { code: string } };
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("wallet.cap_reached");
+  });
+
+  it("rejects a label longer than 120 chars at the input schema", async () => {
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletAddEvm)!;
+    const result = (await fn(trustedSender, {
+      requestId: "ra2b",
+      payload: { label: "x".repeat(121) },
+    })) as { ok: boolean; error?: { code: string } };
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("validation.invalid_input");
+    expect(mockAddEvm).not.toHaveBeenCalled();
+  });
+});
+
+describe("walletImportAddSolana handler (inventory import-add)", () => {
+  it("forwards rawKey + label to the inventory import runner", async () => {
+    mockImportAddSolana.mockResolvedValue({
+      ok: true,
+      data: {
+        id: "sol_xyz",
+        address: "DRpbCBMxVnDK7maPM5tGv6MvCsx1WTokJBKVz5Pk5Hxe",
+        label: "Solana 2",
+      },
+    });
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletImportAddSolana)!;
+    const result = (await fn(trustedSender, {
+      requestId: "ra3",
+      payload: { rawKey: "base58key", label: "Solana 2" },
+    })) as { ok: boolean };
+    expect(result.ok).toBe(true);
+    expect(mockImportAddSolana).toHaveBeenCalledWith("base58key", "Solana 2");
+  });
+
+  it("rejects empty rawKey at the input schema", async () => {
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletImportAddSolana)!;
+    const result = (await fn(trustedSender, {
+      requestId: "ra4",
+      payload: { rawKey: "" },
+    })) as { ok: boolean; error?: { code: string } };
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("validation.invalid_input");
+    expect(mockImportAddSolana).not.toHaveBeenCalled();
+  });
+});
+
+describe("walletExportAll handler", () => {
+  it("returns internal.cancelled when the directory picker is cancelled (runner not called)", async () => {
+    mockShowOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletExportAll)!;
+    const result = (await fn(trustedSender, {
+      requestId: "ra5",
+      payload: {},
+    })) as { ok: boolean; error?: { code: string } };
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("internal.cancelled");
+    expect(mockExportAll).not.toHaveBeenCalled();
+  });
+
+  it("runs the export with the chosen directory and returns {files}", async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ["/tmp/vex-export"],
+    });
+    mockExportAll.mockResolvedValue({
+      ok: true,
+      data: { files: ["wallet-evm_a.json", "manifest.json"] },
+    });
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletExportAll)!;
+    const result = (await fn(trustedSender, {
+      requestId: "ra6",
+      payload: {},
+    })) as { ok: boolean; data?: { files: string[] } };
+    expect(result.ok).toBe(true);
+    expect(result.data?.files).toContain("manifest.json");
+    expect(mockExportAll).toHaveBeenCalledWith("/tmp/vex-export");
+  });
+
+  it("requests an openDirectory picker", async () => {
+    mockShowOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
+    registerWalletHandlers();
+    const fn = handlers.get(CH.onboarding.walletExportAll)!;
+    await fn(trustedSender, { requestId: "ra7", payload: {} });
+    expect(mockShowOpenDialog).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({
+        properties: ["openDirectory", "createDirectory"],
+      })
     );
   });
 });

@@ -29,6 +29,7 @@ import {
   useWalletRestore,
 } from "../../../../lib/api/wallets.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
+import { WalletInventoryPanel } from "./WalletInventoryPanel.js";
 
 type View = "menu" | "import";
 
@@ -174,6 +175,7 @@ export function ChainActions({
             </Button>
           </div>
         ) : null}
+        <WalletInventoryPanel chain={chain} primaryAddress={address} />
         <div>
           <Button
             variant="outline"

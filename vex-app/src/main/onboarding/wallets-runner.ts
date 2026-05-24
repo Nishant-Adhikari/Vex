@@ -17,13 +17,20 @@
  */
 
 import {
+  createEvmWalletEntry,
   createSolanaWallet,
+  createSolanaWalletEntry,
   createWallet,
+  exportAllWallets,
+  importEvmWalletEntry,
   importSolanaWallet,
+  importSolanaWalletEntry,
   importWallet,
 } from "@vex-lib/wallet.js";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
+  WalletAddResult,
+  WalletExportAllResult,
   WalletGenerateEvmResult,
   WalletGenerateSolanaResult,
   WalletImportEvmResult,
@@ -41,6 +48,9 @@ const ENGINE_CODE = {
   KEYSTORE_CORRUPT: "KEYSTORE_CORRUPT",
   AUTO_BACKUP_FAILED: "AUTO_BACKUP_FAILED",
   INVALID_PRIVATE_KEY: "INVALID_PRIVATE_KEY",
+  WALLET_INVENTORY_FULL: "WALLET_INVENTORY_FULL",
+  WALLET_DUPLICATE_ADDRESS: "WALLET_DUPLICATE_ADDRESS",
+  AGENT_VALIDATION_ERROR: "AGENT_VALIDATION_ERROR",
 } as const;
 
 interface EngineErrorLike {
@@ -144,6 +154,33 @@ export function mapWalletEngineError(cause: unknown): Result<never, VexError> {
           userActionable: true,
           redacted: true,
         });
+      case ENGINE_CODE.WALLET_INVENTORY_FULL:
+        return err({
+          code: "wallet.cap_reached",
+          domain: "wallet",
+          message: "Maximum of 3 wallets per chain reached. Remove one before adding another.",
+          retryable: false,
+          userActionable: true,
+          redacted: true,
+        });
+      case ENGINE_CODE.WALLET_DUPLICATE_ADDRESS:
+        return err({
+          code: "wallet.address_exists",
+          domain: "wallet",
+          message: "This wallet address is already in your inventory.",
+          retryable: false,
+          userActionable: true,
+          redacted: true,
+        });
+      case ENGINE_CODE.AGENT_VALIDATION_ERROR:
+        return err({
+          code: "validation.invalid_input",
+          domain: "onboarding",
+          message: cause.message ?? "Invalid wallet input.",
+          retryable: false,
+          userActionable: true,
+          redacted: true,
+        });
     }
   }
   log.error("[wallets-runner] unexpected engine error", cause);
@@ -192,6 +229,63 @@ export async function importSolanaWalletRunner(
   try {
     const result = await importSolanaWallet(rawKey);
     return ok({ address: result.address });
+  } catch (cause) {
+    return mapWalletEngineError(cause);
+  }
+}
+
+// ── Multi-wallet inventory runners (puzzle 5 phase 5D) ──────────────────────
+// APPEND (not overwrite) up to MAX_WALLETS_PER_FAMILY. Cap/duplicate/label
+// errors map to wallet.cap_reached / wallet.address_exists / validation.
+
+export async function addEvmWallet(label?: string): Promise<Result<WalletAddResult>> {
+  try {
+    const e = createEvmWalletEntry({ label });
+    return ok({ id: e.id, address: e.address, label: e.label });
+  } catch (cause) {
+    return mapWalletEngineError(cause);
+  }
+}
+
+export async function importEvmWalletInventory(
+  rawKey: string,
+  label?: string,
+): Promise<Result<WalletAddResult>> {
+  try {
+    const e = importEvmWalletEntry(rawKey, { label });
+    return ok({ id: e.id, address: e.address, label: e.label });
+  } catch (cause) {
+    return mapWalletEngineError(cause);
+  }
+}
+
+export async function addSolanaWallet(label?: string): Promise<Result<WalletAddResult>> {
+  try {
+    const e = createSolanaWalletEntry({ label });
+    return ok({ id: e.id, address: e.address, label: e.label });
+  } catch (cause) {
+    return mapWalletEngineError(cause);
+  }
+}
+
+export async function importSolanaWalletInventory(
+  rawKey: string,
+  label?: string,
+): Promise<Result<WalletAddResult>> {
+  try {
+    const e = importSolanaWalletEntry(rawKey, { label });
+    return ok({ id: e.id, address: e.address, label: e.label });
+  } catch (cause) {
+    return mapWalletEngineError(cause);
+  }
+}
+
+export async function exportAllWalletsRunner(
+  destDir: string,
+): Promise<Result<WalletExportAllResult>> {
+  try {
+    const { files } = exportAllWallets(destDir);
+    return ok({ files });
   } catch (cause) {
     return mapWalletEngineError(cause);
   }

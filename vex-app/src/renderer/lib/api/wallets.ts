@@ -15,11 +15,15 @@
 import {
   useMutation,
   useQueryClient,
+  type QueryClient,
   type UseMutationResult,
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  WalletAddInput,
+  WalletAddResult,
   WalletChain,
+  WalletExportAllResult,
   WalletGenerateEvmResult,
   WalletGenerateSolanaResult,
   WalletImportEvmResult,
@@ -29,9 +33,20 @@ import type {
   WalletRestoreInput,
   WalletRestoreResult,
 } from "@shared/schemas/wallets.js";
-import { onboardingKeys } from "./queryKeys.js";
+import { onboardingKeys, walletsKeys } from "./queryKeys.js";
 
 type GenerateMutationResult<T> = UseMutationResult<Result<T>, Error, void>;
+
+/**
+ * After any wallet write (generate / import / add / restore) both the
+ * onboarding env-state badge AND the global inventory list
+ * (`walletsKeys.available()`, consumed by the multi-wallet onboarding UI +
+ * the session-create picker) must refetch (Codex 5D wiring review).
+ */
+function invalidateWalletQueries(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: onboardingKeys.envState() });
+  void queryClient.invalidateQueries({ queryKey: walletsKeys.available() });
+}
 
 /**
  * Generate a new wallet for the given chain. Per-chain hook so the
@@ -49,11 +64,7 @@ export function useWalletGenerate(
         ? window.vex.onboarding.walletGenerateEvm()
         : window.vex.onboarding.walletGenerateSolana(),
     onSuccess: (result) => {
-      if (result.ok) {
-        void queryClient.invalidateQueries({
-          queryKey: onboardingKeys.envState(),
-        });
-      }
+      if (result.ok) invalidateWalletQueries(queryClient);
     },
   });
 }
@@ -73,11 +84,7 @@ export function useWalletRestore(
       return window.vex.onboarding.walletRestoreFromBackup(input);
     },
     onSuccess: (result) => {
-      if (result.ok) {
-        void queryClient.invalidateQueries({
-          queryKey: onboardingKeys.envState(),
-        });
-      }
+      if (result.ok) invalidateWalletQueries(queryClient);
     },
   });
 }
@@ -118,16 +125,77 @@ export async function importWalletSolana(
   return window.vex.onboarding.walletImportSolana({ rawKey });
 }
 
+// ── Multi-wallet inventory (puzzle 5 phase 5D) ───────────────────────────────
+// After the FIRST wallet per family (legacy generate/import/restore above),
+// these append additional wallets (≤3 per family). Generate-add carries no
+// secret → useMutation. Import-add carries a raw key → bare async (same rule
+// as importWalletEvm: caller clears the DOM input synchronously before await).
+
+type AddMutationResult = UseMutationResult<
+  Result<WalletAddResult>,
+  Error,
+  WalletAddInput
+>;
+
 /**
- * Helper for the bare-async import paths to invalidate envState — pulls
- * the QueryClient via a hook indirection so callers don't have to wire
- * one manually.
+ * Append a freshly-generated wallet to the given family's inventory. Per-chain
+ * hook so each tab keeps independent `isPending`. Invalidates env-state +
+ * the global inventory list on success.
+ */
+export function useWalletAdd(chain: WalletChain): AddMutationResult {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: WalletAddInput) =>
+      chain === "evm"
+        ? window.vex.onboarding.walletAddEvm(input)
+        : window.vex.onboarding.walletAddSolana(input),
+    onSuccess: (result) => {
+      if (result.ok) invalidateWalletQueries(queryClient);
+    },
+  });
+}
+
+/**
+ * Import-add — direct async, NOT a hook. `rawKey` is a secret (see
+ * `importWalletEvm`). Caller reads it from an uncontrolled DOM ref, clears the
+ * input synchronously before the await, and calls
+ * `useInvalidateEnvStateAfterWalletWrite()` on success.
+ */
+export async function importAddWalletEvm(
+  rawKey: string,
+  label?: string
+): Promise<Result<WalletAddResult>> {
+  return window.vex.onboarding.walletImportAddEvm({ rawKey, label });
+}
+
+export async function importAddWalletSolana(
+  rawKey: string,
+  label?: string
+): Promise<Result<WalletAddResult>> {
+  return window.vex.onboarding.walletImportAddSolana({ rawKey, label });
+}
+
+/**
+ * Export every wallet (both families) to a user-chosen directory. Main owns
+ * the directory picker; renderer never sees the path — the result carries
+ * filenames only (no secrets, no absolute path). No secret input → useMutation.
+ */
+export function useExportAllWallets(): UseMutationResult<
+  Result<WalletExportAllResult>,
+  Error,
+  void
+> {
+  return useMutation({
+    mutationFn: () => window.vex.onboarding.walletExportAll({}),
+  });
+}
+
+/**
+ * Helper for the bare-async import paths to invalidate env-state + the global
+ * inventory list — pulls the QueryClient via a hook indirection so callers
+ * don't have to wire one manually.
  */
 export function useInvalidateEnvStateAfterWalletWrite(): () => void {
   const queryClient = useQueryClient();
-  return () => {
-    void queryClient.invalidateQueries({
-      queryKey: onboardingKeys.envState(),
-    });
-  };
+  return () => invalidateWalletQueries(queryClient);
 }

@@ -71,6 +71,14 @@ export {
 } from "../tools/wallet/inventory.js";
 
 export {
+  createEvmWalletEntry,
+  importEvmWalletEntry,
+  createSolanaWalletEntry,
+  importSolanaWalletEntry,
+  exportAllWallets,
+} from "../tools/wallet/inventory-create.js";
+
+export {
   BACKUPS_DIR,
   CONFIG_DIR as ENGINE_CONFIG_DIR,
   CONFIG_FILE,

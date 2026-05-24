@@ -8,20 +8,20 @@
  * write-paths are separate (fixed keystore + `registerPrimaryLegacyWallet`).
  */
 
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { Keypair } from "@solana/web3.js";
 import { generatePrivateKey, privateKeyToAddress } from "viem/accounts";
 import type { KeystoreV1 } from "./keystore.js";
 
-import { CONFIG_FILE } from "../../config/paths.js";
 import {
   loadConfig,
   saveConfig,
   type VexConfig,
   type WalletInventoryEntry,
 } from "../../config/store.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 import { requireKeystorePassword } from "../../utils/env.js";
 import { encryptPrivateKey, normalizePrivateKey, saveKeystoreFile } from "./keystore.js";
 import {
@@ -53,10 +53,20 @@ function appendWalletEntry(
 ): WalletInventoryEntry {
   const cfg = loadConfig();
   assertCanAddWallet(family, address, cfg);
+  const trimmedLabel = label?.trim();
+  if (trimmedLabel !== undefined && trimmedLabel.length > 120) {
+    // Reject BEFORE any keystore/config write — the config normalizer drops
+    // entries whose label exceeds 120 chars, so persisting one is silent data
+    // loss (Codex 5D review). Boundary IPC schema also caps it.
+    throw new VexError(
+      ErrorCodes.AGENT_VALIDATION_ERROR,
+      "Wallet label must be 120 characters or fewer.",
+    );
+  }
   const entry: WalletInventoryEntry = {
     id: generateWalletId(family),
     address,
-    label: label?.trim() || defaultLabel(family, cfg),
+    label: trimmedLabel || defaultLabel(family, cfg),
     createdAt: new Date().toISOString(),
   };
   saveKeystoreFile(derivePath(family, entry), keystore);
@@ -104,30 +114,56 @@ export function importSolanaWalletEntry(
   return appendWalletEntry("solana", address, encryptSolanaSecretKey(secret, password), opts.label);
 }
 
+interface ExportManifestWallet {
+  id: string;
+  family: InventoryFamily;
+  address: string;
+  label: string;
+  createdAt: string;
+  legacy: boolean;
+}
+
 /**
- * Copy config + every referenced keystore file into `destDir` for backup.
- * Keystores are encrypted on disk; the RETURN value is filenames only — no key
- * material ever leaves this process through the return path.
+ * Export a WALLET-ONLY bundle into `destDir`: the encrypted keystore files + a
+ * sanitized `manifest.json` carrying inventory metadata only
+ * ({id,family,address,label,createdAt,legacy}). It deliberately does NOT copy
+ * `config.json` — that holds non-wallet secrets (solana.jupiterApiKey, service
+ * / model config). The RETURN value is filenames only; no key material or
+ * config secrets cross the return path (Codex 5D review).
+ *
+ * The manifest is written LAST, after every keystore copy succeeds, so a copy
+ * failure throws before a "complete" manifest is produced (no partial success).
  */
 export function exportAllWallets(destDir: string): { files: string[] } {
   mkdirSync(destDir, { recursive: true });
   const cfg = loadConfig();
   const files: string[] = [];
-
-  if (existsSync(CONFIG_FILE)) {
-    cpSync(CONFIG_FILE, join(destDir, "config.json"));
-    files.push("config.json");
-  }
+  const wallets: ExportManifestWallet[] = [];
 
   for (const family of ["evm", "solana"] as const) {
     for (const entry of cfg.wallet[family]) {
       const src = derivePath(family, entry);
       if (!existsSync(src)) continue;
       const base = basename(src);
-      cpSync(src, join(destDir, base));
+      cpSync(src, join(destDir, base)); // throws on failure → no success returned
       if (!files.includes(base)) files.push(base);
+      wallets.push({
+        id: entry.id,
+        family,
+        address: entry.address,
+        label: entry.label,
+        createdAt: entry.createdAt,
+        legacy: entry.legacy ?? false,
+      });
     }
   }
+
+  writeFileSync(
+    join(destDir, "manifest.json"),
+    JSON.stringify({ version: 1, wallets }, null, 2),
+    "utf-8",
+  );
+  files.push("manifest.json");
 
   return { files };
 }

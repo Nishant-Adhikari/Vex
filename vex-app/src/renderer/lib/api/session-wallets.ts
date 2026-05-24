@@ -20,7 +20,6 @@ import {
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type {
-  AvailableWalletsDto,
   PreparedIntentDto,
   SessionWalletScopeDto,
   WalletsActionResult,
@@ -32,18 +31,10 @@ import { walletsKeys } from "./queryKeys.js";
 
 const STALE_MS = 10_000;
 
-function availableWalletsOptions() {
-  return queryOptions({
-    queryKey: walletsKeys.available(),
-    queryFn: () => window.vex.wallets.listAvailable({}),
-    staleTime: STALE_MS,
-  });
-}
-
-/** Inventory wallets available to pick from at session creation. */
-export function useAvailableWallets(): UseQueryResult<Result<AvailableWalletsDto>> {
-  return useQuery(availableWalletsOptions());
-}
+// `useAvailableWallets` lives in the neutral `wallet-inventory.ts` (global
+// inventory, not session scope). Re-exported here so existing session-scope
+// consumers (SessionCreator) keep a single import site (Codex 5D review).
+export { useAvailableWallets } from "./wallet-inventory.js";
 
 function sessionScopeOptions(sessionId: string) {
   return queryOptions({

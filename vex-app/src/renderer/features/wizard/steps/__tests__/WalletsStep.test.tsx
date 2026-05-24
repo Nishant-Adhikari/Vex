@@ -21,6 +21,9 @@ import type { JSX } from "react";
 import type { Result } from "@shared/ipc/result.js";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type {
+  WalletAddInput,
+  WalletAddResult,
+  WalletExportAllResult,
   WalletGenerateEvmResult,
   WalletGenerateSolanaResult,
   WalletOpenBackupFolderInput,
@@ -42,6 +45,11 @@ const mockImportEvm = vi.fn();
 const mockImportSolana = vi.fn();
 const mockOnAdvance = vi.fn();
 const mockInvalidateEnv = vi.fn();
+const mockWalletAdd = vi.fn();
+const mockImportAddEvm = vi.fn();
+const mockImportAddSolana = vi.fn();
+const mockExportAll = vi.fn();
+const mockUseAvailableWallets = vi.fn();
 
 vi.mock("../../../../lib/api/onboarding.js", () => ({
   useEnvState: () => mockUseEnvState(),
@@ -100,6 +108,30 @@ vi.mock("../../../../lib/api/wallets.js", () => ({
   useInvalidateEnvStateAfterWalletWrite: () => mockInvalidateEnv,
   importWalletEvm: (rawKey: string) => mockImportEvm(rawKey),
   importWalletSolana: (rawKey: string) => mockImportSolana(rawKey),
+  useWalletAdd: () =>
+    ({
+      mutateAsync: (input: WalletAddInput) => mockWalletAdd(input),
+      isPending: false,
+    }) as unknown as UseMutationResult<
+      Result<WalletAddResult>,
+      Error,
+      WalletAddInput
+    >,
+  importAddWalletEvm: (rawKey: string) => mockImportAddEvm(rawKey),
+  importAddWalletSolana: (rawKey: string) => mockImportAddSolana(rawKey),
+  useExportAllWallets: () =>
+    ({
+      mutateAsync: () => mockExportAll(),
+      isPending: false,
+    }) as unknown as UseMutationResult<
+      Result<WalletExportAllResult>,
+      Error,
+      void
+    >,
+}));
+
+vi.mock("../../../../lib/api/wallet-inventory.js", () => ({
+  useAvailableWallets: () => mockUseAvailableWallets(),
 }));
 
 const { WalletsStep } = await import("../WalletsStep.js");
@@ -171,6 +203,19 @@ beforeEach(() => {
   mockImportSolana.mockReset();
   mockOnAdvance.mockReset();
   mockInvalidateEnv.mockReset();
+  mockWalletAdd.mockReset();
+  mockImportAddEvm.mockReset();
+  mockImportAddSolana.mockReset();
+  mockExportAll.mockReset();
+  mockUseAvailableWallets.mockReset();
+  // Default: empty inventory so configured-branch flows render the
+  // WalletInventoryPanel without surfacing extra addresses.
+  mockUseAvailableWallets.mockReturnValue({
+    data: { ok: true, data: { evm: [], solana: [] } },
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+  });
 });
 
 afterEach(() => {
