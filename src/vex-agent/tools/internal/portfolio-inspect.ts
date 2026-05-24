@@ -31,14 +31,15 @@ const VALID_VIEWS = new Set<string>([
 ]);
 
 /**
- * Views scoped to the session's selected wallet set (puzzle 5 phase 5E-2a).
- * Remaining views: activity/bridges/lp_history/non_trading_history → 5E-2b;
- * `executions` is global (no wallet_address).
+ * Views scoped to the session's selected wallet set (puzzle 5 phase 5E-2).
+ * Only `executions` (a global protocol audit log with no wallet_address) stays
+ * unscoped.
  */
 const WALLET_SCOPED_VIEWS = new Set<string>([
   "summary", "balances", "snapshots",
   "open_positions", "closed_positions", "orders",
   "lots", "profits", "unrealized",
+  "activity", "bridges", "lp_history", "non_trading_history",
 ]);
 
 export async function handlePortfolioInspect(
@@ -74,16 +75,16 @@ export async function handlePortfolioInspect(
       case "lots": return inspectLots(addresses, str(params, "instrumentKey") || undefined, namespace, str(params, "status") || undefined);
       case "profits": return inspectProfits(addresses, namespace, str(params, "instrumentKey") || undefined, str(params, "groupBy") || undefined);
       case "unrealized": return inspectUnrealized(addresses, namespace);
+      case "activity": return inspectActivity(addresses, namespace, productType, limit);
+      case "bridges": return inspectBridges(addresses, namespace, limit);
+      case "lp_history": return inspectLpHistory(addresses, namespace, limit);
+      case "non_trading_history": return inspectNonTradingHistory(addresses, namespace, limit);
       default: return fail(`Unknown view: ${view}`);
     }
   }
 
-  // Unscoped views — activity/history (5E-2b) + global executions.
+  // `executions` is a global protocol audit log (no wallet_address) — unscoped.
   switch (view) {
-    case "activity": return inspectActivity(namespace, productType, limit);
-    case "bridges": return inspectBridges(namespace, limit);
-    case "lp_history": return inspectLpHistory(namespace, limit);
-    case "non_trading_history": return inspectNonTradingHistory(namespace, limit);
     case "executions": return inspectExecutions(namespace, limit);
     default: return fail(`Unknown view: ${view}`);
   }

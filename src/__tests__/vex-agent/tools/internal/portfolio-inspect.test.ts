@@ -95,9 +95,9 @@ describe("portfolio_inspect tool", () => {
   });
 
   describe("activity", () => {
-    it("passes filters to getActivities", async () => {
+    it("passes the wallet set + filters to getActivities", async () => {
       await handlePortfolioInspect({ view: "activity", namespace: "khalani", productType: "bridge", limit: 5 }, ctx);
-      expect(mockGetActivities).toHaveBeenCalledWith({ namespace: "khalani", productType: "bridge", limit: 5 });
+      expect(mockGetActivities).toHaveBeenCalledWith({ addresses: ["0xEVM", "SOL"], namespace: "khalani", productType: "bridge", limit: 5 });
     });
   });
 

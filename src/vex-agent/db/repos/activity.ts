@@ -67,18 +67,23 @@ export async function insertActivity(row: ActivityRow): Promise<number> {
   return result?.id ?? 0;
 }
 
-/** Get activities with optional filters. */
+/**
+ * Get activities with optional filters. `addresses` undefined → all wallets
+ * (legacy/global); a set → only those (wallet_address = ANY); EMPTY set → []
+ * (never global — Codex 5E-2).
+ */
 export async function getActivities(opts?: {
-  walletAddress?: string;
+  addresses?: string[];
   namespace?: string;
   productType?: string;
   limit?: number;
 }): Promise<Activity[]> {
+  if (opts?.addresses !== undefined && opts.addresses.length === 0) return [];
   const conditions: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
 
-  if (opts?.walletAddress) { conditions.push(`wallet_address = $${idx++}`); params.push(opts.walletAddress); }
+  if (opts?.addresses !== undefined) { conditions.push(`wallet_address = ANY($${idx++}::text[])`); params.push(opts.addresses); }
   if (opts?.namespace) { conditions.push(`namespace = $${idx++}`); params.push(opts.namespace); }
   if (opts?.productType) { conditions.push(`product_type = $${idx++}`); params.push(opts.productType); }
 

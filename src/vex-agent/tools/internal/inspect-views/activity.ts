@@ -6,9 +6,9 @@
 import type { ToolResult } from "../../types.js";
 import { ok } from "../types.js";
 
-export async function inspectActivity(namespace?: string, productType?: string, limit = 20): Promise<ToolResult> {
+export async function inspectActivity(addresses: string[], namespace?: string, productType?: string, limit = 20): Promise<ToolResult> {
   const { getActivities } = await import("@vex-agent/db/repos/activity.js");
-  const activities = await getActivities({ namespace, productType, limit });
+  const activities = await getActivities({ addresses, namespace, productType, limit });
 
   return ok({
     view: "activity",
@@ -30,11 +30,11 @@ export async function inspectActivity(namespace?: string, productType?: string, 
   });
 }
 
-export async function inspectBridges(namespace?: string, limit = 20): Promise<ToolResult> {
+export async function inspectBridges(addresses: string[], namespace?: string, limit = 20): Promise<ToolResult> {
   const { query } = await import("@vex-agent/db/client.js");
-  const conditions: string[] = ["product_type = 'bridge'"];
-  const params: unknown[] = [];
-  let idx = 1;
+  const conditions: string[] = ["product_type = 'bridge'", "wallet_address = ANY($1::text[])"];
+  const params: unknown[] = [addresses];
+  let idx = 2;
 
   if (namespace) { conditions.push(`namespace = $${idx++}`); params.push(namespace); }
   params.push(limit);
@@ -61,11 +61,11 @@ export async function inspectBridges(namespace?: string, limit = 20): Promise<To
   });
 }
 
-export async function inspectLpHistory(namespace?: string, limit = 20): Promise<ToolResult> {
+export async function inspectLpHistory(addresses: string[], namespace?: string, limit = 20): Promise<ToolResult> {
   const { query } = await import("@vex-agent/db/client.js");
-  const conditions: string[] = ["product_type = 'lp'"];
-  const params: unknown[] = [];
-  let idx = 1;
+  const conditions: string[] = ["product_type = 'lp'", "wallet_address = ANY($1::text[])"];
+  const params: unknown[] = [addresses];
+  let idx = 2;
 
   if (namespace) { conditions.push(`namespace = $${idx++}`); params.push(namespace); }
   params.push(limit);
@@ -90,11 +90,11 @@ export async function inspectLpHistory(namespace?: string, limit = 20): Promise<
   });
 }
 
-export async function inspectNonTradingHistory(namespace?: string, limit = 20): Promise<ToolResult> {
+export async function inspectNonTradingHistory(addresses: string[], namespace?: string, limit = 20): Promise<ToolResult> {
   const { query } = await import("@vex-agent/db/client.js");
-  const conditions: string[] = ["product_type IN ('bridge', 'lend', 'wrap', 'allowance', 'reward', 'stake')"];
-  const params: unknown[] = [];
-  let idx = 1;
+  const conditions: string[] = ["product_type IN ('bridge', 'lend', 'wrap', 'allowance', 'reward', 'stake')", "wallet_address = ANY($1::text[])"];
+  const params: unknown[] = [addresses];
+  let idx = 2;
 
   if (namespace) { conditions.push(`namespace = $${idx++}`); params.push(namespace); }
   params.push(limit);
