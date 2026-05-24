@@ -10,7 +10,8 @@ import { buildClobOrder, signClobOrder } from "@tools/polymarket/clob/signing.js
 import { requirePolyClobCredentials } from "@tools/polymarket/auth.js";
 import { getPolyGammaClient } from "@tools/polymarket/gamma/client.js";
 import { USDC_E_DECIMALS } from "@tools/polymarket/constants.js";
-import { requireEvmWallet } from "@tools/wallet/multi-auth.js";
+import type { ChainWallet } from "@tools/wallet/multi-auth.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { parseClobTokenIds } from "@tools/polymarket/helpers.js";
 import type { Hex } from "viem";
 import type { ProtocolHandler } from "../types.js";
@@ -120,7 +121,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
 
   // ── Trading (authenticated) ───────────────────────────────────
 
-  "polymarket.clob.buy": async (p) => {
+  "polymarket.clob.buy": async (p, ctx) => {
     const conditionId = str(p, "conditionId"), outcomeRaw = str(p, "outcome");
     const amount = num(p, "amount");
     if (!conditionId || !outcomeRaw || amount == null) return fail("Missing required: conditionId, outcome, amount");
@@ -151,14 +152,22 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
       return ok({ dryRun: true, conditionId, outcome, amount, price, shares: shares.toFixed(2), tokenId, question: market.question });
     }
 
-    const wallet = requireEvmWallet();
+    // Session signing wallet (5D-protocols p3) — after the dryRun gate, real exec only.
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
+
     const creds = requirePolyClobCredentials();
     const feeRate = await clob.getFeeRate(tokenId);
     const { makerAmount, takerAmount } = calcAmounts("BUY", shares, price);
-    const orderData = buildClobOrder({ maker: wallet.address, signer: wallet.address, tokenId, makerAmount, takerAmount, side: "BUY", feeRateBps: String(feeRate.base_fee) });
-    const signature = await signClobOrder(wallet.privateKey as Hex, orderData, market.negRisk ?? false);
+    const orderData = buildClobOrder({ maker: signer.address, signer: signer.address, tokenId, makerAmount, takerAmount, side: "BUY", feeRateBps: String(feeRate.base_fee) });
+    const signature = await signClobOrder(signer.privateKey as Hex, orderData, market.negRisk ?? false);
 
-    const result = await clob.postOrder({
+    const result = await clob.postOrder({ address: signer.address }, {
       order: { ...orderData, signature },
       owner: creds.apiKey,
       orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" | "FAK",
@@ -174,7 +183,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
         chain: "polygon",
         status: isMatched ? "executed" : "open",
         inputToken: "USDC", outputToken: `${outcome}@${conditionId.slice(0, 8)}`,
-        inputAmount: String(amount), walletAddress: wallet.address, tradeSide: "buy",
+        inputAmount: String(amount), walletAddress: signer.address, tradeSide: "buy",
         positionKey: isMatched ? `polymarket:${conditionId}:${outcome}` : result.orderID,
         instrumentKey: `polymarket:${conditionId}:${outcome}`,
         ...(isMatched ? { inputValueUsd: String(amount), unitPriceUsd: String(price), valuationSource: "polymarket_exact" } : { valuationSource: "none" }),
@@ -184,7 +193,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     };
   },
 
-  "polymarket.clob.sell": async (p) => {
+  "polymarket.clob.sell": async (p, ctx) => {
     const conditionId = str(p, "conditionId"), outcomeRaw = str(p, "outcome");
     const shares = num(p, "amount");
     if (!conditionId || !outcomeRaw || shares == null) return fail("Missing required: conditionId, outcome, amount");
@@ -214,14 +223,22 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
       return ok({ dryRun: true, conditionId, outcome, shares, price, usdcValue: (shares * price).toFixed(2), tokenId, question: market.question });
     }
 
-    const wallet = requireEvmWallet();
+    // Session signing wallet (5D-protocols p3) — after the dryRun gate, real exec only.
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
+
     const creds = requirePolyClobCredentials();
     const feeRate = await clob.getFeeRate(tokenId);
     const { makerAmount, takerAmount } = calcAmounts("SELL", shares, price);
-    const orderData = buildClobOrder({ maker: wallet.address, signer: wallet.address, tokenId, makerAmount, takerAmount, side: "SELL", feeRateBps: String(feeRate.base_fee) });
-    const signature = await signClobOrder(wallet.privateKey as Hex, orderData, market.negRisk ?? false);
+    const orderData = buildClobOrder({ maker: signer.address, signer: signer.address, tokenId, makerAmount, takerAmount, side: "SELL", feeRateBps: String(feeRate.base_fee) });
+    const signature = await signClobOrder(signer.privateKey as Hex, orderData, market.negRisk ?? false);
 
-    const result = await clob.postOrder({ order: { ...orderData, signature }, owner: creds.apiKey, orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" | "FAK", deferExec: p.deferExec === true ? true : undefined });
+    const result = await clob.postOrder({ address: signer.address }, { order: { ...orderData, signature }, owner: creds.apiKey, orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" | "FAK", deferExec: p.deferExec === true ? true : undefined });
 
     const isMatched = result.status === "matched";
     return {
@@ -232,7 +249,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
         chain: "polygon",
         status: isMatched ? "closed" : "open",
         outputToken: "USDC", inputToken: `${outcome}@${conditionId.slice(0, 8)}`,
-        inputAmount: String(shares), walletAddress: wallet.address, tradeSide: "sell",
+        inputAmount: String(shares), walletAddress: signer.address, tradeSide: "sell",
         positionKey: isMatched ? `polymarket:${conditionId}:${outcome}` : result.orderID,
         instrumentKey: `polymarket:${conditionId}:${outcome}`,
         ...(isMatched ? { outputValueUsd: String(shares * price), unitPriceUsd: String(price), valuationSource: "polymarket_exact" } : { valuationSource: "none" }),
@@ -242,52 +259,78 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     };
   },
 
-  "polymarket.clob.cancel": async (p) => {
+  "polymarket.clob.cancel": async (p, ctx) => {
     const orderId = str(p, "orderId");
     if (!orderId) return fail("Missing required: orderId");
-    const wallet = requireEvmWallet();
-    const result = await getPolyClobClient().cancelOrder(orderId);
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, orderId, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, positionKey: orderId, meta: { action: "cancel" } } } };
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await getPolyClobClient().cancelOrder({ address }, orderId);
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, orderId, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: address, positionKey: orderId, meta: { action: "cancel" } } } };
   },
 
-  "polymarket.clob.cancelOrders": async (p) => {
+  "polymarket.clob.cancelOrders": async (p, ctx) => {
     const raw = str(p, "orderIds");
     if (!raw) return fail("Missing required: orderIds");
     const ids = splitIds(raw);
     if (ids.length === 0) return fail("No valid order IDs provided");
-    const wallet = requireEvmWallet();
-    const result = await getPolyClobClient().cancelOrders(ids);
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await getPolyClobClient().cancelOrders({ address }, ids);
     const captureItems = result.canceled.map(oid => ({
       type: "order" as const, chain: "polygon" as const, status: "cancelled" as const,
-      walletAddress: wallet.address, positionKey: oid, meta: { action: "cancel" },
+      walletAddress: address, positionKey: oid, meta: { action: "cancel" },
     }));
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, meta: { action: "cancelOrders", count: result.canceled.length } }, _tradeCaptureItems: captureItems } };
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: address, meta: { action: "cancelOrders", count: result.canceled.length } }, _tradeCaptureItems: captureItems } };
   },
 
-  "polymarket.clob.cancelAll": async () => {
-    const wallet = requireEvmWallet();
-    const result = await getPolyClobClient().cancelAll();
+  "polymarket.clob.cancelAll": async (_p, ctx) => {
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await getPolyClobClient().cancelAll({ address });
     const captureItems = result.canceled.map(oid => ({
       type: "order" as const, chain: "polygon" as const, status: "cancelled" as const,
-      walletAddress: wallet.address, positionKey: oid, meta: { action: "cancel" },
+      walletAddress: address, positionKey: oid, meta: { action: "cancel" },
     }));
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, meta: { action: "cancelAll", count: result.canceled.length } }, _tradeCaptureItems: captureItems.length > 0 ? captureItems : undefined } };
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: address, meta: { action: "cancelAll", count: result.canceled.length } }, _tradeCaptureItems: captureItems.length > 0 ? captureItems : undefined } };
   },
 
-  "polymarket.clob.cancelMarket": async (p) => {
+  "polymarket.clob.cancelMarket": async (p, ctx) => {
     const market = str(p, "market"), assetId = str(p, "assetId");
     if (!market || !assetId) return fail("Missing required: market, assetId");
-    const wallet = requireEvmWallet();
-    const result = await getPolyClobClient().cancelMarketOrders(market, assetId);
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await getPolyClobClient().cancelMarketOrders({ address }, market, assetId);
     const captureItems = result.canceled.map(oid => ({
       type: "order" as const, chain: "polygon" as const, status: "cancelled" as const,
-      walletAddress: wallet.address, positionKey: oid, meta: { action: "cancelMarket", conditionId: market, assetId },
+      walletAddress: address, positionKey: oid, meta: { action: "cancelMarket", conditionId: market, assetId },
     }));
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, conditionId: market, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: wallet.address, meta: { action: "cancelMarket", conditionId: market, assetId } }, _tradeCaptureItems: captureItems.length > 0 ? captureItems : undefined } };
+    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, conditionId: market, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: address, meta: { action: "cancelMarket", conditionId: market, assetId } }, _tradeCaptureItems: captureItems.length > 0 ? captureItems : undefined } };
   },
 
-  "polymarket.clob.orders": async (p) => {
-    return ok(await getPolyClobClient().getOrders({
+  "polymarket.clob.orders": async (p, ctx) => {
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    return ok(await getPolyClobClient().getOrders({ address }, {
       id: str(p, "id") || undefined,
       market: str(p, "market") || undefined,
       asset_id: str(p, "assetId") || undefined,
@@ -295,17 +338,28 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     }));
   },
 
-  "polymarket.clob.order": async (p) => {
+  "polymarket.clob.order": async (p, ctx) => {
     const orderId = str(p, "orderId");
     if (!orderId) return fail("Missing required: orderId");
-    return ok(await getPolyClobClient().getOrder(orderId));
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    return ok(await getPolyClobClient().getOrder({ address }, orderId));
   },
 
-  "polymarket.clob.trades": async (p) => {
-    const wallet = requireEvmWallet();
-    return ok(await getPolyClobClient().getTrades({
+  "polymarket.clob.trades": async (p, ctx) => {
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    return ok(await getPolyClobClient().getTrades({ address }, {
       id: str(p, "id") || undefined,
-      maker_address: wallet.address,
+      maker_address: address,
       market: str(p, "market") || undefined,
       asset_id: str(p, "assetId") || undefined,
       before: str(p, "before") || undefined,
@@ -324,8 +378,14 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     return ok(await getPolyClobClient().getRebates(date, makerAddress));
   },
 
-  "polymarket.clob.heartbeat": async () => {
-    return ok(await getPolyClobClient().sendHeartbeat());
+  "polymarket.clob.heartbeat": async (_p, ctx) => {
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    return ok(await getPolyClobClient().sendHeartbeat({ address }));
   },
 
   "polymarket.clob.batchPriceHistory": async (p) => {
@@ -343,9 +403,15 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     return ok(result);
   },
 
-  "polymarket.clob.orderScoring": async (p) => {
+  "polymarket.clob.orderScoring": async (p, ctx) => {
     const orderId = str(p, "orderId");
     if (!orderId) return fail("Missing required: orderId");
-    return ok(await getPolyClobClient().getOrderScoring(orderId));
+    let address: string;
+    try {
+      address = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    return ok(await getPolyClobClient().getOrderScoring({ address }, orderId));
   },
 };

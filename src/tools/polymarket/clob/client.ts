@@ -11,7 +11,6 @@ import { isRecord } from "../../../utils/validation-helpers.js";
 import { mapPolyTransportError, mapPolyApiError } from "../errors.js";
 import { CLOB_BASE_URL, CLOB_TIMEOUT_MS } from "../constants.js";
 import { buildClobHeaders, requirePolyClobCredentials } from "../auth.js";
-import { requireEvmWallet } from "../../wallet/multi-auth.js";
 import {
   validateOrderBookResponse, validatePriceResponse, validateMidpointResponse,
   validateSpreadResponse, validateLastTradePriceResponse,
@@ -30,6 +29,16 @@ import type {
   OpenOrder, PaginatedOrders, CancelResponse, PaginatedTrades,
   PriceHistoryResponse, BookRequest, LastTradePrice, OrderScoringResponse,
 } from "./types.js";
+
+/**
+ * Per-call auth identity for CLOB HMAC headers. The wallet address is resolved
+ * by the caller (session-scoped) and passed to every authenticated method — the
+ * client never resolves a wallet itself, and never caches auth state on the
+ * singleton (puzzle 5 phase 5D-protocols p3).
+ */
+export interface ClobAuthContext {
+  address: string;
+}
 
 export class PolyClobClient {
   constructor(
@@ -72,6 +81,7 @@ export class PolyClobClient {
   /** Authenticated request (trading). Uses HMAC-SHA256 headers.
    *  HMAC signs path only (without query string) — query params go to URL separately. */
   private async requestAuth<T>(
+    auth: ClobAuthContext,
     method: string,
     path: string,
     validator: (raw: unknown) => T,
@@ -79,7 +89,7 @@ export class PolyClobClient {
     query?: Record<string, string | undefined>,
   ): Promise<T> {
     const creds = requirePolyClobCredentials();
-    const { address } = requireEvmWallet();
+    const { address } = auth;
     const bodyStr = body !== undefined ? JSON.stringify(body) : "";
     // HMAC signs path without query — per Polymarket CLOB auth spec
     const headers = buildClobHeaders(creds.apiKey, address, creds.passphrase, method, path, bodyStr, creds.apiSecret);
@@ -261,54 +271,54 @@ export class PolyClobClient {
 
   // ── Rewards (authenticated) ────────────────────────────────────────
 
-  getUserEarnings(opts: Record<string, string | undefined>): Promise<unknown> {
-    return this.requestAuth("GET", "/rewards/user", (raw) => raw, undefined, opts);
+  getUserEarnings(auth: ClobAuthContext, opts: Record<string, string | undefined>): Promise<unknown> {
+    return this.requestAuth(auth, "GET", "/rewards/user", (raw) => raw, undefined, opts);
   }
 
-  getUserTotalEarnings(opts: Record<string, string | undefined>): Promise<unknown> {
-    return this.requestAuth("GET", "/rewards/user/total", (raw) => raw, undefined, opts);
+  getUserTotalEarnings(auth: ClobAuthContext, opts: Record<string, string | undefined>): Promise<unknown> {
+    return this.requestAuth(auth, "GET", "/rewards/user/total", (raw) => raw, undefined, opts);
   }
 
-  getUserRewardPercentages(opts?: Record<string, string | undefined>): Promise<unknown> {
-    return this.requestAuth("GET", "/rewards/user/percentages", (raw) => raw, undefined, opts);
+  getUserRewardPercentages(auth: ClobAuthContext, opts?: Record<string, string | undefined>): Promise<unknown> {
+    return this.requestAuth(auth, "GET", "/rewards/user/percentages", (raw) => raw, undefined, opts);
   }
 
-  getUserEarningsMarkets(opts?: Record<string, string | undefined>): Promise<unknown> {
-    return this.requestAuth("GET", "/rewards/user/markets", (raw) => raw, undefined, opts);
+  getUserEarningsMarkets(auth: ClobAuthContext, opts?: Record<string, string | undefined>): Promise<unknown> {
+    return this.requestAuth(auth, "GET", "/rewards/user/markets", (raw) => raw, undefined, opts);
   }
 
-  getOrderScoring(orderId: string): Promise<OrderScoringResponse> {
-    return this.requestAuth("GET", "/order-scoring", validateOrderScoringResponse, undefined, { order_id: orderId });
+  getOrderScoring(auth: ClobAuthContext, orderId: string): Promise<OrderScoringResponse> {
+    return this.requestAuth(auth, "GET", "/order-scoring", validateOrderScoringResponse, undefined, { order_id: orderId });
   }
 
   // ── Trading (authenticated) ─────────────────────────────────────
 
-  postOrder(order: SendOrderRequest): Promise<SendOrderResponse> {
-    return this.requestAuth("POST", "/order", validateSendOrderResponse, order);
+  postOrder(auth: ClobAuthContext, order: SendOrderRequest): Promise<SendOrderResponse> {
+    return this.requestAuth(auth, "POST", "/order", validateSendOrderResponse, order);
   }
 
-  postOrders(orders: SendOrderRequest[]): Promise<SendOrderResponse[]> {
-    return this.requestAuth("POST", "/orders", validateSendOrdersResponse, orders);
+  postOrders(auth: ClobAuthContext, orders: SendOrderRequest[]): Promise<SendOrderResponse[]> {
+    return this.requestAuth(auth, "POST", "/orders", validateSendOrdersResponse, orders);
   }
 
-  cancelOrder(orderId: string): Promise<CancelResponse> {
-    return this.requestAuth("DELETE", "/order", validateCancelResponse, { orderID: orderId });
+  cancelOrder(auth: ClobAuthContext, orderId: string): Promise<CancelResponse> {
+    return this.requestAuth(auth, "DELETE", "/order", validateCancelResponse, { orderID: orderId });
   }
 
-  cancelOrders(orderIds: string[]): Promise<CancelResponse> {
-    return this.requestAuth("DELETE", "/orders", validateCancelResponse, orderIds);
+  cancelOrders(auth: ClobAuthContext, orderIds: string[]): Promise<CancelResponse> {
+    return this.requestAuth(auth, "DELETE", "/orders", validateCancelResponse, orderIds);
   }
 
-  cancelAll(): Promise<CancelResponse> {
-    return this.requestAuth("DELETE", "/cancel-all", validateCancelResponse);
+  cancelAll(auth: ClobAuthContext): Promise<CancelResponse> {
+    return this.requestAuth(auth, "DELETE", "/cancel-all", validateCancelResponse);
   }
 
-  cancelMarketOrders(market: string, assetId: string): Promise<CancelResponse> {
-    return this.requestAuth("DELETE", "/cancel-market-orders", validateCancelResponse, { market, asset_id: assetId });
+  cancelMarketOrders(auth: ClobAuthContext, market: string, assetId: string): Promise<CancelResponse> {
+    return this.requestAuth(auth, "DELETE", "/cancel-market-orders", validateCancelResponse, { market, asset_id: assetId });
   }
 
-  getOrders(opts?: { id?: string; market?: string; asset_id?: string; next_cursor?: string }): Promise<PaginatedOrders> {
-    return this.requestAuth("GET", "/data/orders", validatePaginatedOrders, undefined, {
+  getOrders(auth: ClobAuthContext, opts?: { id?: string; market?: string; asset_id?: string; next_cursor?: string }): Promise<PaginatedOrders> {
+    return this.requestAuth(auth, "GET", "/data/orders", validatePaginatedOrders, undefined, {
       id: opts?.id,
       market: opts?.market,
       asset_id: opts?.asset_id,
@@ -316,12 +326,12 @@ export class PolyClobClient {
     });
   }
 
-  getOrder(orderId: string): Promise<OpenOrder> {
-    return this.requestAuth("GET", `/order/${encodeURIComponent(orderId)}`, validateOpenOrder);
+  getOrder(auth: ClobAuthContext, orderId: string): Promise<OpenOrder> {
+    return this.requestAuth(auth, "GET", `/order/${encodeURIComponent(orderId)}`, validateOpenOrder);
   }
 
-  getTrades(opts?: { id?: string; maker_address?: string; market?: string; asset_id?: string; before?: string; after?: string; next_cursor?: string }): Promise<PaginatedTrades> {
-    return this.requestAuth("GET", "/data/trades", validatePaginatedTrades, undefined, {
+  getTrades(auth: ClobAuthContext, opts?: { id?: string; maker_address?: string; market?: string; asset_id?: string; before?: string; after?: string; next_cursor?: string }): Promise<PaginatedTrades> {
+    return this.requestAuth(auth, "GET", "/data/trades", validatePaginatedTrades, undefined, {
       id: opts?.id,
       maker_address: opts?.maker_address,
       market: opts?.market,
@@ -332,8 +342,8 @@ export class PolyClobClient {
     });
   }
 
-  sendHeartbeat(): Promise<{ status: string }> {
-    return this.requestAuth("POST", "/heartbeats", (raw) => {
+  sendHeartbeat(auth: ClobAuthContext): Promise<{ status: string }> {
+    return this.requestAuth(auth, "POST", "/heartbeats", (raw) => {
       if (isRecord(raw) && typeof raw.status === "string") return { status: raw.status };
       return { status: "ok" };
     });
