@@ -6,11 +6,16 @@ import { getKhalaniClient } from "@tools/khalani/client.js";
 import {
   getCachedKhalaniChains,
   getChain,
+  getChainFamily,
+  resolveChainId,
 } from "@tools/khalani/chains.js";
 import { resolveRouteBestIndex } from "@tools/khalani/helpers.js";
 import { prepareQuoteRequest } from "@tools/khalani/request.js";
 import { executeDepositPlan } from "@tools/khalani/bridge-executor.js";
 import type { DepositMethod, QuoteRoute } from "@tools/khalani/types.js";
+import type { ChainWallet } from "@tools/wallet/multi-auth.js";
+import { familyToInventory, walletAddressesEqual } from "@tools/wallet/inventory.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import logger from "@utils/logger.js";
@@ -36,6 +41,48 @@ export const BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
       return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
     }
 
+    // Per-session wallet scope (5D-protocols p4). Resolve source/dest chain
+    // families up front so the bridge uses the session's selected wallets: the
+    // deposit signs with the SOURCE-family wallet, funds land at the dest-family
+    // recipient. prepareQuoteRequest re-resolves these cached chains (cheap).
+    const chains = await getCachedKhalaniChains();
+    let fromFamily: "eip155" | "solana";
+    let toFamily: "eip155" | "solana";
+    try {
+      fromFamily = getChainFamily(resolveChainId(fromChain, chains), chains);
+      toFamily = getChainFamily(resolveChainId(toChain, chains), chains);
+    } catch (err) {
+      return { success: false, output: err instanceof Error ? err.message : String(err) };
+    }
+
+    // Source address: the session's selected wallet for the source family. An
+    // explicit fromAddress under a session must match it — never override session
+    // scope (fail-closed, before quote and before signing).
+    const explicitFrom = str(params, "fromAddress") || undefined;
+    let fromAddress: string;
+    try {
+      fromAddress = resolveSelectedAddress(context.walletResolution, context.walletPolicy, fromFamily);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (
+      context.walletResolution.source === "session" && explicitFrom
+      && !walletAddressesEqual(familyToInventory(fromFamily), explicitFrom, fromAddress)
+    ) {
+      return { success: false, output: "The provided fromAddress does not match the session's selected wallet for the source chain." };
+    }
+
+    // Recipient: an explicit address is honored (bridging to another address is
+    // valid); otherwise the session's selected dest-family wallet (fail-closed
+    // if neither is available).
+    const explicitRecipient = str(params, "recipient") || undefined;
+    let recipient: string;
+    try {
+      recipient = explicitRecipient ?? resolveSelectedAddress(context.walletResolution, context.walletPolicy, toFamily);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+
     // 1. Prepare quote request (resolves aliases, normalizes addresses, parses hex amounts)
     const prepared = await prepareQuoteRequest({
       fromChain,
@@ -44,15 +91,15 @@ export const BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
       toToken,
       amount,
       tradeType: str(params, "tradeType") || undefined,
-      fromAddress: str(params, "fromAddress") || undefined,
-      recipient: str(params, "recipient") || undefined,
+      fromAddress,
+      recipient,
       refundTo: str(params, "refundTo") || undefined,
       referrer: str(params, "referrer") || undefined,
       referrerFeeBps: str(params, "referrerFeeBps") || undefined,
       filler: str(params, "filler") || undefined,
     });
 
-    const { chains, fromChainId, toChainId, request } = prepared;
+    const { fromChainId, toChainId, request } = prepared;
     const sourceChain = getChain(fromChainId, chains);
 
     // 2. Quote
@@ -120,13 +167,22 @@ export const BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
       planKind: plan.kind,
     });
 
-    const result = await executeDepositPlan(
+    // Source-family signing wallet — resolved AFTER the dryRun gate, just before broadcast.
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, fromFamily);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+
+    const result = await executeDepositPlan({
       plan,
       sourceChain,
       chains,
-      quoteResponse.quoteId,
-      selectedRoute.routeId,
-    );
+      quoteId: quoteResponse.quoteId,
+      routeId: selectedRoute.routeId,
+      signer,
+    });
 
     // 9. Return result with trade capture data
     const bridgeResult = {

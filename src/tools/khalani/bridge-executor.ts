@@ -19,7 +19,7 @@ import type {
   KhalaniChain,
   TransferDepositPlan,
 } from "./types.js";
-import { requireEvmWallet, requireSolanaWallet } from "../wallet/multi-auth.js";
+import type { ChainWallet } from "../wallet/multi-auth.js";
 
 interface Eip1193TransactionRequest {
   from?: string;
@@ -168,8 +168,12 @@ export async function executeEvmContractCallPlan(
   chains: KhalaniChain[],
   quoteId: string,
   routeId: string,
+  signer: ChainWallet,
 ): Promise<{ orderId: string; txHash: string }> {
-  const wallet = requireEvmWallet();
+  if (signer.family !== "eip155") {
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "EVM deposit requires an EVM signing wallet.");
+  }
+  const wallet = signer;
   let depositTxHash: Hash | null = null;
   let hasDepositAction = false;
 
@@ -202,8 +206,12 @@ export async function executeSolanaContractCallPlan(
   chains: KhalaniChain[],
   quoteId: string,
   routeId: string,
+  signer: ChainWallet,
 ): Promise<{ orderId: string; txHash: string }> {
-  const wallet = requireSolanaWallet();
+  if (signer.family !== "solana") {
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Solana deposit requires a Solana signing wallet.");
+  }
+  const wallet = signer;
   const rpcUrl = getChainRpcUrl(chain.id, chains);
   let depositTxHash: string | null = null;
   let hasDepositAction = false;
@@ -235,6 +243,7 @@ export async function executeTransferPlan(
   chains: KhalaniChain[],
   quoteId: string,
   routeId: string,
+  signer: ChainWallet,
 ): Promise<{ orderId: string; txHash: string }> {
   if (chain.type !== "eip155") {
     throw new VexError(
@@ -243,8 +252,11 @@ export async function executeTransferPlan(
       "Retry with --deposit-method CONTRACT_CALL.",
     );
   }
+  if (signer.family !== "eip155") {
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "EVM transfer requires an EVM signing wallet.");
+  }
 
-  const wallet = requireEvmWallet();
+  const wallet = signer;
   const account = privateKeyToAccount(wallet.privateKey);
   const walletClient = createDynamicWalletClient(chain, chains, wallet.privateKey);
   const publicClient = createDynamicPublicClient(chain, chains);
@@ -269,13 +281,20 @@ export async function executeTransferPlan(
   return { orderId: submitted.orderId, txHash: submitted.txHash };
 }
 
+export interface ExecuteDepositPlanArgs {
+  plan: DepositPlan;
+  sourceChain: KhalaniChain;
+  chains: KhalaniChain[];
+  quoteId: string;
+  routeId: string;
+  /** Source-chain-family signing wallet, resolved by the caller (session-scoped). */
+  signer: ChainWallet;
+}
+
 export async function executeDepositPlan(
-  plan: DepositPlan,
-  sourceChain: KhalaniChain,
-  chains: KhalaniChain[],
-  quoteId: string,
-  routeId: string,
+  args: ExecuteDepositPlanArgs,
 ): Promise<{ orderId: string; txHash: string }> {
+  const { plan, sourceChain, chains, quoteId, routeId, signer } = args;
   if (plan.kind === "PERMIT2") {
     throw new VexError(
       ErrorCodes.KHALANI_PERMIT2_BLOCKED,
@@ -285,10 +304,10 @@ export async function executeDepositPlan(
   }
 
   if (plan.kind === "TRANSFER") {
-    return executeTransferPlan(plan, sourceChain, chains, quoteId, routeId);
+    return executeTransferPlan(plan, sourceChain, chains, quoteId, routeId, signer);
   }
 
   return sourceChain.type === "solana"
-    ? executeSolanaContractCallPlan(plan, sourceChain, chains, quoteId, routeId)
-    : executeEvmContractCallPlan(plan, sourceChain, chains, quoteId, routeId);
+    ? executeSolanaContractCallPlan(plan, sourceChain, chains, quoteId, routeId, signer)
+    : executeEvmContractCallPlan(plan, sourceChain, chains, quoteId, routeId, signer);
 }

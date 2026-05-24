@@ -8,6 +8,8 @@ import type {
   Permit2DepositPlan,
   TransferDepositPlan,
 } from "@tools/khalani/types.js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const ETH_CHAIN: KhalaniChain = {
   type: "eip155",
@@ -31,18 +33,18 @@ const CHAINS: KhalaniChain[] = [ETH_CHAIN, SOL_CHAIN];
 // We test parseBigintish directly (already imported at top-level).
 // For executeDepositPlan and friends, we mock the heavy dependencies.
 
-vi.mock("@tools/wallet/multi-auth.js", () => ({
-  requireEvmWallet: vi.fn(() => ({
-    family: "eip155" as const,
-    address: "0x9f7cF98a82462575a3b25C664BfBE5dCeCF3dec2",
-    privateKey: "0x" + "ab".repeat(32),
-  })),
-  requireSolanaWallet: vi.fn(() => ({
-    family: "solana" as const,
-    address: "11111111111111111111111111111111",
-    secretKey: new Uint8Array(64),
-  })),
-}));
+// 5D-protocols p4: executeDepositPlan now takes an explicit source-family signer
+// (the executor no longer resolves a wallet itself).
+const EVM_SIGNER = {
+  family: "eip155" as const,
+  address: "0x9f7cF98a82462575a3b25C664BfBE5dCeCF3dec2" as `0x${string}`,
+  privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
+};
+const SOL_SIGNER = {
+  family: "solana" as const,
+  address: "11111111111111111111111111111111",
+  secretKey: new Uint8Array(64),
+};
 
 const mockSendTransaction = vi.fn(async (): Promise<`0x${string}`> => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
 const mockWriteContract = vi.fn(async (): Promise<`0x${string}`> => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
@@ -116,6 +118,11 @@ describe("executeDepositPlan", () => {
     executeDepositPlan = mod.executeDepositPlan;
   });
 
+  // Adapter: positional call sites → object args, with a source-family signer.
+  function run(plan: DepositPlan, sourceChain: KhalaniChain, signer: typeof EVM_SIGNER | typeof SOL_SIGNER = EVM_SIGNER) {
+    return executeDepositPlan({ plan, sourceChain, chains: CHAINS, quoteId: "q1", routeId: "r1", signer });
+  }
+
   it("blocks PERMIT2 plans with KHALANI_PERMIT2_BLOCKED", async () => {
     const permit2Plan: Permit2DepositPlan = {
       kind: "PERMIT2",
@@ -124,7 +131,7 @@ describe("executeDepositPlan", () => {
     };
 
     await expect(
-      executeDepositPlan(permit2Plan, ETH_CHAIN, CHAINS, "q1", "r1"),
+      run(permit2Plan, ETH_CHAIN),
     ).rejects.toMatchObject({
       code: ErrorCodes.KHALANI_PERMIT2_BLOCKED,
     });
@@ -145,7 +152,7 @@ describe("executeDepositPlan", () => {
       ],
     };
 
-    const result = await executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1");
+    const result = await run(plan, ETH_CHAIN);
     expect(result).toHaveProperty("orderId");
     expect(result).toHaveProperty("txHash");
   });
@@ -176,7 +183,7 @@ describe("executeDepositPlan", () => {
       ],
     };
 
-    await executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1");
+    await run(plan, ETH_CHAIN);
 
     expect(mockSubmitDeposit).toHaveBeenCalledWith(expect.objectContaining({
       txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -195,7 +202,7 @@ describe("executeDepositPlan", () => {
       ],
     };
 
-    const result = await executeDepositPlan(plan, SOL_CHAIN, CHAINS, "q1", "r1");
+    const result = await run(plan, SOL_CHAIN, SOL_SIGNER);
     expect(result).toHaveProperty("orderId");
     expect(result).toHaveProperty("txHash");
   });
@@ -215,7 +222,7 @@ describe("executeDepositPlan", () => {
     };
 
     await expect(
-      executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1"),
+      run(plan, ETH_CHAIN),
     ).rejects.toMatchObject({
       code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
     });
@@ -236,7 +243,7 @@ describe("executeDepositPlan", () => {
     };
 
     await expect(
-      executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1"),
+      run(plan, ETH_CHAIN),
     ).rejects.toMatchObject({
       code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
     });
@@ -257,7 +264,7 @@ describe("executeDepositPlan", () => {
     };
 
     await expect(
-      executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1"),
+      run(plan, ETH_CHAIN),
     ).rejects.toMatchObject({
       code: ErrorCodes.CHAIN_MISMATCH,
     });
@@ -272,7 +279,7 @@ describe("executeDepositPlan", () => {
       chainId: 1,
     };
 
-    const result = await executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1");
+    const result = await run(plan, ETH_CHAIN);
     expect(result).toHaveProperty("orderId");
     expect(result).toHaveProperty("txHash");
   });
@@ -287,7 +294,7 @@ describe("executeDepositPlan", () => {
     };
 
     await expect(
-      executeDepositPlan(plan, SOL_CHAIN, CHAINS, "q1", "r1"),
+      run(plan, SOL_CHAIN, SOL_SIGNER),
     ).rejects.toMatchObject({
       code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
     });
@@ -302,7 +309,7 @@ describe("executeDepositPlan", () => {
       chainId: 1,
     };
 
-    const result = await executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1");
+    const result = await run(plan, ETH_CHAIN);
     expect(result).toHaveProperty("orderId");
   });
 
@@ -321,9 +328,38 @@ describe("executeDepositPlan", () => {
     };
 
     await expect(
-      executeDepositPlan(plan, ETH_CHAIN, CHAINS, "q1", "r1"),
+      run(plan, ETH_CHAIN),
     ).rejects.toMatchObject({
       code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
     });
+  });
+
+  it("rejects an EVM source paired with a Solana signer (family guard, no submit)", async () => {
+    const plan: ContractCallDepositPlan = {
+      kind: "CONTRACT_CALL",
+      approvals: [
+        {
+          type: "eip1193_request",
+          request: {
+            method: "eth_sendTransaction",
+            params: [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: "0x0" }],
+          },
+          deposit: true,
+        },
+      ],
+    };
+    // EVM source dispatches to the EVM executor, whose family guard rejects a
+    // Solana signer before any broadcast — never falls back to a primary wallet.
+    await expect(run(plan, ETH_CHAIN, SOL_SIGNER)).rejects.toMatchObject({
+      code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
+    });
+    expect(mockSubmitDeposit).not.toHaveBeenCalled();
+  });
+});
+
+describe("bridge-executor signer regression (5D-protocols p4)", () => {
+  it("bridge-executor.ts no longer imports the zero-arg signer primitives", () => {
+    const src = readFileSync(join(process.cwd(), "src/tools/khalani/bridge-executor.ts"), "utf-8");
+    expect(/\brequireEvmWallet\b/.test(src) || /\brequireSolanaWallet\b/.test(src)).toBe(false);
   });
 });

@@ -5,6 +5,7 @@
 import { getKhalaniClient } from "@tools/khalani/client.js";
 import {
   getCachedKhalaniChains,
+  getChainFamily,
   resolveChainId,
 } from "@tools/khalani/chains.js";
 import {
@@ -18,7 +19,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
-import { resolveSelectedAddress } from "../../../internal/wallet/resolve.js";
+import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
@@ -145,7 +146,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     };
   },
 
-  "khalani.quote.get": async (params) => {
+  "khalani.quote.get": async (params, context) => {
     const fromChain = str(params, "fromChain");
     const toChain = str(params, "toChain");
     const fromToken = str(params, "fromToken");
@@ -156,6 +157,38 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
     }
 
+    // Per-session wallet scope (5D-protocols p4) — the quote uses the session's
+    // selected source/dest wallets, not the primary. Read-only (no signing).
+    const chains = await getCachedKhalaniChains();
+    let fromFamily: "eip155" | "solana";
+    let toFamily: "eip155" | "solana";
+    try {
+      fromFamily = getChainFamily(resolveChainId(fromChain, chains), chains);
+      toFamily = getChainFamily(resolveChainId(toChain, chains), chains);
+    } catch (err) {
+      return { success: false, output: err instanceof Error ? err.message : String(err) };
+    }
+    const explicitFrom = str(params, "fromAddress") || undefined;
+    let fromAddress: string;
+    try {
+      fromAddress = resolveSelectedAddress(context.walletResolution, context.walletPolicy, fromFamily);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (
+      context.walletResolution.source === "session" && explicitFrom
+      && !walletAddressesEqual(familyToInventory(fromFamily), explicitFrom, fromAddress)
+    ) {
+      return { success: false, output: "The provided fromAddress does not match the session's selected wallet for the source chain." };
+    }
+    const explicitRecipient = str(params, "recipient") || undefined;
+    let recipient: string;
+    try {
+      recipient = explicitRecipient ?? resolveSelectedAddress(context.walletResolution, context.walletPolicy, toFamily);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+
     const prepared = await prepareQuoteRequest({
       fromChain,
       fromToken,
@@ -163,8 +196,8 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       toToken,
       amount,
       tradeType: str(params, "tradeType") || undefined,
-      fromAddress: str(params, "fromAddress") || undefined,
-      recipient: str(params, "recipient") || undefined,
+      fromAddress,
+      recipient,
       refundTo: str(params, "refundTo") || undefined,
       referrer: str(params, "referrer") || undefined,
       referrerFeeBps: str(params, "referrerFeeBps") || undefined,
