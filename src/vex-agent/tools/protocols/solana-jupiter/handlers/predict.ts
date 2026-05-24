@@ -20,6 +20,7 @@ import { JUPITER_PREDICTION_USDC_MINT } from "@tools/solana-ecosystem/jupiter/ju
 import type { ProtocolHandler } from "../../types.js";
 import { str, num, ok, fail, enumField } from "../../handler-helpers.js";
 import { walletAddress, walletSecret } from "./core.js";
+import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 
 // ── SDK enum mirrors ──────────────────────────────────────────────
 // Source: `JupiterPredictionCategory` + `JupiterPredictionFilter` in
@@ -50,17 +51,31 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     if (!id) return fail("Missing required: marketId");
     return ok(await getJupiterPredictionMarket(id));
   },
-  "solana.predict.positions": async (p) => ok(await getJupiterPredictionPositions({ ownerPubkey: walletAddress(p) })),
-  "solana.predict.history": async (p) => {
+  "solana.predict.positions": async (p, ctx) => {
+    let owner: string;
+    try {
+      owner = walletAddress(p, ctx);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    return ok(await getJupiterPredictionPositions({ ownerPubkey: owner }));
+  },
+  "solana.predict.history": async (p, ctx) => {
+    let owner: string;
+    try {
+      owner = walletAddress(p, ctx);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
     const start = num(p, "offset") ?? 0;
     const limit = num(p, "limit") ?? 10;
     return ok(await getJupiterPredictionHistory({
-      ownerPubkey: walletAddress(p),
+      ownerPubkey: owner,
       start,
       end: start + limit,
     }));
   },
-  "solana.predict.buy": async (p) => {
+  "solana.predict.buy": async (p, ctx) => {
     const marketId = str(p, "marketId"), side = str(p, "side");
     const amount = num(p, "amountUsdc");
     if (!marketId || !side || amount == null) return fail("Missing required: marketId, side, amountUsdc");
@@ -68,7 +83,15 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     if (normalizedSide !== "yes" && normalizedSide !== "no") return fail('side must be "yes" or "no"');
     const isYes = normalizedSide === "yes";
     const depositAmount = Math.round(amount * 1_000_000);
-    const result = await executeJupiterPredictionCreateOrder(walletSecret(), {
+    // Resolve owner + signer BEFORE broadcast (5D-protocols p2).
+    let addr: string, secret: Uint8Array;
+    try {
+      addr = walletAddress(p, ctx);
+      secret = walletSecret(ctx);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await executeJupiterPredictionCreateOrder(secret, {
       marketId, isYes, isBuy: true, depositAmount, depositMint: JUPITER_PREDICTION_USDC_MINT,
     });
     const positionPubkey = result.raw.order.positionPubkey;
@@ -81,7 +104,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
         positionPubkey,
         _tradeCapture: {
           type: "prediction", chain: "solana", status: "open",
-          walletAddress: walletAddress(p), tradeSide: "buy",
+          walletAddress: addr, tradeSide: "buy",
           positionKey: positionPubkey, instrumentKey: `solana:predict:${marketId}:${normalizedSide}`,
           inputValueUsd: order.orderCostUsd,
           unitPriceUsd: order.newAvgPriceUsd,
@@ -93,10 +116,17 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
       },
     };
   },
-  "solana.predict.sell": async (p) => {
+  "solana.predict.sell": async (p, ctx) => {
     const pk = str(p, "positionPubkey");
     if (!pk) return fail("Missing required: positionPubkey");
-    const result = await executeJupiterPredictionClosePosition(walletSecret(), pk);
+    let addr: string, secret: Uint8Array;
+    try {
+      addr = walletAddress(p, ctx);
+      secret = walletSecret(ctx);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await executeJupiterPredictionClosePosition(secret, pk);
     const order = result.raw.order;
     const outcome = order.isYes ? "yes" : "no";
     return {
@@ -106,7 +136,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
         ...result,
         _tradeCapture: {
           type: "prediction", chain: "solana", status: "closed",
-          walletAddress: walletAddress(p), tradeSide: "sell",
+          walletAddress: addr, tradeSide: "sell",
           positionKey: pk,
           instrumentKey: `solana:predict:${order.marketId}:${outcome}`,
           inputValueUsd: order.orderCostUsd,
@@ -119,10 +149,17 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
       },
     };
   },
-  "solana.predict.claim": async (p) => {
+  "solana.predict.claim": async (p, ctx) => {
     const pk = str(p, "positionPubkey");
     if (!pk) return fail("Missing required: positionPubkey");
-    const result = await executeJupiterPredictionClaimPosition(walletSecret(), pk);
+    let addr: string, secret: Uint8Array;
+    try {
+      addr = walletAddress(p, ctx);
+      secret = walletSecret(ctx);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await executeJupiterPredictionClaimPosition(secret, pk);
     const pos = result.raw.position;
     const outcome = pos.isYes ? "yes" : "no";
     return {
@@ -132,7 +169,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
         ...result,
         _tradeCapture: {
           type: "prediction", chain: "solana", status: "claimed",
-          walletAddress: walletAddress(p), positionKey: pk,
+          walletAddress: addr, positionKey: pk,
           outputValueUsd: pos.payoutAmountUsd,
           valuationSource: "prediction_exact",
           settlementAssetKey: "USDC",
@@ -143,9 +180,16 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
       },
     };
   },
-  "solana.predict.closeAll": async (p) => {
-    const result = await executeJupiterPredictionCloseAllPositions(walletSecret());
-    const wallet = walletAddress(p);
+  "solana.predict.closeAll": async (p, ctx) => {
+    // Resolve owner + signer BEFORE broadcast (5D-protocols p2).
+    let wallet: string, secret: Uint8Array;
+    try {
+      wallet = walletAddress(p, ctx);
+      secret = walletSecret(ctx);
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const result = await executeJupiterPredictionCloseAllPositions(secret);
 
     const captureItems = result.results.map(item => {
       let pk: string | undefined;

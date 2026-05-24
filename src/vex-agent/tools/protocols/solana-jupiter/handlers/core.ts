@@ -20,21 +20,41 @@ import {
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/service.js";
 import { classifySolanaSwap } from "@tools/solana-ecosystem/shared/swap-classify.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
-import { requireSolanaWallet } from "@tools/wallet/multi-auth.js";
+import type { ChainWallet } from "@tools/wallet/multi-auth.js";
+import { walletAddressesEqual } from "@tools/wallet/inventory.js";
+import { VexError, ErrorCodes } from "../../../../../errors.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 
-import type { ProtocolHandler } from "../../types.js";
+import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 // ── Shared helpers (exported for predict + lend handlers) ───────
 
-export function walletAddress(p: Record<string, unknown>): string {
+export function walletAddress(p: Record<string, unknown>, ctx: ProtocolExecutionContext): string {
   const explicit = str(p, "address");
-  if (explicit) return explicit;
-  return requireSolanaWallet().address;
+  if (ctx.walletResolution.source === "session") {
+    // Session authority: the selected Solana wallet is the only valid owner.
+    // An explicit (renderer/LLM-supplied) address that differs is rejected — it
+    // must never override session scope.
+    const selected = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "solana");
+    if (explicit && !walletAddressesEqual("solana", explicit, selected)) {
+      throw new VexError(
+        ErrorCodes.WALLET_SCOPE_MISMATCH,
+        "The provided address does not match the session's selected Solana wallet.",
+      );
+    }
+    return selected;
+  }
+  // source:"default" (CLI/MCP) — explicit override preserved; else the primary.
+  return explicit || resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "solana");
 }
 
-export function walletSecret(): Uint8Array {
-  return requireSolanaWallet().secretKey;
+export function walletSecret(ctx: ProtocolExecutionContext): Uint8Array {
+  const signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "solana");
+  if (signer.family !== "solana") {
+    throw new VexError(ErrorCodes.WALLET_SCOPE_MISMATCH, "Resolved wallet family mismatch (expected solana).");
+  }
+  return signer.secretKey;
 }
 
 // ── Category routing for tokens.trending ─────────────────────────
@@ -91,12 +111,19 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const { quote } = await getJupiterSwapQuote(input, output, amount, { slippageBps: num(p, "slippageBps") });
     return ok(quote);
   },
-  "solana.swap.execute": async (p) => {
+  "solana.swap.execute": async (p, ctx) => {
     const input = str(p, "inputToken"), output = str(p, "outputToken");
     const amount = num(p, "amount");
     if (!input || !output || amount == null) return fail("Missing required: inputToken, outputToken, amount");
-    const wallet = requireSolanaWallet();
-    const result = await executeJupiterSwap(input, output, amount, wallet.secretKey, { slippageBps: num(p, "slippageBps") });
+    // Session signing wallet (5D-protocols p2) — execute has no preview path.
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "solana");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    if (signer.family !== "solana") return fail("Resolved wallet family mismatch.");
+    const result = await executeJupiterSwap(input, output, amount, signer.secretKey, { slippageBps: num(p, "slippageBps") });
     const cls = classifySolanaSwap(result.inputToken.address, result.outputToken.address);
     const hasExactUsdValue = result.order.inUsdValue != null || result.order.outUsdValue != null;
 
@@ -132,7 +159,7 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
           inputToken: result.inputToken.symbol, outputToken: result.outputToken.symbol,
           inputTokenAddress: result.inputToken.address, outputTokenAddress: result.outputToken.address,
           inputAmount: result.inputAmountRaw, outputAmount: result.outputAmountRaw,
-          signature: result.signature, walletAddress: wallet.address,
+          signature: result.signature, walletAddress: signer.address,
           tradeSide: cls.tradeSide, instrumentKey: `solana:${cls.instrumentMint}`,
           inputValueUsd: result.order.inUsdValue != null ? String(result.order.inUsdValue) : undefined,
           outputValueUsd: result.order.outUsdValue != null ? String(result.order.outUsdValue) : undefined,

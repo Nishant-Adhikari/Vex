@@ -24,9 +24,8 @@ const SIGNER_RE = /\b(requireEvmWallet|requireSolanaWallet|requireWalletForChain
 // Un-migrated protocol signers, hard-denied under source:"session" by the
 // runtime guard. Paths relative to src/vex-agent/tools.
 const ALLOWLIST = new Set([
-  // kyberswap migrated in 5D-protocols p1 (now resolve session signing wallet).
+  // kyberswap migrated p1, solana-jupiter migrated p2 — only polymarket remains.
   "protocols/polymarket/handlers-clob.ts",
-  "protocols/solana-jupiter/handlers/core.ts",
 ]);
 
 function walk(dir: string): string[] {
@@ -71,6 +70,7 @@ describe("signer import allowlist", () => {
       "protocols/kyberswap/handlers/swap.ts",
       "protocols/kyberswap/handlers/zap.ts",
       "protocols/kyberswap/handlers/limit-order.ts",
+      "protocols/solana-jupiter/handlers/core.ts",
     ];
     for (const rel of migrated) {
       const src = readFileSync(join(TOOLS_DIR, rel), "utf-8");
