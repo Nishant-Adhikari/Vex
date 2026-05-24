@@ -1,11 +1,12 @@
 /**
- * Protocol wallet-scope deny-guard (puzzle 5 phase 5B).
+ * Protocol wallet-scope (puzzle 5 phase 5D-protocols p5).
  *
- * Under `source:"session"`, protocol tools that sign with the user wallet
- * (actionKind user_wallet_broadcast OR external_post) are hard-denied BEFORE
- * the handler — until 5D-protocols migrates them to session resolution. The
- * guard keys on `manifest.actionKind` so a preview/dryRun is denied too.
- * `source:"default"` (CLI/MCP) and `read` tools are never denied.
+ * The 5B hard-deny for user-wallet signing tools (actionKind
+ * user_wallet_broadcast / external_post) under `source:"session"` was LIFTED in
+ * p5: every protocol signer now resolves the session's selected wallet and fails
+ * closed on an unselected family. So under a session, signing tools must now
+ * REACH the handler (authorization = approval gate + handler-level resolution),
+ * exactly like `read` tools and `source:"default"` always have.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -73,39 +74,40 @@ beforeEach(() => {
   vi.mocked(catalog.getProtocolHandler).mockReset();
 });
 
-describe("protocol wallet-scope deny-guard", () => {
+describe("protocol wallet-scope (deny-guard lifted in 5D-protocols p5)", () => {
   for (const actionKind of ["user_wallet_broadcast", "external_post"] as const) {
-    it(`denies ${actionKind} under source:session, before the handler`, async () => {
+    it(`no longer denies ${actionKind} under source:session — handler is reached`, async () => {
       vi.mocked(catalog.getProtocolManifest).mockReturnValue(
         makeManifest({ toolId: "x.sign", mutating: true, actionKind }),
       );
-      const handler = vi.fn();
+      const handler = vi.fn().mockResolvedValue({ success: true, output: "ok" });
       vi.mocked(catalog.getProtocolHandler).mockReturnValue(handler);
 
       const result = await executeProtocolTool({ toolId: "x.sign", params: {} }, SESSION_CTX);
 
-      expect(result.success).toBe(false);
-      expect(result.output).toContain("wallet-scoped session");
-      expect(handler).not.toHaveBeenCalled();
+      // The 5B hard-deny is gone: signing tools now reach the handler under a
+      // session (the handler resolves the session wallet + fails closed itself).
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+      expect(result.output).not.toContain("wallet-scoped session");
     });
   }
 
-  it("denies a PREVIEW of a signing tool under session (keyed on manifest.actionKind)", async () => {
+  it("no longer denies a PREVIEW of a signing tool under session", async () => {
     vi.mocked(captureValidator.isPreviewExecution).mockReturnValue(true);
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(
       makeManifest({ toolId: "x.sign", mutating: true, actionKind: "user_wallet_broadcast" }),
     );
-    const handler = vi.fn();
+    const handler = vi.fn().mockResolvedValue({ success: true, output: "ok" });
     vi.mocked(catalog.getProtocolHandler).mockReturnValue(handler);
 
     const result = await executeProtocolTool({ toolId: "x.sign", params: {} }, SESSION_CTX);
 
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("wallet-scoped session");
-    expect(handler).not.toHaveBeenCalled();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
   });
 
-  it("does NOT deny a read tool under session", async () => {
+  it("a read tool under session reaches the handler", async () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(
       makeManifest({ toolId: "x.read", actionKind: "read" }),
     );
@@ -118,7 +120,7 @@ describe("protocol wallet-scope deny-guard", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT deny a signing tool under source:default (CLI/MCP)", async () => {
+  it("a signing tool under source:default (CLI/MCP) reaches the handler", async () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(
       makeManifest({ toolId: "x.sign", mutating: true, actionKind: "user_wallet_broadcast" }),
     );

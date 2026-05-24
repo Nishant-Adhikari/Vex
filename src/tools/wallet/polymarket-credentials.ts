@@ -1,6 +1,15 @@
 /**
  * Polymarket CLOB API credential derivation — canonical source of truth.
  *
+ * Moved out of `src/tools/polymarket/` in puzzle 5 phase 5D-protocols p5 (Codex
+ * ruling): this is primary-bound credential SETUP (sign an EIP-712 ClobAuth with
+ * the wallet keystore → derive/create API creds → persist), NOT session-scoped
+ * protocol trading. It legitimately decrypts the keystore, so it lives in a
+ * wallet module — keeping protocol paths free of keystore/decrypt imports (the
+ * keystore-isolation scan stays strict-empty for protocol code). Per-wallet
+ * Polymarket creds (vs the current primary-bound creds) is a separate future
+ * design (storage/rotation/invalidation), not in scope here.
+ *
  * Flow: wallet keystore → EIP-712 ClobAuth signature → derive/create API key → save to encrypted vault
  * Used by:
  *   - CLI `vex polymarket setup` + vex-agent internal tool (legacy env-driven path)
@@ -23,9 +32,9 @@
  */
 
 import type { Address, Hex } from "viem";
-import { loadKeystore, decryptPrivateKey } from "../wallet/keystore.js";
+import { loadKeystore, decryptPrivateKey } from "./keystore.js";
 import { loadConfig } from "../../config/store.js";
-import { getPrimaryEvmAddress } from "../wallet/inventory.js";
+import { getPrimaryEvmAddress } from "./inventory.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import {
@@ -41,7 +50,7 @@ import {
   ENV_POLYMARKET_API_KEY,
   ENV_POLYMARKET_API_SECRET,
   ENV_POLYMARKET_PASSPHRASE,
-} from "./constants.js";
+} from "../polymarket/constants.js";
 
 // ── EIP-712 ClobAuth domain + types (from Polymarket docs) ─────────
 

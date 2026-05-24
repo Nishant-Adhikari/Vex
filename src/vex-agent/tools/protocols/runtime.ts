@@ -85,28 +85,16 @@ export async function executeProtocolTool(
     walletPolicy: context.walletPolicy ?? { kind: "none" },
   };
 
-  // Per-session wallet scope (puzzle 5 phase 5B): protocol tools that sign with
-  // the user wallet are NOT yet migrated to session-scoped resolution, so under
-  // a session scope they would fall back to the PRIMARY wallet. Hard-deny them
-  // here — before the approval gate and the handler — until 5D-protocols
-  // migrates them. Keyed on `manifest.actionKind` (NOT effectiveActionKind): a
-  // preview/dryRun of a signing tool must be denied too. Both broadcast AND
-  // external_post sign (EIP-712 gasless orders), so both are covered.
-  if (
-    scopedContext.walletResolution.source === "session"
-    && (manifest.actionKind === "user_wallet_broadcast" || manifest.actionKind === "external_post")
-  ) {
-    logger.info("protocol.execute.wallet_scope_denied", {
-      toolId: request.toolId,
-      actionKind: manifest.actionKind,
-    });
-    return withActionKind({
-      success: false,
-      output:
-        `${request.toolId} is not available in a wallet-scoped session yet. `
-        + `Per-session wallet support for protocol tools lands in a later stage.`,
-    }, effectiveActionKind);
-  }
+  // Per-session wallet scope (puzzle 5): the 5B hard-deny for user-wallet signing
+  // tools (actionKind user_wallet_broadcast / external_post) was LIFTED in
+  // 5D-protocols p5. Every protocol signer now resolves the session's selected
+  // wallet (resolveSigningWallet / resolveSelectedAddress) and fails closed on an
+  // unselected family or address drift — there is no fallback to the primary
+  // wallet. Authorization is the approval gate below plus handler-level wallet
+  // resolution; no second global gate is needed. The signer-import + keystore
+  // scans (src/vex-agent/tools + src/tools/**) prevent a signer from regressing
+  // to the primary wallet under a session, and the actionKind census test forces
+  // a review if a new signing kind (e.g. provider_action_request) ever appears.
 
   // Note: `manifest.lifecycle` is always "active" after PR1 narrowed the
   // ToolLifecycle union; no runtime lifecycle gate at the per-tool level.

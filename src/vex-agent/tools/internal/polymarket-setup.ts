@@ -20,7 +20,7 @@ export async function handlePolymarketSetup(
   }
 
   try {
-    const { deriveAndSavePolymarketCredentials } = await import("@tools/polymarket/derive-credentials.js");
+    const { deriveAndSavePolymarketCredentials } = await import("@tools/wallet/polymarket-credentials.js");
     const result = await deriveAndSavePolymarketCredentials();
 
     return ok({

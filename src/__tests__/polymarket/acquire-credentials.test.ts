@@ -53,7 +53,7 @@ vi.mock("viem/chains", () => ({
 }));
 
 const { acquirePolymarketCredentialsWithPassword } = await import(
-  "../../tools/polymarket/derive-credentials.js"
+  "../../tools/wallet/polymarket-credentials.js"
 );
 
 const VALID_KEYSTORE = {

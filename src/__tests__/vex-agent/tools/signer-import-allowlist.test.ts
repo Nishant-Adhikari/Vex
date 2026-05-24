@@ -90,8 +90,76 @@ describe("signer import allowlist", () => {
       }
     }
     const outside = [...seen].filter((k) => !allowedKinds.has(k));
-    // A new signing-capable actionKind outside {user_wallet_broadcast,
-    // external_post} would bypass the runtime deny-guard — review it there.
+    // The 5B deny-guard is gone (lifted in 5D-protocols p5), but a NEW signing
+    // actionKind (e.g. provider_action_request, which has no backend signer)
+    // must still force a deliberate review here before it can reach a handler.
     expect(outside).toEqual([]);
+  });
+});
+
+// ── src/tools/** protocol-client signer scan (5D-protocols p5) ──────
+// The shared protocol clients (khalani/bridge-executor, polymarket/clob/client,
+// kyberswap, solana-ecosystem) must not resolve the zero-arg primary wallet
+// either. `multi-auth.ts` DEFINES the primitives (export, not import) — the
+// import-line check excludes it.
+const SRC_TOOLS_DIR = join(process.cwd(), "src/tools");
+
+describe("src/tools signer import scan", () => {
+  it("no src/tools file imports the zero-arg signer primitives", () => {
+    const offenders: string[] = [];
+    for (const file of walk(SRC_TOOLS_DIR)) {
+      if (importsSigner(readFileSync(file, "utf-8"))) {
+        offenders.push(file.slice(SRC_TOOLS_DIR.length + 1).split("\\").join("/"));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+// ── Keystore/decrypt isolation in protocol paths (5D-protocols p5) ──
+// Protocol code must reach signing material ONLY via the resolve helpers
+// (resolveSigningWallet / resolveSelectedAddress in internal/wallet/resolve.ts).
+// Direct imports of secret-loading / keystore / zero-arg-signer symbols are
+// banned in protocol paths. Pure helpers (walletAddressesEqual, familyToInventory)
+// and the `type ChainWallet` import are NOT secret-loading and stay allowed.
+const PROTOCOL_PATHS = [
+  "src/vex-agent/tools/protocols",
+  "src/tools/khalani",
+  "src/tools/polymarket",
+  "src/tools/kyberswap",
+  "src/tools/solana-ecosystem",
+].map((p) => join(process.cwd(), p));
+
+const BANNED_SIGNING_SYMBOLS = [
+  "decryptPrivateKey", "decryptSecretBytes", "decryptSolanaSecretKey",
+  "loadKeystore", "loadKeystoreFile", "loadSolanaKeystore",
+  "loadEvmSecret", "loadSolanaSecret", "loadEvmKey",
+  "loadWalletFromEntry",
+  "requireEvmWallet", "requireSolanaWallet", "requireWalletForChain",
+  "createEvmWalletEntry", "importEvmWalletEntry",
+  "createSolanaWalletEntry", "importSolanaWalletEntry",
+];
+const BANNED_RE = new RegExp(`\\b(${BANNED_SIGNING_SYMBOLS.join("|")})\\b`);
+
+describe("protocol-path keystore/decrypt isolation", () => {
+  it("protocol code never imports secret-loading or zero-arg signer symbols", () => {
+    const offenders: string[] = [];
+    for (const root of PROTOCOL_PATHS) {
+      let files: string[];
+      try {
+        files = walk(root);
+      } catch {
+        continue; // path absent — skip
+      }
+      for (const file of files) {
+        const importLines = readFileSync(file, "utf-8")
+          .split("\n")
+          .filter((l) => l.trim().startsWith("import"));
+        if (importLines.some((l) => BANNED_RE.test(l))) {
+          offenders.push(file.slice(process.cwd().length + 1).split("\\").join("/"));
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
