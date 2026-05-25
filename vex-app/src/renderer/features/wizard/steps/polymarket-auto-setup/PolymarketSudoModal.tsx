@@ -45,6 +45,12 @@ import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
 
 export interface PolymarketSudoModalProps {
+  /**
+   * EVM wallet to derive credentials for (puzzle 5 B-UI). Omitted = the
+   * primary EVM wallet. Threaded straight into the IPC payload; the main
+   * handler resolves it through the config inventory and is the authority.
+   */
+  readonly walletId?: string;
   readonly overwriteConfirmed: boolean;
   readonly onSuccess: (result: PolymarketAutoSetupResult) => void;
   readonly onClose: () => void;
@@ -75,6 +81,7 @@ function LockIcon(): JSX.Element {
 }
 
 export function PolymarketSudoModal({
+  walletId,
   overwriteConfirmed,
   onSuccess,
   onClose,
@@ -112,6 +119,9 @@ export function PolymarketSudoModal({
           password,
           riskAcknowledged: true,
           overwriteConfirmed,
+          // Only include `walletId` when a non-primary wallet is selected so
+          // the primary path keeps the exact pre-B-UI payload shape.
+          ...(walletId !== undefined ? { walletId } : {}),
         });
 
         if (!result.ok) {
@@ -154,6 +164,7 @@ export function PolymarketSudoModal({
       onRiskConfirmationRequired,
       onSuccess,
       overwriteConfirmed,
+      walletId,
       wipePasswordField,
     ],
   );

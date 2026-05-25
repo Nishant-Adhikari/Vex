@@ -138,11 +138,16 @@ export type PolymarketStatus = z.infer<typeof polymarketStatusSchema>;
 // the secret material) — logging contracts forbid prefix previews even
 // when redacted. The renderer surfaces "Configured" + the address, then
 // reads canonical names via envState.
+// `walletId` (puzzle 5 B-UI) selects WHICH EVM wallet to derive credentials
+// for. Omitted = the primary EVM wallet (keeps the pre-B-UI renderer call
+// valid). The renderer-supplied id is the authority — the handler resolves it
+// through the config-backed inventory and NEVER trusts a renderer address.
 export const polymarketAutoSetupInputSchema = z
   .object({
     password: z.string().min(PASSWORD_MIN_LENGTH),
     riskAcknowledged: z.literal(true),
     overwriteConfirmed: z.boolean().default(false),
+    walletId: z.string().optional(),
   })
   .strict();
 export type PolymarketAutoSetupInput = z.infer<
@@ -157,4 +162,19 @@ export const polymarketAutoSetupResultSchema = z
   .strict();
 export type PolymarketAutoSetupResult = z.infer<
   typeof polymarketAutoSetupResultSchema
+>;
+
+// ── Polymarket configured addresses (puzzle 5 B-UI) ───────────────────────
+//
+// Lowercased EVM addresses that currently have Polymarket CLOB credentials in
+// the vault (map keys + legacy-primary fallback). PUBLIC ADDRESSES ONLY — the
+// renderer uses this to mark each wallet ✓ configured / ◦ not. No credential
+// material crosses this boundary.
+export const polymarketConfiguredAddressesResultSchema = z
+  .object({
+    addresses: z.array(evmAddressSchema),
+  })
+  .strict();
+export type PolymarketConfiguredAddressesResult = z.infer<
+  typeof polymarketConfiguredAddressesResultSchema
 >;

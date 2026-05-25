@@ -7,42 +7,58 @@
  * a `riskAcknowledged: true` hard literal and an `overwriteConfirmed`
  * boolean for the "credentials already exist" branch.
  *
+ * Per-wallet (puzzle 5 B-UI): the renderer may pass `walletId` to target a
+ * specific EVM wallet; omitted = the primary. The credentials are merged into
+ * the per-address `POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS` map (primary ALSO
+ * refreshes the 3 fixed legacy keys) via the shared `buildPolymarketVaultUpdates`.
+ *
  * Flow per locked spec (Codex-approved):
  *   1. Schema validation runs automatically inside `registerHandler`.
  *   2. Vault session must be unlocked. The handler does NOT prompt for an
  *      unlock; the renderer is expected to gate the action behind
  *      `getSecretSessionStatus().unlocked`.
- *   3. EVM keystore must exist on disk. Missing → `wallet.keystore_missing`.
- *   4. Pre-network overwrite check (UX). If all three Polymarket secrets
- *      are already present and the renderer did NOT pass
+ *   3. Resolve the TARGET wallet from `input.walletId` (or primary). A null
+ *      entry → `wallet.not_found`, FAIL CLOSED before re-auth/acquire/network.
+ *      The renderer-supplied id is the authority — never a renderer address.
+ *   4. Pre-network overwrite check (UX), PER SELECTED WALLET. If the selected
+ *      wallet already has credentials (its lowercased address is in
+ *      `getConfiguredPolymarketAddresses()`) and the renderer did NOT pass
  *      `overwriteConfirmed: true`, return `wallet.risk_confirmation_required`
- *      BEFORE making any network call. This avoids burning a Polymarket
- *      API request when the user has not confirmed.
+ *      BEFORE any network call.
  *   5. Sudo-style re-auth via `verifySecretVaultPassword`. Wrong password →
  *      `wallet.password_invalid`. No session-state mutation, no KDF upgrade.
- *   6. Acquire credentials OUTSIDE the env-write lock — the network call
- *      runs without holding the serialiser. Engine `VexError` codes map to
- *      public error codes per the policy comment below.
+ *   6. Acquire credentials OUTSIDE the env-write lock, WITH the resolved entry
+ *      (acquire asserts the keystore derives the entry's address before
+ *      signing). Engine `VexError` codes map to public codes below.
  *   7. Persist UNDER `withEnvWriteLock` so this cannot interleave with
  *      keystoreSet / apiKeysSet / embeddingConfigure / agentCoreConfigure.
- *      A second presence probe runs INSIDE the lock to close the TOCTOU
- *      race against a concurrent vault write that landed between (4) and
- *      this point.
+ *      A second PER-WALLET configured-probe runs INSIDE the lock to close the
+ *      TOCTOU race against a concurrent vault write that landed between (4)
+ *      and this point. The write keys are computed by the shared
+ *      `buildPolymarketVaultUpdates` (map merge + primary-only fixed keys).
  *   8. Drop the credentials reference as soon as the write returns. JS
  *      strings are immutable so we can't zeroize the buffer — minimising
  *      lifetime is the strongest in-process defense.
  *   9. Audit log records the wallet address + correlationId only. NEVER
- *      the credentials or any prefix preview.
+ *      the credentials, the walletId, or any prefix preview.
  *
  * Logging contract (mirrors Codex-locked api-keys logging rule):
  *   - log only `address=<X>` + `correlationId=<id>` on success
  *   - NEVER values, lengths, or prefix/suffix previews
  */
 
+import { getAddress } from "viem";
 import {
   acquirePolymarketCredentialsWithPassword,
+  buildPolymarketVaultUpdates,
+  ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS,
 } from "@vex-lib/polymarket.js";
-import { loadKeystore } from "@vex-lib/wallet.js";
+import {
+  getPrimaryEvmAddress,
+  getPrimaryEvmEntry,
+  getWalletById,
+  type WalletInventoryEntry,
+} from "@vex-lib/wallet.js";
 import {
   LocalSecretVaultError,
   verifySecretVaultPassword,
@@ -57,8 +73,8 @@ import {
 import { withEnvWriteLock } from "../../onboarding/env-write-mutex.js";
 import { SECRETS_VAULT_FILE } from "../../paths/config-dir.js";
 import {
+  getConfiguredPolymarketAddresses,
   getSecretSessionStatus,
-  getUnlockedSecretPresence,
   writeUnlockedSecrets,
 } from "../../secrets/session.js";
 import { log } from "../../logger/index.js";
@@ -122,6 +138,19 @@ function keystoreCorruptError(correlationId: string): VexError {
     domain: "wallet",
     message:
       "Wallet keystore is corrupt. Restore from backup or regenerate before configuring Polymarket.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  };
+}
+
+function walletNotFoundError(correlationId: string): VexError {
+  return {
+    code: "wallet.not_found",
+    domain: "wallet",
+    message:
+      "The selected EVM wallet was not found. Re-select a wallet and try again.",
     retryable: false,
     userActionable: true,
     redacted: true,
@@ -228,14 +257,23 @@ type PersistOutcome =
   | { readonly kind: "race_confirmation_required" }
   | { readonly kind: "write_failed"; readonly error: VexError };
 
-function isPolymarketTrioConfigured(
-  presence: ReturnType<typeof getUnlockedSecretPresence>,
-): boolean {
-  return Boolean(
-    presence.secrets.POLYMARKET_API_KEY &&
-      presence.secrets.POLYMARKET_API_SECRET &&
-      presence.secrets.POLYMARKET_PASSPHRASE,
-  );
+/**
+ * Per-wallet "already configured" probe (puzzle 5 B-UI). Resolves the lowercased
+ * configured-address set via `getConfiguredPolymarketAddresses()` and reports
+ * whether the SELECTED wallet is already present. Returns the helper's error
+ * Result on failure (locked session, malformed map → fail closed) so the caller
+ * can short-circuit before any network/write. Used for BOTH the pre-network
+ * gate and the under-lock TOCTOU recheck so the rule cannot drift.
+ */
+function isWalletConfigured(
+  entry: WalletInventoryEntry,
+):
+  | { readonly kind: "ok"; readonly configured: boolean }
+  | { readonly kind: "error"; readonly error: VexError } {
+  const result = getConfiguredPolymarketAddresses();
+  if (!result.ok) return { kind: "error", error: result.error };
+  const target = getAddress(entry.address).toLowerCase();
+  return { kind: "ok", configured: result.data.includes(target) };
 }
 
 export function registerPolymarketSetupHandler(): () => void {
@@ -257,46 +295,37 @@ export function registerPolymarketSetupHandler(): () => void {
         return err(sessionLockedError(ctx.requestId));
       }
 
-      // 3. EVM wallet keystore must exist and be parseable ─────────────
-      try {
-        if (loadKeystore() === null) {
-          log.warn(
-            `[ipc:vex:onboarding:polymarketAutoSetup] keystore missing correlationId=${ctx.requestId}`,
-          );
-          return err(keystoreMissingError(ctx.requestId));
-        }
-      } catch (cause: unknown) {
-        const code = getEngineCode(cause);
-        if (code === ENGINE_CODE.KEYSTORE_CORRUPT) {
-          log.error(
-            `[ipc:vex:onboarding:polymarketAutoSetup] keystore corrupt correlationId=${ctx.requestId}`,
-            cause,
-          );
-          return err(keystoreCorruptError(ctx.requestId));
-        }
-        log.error(
-          `[ipc:vex:onboarding:polymarketAutoSetup] keystore load failed correlationId=${ctx.requestId}`,
-          cause,
+      // 3. Resolve the TARGET wallet from the renderer-supplied id ─────
+      // `walletId` omitted → the primary EVM wallet (pre-B-UI behavior);
+      // otherwise the specific inventory entry. The id is the authority —
+      // we resolve through the config inventory and NEVER trust a
+      // renderer-supplied address. A null entry fails CLOSED here, BEFORE
+      // any password re-auth / acquire / network (Codex B-UI binding).
+      const entry: WalletInventoryEntry | null = input.walletId
+        ? getWalletById("evm", input.walletId)
+        : getPrimaryEvmEntry();
+      if (entry === null) {
+        log.warn(
+          `[ipc:vex:onboarding:polymarketAutoSetup] wallet not found correlationId=${ctx.requestId}`,
         );
-        return err(keystoreMissingError(ctx.requestId));
+        return err(walletNotFoundError(ctx.requestId));
       }
 
-      // 4. Pre-network overwrite check ─────────────────────────────────
-      // `getUnlockedSecretPresence()` self-relocks the session if its internal
-      // decrypt probe fails. If the session relocked between step 2 and here,
-      // abort BEFORE the network call so we never burn a Polymarket API
-      // request whose write would then fail.
-      const initialPresence = getUnlockedSecretPresence();
-      if (!initialPresence.unlocked) {
+      // 4. Pre-network overwrite check — PER SELECTED WALLET ───────────
+      // `getConfiguredPolymarketAddresses()` requires the unlocked session
+      // (returns wallet.keystore_locked if it relocked between step 2 and
+      // here) and fails CLOSED on a malformed map. The selected wallet is
+      // "already configured" iff its lowercased address is in that set; if
+      // so and the renderer did not confirm overwrite, abort BEFORE the
+      // network call so we never burn a Polymarket API request.
+      const preCheck = isWalletConfigured(entry);
+      if (preCheck.kind === "error") {
         log.warn(
-          `[ipc:vex:onboarding:polymarketAutoSetup] presence probe relocked correlationId=${ctx.requestId}`,
+          `[ipc:vex:onboarding:polymarketAutoSetup] configured-probe failed (pre-network) correlationId=${ctx.requestId} code=${preCheck.error.code}`,
         );
-        return err(sessionLockedError(ctx.requestId));
+        return err({ ...preCheck.error, correlationId: ctx.requestId });
       }
-      if (
-        isPolymarketTrioConfigured(initialPresence) &&
-        !input.overwriteConfirmed
-      ) {
+      if (preCheck.configured && !input.overwriteConfirmed) {
         log.info(
           `[ipc:vex:onboarding:polymarketAutoSetup] overwrite confirmation required correlationId=${ctx.requestId}`,
         );
@@ -347,6 +376,7 @@ export function registerPolymarketSetupHandler(): () => void {
       try {
         acquired = await acquirePolymarketCredentialsWithPassword(
           input.password,
+          entry,
         );
       } catch (cause: unknown) {
         const code = getEngineCode(cause);
@@ -397,26 +427,23 @@ export function registerPolymarketSetupHandler(): () => void {
       // 7. Persist UNDER the env-write lock (with TOCTOU re-check) ─────
       const persistOutcome: PersistOutcome = await withEnvWriteLock(
         async (): Promise<PersistOutcome> => {
-          // Race re-check: a concurrent vault write (e.g. apiKeysSet on
-          // another wizard tab, future Settings rotate flow) could have
-          // landed between the pre-network probe (step 4) and now. If
-          // the trio is now present and overwriteConfirmed is false,
-          // back out without writing.
-          const lockedPresence = getUnlockedSecretPresence();
-          // The probe self-relocks the session on internal failure. If we
-          // hit that path here — between acquire and write — fail closed
-          // so the writeUnlockedSecrets below never runs against a locked
-          // vault.
-          if (!lockedPresence.unlocked) {
+          // Race re-check — PER SELECTED WALLET. A concurrent vault write
+          // (e.g. apiKeysSet on another tab, a Settings rotate flow, or a
+          // parallel auto-setup for the same wallet) could have landed
+          // between the pre-network probe (step 4) and now. Re-resolve the
+          // configured set inside the lock; if the SELECTED wallet is now
+          // present and overwriteConfirmed is false, back out without
+          // writing. The probe also fails CLOSED if the session relocked
+          // mid-flight (returns wallet.keystore_locked) so the write below
+          // never runs against a locked vault.
+          const lockedCheck = isWalletConfigured(entry);
+          if (lockedCheck.kind === "error") {
             return {
               kind: "write_failed",
-              error: sessionLockedError(ctx.requestId),
+              error: { ...lockedCheck.error, correlationId: ctx.requestId },
             };
           }
-          if (
-            isPolymarketTrioConfigured(lockedPresence) &&
-            !input.overwriteConfirmed
-          ) {
+          if (lockedCheck.configured && !input.overwriteConfirmed) {
             return { kind: "race_confirmation_required" };
           }
 
@@ -431,11 +458,29 @@ export function registerPolymarketSetupHandler(): () => void {
             };
           }
 
-          const writeResult = writeUnlockedSecrets({
-            POLYMARKET_API_KEY: acquired.credentials.apiKey,
-            POLYMARKET_API_SECRET: acquired.credentials.secret,
-            POLYMARKET_PASSPHRASE: acquired.credentials.passphrase,
+          // PERSIST: compute isPrimary by comparing the acquired address to
+          // the primary EVM address (guard a null primary), then build the
+          // vault updates via the SHARED helper — NON-primary writes ONLY the
+          // per-address map key (merged); PRIMARY writes the map key + the 3
+          // fixed legacy keys. `buildPolymarketVaultUpdates` is the single
+          // source of truth for key selection (shared with the CLI path).
+          const primaryAddress = getPrimaryEvmAddress();
+          const isPrimary =
+            primaryAddress !== null &&
+            getAddress(primaryAddress) === getAddress(acquired.address);
+          const updates = buildPolymarketVaultUpdates({
+            currentMapEnv:
+              process.env[ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS],
+            address: acquired.address,
+            creds: {
+              apiKey: acquired.credentials.apiKey,
+              apiSecret: acquired.credentials.secret,
+              passphrase: acquired.credentials.passphrase,
+            },
+            isPrimary,
           });
+
+          const writeResult = writeUnlockedSecrets(updates);
           if (!writeResult.ok) {
             return {
               kind: "write_failed",

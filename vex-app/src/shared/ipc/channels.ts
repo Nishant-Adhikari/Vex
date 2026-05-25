@@ -67,6 +67,7 @@ export const CH = {
     walletExportAll: "vex:onboarding:walletExportAll",
     apiKeysSet: "vex:onboarding:apiKeysSet",
     polymarketAutoSetup: "vex:onboarding:polymarketAutoSetup",
+    polymarketConfiguredAddresses: "vex:onboarding:polymarketConfiguredAddresses",
     embeddingConfigure: "vex:onboarding:embeddingConfigure",
     agentCoreConfigure: "vex:onboarding:agentCoreConfigure",
     providerListModels: "vex:onboarding:providerListModels",

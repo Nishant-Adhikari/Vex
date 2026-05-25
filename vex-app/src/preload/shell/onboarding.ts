@@ -157,6 +157,9 @@ export const onboarding = {
       polymarketAutoSetupInputSchema
     );
   },
+  polymarketConfiguredAddresses() {
+    return invokeWithSchema(CH.onboarding.polymarketConfiguredAddresses, {});
+  },
   embeddingConfigure(input: EmbeddingConfigureInput) {
     return invokeWithSchema(
       CH.onboarding.embeddingConfigure,
