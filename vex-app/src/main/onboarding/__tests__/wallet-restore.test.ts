@@ -14,8 +14,9 @@ const mockLoadKeystoreFile = vi.fn();
 const mockDecryptPrivateKey = vi.fn();
 const mockDecryptSolanaSecretKey = vi.fn();
 const mockPrivateKeyToAddress = vi.fn();
-const mockLoadConfig = vi.fn();
-const mockSaveConfig = vi.fn();
+const mockGetPrimaryEvmAddress = vi.fn();
+const mockGetPrimarySolanaAddress = vi.fn();
+const mockRegisterPrimaryLegacyWallet = vi.fn();
 const mockSaveKeystoreFile = vi.fn();
 const mockAutoBackup = vi.fn();
 const mockFsAccess = vi.fn();
@@ -30,8 +31,10 @@ vi.mock("@vex-lib/wallet.js", () => ({
   decryptSolanaSecretKey: (ks: unknown, pwd: string) =>
     mockDecryptSolanaSecretKey(ks, pwd),
   privateKeyToAddress: (pk: string) => mockPrivateKeyToAddress(pk),
-  loadConfig: () => mockLoadConfig(),
-  saveConfig: (cfg: unknown) => mockSaveConfig(cfg),
+  getPrimaryEvmAddress: () => mockGetPrimaryEvmAddress(),
+  getPrimarySolanaAddress: () => mockGetPrimarySolanaAddress(),
+  registerPrimaryLegacyWallet: (family: string, address: string) =>
+    mockRegisterPrimaryLegacyWallet(family, address),
   saveKeystoreFile: (path: string, ks: unknown) =>
     mockSaveKeystoreFile(path, ks),
   autoBackup: () => mockAutoBackup(),
@@ -85,21 +88,21 @@ beforeEach(() => {
   mockDecryptPrivateKey.mockReset();
   mockDecryptSolanaSecretKey.mockReset();
   mockPrivateKeyToAddress.mockReset();
-  mockLoadConfig.mockReset();
-  mockSaveConfig.mockReset();
+  mockGetPrimaryEvmAddress.mockReset();
+  mockGetPrimarySolanaAddress.mockReset();
+  mockRegisterPrimaryLegacyWallet.mockReset();
   mockSaveKeystoreFile.mockReset();
   mockAutoBackup.mockReset();
   mockFsAccess.mockReset();
   mockKeypairFromSecretKey.mockReset();
 
-  // Defaults: file exists, decrypt succeeds, no existing config.
+  // Defaults: file exists, decrypt succeeds, no existing primary wallet.
   mockFsAccess.mockResolvedValue(undefined);
   mockLoadKeystoreFile.mockReturnValue(fakeKeystore);
   mockDecryptPrivateKey.mockReturnValue("0xprivatekey");
   mockPrivateKeyToAddress.mockReturnValue(evmAddress);
-  mockLoadConfig.mockReturnValue({
-    wallet: { address: null, solanaAddress: null },
-  });
+  mockGetPrimaryEvmAddress.mockReturnValue(null);
+  mockGetPrimarySolanaAddress.mockReturnValue(null);
   mockAutoBackup.mockResolvedValue(null);
 });
 
@@ -126,7 +129,10 @@ describe("restoreWalletFromFile (EVM happy path)", () => {
       "/fake/keystore.json",
       fakeKeystore
     );
-    expect(mockSaveConfig).toHaveBeenCalled();
+    expect(mockRegisterPrimaryLegacyWallet).toHaveBeenCalledWith(
+      "evm",
+      evmAddress
+    );
   });
 });
 
@@ -165,7 +171,7 @@ describe("restoreWalletFromFile (validation order)", () => {
     if (!result.ok) expect(result.error.code).toBe("wallet.password_invalid");
     expect(mockAutoBackup).not.toHaveBeenCalled();
     expect(mockSaveKeystoreFile).not.toHaveBeenCalled();
-    expect(mockSaveConfig).not.toHaveBeenCalled();
+    expect(mockRegisterPrimaryLegacyWallet).not.toHaveBeenCalled();
   });
 
   it("maps malformed-keystore VexError(KEYSTORE_CORRUPT) to wallet.keystore_corrupt", async () => {
@@ -186,9 +192,7 @@ describe("restoreWalletFromFile (validation order)", () => {
 
 describe("restoreWalletFromFile (mismatch confirmation)", () => {
   it("calls confirmReplace when existing address differs; aborts on cancel", async () => {
-    mockLoadConfig.mockReturnValue({
-      wallet: { address: otherEvmAddress, solanaAddress: null },
-    });
+    mockGetPrimaryEvmAddress.mockReturnValue(otherEvmAddress);
     const confirmReplace = vi.fn().mockResolvedValue(false);
     const result = await restoreWalletFromFile({
       chain: "evm",
@@ -208,9 +212,7 @@ describe("restoreWalletFromFile (mismatch confirmation)", () => {
   });
 
   it("proceeds when confirmReplace returns true — backup, copy, config in order", async () => {
-    mockLoadConfig.mockReturnValue({
-      wallet: { address: otherEvmAddress, solanaAddress: null },
-    });
+    mockGetPrimaryEvmAddress.mockReturnValue(otherEvmAddress);
     mockAutoBackup.mockResolvedValue("/home/user/.config/vex/backups/T123");
     const callLog: string[] = [];
     mockAutoBackup.mockImplementation(async () => {
@@ -220,8 +222,8 @@ describe("restoreWalletFromFile (mismatch confirmation)", () => {
     mockSaveKeystoreFile.mockImplementation(() => {
       callLog.push("saveKeystoreFile");
     });
-    mockSaveConfig.mockImplementation(() => {
-      callLog.push("saveConfig");
+    mockRegisterPrimaryLegacyWallet.mockImplementation(() => {
+      callLog.push("registerPrimaryLegacyWallet");
     });
 
     const result = await restoreWalletFromFile({
@@ -237,13 +239,15 @@ describe("restoreWalletFromFile (mismatch confirmation)", () => {
         "/home/user/.config/vex/backups/T123"
       );
     }
-    expect(callLog).toEqual(["autoBackup", "saveKeystoreFile", "saveConfig"]);
+    expect(callLog).toEqual([
+      "autoBackup",
+      "saveKeystoreFile",
+      "registerPrimaryLegacyWallet",
+    ]);
   });
 
   it("does NOT call confirmReplace when existing address matches (idempotent re-restore)", async () => {
-    mockLoadConfig.mockReturnValue({
-      wallet: { address: evmAddress, solanaAddress: null },
-    });
+    mockGetPrimaryEvmAddress.mockReturnValue(evmAddress);
     const confirmReplace = vi.fn();
     const result = await restoreWalletFromFile({
       chain: "evm",
@@ -273,6 +277,10 @@ describe("restoreWalletFromFile (Solana)", () => {
     expect(mockSaveKeystoreFile).toHaveBeenCalledWith(
       "/fake/solana-keystore.json",
       fakeKeystore
+    );
+    expect(mockRegisterPrimaryLegacyWallet).toHaveBeenCalledWith(
+      "solana",
+      solanaAddress
     );
   });
 });

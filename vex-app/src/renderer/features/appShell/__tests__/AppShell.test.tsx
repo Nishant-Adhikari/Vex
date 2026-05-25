@@ -305,6 +305,8 @@ describe("AppShell", () => {
       mode: "mission",
       name: "LP rebalance run",
       permission: "restricted",
+      selectedEvmWalletId: null,
+      selectedSolanaWalletId: null,
     });
   });
 
