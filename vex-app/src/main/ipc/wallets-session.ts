@@ -5,10 +5,11 @@
  * Distinct from `wallet-export.ts` (sudo-style key export). This file
  * owns the wallet-related agent surface for puzzles 05/10:
  *
- *   - `listSessionWallets`        — read-only, returns empty scope today
- *                                   (DB-backed scope lands in puzzle 5
- *                                   phase 5, NOT here).
- *   - `setSessionWalletScope`     — fail-closed (PHASE 5).
+ *   - `listSessionWallets`        — read-only, returns the DB-backed
+ *                                   per-session wallet scope DTO (phase 5C).
+ *   - `setSessionWalletScope`     — resolves wallet ids server-side,
+ *                                   fail-closed on an unknown id, then CAS
+ *                                   init-if-empty per family (phase 5C).
  *   - `getPreparedIntent`         — phase 4 wired: engine repo +
  *                                   ensureEngineDbUrl + allow-listed
  *                                   DTO mapper.

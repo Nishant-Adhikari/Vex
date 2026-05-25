@@ -8,7 +8,8 @@
  *   - cancelPreparedIntent: ok({status:'cancelled'}) on CAS win,
  *     ok({status:'already_terminal'}) on race miss OR cross-session
  *   - cross-session calls do NOT expose existence
- *   - listSessionWallets / setSessionWalletScope UNCHANGED (phase 5)
+ *   - listSessionWallets / setSessionWalletScope registered (phase 5C wired;
+ *     focused contract in wallets-phase5.test.ts)
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -340,28 +341,15 @@ describe("cancelPreparedIntent handler", () => {
   });
 });
 
-// ── listSessionWallets / setSessionWalletScope (unchanged, smoke) ───────
+// ── listSessionWallets / setSessionWalletScope (phase 5C wired, smoke) ───
 
-describe("legacy phase-1 wallet scope handlers (unchanged in phase 4)", () => {
-  it("listSessionWallets still returns empty scope", async () => {
-    const result = await call(CH.wallets.listSessionWallets, {
-      sessionId: SESSION,
-    });
-    expect(result.ok).toBe(true);
-    expect(result.data).toEqual({
-      sessionId: SESSION,
-      allowedWalletIds: [],
-      defaultWalletId: null,
-    });
-  });
-
-  it("setSessionWalletScope still fail-closed (deferred to phase 5)", async () => {
-    const result = await call(CH.wallets.setSessionWalletScope, {
-      sessionId: SESSION,
-      allowedWalletIds: [],
-      defaultWalletId: null,
-    });
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("wallets.feature_unavailable");
+describe("wallet scope handlers (phase 5C wired)", () => {
+  // Focused contract lives in `wallets-phase5.test.ts`, `wallet-refs.test.ts`
+  // (resolveWalletRef + invalid_selection), and `database/__tests__/
+  // sessions-wallet-scope.test.ts` (CAS + missions.allowed_wallets). Here we
+  // only assert the handlers are registered (smoke regression).
+  it("listSessionWallets / setSessionWalletScope registered (phase 5 wired)", () => {
+    expect(handlers.has(CH.wallets.listSessionWallets)).toBe(true);
+    expect(handlers.has(CH.wallets.setSessionWalletScope)).toBe(true);
   });
 });

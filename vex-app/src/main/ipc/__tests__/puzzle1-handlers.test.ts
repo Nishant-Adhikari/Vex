@@ -296,26 +296,15 @@ describe("approvals handlers", () => {
 });
 
 describe("wallets-session handlers", () => {
-  it("listSessionWallets returns empty scope (no DB column yet)", async () => {
-    const result = await call(CH.wallets.listSessionWallets, {
-      sessionId: SESSION,
-    });
-    expect(result.ok).toBe(true);
-    expect(result.data).toEqual({
-      sessionId: SESSION,
-      allowedWalletIds: [],
-      defaultWalletId: null,
-    });
-  });
-
-  it("setSessionWalletScope still fail-closed (phase 5)", async () => {
-    const set = await call(CH.wallets.setSessionWalletScope, {
-      sessionId: SESSION,
-      allowedWalletIds: ["w1"],
-      defaultWalletId: "w1",
-    });
-    expect(set.ok).toBe(false);
-    expect(set.error?.code).toBe("wallets.feature_unavailable");
+  // Phase 5C wires listSessionWallets (DB-backed scope DTO) +
+  // setSessionWalletScope (id-resolved, fail-closed on unknown id). The
+  // focused contract lives in `wallets-phase5.test.ts`, `wallet-refs.test.ts`
+  // (resolveWalletRef + invalid_selection), and `database/__tests__/
+  // sessions-wallet-scope.test.ts` (CAS + allowed_wallets). Here we only check
+  // the handlers exist after registration (smoke regression).
+  it("listSessionWallets / setSessionWalletScope registered (phase 5 wired)", () => {
+    expect(handlers.has(CH.wallets.listSessionWallets)).toBe(true);
+    expect(handlers.has(CH.wallets.setSessionWalletScope)).toBe(true);
   });
 
   // Phase 4 wires getPreparedIntent / cancelPreparedIntent — the focused
