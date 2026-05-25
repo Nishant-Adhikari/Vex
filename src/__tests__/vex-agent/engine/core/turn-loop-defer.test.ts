@@ -179,6 +179,9 @@ function makeContext(overrides = {}) {
     missionId: "mission-1",
     missionRunId: "run-1",
     isSubagent: false,
+    selectedEvmWallet: null,
+    selectedSolanaWallet: null,
+    walletPolicy: { kind: "none" as const },
     loadedDocuments: new Map<string, string>(),
     ...overrides,
   };
