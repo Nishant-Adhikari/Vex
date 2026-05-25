@@ -7,11 +7,18 @@
 
 import { createHmac } from "node:crypto";
 import { VexError, ErrorCodes } from "../../errors.js";
+import { getPrimaryEvmAddress } from "../wallet/inventory.js";
 import {
   ENV_POLYMARKET_API_KEY,
   ENV_POLYMARKET_API_SECRET,
   ENV_POLYMARKET_PASSPHRASE,
+  ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS,
 } from "./constants.js";
+import {
+  type StoredPolyCredentials,
+  normalizePolyAddress,
+  parseCredentialMapEnv,
+} from "./credential-map.js";
 
 // ── HMAC-SHA256 request signing ─────────────────────────────────────
 
@@ -62,41 +69,74 @@ export function buildClobHeaders(
   };
 }
 
-// ── Credential loading from env ─────────────────────────────────────
+// ── Per-wallet credential loading (puzzle 5 B-core) ─────────────────
 
-export interface PolyClobCredentials {
-  apiKey: string;
-  apiSecret: string;
-  passphrase: string;
+/** One wallet's CLOB credentials. Canonical shape owned by `credential-map.ts`. */
+export type PolyClobCredentials = StoredPolyCredentials;
+
+/** Mask an address for error messages (no secret, but avoids full-address noise). */
+function maskAddress(address: string): string {
+  return address.length >= 10
+    ? `${address.slice(0, 6)}…${address.slice(-4)}`
+    : address;
 }
 
-/**
- * Load Polymarket CLOB credentials from environment.
- * Throws POLYMARKET_NOT_CONFIGURED if any are missing.
- */
-export function requirePolyClobCredentials(): PolyClobCredentials {
+/** Read the three fixed legacy env keys, or null when any is missing. */
+function readLegacyFixedCredentials(): PolyClobCredentials | null {
   const apiKey = process.env[ENV_POLYMARKET_API_KEY];
   const apiSecret = process.env[ENV_POLYMARKET_API_SECRET];
   const passphrase = process.env[ENV_POLYMARKET_PASSPHRASE];
-
-  if (!apiKey || !apiSecret || !passphrase) {
-    throw new VexError(
-      ErrorCodes.POLYMARKET_NOT_CONFIGURED,
-      "Polymarket CLOB API key not configured",
-      "Run 'vex polymarket setup --yes' to auto-generate API credentials.",
-    );
-  }
-
+  if (!apiKey || !apiSecret || !passphrase) return null;
   return { apiKey, apiSecret, passphrase };
 }
 
 /**
- * Check if Polymarket credentials are configured (non-throwing).
+ * Load the CLOB credentials for a SPECIFIC wallet address.
+ *
+ * Resolution order:
+ *   1. Per-wallet map entry (`POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS`), keyed by
+ *      the normalized address — the owner==signer credentials.
+ *   2. Legacy fallback, PRIMARY WALLET ONLY: no map entry AND `address` is the
+ *      current primary EVM address AND the three fixed env keys exist → return
+ *      those (pre-B setups). Never used for a non-primary wallet — that would
+ *      post an order whose `owner` (apiKey) mismatches the `signer`, which
+ *      Polymarket rejects.
+ *
+ * A present-but-malformed map throws (fail closed — see `parseCredentialMapEnv`).
+ * Throws POLYMARKET_NOT_CONFIGURED when nothing resolves for `address`.
  */
-export function hasPolyClobCredentials(): boolean {
-  return !!(
-    process.env[ENV_POLYMARKET_API_KEY] &&
-    process.env[ENV_POLYMARKET_API_SECRET] &&
-    process.env[ENV_POLYMARKET_PASSPHRASE]
+export function requirePolyClobCredentials(address: string): PolyClobCredentials {
+  const normalized = normalizePolyAddress(address);
+
+  const map = parseCredentialMapEnv(
+    process.env[ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS],
   );
+  const entry = map[normalized];
+  if (entry) return entry;
+
+  const primary = getPrimaryEvmAddress();
+  if (primary && normalizePolyAddress(primary) === normalized) {
+    const legacy = readLegacyFixedCredentials();
+    if (legacy) return legacy;
+  }
+
+  throw new VexError(
+    ErrorCodes.POLYMARKET_NOT_CONFIGURED,
+    `Polymarket CLOB API credentials not configured for wallet ${maskAddress(normalized)}.`,
+    "Run polymarket_setup for the wallet selected in this session to derive API credentials.",
+  );
+}
+
+/**
+ * Check if CLOB credentials are configured for `address` (non-throwing).
+ * Returns false on any resolution failure, including a malformed map — the
+ * throwing `requirePolyClobCredentials` is the surface that exposes corruption.
+ */
+export function hasPolyClobCredentials(address: string): boolean {
+  try {
+    requirePolyClobCredentials(address);
+    return true;
+  } catch {
+    return false;
+  }
 }

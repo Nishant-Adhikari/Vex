@@ -161,7 +161,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     }
     if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
 
-    const creds = requirePolyClobCredentials();
+    const creds = requirePolyClobCredentials(signer.address);
     const feeRate = await clob.getFeeRate(tokenId);
     const { makerAmount, takerAmount } = calcAmounts("BUY", shares, price);
     const orderData = buildClobOrder({ maker: signer.address, signer: signer.address, tokenId, makerAmount, takerAmount, side: "BUY", feeRateBps: String(feeRate.base_fee) });
@@ -232,7 +232,7 @@ export const CLOB_HANDLERS: Record<string, ProtocolHandler> = {
     }
     if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
 
-    const creds = requirePolyClobCredentials();
+    const creds = requirePolyClobCredentials(signer.address);
     const feeRate = await clob.getFeeRate(tokenId);
     const { makerAmount, takerAmount } = calcAmounts("SELL", shares, price);
     const orderData = buildClobOrder({ maker: signer.address, signer: signer.address, tokenId, makerAmount, takerAmount, side: "SELL", feeRateBps: String(feeRate.base_fee) });

@@ -13,9 +13,15 @@ export async function handlePolymarketSetup(
   _params: Record<string, unknown>,
   _context: InternalToolContext,
 ): Promise<ToolResult> {
-  // Defense in depth: check if already configured
+  // Defense in depth: check if already configured. `hasPolyClobCredentials` is
+  // address-scoped (B-core); this tool still targets the PRIMARY wallet (the
+  // agent session-wallet trigger lands in B-core-2), so probe the primary EVM
+  // address. No primary wallet → skip the short-circuit and let the derive path
+  // surface a clear WALLET_NOT_CONFIGURED.
   const { hasPolyClobCredentials } = await import("@tools/polymarket/auth.js");
-  if (hasPolyClobCredentials()) {
+  const { getPrimaryEvmAddress } = await import("@tools/wallet/inventory.js");
+  const primaryAddress = getPrimaryEvmAddress();
+  if (primaryAddress && hasPolyClobCredentials(primaryAddress)) {
     return ok({ configured: true, note: "Polymarket CLOB credentials already configured." });
   }
 

@@ -88,8 +88,8 @@ export class PolyClobClient {
     body?: unknown,
     query?: Record<string, string | undefined>,
   ): Promise<T> {
-    const creds = requirePolyClobCredentials();
     const { address } = auth;
+    const creds = requirePolyClobCredentials(address);
     const bodyStr = body !== undefined ? JSON.stringify(body) : "";
     // HMAC signs path without query — per Polymarket CLOB auth spec
     const headers = buildClobHeaders(creds.apiKey, address, creds.passphrase, method, path, bodyStr, creds.apiSecret);

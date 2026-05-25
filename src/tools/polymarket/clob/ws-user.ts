@@ -8,6 +8,7 @@
 
 import { EventEmitter } from "node:events";
 import { requirePolyClobCredentials } from "../auth.js";
+import type { ClobAuthContext } from "./client.js";
 import logger from "../../../utils/logger.js";
 
 const WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/user";
@@ -37,16 +38,23 @@ export class PolyUserStream extends EventEmitter {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private options: UserSubscribeOptions;
+  /**
+   * Per-stream auth identity (session-scoped). The user channel never resolves a
+   * wallet itself — the selected address is passed in, same contract as the CLOB
+   * client's `ClobAuthContext` (puzzle 5 B-core). No hidden primary fallback.
+   */
+  private readonly auth: ClobAuthContext;
 
-  constructor(options?: UserSubscribeOptions) {
+  constructor(auth: ClobAuthContext, options?: UserSubscribeOptions) {
     super();
+    this.auth = auth;
     this.options = options ?? {};
   }
 
   connect(): void {
     if (this.ws || this.destroyed) return;
 
-    const creds = requirePolyClobCredentials();
+    const creds = requirePolyClobCredentials(this.auth.address);
 
     logger.debug("[PolyUserStream] Connecting...");
     this.ws = new WebSocket(WS_URL);

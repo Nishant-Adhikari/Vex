@@ -53,8 +53,9 @@ vi.mock("@tools/polymarket/clob/signing.js", () => ({
   signClobOrder: vi.fn().mockResolvedValue("0xsig"),
 }));
 
+const mockRequireCreds = vi.fn(() => ({ apiKey: "ak", apiSecret: "as", passphrase: "pp" }));
 vi.mock("@tools/polymarket/auth.js", () => ({
-  requirePolyClobCredentials: () => ({ apiKey: "ak", apiSecret: "as", passphrase: "pp" }),
+  requirePolyClobCredentials: (...a: unknown[]) => mockRequireCreds(...a),
 }));
 
 vi.mock("@tools/polymarket/helpers.js", () => ({
@@ -80,6 +81,7 @@ beforeEach(() => {
   mockCancelOrder.mockResolvedValue({ canceled: ["oid-1"], not_canceled: {} });
   mockGetTrades.mockResolvedValue({ data: [], next_cursor: "" });
   mockBuildClobOrder.mockReturnValue({ salt: "1", maker: SEL, signer: SEL });
+  mockRequireCreds.mockReturnValue({ apiKey: "ak", apiSecret: "as", passphrase: "pp" });
 });
 
 describe("polymarket clob session wallet scope (5D-protocols p3)", () => {
@@ -92,6 +94,8 @@ describe("polymarket clob session wallet scope (5D-protocols p3)", () => {
     expect(mockBuildClobOrder).toHaveBeenCalledWith(expect.objectContaining({ maker: SEL, signer: SEL }));
     // postOrder auth context (FIRST arg) is the session address
     expect(mockPostOrder.mock.calls[0][0]).toEqual({ address: SEL });
+    // credential lookup is scoped to the SESSION signer address (B-core)
+    expect(mockRequireCreds).toHaveBeenCalledWith(SEL);
     // capture records the session wallet
     expect((r.data?._tradeCapture as Record<string, unknown>).walletAddress).toBe(SEL);
   });

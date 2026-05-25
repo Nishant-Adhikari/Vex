@@ -8,6 +8,10 @@ export const VAULT_SECRET_KEYS = [
   "POLYMARKET_API_KEY",
   "POLYMARKET_API_SECRET",
   "POLYMARKET_PASSPHRASE",
+  // Per-wallet CLOB creds (puzzle 5 B-core): JSON map keyed by normalized EVM
+  // address. Encrypted in the vault, mirrored to process.env at unlock, and
+  // stripped from .env like the other managed secrets.
+  "POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS",
 ] as const;
 
 export type VaultSecretKey = (typeof VAULT_SECRET_KEYS)[number];

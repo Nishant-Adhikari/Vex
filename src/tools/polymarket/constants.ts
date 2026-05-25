@@ -55,3 +55,15 @@ export const RELAYER_TIMEOUT_MS = 15_000;
 export const ENV_POLYMARKET_API_KEY = "POLYMARKET_API_KEY";
 export const ENV_POLYMARKET_API_SECRET = "POLYMARKET_API_SECRET";
 export const ENV_POLYMARKET_PASSPHRASE = "POLYMARKET_PASSPHRASE";
+
+/**
+ * Per-wallet CLOB credentials (puzzle 5 B-core). A JSON object keyed by the
+ * normalized (lowercased) EVM address: `{ "<lc-addr>": { apiKey, secret,
+ * passphrase } }`, stored as ONE encrypted vault secret and mirrored into
+ * process.env at unlock. Lets a session sign+post Polymarket orders with the
+ * SELECTED wallet's own creds (owner == signer) instead of the single
+ * primary-bound set. The three fixed keys above remain a primary-only READ
+ * fallback for pre-B setups; see `requirePolyClobCredentials(address)`.
+ */
+export const ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS =
+  "POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS";

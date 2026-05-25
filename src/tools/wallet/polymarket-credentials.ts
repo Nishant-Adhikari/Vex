@@ -2,13 +2,17 @@
  * Polymarket CLOB API credential derivation — canonical source of truth.
  *
  * Moved out of `src/tools/polymarket/` in puzzle 5 phase 5D-protocols p5 (Codex
- * ruling): this is primary-bound credential SETUP (sign an EIP-712 ClobAuth with
- * the wallet keystore → derive/create API creds → persist), NOT session-scoped
- * protocol trading. It legitimately decrypts the keystore, so it lives in a
- * wallet module — keeping protocol paths free of keystore/decrypt imports (the
- * keystore-isolation scan stays strict-empty for protocol code). Per-wallet
- * Polymarket creds (vs the current primary-bound creds) is a separate future
- * design (storage/rotation/invalidation), not in scope here.
+ * ruling): this is credential SETUP (sign an EIP-712 ClobAuth with the wallet
+ * keystore → derive/create API creds → persist), NOT session-scoped protocol
+ * trading. It legitimately decrypts the keystore, so it lives in a wallet
+ * module — keeping protocol paths free of keystore/decrypt imports (the
+ * keystore-isolation scan stays strict-empty for protocol code).
+ *
+ * Puzzle 5 B-core: derivation is now PER-WALLET. `deriveAndSave…({ walletId })`
+ * targets a specific session EVM wallet and merges its creds into the
+ * `POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS` map (see `polymarket/credential-map.ts`);
+ * omitting `walletId` keeps the primary-wallet behavior. The read side lives in
+ * `polymarket/auth.requirePolyClobCredentials(address)`.
  *
  * Flow: wallet keystore → EIP-712 ClobAuth signature → derive/create API key → save to encrypted vault
  * Used by:
@@ -31,16 +35,23 @@
  * No secrets in return value — only apiKeyPrefix (first 8 chars + ellipsis).
  */
 
-import type { Address, Hex } from "viem";
-import { loadKeystore, decryptPrivateKey } from "./keystore.js";
-import { loadConfig } from "../../config/store.js";
-import { getPrimaryEvmAddress } from "./inventory.js";
+import { type Address, type Hex, getAddress } from "viem";
+import { privateKeyToAddress } from "viem/accounts";
+import { loadKeystore, loadKeystoreFile, decryptPrivateKey } from "./keystore.js";
+import { loadConfig, type WalletInventoryEntry } from "../../config/store.js";
+import {
+  derivePath,
+  getPrimaryEvmAddress,
+  getPrimaryEvmEntry,
+  getWalletById,
+} from "./inventory.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import {
   stripManagedSecretsFromDotenvFile,
   writeSecretVaultSecrets,
 } from "../../lib/local-secret-vault.js";
+import { type VaultSecretKey } from "../../lib/secret-keys.js";
 import { requireKeystorePassword } from "../../utils/env.js";
 import { isRecord } from "../../utils/validation-helpers.js";
 import {
@@ -50,7 +61,14 @@ import {
   ENV_POLYMARKET_API_KEY,
   ENV_POLYMARKET_API_SECRET,
   ENV_POLYMARKET_PASSPHRASE,
+  ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS,
 } from "../polymarket/constants.js";
+import {
+  type StoredPolyCredentials,
+  parseCredentialMapEnv,
+  serializeCredentialMap,
+  withCredentialEntry,
+} from "../polymarket/credential-map.js";
 
 // ── EIP-712 ClobAuth domain + types (from Polymarket docs) ─────────
 
@@ -114,13 +132,16 @@ export interface AcquireResult {
  */
 export async function acquirePolymarketCredentialsWithPassword(
   password: string,
+  entry?: WalletInventoryEntry,
 ): Promise<AcquireResult> {
-  // 1. Keystore must exist on disk.
-  const keystore = loadKeystore();
+  // 1. Keystore must exist on disk. For a specific session wallet (`entry`),
+  // resolve its derived keystore path (traversal-guarded by `derivePath`);
+  // otherwise the primary (legacy) keystore.
+  const keystore = entry ? loadKeystoreFile(derivePath("evm", entry)) : loadKeystore();
   if (!keystore) {
     throw new VexError(
       ErrorCodes.KEYSTORE_NOT_FOUND,
-      "Keystore not found.",
+      entry ? "Keystore not found for the selected EVM wallet." : "Keystore not found.",
       "Generate or import an EVM wallet before configuring Polymarket.",
     );
   }
@@ -134,6 +155,19 @@ export async function acquirePolymarketCredentialsWithPassword(
   // shortening the lifetime of the local binding is the strongest in-process
   // defense available.
   let privateKey: Hex = decryptPrivateKey(keystore, password);
+
+  // 2b. Per-wallet derive (B-core): assert the decrypted key derives the
+  // recorded address BEFORE signing, so creds are never derived/bound with a
+  // key that isn't the selected wallet (Codex B-core ruling — fail closed).
+  // Scrub the local binding before throwing.
+  if (entry && privateKeyToAddress(privateKey) !== getAddress(entry.address)) {
+    privateKey = "0x" as Hex;
+    throw new VexError(
+      ErrorCodes.SIGNER_MISMATCH,
+      "EVM keystore does not match the selected wallet address.",
+      "Re-import the wallet or restore from backup.",
+    );
+  }
 
   // 3. Sign EIP-712 ClobAuth. `try/finally` guarantees the local binding is
   // overwritten whether the signer succeeds or throws — so any subsequent
@@ -160,51 +194,99 @@ export async function acquirePolymarketCredentialsWithPassword(
 }
 
 /**
- * Derive Polymarket CLOB API credentials from wallet keystore and save to the
- * encrypted vault. Legacy env-driven entry point used by:
+ * Derive Polymarket CLOB API credentials for an EVM wallet and save them into
+ * the per-wallet credential map. Legacy env-driven entry point used by:
  *   - vex CLI `vex polymarket setup`
  *   - vex-agent internal tool (`polymarket-setup`)
  *
- * Resolves the master password from `process.env.VEX_KEYSTORE_PASSWORD` via
- * `requireKeystorePassword()`. The Electron app does NOT use this path —
- * it calls `acquirePolymarketCredentialsWithPassword` directly with the
- * unlocked in-memory password.
+ * Target wallet:
+ *   - `options.walletId` → that specific session EVM wallet;
+ *   - omitted → the primary EVM wallet (legacy CLI behavior).
  *
- * Throws `VexError` on failure (network, auth, missing fields).
+ * Persistence (puzzle 5 B-core): the creds are MERGED into the
+ * `POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS` map (keyed by normalized address),
+ * preserving every other wallet's entry. For the PRIMARY wallet only, the three
+ * fixed keys are also written — backward compat for the legacy read fallback and
+ * the `polymarket_setup` visibility gate. Legacy keys are never deleted here.
+ *
+ * Resolves the master password from `process.env.VEX_KEYSTORE_PASSWORD` via
+ * `requireKeystorePassword()`. The Electron app does NOT use this path — it
+ * calls `acquirePolymarketCredentialsWithPassword` directly with the unlocked
+ * in-memory password.
+ *
+ * Throws `VexError` on failure (no wallet, network, auth, missing fields).
  */
 export async function deriveAndSavePolymarketCredentials(
-  options: { readonly secretsFilePath?: string } = {},
+  options: { readonly walletId?: string; readonly secretsFilePath?: string } = {},
 ): Promise<DeriveResult> {
-  // Wallet config sanity check (legacy CLI behavior).
   const cfg = loadConfig();
-  if (!getPrimaryEvmAddress(cfg)) {
+
+  // Resolve the target EVM wallet: an explicit session wallet by id, else the
+  // primary (legacy CLI behavior).
+  const entry = options.walletId
+    ? getWalletById("evm", options.walletId, cfg)
+    : getPrimaryEvmEntry(cfg);
+  if (!entry) {
     throw new VexError(
       ErrorCodes.WALLET_NOT_CONFIGURED,
-      "No wallet configured.",
-      "Run: vex wallet create --json",
+      options.walletId ? "Selected EVM wallet not found." : "No wallet configured.",
+      options.walletId
+        ? "Re-select an EVM wallet for this session."
+        : "Run: vex wallet create --json",
     );
   }
 
   const masterPassword = requireKeystorePassword();
   const { address, credentials } = await acquirePolymarketCredentialsWithPassword(
     masterPassword,
+    entry,
   );
+
+  const stored: StoredPolyCredentials = {
+    apiKey: credentials.apiKey,
+    apiSecret: credentials.secret,
+    passphrase: credentials.passphrase,
+  };
+
+  // Merge into the per-wallet map (never drop other wallets' creds). Read the
+  // freshest in-process mirror from process.env.
+  const serializedMap = serializeCredentialMap(
+    withCredentialEntry(
+      parseCredentialMapEnv(process.env[ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS]),
+      address,
+      stored,
+    ),
+  );
+
+  // Primary wallet → also refresh the three fixed keys (legacy read fallback +
+  // setup-tool visibility). Non-primary wallets live in the map only.
+  const primaryAddress = getPrimaryEvmAddress(cfg);
+  const isPrimary =
+    primaryAddress !== null && getAddress(primaryAddress) === getAddress(address);
+
+  const updates: Partial<Record<VaultSecretKey, string | null>> = {
+    [ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS]: serializedMap,
+  };
+  if (isPrimary) {
+    updates[ENV_POLYMARKET_API_KEY] = credentials.apiKey;
+    updates[ENV_POLYMARKET_API_SECRET] = credentials.secret;
+    updates[ENV_POLYMARKET_PASSPHRASE] = credentials.passphrase;
+  }
 
   // Persistence — vault write + .env strip + same-process env apply.
   writeSecretVaultSecrets(
     masterPassword,
-    {
-      [ENV_POLYMARKET_API_KEY]: credentials.apiKey,
-      [ENV_POLYMARKET_API_SECRET]: credentials.secret,
-      [ENV_POLYMARKET_PASSPHRASE]: credentials.passphrase,
-    },
+    updates,
     options.secretsFilePath ? { filePath: options.secretsFilePath } : {},
   );
   stripManagedSecretsFromDotenvFile();
 
-  process.env[ENV_POLYMARKET_API_KEY] = credentials.apiKey;
-  process.env[ENV_POLYMARKET_API_SECRET] = credentials.secret;
-  process.env[ENV_POLYMARKET_PASSPHRASE] = credentials.passphrase;
+  process.env[ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS] = serializedMap;
+  if (isPrimary) {
+    process.env[ENV_POLYMARKET_API_KEY] = credentials.apiKey;
+    process.env[ENV_POLYMARKET_API_SECRET] = credentials.secret;
+    process.env[ENV_POLYMARKET_PASSPHRASE] = credentials.passphrase;
+  }
 
   return {
     apiKeyPrefix: `${credentials.apiKey.slice(0, 8)}…`,

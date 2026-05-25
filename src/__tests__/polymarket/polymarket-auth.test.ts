@@ -1,6 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { signClobRequest, buildClobHeaders, requirePolyClobCredentials, hasPolyClobCredentials } from "@tools/polymarket/auth.js";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { VexError, ErrorCodes } from "../../errors.js";
+
+// Control the primary-EVM-address read so the legacy (primary-only) fallback is
+// deterministic without a real wallet config on disk.
+const inv = vi.hoisted(() => ({ primaryAddress: null as string | null }));
+vi.mock("@tools/wallet/inventory.js", () => ({
+  getPrimaryEvmAddress: () => inv.primaryAddress,
+}));
+
+const { signClobRequest, buildClobHeaders, requirePolyClobCredentials, hasPolyClobCredentials } =
+  await import("@tools/polymarket/auth.js");
+
+const MAP_KEY = "POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS";
+const ADDR_PRIMARY = `0x${"11".repeat(20)}`;
+const ADDR_SESSION = `0x${"22".repeat(20)}`;
+const MAP_CREDS = { apiKey: "ak-map", apiSecret: "as-map", passphrase: "pp-map" };
 
 describe("signClobRequest", () => {
   it("returns timestamp and base64 signature", () => {
@@ -49,33 +63,82 @@ describe("buildClobHeaders", () => {
 describe("requirePolyClobCredentials", () => {
   const originalEnv = { ...process.env };
 
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("throws POLYMARKET_NOT_CONFIGURED when env vars missing", () => {
+  function clearAll(): void {
+    delete process.env[MAP_KEY];
     delete process.env.POLYMARKET_API_KEY;
     delete process.env.POLYMARKET_API_SECRET;
     delete process.env.POLYMARKET_PASSPHRASE;
-    expect(() => requirePolyClobCredentials()).toThrow(VexError);
-    expect(() => requirePolyClobCredentials()).toThrow(/not configured/);
+  }
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    inv.primaryAddress = null;
   });
 
-  it("throws when only partial env vars set", () => {
-    process.env.POLYMARKET_API_KEY = "key";
-    delete process.env.POLYMARKET_API_SECRET;
-    delete process.env.POLYMARKET_PASSPHRASE;
-    expect(() => requirePolyClobCredentials()).toThrow(VexError);
+  it("returns the wallet's creds from the per-address map", () => {
+    clearAll();
+    process.env[MAP_KEY] = JSON.stringify({ [ADDR_SESSION]: MAP_CREDS });
+    expect(requirePolyClobCredentials(ADDR_SESSION)).toEqual(MAP_CREDS);
   });
 
-  it("returns credentials when all env vars set", () => {
-    process.env.POLYMARKET_API_KEY = "key";
-    process.env.POLYMARKET_API_SECRET = "secret";
-    process.env.POLYMARKET_PASSPHRASE = "pass";
-    const creds = requirePolyClobCredentials();
-    expect(creds.apiKey).toBe("key");
-    expect(creds.apiSecret).toBe("secret");
-    expect(creds.passphrase).toBe("pass");
+  it("selects the correct wallet from a multi-entry map", () => {
+    clearAll();
+    const other = { apiKey: "ak-x", apiSecret: "as-x", passphrase: "pp-x" };
+    process.env[MAP_KEY] = JSON.stringify({ [ADDR_PRIMARY]: other, [ADDR_SESSION]: MAP_CREDS });
+    expect(requirePolyClobCredentials(ADDR_SESSION)).toEqual(MAP_CREDS);
+  });
+
+  it("legacy fallback returns the fixed env keys for the PRIMARY wallet only", () => {
+    clearAll();
+    inv.primaryAddress = ADDR_PRIMARY;
+    process.env.POLYMARKET_API_KEY = "k";
+    process.env.POLYMARKET_API_SECRET = "s";
+    process.env.POLYMARKET_PASSPHRASE = "p";
+    expect(requirePolyClobCredentials(ADDR_PRIMARY)).toEqual({
+      apiKey: "k", apiSecret: "s", passphrase: "p",
+    });
+  });
+
+  it("does NOT use the legacy fixed keys for a NON-primary wallet", () => {
+    clearAll();
+    inv.primaryAddress = ADDR_PRIMARY;
+    process.env.POLYMARKET_API_KEY = "k";
+    process.env.POLYMARKET_API_SECRET = "s";
+    process.env.POLYMARKET_PASSPHRASE = "p";
+    expect(() => requirePolyClobCredentials(ADDR_SESSION)).toThrow(VexError);
+    expect(() => requirePolyClobCredentials(ADDR_SESSION)).toThrow(/not configured/i);
+  });
+
+  it("map entry wins over the legacy fixed keys for the primary", () => {
+    clearAll();
+    inv.primaryAddress = ADDR_PRIMARY;
+    process.env.POLYMARKET_API_KEY = "legacy";
+    process.env.POLYMARKET_API_SECRET = "legacy";
+    process.env.POLYMARKET_PASSPHRASE = "legacy";
+    process.env[MAP_KEY] = JSON.stringify({ [ADDR_PRIMARY]: MAP_CREDS });
+    expect(requirePolyClobCredentials(ADDR_PRIMARY)).toEqual(MAP_CREDS);
+  });
+
+  it("throws POLYMARKET_NOT_CONFIGURED when nothing resolves", () => {
+    clearAll();
+    inv.primaryAddress = null;
+    try {
+      requirePolyClobCredentials(ADDR_SESSION);
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(VexError);
+      expect((err as VexError).code).toBe(ErrorCodes.POLYMARKET_NOT_CONFIGURED);
+    }
+  });
+
+  it("fails CLOSED on a malformed map even when legacy keys would match the primary", () => {
+    clearAll();
+    inv.primaryAddress = ADDR_PRIMARY;
+    process.env.POLYMARKET_API_KEY = "k";
+    process.env.POLYMARKET_API_SECRET = "s";
+    process.env.POLYMARKET_PASSPHRASE = "p";
+    process.env[MAP_KEY] = "{not valid json";
+    expect(() => requirePolyClobCredentials(ADDR_PRIMARY)).toThrow(VexError);
   });
 });
 
@@ -84,17 +147,33 @@ describe("hasPolyClobCredentials", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    inv.primaryAddress = null;
   });
 
-  it("returns false when missing", () => {
+  it("returns true when the wallet has map creds", () => {
     delete process.env.POLYMARKET_API_KEY;
-    expect(hasPolyClobCredentials()).toBe(false);
+    process.env[MAP_KEY] = JSON.stringify({ [ADDR_SESSION]: MAP_CREDS });
+    expect(hasPolyClobCredentials(ADDR_SESSION)).toBe(true);
   });
 
-  it("returns true when all set", () => {
-    process.env.POLYMARKET_API_KEY = "key";
-    process.env.POLYMARKET_API_SECRET = "secret";
-    process.env.POLYMARKET_PASSPHRASE = "pass";
-    expect(hasPolyClobCredentials()).toBe(true);
+  it("returns false when the wallet has no creds", () => {
+    delete process.env[MAP_KEY];
+    delete process.env.POLYMARKET_API_KEY;
+    inv.primaryAddress = null;
+    expect(hasPolyClobCredentials(ADDR_SESSION)).toBe(false);
+  });
+
+  it("returns false on a malformed map (the probe never surfaces corruption)", () => {
+    process.env[MAP_KEY] = "{not valid json";
+    expect(hasPolyClobCredentials(ADDR_SESSION)).toBe(false);
+  });
+
+  it("returns true for the primary via the legacy fallback", () => {
+    delete process.env[MAP_KEY];
+    inv.primaryAddress = ADDR_PRIMARY;
+    process.env.POLYMARKET_API_KEY = "k";
+    process.env.POLYMARKET_API_SECRET = "s";
+    process.env.POLYMARKET_PASSPHRASE = "p";
+    expect(hasPolyClobCredentials(ADDR_PRIMARY)).toBe(true);
   });
 });
