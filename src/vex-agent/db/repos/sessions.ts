@@ -209,10 +209,9 @@ export async function createSession(
  * Mark a session as ended. Idempotent — safe to call multiple times on a
  * session that has already been ended (only the first call writes a value).
  *
- * Used by the production MCP server (`src/mcp/sessions.ts`) on transport
- * disconnect, so the `sessions.ended_at` column reflects MCP connection
- * lifecycle. Vex Agent's chat / mission flows do not call this — their
- * sessions stay open until compaction.
+ * Used by hosts on disconnect/shutdown so the `sessions.ended_at` column
+ * reflects session lifecycle. Vex Agent's chat / mission flows do not call
+ * this — their sessions stay open until compaction.
  */
 export async function endSession(id: string): Promise<void> {
   await executeWith(

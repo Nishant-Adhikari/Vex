@@ -3,11 +3,11 @@
  * canonical wallet primitives via `@vex-lib/wallet.js` without reaching
  * outside the alias scope (mirrors `src/lib/dotenv.ts` from M7).
  *
- * The implementations live under `src/tools/wallet/` and `src/cli/setup/`
- * and stay the single source of truth for keystore format, encryption
+ * The implementations live under `src/tools/wallet/` and stay the single
+ * source of truth for keystore format, encryption
  * (AES-256-GCM + Scrypt), wallet generation, import validation, and
- * auto-backup retention. vex-shell and vex-app both consume the same
- * functions so the on-disk state remains compatible across clients.
+ * auto-backup retention. vex-app consumes these functions so the on-disk
+ * state stays compatible across desktop releases.
  */
 
 export {

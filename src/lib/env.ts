@@ -1,11 +1,8 @@
 /**
  * Cross-boundary env-key constants for vex-app onboarding (M9).
  *
- * Re-exports a curated subset of canonical .env key names. Stays
- * lean on purpose — vex-shell's `ENV_FIELDS` (in
- * `src/cli/setup/status.ts`) intentionally pulls additional metadata
- * + transitively the wallet/decrypt modules, which we do not want
- * loaded inside vex-app preload contexts.
+ * Re-exports a curated subset of canonical .env key names. Stays lean on
+ * purpose so vex-app preload contexts do not load wallet/decrypt modules.
  *
  * vex-app builds its own typed surface (Zod schemas + per-field UI
  * metadata) on top of the bare key names exported here.

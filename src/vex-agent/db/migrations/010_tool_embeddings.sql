@@ -10,10 +10,9 @@
 -- service or table is unavailable at runtime, discovery falls back to lexical
 -- scoring so callers still get a useful shortlist.
 --
--- Re-embed task at startup (`src/mcp/bootstrap.ts:runBootstrapChecks`,
--- non-blocking) iterates active manifests, computes `content_hash`, and
--- skips rows whose hash is unchanged. Deprecated namespaces are excluded
--- via `lifecycle.ts:isReembeddableNamespace`.
+-- Re-embed iterates active manifests, computes `content_hash`, and skips rows
+-- whose hash is unchanged. Deprecated namespaces are excluded via
+-- `lifecycle.ts:isReembeddableNamespace`.
 --
 -- No ivfflat/hnsw index here — `vector` is intentionally typmod-free so
 -- we can swap embedding dim later. Brute-force cosine scan is acceptable

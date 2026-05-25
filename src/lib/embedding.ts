@@ -4,7 +4,7 @@
  * Pure module — no fs/DB/Electron imports outside `node:fs` for the
  * single readFileSync that backs `readEmbeddingDefaultsFromExample`.
  * Cross-boundary safe: vex-app main can import via `@vex-lib/embedding.js`
- * without dragging CLI status/setup helpers (which transitively pull
+ * without dragging setup/status helpers (which transitively pull
  * wallet decryption modules).
  *
  * Path resolution lives in vex-app main (M9 wires it via the existing

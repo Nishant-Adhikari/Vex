@@ -51,7 +51,7 @@ jobs:
 
       - run: corepack enable
 
-      - name: Install root dependencies (monorepo — @vex-lib alias bundles root MCP code into vex-app's main process, rolldown resolves third-party deps relative to the root file location, so root node_modules MUST exist at build time)
+      - name: Install root dependencies (monorepo — @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
 

@@ -39,7 +39,7 @@ export async function handlePolymarketSetup(
   }
 
   // 3. Derive target. The SESSION path MUST derive for the selected wallet id —
-  // never an address lookup or a primary fallback. default/CLI/MCP → primary.
+  // never an address lookup or a primary fallback. default → primary.
   let walletId: string | undefined;
   if (context.walletResolution.source === "session") {
     walletId = context.walletResolution.evm?.id;

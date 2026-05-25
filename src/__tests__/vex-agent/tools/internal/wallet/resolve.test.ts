@@ -127,7 +127,7 @@ describe("resolveSelectedAddressSet — read-side wallet set", () => {
     expect(set.all).toEqual([EVM]);
   });
 
-  it("default/MCP with no wallet configured for a family (WALLET_NOT_CONFIGURED) → empty set", () => {
+  it("default resolution with no wallet configured for a family (WALLET_NOT_CONFIGURED) -> empty set", () => {
     mockResolveSelectedEntry.mockImplementation(() => {
       throw new VexError(ErrorCodes.WALLET_NOT_CONFIGURED, "none configured");
     });

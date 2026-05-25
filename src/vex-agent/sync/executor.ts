@@ -6,8 +6,8 @@
  *   balance snapshot.
  * - `syncTick()` drains post-mutation runs and checks due periodic jobs.
  *
- * This executor owns the process-lifetime loop for the long-lived MCP/local
- * shell processes. Short-lived bootstrap checks must not start it.
+ * This executor owns the process-lifetime loop for the long-lived desktop
+ * agent host. Short-lived bootstrap checks must not start it.
  */
 
 import { initSync, syncTick } from "./index.js";

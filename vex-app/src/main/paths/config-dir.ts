@@ -1,8 +1,8 @@
 /**
  * Pure CONFIG_DIR resolver — mirrors `/mnt/x/Vex/src/config/paths.ts`
- * exactly so vex-app and vex-shell agree on a single `~/.config/vex`
- * (Linux) / `~/Library/Application Support/vex` (macOS) / `%APPDATA%/vex`
- * (Windows) shared between both clients (main plan §39-43).
+ * exactly so vex-app and the local agent runtime agree on a single
+ * `~/.config/vex` (Linux) / `~/Library/Application Support/vex` (macOS) /
+ * `%APPDATA%/vex` (Windows).
  *
  * No Electron imports here — must remain consumable from plain Node /
  * tsx contexts so the future M5 compose render module (also pure)
@@ -29,7 +29,7 @@ export function resolveConfigDir(deps: ResolveDeps): string {
   // non-empty AND absolute; a relative value silently falls through
   // to the platform default so a typo can't redirect production
   // writes into the launcher's cwd. Mirrors the override in
-  // src/config/paths.ts so vex-shell sees the same root.
+  // src/config/paths.ts so the local agent runtime sees the same root.
   const override = env["VEX_CONFIG_DIR"];
   if (
     typeof override === "string" &&
@@ -62,13 +62,13 @@ export const CONFIG_DIR = resolveConfigDir({
 /**
  * Electron-private state lives nested under CONFIG_DIR so the directory
  * tree stays one place but Chromium's session cache, our preferences
- * store, and electron-log files do not pollute paths that vex-shell
- * also reads from (`.env`, `keystore.json`, `config.json`, …).
+ * store, and electron-log files do not pollute shared runtime files
+ * (`.env`, `keystore.json`, `config.json`, ...).
  */
 export const ELECTRON_STATE_DIR = path.join(CONFIG_DIR, ".electron-state");
 
 /**
- * Shared resources (vex-app + vex-shell both touch these):
+ * Shared local runtime resources:
  *
  *   CONFIG_DIR/
  *     .env                              shared TRACKED_ENV_KEYS

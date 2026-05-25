@@ -215,10 +215,6 @@ type InternalHandler = (
 type InternalHandlerLoader = () => Promise<InternalHandler>;
 
 export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoader>> = {
-  // Self-documentation (Vex orientation tools)
-  vex_introduction: async () => (await import("./internal/vex-intro.js")).handleVexIntroduction,
-  vex_namespace_tools: async () => (await import("./internal/vex-namespace-tools.js")).handleVexNamespaceTools,
-
   // Web research (search + optional fetch in one tool)
   web_research: async () => (await import("./internal/web.js")).handleWebResearch,
 
@@ -281,9 +277,9 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   evm_read: async () => (await import("./internal/evm-read.js")).handleEvmRead,
 
   // Wallet
-  wallet_read: async () => (await import("./internal/wallet.js")).handleWalletRead,
-  wallet_send_prepare: async () => (await import("./internal/wallet.js")).handleWalletSendPrepare,
-  wallet_send_confirm: async () => (await import("./internal/wallet.js")).handleWalletSendConfirm,
+  wallet_read: async () => (await import("./internal/wallet/read.js")).handleWalletRead,
+  wallet_send_prepare: async () => (await import("./internal/wallet/send.js")).handleWalletSendPrepare,
+  wallet_send_confirm: async () => (await import("./internal/wallet/send.js")).handleWalletSendConfirm,
 };
 
 async function routeInternalTool(

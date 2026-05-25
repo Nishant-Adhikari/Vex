@@ -116,8 +116,8 @@ describe("verifyOpenRouterConnection", () => {
     expect(sdkSpies.chatSend).toHaveBeenCalledTimes(1);
     const [body, options] = sdkSpies.chatSend.mock.calls[0]!;
     expect(
-      (body as { chatGenerationParams: { maxCompletionTokens: number } })
-        .chatGenerationParams.maxCompletionTokens,
+      (body as { chatRequest: { maxCompletionTokens: number } })
+        .chatRequest.maxCompletionTokens,
     ).toBe(16);
     expect((options as { signal?: AbortSignal }).signal).toBeDefined();
     expect((options as { retries?: { strategy: string } }).retries?.strategy).toBe(

@@ -2,9 +2,6 @@
  * Builds the production `RenderDeps` object for vex-app's main process.
  * Wraps Node's `crypto` for `randomBytes` / `randomUUID` / base64url
  * encoding, and uses Electron `safeStorage` for at-rest encryption.
- *
- * vex-shell builds its own deps factory (POSIX adapters only) — that
- * lives in `local/vex-shell/platform/` once M5 migration lands.
  */
 
 import { app, safeStorage } from "electron";

@@ -12,8 +12,8 @@
  * Pattern mirrors `wallet-mutex.ts`: a chain-of-promises serialiser
  * that DOES NOT poison on rejection — a failed env write never
  * blocks subsequent ones. Process-local only; cross-process
- * concurrency (vex-shell CLI editing the same file in another
- * terminal) remains an accepted Phase 1 risk per codex turn 2 RED #7.
+ * concurrency (another process editing the same file) remains an accepted
+ * Phase 1 risk per codex turn 2 RED #7.
  *
  * Wallet ops keep their own dedicated `wallet-mutex` because they
  * coordinate keystore.json + solana-keystore.json + config.json +

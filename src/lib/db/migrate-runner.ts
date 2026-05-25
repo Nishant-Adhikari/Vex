@@ -9,8 +9,8 @@
  * across the boundary stays build-safe.
  *
  * Concurrency safety: a Postgres advisory lock guards the whole run.
- * Concurrent processes (Electron main, MCP bootstrap, knowledge-import
- * scripts, integration tests) are serialized — only one applies
+ * Concurrent processes (Electron main, maintenance scripts, integration
+ * tests) are serialized — only one applies
  * migrations at a time.
  */
 
@@ -20,8 +20,8 @@ import type pg from "pg";
 
 /**
  * Stable advisory-lock identifier shared across every Vex consumer.
- * Pinning a single bigint lets concurrent installs/MCP/scripts queue
- * on the same lock instead of silently racing on schema_version.
+ * Pinning a single bigint lets concurrent installs/scripts queue on the
+ * same lock instead of silently racing on schema_version.
  */
 const VEX_MIGRATE_LOCK_ID = 1_985_229_328;
 

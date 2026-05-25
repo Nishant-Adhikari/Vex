@@ -2,10 +2,10 @@
  * OpenRouter message mapping, response parsing, and streaming accumulation.
  */
 
-import type { ChatResponse } from "@openrouter/sdk/models/chatresponse.js";
-import type { ChatGenerationParams } from "@openrouter/sdk/models/chatgenerationparams.js";
-import type { ChatMessageToolCall } from "@openrouter/sdk/models/chatmessagetoolcall.js";
-import type { ChatStreamingMessageToolCall } from "@openrouter/sdk/models/chatstreamingmessagetoolcall.js";
+import type { ChatResult } from "@openrouter/sdk/models/chatresult.js";
+import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";
+import type { ChatToolCall } from "@openrouter/sdk/models/chattoolcall.js";
+import type { ChatStreamToolCall } from "@openrouter/sdk/models/chatstreamtoolcall.js";
 
 import type {
   InferenceResponse,
@@ -22,7 +22,7 @@ import logger from "@utils/logger.js";
 const TOOL_RESULT_PLACEHOLDER_CONTENT =
   "[Engine: tool execution did not complete — placeholder]";
 
-export function mapMessages(messages: ProviderMessage[]): ChatGenerationParams["messages"] {
+export function mapMessages(messages: ProviderMessage[]): ChatRequest["messages"] {
   const mapped = messages.map(m => {
     if (m.role === "tool" && m.toolCallId) {
       return { role: "tool" as const, content: m.content, toolCallId: m.toolCallId };
@@ -48,13 +48,13 @@ export function mapMessages(messages: ProviderMessage[]): ChatGenerationParams["
   return synthesizeMissingToolResults(mapped);
 }
 
-type MappedMessage = ChatGenerationParams["messages"][number];
+type MappedMessage = ChatRequest["messages"][number];
 
 /**
  * Defence-in-depth safety belt that mirrors `repairOrphanedToolCalls` at the
  * SDK boundary. The engine layer already runs the chronological repair on
  * `ProviderMessage`, but any caller that bypasses `executeTurn` (direct SDK
- * use, future MCP tool surface, simple completion paths) must not be allowed
+ * use, future tool surfaces, simple completion paths) must not be allowed
  * to send a request that ends with `assistant{tool_calls}` whose ids are not
  * paired with adjacent `tool` rows. Every chat-completions provider rejects
  * that shape; DeepSeek's adapter surfaces it as the
@@ -66,9 +66,9 @@ type MappedMessage = ChatGenerationParams["messages"][number];
  * upstream error than a server 400.
  */
 export function synthesizeMissingToolResults(
-  mapped: ChatGenerationParams["messages"],
-): ChatGenerationParams["messages"] {
-  const result: ChatGenerationParams["messages"] = [];
+  mapped: ChatRequest["messages"],
+): ChatRequest["messages"] {
+  const result: ChatRequest["messages"] = [];
   let inserted = 0;
 
   for (let i = 0; i < mapped.length; i++) {
@@ -126,13 +126,13 @@ export function extractUsage(raw: { promptTokens?: number; completionTokens?: nu
   };
 }
 
-export function parseNonStreamingResponse(response: ChatResponse): InferenceResponse {
+export function parseNonStreamingResponse(response: ChatResult): InferenceResponse {
   const choice = response.choices?.[0];
   const msg = choice?.message;
   const usage = extractUsage(response.usage);
 
   // Tool calls
-  const sdkToolCalls: ChatMessageToolCall[] | undefined = msg?.toolCalls;
+  const sdkToolCalls: ChatToolCall[] | undefined = msg?.toolCalls;
   if (sdkToolCalls?.length) {
     const parsed: ParsedToolCall[] = [];
     for (const tc of sdkToolCalls) {
@@ -172,7 +172,7 @@ export function parseNonStreamingResponse(response: ChatResponse): InferenceResp
 // ── Streaming tool call delta accumulation ────────────────────────
 
 export function* processToolCallDelta(
-  tc: ChatStreamingMessageToolCall,
+  tc: ChatStreamToolCall,
   accumulator: Map<number, { id: string; name: string; argsBuffer: string }>,
 ): Generator<StreamChunk> {
   const idx = tc.index;

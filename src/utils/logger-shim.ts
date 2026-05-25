@@ -12,9 +12,8 @@
  *
  *   Splitting the wallet / config helpers off the winston import chain
  *   restores skill §1 + §3 bridge purity (no fs-or-DB-or-heavy-dep
- *   imports from cross-boundary code). vex-shell's top-level CLI code
- *   keeps using full winston via `src/utils/logger.ts`; this shim is
- *   only for primitives shared across boundaries.
+ *   imports from cross-boundary code). This shim is only for primitives
+ *   shared across boundaries.
  *
  * Output contract:
  *   - All log lines go to `process.stderr` so stdout stays free for

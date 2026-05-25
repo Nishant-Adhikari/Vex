@@ -5,7 +5,7 @@
  *
  * The implementation lives in `/mnt/x/Vex/src/utils/dotenv.ts` and
  * stays the single source of truth for the `${CONFIG_DIR}/.env`
- * format that both vex-shell and vex-app read/write.
+ * format used by vex-app and the local agent runtime.
  */
 
 export {

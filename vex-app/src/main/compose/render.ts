@@ -1,12 +1,10 @@
 /**
  * Pure compose render core (codex turn 4 RED #1). NO Electron imports
- * here — vex-shell tsx CLI must be able to consume this module to keep
- * the two clients on a single rendered template (main plan §39-43).
+ * here; dependencies are injected so tests can run it without Electron.
  *
  * Dependencies are injected via `RenderDeps` so:
  *   - vex-app main process passes `electronSecretAdapter` (DPAPI-backed
  *     on Windows, plain mode-0o600 on POSIX)
- *   - vex-shell passes `posixSecretAdapter` (POSIX file with mode 0o600)
  *   - tests pass deterministic adapters that capture writes in-memory
  */
 

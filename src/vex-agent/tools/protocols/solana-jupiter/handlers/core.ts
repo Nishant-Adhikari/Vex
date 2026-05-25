@@ -45,7 +45,7 @@ export function walletAddress(p: Record<string, unknown>, ctx: ProtocolExecution
     }
     return selected;
   }
-  // source:"default" (CLI/MCP) — explicit override preserved; else the primary.
+  // source:"default" — explicit override preserved; else the primary.
   return explicit || resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "solana");
 }
 

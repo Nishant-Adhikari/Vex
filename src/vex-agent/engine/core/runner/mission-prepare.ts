@@ -121,7 +121,7 @@ export interface PrepareMissionStartInput {
   /**
    * Host-supplied session id. IPC callers MUST pass this; engine
    * rejects with `session_mismatch` if it doesn't match the mission
-   * row's `rootSessionId`. Non-IPC callers (CLI / tests / direct
+   * row's `rootSessionId`. Non-IPC callers (tests / direct
    * engine consumers) may omit it — engine then uses the row's
    * `rootSessionId` as the canonical session id and skips the
    * cross-session ownership check (there is no foreign id to compare

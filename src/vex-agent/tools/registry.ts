@@ -59,7 +59,6 @@ export function defaultVisibilityContext(
   };
 }
 
-import { VEX_TOOLS } from "./registry/vex.js";
 import { PROTOCOL_TOOLS } from "./registry/protocol.js";
 import { KHALANI_INTERNAL_TOOLS } from "./registry/khalani.js";
 import { WEB_TOOLS } from "./registry/web.js";
@@ -77,11 +76,9 @@ import { COMPACT_TOOLS } from "./registry/compact.js";
 import { MEMORY_TOOLS } from "./registry/memory.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
-// proactive selection. `VEX_TOOLS` (self-documentation) come first so the
-// model has a one-call entry into the agent's product narrative before it
-// reaches for discover_tools.
+// proactive selection. Protocol discovery comes first because it is the
+// structured entry point into protocol-specific capabilities.
 const TOOLS: readonly ToolDef[] = [
-  ...VEX_TOOLS,
   ...PROTOCOL_TOOLS,
   ...KHALANI_INTERNAL_TOOLS,
   ...WEB_TOOLS,
@@ -155,9 +152,6 @@ export function getAllTools(): readonly ToolDef[] {
  *      mission-setup-hidden / requiresMissionActiveRun gates.
  *   5. `passesPressureSafety` — PR2 cutover catalog-level filter
  *      (drops `mutating` at barrier+, drops `compact_only` below barrier).
- *   6. `isVisibleOnSurface(t, "agent")` — drops `surface: "mcp"` tools
- *      (`vex_introduction`, `vex_namespace_tools`) for the agent runtime;
- *      they remain visible via `getProductionMcpTools()` for MCP consumers.
  */
 export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
   return TOOLS
@@ -166,8 +160,7 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
     .filter(t => !t.excludeRoles?.includes(ctx.role))
     .filter(t => passesVisibility(t.visibility, ctx))
-    .filter(t => passesPressureSafety(t, ctx.contextUsageBand))
-    .filter(t => isVisibleOnSurface(t, "agent"));
+    .filter(t => passesPressureSafety(t, ctx.contextUsageBand));
 }
 
 /**
@@ -202,19 +195,6 @@ function passesPressureSafety(tool: ToolDef, band: ContextUsageBand): boolean {
   if (atBarrier && safety === "mutating") return false;
   if (!atBarrier && safety === "compact_only") return false;
   return true;
-}
-
-/**
- * Whether `tool` is advertised on the given runtime surface.
- *
- * Default `surface === undefined` is treated as "both" — preserves the
- * pre-migration behavior for tools that don't declare a surface. The two
- * surfaces have asymmetric defaults intentionally: most operational tools
- * (knowledge, wallet, web, evm, khalani, etc.) need to appear on both, so
- * leaving `surface` unset is the sensible no-op.
- */
-function isVisibleOnSurface(tool: ToolDef, surface: "agent" | "mcp"): boolean {
-  return !tool.surface || tool.surface === "both" || tool.surface === surface;
 }
 
 function passesVisibility(
@@ -260,33 +240,6 @@ function passesVisibility(
   return true;
 }
 
-/**
- * Surface for the production MCP server (`src/mcp`).
- *
- * Reuses the canonical env / showOnlyWhenEnvMissing / role filtering used
- * everywhere else. The MCP server is a passive bridge — it surfaces the
- * `parent`-role view of tools (no subagent child-only tools), drops anything
- * marked `surface: "agent"` (e.g. `mission_stop`, `loop_defer`,
- * `tool_output_read`, `compact_now` — Vex Agent runtime
- * concepts that the MCP host cannot drive), and hard-excludes any name
- * starting with `subagent_` as defense in depth (today these are already
- * filtered by `excludeRoles: ["subagent"]` for child-only ones, but
- * parent-spawn tools like subagent_spawn / subagent_status / subagent_stop /
- * subagent_reply are NOT role-filtered out — they belong to parent. We do
- * NOT want them in MCP regardless of role).
- *
- * MCP does NOT pass a `chatMode` filter — there is no concept of "MCP mode".
- * Proactive tools (none today) would be visible.
- */
-export function getProductionMcpTools(): readonly ToolDef[] {
-  return TOOLS
-    .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
-    .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
-    .filter(t => !t.excludeRoles?.includes("parent")) // none today, defensive
-    .filter(t => isVisibleOnSurface(t, "mcp"))        // agent-runtime-only tools hidden (mission_stop + autonomy primitives)
-    .filter(t => !t.name.startsWith("subagent_"));    // hard guard for `full-minus-subagents`
-}
-
 /** Check if a tool is blocked for a given role. Hard enforcement at dispatch time. */
 export function isToolBlockedForRole(name: string, role: "parent" | "subagent"): boolean {
   const def = byName.get(name);
@@ -304,11 +257,6 @@ export function isToolBlockedForRole(name: string, role: "parent" | "subagent"):
  * before writes within each substrate; runtime safety nets like
  * `compact_now` next to the substrate they protect). Do NOT alphabetize
  * within categories — the declaration order is the LLM-facing order.
- *
- * MCP-surface-only tools (`vex_introduction`, `vex_namespace_tools`,
- * declared with `surface: "mcp"` in `registry/vex.ts`) intentionally have
- * NO entry here — the agent runtime does not advertise them. They remain
- * visible to MCP consumers via `getProductionMcpTools()`.
  *
  * Subagent tools (`registry/subagents.ts`) are dormant (empty array); if
  * re-enabled in the future, add a `Subagent control` category here and

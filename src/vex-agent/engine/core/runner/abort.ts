@@ -24,7 +24,7 @@
  *      check that rejects when the active run is terminal.
  *
  * Multi-process note: the `AbortController` registry below is per-process.
- * If two processes run the same engine (e.g. a CLI host and the MCP server),
+ * If two processes run the same engine (e.g. a dev host and the desktop app),
  * only the process that started/resumed the run can deliver the signal
  * cleanly. The DB-direct fall-through finalises the row for the other
  * process — race window is one in-flight turn — so either path leaves the

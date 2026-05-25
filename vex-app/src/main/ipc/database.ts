@@ -116,8 +116,7 @@ export function registerDatabaseHandlers(): Array<() => void> {
         try {
           const runResult = await run;
           const result = mapToResult(runResult, ctx.requestId);
-          // M11.5.4 — vex-app's equivalent of vex-shell's
-          // `ensureRequiredEnvDefaults`. Bundled defaults for the
+          // M11.5.4 — seed bundled defaults for the
           // EMBEDDING_* env keys are seeded ONLY when every key is
           // absent (preserve-first), so a partial user override is
           // never clobbered. We run post-migrate because the writer

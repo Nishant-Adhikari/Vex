@@ -7,7 +7,7 @@
  * - Auth header injection
  * - Zod-validated response parsing
  *
- * Streaming: SDK returns EventStream<ChatStreamingResponseChunk> which
+ * Streaming: SDK returns EventStream<ChatStreamChunk> which
  * we consume and yield as provider-agnostic StreamChunk instances.
  *
  * Tool calling: both streaming (delta accumulation) and non-streaming paths.
@@ -18,8 +18,8 @@
  */
 
 import { OpenRouter } from "@openrouter/sdk";
-import type { ChatResponse } from "@openrouter/sdk/models/chatresponse.js";
-import type { ChatStreamingResponseChunk } from "@openrouter/sdk/models/chatstreamingresponsechunk.js";
+import type { ChatResult } from "@openrouter/sdk/models/chatresult.js";
+import type { ChatStreamChunk } from "@openrouter/sdk/models/chatstreamchunk.js";
 import type { EventStream } from "@openrouter/sdk/lib/event-streams.js";
 
 import type {
@@ -79,7 +79,7 @@ export class OpenRouterProvider implements InferenceProvider {
     this.client = new OpenRouter({
       apiKey: this.apiKey,
       httpReferer: OPENROUTER_APP_URL,
-      xTitle: OPENROUTER_APP_TITLE,
+      appTitle: OPENROUTER_APP_TITLE,
       timeoutMs: OPENROUTER_SDK_TIMEOUT_MS,
       retryConfig: {
         strategy: "backoff",
@@ -166,11 +166,11 @@ export class OpenRouterProvider implements InferenceProvider {
   ): Promise<InferenceResponse> {
     const params = buildOpenRouterParams(messages, tools, config, false);
 
-    let response: ChatResponse;
+    let response: ChatResult;
     try {
       response = await this.client.chat.send({
-        chatGenerationParams: params,
-      }) as ChatResponse;
+        chatRequest: params,
+      }) as ChatResult;
     } catch (err) {
       throw normalizeOpenRouterError(err, "chat completion");
     }
@@ -186,11 +186,11 @@ export class OpenRouterProvider implements InferenceProvider {
   ): Promise<{ content: string; usage: InferenceUsage }> {
     const params = buildOpenRouterParams(messages, [], config, false);
 
-    let response: ChatResponse;
+    let response: ChatResult;
     try {
       response = await this.client.chat.send({
-        chatGenerationParams: params,
-      }) as ChatResponse;
+        chatRequest: params,
+      }) as ChatResult;
     } catch (err) {
       throw normalizeOpenRouterError(err, "simple chat completion");
     }
@@ -213,11 +213,11 @@ export class OpenRouterProvider implements InferenceProvider {
   ): AsyncGenerator<StreamChunk> {
     const params = buildOpenRouterParams(messages, tools, config, true);
 
-    let stream: EventStream<ChatStreamingResponseChunk>;
+    let stream: EventStream<ChatStreamChunk>;
     try {
       stream = await this.client.chat.send({
-        chatGenerationParams: { ...params, stream: true },
-      }) as EventStream<ChatStreamingResponseChunk>;
+        chatRequest: { ...params, stream: true },
+      }) as EventStream<ChatStreamChunk>;
     } catch (err) {
       throw normalizeOpenRouterError(err, "streaming chat completion");
     }

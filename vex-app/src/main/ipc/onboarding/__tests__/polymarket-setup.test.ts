@@ -98,7 +98,7 @@ vi.mock("../../../onboarding/env-write-mutex.js", () => ({
 // The acquire primitive is mocked; the PURE credential-map helpers
 // (`buildPolymarketVaultUpdates`, the ENV constant) run for real so the
 // `writeUnlockedSecrets` argument assertions exercise the true key-selection
-// logic (the single source of truth shared with the CLI path).
+// logic (the single source of truth for key selection).
 vi.mock("@vex-lib/polymarket.js", async () => {
   const actual = await vi.importActual<
     typeof import("@vex-lib/polymarket.js")

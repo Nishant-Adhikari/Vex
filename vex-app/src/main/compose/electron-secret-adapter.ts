@@ -1,13 +1,11 @@
 /**
  * Electron secret adapter — POSIX-compatible plaintext format for the
  * canonical secret file (codex turn 5 RED #3 — adapter MUST be format-
- * compatible with `posixSecretAdapter` so vex-shell, which uses POSIX
- * directly, reads exactly what vex-app wrote).
+ * compatible with `posixSecretAdapter`).
  *
  * The canonical file at `${SECRETS_DIR}/pg_password` is always written
  * plaintext mode 0o600. DPAPI / Keychain / libsecret defense-in-depth
- * is deferred to a future M11 task that adds a shared decryption
- * shim (or moves vex-shell off the shared file model entirely).
+ * is deferred to a future M11 task that adds a shared decryption shim.
  *
  * The boot-time cleanup pass enumerates the secrets directory for any
  * orphaned `*.transient` files left over from a previous session that

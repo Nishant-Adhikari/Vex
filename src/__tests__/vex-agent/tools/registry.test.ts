@@ -5,7 +5,6 @@ import {
   isMutatingTool,
   getAllTools,
   getOpenAITools,
-  getProductionMcpTools,
   isToolBlockedForRole,
   defaultVisibilityContext,
 } from "../../../vex-agent/tools/registry.js";
@@ -116,6 +115,11 @@ describe("registry", () => {
 
   it("does NOT have wallet_backup (deferred)", () => {
     expect(getToolDef("wallet_backup")).toBeUndefined();
+  });
+
+  it("does NOT have retired orientation tools", () => {
+    expect(getToolDef("vex_introduction")).toBeUndefined();
+    expect(getToolDef("vex_namespace_tools")).toBeUndefined();
   });
 
   // ── OpenAI format ────────────────────────────────────────────────
@@ -361,40 +365,8 @@ describe("registry", () => {
       expect(defaultTools.length).toBe(parentTools.length);
     });
   });
-
-  // ── Production MCP surface ───────────────────────────────────────
-
-  describe("getProductionMcpTools", () => {
-    it("includes the core host-relevant tools", () => {
-      const names = getProductionMcpTools().map((t) => t.name);
-      expect(names).toContain("discover_tools");
-      expect(names).toContain("execute_tool");
-      expect(names).toContain("wallet_read");
-      expect(names).toContain("khalani_tokens_balances");
-      expect(names).toContain("wallet_send_prepare");
-      expect(names).toContain("wallet_send_confirm");
-      expect(names).toContain("knowledge_write");
-      expect(names).toContain("knowledge_lineage");
-      expect(names).toContain("knowledge_history");
-      expect(names).toContain("portfolio_inspect");
-    });
-
-    // Single-tool exclusion test for `mission_stop`. The full agent-only freeze
-    // for `loop_defer`, `tool_output_read`, `compact_now` lives in
-    // `__tests__/mcp/docs/no-autonomy-leak.test.ts` (broader: also gates docs/manifest).
-    it("excludes mission_stop (vex-agent runtime concept)", () => {
-      const names = getProductionMcpTools().map((t) => t.name);
-      expect(names).not.toContain("mission_stop");
-    });
-
-    it("excludes every subagent_* tool", () => {
-      const names = getProductionMcpTools().map((t) => t.name);
-      for (const name of names) {
-        expect(name.startsWith("subagent_")).toBe(false);
-      }
-    });
-
-    it("mission_stop remains visible to Vex Agent inside an active mission run", () => {
+  describe("mission visibility", () => {
+    it("mission_stop remains visible inside an active mission run", () => {
       const names = getOpenAITools(defaultVisibilityContext({
         permission: "restricted",
         role: "parent",
@@ -402,28 +374,6 @@ describe("registry", () => {
         missionRunActive: true,
       })).map((t) => t.function.name);
       expect(names).toContain("mission_stop");
-    });
-
-    // ── surface: "mcp" — self-doc tools hidden from agent ──────────
-
-    it("excludes vex_introduction from agent surface (already covered by system prompt)", () => {
-      const names = getOpenAITools(defaultVisibilityContext()).map((t) => t.function.name);
-      expect(names).not.toContain("vex_introduction");
-    });
-
-    it("excludes vex_namespace_tools from agent surface (already covered by system prompt)", () => {
-      const names = getOpenAITools(defaultVisibilityContext()).map((t) => t.function.name);
-      expect(names).not.toContain("vex_namespace_tools");
-    });
-
-    it("includes vex_introduction in MCP surface (host orientation)", () => {
-      const names = getProductionMcpTools().map((t) => t.name);
-      expect(names).toContain("vex_introduction");
-    });
-
-    it("includes vex_namespace_tools in MCP surface (host orientation)", () => {
-      const names = getProductionMcpTools().map((t) => t.name);
-      expect(names).toContain("vex_namespace_tools");
     });
   });
 });

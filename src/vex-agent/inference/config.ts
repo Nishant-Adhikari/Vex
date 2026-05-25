@@ -6,7 +6,7 @@
  *
  * M9 refactor: AGENT_ and SUBAGENT_ range plus default constants
  * moved to `src/lib/agent-config.ts` (single source of truth, shared
- * with vex-app onboarding writers and the vex-shell wizard). Engine
+ * with vex-app onboarding writers). Engine
  * behavior preserved:
  *  - AGENT_ keys: parse errors aggregated and thrown (combined message).
  *  - SUBAGENT_ keys: parse errors fall back silently with `logger.warn`.
@@ -129,8 +129,8 @@ export function loadSubagentConfig(agentConfig: EnvConfig): SubagentConfig {
 }
 
 // ── Re-exports of public field metadata ──────────────────────────
-// vex-shell wizard + vex-app onboarding both import from
-// `src/lib/agent-config.ts` directly. These are kept here for
+// vex-app onboarding imports from `src/lib/agent-config.ts` directly.
+// These are kept here for
 // backward compatibility with any in-tree consumer that already
 // imports from this module.
 export { AGENT_CONTEXT_LIMIT, AGENT_MAX_OUTPUT_TOKENS, AGENT_TEMPERATURE };

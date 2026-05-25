@@ -1,6 +1,6 @@
 -- Knowledge lifecycle lineage — adds supersede columns + partial unique index.
 --
--- Forward-only migration for installs that already ran 001..005 (MCP users on
+-- Forward-only migration for installs that already ran 001..005 (early local users on
 -- shipped versions of Vex). On fresh DBs runMigrations applies 001..005
 -- first, then this one — identical end state. Idempotent with IF NOT EXISTS so
 -- re-runs on a partially-applied volume are safe.

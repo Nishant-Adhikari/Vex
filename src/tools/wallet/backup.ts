@@ -1,6 +1,6 @@
 /**
  * Core wallet backup logic.
- * No CLI output — caller is responsible for display.
+ * No direct output — caller is responsible for display.
  */
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, cpSync, rmSync } from "node:fs";

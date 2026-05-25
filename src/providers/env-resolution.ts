@@ -31,7 +31,7 @@ export function readEnvValue(key: string, envPath: string): string | null {
 }
 
 /**
- * Load provider-neutral dotenv at CLI startup.
+ * Load provider-neutral dotenv at runtime startup.
  * Loads from app-specific .env only.
  */
 export function loadProviderDotenv(): void {

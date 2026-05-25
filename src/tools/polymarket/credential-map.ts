@@ -110,7 +110,7 @@ export function withCredentialEntry(
 /**
  * Build the vault-secret updates for persisting one wallet's CLOB credentials —
  * the SINGLE source of truth for "which keys get written" (puzzle 5 B-UI D1).
- * Shared by the CLI/env path (`deriveAndSavePolymarketCredentials`) and the
+ * Shared by the legacy env path (`deriveAndSavePolymarketCredentials`) and the
  * vex-app onboarding handler so the rule cannot drift between them:
  *   - ALWAYS merge `creds` into the per-address map (preserving other wallets);
  *   - for the PRIMARY wallet ONLY, ALSO refresh the three fixed legacy keys
@@ -118,7 +118,7 @@ export function withCredentialEntry(
  *     wallets live in the map only.
  *
  * PURE: parse/merge/serialize only — never touches the keystore, the vault, or
- * process.env. Callers persist the returned object with their own writer (CLI:
+ * process.env. Callers persist the returned object with their own writer (legacy:
  * writeSecretVaultSecrets; vex-app: writeUnlockedSecrets) and decide `isPrimary`.
  * A malformed `currentMapEnv` throws via `parseCredentialMapEnv` (fail closed).
  */

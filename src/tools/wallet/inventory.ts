@@ -8,8 +8,8 @@
  *     entry id (or the fixed legacy file), never stored in config.
  *
  * `requireEvmWallet()` / `requireSolanaWallet()` resolve the PRIMARY entry
- * (index 0) so CLI/MCP — which have no session — keep working unchanged.
- * Per-session selection (stage 2) resolves a specific entry by id+address.
+ * (index 0) for trusted callers without session-scoped wallet selection.
+ * Per-session selection resolves a specific entry by id+address.
  */
 
 import { randomUUID } from "node:crypto";
@@ -193,9 +193,8 @@ export function assertCanAddWallet(
 
 /**
  * Upsert the single legacy (fixed-keystore) entry for a family and make it the
- * primary (index 0). Used by the CLI `vex wallet create/import` write-paths,
- * which still write the fixed keystore file. Exactly one legacy entry can
- * exist per family.
+ * primary (index 0). Used by legacy write paths that still write the fixed
+ * keystore file. Exactly one legacy entry can exist per family.
  */
 export function registerPrimaryLegacyWallet(family: InventoryFamily, address: string): void {
   const cfg = loadConfig();

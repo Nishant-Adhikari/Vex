@@ -120,10 +120,6 @@ describe("ActionKind — pinned critical classifications", () => {
     ["discover_tools", "read"],
     ["execute_tool", "read"],
 
-    // Self-documentation (MCP-surface only)
-    ["vex_introduction", "read"],
-    ["vex_namespace_tools", "read"],
-
     // Khalani read-only aliases
     ["khalani_chains_list", "read"],
     ["khalani_tokens_top", "read"],

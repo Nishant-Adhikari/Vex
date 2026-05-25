@@ -1,6 +1,6 @@
 /**
  * Failed mission recovery — non-IPC entry. Composes prepare + run
- * halves so CLI / test / direct engine callers keep the same surface.
+ * halves so tests and direct engine callers keep the same surface.
  *
  * The IPC layer (`vex-app/src/main/ipc/mission/recover.ts`) calls
  * `prepareMissionRecover` directly so it can return `dispatched`

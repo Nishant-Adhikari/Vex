@@ -3,7 +3,7 @@
  * prepare + run split (puzzle 04 phase 6).
  *
  * `startMission(missionId)` and `resumeMissionRun(runId)` exist for
- * non-IPC callers (CLI / tests / direct engine consumers) that don't
+ * non-IPC callers (tests / direct engine consumers) that don't
  * have the sessionId or pre-resolved provider/config in scope. The
  * IPC layer in `vex-app/src/main/ipc/mission/` calls
  * `prepareMissionStart` directly to keep durable dispatch semantics

@@ -5,10 +5,8 @@
  *
  * The implementations live under `src/tools/wallet/polymarket-credentials.ts`
  * and stay the single source of truth for the EIP-712 ClobAuth signing
- * flow + derive/create API key sequence. vex-shell (CLI) consumes
- * `deriveAndSavePolymarketCredentials` directly via the legacy import path;
- * vex-app uses the env-free `acquirePolymarketCredentialsWithPassword`
- * primitive exported here.
+ * flow + derive/create API key sequence. vex-app uses the env-free
+ * `acquirePolymarketCredentialsWithPassword` primitive exported here.
  */
 
 export {
@@ -22,7 +20,7 @@ export {
 // Per-wallet credential-map primitives (puzzle 5 B-UI). `buildPolymarketVaultUpdates`
 // is the SINGLE source of truth for which vault keys a Polymarket write touches
 // (map merge + primary-only fixed keys); the vex-app onboarding handler composes
-// it exactly like the CLI path so the rule cannot drift between clients.
+// it directly so the rule cannot drift between callers.
 export {
   buildPolymarketVaultUpdates,
   parseCredentialMapEnv,

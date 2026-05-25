@@ -40,11 +40,9 @@ import {
 /**
  * Remap Electron's userData onto CONFIG_DIR/.electron-state BEFORE any
  * code touches `app.getPath("userData")` (per Electron docs — once a path
- * is queried it caches). This unifies vex-app and vex-shell on a single
- * shared CONFIG_DIR (main plan §39-43): shared `.env`, `keystore.json`,
- * `.install-id`, etc. live at CONFIG_DIR root; Chromium cache, the
- * preferences store, electron-log files all nest under
- * CONFIG_DIR/.electron-state and stay invisible to vex-shell.
+ * is queried it caches). Shared `.env`, `keystore.json`, `.install-id`,
+ * etc. live at CONFIG_DIR root; Chromium cache, the preferences store,
+ * and electron-log files all nest under CONFIG_DIR/.electron-state.
  */
 mkdirSync(ELECTRON_STATE_DIR, { recursive: true });
 app.setPath("userData", ELECTRON_STATE_DIR);

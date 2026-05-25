@@ -9,15 +9,14 @@
  * surface (~120 tools today, ~3-4s wallclock); subsequent boots are a
  * cheap hash diff.
  *
- * Wired into `src/mcp/bootstrap.ts:runBootstrapChecks` as **non-blocking**
- * fire-and-forget so MCP startup never waits on the embedding service. The
- * `discover_tools` cold path NEVER lazy-embeds in user-facing code — if
+ * The `discover_tools` cold path NEVER lazy-embeds in user-facing code — if
  * `tool_embeddings` is incomplete, dense discovery degrades to
- * `dense_failed: true` and falls back to lexical scoring.
+ * `dense_failed: true` and falls back to lexical scoring. Use
+ * `pnpm tool-reembed` during development until the desktop local-service
+ * bootstrap owns this refresh path.
  *
- * Module-level `inFlight` promise enforces single-flight: parallel calls
- * (e.g. CLI invocation racing the bootstrap fire-and-forget) wait on the
- * same run rather than double-embedding.
+ * Module-level `inFlight` promise enforces single-flight: parallel callers
+ * wait on the same run rather than double-embedding.
  */
 
 import { createHash } from "node:crypto";

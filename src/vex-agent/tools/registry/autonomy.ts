@@ -10,8 +10,6 @@
  *   - `excludeRoles: ["subagent"]` is defense in depth — a child subagent
  *     that somehow ended up with the tool name should still be rejected at
  *     dispatch.
- *   - `surface: "agent"` — MCP has no runtime / autonomy concept.
- *
  * Contract reminders for the model (PR-5 plan §7):
  *   - `reason` is an INTERNAL resume hint, not a user-facing message. It
  *     surfaces later as the wake banner + `effectiveRecallSeed` input
@@ -32,7 +30,6 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
-    surface: "agent",
     visibility: { hiddenInMissionSetup: true },
     description:
       "Retrieve a bounded byte slice of a previously-overflowed tool output. " +
@@ -68,7 +65,6 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
     pressureSafety: "mutating",
     actionKind: "schedule",
     excludeRoles: ["subagent"],
-    surface: "agent",
     visibility: { requiresMissionActiveRun: true },
     description:
       "Pause the current mission run until a wake time. " +

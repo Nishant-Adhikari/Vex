@@ -98,24 +98,6 @@ export interface ToolDef {
   /** Roles that should NOT see/use this tool. Hard-enforced at dispatch time. */
   excludeRoles?: string[];
   /**
-   * Surface(s) on which this tool is advertised. Default `undefined` ≡ "both".
-   *
-   * - `"agent"` → only the Vex Agent runtime sees it (agent / mission).
-   *   `getProductionMcpTools` filters it out. Use for tools
-   *   that only make sense inside the agent loop (`mission_stop`, `loop_defer`,
-   *   `tool_output_read`).
-   * - `"mcp"` → only the MCP server (`getProductionMcpTools`) advertises it.
-   *   `getOpenAITools` filters it out. Use for self-documentation tools whose
-   *   content the agent already gets via system prompt (`vex_introduction`,
-   *   `vex_namespace_tools`).
-   * - `"both"` (or undefined) → visible on both surfaces. Default for the vast
-   *   majority of operational tools.
-   *
-   * Surface controls advertising only — the dispatcher still routes calls for
-   * any registered tool name regardless of surface.
-   */
-  surface?: "agent" | "mcp" | "both";
-  /**
    * Session-aware visibility rules. When omitted, the tool is subject only
    * to the existing filter chain (requiresEnv, proactive, excludeRoles).
    * See `ToolVisibility` for the individual gates.

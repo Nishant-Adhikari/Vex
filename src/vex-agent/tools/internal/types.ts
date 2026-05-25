@@ -53,22 +53,22 @@ export interface InternalToolContext {
   /**
    * Origin of the call. Used for knowledge provenance (knowledge_entries.source_surface).
    * - undefined / "vex_agent": Vex Agent (mission loop, chat, scripts) — default
-   * - "mcp_local": production MCP server (`src/mcp`)
+   * - "mcp_local": legacy import/export provenance value retained for backups
    *
    * Defaulting to undefined means existing call sites stay unchanged; the knowledge
    * write path interprets undefined as "vex_agent".
    */
   sourceSurface?: "vex_agent" | "mcp_local";
   /**
-   * Session id of the writer surface. For MCP this is the MCP-side session id
-   * (`mcp-stdio-{nanoid}` / `mcp-http-{nanoid}`). Vex Agent typically leaves
-   * this undefined and relies on `sessionId` for its own session tracking.
+   * Session id of the writer surface. Vex Agent typically leaves this
+   * undefined and relies on `sessionId` for its own session tracking.
    */
   sourceSession?: string;
   /**
-   * Per-session wallet resolution (puzzle 5 phase 5B). Engine sessions use
-   * source:"session" (selected wallet, or fail-closed when unselected); MCP/CLI
-   * use source:"default" (primary wallet). Consumed by the wallet resolvers.
+   * Per-session wallet resolution. Engine sessions use source:"session"
+   * (selected wallet, or fail-closed when unselected); trusted maintenance
+   * paths without session scope use source:"default" (primary wallet).
+   * Consumed by the wallet resolvers.
    */
   walletResolution: WalletResolution;
   /** Mission wallet policy — enforced alongside the resolution by the resolvers. */

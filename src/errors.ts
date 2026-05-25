@@ -1,6 +1,5 @@
 /**
- * Structured error class for Vex CLI.
- * Enables consistent JSON error output for automation.
+ * Structured error class for Vex runtime and automation.
  */
 export class VexError extends Error {
   retryable?: boolean;

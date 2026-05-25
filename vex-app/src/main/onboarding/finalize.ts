@@ -19,8 +19,8 @@
  *      `telemetryWarning` so the renderer can prompt the operator
  *      to retry from Settings later.
  *   5. Best-effort `${SETUP_COMPLETE_FILE}` flag write. Primary skip-
- *      gate is `wizardState.completed`; the flag exists for future
- *      vex-shell skip detection. Best-effort = log + continue.
+ *      gate is `wizardState.completed`; the flag exists for simple
+ *      boot-time detection. Best-effort = log + continue.
  *
  * Phase 2 note: Mode (AGENT_MODE/AGENT_LOOP_MODE/AGENT_INITIAL_PROMPT)
  * and Wake (AGENT_WAKE_*) no longer live in the wizard. They are

@@ -25,7 +25,6 @@ export const MEMORY_TOOLS: readonly ToolDef[] = [
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
-    surface: "agent",
     description: [
       "Semantic recall over THIS SESSION's narrative memory chunks. Each chunk is a 4-section markdown body (what happened / what I did / what I tried / outstanding items) produced when the conversation was compacted by `compact_now`.",
       "Per-session only — does NOT reach earlier sessions. For durable cross-session lessons use `knowledge_recall`. For freeform scratchpad lookups use `document_read`.",
@@ -61,7 +60,6 @@ export const MEMORY_TOOLS: readonly ToolDef[] = [
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "local_write",
-    surface: "agent",
     description: [
       "Close a single outstanding item on a session memory chunk. Use when a previously-open follow-up (pending tx, awaiting decision, lookup needed) is now done — keeps the resume packet's Outstanding section honest across compacts.",
       "memory_id is the chunk id from memory_recall output. outstanding_item_id is the UUID of the specific item to resolve (shown in the chunk's Outstanding section). resolution_note is a short (≤500-char) explanation persisted for audit and future recall.",

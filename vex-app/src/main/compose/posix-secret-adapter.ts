@@ -3,7 +3,7 @@
  * directory with mode 0o700. No DPAPI / safeStorage involvement; the
  * compose `pg_password.file:` reference points directly at the target.
  *
- * Used by macOS, Linux, and the vex-shell tsx CLI.
+ * Used by macOS and Linux desktop hosts.
  */
 
 import { promises as fs } from "node:fs";

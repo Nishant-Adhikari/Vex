@@ -3,7 +3,7 @@
  * (codex turn 3 RED #3). MUST NOT decrypt keystores or expose private
  * key material before the wallet-unlock flow. Wallet status is
  * deliberately reduced to `present | missing` rather than the richer
- * decrypt-tested status the post-unlock CLI helper returns.
+ * decrypt-tested status the post-unlock helper returns.
  *
  * `embeddings` lives here (not in DockerStatus) because the endpoint is
  * user-configured via `EMBEDDING_BASE_URL` — it might be Docker Model

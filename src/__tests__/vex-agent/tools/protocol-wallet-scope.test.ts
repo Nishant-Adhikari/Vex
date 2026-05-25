@@ -120,7 +120,7 @@ describe("protocol wallet-scope with signing handlers enabled", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("a signing tool under source:default (CLI/MCP) reaches the handler", async () => {
+  it("a signing tool under source:default reaches the handler", async () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(
       makeManifest({ toolId: "x.sign", mutating: true, actionKind: "user_wallet_broadcast" }),
     );

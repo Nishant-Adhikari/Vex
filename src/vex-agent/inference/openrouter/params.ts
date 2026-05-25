@@ -1,4 +1,4 @@
-import type { ChatGenerationParams } from "@openrouter/sdk/models/chatgenerationparams.js";
+import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";
 import type {
   InferenceConfig,
   ProviderMessage,
@@ -12,8 +12,8 @@ export function buildOpenRouterParams(
   tools: ToolDefinition[],
   config: InferenceConfig,
   stream: boolean,
-): ChatGenerationParams {
-  const params: ChatGenerationParams = {
+): ChatRequest {
+  const params: ChatRequest = {
     model: config.model,
     messages: mapMessages(messages),
     maxTokens: config.maxOutputTokens,

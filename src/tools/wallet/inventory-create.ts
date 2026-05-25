@@ -4,7 +4,7 @@
  * New (non-legacy) wallets get a `wallet-<id>.json` keystore under CONFIG_DIR
  * and append to the per-family inventory after the cap + duplicate checks.
  * These functions hold key material only transiently (encrypt → write file);
- * they never return private keys. The CLI `vex wallet create/import` legacy
+ * they never return private keys. The legacy wallet create/import
  * write-paths are separate (fixed keystore + `registerPrimaryLegacyWallet`).
  */
 

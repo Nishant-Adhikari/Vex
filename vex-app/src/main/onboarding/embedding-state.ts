@@ -4,7 +4,7 @@
  * Reads the 4 EMBEDDING_* keys from `${CONFIG_DIR}/.env` directly
  * (matches engine's runtime contract: `loadEmbeddingConfig()` reads
  * `process.env`, populated from .env via `loadDotenvFileIntoProcess`
- * at bootstrap — `.env.example` is a CLI-setup-time template, NOT a
+ * at bootstrap — `.env.example` is a setup-time template, NOT a
  * runtime source). The probe says "configured" iff all four keys
  * resolve to valid values per engine validation rules.
  *

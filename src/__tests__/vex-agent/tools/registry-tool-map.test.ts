@@ -1,15 +1,13 @@
 /**
- * Tool Map integrity — every agent-surface ToolDef must appear in exactly
+ * Tool Map integrity — every registered agent ToolDef must appear in exactly
  * one `TOOL_MAP_CATEGORIES` entry, every name in the map must resolve to
- * a registered ToolDef, and MCP-only / dormant-subagent tools must NOT
- * appear in the agent Tool Map.
+ * a registered ToolDef, and dormant-subagent tools must NOT appear in the
+ * agent Tool Map.
  *
  * Codex PR3 plan-review (round 1) required this scoping: the invariant
- * covers tools the LLM in agent runtime will see, not the union of every
- * tool in the repo. `vex_introduction` / `vex_namespace_tools` are
- * `surface: "mcp"` (filtered out by `getOpenAITools`), and the
- * `SUBAGENT_TOOLS` array is currently `[]` per the dormant-subagent
- * comment in `registry/subagents.ts`.
+ * covers tools the LLM in agent runtime will see. The `SUBAGENT_TOOLS`
+ * array is currently `[]` per the dormant-subagent comment in
+ * `registry/subagents.ts`.
  */
 
 import { describe, it, expect } from "vitest";
@@ -21,7 +19,6 @@ import {
 } from "../../../vex-agent/tools/registry.js";
 
 const AGENT_SURFACE_TOOL_NAMES = getAllTools()
-  .filter(t => t.surface !== "mcp")
   // Subagent dormancy: SUBAGENT_TOOLS is `[]` today. If re-enabled,
   // re-evaluate whether subagent_* belong in the agent Tool Map.
   .filter(t => !t.name.startsWith("subagent_"))
@@ -51,14 +48,6 @@ describe("TOOL_MAP_CATEGORIES integrity", () => {
       }
     }
     expect(unresolved, `TOOL_MAP_CATEGORIES names not found in registry: ${unresolved.join(", ")}`).toEqual([]);
-  });
-
-  it("MCP-only orientation tools are NOT in any agent Tool Map category", () => {
-    // `vex_introduction` / `vex_namespace_tools` are declared
-    // `surface: "mcp"` in registry/vex.ts so they reach the MCP host but
-    // never the agent runtime. They must not appear in any category here.
-    expect(TOOL_MAP_NAMES).not.toContain("vex_introduction");
-    expect(TOOL_MAP_NAMES).not.toContain("vex_namespace_tools");
   });
 
   it("does NOT include dormant subagent_* tools", () => {

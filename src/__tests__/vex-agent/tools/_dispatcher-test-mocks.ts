@@ -74,6 +74,31 @@ vi.mock("@tools/khalani/client.js", () => ({
   }),
 }));
 
+vi.mock("@tools/khalani/chains.js", () => ({
+  clearKhalaniChainsCache: vi.fn(),
+  getCachedKhalaniChains: vi.fn().mockResolvedValue(KHALANI_TEST_CHAINS),
+  resolveChainId: (input: string) => {
+    const normalized = input.trim().toLowerCase();
+    if (normalized === "eth" || normalized === "ethereum") return 1;
+    if (normalized === "sol" || normalized === "solana") return 20011000000;
+    const numeric = Number(normalized);
+    if (Number.isInteger(numeric) && numeric > 0) return numeric;
+    throw new Error(`Unsupported chain: ${input}`);
+  },
+  getChain: (chainId: number) => {
+    const chain = KHALANI_TEST_CHAINS.find((entry) => entry.id === chainId);
+    if (!chain) throw new Error(`Unsupported chain: ${chainId}`);
+    return chain;
+  },
+  getChainFamily: (chainId: number) => {
+    const chain = KHALANI_TEST_CHAINS.find((entry) => entry.id === chainId);
+    if (!chain) throw new Error(`Unsupported chain: ${chainId}`);
+    return chain.type;
+  },
+  getChainRpcUrl: vi.fn(() => "https://rpc.example.com"),
+  getChainExplorerUrl: vi.fn(() => "https://explorer.example.com"),
+}));
+
 // Mock vex-agent DB repos (no real DB in unit tests)
 vi.mock("@vex-agent/db/repos/search.js", () => ({
   getCached: vi.fn().mockResolvedValue(null),

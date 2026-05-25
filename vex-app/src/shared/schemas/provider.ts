@@ -45,7 +45,7 @@ export type ProviderPersistInput = z.infer<typeof providerPersistInputSchema>;
  *   2. `OPENROUTER_API_KEY` + `AGENT_MODEL` present → openrouter
  * The API key is stored in the encrypted vault; provider/model selection
  * stays in `.env` so the GUI's wizard choice is unambiguous even when
- * stale `AGENT_PROVIDER` lines exist from prior CLI use or manual edits.
+ * stale `AGENT_PROVIDER` lines exist from manual edits.
  */
 export const PROVIDER_PERSIST_CANONICAL_ORDER = [
   "OPENROUTER_API_KEY",

@@ -23,10 +23,13 @@
  *   9. Compose templates pin every image by sha256 digest (skill §10), bind
  *      every published port to host_ip 127.0.0.1, and leave no
  *      `REPLACE_WITH_VERIFIED_DIGEST_BEFORE_FIRST_RUN` placeholders behind.
+ *   10. Packaged migration resources are byte-for-byte in sync with the
+ *      canonical `src/vex-agent/db/migrations/` source.
  *
  * Exit non-zero on any violation.
  */
 
+import { createHash } from "node:crypto";
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
@@ -444,6 +447,48 @@ check("compose templates — sha256 digest pinning + host_ip 127.0.0.1", () => {
 
   if (issues.length > 0) {
     throw new Error(`Compose template issues:\n    ${issues.join("\n    ")}`);
+  }
+});
+
+// 10. Migration resources mirror the canonical vex-agent migrations.
+check("migration resources — mirror canonical vex-agent migrations", () => {
+  const repoRoot = path.resolve(root, "..");
+  const srcDir = path.join(repoRoot, "src", "vex-agent", "db", "migrations");
+  const destDir = path.join(root, "resources", "migrations");
+  const isMigrationFile = (name) => name.endsWith(".sql") && /^\d{3}_/.test(name);
+  const hashFile = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
+
+  if (!existsSync(srcDir)) throw new Error(`missing source migrations dir: ${srcDir}`);
+  if (!existsSync(destDir)) throw new Error(`missing packaged migrations dir: ${destDir}`);
+
+  const sourceNames = readdirSync(srcDir).filter(isMigrationFile).sort();
+  const destNames = readdirSync(destDir).filter(isMigrationFile).sort();
+
+  if (sourceNames.length === 0) {
+    throw new Error(`no canonical migrations found in ${srcDir}`);
+  }
+
+  if (sourceNames.join("\n") !== destNames.join("\n")) {
+    throw new Error(
+      `packaged migration list differs from canonical source.\n` +
+        `Run \`node scripts/copy-migrations.mjs\` from vex-app/ before building.`
+    );
+  }
+
+  const mismatches = [];
+  for (const name of sourceNames) {
+    const sourceHash = hashFile(path.join(srcDir, name));
+    const destHash = hashFile(path.join(destDir, name));
+    if (sourceHash !== destHash) {
+      mismatches.push(name);
+    }
+  }
+
+  if (mismatches.length > 0) {
+    throw new Error(
+      `packaged migration content differs for: ${mismatches.join(", ")}.\n` +
+        `Run \`node scripts/copy-migrations.mjs\` from vex-app/ before building.`
+    );
   }
 });
 

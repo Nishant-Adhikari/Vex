@@ -2,7 +2,7 @@
  * Vex Agent — auto-migration entrypoint.
  *
  * Thin delegation to the shared runner in src/lib/db/migrate-runner.ts.
- * Signature stays `Promise<void>` so existing consumers (MCP bootstrap,
+ * Signature stays `Promise<void>` so existing consumers (desktop bootstrap,
  * integration globalSetup, knowledge-import script, idempotency test)
  * continue to work unchanged. The shared runner adds advisory-lock
  * concurrency safety + per-statement timeouts, both of which are also

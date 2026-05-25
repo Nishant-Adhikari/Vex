@@ -41,7 +41,7 @@ import logger from "@utils/logger.js";
  *   supersedes_content_hash — stable cross-DB link to predecessor (not local id).
  *   status_reason / change_summary / what_failed — lifecycle audit text.
  *   source_surface / source_session — provenance (which surface wrote this entry:
- *     vex_agent = mission loop / chat / scripts, mcp_local = production MCP).
+ *     vex_agent = mission loop / chat / scripts, mcp_local = legacy import provenance).
  *     Carried so audit trails survive backup/restore across machines.
  *
  * Streaming order (by id ASC) guarantees every predecessor is emitted before its
@@ -130,7 +130,7 @@ function entryToExportRow(e: KnowledgeEntryForExport): ExportedRow {
 }
 
 /**
- * Programmatic entry point for tests and CLI. Writes JSONL to the given sink.
+ * Programmatic entry point for tests and maintenance scripts. Writes JSONL to the given sink.
  * Returns count of entries written (NOT including the manifest line).
  */
 export async function exportKnowledge(sink: {

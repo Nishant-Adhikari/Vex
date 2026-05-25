@@ -125,7 +125,7 @@ export interface InsertEntryInput {
   /** Vector as plain number[]. Must match embeddingDim. Serialized to pgvector literal. */
   embedding: number[];
   // ── Optional provenance fields. Default 'vex_agent' / NULL when omitted.
-  // Production MCP server (`src/mcp`) passes 'mcp_local' + its session id.
+  // 'mcp_local' is retained only for legacy backups/imports.
   sourceSurface?: "vex_agent" | "mcp_local";
   sourceSession?: string;
   // ── Optional audit fields (used by knowledge-import to preserve roundtrip).

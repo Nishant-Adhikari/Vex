@@ -16,7 +16,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 // Load provider dotenv before any module reading process.env — mirrors the
-// baseline test and CLI scripts.
+// baseline test and maintenance scripts.
 import { loadProviderDotenv } from "../../providers/env-resolution.js";
 loadProviderDotenv();
 import { discoverProtocolCapabilities } from "../../vex-agent/tools/protocols/runtime.js";

@@ -19,7 +19,7 @@
 -- No TTL / stale-owner recovery in v1. Desktop scenario: reembed is
 -- operator-initiated, and a crashed reembed that leaves `active = TRUE`
 -- is cleared by hand (`UPDATE maintenance_leases SET active = FALSE
--- WHERE id = 1;`). TTL + force-release-lease CLI are deferred to v2 per
+-- WHERE id = 1;`). TTL + force-release command are deferred to v2 per
 -- plan v5 non-goals.
 
 CREATE TABLE IF NOT EXISTS maintenance_leases (

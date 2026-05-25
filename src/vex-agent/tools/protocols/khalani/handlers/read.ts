@@ -49,7 +49,7 @@ export function resolveWalletAddress(
   const selected = resolveSelectedAddress(context.walletResolution, context.walletPolicy, walletFamily);
   const explicit = str(params, "address");
   if (!explicit) return selected;
-  // Default (CLI/MCP) may query an arbitrary explicit address. A session scope
+  // Default resolution may query an arbitrary explicit address. A session scope
   // is locked to its selected wallet — an explicit address must match it
   // (Codex 5B #2); generic recipient/quote fields are separate params.
   if (context.walletResolution.source === "default") return explicit;

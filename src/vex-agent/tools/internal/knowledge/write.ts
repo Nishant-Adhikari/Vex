@@ -155,7 +155,7 @@ export async function handleKnowledgeWrite(
           embeddingDim: embedding.length,
           embedding,
           // Surface provenance: defaults to 'vex_agent' when context omits it
-          // (legacy / scripts / tests). Production MCP server fills in 'mcp_local'
+          // (legacy / scripts / tests). Undefined defaults to 'vex_agent'.
           // and its own session id via makeProductionContext.
           sourceSurface: context.sourceSurface,
           sourceSession: context.sourceSession,

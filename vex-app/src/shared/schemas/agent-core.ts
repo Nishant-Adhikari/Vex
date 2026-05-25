@@ -13,7 +13,7 @@
  * payload (codex turn 2 RED #4).
  *
  * The range/default constants are imported from the shared
- * `src/lib/agent-config.ts` module so engine + GUI + CLI share one
+ * `src/lib/agent-config.ts` module so engine + GUI share one
  * source of truth (no drift).
  */
 

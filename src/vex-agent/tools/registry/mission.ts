@@ -1,7 +1,4 @@
-/**
- * Mission tools — vex-agent only. MCP has no mission concept
- * (`missionRunId` is always null in MCP context); hide via `surface: "agent"`.
- */
+/** Mission tools — only visible in mission setup/run contexts. */
 
 import type { ToolDef } from "../types.js";
 
@@ -9,7 +6,6 @@ export const MISSION_TOOLS: readonly ToolDef[] = [
   {
     name: "mission_draft_update", kind: "internal", mutating: false, pressureSafety: "mutating", actionKind: "local_write",
     excludeRoles: ["subagent"],
-    surface: "agent",
     visibility: { requiresMissionSetup: true },
     description: "Save or update the mission draft during mission setup/edit. Call this before telling the user the mission draft is ready.",
     parameters: { type: "object", properties: {
@@ -29,7 +25,6 @@ export const MISSION_TOOLS: readonly ToolDef[] = [
   {
     name: "mission_stop", kind: "internal", mutating: false, pressureSafety: "safe_at_barrier", actionKind: "local_write",
     excludeRoles: ["subagent"],
-    surface: "agent",
     visibility: { requiresMissionRun: true },
     description: "Stop the current mission run. Only valid during active mission execution. goal_reached is success; other non-emergency reasons must match the user-approved mission stopConditions.",
     parameters: { type: "object", properties: {

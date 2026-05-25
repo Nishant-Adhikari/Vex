@@ -5,8 +5,7 @@
  * barrier / critical).
  *
  * Codex PR3 GREEN LIGHT verification: visibility-aware, empty categories
- * dropped, names in declared order, MCP-only orientation tools excluded
- * across all contexts.
+ * dropped, names in declared order across all contexts.
  */
 
 import { describe, it, expect } from "vitest";
@@ -52,7 +51,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       // compact_now is hidden below barrier
       expect(out).not.toContain("Context compaction");
 
-      // MCP-only tools never appear in agent map
+      // Retired orientation tools never appear in the agent map.
       expect(out).not.toContain("vex_introduction");
       expect(out).not.toContain("vex_namespace_tools");
     });

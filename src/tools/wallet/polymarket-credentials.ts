@@ -16,15 +16,15 @@
  *
  * Flow: wallet keystore → EIP-712 ClobAuth signature → derive/create API key → save to encrypted vault
  * Used by:
- *   - CLI `vex polymarket setup` + vex-agent internal tool (legacy env-driven path)
- *   - vex-app onboarding handler (env-free `acquire…` primitive)
+ *   - vex-agent internal tool (legacy env-driven path)
+ *   - vex-app onboarding handler (env-free `acquire...` primitive)
  *
  * Two-tier surface per Codex Phase-2 review:
  *   1. `acquirePolymarketCredentialsWithPassword(password)` — env-free primitive.
  *      Decrypts the keystore using the explicitly provided password, signs the
  *      L1 EIP-712 ClobAuth, calls Polymarket. Returns credentials in memory.
  *      Does NOT touch the vault, .env, or process.env.
- *   2. `deriveAndSavePolymarketCredentials({ secretsFilePath? })` — legacy CLI
+ *   2. `deriveAndSavePolymarketCredentials({ secretsFilePath? })` — legacy
  *      wrapper. Resolves the master password from process.env
  *      (`VEX_KEYSTORE_PASSWORD`), then composes the acquire primitive with the
  *      same vault-persist + .env-strip + same-process env-apply as before.
@@ -189,13 +189,12 @@ export async function acquirePolymarketCredentialsWithPassword(
 
 /**
  * Derive Polymarket CLOB API credentials for an EVM wallet and save them into
- * the per-wallet credential map. Legacy env-driven entry point used by:
- *   - vex CLI `vex polymarket setup`
- *   - vex-agent internal tool (`polymarket-setup`)
+ * the per-wallet credential map. Legacy env-driven entry point used by the
+ * vex-agent internal tool (`polymarket_setup`).
  *
  * Target wallet:
  *   - `options.walletId` → that specific session EVM wallet;
- *   - omitted → the primary EVM wallet (legacy CLI behavior).
+ *   - omitted → the primary EVM wallet (legacy behavior).
  *
  * Persistence (puzzle 5 B-core): the creds are MERGED into the
  * `POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS` map (keyed by normalized address),
@@ -216,7 +215,7 @@ export async function deriveAndSavePolymarketCredentials(
   const cfg = loadConfig();
 
   // Resolve the target EVM wallet: an explicit session wallet by id, else the
-  // primary (legacy CLI behavior).
+  // primary (legacy behavior).
   const entry = options.walletId
     ? getWalletById("evm", options.walletId, cfg)
     : getPrimaryEvmEntry(cfg);

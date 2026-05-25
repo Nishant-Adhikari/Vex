@@ -42,7 +42,7 @@ CONFIG_DIR/
   .electron-state/                  Electron-only (window state, session cache, log files)
 ```
 
-Files OUTSIDE `.electron-state/` are shared with `local/vex-shell/` (the CLI).
+Files OUTSIDE `.electron-state/` are shared runtime state for the desktop app.
 Files INSIDE `.electron-state/` are Electron-private (Chromium cache, electron-log).
 
 ## WSL2 gotcha — Windows host
@@ -57,15 +57,9 @@ That means:
   (i.e. `%APPDATA%/vex`), **not** `~/.config/vex` inside WSL2.
 - From WSL2 you can reach that directory at `/mnt/c/Users/<user>/AppData/Roaming/vex/`.
 
-If you also use the CLI (`local/vex-shell/`) from inside WSL2, *that* process
-runs as Linux and uses `~/.config/vex`. Result: the two clients see different
-state. For a coherent dev environment, either:
-- Run both from WSL2 with an explicit `XDG_CONFIG_HOME` pointing at the
-  Windows AppData path (`/mnt/c/Users/<user>/AppData/Roaming/`), or
-- Run both from PowerShell, or
-- Override the config root with `VEX_CONFIG_DIR=<absolute path>` (env var
-  honoured by both the desktop app and the CLI; must be a non-empty
-  absolute path).
+For a coherent dev environment, override the config root with
+`VEX_CONFIG_DIR=<absolute path>` when launching the desktop app; it must be a
+non-empty absolute path.
 
 ## Clean-slate reset
 

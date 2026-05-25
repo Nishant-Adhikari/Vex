@@ -48,7 +48,7 @@ function loadSolanaWalletFromEntry(entry: WalletInventoryEntry): SolanaWallet {
   return { family: "solana", address: derivedAddress, secretKey };
 }
 
-// ── Primary resolution (CLI/MCP — no session) ──────────────────────────────
+// ── Primary resolution (no session-scoped wallet selection) ────────────────
 
 export function requireEvmWallet(): EvmWallet {
   const { address, privateKey } = requireWalletAndKeystore();
@@ -61,7 +61,7 @@ export function requireSolanaWallet(): SolanaWallet {
     throw new VexError(
       ErrorCodes.WALLET_NOT_CONFIGURED,
       "No Solana wallet configured.",
-      "Run: vex wallet create --chain solana",
+      "Configure a Solana wallet in Vex setup.",
     );
   }
   return loadSolanaWalletFromEntry(entry);
@@ -77,7 +77,7 @@ export function requireWalletForChain(family: ChainFamily): ChainWallet {
  * How a wallet is chosen for the current execution. Engine sessions MUST use
  * `source: "session"` so a missing/unselected family fails CLOSED — there is
  * deliberately no fall-through to the primary wallet. `source: "default"` is
- * reserved for CLI/MCP, which have no per-session scope.
+ * reserved for trusted maintenance paths that do not have per-session scope.
  */
 export type WalletResolution =
   | {
@@ -89,7 +89,7 @@ export type WalletResolution =
 
 /**
  * Resolve the wallet for a family under a resolution policy.
- *   - default → primary wallet (CLI/MCP).
+ *   - default → primary wallet.
  *   - session → the selected entry, validated by id AND address snapshot. A
  *     missing selection, deleted wallet, or address drift (e.g. a force
  *     re-import under the same id) throws a typed VexError so the caller can
@@ -99,7 +99,7 @@ export type WalletResolution =
  * Validate + return the inventory entry for a family under a resolution policy,
  * WITHOUT decrypting any key. Address-only callers (wallet_read, send prepare,
  * balance display) use this; signing callers add `loadWalletFromEntry`.
- *   - default → primary entry (CLI/MCP).
+ *   - default → primary entry.
  *   - session → selected entry, validated by id AND address snapshot. Missing
  *     selection / removed wallet / address drift throw typed VexErrors.
  */
@@ -157,8 +157,8 @@ export function loadWalletFromEntry(
 
 /**
  * Resolve + decrypt the signing wallet for a family (address-snapshot pinned).
- * Composition of `resolveSelectedEntry` + `loadWalletFromEntry`. Kept for CLI
- * and the engine signing path.
+ * Composition of `resolveSelectedEntry` + `loadWalletFromEntry`. Kept for the
+ * engine signing path and trusted maintenance callers.
  */
 export function resolveWalletForFamily(
   family: ChainFamily,

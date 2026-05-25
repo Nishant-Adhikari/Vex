@@ -5,8 +5,8 @@ import { getPrimaryEvmEntry, loadEvmKey } from "./inventory.js";
 /**
  * Resolve the PRIMARY EVM wallet (inventory index 0) + its private key.
  *
- * Back-compat: CLI/MCP have no session, so they always get the primary entry —
- * which on a legacy install is the single wallet migrated from the old
+ * Back-compat: callers without session-scoped wallet selection use the primary
+ * entry. On a legacy install this is the single wallet migrated from the old
  * `wallet.address` config field (keystore in the fixed KEYSTORE_FILE).
  */
 export function requireWalletAndKeystore(): { address: Address; privateKey: Hex } {
@@ -15,7 +15,7 @@ export function requireWalletAndKeystore(): { address: Address; privateKey: Hex 
     throw new VexError(
       ErrorCodes.WALLET_NOT_CONFIGURED,
       "No wallet configured.",
-      "Run: vex wallet create --json",
+      "Configure a wallet in Vex setup.",
     );
   }
   return loadEvmKey(entry);

@@ -55,7 +55,7 @@ export interface DiscoveryTelemetryInput {
   discoveryRunId: string;
   /** Calling surface — "vex_agent" | "mcp_local" | undefined (defaults to "vex_agent"). */
   sourceSurface?: string;
-  /** Session ID of the calling surface — enables grouping discoveries within one MCP session. */
+  /** Session ID of the calling surface — enables grouping discoveries within one host session. */
   sourceSession?: string;
 }
 

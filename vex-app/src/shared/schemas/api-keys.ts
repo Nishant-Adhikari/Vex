@@ -3,7 +3,7 @@
  *
  * Field set:
  *   - JUPITER_API_KEY (optional in input — user may already have it
- *     set via vex-shell; the wizard's Step-3 skip-card uses the
+ *     set; the wizard's Step-3 skip-card uses the
  *     envState `apiKeys.jupiterConfigured` boolean to decide whether
  *     to show the form at all).
  *   - TAVILY_API_KEY (optional)

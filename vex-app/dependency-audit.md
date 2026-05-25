@@ -70,9 +70,9 @@ Three direct deps received major bumps vs planned targets. Each verified safe:
 ## Removed from plan
 - **`@types/dompurify`** — DOMPurify v3.x ships own types (`@types/dompurify` deprecated as stub). Removed.
 
-## Added 2026-05-14 — root MCP runtime deps bundled into main bundle
+## Added 2026-05-14 — root runtime deps bundled into main bundle
 
-The vex-app main process consumes root MCP code (`/mnt/x/Vex/src/lib/*`, `/mnt/x/Vex/src/tools/*`) through the `@vex-lib` Vite alias declared in `vite.main.config.ts`. At BUILD time, Rolldown bundles that source into `dist/main/index.js` and must resolve its third-party imports against vex-app's own `node_modules` — pnpm hoisting across workspace boundaries is not honoured during bundling. The fix is to declare these runtime deps directly in `vex-app/package.json` so they are resolvable at build AND copied into the packaged Electron app.
+The vex-app main process consumes shared root runtime code (`/mnt/x/Vex/src/lib/*`, `/mnt/x/Vex/src/tools/*`) through the `@vex-lib` Vite alias declared in `vite.main.config.ts`. At BUILD time, Rolldown bundles that source into `dist/main/index.js` and must resolve its third-party imports against vex-app's own `node_modules` — pnpm hoisting across workspace boundaries is not honoured during bundling. The fix is to declare these runtime deps directly in `vex-app/package.json` so they are resolvable at build AND copied into the packaged Electron app.
 
 | Package | Version | Verified | License | Why |
 |---|---|---|---|---|
@@ -83,7 +83,7 @@ The vex-app main process consumes root MCP code (`/mnt/x/Vex/src/lib/*`, `/mnt/x
 
 All four are declared in `dependencies` (not `devDependencies`) because electron-builder must ship them in the packaged app.
 
-This addition does NOT close the root MCP architectural leak — that is a separate refactor (split `src/lib/wallet.ts` so `loadConfig` does not pull `viem/accounts`) tracked in task #13. The build fix unblocks CI; the proper boundary fix follows.
+This addition does NOT close the root runtime boundary issue — that is a separate refactor (split `src/lib/wallet.ts` so `loadConfig` does not pull `viem/accounts`) tracked in task #13. The build fix unblocks CI; the proper boundary fix follows.
 
 ### Accepted transitive debt
 

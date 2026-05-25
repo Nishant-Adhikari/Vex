@@ -26,16 +26,14 @@ lint-all:
 
 check: lint test
 
-# -- E2E Test stack (pgvector + Docker Model Runner) -------------------------
+# -- E2E test stack (pgvector + Docker Model Runner) -------------------------
 #
 # Postgres on host port 5777 (test-only; production uses 55432 via vex-app
 # render template). Embedding model + dim are config-driven via
 # EMBEDDING_MODEL / EMBEDDING_DIM env vars sourced from your CONFIG_DIR/.env.
 # Requires Docker Engine >=4.40, Compose >=2.38.1, Docker Model Runner active.
 #
-# As of M5 (2026-05-08) the canonical e2e compose lives in vex-app/resources/
-# compose/docker-compose.e2e.yml (skill §10 — sha256 digest pinning + 127.0.0.1
-# loopback). The legacy `docker/vex-agent/` directory was removed.
+# The canonical e2e compose lives in vex-app/resources/compose/.
 
 e2e-up:
 	docker compose -f vex-app/resources/compose/docker-compose.e2e.yml up -d
@@ -45,7 +43,7 @@ e2e-down:
 
 e2e-smoke:
 	@if [ -z "$$EMBEDDING_DIM" ] || [ -z "$$EMBEDDING_MODEL" ] || [ -z "$$EMBEDDING_BASE_URL" ]; then \
-	  echo "FAIL: EMBEDDING_DIM / EMBEDDING_MODEL / EMBEDDING_BASE_URL not set — source docker/vex-agent/.env first"; \
+	  echo "FAIL: EMBEDDING_DIM / EMBEDDING_MODEL / EMBEDDING_BASE_URL not set — source the local services env first"; \
 	  exit 1; \
 	fi
 	@echo "Smoke-testing $$EMBEDDING_BASE_URL/embeddings (model=$$EMBEDDING_MODEL, expecting dim=$$EMBEDDING_DIM)…"
@@ -60,7 +58,7 @@ e2e-smoke:
 # Three companion scripts for the embedding-portability subsystem.
 # See README "Switching embedding model" for the operator workflow.
 #
-# All three accept ARGS=... to forward CLI flags, e.g.:
+# All three accept ARGS=... to forward command flags, e.g.:
 #   make knowledge-export ARGS="--out backup.jsonl"
 #   make knowledge-import ARGS="--in backup.jsonl"
 #   make knowledge-reembed ARGS="--dry-run"

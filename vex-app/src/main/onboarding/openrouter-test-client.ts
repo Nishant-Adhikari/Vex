@@ -98,7 +98,7 @@ function defaultClientFactory(apiKey: string, timeoutMs: number) {
     retryConfig: { strategy: "none" },
     timeoutMs,
     httpReferer: OPENROUTER_APP_URL,
-    xTitle: OPENROUTER_APP_TITLE,
+    appTitle: OPENROUTER_APP_TITLE,
   });
 }
 
@@ -248,7 +248,7 @@ export async function verifyOpenRouterConnection(
   try {
     await client.chat.send(
       {
-        chatGenerationParams: {
+        chatRequest: {
           model: input.model,
           messages: [{ role: "user", content: "ping" }],
           maxCompletionTokens: VERIFY_MAX_OUTPUT_TOKENS,

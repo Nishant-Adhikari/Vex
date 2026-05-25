@@ -1,6 +1,5 @@
 /**
- * Bundled embedding env writer (M11.5.4) — vex-app's equivalent of
- * vex-shell's `ensureRequiredEnvDefaults()`.
+ * Bundled embedding env writer (M11.5.4).
  *
  * Writes the 4 EMBEDDING_* keys to `${CONFIG_DIR}/.env` ONLY when ALL
  * four are absent or empty (preserve-first). If even a single key is

@@ -13,7 +13,7 @@
  * runs under `withLeaseSharedLock` and fails fast with
  * `MaintenanceActiveError`. The old `runtime_state.active` flag is no
  * longer a gate — it is kept purely as an observability signal for
- * CLI / UI status (see `scripts/knowledge-reembed.ts` --help).
+ * UI/status surfaces (see `scripts/knowledge-reembed.ts` --help).
  */
 
 import { query, queryOne, execute } from "../../client.js";
@@ -116,10 +116,9 @@ export async function findRowsWithDimNotMatching(currentDim: number): Promise<nu
  * Cheap check on the singleton `runtime_state` row. Used as a soft pre-check
  * by `knowledge-reembed` against the most obvious race with the loop engine.
  *
- * NOTE: This is NOT a full write lock. MCP / internal tools / subagents / CLI
- * can still write to knowledge_entries while `active = FALSE`. The script
- * help text and README must explicitly tell operators to stop the FULL stack
- * of writers before running reembed.
+ * NOTE: This is NOT a full write lock. Internal tools, subagents, scripts, or
+ * future hosts can still write to knowledge_entries while `active = FALSE`.
+ * Operators must stop the full stack of writers before running reembed.
  */
 export async function isRuntimeActive(): Promise<boolean> {
   const row = await queryOne<{ active: boolean }>(

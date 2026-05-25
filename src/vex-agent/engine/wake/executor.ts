@@ -7,10 +7,9 @@
  *     LOCKED). Mission-run wake resumes also claim the run row with a CAS
  *     before injecting the wake banner, so `/retry` and wake cannot both
  *     resume the same stale `paused_wake` snapshot.
- *   - The executor is started exclusively from the MCP binary
- *     (`src/mcp/index.ts`) after the transport bind, with hardcoded
- *     defaults (interval=2000ms, batchSize=10) — wake is always-on for
- *     any installed process, no env-driven kill switch.
+ *   - The desktop-agent host should start one process-local executor with
+ *     hardcoded defaults (interval=2000ms, batchSize=10) after DB bootstrap.
+ *     Wake is an installed-runtime concern, not a renderer concern.
  *
  * Tick semantics:
  *   1. `claimDue(now, batchSize)` — atomically flips the pending rows to
@@ -224,8 +223,8 @@ export interface StartOptions {
  * `AGENT_WAKE_ENABLED=false` from an older install cannot disable wake.
  * Pass `deps`/`now` in tests to inject fakes without touching the real DB.
  *
- * `stop()` drains any currently-running tick before resolving, so callers
- * (e.g. MCP SIGTERM handler) can await a clean shutdown.
+ * `stop()` drains any currently-running tick before resolving, so hosts can
+ * await a clean shutdown.
  */
 export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandle {
   const interval = options.intervalMs ?? 2000;
@@ -279,7 +278,7 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
 // ── Production dep wiring ──────────────────────────────────────────
 
 // Production wiring lives inline (top-level imports) because this module is
-// only reachable from `src/mcp/index.ts`, which already boots the DB + engine.
+// only reachable after the host has booted the DB + engine.
 // Tests that just want `tick` call it directly with a handcrafted `WakeDeps`.
 
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";

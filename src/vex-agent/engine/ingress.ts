@@ -1,6 +1,6 @@
 /**
- * Ingress router — the single entry point transport layers (MCP, CLI, GUI) call
- * when a user message arrives for a session.
+ * Ingress router — the single entry point desktop hosts call when a user
+ * message arrives for a session.
  *
  * Responsibilities:
  *   1. Cancel any pending `loop_defer` wake for the session (user preempt).

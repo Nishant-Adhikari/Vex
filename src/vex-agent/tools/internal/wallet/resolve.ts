@@ -77,7 +77,7 @@ export interface SelectedWalletAddresses {
  *  - Invalid mission policy fails closed FIRST (contract drift must never
  *    degrade to an empty/global read — Codex 5E-2 review).
  *  - A family with no wallet (`WALLET_NOT_SELECTED` for a session, or
- *    `WALLET_NOT_CONFIGURED` for CLI/MCP default) is a VALID empty → null; the
+ *    `WALLET_NOT_CONFIGURED` for default resolution) is a VALID empty → null; the
  *    read simply shows nothing for that family.
  *  - Address drift / removed wallet / policy violation (`WALLET_SCOPE_MISMATCH`)
  *    re-throws so the read fails closed.

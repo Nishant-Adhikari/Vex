@@ -90,7 +90,7 @@ export function redactEmbeddingUrl(rawUrl: string | null): string | null {
 /**
  * Local schema for the wallet-addresses slice of `config.json`. Kept
  * local (not imported from @vex-lib) so this probe stays free of the
- * root MCP wallet barrel — that barrel transitively pulls
+ * root wallet barrel — that barrel transitively pulls
  * `viem/accounts` for keystore creation, which (a) is not a dependency
  * of vex-app and (b) would drag signing-capable code through the env
  * probe path for no reason.

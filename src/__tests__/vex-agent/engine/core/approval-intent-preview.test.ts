@@ -108,7 +108,7 @@ describe("buildIntentPreview", () => {
   });
 
   it("returns empty criticalArgs map when no allow-listed key matches", () => {
-    const preview = buildIntentPreview("vex_introduction", {
+    const preview = buildIntentPreview("non_allowlisted_tool", {
       topic: "overview", // not in allowlist
     });
     expect(preview.criticalArgs).toEqual({});

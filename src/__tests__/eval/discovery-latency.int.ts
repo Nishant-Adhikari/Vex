@@ -30,7 +30,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 // Load provider dotenv before any module reading process.env (same pattern
-// as the baseline test and CLI scripts).
+// as the baseline test and maintenance scripts).
 import { loadProviderDotenv } from "../../providers/env-resolution.js";
 loadProviderDotenv();
 import { discoverProtocolCapabilities } from "../../vex-agent/tools/protocols/runtime.js";

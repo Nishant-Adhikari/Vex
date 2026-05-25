@@ -8,7 +8,7 @@
  * background resume). The wrapper preserves the legacy "returns null on
  * CAS miss" shape by mapping the new outcome union onto it, but also
  * awaits the resumed turn loop synchronously when a mission run is in
- * play — that's the legacy behaviour callers (tests, MCP, CLI) expect.
+ * play — that's the legacy behaviour callers and tests expect.
  *
  * IPC handlers should use `prepareReject` directly so the renderer doesn't
  * block on the full resumed turn loop.

@@ -9,7 +9,7 @@ import { ok } from "../types.js";
 // All portfolio reads are scoped to the session's selected wallet set
 // (puzzle 5 phase 5E-2). An empty set yields zeroes/[] (never global) because
 // every filter is `wallet_address = ANY($::text[])` and `ANY('{}')` matches
-// nothing. CLI/MCP pass the primary set, preserving prior behaviour.
+// nothing. Default-resolution callers pass the primary set, preserving prior behaviour.
 export async function inspectSummary(addresses: string[]): Promise<ToolResult> {
   const { getTotalUsd, getLatestAggregateSnapshot } = await import("@vex-agent/db/repos/balances.js");
   const { getOpen } = await import("@vex-agent/db/repos/open-positions.js");

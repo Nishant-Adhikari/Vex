@@ -10,9 +10,7 @@
  *   4. Print a one-line summary, exit 0 on success / non-zero on failure.
  *
  * Use this when developing locally and you want to know dense tool discovery
- * is ready before running the MCP server. Production MCP boots reembed in the
- * background (see `src/mcp/bootstrap.ts`); this script is the synchronous
- * equivalent.
+ * is ready before running desktop-agent flows or protocol-discovery tests.
  */
 
 import { loadProviderDotenv } from "../../providers/env-resolution.js";

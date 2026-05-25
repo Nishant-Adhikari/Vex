@@ -21,7 +21,7 @@
  *   TTL-based stale-owner recovery is deferred to v2 per plan v5.
  *
  *   `runtime_state.active` is NOT a gate. It is retained as a pure
- *   observability signal for UI / CLI status and is not read here.
+ *   observability signal for UI/status surfaces and is not read here.
  *
  * Usage:
  *   pnpm exec tsx src/vex-agent/scripts/knowledge-reembed.ts [--force] [--dry-run]
@@ -86,9 +86,9 @@ export async function reembedKnowledge(opts: ReembedOptions = {}): Promise<Reemb
         `(current EMBEDDING_DIM). Re-embedding cannot reconcile mixed dims atomically.\n` +
         `Use the export → wipe → import flow instead:\n` +
         `  1. make knowledge-export ARGS="--out backup.jsonl"\n` +
-        `  2. docker compose -f docker/vex-agent/docker-compose.dev.yml down -v\n` +
+        `  2. reset the targeted local DB stack (desktop app reset flow, or e2e compose for tests)\n` +
         `  3. update env (EMBEDDING_MODEL, EMBEDDING_DIM)\n` +
-        `  4. docker compose ... up -d\n` +
+        `  4. start the local services again\n` +
         `  5. make knowledge-import ARGS="--in backup.jsonl"`,
     );
   }
@@ -215,7 +215,7 @@ function parseArgs(argv: readonly string[]): ReembedArgs {
           "clear it manually:\n" +
           "  psql $VEX_DB_URL -c 'UPDATE maintenance_leases SET active = FALSE WHERE id = 1;'\n\n" +
           "runtime_state.active is no longer a gate — it remains as an\n" +
-          "observability signal only (UI / CLI status).\n\n" +
+          "observability signal only (UI/status surfaces).\n\n" +
           "DIFFERENT-DIM SWAP: this script refuses to run if any row has a different\n" +
           "embedding_dim from the current EMBEDDING_DIM. Use the export → wipe →\n" +
           "import flow for dim changes (see --help on knowledge-export / -import).\n",

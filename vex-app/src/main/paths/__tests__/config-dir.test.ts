@@ -1,7 +1,7 @@
 /**
  * Verifies the CONFIG_DIR resolver matches `/mnt/x/Vex/src/config/paths.ts`
  * exactly across the three supported platforms — drift would split the
- * shared user resources between vex-app and vex-shell (main plan §39-43).
+ * shared user resources between vex-app and the local agent runtime.
  */
 
 import path from "node:path";

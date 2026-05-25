@@ -1,37 +1,22 @@
 {
   "name": "@vex/vex",
   "version": "1.0.0",
-  "description": "Vex local MCP and agent launcher",
+  "private": true,
+  "description": "Vex desktop app workspace and local agent runtime",
   "type": "module",
-  "publishConfig": {
-    "access": "public"
-  },
   "engines": {
     "node": ">=22.21.0"
-  },
-  "files": [
-    "dist/**",
-    "src/vex-agent/db/migrations/**",
-    "docker/vex-agent/**",
-    "docker/vex-agent/.env.example"
-  ],
-  "bin": {
-    "vex": "dist/cli/index.js",
-    "vex-mcp": "dist/mcp/index.js"
   },
   "scripts": {
     "clean": "node scripts/clean-dist.cjs",
     "build": "pnpm run clean && pnpm exec tsc && pnpm exec tsc-alias --outDir dist",
-    "build:release": "pnpm run clean && pnpm exec tsc -p tsconfig.release.json && pnpm exec tsc-alias -p tsconfig.release.json --outDir dist",
     "dev": "tsc --watch",
-    "prepack": "pnpm run build:release",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest/integration.config.ts",
     "test:eval:dense": "VEX_REAL_DENSE_EVAL=1 vitest run --config vitest/dense-eval.config.ts",
     "test:eval:latency": "VEX_REAL_LATENCY_EVAL=1 vitest run --config vitest/latency-eval.config.ts",
     "test:all": "pnpm test && pnpm test:integration",
-    "mcp": "tsx src/mcp/index.ts",
     "knowledge-export": "tsx src/vex-agent/scripts/knowledge-export.ts",
     "knowledge-import": "tsx src/vex-agent/scripts/knowledge-import.ts",
     "knowledge-reembed": "tsx src/vex-agent/scripts/knowledge-reembed.ts",
@@ -45,14 +30,12 @@
     "vex:test:e2e": "pnpm --dir vex-app test:e2e"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openrouter/sdk": "^0.9.11",
+    "@openrouter/sdk": "^0.12.35",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "@tavily/core": "^0.7.2",
     "bs58": "^6.0.0",
     "ethers": "^6.13.1",
-    "fastify": "^5.8.4",
     "pg": "^8.20.0",
     "rettiwt-api": "7.0.3",
     "socket.io-client": "^4.8.3",
@@ -61,18 +44,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@clack/prompts": "^1.2.0",
     "@testcontainers/postgresql": "^11.14.0",
-    "@types/marked-terminal": "^6.1.1",
     "@types/node": "^22.19.15",
     "@types/pg": "^8.18.0",
-    "@types/react": "^19.2.14",
-    "ink": "^7.0.1",
-    "ink-spinner": "^5.0.0",
-    "ink-text-input": "^6.0.0",
-    "marked": "^15.0.12",
-    "marked-terminal": "^7.3.0",
-    "react": "^19.2.5",
     "tsc-alias": "^1.8.16",
     "tsx": "^4.21.0",
     "typescript": "^5.6.3",
@@ -81,7 +55,7 @@
   "keywords": [
     "defi",
     "blockchain",
-    "mcp",
+    "desktop",
     "agent"
   ],
   "author": "",

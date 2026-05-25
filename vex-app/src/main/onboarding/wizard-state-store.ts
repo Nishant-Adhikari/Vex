@@ -9,9 +9,8 @@
  * so leftover-file collisions cannot occur even across crashes.
  *
  * Lives under `ELECTRON_STATE_DIR` (the Electron-private nested path)
- * deliberately — vex-shell does not need to read or write wizard
- * progress, only the env values the steps emit (those land in the
- * shared `${CONFIG_DIR}/.env`).
+ * deliberately — setup progress is desktop UI state, while the env values
+ * the steps emit land in the shared `${CONFIG_DIR}/.env`.
  *
  * The persisted shape is validated by `wizardStateSchema`, which
  * rejects: unknown step ids, duplicate completed entries, and

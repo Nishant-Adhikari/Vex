@@ -1,7 +1,6 @@
 /**
- * Wallet restore-from-backup (M8) — NEW logic; vex-shell has no
- * equivalent flow. The user picks a `.json` keystore file via the
- * Electron dialog (filtered to .json), main verifies the password
+ * Wallet restore-from-backup (M8). The user picks a `.json` keystore
+ * file via the Electron dialog (filtered to .json), main verifies the password
  * decrypts the file, confirms an address-mismatch overwrite if any,
  * backs up the current state, then atomically copies the keystore
  * into the canonical CONFIG_DIR location.

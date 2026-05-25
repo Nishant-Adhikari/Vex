@@ -77,7 +77,7 @@ describe("handlePolymarketSetup", () => {
     expect(mocks.deriveAndSave).not.toHaveBeenCalled();
   });
 
-  it("derives the PRIMARY (no walletId) on the default (CLI/MCP) path", async () => {
+  it("derives the PRIMARY (no walletId) on the default-resolution path", async () => {
     mocks.resolveSelectedAddress.mockReturnValue(PRIMARY_EVM);
     mocks.hasCreds.mockReturnValue(false);
     mocks.deriveAndSave.mockResolvedValue({ apiKeyPrefix: "p…", storage: "secret-vault", address: PRIMARY_EVM });

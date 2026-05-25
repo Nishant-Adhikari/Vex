@@ -463,7 +463,7 @@ export function registerPolymarketSetupHandler(): () => void {
           // vault updates via the SHARED helper — NON-primary writes ONLY the
           // per-address map key (merged); PRIMARY writes the map key + the 3
           // fixed legacy keys. `buildPolymarketVaultUpdates` is the single
-          // source of truth for key selection (shared with the CLI path).
+          // source of truth for key selection.
           const primaryAddress = getPrimaryEvmAddress();
           const isPrimary =
             primaryAddress !== null &&

@@ -1,6 +1,6 @@
 /**
  * Visual password-strength feedback. Length-tier only — does NOT block
- * form submission (vex-shell parity hard rule = 8 char minimum, the
+ * form submission (runtime hard rule = 8 char minimum, the
  * Zod schema enforces that). Per codex turn 5 answer #3 the hint is
  * factual: "8 characters minimum. 12+ recommended." We do NOT imply
  * Phase 2 KDF / encryption properties that have not shipped yet.

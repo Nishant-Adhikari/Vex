@@ -2,7 +2,7 @@
  * `approveAndResume` — back-compat wrapper over the puzzle-5 phase-3
  * `prepareApprove` + `runResumeAfterDecision` pair.
  *
- * Existing non-IPC callers (engine tests, CLI/MCP if any) keep their
+ * Existing non-IPC callers (engine tests and direct engine consumers) keep their
  * synchronous-resume semantics: the function awaits the mission-run turn
  * loop and returns the resulting `TurnResult`. IPC handlers should use
  * `prepareApprove` + `dispatchPreparedApprovalDecision(runResumeAfterDecision)`

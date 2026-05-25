@@ -21,7 +21,7 @@
  *     the writer's tx always completes before maintenance can flip the
  *     gate — closing the TOCTOU window without an advisory lock.
  *
- * The lease is intentionally minimal: no TTL, no force-release CLI, no
+ * The lease is intentionally minimal: no TTL, no force-release command, no
  * stale-owner heartbeats. Desktop scenario: operator runs reembed by
  * hand, and a crashed reembed that leaves `active=TRUE` is cleared with
  * one SQL statement (`UPDATE maintenance_leases SET active=FALSE WHERE
@@ -193,7 +193,7 @@ export async function releaseReembedLease(
 
 /**
  * Read the current lease state. Non-blocking — does not take any lock.
- * Intended for observability (UI / CLI status), NOT for gating writes
+ * Intended for observability (UI/status surfaces), NOT for gating writes
  * (use {@link withLeaseSharedLock} for that).
  */
 export async function inspectLease(

@@ -90,7 +90,7 @@ describe("wallet_read", () => {
     expect(data.totalUsd).toBeGreaterThan(0);
   });
 
-  // Empty/whitespace `chainIds` is normalized to "scan all chains". MCP-style
+  // Empty/whitespace `chainIds` is normalized to "scan all chains". Some
   // serializers and many LLM providers emit `""` for "no value" — the handler
   // must treat that as omission, not a validation error.
   it("treats empty chainIds string as omission (scans all chains)", async () => {

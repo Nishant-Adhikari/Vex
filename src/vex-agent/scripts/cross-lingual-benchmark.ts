@@ -1,7 +1,7 @@
 /**
  * cross-lingual-benchmark — Phase 0 hard gate for the language pivot.
  *
- * Stand-alone CLI. Embeds the curated benchmark dataset against the local
+ * Stand-alone maintenance command. Embeds the curated benchmark dataset against the local
  * EmbeddingGemma endpoint (or whatever EMBEDDING_BASE_URL points at) and
  * produces a markdown report covering two retrieval modes:
  *
@@ -462,7 +462,7 @@ export async function runBenchmark(
   return report;
 }
 
-// ── CLI entry ────────────────────────────────────────────────────────
+// ── Command entry ────────────────────────────────────────────────────
 
 const isMain = (() => {
   try {
