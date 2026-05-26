@@ -1,13 +1,15 @@
 /**
- * One transcript row (stage 8-1) — presentational only.
+ * One transcript row — presentational only.
  *
- * Switches on the pure `TranscriptRowModel.variant`. Content is rendered as a
- * React text node (`{content}`), never HTML, so tool args / model output can't
- * inject markup — markdown + sanitization land in a later slice. Vex replies
- * carry the `/vex.jpg` avatar. Surfaces stay ≤8px radius with no card-in-card.
+ * Switches on the pure `TranscriptRowModel.variant`. Assistant prose renders
+ * through `MarkdownContent` (stage 8-2a) — safe React elements, never an HTML
+ * string; user/tool/notice rows render as plain React text nodes. Either way
+ * model/tool output cannot inject markup. Vex replies carry the `/vex.jpg`
+ * avatar. Surfaces stay ≤8px radius with no card-in-card.
  */
 
 import type { JSX } from "react";
+import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import type { TranscriptRowModel } from "./transcriptRowModel.js";
 
 const BUBBLE =
@@ -37,8 +39,8 @@ export function TranscriptMessage({
             alt="Vex"
             className="mt-0.5 h-7 w-7 shrink-0 rounded-md object-cover"
           />
-          <div className={`${BUBBLE} bg-white/[0.04] text-foreground`}>
-            {row.content}
+          <div className="max-w-[80%] break-words rounded-lg bg-white/[0.04] px-3 py-2 text-sm leading-relaxed text-foreground">
+            <MarkdownContent text={row.content} />
           </div>
         </div>
       );
