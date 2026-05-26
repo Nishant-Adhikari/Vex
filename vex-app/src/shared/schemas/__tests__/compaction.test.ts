@@ -5,6 +5,8 @@ import {
   compactionHistoryInputSchema,
   compactionHistoryItemSchema,
   compactionHistoryResultSchema,
+  compactionRetryInputSchema,
+  compactionRetryResultSchema,
   compactionStatusDtoSchema,
   compactionStatusInputSchema,
   compactionStatusResultSchema,
@@ -145,5 +147,45 @@ describe("compaction history schemas (stage 7-2a)", () => {
     expect(compactionHistoryResultSchema.safeParse([VALID_ITEM]).success).toBe(
       true,
     );
+  });
+});
+
+describe("compaction retry schemas (stage 8-5)", () => {
+  const SID = "00000000-0000-4000-8000-000000000009";
+
+  it("input requires a uuid + non-negative generation; strict", () => {
+    expect(
+      compactionRetryInputSchema.safeParse({ sessionId: SID, checkpointGeneration: 0 })
+        .success,
+    ).toBe(true);
+    expect(
+      compactionRetryInputSchema.safeParse({ sessionId: "nope", checkpointGeneration: 0 })
+        .success,
+    ).toBe(false);
+    expect(
+      compactionRetryInputSchema.safeParse({ sessionId: SID, checkpointGeneration: -1 })
+        .success,
+    ).toBe(false);
+    expect(compactionRetryInputSchema.safeParse({ sessionId: SID }).success).toBe(
+      false,
+    );
+    expect(
+      compactionRetryInputSchema.safeParse({
+        sessionId: SID,
+        checkpointGeneration: 0,
+        extra: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("result echoes the generation + a valid job status; rejects a bad status", () => {
+    expect(
+      compactionRetryResultSchema.safeParse({ checkpointGeneration: 2, status: "pending" })
+        .success,
+    ).toBe(true);
+    expect(
+      compactionRetryResultSchema.safeParse({ checkpointGeneration: 2, status: "bogus" })
+        .success,
+    ).toBe(false);
   });
 });

@@ -270,6 +270,57 @@ export async function recoverStaleRunning(staleThresholdMs: number): Promise<num
   return rowCount;
 }
 
+/**
+ * Re-enqueue a `permanently_failed` job for another attempt (user-triggered
+ * retry from the desktop app). Clears the terminal status AND every
+ * progress/audit field stamped by claim / markFailed / markCompleted, so the
+ * row is indistinguishable from a fresh enqueue and `claimNextDueJob` can pick
+ * it up (`attempt_count = 0 < max_attempts`, `next_attempt_at = NOW()`).
+ *
+ * Guarded on the current status to avoid racing a worker: `not_found` if the
+ * row is gone, `not_permanently_failed` if it is not (or no longer) terminal.
+ */
+export async function resetPermanentlyFailed(
+  jobId: number,
+): Promise<
+  { ok: true } | { ok: false; reason: "not_found" | "not_permanently_failed" }
+> {
+  const row = await queryOne<{ status: string }>(
+    "SELECT status FROM compact_jobs WHERE id = $1",
+    [jobId],
+  );
+  if (!row) return { ok: false, reason: "not_found" };
+  if (row.status !== "permanently_failed") {
+    return { ok: false, reason: "not_permanently_failed" };
+  }
+  const rowCount = await execute(
+    `UPDATE compact_jobs
+     SET status                       = 'pending',
+         attempt_count                = 0,
+         last_error                   = NULL,
+         next_attempt_at              = NOW(),
+         locked_at                    = NULL,
+         locked_by                    = NULL,
+         heartbeat_at                 = NULL,
+         started_at                   = NULL,
+         completed_at                 = NULL,
+         inference_completed_at       = NULL,
+         inference_provider           = NULL,
+         inference_model              = NULL,
+         cost_usd                     = NULL,
+         chunks_inserted              = 0,
+         chunks_rejected_by_exclusion = 0,
+         chunks_rejected_by_redaction = 0
+     WHERE id = $1
+       AND status = 'permanently_failed'`,
+    [jobId],
+  );
+  // rowCount 0 ⇒ a worker/other path changed status between SELECT and UPDATE.
+  return rowCount === 1
+    ? { ok: true }
+    : { ok: false, reason: "not_permanently_failed" };
+}
+
 export async function getById(id: number): Promise<CompactJob | null> {
   const row = await queryOne<CompactJobRow>(
     `SELECT ${JOB_COLUMNS} FROM compact_jobs WHERE id = $1`,

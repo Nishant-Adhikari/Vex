@@ -1,9 +1,10 @@
 /**
- * Compaction TanStack Query hooks (agent integration stage 7-1).
+ * Compaction TanStack Query hooks (stages 7-1, 7-2a) + retry mutation (8-5).
  *
- * Read-only Track-2 worker status for the runtime-bar chip. The renderer
- * never controls the executor (owned by Electron main) — it only reflects
- * the session's `compact_jobs` state.
+ * The renderer never schedules the Track-2 executor (owned by Electron main).
+ * It reads the session's `compact_jobs` state for the runtime-bar chip +
+ * history panel, and `useRetryCompaction` re-enqueues a permanently-failed
+ * generation (the one user-initiated action).
  *
  * Two freshness layers:
  *  - **poll** (`refetchInterval`): Track-2 runs in a background worker and
@@ -17,14 +18,18 @@
 import { useEffect } from "react";
 import {
   queryOptions,
+  useMutation,
   useQuery,
   useQueryClient,
+  type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import {
   COMPACTION_HISTORY_DEFAULT_LIMIT,
   type CompactionHistoryResult,
+  type CompactionRetryInput,
+  type CompactionRetryResult,
   type CompactionStatusResult,
 } from "@shared/schemas/compaction.js";
 import { compactionKeys } from "./queryKeys.js";
@@ -109,5 +114,33 @@ export function useCompactionHistory(
       }),
     staleTime: STALE_MS,
     enabled: id.length > 0,
+  });
+}
+
+/**
+ * Re-enqueue a permanently-failed compaction generation (stage 8-5). The one
+ * user-initiated compaction action. On success it invalidates the session's
+ * compaction history + status so the row flips back to "pending" and the
+ * runtime-bar chip updates. No automatic mutation retry — the button is the
+ * retry; a failed call surfaces its `Result.error` to the caller.
+ */
+export function useRetryCompaction(): UseMutationResult<
+  Result<CompactionRetryResult>,
+  Error,
+  CompactionRetryInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CompactionRetryInput) =>
+      window.vex.compaction.retry(input),
+    onSuccess: (result, variables) => {
+      if (!result.ok) return;
+      void queryClient.invalidateQueries({
+        queryKey: compactionKeys.history(variables.sessionId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: compactionKeys.status(variables.sessionId),
+      });
+    },
   });
 }

@@ -77,6 +77,7 @@ vi.mock("../../database/usage-db.js", () => ({
 vi.mock("../../database/compaction-db.js", () => ({
   getCompactionStatus: mocks.getCompactionStatus,
   listCompactionHistory: mocks.listCompactionHistory,
+  getRetryableCompactJob: vi.fn(),
   probeCompactJobsReady: vi.fn(),
 }));
 

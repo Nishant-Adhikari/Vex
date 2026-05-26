@@ -35,8 +35,12 @@ vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { getCompactionStatus, listCompactionHistory, probeCompactJobsReady } =
-  await import("../compaction-db.js");
+const {
+  getCompactionStatus,
+  listCompactionHistory,
+  probeCompactJobsReady,
+  getRetryableCompactJob,
+} = await import("../compaction-db.js");
 const { VEX_APP_SESSION_SCOPE } = await import("@shared/schemas/sessions.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000aa01";
@@ -200,5 +204,36 @@ describe("listCompactionHistory (app-scoped)", () => {
       startedAt: "2026-05-21T10:00:00.000Z",
       completedAt: "2026-05-21T10:00:00.000Z",
     });
+  });
+});
+
+describe("getRetryableCompactJob (app-scoped, stage 8-5)", () => {
+  it("returns {id,status} for an app-scope job and scopes the query", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValueOnce({
+      rows: [{ id: 5, status: "permanently_failed" }],
+    });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await getRetryableCompactJob(SESSION, 3);
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toEqual({ id: 5, status: "permanently_failed" });
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("s.scope = $2");
+    expect(sql).toContain("s.deleted_at IS NULL");
+    expect(sql).toContain("cj.checkpoint_generation = $3");
+    expect(params).toEqual([SESSION, VEX_APP_SESSION_SCOPE, 3]);
+  });
+
+  it("returns null when no app-scope job matches the (session, generation)", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await getRetryableCompactJob(SESSION, 9);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data).toBeNull();
   });
 });

@@ -21,5 +21,6 @@ export {
   getById,
   getBySessionAndGeneration,
   listPendingForSession,
+  resetPermanentlyFailed,
   type CompletionAudit,
 } from "./crud.js";

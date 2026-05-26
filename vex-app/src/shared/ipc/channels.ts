@@ -187,13 +187,15 @@ export const CH = {
     getContextWindow: "vex:usage:getContextWindow",
   },
 
-  // Compaction — read-only Track-2 status + history (stages 7-1, 7-2a).
+  // Compaction — Track-2 status + history (stages 7-1, 7-2a) + retry (8-5).
   // `getStatus` = latest job + active count for the runtime-bar chip;
   // `listHistory` = the session's compaction-generation timeline for the
-  // knowledge/memory panel. Both app-scoped; null for missing/foreign sessions.
+  // knowledge/memory panel (both app-scoped; null for missing/foreign sessions).
+  // `retry` re-enqueues a permanently-failed generation for another attempt.
   compaction: {
     getStatus: "vex:compaction:getStatus",
     listHistory: "vex:compaction:listHistory",
+    retry: "vex:compaction:retry",
   },
 
   // Knowledge — read-only management list of the GLOBAL knowledge store

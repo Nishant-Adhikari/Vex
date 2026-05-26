@@ -261,3 +261,44 @@ export async function listCompactionHistory(
     }
   });
 }
+
+interface RetryableJobRow {
+  readonly id: number | string;
+  readonly status: string;
+}
+
+/**
+ * App-scope authorization for the retry mutation (stage 8-5): resolve a
+ * compact job's internal id + current status from its (sessionId, generation)
+ * key, ONLY when the session is app-scope + non-deleted. `null` when the
+ * session is unknown/foreign/deleted or no such generation exists. The id
+ * stays main-internal — the IPC handler hands it to the engine repo to perform
+ * the transition; it never crosses to the renderer.
+ */
+export async function getRetryableCompactJob(
+  sessionId: string,
+  checkpointGeneration: number,
+): Promise<Result<{ id: number; status: CompactJobStatusDto } | null, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<RetryableJobRow>(
+        `SELECT cj.id, cj.status
+           FROM sessions s
+           JOIN compact_jobs cj ON cj.session_id = s.id
+          WHERE s.id = $1
+            AND s.scope = $2
+            AND s.deleted_at IS NULL
+            AND cj.checkpoint_generation = $3`,
+        [sessionId, VEX_APP_SESSION_SCOPE, checkpointGeneration],
+      );
+      const row = result.rows[0];
+      if (!row) return ok(null);
+      return ok({
+        id: toInt(row.id),
+        status: row.status as CompactJobStatusDto,
+      });
+    } catch (cause) {
+      return dbError("getRetryableCompactJob query failed", cause);
+    }
+  });
+}

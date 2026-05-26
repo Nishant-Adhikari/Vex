@@ -3,9 +3,10 @@
  * (agent integration stage 7-1).
  *
  * The Track-2 compact-jobs executor is owned by Electron main; the renderer
- * never controls it. This domain exposes only a status projection of the
- * session's `compact_jobs` rows so the chat runtime bar can show whether a
- * compaction is queued, running, or terminally failed.
+ * never controls its scheduling. This domain exposes a status projection of
+ * the session's `compact_jobs` rows (queued / running / terminally failed)
+ * plus one user-initiated mutation — `retry` (stage 8-5) — that re-enqueues a
+ * permanently-failed job for another attempt.
  *
  * The status literal mirrors the engine's internal `CompactJobStatus`
  * (`src/vex-agent/db/repos/compact-jobs/types.ts`). It is re-declared here
@@ -127,3 +128,26 @@ export const compactionHistoryResultSchema = z
 export type CompactionHistoryResult = z.infer<
   typeof compactionHistoryResultSchema
 >;
+
+// ── Compaction retry (stage 8-5) ──────────────────────────────────────────
+// The one renderer-initiated compaction action: re-enqueue a
+// `permanently_failed` job for another attempt. The job is targeted by its
+// (sessionId, checkpointGeneration) unique key — no internal job id is exposed
+// to the renderer. Main enforces app-scope; the engine owns the transition.
+
+export const compactionRetryInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    checkpointGeneration: z.number().int().min(0),
+  })
+  .strict();
+export type CompactionRetryInput = z.infer<typeof compactionRetryInputSchema>;
+
+/** Echoes the targeted generation + its post-reset status (`pending`). */
+export const compactionRetryResultSchema = z
+  .object({
+    checkpointGeneration: z.number().int().min(0),
+    status: compactJobStatusSchema,
+  })
+  .strict();
+export type CompactionRetryResult = z.infer<typeof compactionRetryResultSchema>;

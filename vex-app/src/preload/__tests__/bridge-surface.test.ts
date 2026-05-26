@@ -143,6 +143,7 @@ describe("preload bridge surface", () => {
       "CH.usage.getContextWindow",
       "CH.compaction.getStatus",
       "CH.compaction.listHistory",
+      "CH.compaction.retry",
       "CH.knowledge.list",
       "CH.knowledge.updateStatus",
       "CH.memory.listSession",

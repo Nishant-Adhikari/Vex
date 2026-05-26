@@ -46,11 +46,11 @@ export type VexDomain =
   | "models"
   | "usage"
   /**
-   * Agent integration stage 7-1 — read-only `compaction.getStatus`
-   * (Track-2 worker job status for the runtime bar). Electron main owns
-   * the executor; this domain is purely the status read surface. DB
-   * unavailability maps to `internal.unexpected` like the other read
-   * domains (no `compaction.feature_unavailable` — there is no mutation).
+   * Agent integration stages 7-1 / 8-5 — `compaction.getStatus` +
+   * `listHistory` (read) and `compaction.retry` (re-enqueue a
+   * permanently-failed job). Electron main owns the executor; the renderer
+   * never schedules it. DB unavailability maps to `internal.unexpected`;
+   * retry adds `compaction.not_found` / `compaction.invalid_state`.
    */
   | "compaction"
   /**
@@ -158,6 +158,14 @@ export type VexErrorCode =
    */
   | "knowledge.not_found"
   | "knowledge.invalid_state"
+  /**
+   * Stage 8-5 — compaction retry (`compaction.retry`). `not_found` = no such
+   * job for the (session, generation); `invalid_state` = the job is not (or no
+   * longer) `permanently_failed`. Both `retryable: false, userActionable:
+   * true`.
+   */
+  | "compaction.not_found"
+  | "compaction.invalid_state"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";
@@ -246,6 +254,8 @@ export const VEX_ERROR_CODES = [
   "approvals.dispatch_failed",
   "knowledge.not_found",
   "knowledge.invalid_state",
+  "compaction.not_found",
+  "compaction.invalid_state",
   "internal.contract_violation",
   "internal.cancelled",
   "internal.unexpected",
