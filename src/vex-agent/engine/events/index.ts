@@ -22,3 +22,14 @@ export {
   emitTranscriptAppend,
   type AppendOptions,
 } from "./append-transcript.js";
+
+export {
+  STREAM_DELTA_EVENT_TYPE,
+  StreamDeltaBus,
+  streamDeltaBus,
+  toStreamDeltaEvent,
+  type StreamDeltaEvent,
+  type StreamDeltaListener,
+  type StreamDeltaType,
+  type StreamDeltaPayload,
+} from "./stream-bus.js";

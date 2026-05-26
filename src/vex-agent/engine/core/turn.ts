@@ -1,12 +1,15 @@
 /**
  * Single turn — one inference round-trip.
  *
- * Builds prompt stack, calls provider.chatCompletion(), parses
- * response, saves messages, logs usage + updates tokenCount.
+ * Builds prompt stack, consumes provider.chatCompletionStream() (buffered
+ * chatCompletion fallback) and accumulates the response, logs usage +
+ * updates tokenCount. The assistant message save is deferred to turn-loop.
  */
 
+import { randomUUID } from "node:crypto";
 import type { EngineContext, TurnResult, MessageMetadata } from "../types.js";
 import type { InferenceProvider, InferenceConfig, ProviderMessage, ParsedToolCall, ToolDefinition } from "@vex-agent/inference/types.js";
+import { runStreamingInference } from "@vex-agent/inference/stream-consumer.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
 import { formatActiveKnowledgeBlock } from "../prompts/knowledge.js";
@@ -14,7 +17,7 @@ import { buildKnowledgeStateBanner } from "../prompts/knowledge-state.js";
 import { buildMemoryStateBanner } from "../prompts/memory-state.js";
 import { sanitizeForSystemPrompt } from "../prompts/sanitize.js";
 import { repairOrphanedToolCalls } from "./transcript-integrity.js";
-import { appendMessage } from "@vex-agent/engine/events/index.js";
+import { appendMessage, streamDeltaBus, toStreamDeltaEvent } from "@vex-agent/engine/events/index.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
@@ -43,7 +46,8 @@ export interface SingleTurnResult {
  *
  * 1. Build prompt stack
  * 2. Convert messages to provider format
- * 3. Call provider.chatCompletion()
+ * 3. Consume provider.chatCompletionStream() → accumulate InferenceResponse
+ *    (chatCompletion fallback), emitting ephemeral stream deltas on streamDeltaBus
  * 4. Log usage + update tokenCount
  *
  * NOTE: Does NOT save the assistant message. The caller (turn-loop)
@@ -126,8 +130,21 @@ export async function executeTurn(
     });
   }
 
-  // Inference
-  const response = await provider.chatCompletion(repair.messages, tools, config);
+  // Inference — consume the streaming path and accumulate a
+  // `chatCompletion`-equivalent response, emitting one ephemeral stream delta
+  // per provider chunk on `streamDeltaBus`. `runStreamingInference` falls back
+  // to buffered `chatCompletion` when the provider cannot stream (see its doc).
+  // The stream is a PREVIEW only — the canonical transcript still comes from
+  // the deferred save in turn-loop. Emission is best-effort and never throws
+  // into the turn (the bus + onDelta both isolate listener errors).
+  const streamId = randomUUID();
+  const response = await runStreamingInference(provider, repair.messages, tools, config, {
+    onDelta: (chunk, sequence) => {
+      streamDeltaBus.emit(
+        toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
+      );
+    },
+  });
 
   // Log usage + update token count
   // NOTE: assistant message is NOT saved here — turn-loop handles deferred save

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { StreamDeltaEvent } from "../../../../vex-agent/engine/events/index.js";
+import type { StreamChunk } from "../../../../vex-agent/inference/types.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -34,6 +36,7 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 }));
 
 const { executeTurn } = await import("../../../../vex-agent/engine/core/turn.js");
+const { streamDeltaBus } = await import("../../../../vex-agent/engine/events/index.js");
 
 describe("turn", () => {
   beforeEach(() => {
@@ -67,6 +70,22 @@ describe("turn", () => {
       }),
       // chatCompletionSimple stays on the contract (used by checkpoint extract/merge)
       // but the recall path no longer calls it — see "recall path" tests below.
+      chatCompletionSimple: vi.fn(),
+      calculateCost: vi.fn().mockReturnValue({ totalCost: 0.001, currency: "USD" }),
+    };
+  }
+
+  // The 9-1 streaming producer: a provider whose chatCompletionStream yields
+  // chunks. `chatCompletion` must NOT be called on this path (no fallback).
+  // The chatCompletion-only `makeProvider` mocks above now exercise the
+  // fallback path inside `runStreamingInference`.
+  function makeStreamingProvider(chunks: StreamChunk[]) {
+    return {
+      id: "fake",
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        for (const chunk of chunks) yield chunk;
+      },
+      chatCompletion: vi.fn(),
       chatCompletionSimple: vi.fn(),
       calculateCost: vi.fn().mockReturnValue({ totalCost: 0.001, currency: "USD" }),
     };
@@ -157,6 +176,53 @@ describe("turn", () => {
     const userMsg = providerMessages.find((m: any) => m.content === "Check balance");
     expect(userMsg).toBeTruthy();
     expect(userMsg.role).toBe("user");
+  });
+
+  it("consumes the provider stream and mirrors ephemeral deltas on streamDeltaBus", async () => {
+    const events: StreamDeltaEvent[] = [];
+    const off = streamDeltaBus.subscribe((e) => events.push(e));
+    try {
+      const provider = makeStreamingProvider([
+        { type: "content", text: "Bal " },
+        { type: "content", text: "2.5 SOL" },
+        { type: "usage", usage: { promptTokens: 1000, completionTokens: 200, totalTokens: 1200 } },
+        { type: "done" },
+      ]);
+      const result = await executeTurn(
+        makeContext(), [], null, provider as any, makeConfig() as any, [],
+      );
+
+      // Accumulated response is chatCompletion-equivalent…
+      expect(result.content).toBe("Bal 2.5 SOL");
+      expect(result.toolCalls).toBeNull();
+      expect(result.promptTokens).toBe(1000);
+      // …without ever touching the buffered path.
+      expect(provider.chatCompletion).not.toHaveBeenCalled();
+
+      // …and every chunk was mirrored on the bus, in order, under one stream id.
+      expect(events.map((e) => e.deltaType)).toEqual(["text", "text", "usage", "done"]);
+      expect(events.map((e) => e.sequence)).toEqual([0, 1, 2, 3]);
+      expect(events.every((e) => e.sessionId === "session-1")).toBe(true);
+      expect(new Set(events.map((e) => e.streamId)).size).toBe(1);
+    } finally {
+      off();
+    }
+  });
+
+  it("emits no stream deltas when the provider cannot stream (buffered fallback)", async () => {
+    const events: StreamDeltaEvent[] = [];
+    const off = streamDeltaBus.subscribe((e) => events.push(e));
+    try {
+      const provider = makeProvider({ content: "buffered reply" });
+      const result = await executeTurn(
+        makeContext(), [], null, provider as any, makeConfig() as any, [],
+      );
+      expect(result.content).toBe("buffered reply");
+      expect(provider.chatCompletion).toHaveBeenCalledTimes(1);
+      expect(events).toHaveLength(0);
+    } finally {
+      off();
+    }
   });
 
   // PR2 cutover: the legacy `[Session episode recall]` block + the
