@@ -20,6 +20,7 @@ import { useMemo } from "react";
 import type { JSX } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { useTranscriptLiveSync } from "../../lib/api/messages.js";
+import { useStreamPreviewSync } from "../../lib/api/streams.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -32,9 +33,11 @@ import { SessionWelcomeHero } from "./SessionWelcomeHero.js";
 export function SessionPanel(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   // Puzzle 02/06: keep the active session's transcript + usage queries fresh
-  // (transcript-append event + 30s fallback poll). Pure side effects.
+  // (transcript-append event + 30s fallback poll). Puzzle 09: drive the
+  // ephemeral streaming preview from the engine stream spine. Pure side effects.
   useTranscriptLiveSync(activeSessionId);
   useUsageLiveSync(activeSessionId);
+  useStreamPreviewSync(activeSessionId);
   const detailQuery = useSession(activeSessionId);
 
   const activeSession = useMemo((): SessionListItem | null => {

@@ -18,6 +18,7 @@ import type {
   SessionMessageDto,
 } from "@shared/schemas/messages.js";
 import { SessionTranscript } from "../SessionTranscript.js";
+import { useStreamStore } from "../../../stores/streamStore.js";
 
 const SESSION = "00000000-0000-4000-8000-0000000000aa";
 const ISO = "2026-05-26T10:00:00.000Z";
@@ -93,6 +94,7 @@ function getScroller(container: HTMLElement): HTMLElement {
 
 afterEach(() => {
   vi.clearAllMocks();
+  useStreamStore.setState({ bySessionId: {} });
   // @ts-expect-error — test cleanup
   delete window.vex;
 });
@@ -160,6 +162,26 @@ describe("SessionTranscript", () => {
     await waitFor(() => {
       expect(screen.getByText(/Start the conversation/i)).not.toBeNull();
     });
+  });
+
+  it("renders the streaming preview when the transcript is empty (new session)", async () => {
+    listMock.mockResolvedValue(page([], null));
+    setVex();
+    useStreamStore.setState({
+      bySessionId: {
+        [SESSION]: { streamId: "s1", text: "streaming…", phase: "streaming", toolName: null },
+      },
+    });
+    const { container } = render(
+      createElement(SessionTranscript, { sessionId: SESSION }),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-vex-area="stream-preview"]')).not.toBeNull();
+    });
+    // The empty-state copy must NOT show while a preview is live.
+    expect(screen.queryByText(/Start the conversation/i)).toBeNull();
   });
 
   it("surfaces an initial-page failure as an alert", async () => {

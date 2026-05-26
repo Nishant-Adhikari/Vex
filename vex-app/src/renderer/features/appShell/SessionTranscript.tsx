@@ -23,6 +23,8 @@ import {
   useTranscriptInfinite,
 } from "../../lib/api/messages.js";
 import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
+import { useStreamPreview } from "../../stores/streamStore.js";
+import { StreamingBubble } from "./StreamingBubble.js";
 import { TranscriptMessage } from "./TranscriptMessage.js";
 import { toTranscriptRow } from "./transcriptRowModel.js";
 
@@ -35,6 +37,7 @@ export function SessionTranscript({
   readonly sessionId: string;
 }): JSX.Element {
   const query = useTranscriptInfinite(sessionId);
+  const preview = useStreamPreview(sessionId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
   // Set ONLY by an intentional load-older fetch; consumed by the settle effect
@@ -71,6 +74,19 @@ export function SessionTranscript({
     const el = scrollRef.current;
     if (el !== null && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
   }, [newestId]);
+
+  // The growing preview bubble must keep the view pinned too. Follow on ANY
+  // visible preview change (new stream, new text, tool name, phase) so a
+  // tool-only or error bubble can't appear off-screen — not just on text.
+  const previewSig =
+    preview === null
+      ? null
+      : `${preview.streamId}:${preview.phase}:${preview.toolName ?? ""}:${preview.text.length}`;
+  useEffect(() => {
+    if (previewSig === null) return;
+    const el = scrollRef.current;
+    if (el !== null && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [previewSig]);
 
   // After an intentional older-page fetch settles, hold the viewport if a page
   // was actually prepended (oldest id changed); clear the anchor either way —
@@ -121,7 +137,10 @@ export function SessionTranscript({
     );
   }
 
-  if (items.length === 0) {
+  // Empty/error copy only when there is also no live preview — otherwise the
+  // first streamed reply in a brand-new session would be invisible. A preview
+  // falls through to the scroll container below.
+  if (items.length === 0 && preview === null) {
     if (query.isError || (firstPage !== undefined && !firstPage.ok)) {
       const message =
         firstPage !== undefined && !firstPage.ok
@@ -180,6 +199,7 @@ export function SessionTranscript({
       {items.map((m) => (
         <TranscriptMessage key={m.id} row={toTranscriptRow(m)} />
       ))}
+      {preview !== null ? <StreamingBubble preview={preview} /> : null}
     </div>
   );
 }

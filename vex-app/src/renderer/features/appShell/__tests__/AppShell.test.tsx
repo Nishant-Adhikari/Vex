@@ -216,12 +216,13 @@ beforeEach(() => {
       messages: {
         list: messagesListMock,
       },
-      // Agent integration puzzle 2: SessionPanel mounts
-      // `useTranscriptLiveSync` which subscribes to the engine bridge.
-      // Stub returns a no-op unsubscribe so tests that exercise the panel
-      // don't crash on missing bridge surface.
+      // Agent integration puzzle 2/09: SessionPanel mounts
+      // `useTranscriptLiveSync` + `useStreamPreviewSync`, which subscribe to
+      // the engine bridge. Stubs return a no-op unsubscribe so tests that
+      // exercise the panel don't crash on missing bridge surface.
       engine: {
         onTranscriptAppend: () => () => {},
+        onStreamDelta: () => () => {},
       },
     },
   });
