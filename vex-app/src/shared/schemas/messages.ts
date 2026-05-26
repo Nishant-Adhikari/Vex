@@ -29,10 +29,14 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
 
 /**
  * Renderer-visible message kind. Discriminator derived in the mapper
- * from `role` + `tool_calls`. Engine markers (compaction, memory,
- * mission contract notices) land in puzzle 02/04/07 — they widen this
- * enum then; today we keep the surface minimal so the type only carries
- * what the puzzle 1 mapper can actually emit.
+ * from `role` + `tool_calls` + `message_type`. Stage 8-4 adds the two
+ * inline-marker kinds:
+ *   - `compaction`: an engine-written `compaction_committed` marker row
+ *     (a Track-1 compaction checkpoint), rendered as a static timeline
+ *     marker — distinct from the live SessionRuntimeBar compaction chip.
+ *   - `recall`: an assistant tool-call row invoking `memory_recall`
+ *     (per-session) or `knowledge_recall` (cross-session), rendered as a
+ *     static recall indicator that still shows any assistant prose.
  */
 export const messageKindSchema = z.enum([
   "text",
@@ -40,6 +44,8 @@ export const messageKindSchema = z.enum([
   "tool_result",
   "runtime_notice",
   "error",
+  "compaction",
+  "recall",
 ]);
 export type MessageKind = z.infer<typeof messageKindSchema>;
 

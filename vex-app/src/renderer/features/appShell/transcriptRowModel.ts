@@ -21,7 +21,9 @@ export type TranscriptRowVariant =
   | "user" // right-aligned operator prompt
   | "assistant" // left, Vex avatar
   | "tool" // compact mono tool call/result
-  | "notice"; // centered muted system/runtime/error line
+  | "notice" // centered muted system/runtime/error line
+  | "compaction" // centered static "conversation compacted" marker (8-4)
+  | "recall"; // static memory/knowledge recall indicator (8-4)
 
 export interface TranscriptRowModel {
   readonly id: number;
@@ -65,6 +67,10 @@ function resolveVariant(
     case "runtime_notice":
     case "error":
       return "notice";
+    case "compaction":
+      return "compaction";
+    case "recall":
+      return "recall";
     case "text":
       return resolveTextVariant(role);
     default:
@@ -77,7 +83,21 @@ export function toTranscriptRow(dto: SessionMessageDto): TranscriptRowModel {
   return {
     id: dto.id,
     variant,
-    label: variant === "tool" ? (dto.toolName ?? "tool") : null,
+    label: resolveLabel(variant, dto.toolName),
     content: dto.content,
   };
+}
+
+/**
+ * Compact rows carry a short tag. `tool` rows show the tool name (or a
+ * generic fallback); `recall` rows carry the raw tool name so the marker can
+ * pick accurate copy (memory vs knowledge); everything else has no label.
+ */
+function resolveLabel(
+  variant: TranscriptRowVariant,
+  toolName: string | null,
+): string | null {
+  if (variant === "tool") return toolName ?? "tool";
+  if (variant === "recall") return toolName;
+  return null;
 }

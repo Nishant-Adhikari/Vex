@@ -218,6 +218,94 @@ describe("messages-db mapper", () => {
     expect(result.data.items[0]).not.toHaveProperty("metadata");
   });
 
+  it("maps a compaction_committed marker row to the compaction kind (8-4)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 7,
+          session_id: SESSION,
+          role: "system",
+          content: "Conversation compacted into memory · checkpoint 2",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "engine",
+          message_type: "compaction_committed",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("compaction");
+  });
+
+  it("maps memory_recall / knowledge_recall tool-call rows to the recall kind and keeps assistant prose (8-4)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 8,
+          session_id: SESSION,
+          role: "assistant",
+          content: "Let me check what I remember.",
+          tool_call_id: null,
+          tool_calls: [{ command: "memory_recall", args: { query: "x" } }],
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "agent",
+          message_type: "chat",
+          metadata: null,
+        },
+        {
+          id: 9,
+          session_id: SESSION,
+          role: "assistant",
+          content: "",
+          tool_call_id: null,
+          tool_calls: [{ command: "knowledge_recall", args: {} }],
+          created_at: "2026-05-21T10:01:00.000Z",
+          source: "agent",
+          message_type: "chat",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 10);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byId = new Map(result.data.items.map((m) => [m.id, m]));
+    expect(byId.get(8)!.kind).toBe("recall");
+    expect(byId.get(8)!.toolName).toBe("memory_recall");
+    // Codex constraint: non-empty assistant prose on a recall row is preserved.
+    expect(byId.get(8)!.content).toBe("Let me check what I remember.");
+    expect(byId.get(9)!.kind).toBe("recall");
+    expect(byId.get(9)!.toolName).toBe("knowledge_recall");
+  });
+
+  it("keeps a normal tool-call row as tool_call (recall detection is narrow) (8-4)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 10,
+          session_id: SESSION,
+          role: "assistant",
+          content: "",
+          tool_call_id: null,
+          tool_calls: [{ namespace: "polymarket", command: "order" }],
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "agent",
+          message_type: "chat",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("tool_call");
+    expect(result.data.items[0]!.toolName).toBe("polymarket:order");
+  });
+
   it("uses cursor-based DESC ordering with overflow page for hasMore=true", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: Array.from({ length: 6 }, (_, idx) => ({

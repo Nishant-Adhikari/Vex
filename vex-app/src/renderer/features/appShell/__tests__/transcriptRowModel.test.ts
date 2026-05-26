@@ -79,4 +79,35 @@ describe("toTranscriptRow", () => {
       "notice",
     );
   });
+
+  it("maps the compaction kind to the compaction variant (no label) (8-4)", () => {
+    const row = toTranscriptRow(
+      dto({
+        role: "system",
+        kind: "compaction",
+        content: "compacted · checkpoint 2",
+      }),
+    );
+    expect(row.variant).toBe("compaction");
+    expect(row.label).toBeNull();
+    expect(row.content).toBe("compacted · checkpoint 2");
+  });
+
+  it("maps the recall kind to the recall variant carrying the tool name as label (8-4)", () => {
+    expect(
+      toTranscriptRow(
+        dto({ role: "assistant", kind: "recall", toolName: "memory_recall" }),
+      ).variant,
+    ).toBe("recall");
+    expect(
+      toTranscriptRow(
+        dto({ role: "assistant", kind: "recall", toolName: "knowledge_recall" }),
+      ).label,
+    ).toBe("knowledge_recall");
+    // A recall row with no tool name keeps a null label (neutral marker copy).
+    expect(
+      toTranscriptRow(dto({ role: "assistant", kind: "recall", toolName: null }))
+        .label,
+    ).toBeNull();
+  });
 });

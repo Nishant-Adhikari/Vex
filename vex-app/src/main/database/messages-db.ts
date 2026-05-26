@@ -172,32 +172,53 @@ function hasToolCalls(raw: unknown): boolean {
 }
 
 /**
- * Derive renderer-visible `kind` from row shape using only the
- * top-level `message_type` column. `metadata` JSONB is intentionally
- * not selected (puzzle 02 introduces the controlled metadata DTO).
+ * Tool names whose assistant tool-call row renders as a static recall
+ * indicator (`kind: "recall"`, stage 8-4). `memory_recall` is per-session
+ * narrative memory; `knowledge_recall` is durable cross-session knowledge —
+ * the renderer keeps the copy distinct.
  */
-function deriveKind(row: MessageRow): MessageKind {
+const RECALL_TOOL_NAMES = new Set(["memory_recall", "knowledge_recall"]);
+
+/**
+ * Engine `message_type` for a Track-1 compaction checkpoint marker
+ * (stage 8-4). Matched exactly so other engine markers stay
+ * `runtime_notice`.
+ */
+const COMPACTION_MARKER_MESSAGE_TYPE = "compaction_committed";
+
+/**
+ * Derive renderer-visible `kind` from row shape using the top-level
+ * `message_type` column + the (already allow-list-extracted) tool name.
+ * `metadata` JSONB is intentionally never selected.
+ */
+function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
   if (row.role === "tool") return "tool_result";
-  if (hasToolCalls(row.tool_calls)) return "tool_call";
+  if (hasToolCalls(row.tool_calls)) {
+    if (toolName !== null && RECALL_TOOL_NAMES.has(toolName)) return "recall";
+    return "tool_call";
+  }
+  if (row.message_type === COMPACTION_MARKER_MESSAGE_TYPE) return "compaction";
   if (row.message_type !== null && row.message_type !== "chat") {
-    // Engine markers (wake banners, overflow stubs, runtime notices)
-    // surface as the catch-all "runtime_notice" kind until puzzle 02
-    // introduces the controlled metadata DTO union.
+    // Other engine markers (wake banners, overflow stubs, runtime
+    // notices) surface as the catch-all "runtime_notice" kind.
     return "runtime_notice";
   }
   return "text";
 }
 
 function toDto(row: MessageRow): SessionMessageDto {
+  // Extract the tool name once: it drives BOTH the recall-kind decision
+  // and the DTO's `toolName` field.
+  const toolName = extractToolName(row.tool_calls);
   return {
     id: row.id,
     sessionId: row.session_id,
     role: normaliseRole(row.role),
-    kind: deriveKind(row),
+    kind: deriveKind(row, toolName),
     content: row.content ?? "",
     createdAt: toIso(row.created_at),
     toolCallId: row.tool_call_id,
-    toolName: extractToolName(row.tool_calls),
+    toolName,
   };
 }
 

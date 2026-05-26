@@ -20,14 +20,26 @@ describe("messages schemas", () => {
     for (const r of ["system", "user", "assistant", "tool"]) {
       expect(messageRoleSchema.safeParse(r).success).toBe(true);
     }
-    for (const k of ["text", "tool_call", "tool_result", "runtime_notice", "error"]) {
+    for (const k of [
+      "text",
+      "tool_call",
+      "tool_result",
+      "runtime_notice",
+      "error",
+      "compaction",
+      "recall",
+    ]) {
       expect(messageKindSchema.safeParse(k).success).toBe(true);
     }
   });
 
   it("rejects exotic role / kind", () => {
     expect(messageRoleSchema.safeParse("hacker").success).toBe(false);
-    expect(messageKindSchema.safeParse("compaction").success).toBe(false);
+    // `compaction`/`recall` are valid kinds as of stage 8-4; a bogus value
+    // still fails.
+    expect(messageKindSchema.safeParse("compaction_started").success).toBe(
+      false,
+    );
   });
 
   it("sessionMessageDtoSchema parses a typical text row", () => {

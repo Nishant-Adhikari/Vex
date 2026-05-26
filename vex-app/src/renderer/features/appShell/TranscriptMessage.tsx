@@ -3,13 +3,16 @@
  *
  * Switches on the pure `TranscriptRowModel.variant`. Assistant prose renders
  * through `MarkdownContent` (stage 8-2a) — safe React elements, never an HTML
- * string; user/tool/notice rows render as plain React text nodes. Either way
- * model/tool output cannot inject markup. Vex replies carry the `/vex.jpg`
- * avatar. Surfaces stay ≤8px radius with no card-in-card.
+ * string; user/tool/notice rows + the `compaction`/`recall` markers (stage
+ * 8-4) render as plain React text nodes. Either way model/tool output cannot
+ * inject markup. Vex replies carry the `/vex.jpg` avatar. Surfaces stay ≤8px
+ * radius with no card-in-card.
  */
 
 import type { JSX } from "react";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
+import { CompactionMarker } from "./CompactionMarker.js";
+import { MemoryMarker } from "./MemoryMarker.js";
 import type { TranscriptRowModel } from "./transcriptRowModel.js";
 
 const BUBBLE =
@@ -65,6 +68,10 @@ export function TranscriptMessage({
           </div>
         </div>
       );
+    case "compaction":
+      return <CompactionMarker content={row.content} />;
+    case "recall":
+      return <MemoryMarker toolName={row.label} content={row.content} />;
     default: {
       const exhaustive: never = row.variant;
       throw new Error(`Unhandled transcript variant: ${String(exhaustive)}`);
