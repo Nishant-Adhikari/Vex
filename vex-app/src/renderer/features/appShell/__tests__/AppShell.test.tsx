@@ -87,6 +87,7 @@ const chatSubmitMock = vi.fn<
   (input: ChatSubmitInput) => Promise<Result<ChatSubmitResult>>
 >();
 const healthMock = vi.fn<() => Promise<Result<HealthReport>>>();
+const messagesGetTailMock = vi.fn();
 
 beforeAll(() => {
   const proto = HTMLDialogElement.prototype as unknown as {
@@ -190,6 +191,10 @@ beforeEach(() => {
     },
   });
   healthMock.mockResolvedValue({ ok: true, data: makeHealthReport("ok") });
+  messagesGetTailMock.mockResolvedValue({
+    ok: true,
+    data: { items: [], nextCursor: null, hasMore: false },
+  });
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
@@ -205,6 +210,11 @@ beforeEach(() => {
       },
       system: {
         health: healthMock,
+      },
+      // Stage 8-1: a selected-session SessionPanel mounts SessionTranscript,
+      // which reads window.vex.messages.getTail. Default = empty live page.
+      messages: {
+        getTail: messagesGetTailMock,
       },
       // Agent integration puzzle 2: SessionPanel mounts
       // `useTranscriptLiveSync` which subscribes to the engine bridge.

@@ -1,16 +1,19 @@
 /**
  * Welcome / session panel — orchestration only.
  *
- * Phase 7 split:
- *   - hero + trust badges → `SessionWelcomeHero`
- *   - context strip       → `SessionContext`
- *   - mission card        → `MissionContractCard` (renders only when
- *     `session.mode === "mission"` and a draft exists)
- *   - composer + slash    → `SessionComposer`
+ * Two layouts, branched on whether a session is active:
+ *   - no active session → centered welcome hero + composer (onboarding feel);
+ *   - active session → full-height chat shell: header (`SessionContext`) +
+ *     optional mission contract card + live transcript (`SessionTranscript`,
+ *     stage 8-1) + bottom composer. The hero is hidden so a selected session's
+ *     loading/error/empty states never sit under onboarding copy.
  *
- * Keeps the file small enough that adding a new orchestration concern
- * (a banner, a status header, a sidebar peek) doesn't push the parent
- * over the 350-LOC budget.
+ * Sub-components keep this file small:
+ *   - hero + trust badges → `SessionWelcomeHero`
+ *   - context strip/header → `SessionContext` (+ `SessionRuntimeBar`)
+ *   - mission card        → `MissionContractCard` (mission sessions only)
+ *   - transcript          → `SessionTranscript`
+ *   - composer + slash    → `SessionComposer`
  */
 
 import { useMemo } from "react";
@@ -23,17 +26,14 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { MissionContractCard } from "./MissionContractCard.js";
 import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
+import { SessionTranscript } from "./SessionTranscript.js";
 import { SessionWelcomeHero } from "./SessionWelcomeHero.js";
 
 export function SessionPanel(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
-  // Agent integration puzzle 2: subscribe the active session to the
-  // engine transcript event spine + 30s fallback poll. Pure side
-  // effect — no UI surface here. Visible transcript UI lands in
-  // puzzle 08 (chat panel).
+  // Puzzle 02/06: keep the active session's transcript + usage queries fresh
+  // (transcript-append event + 30s fallback poll). Pure side effects.
   useTranscriptLiveSync(activeSessionId);
-  // Puzzle 06: keep the runtime bar's usage + context-window queries
-  // fresh after each turn (transcript-append event + 30s fallback poll).
   useUsageLiveSync(activeSessionId);
   const detailQuery = useSession(activeSessionId);
 
@@ -43,33 +43,62 @@ export function SessionPanel(): JSX.Element {
     return detailQuery.data.data;
   }, [activeSessionId, detailQuery.data]);
 
+  const detailError =
+    detailQuery.data && detailQuery.data.ok === false
+      ? detailQuery.data.error.message
+      : null;
+  const panelState = resolvePanelState(
+    activeSessionId,
+    activeSession,
+    detailQuery,
+  );
+
+  // No active session → centered onboarding hero + composer.
+  if (activeSessionId === null) {
+    return (
+      <div
+        data-vex-area="session-panel"
+        data-vex-state={panelState}
+        className="flex h-full min-h-0 w-full items-center px-8 py-10 sm:px-12 lg:px-20"
+      >
+        <div className="w-full max-w-[780px]">
+          <SessionWelcomeHero />
+          <SessionContext
+            activeSession={null}
+            activeSessionId={null}
+            loading={false}
+            error={null}
+          />
+          <SessionComposer activeSession={null} />
+        </div>
+      </div>
+    );
+  }
+
+  // Active session → full-height chat shell (header + mission + transcript +
+  // composer). Loading/error/not-found are surfaced by `SessionContext`, never
+  // the hero; the transcript renders once the session row resolves.
   const showMissionCard =
     activeSession !== null && activeSession.mode === "mission";
-
   return (
     <div
       data-vex-area="session-panel"
-      data-vex-state={resolvePanelState(activeSessionId, activeSession, detailQuery)}
-      className="flex h-full min-h-0 w-full items-center px-8 py-10 sm:px-12 lg:px-20"
+      data-vex-state={panelState}
+      className="flex h-full min-h-0 w-full justify-center"
     >
-      <div className="w-full max-w-[780px]">
-        <SessionWelcomeHero />
-
+      <div className="flex h-full min-h-0 w-full max-w-[860px] flex-col px-6 py-4">
         <SessionContext
           activeSession={activeSession}
           activeSessionId={activeSessionId}
-          loading={activeSessionId !== null && detailQuery.isLoading}
-          error={
-            detailQuery.data && detailQuery.data.ok === false
-              ? detailQuery.data.error.message
-              : null
-          }
+          loading={detailQuery.isLoading}
+          error={detailError}
         />
-
         {showMissionCard && activeSession !== null ? (
           <MissionContractCard sessionId={activeSession.id} />
         ) : null}
-
+        {activeSession !== null ? (
+          <SessionTranscript sessionId={activeSession.id} />
+        ) : null}
         <SessionComposer activeSession={activeSession} />
       </div>
     </div>
