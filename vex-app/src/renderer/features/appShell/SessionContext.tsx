@@ -64,7 +64,12 @@ export function SessionContext({
     const title = getSessionTitle(activeSession);
     return (
       <div className="mt-7 flex max-w-[620px] flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs text-[var(--color-text-secondary)] backdrop-blur-xl">
+        <div
+          data-vex-area="session-header"
+          role="group"
+          aria-label={`Session: ${title}`}
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs text-[var(--color-text-secondary)] backdrop-blur-xl"
+        >
           <span className="flex h-8 w-8 items-center justify-center text-[#8da5ff]">
             <HugeiconsIcon icon={icon} size={16} aria-hidden />
           </span>

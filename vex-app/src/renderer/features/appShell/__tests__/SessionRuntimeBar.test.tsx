@@ -142,7 +142,7 @@ describe("SessionRuntimeBar", () => {
         ),
       ).not.toBeNull();
       expect(
-        container.querySelector('[data-vex-area="session-usage-chip"]'),
+        container.querySelector('[data-vex-area="usage-meter"]'),
       ).not.toBeNull();
       expect(
         container.querySelector('[data-vex-area="session-context-meter"]'),
@@ -168,10 +168,13 @@ describe("SessionRuntimeBar", () => {
       );
       expect(indicator).not.toBeNull();
       expect(indicator?.textContent).toContain("anthropic/claude-opus-4.7");
+      expect(indicator?.getAttribute("aria-label")).toBe(
+        "Model: anthropic/claude-opus-4.7",
+      );
     });
     // No turns yet → no usage chip, and a null context result → no meter.
     expect(
-      container.querySelector('[data-vex-area="session-usage-chip"]'),
+      container.querySelector('[data-vex-area="usage-meter"]'),
     ).toBeNull();
     expect(
       container.querySelector('[data-vex-area="session-context-meter"]'),
@@ -221,6 +224,30 @@ describe("SessionRuntimeBar", () => {
       );
       expect(meter).not.toBeNull();
       expect(meter?.textContent).not.toContain("%");
+    });
+  });
+
+  it("wraps the row in a labeled runtime-status group and names an unconfigured model", async () => {
+    setVex({
+      getModel: vi.fn().mockResolvedValue(ok(MODEL_UNCONFIGURED)),
+      getLastTurn: vi.fn().mockResolvedValue(ok(null)),
+      getSessionTotals: vi.fn().mockResolvedValue(ok(totals(0, null))),
+      getContextWindow: vi.fn().mockResolvedValue(ok(null)),
+    });
+    const { container } = render(
+      createElement(SessionRuntimeBar, { sessionId: SESSION }),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+    await waitFor(() => {
+      const group = container.querySelector('[data-vex-area="runtime-status"]');
+      expect(group).not.toBeNull();
+      expect(group?.getAttribute("role")).toBe("group");
+      expect(group?.getAttribute("aria-label")).toBe("Session runtime status");
+      expect(
+        container
+          .querySelector('[data-vex-area="session-model-indicator"]')
+          ?.getAttribute("aria-label"),
+      ).toBe("Model not configured");
     });
   });
 });

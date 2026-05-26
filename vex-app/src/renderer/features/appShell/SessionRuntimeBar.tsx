@@ -70,7 +70,9 @@ export function SessionRuntimeBar({
 
   return (
     <div
-      data-vex-area="session-runtime-bar"
+      data-vex-area="runtime-status"
+      role="group"
+      aria-label="Session runtime status"
       className="flex w-full flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]"
     >
       <ModelIndicator model={model} />
@@ -104,6 +106,7 @@ function ModelIndicator({
       <span
         data-vex-area="session-model-indicator"
         data-state="unconfigured"
+        aria-label="Model not configured"
         className="inline-flex items-center rounded-md bg-white/[0.04] px-2 py-1 text-[10px] text-[var(--color-text-muted)]"
       >
         Model not configured
@@ -114,6 +117,7 @@ function ModelIndicator({
     <span
       data-vex-area="session-model-indicator"
       data-state="configured"
+      aria-label={`Model: ${model.modelId}`}
       className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1"
       title={`Global model${model.provider !== null ? ` · ${model.provider}` : ""} · ${model.modelId}`}
     >
@@ -140,7 +144,7 @@ function UsageChip({
 
   return (
     <span
-      data-vex-area="session-usage-chip"
+      data-vex-area="usage-meter"
       className={`${PILL} text-[var(--color-text-muted)]`}
       title={buildUsageTitle(lastTurn, totals)}
     >
