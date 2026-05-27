@@ -37,6 +37,10 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
  *   - `recall`: an assistant tool-call row invoking `memory_recall`
  *     (per-session) or `knowledge_recall` (cross-session), rendered as a
  *     static recall indicator that still shows any assistant prose.
+ * Stage 9-5b adds:
+ *   - `assistant_stopped`: an assistant prose row whose streaming turn was
+ *     cancelled mid-response (engine `message_type` "chat_stopped"),
+ *     rendered as the normal assistant bubble plus a "Stopped" badge.
  */
 export const messageKindSchema = z.enum([
   "text",
@@ -46,6 +50,7 @@ export const messageKindSchema = z.enum([
   "error",
   "compaction",
   "recall",
+  "assistant_stopped",
 ]);
 export type MessageKind = z.infer<typeof messageKindSchema>;
 

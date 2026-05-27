@@ -187,6 +187,12 @@ const RECALL_TOOL_NAMES = new Set(["memory_recall", "knowledge_recall"]);
 const COMPACTION_MARKER_MESSAGE_TYPE = "compaction_committed";
 
 /**
+ * Engine `message_type` for a chat turn whose streaming was cancelled
+ * mid-response (stage 9-5b). Surfaces as the `assistant_stopped` kind.
+ */
+const CHAT_STOPPED_MESSAGE_TYPE = "chat_stopped";
+
+/**
  * Derive renderer-visible `kind` from row shape using the top-level
  * `message_type` column + the (already allow-list-extracted) tool name.
  * `metadata` JSONB is intentionally never selected.
@@ -198,6 +204,13 @@ function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
     return "tool_call";
   }
   if (row.message_type === COMPACTION_MARKER_MESSAGE_TYPE) return "compaction";
+  // A cancelled chat turn (engine `message_type` "chat_stopped", 9-5b) is
+  // assistant prose with a "Stopped" badge, not a generic runtime notice.
+  // Role-guarded defensively: the engine only ever writes it on an
+  // assistant row (partial content, tool_calls null).
+  if (row.role === "assistant" && row.message_type === CHAT_STOPPED_MESSAGE_TYPE) {
+    return "assistant_stopped";
+  }
   if (row.message_type !== null && row.message_type !== "chat") {
     // Other engine markers (wake banners, overflow stubs, runtime
     // notices) surface as the catch-all "runtime_notice" kind.

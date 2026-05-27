@@ -123,6 +123,7 @@ describe("registerChatSubmitHandler", () => {
     expect(mocks.submitOperatorInstruction).toHaveBeenCalledWith(
       row.id,
       "Rebalance Arbitrum LP",
+      expect.any(AbortSignal),
     );
     expect(process.env.VEX_DB_URL).toBe(
       "postgresql://vex:test-secret@127.0.0.1:5777/vex",
@@ -149,6 +150,7 @@ describe("registerChatSubmitHandler", () => {
     expect(mocks.submitOperatorInstruction).toHaveBeenCalledWith(
       row.id,
       "Check portfolio",
+      expect.any(AbortSignal),
     );
   });
 
@@ -172,6 +174,22 @@ describe("registerChatSubmitHandler", () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("provider.unavailable");
     expect(result.error?.userActionable).toBe(true);
+  });
+
+  it("threads ctx.signal (an unaborted AbortSignal) into the engine (9-5b)", async () => {
+    const row = makeSessionRow({ mode: "agent", initialGoal: null });
+    mocks.getSessionById.mockResolvedValue({ ok: true, data: row });
+    registerChatSubmitHandler();
+
+    const fn = handlers.get(CH.chat.submit)!;
+    await fn(trustedSender, {
+      requestId: "r-sig",
+      payload: { sessionId: row.id, message: "Stoppable turn" },
+    });
+
+    const signal = mocks.submitOperatorInstruction.mock.calls[0]?.[2];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect((signal as AbortSignal).aborted).toBe(false);
   });
 });
 

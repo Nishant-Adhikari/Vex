@@ -28,6 +28,7 @@ describe("messages schemas", () => {
       "error",
       "compaction",
       "recall",
+      "assistant_stopped",
     ]) {
       expect(messageKindSchema.safeParse(k).success).toBe(true);
     }

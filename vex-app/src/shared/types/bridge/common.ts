@@ -11,9 +11,17 @@ import type { Result } from "../../ipc/result.js";
 /**
  * Shape returned by long-running bridge methods that support user
  * cancellation (PR3). Renderer holds onto `cancel`; calling it asks
- * main to abort the in-flight handler. The original `promise` then
- * resolves to `Result<E:internal.cancelled>` — cancellation is a
- * normal Result outcome, not a rejection.
+ * main to abort the in-flight handler. `promise` resolves to the
+ * handler's `Result` — cancellation is a normal Result outcome, not a
+ * rejection.
+ *
+ * The cancelled outcome is handler-specific, NOT always an error:
+ *   - `docker.composeUp` throws `AbortError` on abort → `promise`
+ *     resolves to `err(internal.cancelled)`.
+ *   - `chat.submit` (9-5b) returns the persisted partial normally on
+ *     abort → `promise` resolves to `ok(... stopReason:"user_stopped" ...)`.
+ * `register-handler` only rewrites a result to `internal.cancelled` when
+ * the handler itself returned an error while the signal was aborted.
  *
  * `cancel` is idempotent: subsequent calls after the first are no-ops.
  */

@@ -92,3 +92,26 @@ describe("TranscriptMessage markers (8-4)", () => {
     ).toBeNull();
   });
 });
+
+describe("TranscriptMessage assistant_stopped (9-5b)", () => {
+  it("renders the stopped assistant prose + a Stopped badge", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant_stopped", content: "The balance is" }),
+      }),
+    );
+    expect(screen.getByText("The balance is")).not.toBeNull();
+    expect(screen.getByText("Stopped")).not.toBeNull();
+    expect(container.querySelector("[data-vex-stopped]")).not.toBeNull();
+  });
+
+  it("still shows the Stopped badge when the partial content is empty", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant_stopped", content: "" }),
+      }),
+    );
+    expect(screen.getByText("Stopped")).not.toBeNull();
+    expect(container.querySelector("[data-vex-stopped]")).not.toBeNull();
+  });
+});

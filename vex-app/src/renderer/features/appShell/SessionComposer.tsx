@@ -26,6 +26,7 @@ import {
   Exchange01Icon,
   Knowledge01Icon,
   Search01Icon,
+  StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { useSubmitChat } from "../../lib/api/chat.js";
@@ -199,6 +200,13 @@ export function SessionComposer({
         return;
       }
       setDraft("");
+      if (outcome.data.stopReason === "user_stopped") {
+        // A stopped turn persists its partial as an `assistant_stopped`
+        // transcript row (when any text streamed); the composer notice just
+        // confirms the stop rather than the misleading "Message sent."
+        setNotice({ tone: "info", text: "Stopped." });
+        return;
+      }
       setNotice({
         tone: "info",
         text:
@@ -276,14 +284,25 @@ export function SessionComposer({
             ) : null}
           </div>
 
-          <button
-            type="submit"
-            disabled={submitDisabled}
-            aria-label="Send message"
-            className="flex h-10 w-12 shrink-0 items-center justify-center rounded-full bg-[#3758ff] text-white shadow-[0_0_28px_rgba(55,88,255,0.36)] transition-colors hover:bg-[#4668ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8da5ff] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <HugeiconsIcon icon={ArrowUp01Icon} size={20} aria-hidden />
-          </button>
+          {submitChat.isPending ? (
+            <button
+              type="button"
+              onClick={() => submitChat.stop()}
+              aria-label="Stop generating"
+              className="flex h-10 w-12 shrink-0 items-center justify-center rounded-full bg-[#3758ff] text-white shadow-[0_0_28px_rgba(55,88,255,0.36)] transition-colors hover:bg-[#4668ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8da5ff]"
+            >
+              <HugeiconsIcon icon={StopCircleIcon} size={20} aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={submitDisabled}
+              aria-label="Send message"
+              className="flex h-10 w-12 shrink-0 items-center justify-center rounded-full bg-[#3758ff] text-white shadow-[0_0_28px_rgba(55,88,255,0.36)] transition-colors hover:bg-[#4668ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8da5ff] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <HugeiconsIcon icon={ArrowUp01Icon} size={20} aria-hidden />
+            </button>
+          )}
         </div>
       </form>
       </div>

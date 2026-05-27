@@ -110,4 +110,13 @@ describe("toTranscriptRow", () => {
         .label,
     ).toBeNull();
   });
+
+  it("maps the assistant_stopped kind to the assistant_stopped variant (no label) (9-5b)", () => {
+    const row = toTranscriptRow(
+      dto({ role: "assistant", kind: "assistant_stopped", content: "partial…" }),
+    );
+    expect(row.variant).toBe("assistant_stopped");
+    expect(row.label).toBeNull();
+    expect(row.content).toBe("partial…");
+  });
 });

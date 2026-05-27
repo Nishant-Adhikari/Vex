@@ -20,6 +20,7 @@ import type {
 export type TranscriptRowVariant =
   | "user" // right-aligned operator prompt
   | "assistant" // left, Vex avatar
+  | "assistant_stopped" // assistant bubble + "Stopped" badge (9-5b)
   | "tool" // compact mono tool call/result
   | "notice" // centered muted system/runtime/error line
   | "compaction" // centered static "conversation compacted" marker (8-4)
@@ -71,6 +72,8 @@ function resolveVariant(
       return "compaction";
     case "recall":
       return "recall";
+    case "assistant_stopped":
+      return "assistant_stopped";
     case "text":
       return resolveTextVariant(role);
     default:

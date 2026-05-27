@@ -1,3 +1,4 @@
+import { useCallback, useRef } from "react";
 import {
   useMutation,
   useQueryClient,
@@ -11,14 +12,31 @@ import type {
 import { isUsageQueryForSession } from "./queryKeys.js";
 import { sessionKeys } from "./sessions.js";
 
-export function useSubmitChat(): UseMutationResult<
+/**
+ * Chat submit mutation + a stable `stop()` that cancels the in-flight turn
+ * (9-5b). The active invocation's `cancel` is captured per-call and cleared
+ * only when THAT same invocation settles, so a newer submit started before
+ * the first resolves keeps its own handle (same ownership rule as the
+ * stream-preview captured-streamId guard).
+ */
+export type UseSubmitChatResult = UseMutationResult<
   Result<ChatSubmitResult>,
   Error,
   ChatSubmitInput
-> {
+> & { readonly stop: () => void };
+
+export function useSubmitChat(): UseSubmitChatResult {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: ChatSubmitInput) => window.vex.chat.submit(input),
+  const cancelRef = useRef<(() => void) | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: (input: ChatSubmitInput) => {
+      const invocation = window.vex.chat.submit(input);
+      cancelRef.current = invocation.cancel;
+      return invocation.promise.finally(() => {
+        if (cancelRef.current === invocation.cancel) cancelRef.current = null;
+      });
+    },
     onSuccess: (result, variables) => {
       if (!result.ok) return;
       void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
@@ -35,4 +53,10 @@ export function useSubmitChat(): UseMutationResult<
       });
     },
   });
+
+  const stop = useCallback(() => {
+    cancelRef.current?.();
+  }, []);
+
+  return { ...mutation, stop };
 }

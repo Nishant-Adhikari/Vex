@@ -62,13 +62,19 @@ export async function invokeWithSchema<T, I = unknown>(
 
 /**
  * Abortable invocation. Bridge files that wrap a cancellable channel
- * (currently only `docker.composeUp`) call this. The returned shape
+ * (`docker.composeUp`, `chat.submit`) call this. The returned shape
  * matches `AbortableInvocation<T>` exported from `bridge/common.js`.
+ *
+ * The cancelled outcome is handler-specific: `docker.composeUp` throws
+ * AbortError → `promise` resolves to `err(internal.cancelled)`, while
+ * `chat.submit` (9-5b) returns the persisted partial normally → `promise`
+ * resolves to `ok(... stopReason:"user_stopped" ...)`. See
+ * `AbortableInvocation` for the full contract.
  *
  * NOTE: this helper is NOT exposed as a `window.vex.*` method. Doing so
  * would let the renderer cancel arbitrary IPC requests, including ones
  * whose handlers don't opt in to cancellation. Instead, individual
- * bridge files declare their own `*Abortable` siblings that route
+ * bridge files declare their own cancellable methods that route
  * through here.
  */
 export function abortableInvoke<T, I = unknown>(

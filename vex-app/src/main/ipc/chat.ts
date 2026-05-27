@@ -151,6 +151,7 @@ export function registerChatSubmitHandler(): () => void {
         const result = await submitOperatorInstruction(
           input.sessionId,
           input.message,
+          ctx.signal,
         );
         log.info(
           `[ipc:vex:chat:submit] ok sessionId=${input.sessionId} ` +

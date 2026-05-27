@@ -10,6 +10,8 @@
  */
 
 import type { JSX } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { StopCircleIcon } from "@hugeicons/core-free-icons";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
@@ -44,6 +46,27 @@ export function TranscriptMessage({
           />
           <div className="max-w-[80%] break-words rounded-lg bg-white/[0.04] px-3 py-2 text-sm leading-relaxed text-foreground">
             <MarkdownContent text={row.content} />
+          </div>
+        </div>
+      );
+    case "assistant_stopped":
+      return (
+        <div
+          data-vex-message-role="assistant"
+          data-vex-stopped=""
+          className="flex items-start gap-2"
+        >
+          <img
+            src="/vex.jpg"
+            alt="Vex"
+            className="mt-0.5 h-7 w-7 shrink-0 rounded-md object-cover"
+          />
+          <div className="max-w-[80%] break-words rounded-lg bg-white/[0.04] px-3 py-2 text-sm leading-relaxed text-foreground">
+            <MarkdownContent text={row.content} />
+            <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
+              <HugeiconsIcon icon={StopCircleIcon} size={12} aria-hidden />
+              <span>Stopped</span>
+            </div>
           </div>
         </div>
       );

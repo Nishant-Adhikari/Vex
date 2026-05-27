@@ -241,6 +241,53 @@ describe("messages-db mapper", () => {
     expect(result.data.items[0]!.kind).toBe("compaction");
   });
 
+  it("maps an assistant chat_stopped row to the assistant_stopped kind (9-5b)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 70,
+          session_id: SESSION,
+          role: "assistant",
+          content: "The balance is",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "agent",
+          message_type: "chat_stopped",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("assistant_stopped");
+    expect(result.data.items[0]!.content).toBe("The balance is");
+  });
+
+  it("keeps a non-assistant chat_stopped row as runtime_notice (role-guarded) (9-5b)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 71,
+          session_id: SESSION,
+          role: "system",
+          content: "stray",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "engine",
+          message_type: "chat_stopped",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("runtime_notice");
+  });
+
   it("maps memory_recall / knowledge_recall tool-call rows to the recall kind and keeps assistant prose (8-4)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [

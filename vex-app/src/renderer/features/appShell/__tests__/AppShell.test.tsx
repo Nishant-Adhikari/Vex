@@ -6,6 +6,7 @@ import type {
   ChatSubmitInput,
   ChatSubmitResult,
 } from "@shared/schemas/chat.js";
+import type { AbortableInvocation } from "@shared/types/bridge/common.js";
 import type {
   SessionCreateInput,
   SessionDeleteResult,
@@ -43,6 +44,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   PanelLeftCloseIcon: "PanelLeftCloseIcon",
   PanelLeftOpenIcon: "PanelLeftOpenIcon",
   Search01Icon: "Search01Icon",
+  StopCircleIcon: "StopCircleIcon",
   Settings02Icon: "Settings02Icon",
   Shield02Icon: "Shield02Icon",
   SparklesIcon: "SparklesIcon",
@@ -84,7 +86,7 @@ const sessionsDeleteMock = vi.fn<
   (input: { readonly id: string }) => Promise<Result<SessionDeleteResult>>
 >();
 const chatSubmitMock = vi.fn<
-  (input: ChatSubmitInput) => Promise<Result<ChatSubmitResult>>
+  (input: ChatSubmitInput) => AbortableInvocation<ChatSubmitResult>
 >();
 const healthMock = vi.fn<() => Promise<Result<HealthReport>>>();
 const messagesListMock = vi.fn();
@@ -179,16 +181,19 @@ beforeEach(() => {
     };
   });
   sessionsDeleteMock.mockResolvedValue({ ok: true, data: { outcome: "removed" } });
-  chatSubmitMock.mockResolvedValue({
-    ok: true,
-    data: {
-      text: "Message sent.",
-      toolCallsMade: 0,
-      pendingApprovals: [],
-      stopReason: null,
-      missionStatus: null,
-      treatedAsInitialGoal: false,
-    },
+  chatSubmitMock.mockReturnValue({
+    promise: Promise.resolve({
+      ok: true,
+      data: {
+        text: "Message sent.",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+        missionStatus: null,
+        treatedAsInitialGoal: false,
+      },
+    }),
+    cancel: vi.fn(),
   });
   healthMock.mockResolvedValue({ ok: true, data: makeHealthReport("ok") });
   messagesListMock.mockResolvedValue({
@@ -309,6 +314,70 @@ describe("AppShell", () => {
     await screen.findByText("Message sent.");
   });
 
+  it("swaps Send for a Stop button while a turn streams and cancels it (9-5b)", async () => {
+    const row = makeAgentRow("Stoppable chat");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    const cancel = vi.fn();
+    // Never settles → the mutation stays pending so the Stop control stays mounted.
+    chatSubmitMock.mockReturnValue({
+      promise: new Promise<Result<ChatSubmitResult>>(() => {}),
+      cancel,
+    });
+
+    renderShell();
+    await screen.findByText("Stoppable chat");
+
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "Long-running research" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const stopBtn = await screen.findByRole("button", { name: "Stop generating" });
+    // Pins the fix: a submit-typed Stop would re-run onSubmit (and could dispatch
+    // a slash command sitting in the draft) instead of only cancelling the turn.
+    expect(stopBtn.getAttribute("type")).toBe("button");
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+
+    fireEvent.click(stopBtn);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    // type="button": clicking Stop must not fire a second submit.
+    expect(chatSubmitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows 'Stopped.' (not 'Message sent.') when a turn stops with no partial (9-5b)", async () => {
+    const row = makeAgentRow("Stop early");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: {
+          text: null,
+          toolCallsMade: 0,
+          pendingApprovals: [],
+          stopReason: "user_stopped",
+          missionStatus: null,
+          treatedAsInitialGoal: false,
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("Stop early");
+
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "do something" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await screen.findByText("Stopped.");
+    expect(screen.queryByText("Message sent.")).toBeNull();
+  });
+
   it("creates a mission session without collecting the goal in the modal", async () => {
     renderShell();
 
@@ -344,16 +413,19 @@ describe("AppShell", () => {
     };
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [missionRow] });
     sessionsGetMock.mockResolvedValue({ ok: true, data: missionRow });
-    chatSubmitMock.mockResolvedValueOnce({
-      ok: true,
-      data: {
-        text: null,
-        toolCallsMade: 0,
-        pendingApprovals: [],
-        stopReason: null,
-        missionStatus: "draft",
-        treatedAsInitialGoal: true,
-      },
+    chatSubmitMock.mockReturnValueOnce({
+      promise: Promise.resolve({
+        ok: true,
+        data: {
+          text: null,
+          toolCallsMade: 0,
+          pendingApprovals: [],
+          stopReason: null,
+          missionStatus: "draft",
+          treatedAsInitialGoal: true,
+        },
+      }),
+      cancel: vi.fn(),
     });
     useUiStore.setState({ activeSessionId: missionRow.id });
 
