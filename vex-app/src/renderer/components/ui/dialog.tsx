@@ -230,7 +230,7 @@ export const DialogHeader = forwardRef<
   <div
     ref={ref}
     className={cn(
-      "flex flex-col gap-1.5 border-b border-border px-6 py-4",
+      "flex shrink-0 flex-col gap-1.5 border-b border-border px-6 py-4",
       className,
     )}
     {...props}
@@ -276,7 +276,10 @@ export const DialogBody = forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col gap-4 px-6 py-5 overflow-y-auto", className)}
+    className={cn(
+      "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5",
+      className,
+    )}
     {...props}
   />
 ));
@@ -289,7 +292,7 @@ export const DialogFooter = forwardRef<
   <div
     ref={ref}
     className={cn(
-      "flex flex-row justify-end gap-2 border-t border-border px-6 py-3",
+      "flex shrink-0 flex-row justify-end gap-2 border-t border-border px-6 py-3",
       className,
     )}
     {...props}

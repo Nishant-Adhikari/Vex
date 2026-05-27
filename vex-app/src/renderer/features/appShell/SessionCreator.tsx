@@ -40,6 +40,7 @@ import { cn } from "../../lib/utils.js";
 import { useCreateSession } from "../../lib/api/sessions.js";
 import { useAvailableWallets } from "../../lib/api/session-wallets.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { WalletSelect } from "./SessionWalletSelect.js";
 
 interface SessionCreatorProps {
   readonly open: boolean;
@@ -91,37 +92,16 @@ const PERMISSION_OPTIONS: ReadonlyArray<PermissionOption> = [
   },
 ];
 
-function WalletSelect({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  readonly label: string;
-  readonly value: string | null;
-  readonly options: ReadonlyArray<{ id: string; address: string; label: string }>;
-  readonly onChange: (id: string | null) => void;
-}): JSX.Element {
-  return (
-    <label className="flex flex-col gap-1 text-xs text-[var(--color-text-secondary)]">
-      <span>{label}</span>
-      <select
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
-        className={cn(
-          "h-9 rounded-lg border border-white/[0.08] bg-white/[0.035] px-2 text-sm text-foreground",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
-        )}
-      >
-        <option value="">None</option>
-        {options.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.label} ({w.address.slice(0, 6)}…{w.address.slice(-4)})
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+/**
+ * Deterministic session name seeded from the first message typed in the
+ * welcome composer (welcome→create flow). Whitespace-collapsed + capped so it
+ * satisfies the `name` min(1) requirement; the user can still edit it.
+ */
+function deriveSessionName(message: string): string {
+  return message
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, Math.min(48, SESSION_TITLE_MAX_LENGTH));
 }
 
 export function SessionCreator({
@@ -129,6 +109,10 @@ export function SessionCreator({
   onOpenChange,
 }: SessionCreatorProps): JSX.Element {
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const createSessionInitialMessage = useUiStore(
+    (s) => s.createSessionInitialMessage,
+  );
+  const setPendingFirstMessage = useUiStore((s) => s.setPendingFirstMessage);
   const createMutation = useCreateSession();
   const availableWallets = useAvailableWallets();
   const inventory =
@@ -147,14 +131,18 @@ export function SessionCreator({
   // Reset state on every (re)open so the next opening starts clean.
   useEffect(() => {
     if (open) {
-      setName("");
+      setName(
+        createSessionInitialMessage !== null
+          ? deriveSessionName(createSessionInitialMessage)
+          : "",
+      );
       setMode("agent");
       setPermission("restricted");
       setSelectedEvmWalletId(null);
       setSelectedSolanaWalletId(null);
       setSubmitError(null);
     }
-  }, [open]);
+  }, [open, createSessionInitialMessage]);
 
   // Focus the Name input first when the dialog opens — it is the only
   // text field in this modal. Mission goal capture happens in chat.
@@ -184,17 +172,30 @@ export function SessionCreator({
         setSubmitError(outcome.error.message);
         return;
       }
+      // Hand the welcome-typed first message to the new session's composer,
+      // which owns the actual chat.submit (+ failure/preserve UX). Set the
+      // hand-off BEFORE activating so the composer's consume-effect sees it on
+      // mount; `closeCreateSession` (via onOpenChange) clears only modal state,
+      // never this hand-off.
+      if (createSessionInitialMessage !== null) {
+        setPendingFirstMessage({
+          sessionId: outcome.data.id,
+          message: createSessionInitialMessage,
+        });
+      }
       setActiveSessionId(outcome.data.id);
       onOpenChange(false);
     },
     [
       createMutation,
+      createSessionInitialMessage,
       mode,
       onOpenChange,
       permission,
       selectedEvmWalletId,
       selectedSolanaWalletId,
       setActiveSessionId,
+      setPendingFirstMessage,
       submitDisabled,
       trimmedName,
     ],
@@ -203,7 +204,7 @@ export function SessionCreator({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl border-white/[0.10] bg-[#071024]/92 text-foreground shadow-[0_0_80px_rgba(22,68,190,0.28)] backdrop:bg-black/70 backdrop:backdrop-blur-sm">
-        <form onSubmit={onSubmit} className="flex flex-col">
+        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader className="border-white/[0.08]">
             <DialogTitle className="text-xl">New session</DialogTitle>
             <DialogDescription className="text-[var(--color-text-secondary)]">

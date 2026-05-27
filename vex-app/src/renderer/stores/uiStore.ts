@@ -52,6 +52,16 @@ export interface UiLogEntry {
   readonly ts: number;
 }
 
+/**
+ * A first message handed off from the welcome→create flow to the just-created
+ * session's composer, which owns the actual `chat.submit` (and its success/
+ * failure UX) so a failed first send is visible + recoverable, never lost.
+ */
+export interface PendingFirstMessage {
+  readonly sessionId: string;
+  readonly message: string;
+}
+
 interface UiState {
   readonly sidebarOpen: boolean;
   readonly currentView: View;
@@ -67,6 +77,13 @@ interface UiState {
    */
   readonly activeSessionId: string | null;
   readonly appShellView: AppShellView;
+  /**
+   * New-session modal state + the first message typed in the welcome
+   * composer that should seed creation. NOT persisted (see partialize).
+   */
+  readonly createSessionOpen: boolean;
+  readonly createSessionInitialMessage: string | null;
+  readonly pendingFirstMessage: PendingFirstMessage | null;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
@@ -74,6 +91,12 @@ interface UiState {
   readonly openUnlock: (returnView: UnlockReturnView) => void;
   readonly setActiveSessionId: (value: string | null) => void;
   readonly setAppShellView: (value: AppShellView) => void;
+  /** Open the new-session modal, optionally seeding the first message. */
+  readonly openCreateSession: (initialMessage?: string | null) => void;
+  /** Close the modal + clear its draft. Does NOT touch pendingFirstMessage. */
+  readonly closeCreateSession: () => void;
+  readonly setPendingFirstMessage: (value: PendingFirstMessage) => void;
+  readonly clearPendingFirstMessage: () => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -89,6 +112,9 @@ export const useUiStore = create<UiState>()(
       sessionModeFilter: "all",
       activeSessionId: null,
       appShellView: "session",
+      createSessionOpen: false,
+      createSessionInitialMessage: null,
+      pendingFirstMessage: null,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
@@ -98,6 +124,19 @@ export const useUiStore = create<UiState>()(
         set({ currentView: "unlock", unlockReturnView }),
       setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
       setAppShellView: (appShellView) => set({ appShellView }),
+      openCreateSession: (initialMessage = null) => {
+        const trimmed =
+          typeof initialMessage === "string" ? initialMessage.trim() : "";
+        set({
+          createSessionOpen: true,
+          createSessionInitialMessage: trimmed.length > 0 ? trimmed : null,
+        });
+      },
+      closeCreateSession: () =>
+        set({ createSessionOpen: false, createSessionInitialMessage: null }),
+      setPendingFirstMessage: (pendingFirstMessage) =>
+        set({ pendingFirstMessage }),
+      clearPendingFirstMessage: () => set({ pendingFirstMessage: null }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),

@@ -90,6 +90,8 @@ const chatSubmitMock = vi.fn<
 >();
 const healthMock = vi.fn<() => Promise<Result<HealthReport>>>();
 const messagesListMock = vi.fn();
+const missionGetDraftMock = vi.fn();
+const runtimeGetStateMock = vi.fn();
 
 beforeAll(() => {
   const proto = HTMLDialogElement.prototype as unknown as {
@@ -138,6 +140,13 @@ beforeEach(() => {
   sessionsDeleteMock.mockReset();
   chatSubmitMock.mockReset();
   healthMock.mockReset();
+  missionGetDraftMock.mockReset();
+  runtimeGetStateMock.mockReset();
+  // SessionComposer queries mission.getDraft + runtime.getState as soon as a
+  // session is active (Send gate moved to activeSessionId). Benign defaults:
+  // no draft, no run status (free text allowed).
+  missionGetDraftMock.mockResolvedValue({ ok: true, data: null });
+  runtimeGetStateMock.mockResolvedValue({ ok: true, data: { status: null } });
   useUiStore.setState({
     sidebarOpen: true,
     currentView: "appShell",
@@ -147,6 +156,9 @@ beforeEach(() => {
     sessionModeFilter: "all",
     activeSessionId: null,
     appShellView: "session",
+    createSessionOpen: false,
+    createSessionInitialMessage: null,
+    pendingFirstMessage: null,
   });
   sessionsListMock.mockResolvedValue({ ok: true, data: [] });
   sessionsGetMock.mockResolvedValue({ ok: true, data: null });
@@ -212,6 +224,12 @@ beforeEach(() => {
       },
       chat: {
         submit: chatSubmitMock,
+      },
+      mission: {
+        getDraft: missionGetDraftMock,
+      },
+      runtime: {
+        getState: runtimeGetStateMock,
       },
       system: {
         health: healthMock,
@@ -376,6 +394,145 @@ describe("AppShell", () => {
 
     await screen.findByText("Stopped.");
     expect(screen.queryByText("Message sent.")).toBeNull();
+  });
+
+  it("enables + submits Send via activeSessionId even while the detail query is unresolved (bug A)", async () => {
+    const row = makeAgentRow("Detail pending");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    // sessions.get never resolves → the detail object (activeSession) stays
+    // null. Send must still work because it gates on activeSessionId.
+    sessionsGetMock.mockReturnValue(new Promise<Result<SessionListItem | null>>(() => {}));
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "hello while loading" } });
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(send);
+
+    await waitFor(() => expect(chatSubmitMock).toHaveBeenCalledTimes(1));
+    expect(chatSubmitMock).toHaveBeenCalledWith({
+      sessionId: row.id,
+      message: "hello while loading",
+    });
+  });
+
+  it("enables Send when the detail query errors (bug A)", async () => {
+    const row = makeAgentRow("Detail error");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "internal.unexpected",
+        domain: "sessions",
+        message: "boom",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+        correlationId: "c",
+      },
+    });
+    useUiStore.setState({ activeSessionId: row.id });
+
+    renderShell();
+    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "send despite error" } });
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(send);
+    await waitFor(() =>
+      expect(chatSubmitMock).toHaveBeenCalledWith({
+        sessionId: row.id,
+        message: "send despite error",
+      }),
+    );
+  });
+
+  it("welcome composer Send opens the creator with the draft carried + name pre-filled (welcome→create)", async () => {
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
+    useUiStore.setState({ activeSessionId: null });
+    renderShell();
+
+    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
+    const send = screen.getByRole("button", { name: "Send message" });
+    // Enabled in welcome with a draft — it is the create entry point now.
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(send);
+
+    await screen.findByRole("heading", { name: "New session" });
+    const nameInput = screen.getByLabelText("Name") as HTMLInputElement;
+    expect(nameInput.value).toBe("research TAO liquidity");
+  });
+
+  it("welcome→create hands the typed first message to the new session's composer", async () => {
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
+    useUiStore.setState({ activeSessionId: null });
+    renderShell();
+
+    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "research TAO liquidity" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByRole("heading", { name: "New session" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() =>
+      expect(chatSubmitMock).toHaveBeenCalledWith({
+        sessionId: "a6bf4f85-e645-4df7-9bc5-70ec2eb0bd51",
+        message: "research TAO liquidity",
+      }),
+    );
+  });
+
+  it("welcome→create: a failed first send surfaces the error AND preserves the draft", async () => {
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
+    useUiStore.setState({ activeSessionId: null });
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: false,
+        error: {
+          code: "internal.unexpected",
+          domain: "chat",
+          message: "send failed",
+          retryable: true,
+          userActionable: false,
+          redacted: true,
+          correlationId: "c",
+        },
+      }),
+      cancel: vi.fn(),
+    });
+    renderShell();
+
+    const draft = (await screen.findByLabelText("Session draft")) as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "first message" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByRole("heading", { name: "New session" });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    // Hand-off submit fails → the now-active composer shows the error and
+    // repopulates the draft so the first message is never silently lost.
+    await screen.findByText("send failed");
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("Session draft") as HTMLTextAreaElement).value,
+      ).toBe("first message"),
+    );
+  });
+
+  it("new-session modal form is a bounded flex column so the footer/Create stays reachable (bug C)", async () => {
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
+    const view = renderShell();
+    fireEvent.click(view.getAllByRole("button", { name: "New session" })[0]!);
+    await screen.findByRole("heading", { name: "New session" });
+
+    const form = view.container.querySelector("dialog form");
+    expect(form).not.toBeNull();
+    expect(form!.classList.contains("flex-1")).toBe(true);
+    expect(form!.classList.contains("min-h-0")).toBe(true);
+    expect(screen.getByRole("button", { name: "Create" })).not.toBeNull();
   });
 
   it("creates a mission session without collecting the goal in the modal", async () => {

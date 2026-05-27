@@ -8,6 +8,7 @@
  */
 
 import type { Result } from "@shared/ipc/result.js";
+import type { ChatSubmitResult } from "@shared/schemas/chat.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import type {
   MissionRunStatus,
@@ -45,6 +46,20 @@ export function gatedReason(status: MissionRunStatus | null): string {
     default:
       return "Composer is gated until the mission run reaches a free state.";
   }
+}
+
+/**
+ * Notice text for a completed chat submit. Shared by the composer's own
+ * submit path AND the welcome→create hand-off so mission first-message UX
+ * ("Mission goal received.") and the stopped state don't regress to a
+ * generic "Message sent."
+ */
+export function submitSuccessText(data: ChatSubmitResult): string {
+  if (data.stopReason === "user_stopped") return "Stopped.";
+  return (
+    data.text ??
+    (data.treatedAsInitialGoal ? "Mission goal received." : "Message sent.")
+  );
 }
 
 export function placeholderFor(session: SessionListItem | null): string {

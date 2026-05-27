@@ -15,23 +15,22 @@
  * `slash/dispatch.ts`. This file owns React state + event routing.
  */
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, JSX } from "react";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
-  ArrowUp01Icon,
-  BitcoinWalletIcon,
-  BridgeIcon,
-  ChartCandlestickIcon,
-  Exchange01Icon,
-  Knowledge01Icon,
-  Search01Icon,
-  StopCircleIcon,
-} from "@hugeicons/core-free-icons";
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { FormEvent, JSX } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowUp01Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { useSubmitChat } from "../../lib/api/chat.js";
 import { useMissionDraft } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
+import { useUiStore } from "../../stores/uiStore.js";
 import { cn } from "../../lib/utils.js";
 import { ConfirmDestructiveDialog } from "./ConfirmDestructiveDialog.js";
 import {
@@ -43,55 +42,14 @@ import {
   gatedReason,
   placeholderFor,
   readRunStatus,
+  submitSuccessText,
 } from "./composer-helpers.js";
+import { QUICK_ACTIONS } from "./composer-quick-actions.js";
 import { parseSlashCommand } from "./slash/parser.js";
 import { useSlashCommandDispatch } from "./slash/dispatch.js";
 import { useSlashMenu } from "./slash/use-slash-menu.js";
 import type { SlashCommand } from "./slash/types.js";
 import { SlashCommandMenu } from "./SlashCommandMenu.js";
-
-interface QuickAction {
-  readonly label: string;
-  readonly prompt: string;
-  readonly icon: IconSvgElement;
-}
-
-const QUICK_ACTIONS: readonly QuickAction[] = [
-  {
-    label: "Swap",
-    prompt:
-      "Swap USDC to ETH with tight slippage and explain the route before execution.",
-    icon: Exchange01Icon,
-  },
-  {
-    label: "Bridge",
-    prompt:
-      "Bridge funds to Base and check fees before proposing the transaction.",
-    icon: BridgeIcon,
-  },
-  {
-    label: "Open position",
-    prompt:
-      "Open a small BTC perp position only after risk and liquidation checks.",
-    icon: ChartCandlestickIcon,
-  },
-  {
-    label: "Research token",
-    prompt: "Research $TAO and summarize catalysts, liquidity, and on-chain risk.",
-    icon: Search01Icon,
-  },
-  {
-    label: "Portfolio check",
-    prompt: "Check portfolio exposure across chains and flag urgent risks.",
-    icon: BitcoinWalletIcon,
-  },
-  {
-    label: "Save knowledge",
-    prompt:
-      "Save the current MEV protection notes into the local knowledge base.",
-    icon: Knowledge01Icon,
-  },
-];
 
 type ComposerNotice =
   | { readonly tone: "info" | "error"; readonly text: string }
@@ -103,13 +61,25 @@ interface PendingConfirm {
 
 export interface SessionComposerProps {
   readonly activeSession: SessionListItem | null;
+  readonly activeSessionId: string | null;
 }
 
 export function SessionComposer({
   activeSession,
+  activeSessionId,
 }: SessionComposerProps): JSX.Element {
-  const sessionId = activeSession?.id ?? null;
+  // Submit/enable gate on the canonical selected id (uiStore), NOT the
+  // detail-query object: the engine ingress loads its own session context,
+  // so a turn can be sent the moment a session is active — even while the
+  // `sessions.get` detail query is still loading or errored (this was the
+  // "send button permanently disabled" bug). `activeSession` stays for
+  // soft, detail-derived UI only (placeholder, quick-action visibility).
+  const sessionId = activeSessionId;
   const submitChat = useSubmitChat();
+  const openCreateSession = useUiStore((s) => s.openCreateSession);
+  const pendingFirstMessage = useUiStore((s) => s.pendingFirstMessage);
+  const clearPendingFirstMessage = useUiStore((s) => s.clearPendingFirstMessage);
+  const handedOffRef = useRef<string | null>(null);
   const draftQuery = useMissionDraft(sessionId);
   const runtimeQuery = useRuntimeState(sessionId);
   const missionId = useMemo<string | null>(() => {
@@ -135,6 +105,36 @@ export function SessionComposer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [draft]);
+
+  // Welcome→create hand-off: when this composer mounts for the freshly
+  // created session, consume the first message stashed by SessionCreator and
+  // send it through the normal submit path so success/failure reuse the same
+  // notice + draft-preserve UX (a failed first send is visible, never lost).
+  // `handedOffRef` + clear-before-submit make it consume-once (Strict Mode
+  // safe); the live store clear avoids a stale-closure re-send.
+  useEffect(() => {
+    if (
+      sessionId === null ||
+      pendingFirstMessage === null ||
+      pendingFirstMessage.sessionId !== sessionId
+    ) {
+      return;
+    }
+    const key = `${pendingFirstMessage.sessionId}:${pendingFirstMessage.message}`;
+    if (handedOffRef.current === key) return;
+    handedOffRef.current = key;
+    const message = pendingFirstMessage.message;
+    clearPendingFirstMessage();
+    void (async () => {
+      const outcome = await submitChat.mutateAsync({ sessionId, message });
+      if (!outcome.ok) {
+        setNotice({ tone: "error", text: outcome.error.message });
+        setDraft(message);
+        return;
+      }
+      setNotice({ tone: "info", text: submitSuccessText(outcome.data) });
+    })();
+  }, [sessionId, pendingFirstMessage, clearPendingFirstMessage, submitChat]);
 
   const runStatus = readRunStatus(runtimeQuery.data);
   const freeTextGate = runStatus !== null && FREE_TEXT_DISALLOWED.has(runStatus);
@@ -162,7 +162,15 @@ export function SessionComposer({
     async (event: FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
       const message = draft.trim();
-      if (message.length === 0 || activeSession === null) return;
+      if (message.length === 0) return;
+      // Welcome state (no session yet): Send opens the new-session modal
+      // seeded with this draft; the created session's composer then sends it
+      // as the first turn (hand-off effect above). Draft is kept so cancelling
+      // the modal preserves what the user typed.
+      if (sessionId === null) {
+        openCreateSession(message);
+        return;
+      }
       setNotice(null);
 
       const parsed = parseSlashCommand(message);
@@ -192,7 +200,7 @@ export function SessionComposer({
       }
       if (submitChat.isPending) return;
       const outcome = await submitChat.mutateAsync({
-        sessionId: activeSession.id,
+        sessionId,
         message,
       });
       if (!outcome.ok) {
@@ -200,23 +208,17 @@ export function SessionComposer({
         return;
       }
       setDraft("");
-      if (outcome.data.stopReason === "user_stopped") {
-        // A stopped turn persists its partial as an `assistant_stopped`
-        // transcript row (when any text streamed); the composer notice just
-        // confirms the stop rather than the misleading "Message sent."
-        setNotice({ tone: "info", text: "Stopped." });
-        return;
-      }
-      setNotice({
-        tone: "info",
-        text:
-          outcome.data.text ??
-          (outcome.data.treatedAsInitialGoal
-            ? "Mission goal received."
-            : "Message sent."),
-      });
+      setNotice({ tone: "info", text: submitSuccessText(outcome.data) });
     },
-    [activeSession, draft, dispatchSlash, freeTextGate, runStatus, submitChat],
+    [
+      sessionId,
+      draft,
+      dispatchSlash,
+      freeTextGate,
+      openCreateSession,
+      runStatus,
+      submitChat,
+    ],
   );
 
   const applyQuickAction = useCallback((prompt: string): void => {
@@ -226,7 +228,6 @@ export function SessionComposer({
 
   const submitDisabled =
     draft.trim().length === 0 ||
-    activeSession === null ||
     submitChat.isPending ||
     slashDispatch.pending;
 
@@ -273,8 +274,8 @@ export function SessionComposer({
           <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--color-text-muted)]">
             <span className="font-mono text-sm text-[#6f91ff]">/</span>
             <span className="truncate">
-              {activeSession === null
-                ? "select a session first"
+              {sessionId === null
+                ? "type a message to start a session"
                 : "type /mission start, /rewind <N>, /restore, /mission-renew"}
             </span>
             {submitChat.isPending || slashDispatch.pending ? (

@@ -1,4 +1,3 @@
-import { useCallback, useState } from "react";
 import type { JSX } from "react";
 import { Docker, Postgresql } from "@thesvg/react";
 import type { Result } from "@shared/ipc/result.js";
@@ -14,9 +13,10 @@ import { SettingsPanel } from "./SettingsPanel.js";
 import { KnowledgePanel } from "./KnowledgePanel.js";
 
 export function AppShell(): JSX.Element {
-  const [creatorOpen, setCreatorOpen] = useState<boolean>(false);
-  const openCreator = useCallback(() => setCreatorOpen(true), []);
   const appShellView = useUiStore((s) => s.appShellView);
+  const createSessionOpen = useUiStore((s) => s.createSessionOpen);
+  const openCreateSession = useUiStore((s) => s.openCreateSession);
+  const closeCreateSession = useUiStore((s) => s.closeCreateSession);
   const healthQuery = useSystemHealth();
   const runtime = getRuntimeStatus({
     loading: healthQuery.isLoading,
@@ -45,7 +45,7 @@ export function AppShell(): JSX.Element {
       />
 
       <div className="relative z-10 flex h-full min-h-0">
-        <SessionsList onCreate={openCreator} />
+        <SessionsList onCreate={() => openCreateSession()} />
 
         <section className="min-w-0 flex-1 pb-12">
           {appShellView === "sessionsLibrary" ? (
@@ -84,7 +84,12 @@ export function AppShell(): JSX.Element {
         </span>
       </footer>
 
-      <SessionCreator open={creatorOpen} onOpenChange={setCreatorOpen} />
+      <SessionCreator
+        open={createSessionOpen}
+        onOpenChange={(next) => {
+          if (!next) closeCreateSession();
+        }}
+      />
     </main>
   );
 }

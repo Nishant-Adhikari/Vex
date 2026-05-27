@@ -72,7 +72,7 @@ export function SessionPanel(): JSX.Element {
             loading={false}
             error={null}
           />
-          <SessionComposer activeSession={null} />
+          <SessionComposer activeSession={null} activeSessionId={null} />
         </div>
       </div>
     );
@@ -102,7 +102,7 @@ export function SessionPanel(): JSX.Element {
         {activeSession !== null ? (
           <SessionTranscript sessionId={activeSession.id} />
         ) : null}
-        <SessionComposer activeSession={activeSession} />
+        <SessionComposer activeSession={activeSession} activeSessionId={activeSessionId} />
       </div>
     </div>
   );

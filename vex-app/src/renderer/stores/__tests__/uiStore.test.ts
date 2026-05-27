@@ -24,6 +24,9 @@ function resetStoreToDefaults(): void {
     sessionModeFilter: "all",
     activeSessionId: null,
     appShellView: "session",
+    createSessionOpen: false,
+    createSessionInitialMessage: null,
+    pendingFirstMessage: null,
   });
 }
 
@@ -48,6 +51,63 @@ describe("uiStore", () => {
     expect(state.activeSessionId).toBeNull();
     expect(state.appShellView).toBe("session");
     expect(state.logBuffer).toEqual([]);
+    expect(state.createSessionOpen).toBe(false);
+    expect(state.createSessionInitialMessage).toBeNull();
+    expect(state.pendingFirstMessage).toBeNull();
+  });
+
+  it("openCreateSession seeds + trims the first message; the sidebar path clears it", () => {
+    useUiStore.getState().openCreateSession("  research TAO  ");
+    expect(useUiStore.getState().createSessionOpen).toBe(true);
+    expect(useUiStore.getState().createSessionInitialMessage).toBe("research TAO");
+    // Sidebar "New session" passes no message → clears any prior seed.
+    useUiStore.getState().openCreateSession();
+    expect(useUiStore.getState().createSessionOpen).toBe(true);
+    expect(useUiStore.getState().createSessionInitialMessage).toBeNull();
+  });
+
+  it("openCreateSession with whitespace-only text stores null", () => {
+    useUiStore.getState().openCreateSession("   ");
+    expect(useUiStore.getState().createSessionInitialMessage).toBeNull();
+  });
+
+  it("closeCreateSession clears modal state but NOT the pending hand-off", () => {
+    useUiStore.getState().openCreateSession("seed");
+    useUiStore
+      .getState()
+      .setPendingFirstMessage({ sessionId: "s1", message: "seed" });
+    useUiStore.getState().closeCreateSession();
+    expect(useUiStore.getState().createSessionOpen).toBe(false);
+    expect(useUiStore.getState().createSessionInitialMessage).toBeNull();
+    // Create success closes the modal AFTER setting the hand-off — it must survive.
+    expect(useUiStore.getState().pendingFirstMessage).toEqual({
+      sessionId: "s1",
+      message: "seed",
+    });
+  });
+
+  it("clearPendingFirstMessage drops the hand-off", () => {
+    useUiStore
+      .getState()
+      .setPendingFirstMessage({ sessionId: "s1", message: "x" });
+    useUiStore.getState().clearPendingFirstMessage();
+    expect(useUiStore.getState().pendingFirstMessage).toBeNull();
+  });
+
+  it("never persists create-modal state or the first message text", () => {
+    useUiStore.getState().openCreateSession("super secret first message");
+    useUiStore.getState().setPendingFirstMessage({
+      sessionId: "s1",
+      message: "super secret first message",
+    });
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.state).toEqual({ sidebarOpen: true });
+    expect(parsed.state.createSessionOpen).toBeUndefined();
+    expect(parsed.state.createSessionInitialMessage).toBeUndefined();
+    expect(parsed.state.pendingFirstMessage).toBeUndefined();
+    expect(raw).not.toContain("super secret first message");
   });
 
   it("setAppShellView mutates and reflects new value", () => {
