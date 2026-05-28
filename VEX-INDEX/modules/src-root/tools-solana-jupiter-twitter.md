@@ -510,7 +510,6 @@ This doc is stale when any of the following change:
 4. **`JUPITER_API_KEY` for Lend**: The lend `earn-api/validation.ts:getJupiterLendHeaders` calls
    `requireJupiterApiKey` from `shared/jupiter-auth.ts`. Confirm whether the same key serves Swap,
    Prices, Tokens, Lend, and Prediction endpoints or whether separate keys are required per portal.jup.ag.
-5. **`solana.predict.analyze` and `solana.predict.getStats` handlers**: Manifests
-   (`manifests/predict.ts`) list `solana.predict.analyze` and `solana.predict.getStats` as protocol
-   tools but the `PREDICT_HANDLERS` map in `handlers/predict.ts` does not define entries for these —
-   verify these are registered in the handler map or that the manifest entries are intentionally stub-only.
+5. Superseded 2026-05-28: a fresh check found that `manifests/predict.ts` no longer lists
+   `solana.predict.analyze` or `solana.predict.getStats`; older notes about missing handlers
+   were stale.

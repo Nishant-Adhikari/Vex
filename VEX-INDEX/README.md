@@ -1,15 +1,15 @@
 # VEX-INDEX — durable codebase index for LLM navigation
 
-> This folder is the working knowledge base for **future-Claude sessions** on this repo.
+> This folder is the working knowledge base for future LLM/Codex sessions on this repo.
 > Files are LLM-readable: granular, stable headings, symbol+line anchors, cross-linked IDs.
 > Designed with Codex consultation (session `vex-index-design`, 2026-05-28).
 
 ## How to navigate (future-me)
 
-1. **Quick repo map** → `Structure.md` (Stage-1 zone index Z1–Z8 + integration wiring map).
+1. **Quick repo map** → `Structure.md` (Stage-1 zone index Z0–Z8 + integration wiring map).
 2. **A specific module** → `modules/<area>/<name>.md`. Terse listing in `modules/_INDEX.md`.
-3. **End-to-end flow** (chat-turn, mission-start, approval, wake, compact, onboarding) → `flows/<name>.md`.
-4. **Trust boundaries / IPC / env / DB contracts** → `boundaries/<topic>.md`.
+3. **End-to-end flow** (chat-turn, mission-start, approval, wake, compact, onboarding) → `Structure.md` for now, then `flows/<name>.md` when expanded.
+4. **Trust boundaries / IPC / env / DB contracts** → `Structure.md`/`boundaries/_INDEX.md` for now, then `boundaries/<topic>.md` when expanded.
 5. **Why we chose X (design)** → `decisions/ADR-NNNN-<topic>.md`.
 6. **Gaps / smells / vex-app coverage** → `audits/current/{coverage-gaps,quality-findings,security-review}.md`.
 7. **What's in flight (bug fixes, audits)** → `00-PROGRESS.md` + `fix-plans/`.
@@ -58,7 +58,7 @@ VEX-INDEX/
 ├── README.md                           (this file)
 ├── MANIFEST.yml                        machine-readable canonical index
 ├── 00-PROGRESS.md                      live tracker
-├── Structure.md                        Stage-1 zone index Z1–Z8 + integration wiring
+├── Structure.md                        Stage-1 zone index Z0–Z8 + integration wiring
 ├── glossary.md                         project terms / aliases for retrieval
 ├── fix-plans/F{1,2,3}-*.md             per-bug plans (shipped on main, commits 97c2c9c..0430072)
 ├── audit-vex-agent-plan.md             10-agent vex-agent deep-audit plan (Round 1)
@@ -66,9 +66,9 @@ VEX-INDEX/
 │   ├── _INDEX.md                       terse listing of all modules (auto/manual updated)
 │   ├── vex-agent/                      ~10 docs — Round 1
 │   ├── src-root/                       — Round 2
-│   └── vex-app/                        — Round 3
-├── flows/                              end-to-end traces (Round 2)
-├── boundaries/                         trust/IPC/env/DB contracts (post-Round 1)
+│   └── vex-app/                        seed docs from 2026-05-28 verification; expand in Round 3
+├── flows/_INDEX.md                     flow index; full flow docs pending
+├── boundaries/_INDEX.md                boundary index; full boundary docs pending
 ├── decisions/                          ADRs (start with ADR-0001 global-model)
 └── audits/
     ├── current/                        latest truth (coverage-gaps, quality-findings, security)
@@ -86,7 +86,7 @@ A doc is **stale** when any path in its `stale_when_paths_change` has changed si
 
 ## Conventions for round-N audit agents
 
-Round 1 = `modules/vex-agent/*`. Round 2 = `modules/src-root/*` + `flows/*`. Round 3 = `modules/vex-app/*` + populated `audits/current/coverage-gaps.md`.
+Round 1 = `modules/vex-agent/*`. Round 2 = `modules/src-root/*` + Stage-1/2 refresh. Round 3 = expand `modules/vex-app/*` + dedicated `flows/*` + dedicated `boundaries/*`.
 
 Agents:
 - Use `general-purpose` subagent type (have `Write` to land directly here).

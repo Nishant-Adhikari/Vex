@@ -1,205 +1,263 @@
 # VEX-INDEX — Structure.md (Stage 1: Repository Index)
 
-> Durable structural index of the Vex monorepo, produced by 8 parallel Explore indexers
-> (2026-05-27). Navigation reference for all later verification stages. Ground truth and the
-> live bug are in `00-PROGRESS.md`. File:line anchors are clickable.
+> Durable structural index of the Vex repo for future LLM/Codex navigation.
+> Refreshed on 2026-05-28 from 10 read-only Explore reports against source
+> snapshot `cf05003` (`docs(vex-index): Round 2 — root src module index (10 modules)`).
+> Detailed module facts live under `modules/`; this file is the cross-zone map.
 
-Zone map: **Z1** engine core/runtime · **Z2** engine mission/wake/compaction · **Z3** inference+tools ·
-**Z4** db+memory/knowledge · **Z5** root src lib/tools · **Z6** vex-app main · **Z7** preload+shared ·
-**Z8** renderer.
+Zone map: **Z0** build/config/ops · **Z1** engine core/runtime · **Z2** mission/wake/compact/prompts ·
+**Z3** inference+tools · **Z4** db+memory/knowledge/sync/embeddings · **Z5** root `src` lib/tools ·
+**Z6** Electron main · **Z7** preload+shared IPC · **Z8** renderer.
 
 ---
 
 ## 0. Monorepo & build/resolution model
 
-Two `package.json` projects: `/Vex/` (root MCP/CLI lib) and `/Vex/vex-app/` (Electron app).
+Two independent pnpm package roots, not a pnpm workspace:
 
-- **`@vex-lib` alias** → `/Vex/src/lib` (vex-app vite + tsconfig). vex-app main/renderer/shared import root
-  lib through this. At build, Rolldown bundles those root sources into the vex-app main bundle; Node
-  resolves their deps from `/Vex/node_modules` → **CI must `pnpm install` at BOTH roots** (see edge-cases #4).
-- **`@vex-agent/*`** → engine/runtime modules. vex-app main reaches the engine **via dynamic `await import("@vex-agent/...")`** (lazy; engine runs in-process in Electron main, no worker/utility process).
-- **Root tsconfig aliases** `@tools/*`, `@utils/*`, `@config/*`, `@lib/*` used inside `src/vex-agent` and `src/`.
-- **Two DB-access models against the SAME local Postgres**:
-  - Engine (Z1–Z4) uses `@vex-agent/db/client.ts` pool + typed repos.
-  - vex-app main (Z6) uses its OWN `vex-app/src/main/database/*` raw `pg.Client` layer. **SQL is the contract boundary; Z6 does NOT import engine repos** (except a few: `wallet-intents`, `runtime-control-requests`, `loop-wake`, `compact-jobs`).
-  - Migrations live in `src/vex-agent/db/migrations/`, **copy-synced** to `vex-app/resources/migrations/` at build; both use shared `src/lib/db/migrate-runner.ts` (advisory-locked).
-- **Config dir resolver intentionally duplicated**: `src/config/paths.ts` (engine) ↔ `vex-app/src/main/paths/config-dir.ts` (Electron, adds `.electron-state` paths). Shared path constants bridge via `@vex-lib/wallet.js` re-exports only.
-- Top-level: root `src/errors.ts` (VexError + ErrorCodes); vex-app config files (`electron-builder.yml`, `vite.{main,preload,renderer}.config.ts`, `tsconfig.*.json`, `playwright.config.ts`).
+- `/Vex/package.json` — root MCP/CLI library + canonical `src/vex-agent` runtime; `packageManager: pnpm@10.32.1`, TypeScript 5.6.
+- `/Vex/vex-app/package.json` — Electron desktop app; `packageManager: pnpm@10.32.1`, Electron 42, Vite 8, React 19.2, TypeScript 6.
+- CI installs both roots. The Electron app bundles root sources into main/preload/renderer, so root dependencies must exist when app builds.
+
+**Resolution / aliases**
+- `vex-app` aliases root code as `@vex-lib/*` and dynamically imports `@vex-agent/*` from Electron main only.
+- Root `tsconfig.json` aliases are `@tools/*`, `@utils/*`, `@config/*`, `@vex-agent/*`. There is no root `@lib/*` alias.
+- Renderer/shared currently import only pure `@vex-lib` modules (`agent-config`, `embedding-constants`, diagnostics schemas). Keep `@vex-lib/wallet`, FS, DB, Docker, signing, and Node-only code out of renderer.
+
+**Build / gates**
+- Root scripts: `pnpm build` runs `tsc` + `tsc-alias`; root tests are Vitest.
+- App scripts: `pnpm --dir vex-app lint` = `tsc --noEmit` + process-boundary check; `build` = lint + Vite main/preload/renderer; `postbuild` runs `scripts/check-build-artifacts.mjs`.
+- App Vite main config must preserve Node platform/external behavior; changing it can break runtime Node built-ins in Electron main.
+- `vex-app/electron-builder.yml` is an unsigned dev/test packaging profile (`forceCodeSigning: false`, notarization/signature verification disabled). Production signing, notarization, checksums, updater metadata, and release workflow are not present.
+- `afterPack.mjs` applies Electron fuses. Postbuild artifact checks cover CSP/protocol/preload/renderer/compose/migration safety.
+
+**Migration mirror**
+- Canonical migrations live in `src/vex-agent/db/migrations/`.
+- App-packaged mirror lives in `vex-app/resources/migrations/`.
+- `vex-app/scripts/copy-migrations.mjs` syncs the mirror; `vex-app/scripts/check-build-artifacts.mjs` verifies packaged migration resources. Treat both as release-critical gates.
 
 ### Config/secret layout (`${CONFIG_DIR}` = `%APPDATA%/vex` | `~/Library/Application Support/vex` | `~/.config/vex`)
-- `.env` — non-secret runtime: `AGENT_MODEL`, `AGENT_PROVIDER=openrouter`, `AGENT_CONTEXT_LIMIT`, `AGENT_MAX_OUTPUT_TOKENS`, `AGENT_TEMPERATURE`, `SUBAGENT_*`, `EMBEDDING_*`.
+
+- `.env` — non-secret runtime config: `AGENT_MODEL`, `AGENT_PROVIDER=openrouter`, `AGENT_CONTEXT_LIMIT`, `AGENT_MAX_OUTPUT_TOKENS`, `AGENT_TEMPERATURE`, `SUBAGENT_*`, `EMBEDDING_*`.
 - `secrets.vault.json` — AES-256-GCM + scrypt(N=65536); holds `OPENROUTER_API_KEY`, `JUPITER_API_KEY`, `TAVILY_API_KEY`, `RETTIWT_API_KEY`, Polymarket creds. Injected to `process.env` only after unlock.
-- `config.json` — public wallet addresses, chain/RPC/service URLs. `keystore.json` / `solana-keystore.json` — wallet keystores (AES-256-GCM + scrypt **N=16384** — weaker than vault, flagged). `.setup-complete`, `.install-id`, `.electron-state/{preferences,wizard-state}.json`, `compose/docker-compose.yml`.
+- `config.json` — public wallet addresses, chain/RPC/service URLs.
+- `keystore.json` / `solana-keystore.json` — wallet keystores (AES-256-GCM + scrypt N=16384, weaker than vault; tracked as security finding).
+- `.setup-complete`, `.install-id`, `.electron-state/{preferences,wizard-state}.json`, and rendered `compose/docker-compose.yml`.
 
 ---
 
 ## Z1 — vex-agent engine core/runtime (`src/vex-agent/engine/{core,events,runtime,checkpoint,support}`)
 
-Owns run lifecycle: claim lease → hydrate → build tools → `runTurnLoop` → finalize → release lease. Provider/model resolved ONCE per entry point (no per-session model). Three event buses. All transcript writes funnel through `appendMessage`.
+Owns run lifecycle: claim lease -> hydrate -> build tools -> `runTurnLoop` -> finalize -> release lease. Provider/model are resolved per entry point from global env, not session state.
 
 **Entry / key files**
-- `engine/index.ts:1` — public barrel (all exports below).
-- `engine/ingress.ts:43` — `routeUserMessage` (== `submitOperatorInstruction`, alias): single entry for user messages; routes by run status (`paused_wake`→preempt+resume; `running`/`paused_approval`→persist interrupt; else `processAgentTurn`/`processMissionSetupTurn`).
-- `engine/types.ts:59` — `MISSION_RUN_STATUSES` = running, paused_approval, paused_wake, paused_error, **paused_user**, completed, failed, stopped, cancelled (canonical; CI drift test). `:239` `EngineContext` (no model fields).
-- `engine/core/turn.ts:66` `executeTurn` (builds prompt, `runStreamingInference`, logs usage, updates token_count); `:258` `saveAssistantMessage`.
-- `engine/core/turn-loop.ts:77` `runTurnLoop` (+ ~12 `turn-loop-*.ts` helpers: tool-batch, text-response, waiting-for-wake, critical-fallback, post-compact, observe, control-emit).
-- `engine/core/runner/agent.ts:29` `processAgentTurn` (maxIter=10); `:36` `resolveProvider()` `:39` `loadConfig()`.
-- `engine/core/runner/mission*.ts` — `prepareMissionStart` (8-step atomic, provider resolved step 3), `runPreparedMissionStart`/`resumePreparedMissionRun` (maxIter=50), finalize, recover, abort, retry.
-- `engine/core/runner/runtime-continuation.ts:39` `scheduleRuntimeContinuation` (iteration_limit/timeout → 5s loop-wake + `runtime_yield` msg).
-- `engine/core/rewind.ts:81` `rewindSession` (/rewind N: soft-archive suffix + `rewind_checkpoint`).
-- `engine/core/approval-runtime.ts` (+ `approval-runtime/` snapshot, post-tx, continuation, sweep) — `prepareApprove`/`prepareReject`/`runResumeAfterDecision`/`sweepExpiredApprovals` (puzzle-5, landed 2026-05-23).
-- `engine/events/{transcript-bus,stream-bus,control-bus≈runtime/control-bus}.ts` — `transcriptEventBus` (post-COMMIT append), `streamDeltaBus` (ephemeral token stream), `controlStateBus`. `events/append-transcript.ts:85` `appendMessage`.
-- `engine/runtime/lease-and-status/*` — `claimRunLeaseAndFlipToRunning`, `claimSessionLease`, `observeAndApplyControl` (atomic CAS). `release-and-emit.ts:41` (every runner `finally`).
-- `engine/checkpoint/prefix.ts:54` `selectPrefixWithGiantFallback`.
-- `engine/support/bug-report-registry.ts` — injectable `BugReportSink` (mounted by vex-app).
+- `engine/ingress.ts:43 routeUserMessage` — main entry for chat/operator instructions; routes by run status.
+- `engine/types.ts:59 MISSION_RUN_STATUSES` — running, paused_approval, paused_wake, paused_error, paused_user, completed, failed, stopped, cancelled.
+- `engine/types.ts:239 EngineContext` — no model/provider fields.
+- `engine/core/turn.ts:66 executeTurn`, `:258 saveAssistantMessage`.
+- `engine/core/turn-loop.ts:77 runTurnLoop` plus helper modules for tool batches, waiting-for-wake, post-compact, control emits.
+- `engine/core/runner/agent.ts:29 processAgentTurn` and mission runner files for prepare/resume/finalize/recover.
+- `engine/events/append-transcript.ts:85 appendMessage` — all transcript writes funnel here, then publish transcript event after commit.
+- `engine/runtime/lease-and-status/*` — atomic CAS claim/heartbeat/release and control-state observation.
+- `engine/runtime/control-bus.ts` — main emits live control-state, but renderer does not receive it yet (F5).
 
-**Cross-zone**: imports Z3 (`resolveProvider`,`runStreamingInference`,`getOpenAITools`), Z4 (repos, client), Z2 (mission commit, prompts, wake/blob-refresh), Z5 (bug-report-sink). Consumed by Z6 (IPC dispatch + bus subscriptions) and Z2 (wake/compact executors call `resumeMissionRun`/turn loop).
+**Cross-zone**: imports Z3 provider/tools, Z4 repos/client, Z2 mission/wake/compact/prompt helpers, Z5 diagnostics. Consumed by Z6 IPC and bridge setup.
 
 ---
 
 ## Z2 — engine mission/wake/subagents/prompts/compaction (`src/vex-agent/engine/{mission,wake,subagents,prompts,compact-jobs}`)
 
-**Mission lifecycle** (`mission/`): `setup.ts` createDraft/applyPatch; `patch-parser.ts:11` drops model-set `stopConditionsAccepted` (host-only); `acceptance.ts:166` `acceptContract` (host-only, recomputes SHA-256 `contract-hash.ts`); `commit-start.ts:98` `commitMissionStart` (atomic gate→flip→createRun); `restore.ts:155` `restoreLatestCheckpoint` (/restore, LIFO); `renew.ts:85` `renewMission` (/mission-renew, fresh draft, NOT idempotent); `diff.ts` getContractStatus; `stop-contract.ts:53` reads only `acceptedContractHash`. Mission statuses (`types.ts:39`): draft, ready, running, completed, failed, cancelled.
+**Mission lifecycle**: draft/patch/accept/commit-start/restore/renew/stop contract. Mission statuses are draft, ready, running, completed, failed, cancelled.
 
-**Wake/defer/sleep** (`wake/`): `tools/internal/loop-defer.ts:62` `handleLoopDefer` (mission-run only; enqueues `loop_wake_requests` via `loopWakeRepo`; returns `defer_until` signal → turn-loop sets `paused_wake`). `wake/executor.ts:83` `startWakeExecutor` (poll 2s, `claimDue` FOR UPDATE SKIP LOCKED → `claimRunLeaseAndFlipToRunning` → injectWakeBanner → `resumeMissionRun`). `wake/blob-refresh.ts` TTL refresh.
+**Wake/defer/sleep**
+- `tools/internal/loop-defer.ts:62 handleLoopDefer` enqueues `loop_wake_requests` and returns `defer_until`.
+- `wake/executor.ts:83 startWakeExecutor` polls due rows, claims with `FOR UPDATE SKIP LOCKED`, claims the run lease, injects a wake banner, and calls `resumeMissionRun`.
+- Wake is now wired in desktop boot by Z6 `setupWakeWorker()` and has a pre-claim provider gate requiring `OPENROUTER_API_KEY && AGENT_MODEL`. Removing the gate can consume wake rows before they can resume.
 
-**Compaction** (`compact-jobs/`): **Track 1** `service.ts:64` `executeCompactNow` (sync, atomic single tx: summary + archive prefix + `enqueueJob` Track 2; returns immediately — "Track 2 NEVER blocks compact"). **Track 2** `executor.ts:64` `startCompactJobsExecutor` (poll 5s → `callChunkerLLM` OpenRouter → `processChunkerOutput` → `embedDocument` → `insertPreparedMemory`). `forced-fallback.ts` deterministic compact at critical band (no LLM). `state.ts` per-session mutex.
+**Compaction**
+- Track 1 `compact-jobs/service.ts:64 executeCompactNow` is synchronous and atomic: summary/archive/enqueue Track 2 in one transaction.
+- Track 2 `compact-jobs/executor.ts:64 startCompactJobsExecutor` polls `compact_jobs`, calls the OpenRouter chunker, embeds chunks, and writes `session_memories`. It is non-blocking; failure does not roll back Track 1.
+- Track 2 currently requires `OPENROUTER_API_KEY && AGENT_MODEL`; the chunker directly constructs `OpenRouterProvider`, bypassing the inference registry singleton/reset path for in-flight calls.
 
-**Prompts** (`prompts/index.ts:91` `buildPromptStack`): layered base/clock/context-pressure/resume-packet/memory/knowledge/tool-catalog/tool-usage/protocols/permission/wallet banners; contextual agent vs mission-setup vs mission-run vs subagent. `mode.ts` `buildPermissionPrompt` (AGENT/MISSION × RESTRICTED/FULL).
+**Prompts / subagents**
+- `prompts/index.ts:91 buildPromptStack` layers base, clock, pressure, resume packet, memory, knowledge, tool catalog, permission and wallet banners.
+- `prompts/protocols.ts` caches the protocol prompt per process; env/tool visibility changes after first build can leave stale tool counts until cache reset.
+- Subagent runner/relay is implemented, but the public tool surface is disabled in both registry and dispatcher. Re-enable only by changing registry + dispatcher + prompts + tests together.
 
-**Subagents** (`subagents/runner.ts`,`relay.ts`): fully implemented BUT **disabled** (`subagent_spawn` commented out in dispatcher; prompts still reference disabled tools — `TODO(subagent-disabled)`).
-
-**Cross-zone**: imports Z1 (hydrate, turn-loop, lease, checkpoint), Z3 (inference, loop-defer), Z4 (repos, memory/embeddings). Consumed by Z6 (`setupCompactWorker` starts Track 2 — but NOT wake), Z1, Z7 (mission IPC).
+**Cross-zone**: imports Z1 runtime/lease/turn loop, Z3 inference/tools, Z4 repos/memory/embeddings. Consumed by Z6 workers and IPC.
 
 ---
 
 ## Z3 — vex-agent inference + tools (`src/vex-agent/{inference,tools}`)
 
-**Inference** — provider is GLOBAL, OpenRouter only.
-- `inference/config.ts:58` reads `process.env.AGENT_PROVIDER`; `:69` `OPENROUTER_API_KEY`+`AGENT_MODEL`; `:75` `parseAgentEnv` (context/output/temp).
-- `inference/registry.ts:41` `doResolve()` → null + log `inference.registry.none_configured` if no key/provider in env; `:100` `resolveProvider()` (singleton, generation-invalidated; **null is NOT cached**); `:134` `resetProvider()` (**only called by `switchProvider` — never on vault unlock**).
-- `inference/openrouter.ts:66` constructor throws if key/model missing; `:98` `loadConfig()` calls OpenRouter **models API on every turn** → returns null (`model_not_found` / `api_unreachable`) if model absent or network fails. `chatCompletionStream()` (signal-cancelable) for streaming.
-- `inference/stream-consumer.ts:137` `runStreamingInference` (buffered fallback only before first chunk; abort → partial; mid-stream error rethrows).
+**Inference**
+- Provider is global, OpenRouter only. `inference/config.ts` reads `process.env.AGENT_PROVIDER`, `OPENROUTER_API_KEY`, `AGENT_MODEL`, and parseable AGENT_* settings.
+- F1 is fixed for provider persist and boot: Z6 loads non-secret `.env` at boot and provider persist reloads with overwrite + `resetProvider()`.
+- Caveat: generic vault unlock/secret writes do not call `resetProvider()`. A previously cached provider can stay stale if secrets/model change outside provider persist; null providers are not cached.
+- F4 remains open: `OpenRouterProvider.loadConfig()` calls the OpenRouter models API on every turn and can return null on transient API/model-list failure.
 
-**Tools** — `tools/registry.ts` (TOOLS concat, `getOpenAITools(ctx)` visibility/pressure filtering, `isMutatingTool`, `getActionKind`); `tools/dispatcher.ts:85` `dispatchTool`→`routeToolCall` (`discover_tools`, `execute_tool`→`executeProtocolTool`, internal via `INTERNAL_TOOL_LOADERS` lazy map; **approval gate**: mutating+restricted+!approved → `pendingApproval:true`). `taxonomy.ts` ActionKind = read|local_write|schedule|approval_prepare|user_wallet_broadcast|external_post|destructive.
-- Wallet tools (`internal/wallet/`): `wallet_send_prepare` (mutating:false, actionKind approval_prepare — DB intent, no signing) / `wallet_send_confirm` (mutating:true, user_wallet_broadcast — CAS consume, approval gate, resolves session-scoped signing wallet, EVM/Solana execute; raw errors fingerprinted, never surfaced).
-- Protocols (`protocols/`): khalani, kyberswap, solana-jupiter, polymarket (mutating), dexscreener (read-only). `runtime.ts:53` `executeProtocolTool` (manifest→lifecycle/env/pressure/param/approval gates→handler→capture; **always overwrites `result.actionKind`** with manifest's effective kind).
+**Tools**
+- `tools/registry.ts` builds the visible tool set; pressure/env filters happen at runtime.
+- `tools/dispatcher.ts` approval gate uses **`mutating`**, not `actionKind`: restricted + mutating + not approved -> pending approval.
+- `actionKind` is still important for intent/risk/audit/UI, but it does not by itself force approval.
+- `execute_tool` is a read-only wrapper; protocol runtime overwrites result `actionKind` from the target manifest. Incorrect manifest metadata directly affects approval/risk/audit.
+- Drift candidate: `document_delete` is `actionKind:"destructive"` but currently `mutating:false`; index this as a security-review finding, not as an already-fixed bug.
 
-**Cross-zone**: consumed by Z1/Z2 (provider+tools); imports Z4 (wallet-intents, loop-wake, executions repos), Z5 (`@tools/wallet`, `agent-config`, `secret-keys`, protocol clients). Env injected by Z6 `secrets/session.ts:applyUnlockedRuntime`.
-
----
-
-## Z4 — vex-agent data + memory/knowledge/sync/embeddings (`src/vex-agent/{db,memory,knowledge,sync,embeddings,scripts}`)
-
-**Schema** (27 migrations, gaps 007/008/012 intentional). `sessions` columns: id, scope, started/ended_at, summary, compacted, message_count, token_count, checkpoint_generation, **mode** (agent|mission), **permission** (restricted|full), initial_goal, title(≤120), pinned_at, deleted_at, **selected_evm_wallet_id/address, selected_solana_wallet_id/address (mig 026, per-session wallet, immutable)**. **NO `model_id` column — global model confirmed.**
-- Other tables: messages(+archive, +rewind_checkpoint_id), usage_log(model per-row), mission_runs(status, contract_snapshot_json, recovered_from_run_id), approval_queue, approval_intents(mig024: action_kind, risk_level, preview/policy_json, decision, execution_status), wallet_intents(mig025), knowledge_entries(pgvector, source, supersedes), session_memories(mig016: themes, body_md, outstanding_items, pgvector), compact_jobs(mig017: outbox), loop_wake_requests(mig011: one-pending-per-session partial unique), rewind_checkpoints(mig023), runtime_control_requests + runner_leases(mig022), tool_output_blobs(mig013), proj_* (balances/positions/pnl/lp), bug_reports, soul, documents/folders.
-
-**Repos** (`db/repos/`): `messages.ts` (`addMessageReturningId` returns id+ts; `getLiveMessagesWithId`; `getAllMessages`); `usage.ts` `getStats` (session + lifetime totals; **NO getLastTurn — that lives in vex-app `usage-db.ts`**); `mission-runs.ts` (`casFlipToRunning`, `getActiveRunBySession`); `approvals.ts`/`approval-intents.ts` (CAS); `compact-jobs/` (`claimNextDueJob` SKIP LOCKED, heartbeat, recoverStale); `session-memories/` (prepareRender→embed→insert invariant); `knowledge/` (recallTopK, hot-context, supersede); `loop-wake.ts` (`enqueue` ON CONFLICT, `claimDue`); `wallet-intents.ts`; `runtime-control-requests.ts`; `runner-leases.ts`.
-
-**Embeddings**: `ai/embeddinggemma` via Docker Model Runner `:12434`; dim config-driven (`EMBEDDING_DIM`); vector cols have NO typmod (per-row dim is authoritative; recall filters on model+dim). **Sync** (`sync/projectors/{spot,lp}.ts`): FIFO PnL lots + LP positions from `proj_activity`.
-
-**Cross-zone**: consumed directly by Z1/Z2/Z3 (engine pool). Z6 reads same Postgres via own raw-pg layer. Z7 schemas mirror (not import) these DTOs.
+**Cross-zone**: consumed by Z1/Z2. Imports Z4 repos and Z5 protocol/wallet clients.
 
 ---
 
-## Z5 — root src lib/tools/providers/config (`src/{tools,lib,providers,config,constants,utils}`)
+## Z4 — vex-agent data + memory/knowledge/sync/embeddings (`src/vex-agent/{db,memory,knowledge,sync,embeddings,scripts,public}`)
 
-Root MCP/CLI lib; subset bridged into vex-app via `@vex-lib`.
-- `config/paths.ts` (CONFIG_DIR resolver, VEX_CONFIG_DIR override), `config/store.ts` (config.json, `isValidWalletId` path-traversal guard, wallet inventory).
-- `lib/wallet.ts` (`@vex-lib/wallet.js` facade: create/import/keystore/inventory + `privateKeyToAddress`), `lib/local-secret-vault.ts` (vault AES-256-GCM scrypt N=65536, `applySecretVaultToProcessEnv`), `lib/secret-keys.ts` (`VAULT_SECRET_KEYS`, `MASTER_PASSWORD_ENV_KEY="VEX_KEYSTORE_PASSWORD"`), `lib/agent-config.ts` (AGENT_*/SUBAGENT_* field metadata, shared with onboarding + renderer), `lib/dotenv.ts`→`utils/dotenv.ts` (atomic .env read/write), `lib/db/migrate-runner.ts` (shared), `lib/diagnostics/{text-redaction,redactor,bug-report-sink,bug-report-schema}.ts`, `lib/openrouter-client.ts`, `lib/embedding*.ts`.
-- `providers/env-resolution.ts` (loadProviderDotenv, readEnvValue routes managed secrets→process.env, others→file).
-- `tools/wallet/` (keystore N=16384, inventory multi-wallet max 3/family, multi-auth `WalletResolution`, signing clients, polymarket-credentials EIP-712). `tools/{dexscreener,khalani,kyberswap,polymarket,solana-ecosystem,twitter-account}/` protocol clients.
-- `utils/{logger(winston, not cross-boundary), logger-shim, http(fetchWithTimeout), package-assets, validation-helpers, env}.ts`.
+**Schema**
+- Current schema version is 027 across 24 SQL migration files; gaps 007/008/012 are intentional.
+- `sessions` has mode/permission/title/pinned/deleted/checkpoint fields plus selected EVM/Solana wallet id/address from migration 026.
+- `sessions` has **no `model_id`**. Model is global by ADR-0001; wallet selection is per-session.
+- DB enforces wallet id/address atomicity, not immutability by trigger. App/engine create/update paths enforce session-scope immutability/CAS.
 
-**Cross-zone**: consumed by Z3 (`@tools/*`), Z4 (migrate-runner), Z6 (`@vex-lib/*`), Z7 (schemas import `@vex-lib/agent-config`), Z8 (renderer imports pure `@vex-lib/{agent-config,embedding-constants}` only).
+**Repos / DB access**
+- Engine uses `src/vex-agent/db/client.ts` pool + typed repos.
+- Electron main uses its own raw `vex-app/src/main/database/*` `pg.Client` layer against the same local Postgres. SQL and shared schemas are the boundary.
+- A few main handlers dynamically import engine repos where intentionally documented, including wallet intents, runtime-control, loop-wake, compact-jobs, and knowledge status update.
+- `inbox_events` has `src/vex-agent/db/repos/inbox.ts`; old “no repo found” notes are obsolete.
+
+**Embeddings**
+- The bundled desktop compose stack uses `llama.cpp:server` on host `127.0.0.1:55134`, OpenAI-compatible base URL `/v1`, alias `ai/embeddinggemma:300M-Q8_0`, dim 768.
+- Older `:12434` Docker Model Runner references remain in probe/config paths and docs; treat them as legacy/status-only unless code proves they are required.
+- Vector columns have no typmod. Recall filters by `embedding_model` and `embedding_dim`.
+
+**Sync**
+- `src/vex-agent/sync` exposes projectors/executor for protocol sync runs.
+- Desktop boot currently wires compact + wake workers, but no sync executor was found in `vex-app/src/main/index.ts`. Mutating protocol tools enqueue sync work, so this is a real coverage gap to verify/fix later.
+
+---
+
+## Z5 — root `src` lib/tools/providers/config/constants/utils
+
+Root MCP/CLI library; pure subsets are bridged into `vex-app` through `@vex-lib`.
+
+- `src/config/paths.ts` and `vex-app/src/main/paths/config-dir.ts` intentionally duplicate config-dir resolution. Drift can split `.env`, vault and keystores.
+- `src/lib/runtime-env.ts` is the F1 facade for `loadProviderDotenv()`.
+- `src/providers/env-resolution.ts` loads non-secret `.env` keys and skips managed secrets.
+- `src/lib/local-secret-vault.ts` + `src/lib/secret-keys.ts` own vault format and key list.
+- `src/lib/env.ts` exists with env-key constants / `TRACKED_API_KEYS`; no active consumers found in this verification.
+- `src/lib/agent-config.ts`, `embedding*.ts`, and diagnostics schemas are renderer-safe only when they remain pure.
+- `src/tools/wallet/**` owns local keystore, inventory, signing clients, and Polymarket credential derivation.
+- Protocol clients under `src/tools/{dexscreener,khalani,kyberswap,polymarket,solana-ecosystem,twitter-account}` are engine/main-only. They assume caller has already enforced approval, wallet policy, and key lifetime.
+
+Important caveat: `lockSecretSession()` clears the in-memory master password, but does not remove vault-injected API keys from `process.env`.
 
 ---
 
 ## Z6 — vex-app main process (`vex-app/src/main`)
 
-Privileged process: secrets, wallet, DB, Docker, onboarding, IPC, engine bridge.
+Privileged process: secrets, wallet, DB, Docker/Compose, onboarding, IPC, engine bridge, packaging-time security gates.
 
-**Bootstrap `index.ts`**: L49 userData→`.electron-state`; L84 single-instance; L90 protocol privileges; L107 whenReady → L110 deny-all permissions → L119 `registerAllIpcHandlers()` → **L126 `setupCompactWorker()` (Track 2 only)** → L133 cleanup → L153 `createMainWindow()`. **NO wake worker started anywhere. NO automatic vault unlock at boot.**
+**Bootstrap (`index.ts`)**
+- `index.ts:51` maps Electron `userData` to `${CONFIG_DIR}/.electron-state`.
+- `index.ts:86` enforces single instance.
+- `index.ts:92` registers app protocol privileges before ready.
+- `index.ts:116 loadProviderDotenv()` loads non-secret `.env` before IPC handlers/workers.
+- `index.ts:120 installPermissionHandlers()` deny-all permissions.
+- `index.ts:126 installAppProtocolHandler(rendererRoot)`.
+- `index.ts:129 registerAllIpcHandlers()`.
+- `index.ts:136 setupCompactWorker()` starts Track 2 supervisor.
+- `index.ts:143 setupWakeWorker()` starts wake supervisor.
+- `index.ts:151-163` drains compact+wake workers before Compose/Postgres cleanup on quit.
 
-**Engine bridge** (`agent/`): `setupAgentBridges()` subscribes the 3 engine buses → `broadcastToAllWindows` on `vex:event:engine:{transcriptAppend,controlState,streamDelta}`. All engine calls via dynamic `import("@vex-agent/...")`. `ipc/runtime/_ensure-engine-db-url.ts` sets `process.env.VEX_DB_URL` + `closePool()` before each dispatch; `database/connection-state.ts` holds DB conn (null until `vex:docker:composeUp`).
+**Security**
+- `windows/main-window.ts:139-150` uses `contextIsolation:true`, `sandbox:true`, `nodeIntegration:false`, `webSecurity:true`, no insecure content, devtools only unpackaged.
+- `windows/main-window.ts:171-187` denies `window.open` and blocks navigation outside allowed app/dev URLs, only forwarding allowlisted external URLs to `shell.openExternal`.
+- `protocol/app-protocol.ts:20-58` implements privileged `app://vex` with host/path containment and no production `file://` loading.
+- `permissions.ts:11-27` denies permission checks/requests/device/display media by default.
 
-**IPC handlers** (`ipc/register-all.ts`) — full channel list mirrors Z7. Engine-calling handlers: `chat.ts` (`submitOperatorInstruction`), `mission/{start,continue,recover,rewind,restore,renew,stop}`, `approvals.ts` (`prepareApprove`/`prepareReject`+`runResumeAfterDecision`), `runtime/{requestResume,cancelWake}`, `compaction.retry`. Read handlers hit DB directly.
+**IPC / engine bridge**
+- `register-handler.ts` validates sender and request envelope, then main-side output schemas/error envelopes. Preload does not validate invoke outputs.
+- `agent/index.ts` subscribes transcript/control/stream buses and bug-report sink. Control-state reaches main broadcast but not renderer bridge yet (F5).
+- Engine calls are dynamic imports from Electron main; renderer never imports `src/vex-agent`.
 
-**Secrets** (`secrets/session.ts`): `unlockSecretSession`→`applyUnlockedRuntime`→`applySecretVaultToProcessEnv` (injects `OPENROUTER_API_KEY` to env, deletes master pw from env, strips managed secrets from .env). Triggered by `vex:secrets:unlock`, `keystoreSet`, and `provider-writer` `writeUnlockedSecrets`.
+**Docker/local services**
+- `ipc/docker.ts`, `docker/*`, `compose/*`, and `database/*` own Docker detection/start, endpoint policy, compose render/up/stop, health probes, migration status, and DB connection handoff.
+- Compose template binds only `127.0.0.1`, uses digest-pinned images, SCRAM Postgres secrets, and local named volumes.
+- Normal quit stops services without deleting volumes. Destructive reset/recovery must remain explicit and gated.
 
-**Onboarding** (`onboarding/provider-writer.ts:48`): vault-writes `OPENROUTER_API_KEY`; `.env`-writes `AGENT_MODEL` + `AGENT_PROVIDER=openrouter` (plaintext). `finalize.ts:199` writes `.setup-complete`.
-
-**Model-configured computation (BUG)**: `ipc/sessions/get-model.ts:25` + `ipc/models.ts:29` read ONLY `process.env.AGENT_PROVIDER`/`AGENT_MODEL` → `source:"unconfigured"` if absent. `ipc/chat.ts:43,75` `classifyEngineError` → `provider.unavailable` "No inference provider is available. Unlock Vex or complete provider setup, then retry."
-
-**Per-session wallet**: `sessions-db.ts:initializeSessionWalletScope` (CAS init); `wallets-session.ts` (list/setScope/intents). `wallet-export.ts` sudo-export to clipboard (never to renderer payload).
-
----
-
-## Z7 — vex-app preload + shared (`vex-app/src/{preload,shared}`) — IPC contracts (trust boundary)
-
-`window.vex` = `VexBridge` (VexShellBridge 10 domains + VexAgentBridge 13 domains), composed with `satisfies`; single `contextBridge.exposeInMainWorld`; no raw ipcRenderer.
-
-- `shared/ipc/channels.ts` — `CH` (request, `vex:<domain>:<action>`) + `EV` (events). Domains present: capabilities, system, docker, database, secrets, wallet, onboarding(24 actions), sessions(+getModel), chat, messages, runtime, mission(12), approvals, wallets, models, usage, compaction, knowledge, memory, settings, telemetry, support, cancel.
-- `shared/ipc/result.ts` — `VexDomain` (29, exhaustive), `VexErrorCode` (52, exhaustive), `VexError` (code/domain/message/retryable/userActionable/redacted/correlationId).
-- `shared/schemas/*` (Zod, +18 tests): `sessions.ts:36` name `min(1)`; `sessions.ts:229` `sessionModelDtoSchema` (source `global_default|unconfigured`, updatedAt always null — **global model, read-only**); `models.ts` no session param, source has no "per-session"; `chat.ts` submit; `messages.ts` transcriptAppendEvent; `stream.ts` streamDeltaEvent (tool_call omits arg fragments); `runtime.ts` state + control results; `approvals.ts`; `wallets.ts` (export requires `riskAcknowledged:true`).
-- `preload/_dispatch.ts` — `invokeWithSchema` (validates INPUT; output is cast, validated main-side only), `abortableInvoke` (chat.submit, docker.composeUp), `subscribe` (validates each event via Zod).
-
-**Drift/gaps flagged**: (a) `RuntimeBridge` control-mutation return types still use legacy `RuntimeRequestResult`, not the per-action puzzle-03 schemas. (b) `EV.engine.controlState` schema + main publish exist but **no preload subscription / bridge method** → renderer can't observe control transitions live. (c) `EV.{system.logLine,system.resume,docker.daemonChanged,updater.available}` unbridged. (d) `CH.onboarding.{providerListModels,providerTest}` channels exist but no bridge method/preload impl.
-
----
-
-## Z8 — vex-app renderer (`vex-app/src/renderer`) — untrusted UI
-
-View state machine (`uiStore.ts`): splash→systemCheck→dockerBootstrap→composeBootstrap→migrations→wizard→unlock→**appShell** (sub-views session|sessionsLibrary|knowledge).
-
-- **AppShell / sessions**: `SessionsList.tsx` tabs All/Agent/Mission (`sessionModeFilter`), groups Pinned/Today/Yesterday/Older; select sets `activeSessionId`.
-- **Composer** `SessionComposer.tsx`: `useSubmitChat`→`window.vex.chat.submit` (abortable, stop button); slash parsing; free-text gate vs runtime state; welcome→`openCreateSession`; placeholder lists only 4 of 9 slash commands.
-- **Transcript** `SessionTranscript.tsx`: `useTranscriptInfinite` (`messages.list`, **MAX 10 pages = 500 nodes, no virtualization yet**); `useTranscriptLiveSync` (onTranscriptAppend + 30s poll); `useStreamPreview`→`StreamingBubble`. `TranscriptMessage` variants: user/assistant/assistant_stopped/tool/notice/compaction/recall. Assistant via safe `MarkdownContent`.
-- **Runtime bar** `SessionRuntimeBar.tsx`: `ModelIndicator` (`useSessionModel`→`sessions.getModel`; **"Model not configured" chip at :109/:112 when source unconfigured/modelId null**); `ContextMeter` (`usage.getContextWindow`→`tokensUsed/contextLimit` → `ctx N%` bar); `UsageChip` (last-turn tokens + cost); `CompactionChip`.
-- **Slash** (`appShell/slash/catalog.ts`): mission-start/continue/recover/stop/edit, retry, rewind(confirm), restore(confirm), mission-renew(confirm) → `useSlashCommandDispatch`→ `window.vex.mission.*`.
-- **Wizard** (`features/wizard/steps`): keystore→wallets→apiKeys→embedding→agentCore→provider→review. Secrets via uncontrolled refs cleared after submit. Provider step verifies OpenRouter then vault-stores key.
-- **Stores**: `uiStore` (routing/filter/activeSession/modals; only `sidebarOpen` persisted), `streamStore` (ephemeral per-session preview).
-- **lib/api**: ~25 TanStack wrappers over `window.vex.*`. `errors/error-copy.ts` maps codes (note: chat path shows raw `error.message`, not mapped copy).
-
-**Stub flagged**: approval hooks `usePendingApprovals/useApprove/useReject` exist in `lib/api/approvals.ts` but **no approval card component is wired anywhere** → restricted-mode `paused_approval` soft-locks the user (composer blocks free text, no card to approve).
+**Updater/release**
+- `electron-updater` dependency and placeholder IPC/event constants exist, but no `autoUpdater`, download, install, or registered updater handler was found. No silent updater path exists today.
 
 ---
 
-## INTEGRATION WIRING MAP (end-to-end flows, file:line)
+## Z7 — vex-app preload + shared (`vex-app/src/{preload,shared}`)
 
-**Chat submit (agent turn)**: `SessionComposer`→`chat.ts:34 window.vex.chat.submit` → preload `agent/chat.ts` (abortable) → Z6 `ipc/chat.ts` (ensureEngineDbUrl) → dynamic import `@vex-agent/engine/index.js` `submitOperatorInstruction` → Z1 `ingress.routeUserMessage`→`processAgentTurn` → Z3 `resolveProvider`+`loadConfig` → `runTurnLoop`→`executeTurn`→`runStreamingInference` → stream deltas on `streamDeltaBus` → Z6 `stream-bridge` → `vex:event:engine:streamDelta` → Z8 `streams.ts`→`streamStore`→`StreamingBubble`. Final msg → `saveAssistantMessage`→`appendMessage`→`transcriptEventBus`→Z6 `transcript-bridge`→`vex:event:engine:transcriptAppend`→Z8 transcript invalidate.
+Trust boundary: `window.vex` is a narrow typed bridge; no raw `ipcRenderer`, `invoke`, `send`, Electron, Node, DB, Docker, wallet or signing authority is exposed.
 
-**Mission start**: Z8 slash `/mission start`→`mission.ts start.mutateAsync`→`window.vex.mission.start`→Z6 `ipc/mission/start.ts`→`prepareMissionStart`(atomic)+fire-and-forget `runPreparedMissionStart`(maxIter=50). Defer: agent calls `loop_defer`→`loop_wake_requests` row + `defer_until`→run `paused_wake`. **Wake: `startWakeExecutor` would resume — BUT NOT STARTED in Z6 ⇒ broken.**
-
-**Restricted approval**: mutating tool + restricted + !approved → Z1 dispatcher returns `pendingApproval` → run `paused_approval` + `approval_queue`/`approval_intents` rows. User approves: Z8 `useApprove`→`window.vex.approvals.approve`→Z6 `ipc/approvals.ts`→`prepareApprove`+`runResumeAfterDecision` (resumes run = the "signal back to agent"). **Backend complete; Z8 approval CARD missing ⇒ user can't approve from UI.**
-
-**Compaction**: context pressure → Z1 turn-loop → Z2 `executeCompactNow` (Track1 sync: summary+archive+enqueue) → Z2 `startCompactJobsExecutor` (Track2 async, started Z6 L126: chunker LLM→embed→`session_memories`). Parallel/non-blocking ✓ (but Track2 idle until OPENROUTER_API_KEY in env).
-
-**Model/provider (BUG path)**: onboarding `provider-writer` → `.env`(AGENT_MODEL/PROVIDER) + vault(OPENROUTER_API_KEY). UI reads `sessions.getModel`/`models.listAvailable` = `process.env` only. Engine reads `process.env` via `inference/config.ts`. **Open: is `${CONFIG_DIR}/.env` loaded into `process.env` at boot? No `dotenv.config()` found in Z6 `index.ts`.** If not loaded, cold start (pre-unlock) ⇒ AGENT_MODEL absent ⇒ "Model not configured"; OPENROUTER_API_KEY absent ⇒ "No inference provider available".
-
----
-
-## PRELIMINARY CROSS-CUTTING FINDINGS (seed for Stage 4 — verify before acting)
-
-| # | Finding | Hits checklist | Confidence | Anchors |
-|---|---------|----------------|-----------|---------|
-| **F1** | **Live bug**: model/provider env not present at chat time → "Model not configured" + "No inference provider". Prime suspect: `${CONFIG_DIR}/.env` not auto-loaded into `process.env` at boot; OPENROUTER_API_KEY needs vault unlock. | §2 bug, model global | HIGH (mechanism), needs final confirm of dotenv-load | Z6 `index.ts`, `ipc/sessions/get-model.ts:25`, `ipc/chat.ts:43`; Z3 `inference/config.ts:69`, `registry.ts:86`; Z8 `SessionRuntimeBar.tsx:112` |
-| **F2** | **Wake executor never started in vex-app** → mission autonomous defer/sleep→wake loop is dead; deferred missions sleep forever. | Mission/full-autonomous | HIGH (Z2+Z6 agree) | `startWakeExecutor` exported, zero prod callsite; Z6 `index.ts:126` starts only compact |
-| **F3** | **Approval card UI not wired** in renderer → restricted-mode `paused_approval` soft-locks user (backend approve→resume is complete). | Restricted mode + approve→resume | HIGH | Z8 `lib/api/approvals.ts` hooks unused; Z1/Z6 approval runtime complete |
-| **F4** | `loadConfig()` hits OpenRouter models API every turn; returns null on transient failure/model-not-listed → session-level "no provider"; `resetProvider()` never called post-unlock. | OpenRouter connection robustness | MED | Z3 `openrouter.ts:98`, `registry.ts:134` |
-| **F5** | `EV.engine.controlState` not bridged to renderer; `RuntimeBridge` type drift. Renderer observes runtime via polling/transcript, not control events. | Runtime status display | MED | Z7 `channels.ts:281`, `runtime.ts` |
-| **F6** | `connection-state.ts` null on cold start; engine handlers fail `dbUnavailableError` unless `composeUp` re-run. | Conversation flow after restart | MED | Z6 `database/connection-state.ts` |
-| **F7** | Per-session wallet ✓ (mig026 + IPC + picker); global model ✓ (no model_id); compaction parallel ✓; context meter ✓; /restore + /mission-renew exist ✓. | Several — IMPLEMENTED | HIGH | Z4/Z6/Z8 |
-| **F8** | Subagents fully built but disabled (`subagent_spawn` commented). Possibly intentional for MVP. | (scope) | HIGH | Z2/Z3 dispatcher |
-| **F9** | Slash placeholder lists 4 of 9 commands; transcript not virtualized (500-node cap). | UI polish | HIGH | Z8 `SessionComposer.tsx:279`, `messages.ts:36` |
-| **F10** | Wallet keystore KDF N=16384 < vault N=65536. | Security review | MED | Z5 `tools/wallet/keystore.ts:27` |
+- `preload/index.ts:34-36` exposes `{...shellBridge, ...agentBridge} satisfies VexBridge`.
+- Preload surface: 10 shell domains + 13 agent domains.
+- `shared/ipc/channels.ts` current inventory: 93 request channel constants across 24 request domains; `EV` has 10 event constants across system/docker/database/updater/engine.
+- `shared/ipc/result.ts` current inventory: 29 domains, 54 error codes.
+- `preload/_dispatch.ts` validates renderer inputs and subscribed events; main `registerHandler` validates success outputs and malformed error envelopes.
+- Unbridged/dead or reserved constants: `CH.onboarding.providerListModels`, `CH.onboarding.providerTest`, `CH.updater.check`, `EV.engine.controlState`, `EV.system.*`, `EV.docker.daemonChanged`, `EV.updater.available`.
+- F5 remains real: main publishes `EV.engine.controlState`, but preload engine bridge currently exposes transcript append + stream delta only.
+- Runtime bridge type drift remains: `RuntimeBridge` uses legacy `RuntimeRequestResult` while handlers validate per-action schemas.
 
 ---
 
-## OPEN VERIFICATION QUESTIONS (for Stage 3/4)
-1. Is `${CONFIG_DIR}/.env` loaded into `process.env` at vex-app/engine boot? (decides F1) — check engine entry + any dotenv loader.
-2. Was the vault unlocked in the screenshot's session? (the `UnlockScreen` exists; on restart vault re-locks.)
-3. Is wake-worker omission intentional or a wiring gap? (F2 — affects whole autonomous mode.)
-4. Is the approval card a planned-but-unbuilt step (F3)?
-5. Does `loadConfig()` paginate `models.list()`? (F4 false-negative risk.)
-6. Mission `/restore` `/mission-renew` `/rewind` — verified end-to-end (engine handlers exist; confirm IPC↔engine↔UI round-trip).
+## Z8 — vex-app renderer (`vex-app/src/renderer`)
+
+Untrusted UI. It talks to main only via `window.vex` and pure shared schemas/types.
+
+- `App.tsx:40-49` route map: splash -> systemCheck -> dockerBootstrap -> composeBootstrap -> migrations -> wizard -> unlock -> appShell.
+- `WizardShell.tsx:174-199` makes unlock conditional; completed setup with locked vault routes to `unlock`, not blindly to appShell.
+- Wizard order: keystore -> wallets -> apiKeys -> embedding -> agentCore -> provider -> review.
+- `SessionPanel.tsx:93-109` active-session mount order: `SessionContext`, optional `MissionContractCard`, `SessionTranscript`, `ApprovalsRegion`, `SessionComposer`.
+- F3 is fixed: `ApprovalsRegion` polls pending approvals every 5s because control-state is not bridged; `ApprovalCard` invalidates pending/history/messages/runtime after approve/reject.
+- `SessionRuntimeBar.tsx:99-129` displays global model/unconfigured state from `sessions.getModel`; there is no per-session model selector.
+- `SessionCreator.tsx` owns per-session wallet selection at session creation.
+- Docker/compose/migrations UI is route-driven from IPC result kinds; log parsing is cosmetic.
+- Settings currently re-enters wizard/reconfigure surfaces; updater UI is absent beyond constants/preferences placeholders.
+- Transcript still has a 500-node cap/no virtualization; slash placeholder lists fewer commands than implemented.
+
+---
+
+## Integration wiring map
+
+**Chat submit**: Z8 `SessionComposer` -> preload `chat.submit` -> Z6 `ipc/chat.ts` (DB URL handoff) -> dynamic import `@vex-agent/engine` -> Z1 `routeUserMessage` -> Z3 provider/tools -> turn loop/stream -> Z6 bridges -> Z8 stream preview and transcript invalidation.
+
+**Mission start / wake**: Z8 slash `/mission start` -> Z6 mission IPC -> Z2 `prepareMissionStart` + fire-and-forget runner. `loop_defer` writes `loop_wake_requests`, run becomes `paused_wake`; Z6 `setupWakeWorker()` now starts the wake executor, which gates before claim on provider readiness.
+
+**Restricted approval**: mutating tool + restricted + not approved -> Z3/Z1 approval queue/intents -> run `paused_approval`. Z8 `ApprovalsRegion` polls and renders `ApprovalCard`; approve/reject IPC calls Z6 approval runtime and resumes/finalizes through Z1. Live control-state still does not reach renderer (F5), so polling/invalidation is the workaround.
+
+**Compaction**: context pressure -> Z2 Track 1 `executeCompactNow` archives prefix and enqueues outbox in one transaction; Z6 `setupCompactWorker()` runs Track 2 async chunking/embedding. Track 2 requires key+model but never blocks Track 1.
+
+**Model/provider**: onboarding provider persist writes `.env` `AGENT_MODEL`/`AGENT_PROVIDER` and vault `OPENROUTER_API_KEY`; then reloads `.env` with overwrite and calls `resetProvider()`. Boot loads `.env` before IPC/workers. Vault unlock still required for `OPENROUTER_API_KEY`.
+
+**Local services**: renderer bootstrap -> Z6 Docker/Compose IPC -> endpoint policy -> rendered compose -> Postgres/pgvector + embedding service -> migration runner -> appShell. Remote Docker contexts are rejected to keep data/secrets local.
+
+---
+
+## Cross-cutting findings
+
+| # | Finding | Status | Confidence | Anchors |
+|---|---------|--------|------------|---------|
+| **F1** | Model/provider boot bug fixed: non-secret `.env` loads before IPC/workers; provider persist reloads with overwrite + `resetProvider()`. Vault unlock is still required for API keys. | fixed | HIGH | `vex-app/src/main/index.ts:116`, `vex-app/src/main/ipc/onboarding/provider.ts`, `src/providers/env-resolution.ts` |
+| **F2** | Wake worker omission fixed: `setupWakeWorker()` starts at boot and executor gates before destructive claim on key+model. | fixed | HIGH | `vex-app/src/main/index.ts:143`, `src/vex-agent/engine/wake/executor.ts` |
+| **F3** | Restricted approval UI fixed: `ApprovalsRegion` + `ApprovalCard` are mounted in `SessionPanel`. | fixed | HIGH | `vex-app/src/renderer/features/appShell/SessionPanel.tsx:103`, `ApprovalsRegion.tsx:38` |
+| **F4** | OpenRouter `loadConfig()` still hits models API every turn; transient model API failures can look like no provider. Provider reset is not called on generic vault unlock. | open | MED | `src/vex-agent/inference/openrouter.ts:98`, `registry.ts:134`, `vex-app/src/main/secrets/session.ts` |
+| **F5** | `EV.engine.controlState` is broadcast from main but not bridged to renderer; runtime UI relies on polling/invalidation. | open | HIGH | `vex-app/src/main/agent/control-bridge.ts:23`, `vex-app/src/preload/agent/engine.ts` |
+| **F6** | Runtime bridge result types drift from current per-action schemas. | open | MED | `vex-app/src/shared/types/bridge/agent/runtime.ts`, `vex-app/src/shared/schemas/runtime.ts` |
+| **F7** | ADR-0001 holds: global model, no `sessions.model_id`, per-session wallet selection. | implemented | HIGH | migration 026, `sessions.getModel`, ADR-0001 |
+| **F8** | Subagents are implemented but intentionally disabled at registry/dispatcher surface. | intentional | HIGH | `tools/registry/subagents.ts`, `tools/dispatcher.ts` |
+| **F9** | UI polish/perf: slash placeholder incomplete; transcript cap/no virtualization. | open | HIGH | Z8 appShell files |
+| **F10** | Wallet keystore KDF N=16384 is weaker than vault N=65536; lock does not clear vault secrets from `process.env`. | open | MED | `src/tools/wallet/keystore.ts`, `vex-app/src/main/secrets/session.ts` |
+| **F11** | Sync executor was not found wired in desktop boot; protocol sync jobs may enqueue without being drained. | open | HIGH | `src/vex-agent/sync/*`, `vex-app/src/main/index.ts` |
+| **F12** | Updater/release is placeholder-only: dependency/channels exist, no implementation, no production signing/notarization/update workflow. | open | HIGH | `vex-app/package.json`, `shared/ipc/channels.ts`, `.github/workflows/ci.yml` |
+| **F13** | Docker Model Runner `:12434` references are legacy/status drift; bundled compose uses llama.cpp on `127.0.0.1:55134/v1`. | open-doc-drift | HIGH | `vex-app/resources/compose/docker-compose.template.yml`, `embedding-defaults.ts` |
+
+---
+
+## Open verification questions
+
+1. Is the sync executor intentionally not started in the Electron desktop app, or should it join compact+wake workers?
+2. Should vault lock clear vault-injected API keys from `process.env`, or is “UI lock only clears master password” the intended runtime model?
+3. Should `document_delete` be `mutating:true`, or is it intentionally destructive/actionKind-only but approval-free?
+4. Should `CH.updater.check` remain a reserved constant, or be removed until updater implementation lands?
+5. Before any production release: verify current official Electron Builder, electron-updater, platform signing/notarization, Docker Desktop installer support, and update metadata requirements.

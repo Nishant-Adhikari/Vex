@@ -377,6 +377,9 @@ requirePolyClobCredentials(address):
 
 1. **`signClobOrder` accepts raw private key** (`Hex`) from the calling handler. This means the protocol handler must extract the private key from the session wallet. The signing happens synchronously in this module, then the key should be discarded. No explicit zeroing of the key material is done by this module. The caller's responsibility for key lifetime is implicit. Worth documenting in the handler or adding a comment here.
 2. **Singleton auth context leak**: `PolyUserStream` stores `ClobAuthContext` at construction (and re-reads `requirePolyClobCredentials` at each `connect()`), but `PolyMarketStream` is purely public. If an agent session ends while a stream is connected, no automatic `disconnect()` is called — the caller must manage stream lifetime. No cleanup path is currently verified in the protocol handlers.
-3. **`getPolyBridgeClient()` singleton is NOT URL-invalidated** (unlike `PolyClobClient` and `PolyGammaClient`). A `config.json` change to `polymarket.bridgeBaseUrl` at runtime would not take effect. `PolyRelayerClient` has the same issue.
+3. **Bridge/relayer URLs have no `config.json` override today**: `VexConfig.polymarket`
+   exposes CLOB/Gamma/Data API bases, while bridge and relayer clients use module constants.
+   Older wording about `polymarket.bridgeBaseUrl` runtime invalidation was stale because that
+   config key does not exist.
 4. **`approveUsdce` USDT-style reset**: the reset-to-zero-then-approve path is correct for tokens like USDT (which requires zero allowance before re-approving), but the code comment says "USDT-style reset" even though the token is `USDC.e`. USDC.e does not require a zero reset. The code is safe but slightly over-cautious; this is a cosmetic issue.
 5. **`PolyMarketStream` uses the global `WebSocket`**: relies on Node.js ≥21 native `WebSocket` or a global polyfill. If the Electron Node version does not expose `WebSocket` globally, the market stream will fail at runtime with a `ReferenceError`. Verified indirectly from Electron 42 shipping Node 22; should be safe but not explicitly tested.

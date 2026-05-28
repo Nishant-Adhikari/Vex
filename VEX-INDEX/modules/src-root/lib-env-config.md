@@ -5,6 +5,7 @@ paths:
   - "src/lib/dotenv.ts"
   - "src/lib/agent-config.ts"
   - "src/lib/runtime-env.ts"
+  - "src/lib/env.ts"
   - "src/lib/embedding.ts"
   - "src/lib/embedding-constants.ts"
   - "src/lib/openrouter-client.ts"
@@ -14,12 +15,13 @@ paths:
   - "src/utils/dotenv.ts"
   - "src/utils/env.ts"
   - "src/constants/chain.ts"
-source_commit: dee0d08
+source_commit: cf05003
 indexed_at: 2026-05-28
 stale_when_paths_change:
   - "src/lib/dotenv.ts"
   - "src/lib/agent-config.ts"
   - "src/lib/runtime-env.ts"
+  - "src/lib/env.ts"
   - "src/lib/embedding.ts"
   - "src/lib/embedding-constants.ts"
   - "src/lib/openrouter-client.ts"
@@ -61,6 +63,7 @@ bounds and constants only, no FS access).
 - runtime-env, overwrite semantics, load-if-undefined, managed secrets skip
 - embedding defaults, embedding constants, EMBEDDING_DIM, MIN/MAX_EMBEDDING_DIM
 - openrouter-client, OpenRouter SDK re-export, instanceof checks, SDK error classes
+- env-key constants, TRACKED_API_KEYS, legacy/env drift candidates
 - config.json, VexConfig, saveConfig, loadConfig, saveConfigPatch, isValidWalletId
 - master password env, VEX_KEYSTORE_PASSWORD, getKeystorePassword, requireKeystorePassword
 - CHAIN, Ethereum Mainnet, chain defaults, ERC20_ABI
@@ -255,11 +258,11 @@ by this module. The `shouldLoadKey` predicate in `loadProviderDotenv` calls
 | `vex-app/src/renderer/features/wizard/steps/EmbeddingStep.tsx:42` | `@vex-lib/embedding-constants.js` | `MIN/MAX_EMBEDDING_DIM` |
 | `vex-app/src/renderer/features/wizard/steps/AgentCoreStep.tsx:35` | `@vex-lib/agent-config.js` | `AGENT_CONTEXT_LIMIT`, `SUBAGENT_CONTEXT_LIMIT`, field constants |
 
-### src/vex-agent (via `@config/*`, `@lib/*` aliases — engine only)
+### src/vex-agent (via root aliases and relative imports — engine only)
 
 | Consumer | Import | Entry point |
 |---|---|---|
-| `src/vex-agent/inference/config.ts` | `src/lib/agent-config.ts` (via `@lib/`) | `parseAgentEnv`, `parseSubagentEnv`, `formatParseErrors`, field constants |
+| `src/vex-agent/inference/config.ts` | `src/lib/agent-config.ts` (relative import in current code) | `parseAgentEnv`, `parseSubagentEnv`, `formatParseErrors`, field constants |
 | `src/vex-agent/tools/internal/subagent/parent.ts:10` | inference config | `loadEnvConfig`, `loadSubagentConfig` |
 
 ### src/tools and src/lib (direct relative imports)

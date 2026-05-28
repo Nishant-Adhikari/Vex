@@ -77,7 +77,8 @@ invariant.
 - **LLM (OpenRouter)**: Track 2 `chunker-call.ts` calls
   `provider.chatCompletionSimple()` over the same `OPENROUTER_API_KEY` /
   `AGENT_MODEL` env vars the in-turn provider uses. 30 s `Promise.race` timeout.
-- **Embedding service**: `embedDocument()` (Docker Model Runner `:12434`) called
+- **Embedding service**: `embedDocument()` (configured embedding base URL; bundled desktop default
+  `127.0.0.1:55134/v1`) called
   per accepted chunk in `chunk-processing.ts`.
 - **`session_memories` repo**: `insertPreparedMemory` + `prepareMemoryRender`
   after embedding.

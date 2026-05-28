@@ -34,8 +34,8 @@ related:
 
 Z4 — The persistence, memory policy, knowledge management, portfolio sync, and
 embedding infrastructure used by the vex-agent engine. Owns the Postgres schema
-(27 migrations, gaps 007/008/012 are intentional), all typed repos, session/knowledge
-memory pipelines, on-chain projection sync, and the local Docker Model Runner
+(version 027 across 24 SQL migration files; gaps 007/008/012 are intentional), all typed repos,
+session/knowledge memory pipelines, on-chain projection sync, and the local
 embedding client.
 
 ## Purpose
@@ -58,8 +58,10 @@ Z4 is the data foundation for the entire vex-agent runtime. It provides:
   TTL + pinned-evergreen entries, and inline/overflow recall splitting.
 - **Sync pipeline** (`proj_*` tables): balance projection, FIFO PnL lot matching, LP
   lifecycle, Polymarket MTM and prediction settlement reconciliation.
-- **Embeddings client**: POST to Docker Model Runner (`ai/embeddinggemma:300M-Q8_0` at
-  `:12434`); EmbeddingGemma prompt scheme, configurable dim, per-row audit stamping.
+- **Embeddings client**: POST to the configured OpenAI-compatible embedding base URL.
+  The bundled desktop compose default is `http://127.0.0.1:55134/v1` backed by
+  `llama.cpp:server` + `ai/embeddinggemma:300M-Q8_0`; older `:12434` Docker Model
+  Runner references are legacy/status drift unless a code path proves otherwise.
 
 ## Retrieval keywords
 
@@ -77,7 +79,7 @@ Z4 is the data foundation for the entire vex-agent runtime. It provides:
 
 ## State owned
 
-### DB tables (27 migrations applied in order; gaps 007/008/012 are intentional)
+### DB tables (schema version 027; 24 SQL files applied in order; gaps 007/008/012 are intentional)
 
 | Table | Migration | Key columns / purpose |
 |---|---|---|
@@ -133,7 +135,7 @@ Z4 is the data foundation for the entire vex-agent runtime. It provides:
 | Var | Purpose |
 |---|---|
 | `VEX_DB_URL` | Engine pool connection string (falls back to `postgresql://vex:vex@localhost:5777/vex_test` with loud warning) |
-| `EMBEDDING_BASE_URL` | Docker Model Runner base URL (required; throws at loadEmbeddingConfig if absent) |
+| `EMBEDDING_BASE_URL` | OpenAI-compatible embedding base URL (required; throws at loadEmbeddingConfig if absent). Bundled desktop default is `http://127.0.0.1:55134/v1`. |
 | `EMBEDDING_MODEL` | Model identifier sent per request (e.g. `ai/embeddinggemma:300M-Q8_0`) |
 | `EMBEDDING_DIM` | Expected vector dimension (required; validated [1,8192]) |
 | `EMBEDDING_PROVIDER` | Free-form provider tag for logging |
@@ -166,7 +168,7 @@ but through **separate, non-shared pools**:
 
 ### Network
 
-- **Docker Model Runner** at `${EMBEDDING_BASE_URL}/embeddings` (default `:12434`):
+- **Embedding service** at `${EMBEDDING_BASE_URL}/embeddings` (desktop default `127.0.0.1:55134/v1`):
   POST with `{ input, model }`, response OpenAI-shaped. Retried 2×, 30 s timeout per attempt.
 
 ### Filesystem
@@ -445,6 +447,7 @@ engine repos (boundary shift).
 
 ## Open questions
 
-- Does `syncTick` have a callsite? Z6 `index.ts` starts `setupCompactWorker` but no evidence of a sync tick wiring in vex-app bootstrap — confirm Z4 sync is called from engine or a Z6 periodic timer.
+- Does `syncTick` / `startSyncExecutor` have a production desktop callsite? Z6 `index.ts`
+  starts compact and wake workers, but no sync worker wiring was found in desktop boot.
 - `runtime_state` and `runtime_cycles` tables (mig 001) appear to be legacy loop infrastructure. Confirm if they are still written by any active code path or if they are dead state.
-- `inbox_events` table is present but no Z4 repo file was found for it in the repo listing — verify if it has a dedicated repo file or is accessed via raw SQL only.
+- `inbox_events` has `src/vex-agent/db/repos/inbox.ts`; older notes saying no repo exists are superseded.

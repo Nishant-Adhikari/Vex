@@ -70,9 +70,11 @@ enforces that invariant after every write.
 
 ### In `process.env` (after unlock)
 
-All keys below are ABSENT before unlock and DELETED from `process.env` on
-`lockSecretSession` (module-level `unlockedMasterPassword = null`). They are
-never loaded from the plaintext `.env` — vault is the sole source.
+All keys below are absent before a successful unlock and are injected into
+`process.env` by the unlock flow. `lockSecretSession()` currently clears the
+in-memory master password only; it does **not** remove these vault-injected keys
+from `process.env`. They are never loaded from the plaintext `.env` — vault is
+the sole source.
 
 | Key | Role |
 |---|---|

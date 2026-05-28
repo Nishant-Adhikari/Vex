@@ -71,8 +71,8 @@ Hypotheses to confirm in Stage 4:
 
 | Stage | Goal | Output | Status |
 |------|------|--------|--------|
-| 1 | Index the repo — what's where, per-file purpose, cross-zone links | `VEX-INDEX/Structure.md` | ✅ DONE (8 indexers) |
-| 2 | Functionality map — every workflow/module in vex-agent & vex-app, how they relate | folded into `Structure.md` §INTEGRATION WIRING MAP | ✅ largely covered |
+| 1 | Index the repo — what's where, per-file purpose, cross-zone links | `VEX-INDEX/Structure.md` | ✅ DONE + refreshed 2026-05-28 (10-agent verification) |
+| 2 | Functionality map — every workflow/module in vex-agent & vex-app, how they relate | folded into `Structure.md` §INTEGRATION WIRING MAP + module docs | ✅ covered for src/vex-agent/root-src; vex-app module docs seeded |
 | 3 | Deep analysis + dependency map per module (modes, tools, mission, rewind, compaction, approvals, model/inference, wallets, onboarding) | `VEX-INDEX/Deep-*.md` | NEXT |
 | 4 | Verification — vex-agent capability vs vex-app wiring; gaps + simplifications; resolve §2 bug | `VEX-INDEX/Gap-Report.md` per area | pending |
 
@@ -178,7 +178,7 @@ Build/config (root + vex-app) consolidated by the lead (me) during Structure.md 
     7. inference (F1 resetProvider call site confirmed · pre-claim provider gate in 2 CAPs · Track-2 chunker bypasses registry singleton — flagged)
     8. tools-internal (25 CAPs · wallet prepare/confirm split · 5 open Qs)
     9. tools-protocols (5 protocols · MUTATION_MATRIX with 27 entries · `execute_tool` actionKind override)
-    10. data-memory-knowledge (27 migrations catalogued · `sessions` has NO model_id → ADR-0001 verified)
+    10. data-memory-knowledge (schema version 027 / 24 migration files catalogued · `sessions` has NO model_id → ADR-0001 verified)
   ADR-0001 verdict across all 10 modules: zero contradictions.
   Working tree: 10 module .md files + foundation (README/MANIFEST/glossary/ADR-0001).
   NOT yet committed. Next: optional commit; Round 2 (root `src/` + flows/ + boundaries/);
@@ -208,5 +208,31 @@ Build/config (root + vex-app) consolidated by the lead (me) during Structure.md 
      KSZapRouterPermit in spender allowlist on chains where it's not deployed.
    - Test gaps: no config-dir resolver parity test (src/config/paths.ts ↔ vex-app config-dir).
    - Type-safety: parseJsonResponse casts without Zod validation.
-  Working tree: 10 new module .md + MANIFEST/PROGRESS edits. NOT yet committed.
-  Next: optional commit; Round 3 (vex-app/) + populated audits/current/coverage-gaps.md.
+	  Working tree: 10 new module .md + MANIFEST/PROGRESS edits. NOT yet committed.
+	  Next: optional commit; Round 3 (vex-app/) + populated audits/current/coverage-gaps.md.
+- 2026-05-28: Stage 1/2 verification refresh complete with 10 read-only Explore agents
+  (runtime limit observed: 6 active agents at once, run as 6+4). Consolidated findings:
+  `Structure.md` was stale after F1/F2/F3 shipped; migration count is schema version
+  027 / 24 SQL files; bundled embeddings use llama.cpp on `127.0.0.1:55134/v1`; Z6
+  security/Docker boot paths needed indexing; Z7 has 93 CH constants, 10 EV constants,
+  54 VexErrorCode entries, and F5 remains real; Z8 approval UI is mounted; updater is
+  placeholder-only; sync executor wiring is not found in desktop boot. Added/updated
+  manifest coverage, `modules/_INDEX.md`, seeded `modules/vex-app/*`, and populated
+  `audits/current/*`.
+- 2026-05-28: ROUND 3 deep vex-app indexing complete. 10 `Explore` agents (sonnet,
+  parallel) wrote deep module docs for `vex-app/` (~5500 new lines):
+    1. main-bootstrap-lifecycle (26 CAPs · 5 open Qs)
+    2. main-agent-bridge (9 CAPs · F5 confirmed: preload `engine.ts` missing `onControlState`)
+    3. main-secrets-wallet-support (12 CAPs · idle-lock confirmed absent · FINDING-security-003 + 004 stand)
+    4. main-database-migrations (18 CAPs · F11 sync worker location flagged · schema 027/24 confirmed)
+    5. main-ipc-engine-orchestration (29 CAPs · F4 OpenRouter loadConfig-per-turn evidence · F6 legacy `RuntimeRequestResult` retained only in test scaffolds; live handlers use per-action schemas)
+    6. main-docker-compose-onboarding (29 CAPs · F1 resetProvider call site verified at provider.ts:70-73 · F13 embedding port 55134 verified · $$VAR escaping correct)
+    7. preload-channels-events-errors (full inventory: 92 CH, 10 EV, 54 error codes, 29 domains · 9 reserved/unbridged constants enumerated)
+    8. shared-schemas-bridge-types (~71 z.object definitions, 24 bridge type files · F6 RuntimeBridge legacy declaration enumerated)
+    9. renderer-appshell-runtime (24 CAPs · F3 ApprovalCard two-step confirm verified · F5 polling workaround 5000ms · F9 transcript 500-node cap)
+    10. renderer-onboarding-bootstrap-secrets (21 CAPs · F1 ProviderStep → provider.ts resetProvider verified · password discipline: uncontrolled refs + pre-await clear across all steps)
+  After Round 3 I also synthesized:
+    - `VEX-INDEX/flows/` 6 FLOW-* docs (chat-turn, mission-start, approval-restricted, wake-resume, compaction-tracks, onboarding-config-write) with `path:line symbol` steps + invariants + failure modes.
+    - `VEX-INDEX/boundaries/` 4 boundary docs (process-boundaries, ipc-contracts, env-secrets, database-contracts) consolidating cross-cutting contracts.
+    - MANIFEST.yml updated: 36 modules total (10 vex-agent + 10 src-root + 6 vex-app seed + 10 vex-app deep), 6 FLOW-* entries, 4 boundary entries, 0 missing paths.
+  Source snapshot: `cf05003`. Working tree: 10 new deep .md + 6 FLOW-*.md + 4 boundary-*.md + MANIFEST/_INDEX/00-PROGRESS edits.

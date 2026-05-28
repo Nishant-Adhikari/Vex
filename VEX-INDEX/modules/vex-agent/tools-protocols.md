@@ -62,7 +62,7 @@ behind those two entry points.
 | Inbound | `tools/dispatcher.ts:dispatchTool` calls `discoverProtocolCapabilities` + `executeProtocolTool` when the LLM emits `discover_tools` / `execute_tool` |
 | DB (engine pool) | `db/repos/executions.ts`, `db/repos/capture-items.ts`, `db/repos/tool-embeddings.ts`, `db/repos/sync.ts` — dynamic imports inside `captureExecution` + `populateCaptureItems` |
 | Network | Per-protocol client libs under `src/tools/{khalani,kyberswap,polymarket,solana-ecosystem,dexscreener}/` called from handlers |
-| Embeddings | `vex-agent/embeddings/client.ts:embedQuery` / `embedTool` → Docker Model Runner `:12434` |
+| Embeddings | `vex-agent/embeddings/client.ts:embedQuery` / `embedTool` → configured embedding base URL; bundled desktop compose default is `127.0.0.1:55134/v1` |
 | Wallet/signing | Handlers resolve the session's selected wallet via `tools/wallet/multi-auth.ts:WalletResolution`; signing is delegated to the per-chain signer clients, never raw keys in this layer |
 | Sync / projection | `sync/activity-populator.ts` (dynamic import post-execution) → `proj_*` tables |
 
@@ -239,7 +239,7 @@ behind those two entry points.
 
 - **Imports FROM**:
   - `module.vex-agent.data-memory-knowledge` — `db/repos/{executions,capture-items,tool-embeddings,sync}.ts`; `embeddings/client.ts`
-  - `module.vex-agent.inference` (indirect) — `embeddings/client.ts` reaches same Docker Model Runner sidecar
+  - `module.vex-agent.inference` (indirect) — `embeddings/client.ts` reaches the configured local embedding service
   - `src/tools/{khalani,kyberswap,polymarket,solana-ecosystem,dexscreener}/` (Z5) — protocol client implementations
   - `tools/wallet/multi-auth.ts` (Z5) — `WalletResolution` type + wallet resolution helpers
   - `vex-agent/engine/types.ts` — `Permission`, `WalletPolicy`

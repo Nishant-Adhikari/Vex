@@ -9,8 +9,9 @@
 
 version: 1
 generated_at: 2026-05-28
-last_source_commit: c138af8
-last_source_commit_subject: "docs(vex-index): repo audit tracker + Stage-1 structure + fix plans"
+last_source_commit: cf05003
+last_source_commit_subject: "docs(vex-index): Round 2 — root src module index (10 modules)"
+# Round 3 (vex-app deep, flows, boundaries) is documentation-only against this commit.
 
 id_conventions:
   module: "module.<area>.<name>"            # e.g. module.vex-agent.engine-core
@@ -37,11 +38,25 @@ docs:
   - id: index.structure
     kind: zone-index
     path: VEX-INDEX/Structure.md
-    source_commit: c138af8
-    indexed_at: 2026-05-27
+    source_commit: cf05003
+    indexed_at: 2026-05-28
     stale_when_paths_change:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/**"
+      - ".dockerignore"
       - "src/vex-agent/**"
       - "vex-app/src/**"
+      - "vex-app/resources/**"
+      - "vex-app/scripts/**"
+      - "vex-app/electron-builder.yml"
+      - "vex-app/build/**"
+      - "vex-app/package.json"
+      - "vex-app/pnpm-lock.yaml"
+      - "vex-app/vite*.config.ts"
+      - "vex-app/vitest.config.ts"
+      - "vex-app/playwright.config.ts"
+      - "vex-app/docs/**"
       - "src/lib/**"
       - "src/tools/**"
       - "src/providers/**"
@@ -54,6 +69,24 @@ docs:
     kind: audit-plan
     path: VEX-INDEX/audit-vex-agent-plan.md
     status: round-1-in-progress
+
+  - id: index.modules
+    kind: module-index
+    path: VEX-INDEX/modules/_INDEX.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+
+  - id: index.flows
+    kind: flow-index
+    path: VEX-INDEX/flows/_INDEX.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+
+  - id: index.boundaries
+    kind: boundary-index
+    path: VEX-INDEX/boundaries/_INDEX.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
 
   # Fix plans (shipped on main)
   - id: fix-plan.F1
@@ -254,6 +287,10 @@ modules:
       - "src/vex-agent/engine/wake/**"
       - "src/vex-agent/engine/subagents/**"
       - "src/vex-agent/engine/prompts/**"
+      - "src/vex-agent/tools/registry/subagents.ts"
+      - "src/vex-agent/tools/dispatcher.ts"
+      - "vex-app/src/main/agent/wake-worker.ts"
+      - "vex-app/src/main/index.ts"
     related:
       - module.vex-agent.engine-runner
       - module.vex-agent.engine-mission
@@ -269,6 +306,14 @@ modules:
       - "src/vex-agent/engine/compact-jobs/**"
     stale_when_paths_change:
       - "src/vex-agent/engine/compact-jobs/**"
+      - "src/vex-agent/engine/checkpoint/prefix.ts"
+      - "src/vex-agent/engine/core/turn-loop*.ts"
+      - "src/vex-agent/tools/internal/compact/now.ts"
+      - "src/vex-agent/db/repos/compact-jobs/**"
+      - "src/vex-agent/db/migrations/017_compact_jobs.sql"
+      - "src/vex-agent/memory/policy.ts"
+      - "vex-app/src/main/agent/compact-worker.ts"
+      - "vex-app/src/main/index.ts"
     related:
       - module.vex-agent.engine-core
       - module.vex-agent.engine-runtime-events
@@ -290,12 +335,13 @@ modules:
 
   - id: module.src-root.lib-env-config
     path: VEX-INDEX/modules/src-root/lib-env-config.md
-    source_commit: dee0d08
+    source_commit: cf05003
     indexed_at: 2026-05-28
     covers_paths:
       - "src/lib/dotenv.ts"
       - "src/lib/agent-config.ts"
       - "src/lib/runtime-env.ts"
+      - "src/lib/env.ts"
       - "src/lib/embedding.ts"
       - "src/lib/embedding-constants.ts"
       - "src/lib/openrouter-client.ts"
@@ -309,6 +355,7 @@ modules:
       - "src/lib/dotenv.ts"
       - "src/lib/agent-config.ts"
       - "src/lib/runtime-env.ts"
+      - "src/lib/env.ts"
       - "src/lib/embedding.ts"
       - "src/lib/embedding-constants.ts"
       - "src/lib/openrouter-client.ts"
@@ -347,6 +394,12 @@ modules:
       - "src/vex-agent/sync/**"
       - "src/vex-agent/embeddings/**"
       - "src/vex-agent/scripts/**"
+      - "src/vex-agent/public/**"
+      - "vex-app/resources/migrations/**"
+      - "vex-app/scripts/copy-migrations.mjs"
+      - "vex-app/scripts/check-build-artifacts.mjs"
+      - "vex-app/src/main/database/**"
+      - "vex-app/src/shared/embedding-defaults.ts"
     related:
       - module.vex-agent.engine-core
       - module.vex-agent.engine-runtime-events
@@ -561,23 +614,640 @@ modules:
       - module.src-root.lib-wallet
       - module.src-root.lib-db-utilities
 
-# Flows — Round 2.
-flows: []
+  - id: module.vex-app.main-process
+    path: VEX-INDEX/modules/vex-app/main-process.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/main/**"
+    stale_when_paths_change:
+      - "vex-app/src/main/**"
+      - "vex-app/src/shared/ipc/**"
+      - "vex-app/src/shared/schemas/**"
+      - "vex-app/src/preload/**"
+      - "src/providers/env-resolution.ts"
+      - "src/lib/runtime-env.ts"
+    related:
+      - module.vex-app.preload-shared-contracts
+      - module.vex-agent.engine-runtime-events
+      - module.vex-agent.engine-wake-subagents-prompts
+      - module.vex-agent.engine-compact
+      - fix-plan.F1
+      - fix-plan.F2
 
-# Boundaries — post-Round 1 (trust/IPC/env/DB contracts).
-boundaries: []
+  - id: module.vex-app.preload-shared-contracts
+    path: VEX-INDEX/modules/vex-app/preload-shared-contracts.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/preload/**"
+      - "vex-app/src/shared/ipc/**"
+      - "vex-app/src/shared/schemas/**"
+      - "vex-app/src/shared/types/bridge/**"
+      - "vex-app/src/shared/types/bridge.ts"
+    stale_when_paths_change:
+      - "vex-app/src/preload/**"
+      - "vex-app/src/shared/ipc/**"
+      - "vex-app/src/shared/schemas/**"
+      - "vex-app/src/shared/types/bridge/**"
+      - "vex-app/src/shared/types/bridge.ts"
+      - "vex-app/src/renderer/vex.d.ts"
+      - "vex-app/src/main/ipc/register-handler.ts"
+      - "vex-app/src/main/ipc/register-all.ts"
+      - "vex-app/src/main/ipc/cancel*.ts"
+      - "vex-app/src/main/agent/*-bridge.ts"
+      - "vex-app/scripts/check-process-boundaries.mjs"
+    related:
+      - module.vex-app.main-process
+      - module.vex-app.renderer-appshell
+      - module.vex-agent.engine-runtime-events
+
+  - id: module.vex-app.renderer-appshell
+    path: VEX-INDEX/modules/vex-app/renderer-appshell.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/renderer/**"
+    stale_when_paths_change:
+      - "vex-app/src/renderer/**"
+      - "vex-app/src/preload/**"
+      - "vex-app/src/shared/schemas/**"
+      - "vex-app/src/shared/types/bridge/**"
+      - "vex-app/src/main/ipc/**"
+    related:
+      - module.vex-app.preload-shared-contracts
+      - module.vex-app.main-process
+      - fix-plan.F3
+      - ADR-0001-global-model-session-wallet
+
+  - id: module.vex-app.local-services-docker
+    path: VEX-INDEX/modules/vex-app/local-services-docker.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/resources/compose/**"
+      - "vex-app/src/main/docker/**"
+      - "vex-app/src/main/compose/**"
+      - "vex-app/src/main/database/**"
+      - "vex-app/src/main/ipc/docker.ts"
+    stale_when_paths_change:
+      - "vex-app/resources/compose/**"
+      - "vex-app/src/main/docker/**"
+      - "vex-app/src/main/compose/**"
+      - "vex-app/src/main/database/**"
+      - "vex-app/src/main/ipc/docker.ts"
+      - "vex-app/src/shared/embedding-defaults.ts"
+      - "vex-app/src/main/onboarding/embedding-defaults.ts"
+      - "vex-app/scripts/check-build-artifacts.mjs"
+      - ".agents/skills/vex-project-rules/references/50-containers-and-runtime.md"
+    related:
+      - module.vex-app.main-process
+      - module.vex-agent.data-memory-knowledge
+
+  - id: module.vex-app.packaging-build-release-updater
+    path: VEX-INDEX/modules/vex-app/packaging-build-release-updater.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/electron-builder.yml"
+      - "vex-app/build/**"
+      - "vex-app/vite*.config.ts"
+      - "vex-app/scripts/check-build-artifacts.mjs"
+      - "vex-app/package.json"
+    stale_when_paths_change:
+      - "vex-app/electron-builder.yml"
+      - "vex-app/build/**"
+      - "vex-app/vite*.config.ts"
+      - "vex-app/scripts/check-build-artifacts.mjs"
+      - "vex-app/package.json"
+      - "vex-app/pnpm-lock.yaml"
+      - ".github/workflows/**"
+    related:
+      - module.vex-app.ci-quality-gates
+      - module.vex-app.local-services-docker
+
+  - id: module.vex-app.ci-quality-gates
+    path: VEX-INDEX/modules/vex-app/ci-quality-gates.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - ".github/workflows/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "vex-app/package.json"
+      - "vex-app/pnpm-lock.yaml"
+      - "vex-app/vitest.config.ts"
+      - "vex-app/playwright.config.ts"
+      - "vex-app/e2e/**"
+      - "vex-app/scripts/**"
+    stale_when_paths_change:
+      - ".github/workflows/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "vex-app/package.json"
+      - "vex-app/pnpm-lock.yaml"
+      - "vex-app/vitest.config.ts"
+      - "vex-app/playwright.config.ts"
+      - "vex-app/e2e/**"
+      - "vex-app/scripts/**"
+    related:
+      - module.vex-app.packaging-build-release-updater
+      - module.vex-app.local-services-docker
+
+  # Round 3 — deep vex-app modules (10 zones)
+  - id: module.vex-app.main-bootstrap-lifecycle
+    path: VEX-INDEX/modules/vex-app/main-bootstrap-lifecycle.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/main/index.ts"
+      - "vex-app/src/main/permissions.ts"
+      - "vex-app/src/main/menu*.ts"
+      - "vex-app/src/main/windows/**"
+      - "vex-app/src/main/protocol/**"
+      - "vex-app/src/main/lifecycle/**"
+      - "vex-app/src/main/paths/**"
+      - "vex-app/src/main/preferences/**"
+      - "vex-app/src/main/security/**"
+      - "vex-app/src/main/logger/**"
+    stale_when_paths_change:
+      - "vex-app/src/main/index.ts"
+      - "vex-app/src/main/permissions.ts"
+      - "vex-app/src/main/menu*.ts"
+      - "vex-app/src/main/windows/**"
+      - "vex-app/src/main/protocol/**"
+      - "vex-app/src/main/lifecycle/**"
+      - "vex-app/src/main/paths/**"
+      - "vex-app/src/main/preferences/**"
+      - "vex-app/src/main/security/**"
+      - "vex-app/src/main/logger/**"
+      - "src/lib/runtime-env.ts"
+      - "src/providers/env-resolution.ts"
+    related:
+      - module.vex-app.main-process
+      - module.vex-app.main-agent-bridge
+      - module.vex-app.main-docker-compose-onboarding
+      - module.src-root.lib-env-config
+      - fix-plan.F1
+      - fix-plan.F2
+
+  - id: module.vex-app.main-agent-bridge
+    path: VEX-INDEX/modules/vex-app/main-agent-bridge.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/main/agent/**"
+    stale_when_paths_change:
+      - "vex-app/src/main/agent/**"
+      - "src/vex-agent/engine/runtime/control-bus.ts"
+      - "src/vex-agent/engine/events/**"
+      - "src/vex-agent/engine/wake/executor.ts"
+      - "src/vex-agent/engine/compact-jobs/executor.ts"
+      - "src/vex-agent/engine/compact-jobs/service.ts"
+      - "src/vex-agent/engine/compact-jobs/chunker-call.ts"
+      - "vex-app/src/main/ipc/register-all.ts"
+      - "vex-app/src/main/database/wake-db.ts"
+    related:
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-agent.engine-runtime-events
+      - module.vex-agent.engine-wake-subagents-prompts
+      - module.vex-agent.engine-compact
+      - fix-plan.F2
+
+  - id: module.vex-app.main-secrets-wallet-support
+    path: VEX-INDEX/modules/vex-app/main-secrets-wallet-support.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/main/secrets/**"
+      - "vex-app/src/main/wallet/**"
+      - "vex-app/src/main/ipc/secrets.ts"
+      - "vex-app/src/main/ipc/wallet-export.ts"
+      - "vex-app/src/main/ipc/wallet-export-clipboard-lease.ts"
+      - "vex-app/src/main/ipc/wallets-session.ts"
+      - "vex-app/src/main/ipc/_wallet-refs.ts"
+      - "vex-app/src/main/ipc/telemetry.ts"
+      - "vex-app/src/main/ipc/support.ts"
+      - "vex-app/src/main/telemetry/**"
+      - "vex-app/src/main/support/**"
+      - "vex-app/src/main/security/**"
+    stale_when_paths_change:
+      - "vex-app/src/main/secrets/**"
+      - "vex-app/src/main/wallet/**"
+      - "vex-app/src/main/ipc/secrets.ts"
+      - "vex-app/src/main/ipc/wallet-export*.ts"
+      - "vex-app/src/main/ipc/wallets-session.ts"
+      - "vex-app/src/main/ipc/telemetry.ts"
+      - "vex-app/src/main/ipc/support.ts"
+      - "vex-app/src/main/telemetry/**"
+      - "vex-app/src/main/support/**"
+      - "src/lib/local-secret-vault.ts"
+      - "src/lib/secret-keys.ts"
+      - "src/tools/wallet/keystore.ts"
+    related:
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.src-root.lib-vault-secrets
+      - module.src-root.lib-wallet
+      - module.src-root.lib-diagnostics
+      - fix-plan.F1
+      - ADR-0001-global-model-session-wallet
+      - audit.current.security-review
+
+  - id: module.vex-app.main-database-migrations
+    path: VEX-INDEX/modules/vex-app/main-database-migrations.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/main/database/**"
+      - "vex-app/src/main/ipc/database.ts"
+      - "vex-app/src/main/ipc/memory.ts"
+      - "vex-app/src/main/ipc/knowledge.ts"
+      - "vex-app/src/main/ipc/messages.ts"
+      - "vex-app/src/main/ipc/compaction.ts"
+      - "vex-app/src/main/ipc/usage.ts"
+    stale_when_paths_change:
+      - "vex-app/src/main/database/**"
+      - "vex-app/src/main/ipc/database.ts"
+      - "vex-app/src/main/ipc/memory.ts"
+      - "vex-app/src/main/ipc/knowledge.ts"
+      - "vex-app/src/main/ipc/messages.ts"
+      - "vex-app/src/main/ipc/compaction.ts"
+      - "vex-app/src/main/ipc/usage.ts"
+      - "vex-app/resources/migrations/**"
+      - "vex-app/scripts/copy-migrations.mjs"
+      - "vex-app/scripts/check-build-artifacts.mjs"
+      - "src/vex-agent/db/client.ts"
+      - "src/vex-agent/db/repos/**"
+      - "src/vex-agent/db/migrations/**"
+    related:
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.main-docker-compose-onboarding
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-agent.data-memory-knowledge
+      - ADR-0001-global-model-session-wallet
+
+  - id: module.vex-app.main-ipc-engine-orchestration
+    path: VEX-INDEX/modules/vex-app/main-ipc-engine-orchestration.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/main/ipc/register-handler.ts"
+      - "vex-app/src/main/ipc/register-all.ts"
+      - "vex-app/src/main/ipc/cancel*.ts"
+      - "vex-app/src/main/ipc/_shared/**"
+      - "vex-app/src/main/ipc/_feature-unavailable.ts"
+      - "vex-app/src/main/ipc/chat.ts"
+      - "vex-app/src/main/ipc/mission*.ts"
+      - "vex-app/src/main/ipc/mission/**"
+      - "vex-app/src/main/ipc/runtime*.ts"
+      - "vex-app/src/main/ipc/runtime/**"
+      - "vex-app/src/main/ipc/approvals*.ts"
+      - "vex-app/src/main/ipc/approvals/**"
+      - "vex-app/src/main/ipc/sessions/**"
+      - "vex-app/src/main/ipc/settings.ts"
+      - "vex-app/src/main/ipc/system.ts"
+      - "vex-app/src/main/ipc/models.ts"
+      - "vex-app/src/main/ipc/capabilities.ts"
+    stale_when_paths_change:
+      - "vex-app/src/main/ipc/**"
+      - "vex-app/src/shared/schemas/chat.ts"
+      - "vex-app/src/shared/schemas/mission/**"
+      - "vex-app/src/shared/schemas/runtime.ts"
+      - "vex-app/src/shared/schemas/approvals.ts"
+      - "vex-app/src/shared/schemas/sessions.ts"
+      - "src/vex-agent/engine/ingress.ts"
+      - "src/vex-agent/engine/core/runner/**"
+      - "src/vex-agent/engine/mission/**"
+      - "src/vex-agent/engine/wake/**"
+    related:
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.main-agent-bridge
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-app.shared-schemas-bridge-types
+      - module.vex-agent.engine-runner
+      - module.vex-agent.engine-runtime-events
+      - module.vex-agent.engine-mission
+      - module.vex-agent.tools-internal
+      - fix-plan.F3
+
+  - id: module.vex-app.main-docker-compose-onboarding
+    path: VEX-INDEX/modules/vex-app/main-docker-compose-onboarding.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/main/docker/**"
+      - "vex-app/src/main/compose/**"
+      - "vex-app/src/main/onboarding/**"
+      - "vex-app/src/main/ipc/docker.ts"
+      - "vex-app/src/main/ipc/onboarding.ts"
+      - "vex-app/src/main/ipc/onboarding/**"
+      - "vex-app/resources/compose/docker-compose.template.yml"
+    stale_when_paths_change:
+      - "vex-app/src/main/docker/**"
+      - "vex-app/src/main/compose/**"
+      - "vex-app/src/main/onboarding/**"
+      - "vex-app/src/main/ipc/docker.ts"
+      - "vex-app/src/main/ipc/onboarding.ts"
+      - "vex-app/src/main/ipc/onboarding/**"
+      - "vex-app/resources/compose/docker-compose.template.yml"
+      - "vex-app/src/shared/embedding-defaults.ts"
+      - "vex-app/scripts/check-build-artifacts.mjs"
+      - "vex-app/scripts/copy-migrations.mjs"
+    related:
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.main-database-migrations
+      - module.vex-app.main-secrets-wallet-support
+      - module.vex-app.preload-channels-events-errors
+      - module.src-root.lib-env-config
+      - module.src-root.lib-vault-secrets
+      - module.src-root.lib-wallet
+      - module.vex-agent.data-memory-knowledge
+      - fix-plan.F1
+      - audit.current.security-review
+      - audit.current.quality-findings
+
+  - id: module.vex-app.preload-channels-events-errors
+    path: VEX-INDEX/modules/vex-app/preload-channels-events-errors.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/preload/**"
+      - "vex-app/src/shared/ipc/channels.ts"
+      - "vex-app/src/shared/ipc/result.ts"
+      - "vex-app/src/shared/ipc/envelope.ts"
+      - "vex-app/src/renderer/vex.d.ts"
+      - "vex-app/src/main/ipc/register-handler.ts"
+      - "vex-app/src/main/ipc/register-all.ts"
+      - "vex-app/src/shared/types/bridge/**"
+    stale_when_paths_change:
+      - "vex-app/src/preload/**"
+      - "vex-app/src/shared/ipc/channels.ts"
+      - "vex-app/src/shared/ipc/result.ts"
+      - "vex-app/src/shared/ipc/envelope.ts"
+      - "vex-app/src/renderer/vex.d.ts"
+      - "vex-app/src/main/ipc/register-handler.ts"
+      - "vex-app/src/main/ipc/register-all.ts"
+      - "vex-app/src/shared/types/bridge/**"
+    related:
+      - module.vex-app.shared-schemas-bridge-types
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.vex-app.renderer-appshell-runtime
+      - module.vex-app.renderer-onboarding-bootstrap-secrets
+      - module.vex-agent.engine-runtime-events
+
+  - id: module.vex-app.shared-schemas-bridge-types
+    path: VEX-INDEX/modules/vex-app/shared-schemas-bridge-types.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/shared/schemas/**"
+      - "vex-app/src/shared/types/bridge.ts"
+      - "vex-app/src/shared/types/bridge/**"
+      - "vex-app/src/shared/embedding-defaults.ts"
+      - "vex-app/src/shared/ipc/envelope.ts"
+    stale_when_paths_change:
+      - "vex-app/src/shared/schemas/**"
+      - "vex-app/src/shared/types/bridge/**"
+      - "vex-app/src/shared/types/bridge.ts"
+      - "vex-app/src/shared/ipc/result.ts"
+      - "vex-app/src/shared/ipc/envelope.ts"
+      - "vex-app/src/shared/embedding-defaults.ts"
+    related:
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.vex-app.renderer-appshell-runtime
+      - module.src-root.lib-env-config
+      - module.src-root.lib-diagnostics
+
+  - id: module.vex-app.renderer-appshell-runtime
+    path: VEX-INDEX/modules/vex-app/renderer-appshell-runtime.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/renderer/App.tsx"
+      - "vex-app/src/renderer/main.tsx"
+      - "vex-app/src/renderer/vex.d.ts"
+      - "vex-app/src/renderer/app/queryClient.ts"
+      - "vex-app/src/renderer/features/appShell/**"
+      - "vex-app/src/renderer/stores/**"
+      - "vex-app/src/renderer/lib/api/**"
+      - "vex-app/src/renderer/lib/errors/**"
+      - "vex-app/src/renderer/lib/markdown/**"
+    stale_when_paths_change:
+      - "vex-app/src/renderer/**"
+      - "vex-app/src/preload/**"
+      - "vex-app/src/shared/schemas/**"
+      - "vex-app/src/shared/types/bridge/**"
+      - "vex-app/src/main/ipc/chat.ts"
+      - "vex-app/src/main/ipc/mission/**"
+      - "vex-app/src/main/ipc/runtime/**"
+      - "vex-app/src/main/ipc/approvals*.ts"
+      - "vex-app/src/main/ipc/sessions/**"
+    related:
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-app.shared-schemas-bridge-types
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.vex-app.main-agent-bridge
+      - module.vex-app.renderer-onboarding-bootstrap-secrets
+      - module.vex-agent.engine-runtime-events
+      - fix-plan.F3
+      - audit.current.quality-findings
+      - ADR-0001-global-model-session-wallet
+
+  - id: module.vex-app.renderer-onboarding-bootstrap-secrets
+    path: VEX-INDEX/modules/vex-app/renderer-onboarding-bootstrap-secrets.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    covers_paths:
+      - "vex-app/src/renderer/App.tsx"
+      - "vex-app/src/renderer/features/splash/**"
+      - "vex-app/src/renderer/features/systemCheck/**"
+      - "vex-app/src/renderer/features/docker/**"
+      - "vex-app/src/renderer/features/compose/**"
+      - "vex-app/src/renderer/features/database/**"
+      - "vex-app/src/renderer/features/secrets/**"
+      - "vex-app/src/renderer/features/wallets/**"
+      - "vex-app/src/renderer/features/wizard/**"
+      - "vex-app/src/renderer/components/common/**"
+      - "vex-app/src/renderer/components/onboarding/**"
+      - "vex-app/src/renderer/lib/api/onboarding.ts"
+      - "vex-app/src/renderer/lib/api/api-keys.ts"
+      - "vex-app/src/renderer/lib/api/wizard.ts"
+      - "vex-app/src/renderer/lib/api/polymarket.ts"
+      - "vex-app/src/renderer/lib/api/provider.ts"
+      - "vex-app/src/renderer/lib/api/embedding.ts"
+      - "vex-app/src/renderer/lib/api/agent-core.ts"
+      - "vex-app/src/renderer/lib/api/docker.ts"
+      - "vex-app/src/renderer/lib/api/wallets.ts"
+      - "vex-app/src/renderer/lib/api/wallet-inventory.ts"
+      - "vex-app/src/renderer/lib/api/finalize.ts"
+    stale_when_paths_change:
+      - "vex-app/src/renderer/features/**"
+      - "vex-app/src/renderer/components/**"
+      - "vex-app/src/renderer/lib/api/**"
+      - "vex-app/src/main/ipc/onboarding/**"
+      - "vex-app/src/main/onboarding/**"
+      - "vex-app/src/shared/schemas/wizard.ts"
+      - "vex-app/src/shared/schemas/onboarding.ts"
+      - "vex-app/src/shared/schemas/secrets.ts"
+      - "vex-app/src/shared/schemas/provider.ts"
+      - "vex-app/src/shared/schemas/embedding.ts"
+      - "vex-app/src/shared/schemas/api-keys.ts"
+      - "vex-app/src/shared/schemas/agent-core.ts"
+      - "vex-app/src/shared/schemas/finalize.ts"
+      - "vex-app/src/shared/schemas/wallets.ts"
+      - "vex-app/src/shared/schemas/docker.ts"
+    related:
+      - module.vex-app.main-docker-compose-onboarding
+      - module.vex-app.main-secrets-wallet-support
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-app.shared-schemas-bridge-types
+      - module.vex-app.renderer-appshell-runtime
+      - module.vex-agent.data-memory-knowledge
+      - fix-plan.F1
+      - ADR-0001-global-model-session-wallet
+
+# Flows — Round 3 written.
+flows:
+  - id: index.flows
+    path: VEX-INDEX/flows/_INDEX.md
+    status: current
+
+  - id: FLOW-chat-turn
+    path: VEX-INDEX/flows/FLOW-chat-turn.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.renderer-appshell-runtime
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.vex-app.main-agent-bridge
+      - module.vex-agent.engine-core
+      - module.vex-agent.inference
+
+  - id: FLOW-mission-start
+    path: VEX-INDEX/flows/FLOW-mission-start.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.renderer-appshell-runtime
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.vex-app.main-agent-bridge
+      - module.vex-agent.engine-mission
+      - module.vex-agent.engine-runner
+
+  - id: FLOW-approval-restricted
+    path: VEX-INDEX/flows/FLOW-approval-restricted.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.vex-app.renderer-appshell-runtime
+      - module.vex-agent.engine-runner
+      - module.vex-agent.tools-internal
+      - module.vex-agent.tools-protocols
+      - fix-plan.F3
+
+  - id: FLOW-wake-resume
+    path: VEX-INDEX/flows/FLOW-wake-resume.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.main-agent-bridge
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.main-database-migrations
+      - module.vex-agent.engine-wake-subagents-prompts
+      - module.vex-agent.engine-runner
+      - fix-plan.F2
+
+  - id: FLOW-compaction-tracks
+    path: VEX-INDEX/flows/FLOW-compaction-tracks.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.main-agent-bridge
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-agent.engine-compact
+      - module.vex-agent.engine-core
+      - module.vex-agent.inference
+      - module.vex-agent.data-memory-knowledge
+
+  - id: FLOW-onboarding-config-write
+    path: VEX-INDEX/flows/FLOW-onboarding-config-write.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.renderer-onboarding-bootstrap-secrets
+      - module.vex-app.main-docker-compose-onboarding
+      - module.vex-app.main-secrets-wallet-support
+      - module.src-root.lib-env-config
+      - module.src-root.lib-vault-secrets
+      - module.vex-agent.inference
+      - fix-plan.F1
+
+# Boundaries — Round 3 written.
+boundaries:
+  - id: index.boundaries
+    path: VEX-INDEX/boundaries/_INDEX.md
+    status: current
+
+  - id: boundary.process-boundaries
+    path: VEX-INDEX/boundaries/boundary-process.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.main-bootstrap-lifecycle
+      - module.vex-app.main-ipc-engine-orchestration
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-app.shared-schemas-bridge-types
+      - module.vex-app.renderer-appshell-runtime
+      - module.vex-app.renderer-onboarding-bootstrap-secrets
+
+  - id: boundary.ipc-contracts
+    path: VEX-INDEX/boundaries/boundary-ipc.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.preload-channels-events-errors
+      - module.vex-app.shared-schemas-bridge-types
+      - module.vex-app.main-ipc-engine-orchestration
+
+  - id: boundary.env-secrets
+    path: VEX-INDEX/boundaries/boundary-env-secrets.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.main-secrets-wallet-support
+      - module.vex-app.main-docker-compose-onboarding
+      - module.src-root.lib-vault-secrets
+      - module.src-root.lib-wallet
+      - module.src-root.lib-env-config
+      - fix-plan.F1
+
+  - id: boundary.database-contracts
+    path: VEX-INDEX/boundaries/boundary-database.md
+    source_commit: cf05003
+    indexed_at: 2026-05-28
+    related:
+      - module.vex-app.main-database-migrations
+      - module.vex-app.main-docker-compose-onboarding
+      - module.vex-agent.data-memory-knowledge
+      - module.src-root.lib-db-utilities
 
 # Audit docs — current snapshot. Findings inside have status: open|fixed|superseded|wontfix.
 audits:
   - id: audit.current.coverage-gaps
     path: VEX-INDEX/audits/current/coverage-gaps.md
-    status: pending
+    status: current
   - id: audit.current.quality-findings
     path: VEX-INDEX/audits/current/quality-findings.md
-    status: pending
+    status: current
   - id: audit.current.security-review
     path: VEX-INDEX/audits/current/security-review.md
-    status: pending
+    status: current
 
 # Templates referenced by README.md for agent prompts and human authors.
 templates:

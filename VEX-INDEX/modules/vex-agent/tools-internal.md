@@ -85,7 +85,9 @@ unless its tool is actually dispatched.
 - **External Khalani API**: wallet_read calls `getKhalaniClient().getChains()` for chain resolution; Khalani internal alias tools proxy to khalani protocol
 - **External Tavily API**: web_research (gated on `TAVILY_API_KEY`)
 - **External Rettiwt API**: twitter_account (gated on `RETTIWT_API_KEY`)
-- **Local EmbeddingGemma** (Docker Model Runner `:12434`): knowledge_write/supersede embed, knowledge_recall embed-query, memory_recall embed-query, mark_outstanding_resolved re-embed
+- **Local EmbeddingGemma**: knowledge_write/supersede embed, knowledge_recall embed-query,
+  memory_recall embed-query, mark_outstanding_resolved re-embed. Bundled desktop default is
+  `127.0.0.1:55134/v1`; older `:12434` Docker Model Runner references are legacy/status drift.
 - **Engine signal bus** (return value only): `EngineSignal` in `ToolResult` consumed by turn-loop (stop_mission, defer_until, compact_committed, wait_for_parent, complete_subagent)
 - **`executeCompactNow`** (Z2 compact-jobs service): compact_now thin wrapper → `executeCompactNow`
 - **`applyMissionPatch`** (Z2 mission/setup): mission_draft_update handler calls `applyMissionPatch`
@@ -130,7 +132,10 @@ unless its tool is actually dispatched.
 - `tools/registry/khalani.ts:16` `KHALANI_INTERNAL_TOOLS` — 4 read aliases (chains_list, tokens_top, tokens_search, tokens_balances); derived from KHALANI_TOOLS manifest; assertion: manifest must not be mutating
 - `tools/registry/web.ts:9` `WEB_TOOLS` — `web_research` (read/read_only, requires TAVILY_API_KEY)
 - `tools/registry/twitter-account.ts:9` `TWITTER_ACCOUNT_TOOLS` — `twitter_account` (read/read_only, requires RETTIWT_API_KEY); 13 read-only actions; never posts/mutates
-- `tools/registry/documents.ts:10` `DOCUMENT_TOOLS` — document_read (read/read_only), document_write (local_write/mutating), document_list (read/read_only), document_delete (destructive/mutating)
+- `tools/registry/documents.ts:10` `DOCUMENT_TOOLS` — document_read (read/read_only),
+  document_write (local_write/mutating), document_list (read/read_only),
+  document_delete (destructive/`mutating:false` as of the 2026-05-28 verification; this means
+  restricted-mode approval is not triggered by `actionKind` alone).
 - `tools/registry/knowledge.ts:13` `KNOWLEDGE_TOOLS` — 8 tools; knowledge_write/supersede/update_status (local_write/mutating); knowledge_recall/recall_overflow/get/lineage/history (read/read_only); recall requires EMBEDDING service at runtime
 - `tools/registry/portfolio.ts:8` `PORTFOLIO_TOOLS` — `portfolio_inspect` (read/read_only); 14 views; wallet-scoped except `executions`
 - `tools/registry/setup.ts:19` `SETUP_TOOLS` — `polymarket_setup` (local_write/mutating, excludeRoles:subagent); idempotent per-wallet EIP-712 credential derivation
