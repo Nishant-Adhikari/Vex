@@ -183,3 +183,30 @@ Build/config (root + vex-app) consolidated by the lead (me) during Structure.md 
   Working tree: 10 module .md files + foundation (README/MANIFEST/glossary/ADR-0001).
   NOT yet committed. Next: optional commit; Round 2 (root `src/` + flows/ + boundaries/);
   Round 3 (vex-app/ + populated coverage-gaps).
+- 2026-05-28: Round 1 committed + pushed (`152af27`: `docs(vex-index): Round 1 — vex-agent
+  module index (10 modules) + foundation`). 15 files, 4337 insertions.
+- 2026-05-28: ROUND 2 complete. 10 `general-purpose` agents (sonnet, parallel) wrote module
+  docs for root `src/` under `VEX-INDEX/modules/src-root/`:
+    1. lib-vault-secrets   (vault crypto + secret keys + Polymarket credential map)
+    2. lib-wallet          (wallet facade + keystore + inventory + multi-auth + signing)
+    3. lib-env-config      (dotenv + agent-config + runtime-env + providers/env-resolution
+                            + config/paths + config/store + utils/dotenv + chain)
+    4. lib-db-utilities    (lib/db/migrate-runner + utils logger/http/validation-helpers
+                            + canonicalJson/minimatch/rateLimit + errors)
+    5. lib-diagnostics     (text-redaction + redactor + bug-report-sink + bug-report-schema)
+    6. tools-dexscreener   (read-only)
+    7. tools-khalani       (cross-chain bridge — mutating)
+    8. tools-kyberswap     (aggregator + limit-order + token-api + ZaaS — mutating)
+    9. tools-polymarket    (clob + bridge + data + gamma + relayer — mutating)
+   10. tools-solana-jupiter-twitter (5 Jupiter sub-protocols + shared/ + twitter read-only)
+  ADR-0001 verdict across Z5: zero contradictions.
+  Cross-cutting findings (to consolidate into audits/current/quality-findings.md later):
+   - Dead-code candidates: getSigningClient, getPublicClient, canonicalJson, minimatch,
+     rateLimit, DexScreener WebSocket client (no production callsites).
+   - Security: vault scrypt N=65536 < OWASP rec; keystore N=16384 4× weaker; lock doesn't
+     clear env secrets; Khalani Solana raw err.message leak in VexError hint;
+     KSZapRouterPermit in spender allowlist on chains where it's not deployed.
+   - Test gaps: no config-dir resolver parity test (src/config/paths.ts ↔ vex-app config-dir).
+   - Type-safety: parseJsonResponse casts without Zod validation.
+  Working tree: 10 new module .md + MANIFEST/PROGRESS edits. NOT yet committed.
+  Next: optional commit; Round 3 (vex-app/) + populated audits/current/coverage-gaps.md.
