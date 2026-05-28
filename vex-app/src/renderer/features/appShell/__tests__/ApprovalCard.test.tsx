@@ -1,0 +1,209 @@
+/**
+ * ApprovalCard tests (F3).
+ *
+ * Pins:
+ *   - renders the rich DTO (toolName, namespace, risk + action chips, criticalArgs);
+ *   - default focus on Reject when `focusOnMount` (Codex F3 default-focus / UI-UX
+ *     "least destructive default");
+ *   - two-step confirm for high-risk (riskLevel in {high,critical} OR actionKind in
+ *     {destructive,user_wallet_broadcast}) — first click arms, second click fires;
+ *   - low-risk: single click fires;
+ *   - Result.ok=false surfaces as inline error (Codex F3 constraint #1 — TanStack
+ *     `isError` would not catch application-level Result failures).
+ */
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
+
+const mockApproveMutate = vi.fn();
+const mockRejectMutate = vi.fn();
+let approvePending = false;
+let rejectPending = false;
+
+vi.mock("../../../lib/api/approvals.js", () => ({
+  useApprove: () => ({
+    mutate: mockApproveMutate,
+    isPending: approvePending,
+  }),
+  useReject: () => ({
+    mutate: mockRejectMutate,
+    isPending: rejectPending,
+  }),
+  // Not used by ApprovalCard directly; satisfy the import surface for adjacent
+  // modules that might be re-resolved during the test run.
+  usePendingApprovals: vi.fn(),
+}));
+
+const { ApprovalCard } = await import("../ApprovalCard.js");
+
+const SESSION = "00000000-0000-4000-8000-00000000aa01";
+
+function makeSummary(
+  over: Partial<ApprovalSummaryDto> = {},
+): ApprovalSummaryDto {
+  return {
+    id: "appr-1",
+    sessionId: SESSION,
+    toolCallId: "call-1",
+    toolName: "wallet:send",
+    status: "pending",
+    permissionAtEnqueue: "restricted",
+    createdAt: "2026-05-28T10:00:00.000Z",
+    resolvedAt: null,
+    reasoningPreview: "Send 0.5 ETH for the bridge proposal.",
+    actionKind: "user_wallet_broadcast",
+    riskLevel: "high",
+    preview: {
+      toolName: "send",
+      namespace: "wallet",
+      criticalArgs: {
+        chain: "ethereum",
+        asset: "ETH",
+        amount: "0.5",
+        recipient: "0xabc",
+      },
+    },
+    expiresAt: null,
+    decision: null,
+    decisionReason: null,
+    executionStatus: null,
+    ...over,
+  };
+}
+
+function renderCard(
+  summary: ApprovalSummaryDto,
+  focusOnMount: boolean,
+): void {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={qc}>
+      <ApprovalCard
+        summary={summary}
+        sessionId={SESSION}
+        focusOnMount={focusOnMount}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  mockApproveMutate.mockReset();
+  mockRejectMutate.mockReset();
+  approvePending = false;
+  rejectPending = false;
+});
+
+describe("ApprovalCard", () => {
+  it("renders toolName, namespace, risk + action chips, and criticalArgs", () => {
+    renderCard(makeSummary(), false);
+    expect(screen.getByText(/Approval needed:/)).toBeTruthy();
+    expect(screen.getByText("wallet:send")).toBeTruthy();
+    expect(screen.getByTestId("risk-chip").textContent).toBe("high");
+    expect(screen.getByTestId("action-chip").textContent).toBe(
+      "user_wallet_broadcast",
+    );
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("chain");
+    expect(args.textContent).toContain("ethereum");
+    expect(args.textContent).toContain("amount");
+    expect(args.textContent).toContain("0.5");
+    expect(args.textContent).toContain("recipient");
+    expect(args.textContent).toContain("0xabc");
+  });
+
+  it("low-risk: single click on Approve fires mutate", () => {
+    renderCard(
+      makeSummary({ riskLevel: "info", actionKind: "read" }),
+      false,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("low-risk: single click on Reject fires mutate", () => {
+    renderCard(
+      makeSummary({ riskLevel: "low", actionKind: "local_write" }),
+      false,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    expect(mockRejectMutate).toHaveBeenCalledTimes(1);
+    expect(mockRejectMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("high-risk approve needs TWO clicks (first arms, second fires)", () => {
+    renderCard(makeSummary(), false);
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    // After arming, the same button now has aria-label "Confirm approve".
+    fireEvent.click(screen.getByRole("button", { name: /confirm approve/i }));
+    expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("high-risk reject also needs two clicks (parity with approve)", () => {
+    renderCard(makeSummary({ riskLevel: "critical" }), false);
+    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /confirm reject/i }));
+    expect(mockRejectMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("focusOnMount=true focuses the Reject button on first mount", () => {
+    renderCard(
+      makeSummary({ riskLevel: "info", actionKind: "read" }),
+      true,
+    );
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^reject$/i }),
+    );
+  });
+
+  it("Result.ok=false on approve surfaces an inline alert (Codex F3 #1)", () => {
+    mockApproveMutate.mockImplementation((_input, options) => {
+      // TanStack `isError` would NOT catch this — it's a Result-level failure.
+      void options?.onSuccess?.({
+        ok: false,
+        error: {
+          code: "approvals.dispatch_failed",
+          domain: "approvals",
+          message: "Wallet rejected the request.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-x",
+        },
+      });
+    });
+    renderCard(
+      makeSummary({ riskLevel: "info", actionKind: "read" }),
+      false,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Wallet rejected the request.",
+    );
+  });
+
+  it("buttons disabled while a mutation is in-flight", () => {
+    approvePending = true;
+    renderCard(
+      makeSummary({ riskLevel: "info", actionKind: "read" }),
+      false,
+    );
+    const approve = screen.getByRole("button", { name: /^approve$/i });
+    const reject = screen.getByRole("button", { name: /^reject$/i });
+    expect(approve.getAttribute("disabled")).not.toBeNull();
+    expect(reject.getAttribute("disabled")).not.toBeNull();
+  });
+});

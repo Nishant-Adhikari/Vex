@@ -24,6 +24,7 @@ import { useStreamPreviewSync } from "../../lib/api/streams.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { ApprovalsRegion } from "./ApprovalsRegion.js";
 import { MissionContractCard } from "./MissionContractCard.js";
 import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
@@ -101,6 +102,9 @@ export function SessionPanel(): JSX.Element {
         ) : null}
         {activeSession !== null ? (
           <SessionTranscript sessionId={activeSession.id} />
+        ) : null}
+        {activeSession !== null ? (
+          <ApprovalsRegion sessionId={activeSession.id} />
         ) : null}
         <SessionComposer activeSession={activeSession} activeSessionId={activeSessionId} />
       </div>

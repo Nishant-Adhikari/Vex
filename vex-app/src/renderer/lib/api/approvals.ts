@@ -1,12 +1,17 @@
 /**
- * Approvals TanStack Query/Mutation hooks (agent integration puzzle 1).
+ * Approvals TanStack Query/Mutation hooks (agent integration puzzle 1 +
+ * puzzle 5 phase 3 live).
  *
- * `usePendingApprovals`, `useApproval`, `useApprovalHistory` are
- * read-only — the DTOs are allow-listed (no raw `tool_call` JSONB).
+ * `usePendingApprovals`, `useApproval`, `useApprovalHistory` are read-only —
+ * the DTOs are allow-listed (no raw `tool_call` JSONB).
  *
- * `useApprove`/`useReject` fail-closed with
- * `approvals.feature_unavailable` until puzzle 05 lands durable
- * approval intents + idempotent runtime continuation.
+ * `useApprove`/`useReject` are LIVE (puzzle-5 phase 3 landed): they call
+ * `window.vex.approvals.approve/reject`, which run the engine's bounded
+ * `prepareApprove`/`prepareReject` + background `runResumeAfterDecision`.
+ * `retry: false` ensures a dangerous action is never auto-retried; the
+ * caller is responsible for invalidating pending/history/messages/runtime
+ * on success (the engine resume can flip `paused_approval` and change the
+ * transcript).
  */
 
 import {
@@ -57,8 +62,17 @@ function historyOptions(sessionId: string, limit: number) {
 
 export function usePendingApprovals(
   sessionId: string | null,
+  options?: { readonly refetchInterval?: number },
 ): UseQueryResult<Result<ReadonlyArray<ApprovalSummaryDto>>> {
-  return useQuery(pendingOptions(sessionId ?? ""));
+  // Modest polling for the approval card (F3) — no `EV.engine.controlState`
+  // bridge yet (Z7 F5), so the renderer learns about a new `paused_approval`
+  // by re-reading the queue. Disabled by default to keep other callers' load
+  // unchanged.
+  const base = pendingOptions(sessionId ?? "");
+  return useQuery({
+    ...base,
+    refetchInterval: options?.refetchInterval,
+  });
 }
 
 export function useApproval(
