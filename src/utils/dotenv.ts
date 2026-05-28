@@ -19,6 +19,13 @@ export function readDotenvFileValue(key: string, envPath: string): string | null
 
 export interface LoadDotenvOptions {
   readonly shouldLoadKey?: (key: string) => boolean;
+  /**
+   * When true, set the key even if it is already defined in `process.env`.
+   * Default false (load-if-undefined) so shell/test-provided env wins at boot
+   * and existing callers stay unchanged. Used after the user rewrites `.env`
+   * via onboarding so the new value goes live without an app restart.
+   */
+  readonly overwrite?: boolean;
 }
 
 export function loadDotenvFileIntoProcess(
@@ -43,7 +50,7 @@ export function loadDotenvFileIntoProcess(
 
     const key = trimmed.slice(0, eqIdx);
     if (options.shouldLoadKey && !options.shouldLoadKey(key)) continue;
-    if (process.env[key] !== undefined) continue;
+    if (!options.overwrite && process.env[key] !== undefined) continue;
 
     let value = trimmed.slice(eqIdx + 1).trim();
     if (value.startsWith('"') && value.endsWith('"')) {

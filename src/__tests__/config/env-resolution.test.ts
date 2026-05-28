@@ -77,6 +77,20 @@ describe("loadProviderDotenv", () => {
     loadProviderDotenv();
     expect(process.env.TEST_APP_VAR).toBe("already-set");
   });
+
+  it("overwrite:true replaces an existing non-secret process.env value", () => {
+    process.env.TEST_APP_VAR = "already-set";
+    writeFileSync(appEnvPath, "TEST_APP_VAR=from-file\n");
+    loadProviderDotenv({ overwrite: true });
+    expect(process.env.TEST_APP_VAR).toBe("from-file");
+  });
+
+  it("overwrite:true STILL skips managed secrets (never clobbers a vault-injected OPENROUTER_API_KEY)", () => {
+    process.env.OPENROUTER_API_KEY = "from-vault";
+    writeFileSync(appEnvPath, 'OPENROUTER_API_KEY="plaintext-legacy"\n');
+    loadProviderDotenv({ overwrite: true });
+    expect(process.env.OPENROUTER_API_KEY).toBe("from-vault");
+  });
 });
 
 describe("writeAppEnvValue", () => {

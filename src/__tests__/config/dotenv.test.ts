@@ -99,6 +99,15 @@ describe("utils/dotenv", () => {
       expect(process.env._TEST_LOAD_A).toBe("original");
     });
 
+    it("overwrite:true replaces existing process.env values", () => {
+      process.env._TEST_LOAD_A = "original";
+      writeFileSync(TEST_ENV, '_TEST_LOAD_A="overwritten"\n');
+
+      loadDotenvFileIntoProcess(TEST_ENV, { overwrite: true });
+
+      expect(process.env._TEST_LOAD_A).toBe("overwritten");
+    });
+
     it("handles quoted values with escapes", () => {
       writeFileSync(TEST_ENV, '_TEST_LOAD_QUOTED="pass\\"word"\n_TEST_LOAD_ESCAPED="C:\\\\Users"\n');
 

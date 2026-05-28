@@ -31,6 +31,7 @@ import {
 import { writeProvider } from "../../onboarding/provider-writer.js";
 import { verifyOpenRouterConnection } from "../../onboarding/openrouter-test-client.js";
 import { withEnvWriteLock } from "../../onboarding/env-write-mutex.js";
+import { loadProviderDotenv } from "@vex-lib/runtime-env.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 
@@ -57,9 +58,22 @@ export function registerProviderHandler(): () => void {
       const latencyMs = verifyResult.data.latencyMs;
 
       // Step 2: persist vault secret + non-secret env values inside the env-write mutex.
-      const persistResult = await withEnvWriteLock(() =>
-        writeProvider(input),
-      );
+      // On success, reload the non-secret .env into process.env (overwrite — the
+      // user just rewrote it) and reset the engine's cached inference provider so
+      // the next resolveProvider() rebuilds with the new model. Both run inside
+      // the lock so the handler cannot report success before env + provider cache
+      // are coherent.
+      const persistResult = await withEnvWriteLock(async () => {
+        const result = await writeProvider(input);
+        if (result.ok) {
+          loadProviderDotenv({ overwrite: true });
+          const { resetProvider } = await import(
+            "@vex-agent/inference/registry.js"
+          );
+          resetProvider();
+        }
+        return result;
+      });
       if (!persistResult.ok) {
         log.info(
           `[ipc:vex:onboarding:providerPersist] ` +

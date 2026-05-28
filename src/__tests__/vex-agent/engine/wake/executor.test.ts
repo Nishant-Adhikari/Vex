@@ -10,7 +10,7 @@
  * targets a mission run.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Puzzle 3 atomic lease helpers — `wake/executor.ts` dynamically imports
 // `claimRunLeaseAndFlipToRunning` instead of the previous `casFlipToRunning`
@@ -36,7 +36,7 @@ vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: (...a: unknown[]) => mockReleaseLease(...a),
 }));
 
-import { tick, type WakeDeps } from "../../../../vex-agent/engine/wake/executor.js";
+import { tick, isWakeProviderConfigured, type WakeDeps } from "../../../../vex-agent/engine/wake/executor.js";
 import type { LoopWakeRequest } from "../../../../vex-agent/db/repos/loop-wake.js";
 import type { MissionRun } from "../../../../vex-agent/db/repos/mission-runs.js";
 
@@ -95,6 +95,7 @@ function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
     casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
+    isProviderReady: vi.fn(() => true),
     ...overrides,
   };
 }
@@ -222,5 +223,55 @@ describe("wake.executor.tick", () => {
     const results = await tick(new Date(), 10, deps);
     expect(results).toEqual([]);
     expect(deps.injectWakeBanner).not.toHaveBeenCalled();
+  });
+
+  it("does NOT claim when provider config is absent (pre-claim gate)", async () => {
+    // claimDue is destructive (pending→consumed); the gate must short-circuit
+    // BEFORE it so a wake row is never consumed when the resume cannot run.
+    const claimDue = vi.fn().mockResolvedValue([makeWake()]);
+    const deps = makeDeps({ claimDue, isProviderReady: () => false });
+
+    const results = await tick(new Date(), 10, deps);
+
+    expect(results).toEqual([]);
+    expect(claimDue).not.toHaveBeenCalled();
+    expect(deps.resumeMissionRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("isWakeProviderConfigured", () => {
+  const KEY = "OPENROUTER_API_KEY";
+  const MODEL = "AGENT_MODEL";
+  let savedKey: string | undefined;
+  let savedModel: string | undefined;
+
+  beforeEach(() => {
+    savedKey = process.env[KEY];
+    savedModel = process.env[MODEL];
+  });
+
+  afterEach(() => {
+    if (savedKey === undefined) delete process.env[KEY];
+    else process.env[KEY] = savedKey;
+    if (savedModel === undefined) delete process.env[MODEL];
+    else process.env[MODEL] = savedModel;
+  });
+
+  it("is true only when BOTH OPENROUTER_API_KEY and AGENT_MODEL are set", () => {
+    process.env[KEY] = "sk-or-xxx";
+    process.env[MODEL] = "anthropic/claude-sonnet-4.5";
+    expect(isWakeProviderConfigured()).toBe(true);
+  });
+
+  it("is false when OPENROUTER_API_KEY is absent", () => {
+    delete process.env[KEY];
+    process.env[MODEL] = "anthropic/claude-sonnet-4.5";
+    expect(isWakeProviderConfigured()).toBe(false);
+  });
+
+  it("is false when AGENT_MODEL is absent", () => {
+    process.env[KEY] = "sk-or-xxx";
+    delete process.env[MODEL];
+    expect(isWakeProviderConfigured()).toBe(false);
   });
 });

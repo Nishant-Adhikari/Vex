@@ -32,6 +32,8 @@ const handlers = new Map<string, Handler>();
 const logInfo = vi.fn();
 const mockVerify = vi.fn();
 const mockWriter = vi.fn();
+const mockLoadProviderDotenv = vi.fn();
+const mockResetProvider = vi.fn();
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -62,6 +64,16 @@ vi.mock("../../../logger/index.js", () => ({
   log: { info: logInfo, warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// F1: handler reloads non-secret .env (overwrite) + resets the engine provider
+// cache after a successful persist so the new model goes live same-session.
+vi.mock("@vex-lib/runtime-env.js", () => ({
+  loadProviderDotenv: (opts: unknown) => mockLoadProviderDotenv(opts),
+}));
+
+vi.mock("@vex-agent/inference/registry.js", () => ({
+  resetProvider: () => mockResetProvider(),
+}));
+
 const { registerProviderHandler } = await import("../provider.js");
 const { CH } = await import("@shared/ipc/channels.js");
 
@@ -77,6 +89,8 @@ beforeEach(() => {
   handlers.clear();
   mockVerify.mockReset();
   mockWriter.mockReset();
+  mockLoadProviderDotenv.mockReset();
+  mockResetProvider.mockReset();
   logInfo.mockReset();
 });
 
@@ -280,5 +294,70 @@ describe("providerPersist handler", () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("validation.invalid_sender");
     expect(mockVerify).not.toHaveBeenCalled();
+  });
+
+  it("on success reloads .env (overwrite) then resets the inference provider, in order", async () => {
+    mockVerify.mockResolvedValue({ ok: true, data: { latencyMs: 50 } });
+    mockWriter.mockResolvedValue({
+      ok: true,
+      data: {
+        fieldsWritten: ["OPENROUTER_API_KEY", "AGENT_MODEL", "AGENT_PROVIDER"],
+      },
+    });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    const result = (await fn(trustedSender, {
+      requestId: "req-reload",
+      payload: VALID_PAYLOAD,
+    })) as { ok: boolean };
+    expect(result.ok).toBe(true);
+    expect(mockLoadProviderDotenv).toHaveBeenCalledTimes(1);
+    expect(mockLoadProviderDotenv).toHaveBeenCalledWith({ overwrite: true });
+    expect(mockResetProvider).toHaveBeenCalledTimes(1);
+    // reload must run BEFORE reset so resolveProvider() rebuilds with the new model
+    expect(mockLoadProviderDotenv.mock.invocationCallOrder[0]).toBeLessThan(
+      mockResetProvider.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("verify failure → neither reload nor provider reset", async () => {
+    mockVerify.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "provider.invalid_api_key",
+        domain: "onboarding",
+        message: "API key rejected",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId: "req-vf",
+      },
+    });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    await fn(trustedSender, { requestId: "req-vf", payload: VALID_PAYLOAD });
+    expect(mockLoadProviderDotenv).not.toHaveBeenCalled();
+    expect(mockResetProvider).not.toHaveBeenCalled();
+  });
+
+  it("persist failure → neither reload nor provider reset", async () => {
+    mockVerify.mockResolvedValue({ ok: true, data: { latencyMs: 10 } });
+    mockWriter.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "onboarding.env_persist_failed",
+        domain: "onboarding",
+        message: "disk full",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        details: { verified: true, partialFieldsWritten: [] },
+      },
+    });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    await fn(trustedSender, { requestId: "req-pf", payload: VALID_PAYLOAD });
+    expect(mockLoadProviderDotenv).not.toHaveBeenCalled();
+    expect(mockResetProvider).not.toHaveBeenCalled();
   });
 });

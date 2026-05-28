@@ -34,9 +34,10 @@ export function readEnvValue(key: string, envPath: string): string | null {
  * Load provider-neutral dotenv at runtime startup.
  * Loads from app-specific .env only.
  */
-export function loadProviderDotenv(): void {
+export function loadProviderDotenv(options: { overwrite?: boolean } = {}): void {
   loadDotenvFileIntoProcess(ENV_FILE, {
     shouldLoadKey: (key) => !isManagedSecretEnvKey(key),
+    overwrite: options.overwrite ?? false,
   });
 }
 

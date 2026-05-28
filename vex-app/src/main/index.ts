@@ -17,6 +17,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ELECTRON_STATE_DIR } from "./paths/config-dir.js";
+import { loadProviderDotenv } from "@vex-lib/runtime-env.js";
 import { configureLogger, log } from "./logger/index.js";
 import { acquireSingleInstanceLock } from "./lifecycle/single-instance.js";
 import { installWindowAllClosedHook } from "./lifecycle/window-all-closed.js";
@@ -31,6 +32,7 @@ import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
+import { setupWakeWorker } from "./agent/wake-worker.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
@@ -106,6 +108,14 @@ app.on("will-quit", () => {
 
 app.whenReady().then(async () => {
   log.info("[main] app.whenReady — initializing");
+
+  // Load NON-secret runtime config (.env) into process.env BEFORE IPC handlers
+  // and the compact worker read provider/model config. Managed secrets are
+  // skipped (they live in the encrypted vault, injected on unlock). Without this
+  // the engine never sees AGENT_MODEL/AGENT_PROVIDER → "Model not configured".
+  loadProviderDotenv();
+  log.info("[main] loaded non-secret runtime config from .env");
+
   // 4. Security: deny-all permission handlers
   installPermissionHandlers();
 
@@ -125,12 +135,32 @@ app.whenReady().then(async () => {
   // Started AFTER registerAllIpcHandlers so the agent bridges already exist.
   const stopCompactWorker = setupCompactWorker();
 
-  // 6b. Register lifecycle-driven cleanup. The compaction worker must drain
-  // its in-flight job BEFORE cleanupOnQuit stops Compose/Postgres — and
-  // globalCleanup runs tasks concurrently, so makeOrderedQuitCleanup
-  // sequences stop() -> cleanupOnQuit in one ordered task. cleanupOnBoot
+  // 6a-wake. Own the engine wake executor so loop_defer-scheduled paused_wake
+  // mission runs actually resume (otherwise deferred autonomous missions sleep
+  // forever). Like the compact worker it stays idle until the loop_wake_requests
+  // schema is ready (supervisor gate) and the inference provider is configured
+  // (the executor's own pre-claim OPENROUTER_API_KEY + AGENT_MODEL gate).
+  const stopWakeWorker = setupWakeWorker();
+
+  // 6b. Register lifecycle-driven cleanup. BOTH workers must drain in-flight
+  // work BEFORE cleanupOnQuit stops Compose/Postgres — and globalCleanup runs
+  // tasks concurrently, so makeOrderedQuitCleanup sequences (drain workers) ->
+  // cleanupOnQuit in one ordered task. Rejected stops are logged so a stuck
+  // worker is diagnosable but never blocks secret/compose cleanup. cleanupOnBoot
   // runs once now to sweep orphaned transient secrets from a prior crash.
-  globalCleanup.add(makeOrderedQuitCleanup(stopCompactWorker, cleanupOnQuit));
+  globalCleanup.add(
+    makeOrderedQuitCleanup(async () => {
+      const results = await Promise.allSettled([
+        stopCompactWorker(),
+        stopWakeWorker(),
+      ]);
+      for (const r of results) {
+        if (r.status === "rejected") {
+          log.error("[main] worker stop failed during quit", r.reason);
+        }
+      }
+    }, cleanupOnQuit),
+  );
   void cleanupOnBoot().catch((err) => {
     log.error("[main] cleanupOnBoot failed", err);
   });

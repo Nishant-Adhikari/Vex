@@ -66,6 +66,14 @@ export interface WakeDeps {
   injectWakeBanner(sessionId: string, reason: string | null, dueAt: string): Promise<void>;
   /** Resume a mission run. */
   resumeMissionRun(runId: string): Promise<void>;
+  /**
+   * Pre-claim provider/config gate. `claimDue` is destructive
+   * (pending→consumed) and the subsequent resume runs the agent turn loop,
+   * which needs the inference provider. The executor must NOT claim wake rows
+   * when provider config is absent (e.g. before the vault injects the key on
+   * unlock); production checks OPENROUTER_API_KEY + AGENT_MODEL in env.
+   */
+  isProviderReady(): boolean;
 }
 
 // ── Pure tick ──────────────────────────────────────────────────────
@@ -80,6 +88,11 @@ export async function tick(
   limit: number,
   deps: WakeDeps,
 ): Promise<ClaimedWake[]> {
+  // Pre-claim provider/config gate. `claimDue` is destructive
+  // (pending→consumed) and the resume below needs the inference provider, so
+  // skip the entire pass (no row consumed) when provider config is absent.
+  if (!deps.isProviderReady()) return [];
+
   const claimed = await deps.claimDue(now, limit);
   const results: ClaimedWake[] = [];
 
@@ -285,6 +298,18 @@ import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 
+/**
+ * Production provider/config gate. Wake resumes run the agent turn loop, which
+ * needs the OpenRouter provider (OPENROUTER_API_KEY) and a model (AGENT_MODEL).
+ * Mirrors the compact executor's pre-claim gate so a wake never consumes a row
+ * it cannot service (e.g. before the vault injects the key at unlock).
+ */
+export function isWakeProviderConfigured(): boolean {
+  return (
+    Boolean(process.env.OPENROUTER_API_KEY) && Boolean(process.env.AGENT_MODEL)
+  );
+}
+
 function buildProductionDeps(): WakeDeps {
   return {
     claimDue: (now, limit) => loopWakeRepo.claimDue(now, limit),
@@ -313,5 +338,6 @@ function buildProductionDeps(): WakeDeps {
       const engine = await import("@vex-agent/engine/index.js");
       await engine.resumeMissionRun(runId);
     },
+    isProviderReady: isWakeProviderConfigured,
   };
 }
