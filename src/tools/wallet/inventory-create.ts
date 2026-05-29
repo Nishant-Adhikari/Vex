@@ -22,7 +22,9 @@ import {
   type WalletInventoryEntry,
 } from "../../config/store.js";
 import { VexError, ErrorCodes } from "../../errors.js";
+import { minLogger as logger } from "../../utils/logger-shim.js";
 import { requireKeystorePassword } from "../../utils/env.js";
+import { autoBackup } from "./backup.js";
 import { encryptPrivateKey, normalizePrivateKey, saveKeystoreFile } from "./keystore.js";
 import {
   deriveSolanaAddress,
@@ -72,6 +74,20 @@ function appendWalletEntry(
   saveKeystoreFile(derivePath(family, entry), keystore);
   cfg.wallet[family] = [...cfg.wallet[family], entry];
   saveConfig(cfg);
+
+  // Snapshot the full wallet surface AFTER the wallet is persisted. Fire-and-
+  // forget so the synchronous create/import signatures (and their vex-app
+  // onboarding callers, which are out of scope for this checkpoint) stay
+  // unchanged. A backup failure NEVER rolls back the just-saved wallet — the
+  // wallet is the source of truth; the backup is best-effort durability.
+  void autoBackup().catch((err: unknown) => {
+    logger.warn(
+      `Post-add wallet backup failed (wallet kept): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  });
+
   return entry;
 }
 

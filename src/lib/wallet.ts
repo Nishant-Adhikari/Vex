@@ -53,7 +53,28 @@ export {
   solanaKeystoreExists,
 } from "../tools/wallet/solana-keystore.js";
 
-export { autoBackup } from "../tools/wallet/backup.js";
+export {
+  autoBackup,
+  enforceBackupRetention,
+  listAvailableBackups,
+  readArchiveManifest,
+  backupManifestSchema,
+  backupManifestV1Schema,
+  backupManifestV2Schema,
+  type AvailableBackup,
+  type BackupManifest,
+  type BackupManifestV1,
+  type BackupManifestV2,
+  type BackupManifestWallet,
+  type BackupFileEntry,
+  type BackupFileRole,
+} from "../tools/wallet/backup.js";
+
+export {
+  restoreFromBackupArchive,
+  type RestoreFromBackupArchiveArgs,
+  type RestoreFromBackupArchiveResult,
+} from "../tools/wallet/backup-restore.js";
 
 export {
   type VexConfig,

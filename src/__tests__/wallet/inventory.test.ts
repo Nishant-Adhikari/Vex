@@ -1,9 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { privateKeyToAddress } from "viem/accounts";
 
-const { testDir, testConfigFile, testKeystoreFile, testSolanaKeystoreFile } = vi.hoisted(() => {
+const {
+  testDir,
+  testConfigFile,
+  testKeystoreFile,
+  testSolanaKeystoreFile,
+  testBackupsDir,
+  testEnvFile,
+  testVaultFile,
+} = vi.hoisted(() => {
   const { join } = require("node:path");
   const { tmpdir } = require("node:os");
   const _dir = join(tmpdir(), `vex-inv-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -12,6 +20,9 @@ const { testDir, testConfigFile, testKeystoreFile, testSolanaKeystoreFile } = vi
     testConfigFile: join(_dir, "config.json"),
     testKeystoreFile: join(_dir, "keystore.json"),
     testSolanaKeystoreFile: join(_dir, "solana-keystore.json"),
+    testBackupsDir: join(_dir, "backups"),
+    testEnvFile: join(_dir, ".env"),
+    testVaultFile: join(_dir, "secrets.vault.json"),
   };
 });
 
@@ -22,6 +33,9 @@ vi.mock("@config/paths.js", () => ({
   CONFIG_FILE: testConfigFile,
   KEYSTORE_FILE: testKeystoreFile,
   SOLANA_KEYSTORE_FILE: testSolanaKeystoreFile,
+  BACKUPS_DIR: testBackupsDir,
+  ENV_FILE: testEnvFile,
+  SECRETS_VAULT_FILE: testVaultFile,
 }));
 
 vi.mock("@utils/env.js", () => ({
@@ -36,8 +50,14 @@ vi.mock("@utils/logger-shim.js", () => ({
 const { ErrorCodes } = await import("../../errors.js");
 const { loadConfig } = await import("@config/store.js");
 const inv = await import("@tools/wallet/inventory.js");
-const { createEvmWalletEntry, importEvmWalletEntry, createSolanaWalletEntry, exportAllWallets } =
-  await import("@tools/wallet/inventory-create.js");
+const backupMod = await import("@tools/wallet/backup.js");
+const {
+  createEvmWalletEntry,
+  importEvmWalletEntry,
+  createSolanaWalletEntry,
+  importSolanaWalletEntry,
+  exportAllWallets,
+} = await import("@tools/wallet/inventory-create.js");
 const { requireEvmWallet, resolveWalletForFamily } = await import("@tools/wallet/multi-auth.js");
 const { saveKeystore, encryptPrivateKey } = await import("@tools/wallet/keystore.js");
 
@@ -316,6 +336,65 @@ describe("wallet inventory (stage 1)", () => {
       expect(
         codeOf(() => inv.decryptExportSecret({ family: "solana", entry: e1, password: TEST_PASSWORD })),
       ).toBe(ErrorCodes.SIGNER_MISMATCH);
+    });
+  });
+
+  describe("add-flow auto-backup hook", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    async function settleBackups(): Promise<void> {
+      await new Promise((r) => setTimeout(r, 30));
+    }
+
+    it("each create/import (all 4) triggers a backup containing the new wallet-<id>.json", async () => {
+      const spy = vi.spyOn(backupMod, "autoBackup");
+
+      const e = createEvmWalletEntry();
+      const ei = importEvmWalletEntry(KEY_A);
+      const s = createSolanaWalletEntry();
+      const si = importSolanaWalletEntry(
+        // 64-byte base58 secret from a generated keypair via the keystore path.
+        // Reuse an EVM-free Solana import: encode a fresh keypair's secret.
+        (await import("bs58")).default.encode(
+          (await import("@solana/web3.js")).Keypair.generate().secretKey,
+        ),
+      );
+
+      // All four fired the fire-and-forget autoBackup.
+      expect(spy).toHaveBeenCalledTimes(4);
+
+      await settleBackups();
+
+      // A real backup must contain each new wallet keystore. Run one more
+      // deterministic backup and assert the manifest enumerates all wallets.
+      const dir = await backupMod.autoBackup();
+      expect(dir).not.toBeNull();
+      const manifest = JSON.parse(readFileSync(join(dir!, "manifest.json"), "utf-8")) as {
+        wallets: Array<{ id: string }>;
+        files: Array<{ filename: string }>;
+      };
+      const ids = new Set(manifest.wallets.map((w) => w.id));
+      for (const entry of [e, ei, s, si]) {
+        expect(ids.has(entry.id)).toBe(true);
+        expect(manifest.files.some((f) => f.filename === `wallet-${entry.id}.json`)).toBe(true);
+        expect(existsSync(join(dir!, `wallet-${entry.id}.json`))).toBe(true);
+      }
+    });
+
+    it("backup failure does NOT roll back the just-added wallet (kept in config + on disk)", async () => {
+      const spy = vi.spyOn(backupMod, "autoBackup").mockRejectedValue(new Error("backup boom"));
+
+      const e = createEvmWalletEntry();
+      await settleBackups();
+
+      expect(spy).toHaveBeenCalled();
+      // Wallet survived: present in config inventory…
+      const cfg = loadConfig();
+      expect(cfg.wallet.evm.some((w) => w.id === e.id)).toBe(true);
+      // …and its keystore file exists on disk.
+      expect(existsSync(inv.derivePath("evm", e))).toBe(true);
     });
   });
 });

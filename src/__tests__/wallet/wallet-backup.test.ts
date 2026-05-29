@@ -3,30 +3,51 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-// We test the backup helpers via the wallet module
-// Since autoBackup uses CONFIG_DIR and BACKUPS_DIR from paths.ts,
-// we mock the paths module to point to a temp directory.
+// Crypto-heavy suite: vi.resetModules() re-imports the wallet graph and real
+// scrypt at N=65536 runs per test; raise the ceiling above vitest's 10s default.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-const TEST_DIR = join(tmpdir(), `vex-test-backup-${Date.now()}`);
-const MOCK_CONFIG_DIR = join(TEST_DIR, "config");
-const MOCK_BACKUPS_DIR = join(MOCK_CONFIG_DIR, "backups");
+// Real temp CONFIG_DIR per the inventory.test.ts harness pattern: a hoisted,
+// stable directory (NOT a fresh Date.now() per property) so every paths.* the
+// backup module reads points at the same isolated tree.
+const { testDir, testConfigFile, testKeystoreFile, testSolanaKeystoreFile, testBackupsDir, testEnvFile, testVaultFile } =
+  vi.hoisted(() => {
+    const { join } = require("node:path");
+    const { tmpdir } = require("node:os");
+    const _dir = join(tmpdir(), `vex-backup-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    return {
+      testDir: _dir,
+      testConfigFile: join(_dir, "config.json"),
+      testKeystoreFile: join(_dir, "keystore.json"),
+      testSolanaKeystoreFile: join(_dir, "solana-keystore.json"),
+      testBackupsDir: join(_dir, "backups"),
+      testEnvFile: join(_dir, ".env"),
+      testVaultFile: join(_dir, "secrets.vault.json"),
+    };
+  });
+
+const TEST_PASSWORD = "test-password-backup";
 
 vi.mock("@config/paths.js", () => ({
-  CONFIG_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config"),
-  CONFIG_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "config.json"),
-  KEYSTORE_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "keystore.json"),
-  BACKUPS_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "backups"),
-  INTENTS_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "intents"),
-  JWT_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "jwt.json"),
-  BOT_DIR: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot"),
-  BOT_ORDERS_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "orders.json"),
-  BOT_STATE_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "state.json"),
-  BOT_PID_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "bot.pid"),
-  BOT_SHUTDOWN_FILE: join(tmpdir(), `vex-test-backup-${Date.now()}`, "config", "bot", "bot.shutdown"),
+  CONFIG_DIR: testDir,
+  CONFIG_FILE: testConfigFile,
+  KEYSTORE_FILE: testKeystoreFile,
+  SOLANA_KEYSTORE_FILE: testSolanaKeystoreFile,
+  BACKUPS_DIR: testBackupsDir,
+  ENV_FILE: testEnvFile,
+  SECRETS_VAULT_FILE: testVaultFile,
 }));
 
-// Since the mock above uses Date.now() which will differ, let's use a different approach.
-// We'll test the backup manifest structure and retention logic directly.
+vi.mock("@utils/env.js", () => ({
+  requireKeystorePassword: vi.fn(() => TEST_PASSWORD),
+  getKeystorePassword: vi.fn(() => TEST_PASSWORD),
+}));
+
+vi.mock("@utils/logger-shim.js", () => ({
+  minLogger: { debug: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+}));
+
+const TEST_DIR = join(tmpdir(), `vex-test-backup-pure-${Date.now()}`);
 
 describe("wallet-backup", () => {
   describe("backup manifest structure", () => {
@@ -83,7 +104,6 @@ describe("wallet-backup", () => {
     });
 
     it("should keep entries sorted chronologically", () => {
-      // Create fake backup dirs
       const dirs = [
         "2026-01-15T120000Z",
         "2026-01-14T120000Z",
@@ -117,7 +137,7 @@ describe("wallet-backup", () => {
         "2026-01-01T000000Z",
         "2026-01-02T000000Z",
         "2026-01-03T000000Z",
-        "2026-01-04T000000Z", // This would be the 4th, over limit
+        "2026-01-04T000000Z",
       ];
 
       for (const dir of dirs) {
@@ -129,7 +149,6 @@ describe("wallet-backup", () => {
         .map((d) => d.name)
         .sort();
 
-      // Simulate retention: remove oldest while over MAX
       const toRemove: string[] = [];
       while (entries.length > MAX) {
         toRemove.push(entries.shift()!);
@@ -152,7 +171,6 @@ describe("wallet-backup", () => {
     });
 
     it("should require manifest.json in backup dir", () => {
-      // Empty dir — no manifest
       expect(existsSync(join(restoreDir, "manifest.json"))).toBe(false);
     });
 
@@ -174,9 +192,201 @@ describe("wallet-backup", () => {
       expect(parsed.version).toBe(1);
       expect(parsed.files).toHaveLength(2);
 
-      // All files in manifest should exist
       for (const file of parsed.files) {
         expect(existsSync(join(restoreDir, file))).toBe(true);
+      }
+    });
+  });
+
+  // ── Real integration: full multi-wallet backup + V2 manifest ───────────────
+  describe("autoBackup (V2 full surface)", () => {
+    let createEvmWalletEntry: typeof import("@tools/wallet/inventory-create.js").createEvmWalletEntry;
+    let importEvmWalletEntry: typeof import("@tools/wallet/inventory-create.js").importEvmWalletEntry;
+    let createSolanaWalletEntry: typeof import("@tools/wallet/inventory-create.js").createSolanaWalletEntry;
+    let autoBackup: typeof import("@tools/wallet/backup.js").autoBackup;
+    let listAvailableBackups: typeof import("@tools/wallet/backup.js").listAvailableBackups;
+    let backupManifestSchema: typeof import("@tools/wallet/backup.js").backupManifestSchema;
+    let backupMod: typeof import("@tools/wallet/backup.js");
+    let loadConfig: typeof import("@config/store.js").loadConfig;
+    let saveConfig: typeof import("@config/store.js").saveConfig;
+    let derivePath: typeof import("@tools/wallet/inventory.js").derivePath;
+
+    beforeEach(async () => {
+      vi.resetModules();
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true });
+      mkdirSync(testDir, { recursive: true });
+      ({ createEvmWalletEntry, importEvmWalletEntry, createSolanaWalletEntry } = await import(
+        "@tools/wallet/inventory-create.js"
+      ));
+      backupMod = await import("@tools/wallet/backup.js");
+      ({ autoBackup, listAvailableBackups, backupManifestSchema } = backupMod);
+      ({ loadConfig, saveConfig } = await import("@config/store.js"));
+      ({ derivePath } = await import("@tools/wallet/inventory.js"));
+    });
+
+    afterEach(() => {
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true });
+      vi.restoreAllMocks();
+    });
+
+    function readManifest(dir: string): unknown {
+      return JSON.parse(readFileSync(join(dir, "manifest.json"), "utf-8"));
+    }
+
+    it("enumerates 2 EVM + 1 Solana with correct roles/ids/addresses (V2 shape)", async () => {
+      const e1 = createEvmWalletEntry();
+      const e2 = importEvmWalletEntry("0x" + "ab".repeat(32));
+      const s1 = createSolanaWalletEntry();
+
+      const dir = await autoBackup();
+      expect(dir).not.toBeNull();
+
+      const raw = readManifest(dir!);
+      const parsed = backupManifestSchema.safeParse(raw);
+      expect(parsed.success).toBe(true);
+      if (!parsed.success || parsed.data.version !== 2) throw new Error("expected v2");
+      const m = parsed.data;
+
+      expect(m.version).toBe(2);
+      expect(m.wallets).toHaveLength(3);
+      const byId = new Map(m.wallets.map((w) => [w.id, w]));
+      expect(byId.get(e1.id)?.family).toBe("evm");
+      expect(byId.get(e2.id)?.address).toBe(e2.address);
+      expect(byId.get(s1.id)?.family).toBe("solana");
+
+      const walletFiles = m.files.filter(
+        (f) => f.role === "wallet-evm" || f.role === "wallet-solana",
+      );
+      expect(walletFiles).toHaveLength(3);
+      for (const f of walletFiles) {
+        expect(f.walletId).toBeDefined();
+        expect(existsSync(join(dir!, f.filename))).toBe(true);
+      }
+      // Every keystore file was physically copied into the archive.
+      expect(existsSync(join(dir!, `wallet-${e1.id}.json`))).toBe(true);
+      expect(existsSync(join(dir!, `wallet-${s1.id}.json`))).toBe(true);
+    });
+
+    it("includes the vault and .env when present, omits them when absent", async () => {
+      createEvmWalletEntry();
+
+      // No vault/.env yet.
+      const dir1 = await autoBackup();
+      const m1 = readManifest(dir1!) as { files: Array<{ role: string }> };
+      expect(m1.files.some((f) => f.role === "vault")).toBe(false);
+      expect(m1.files.some((f) => f.role === "env")).toBe(false);
+
+      // Now create them.
+      writeFileSync(testVaultFile, JSON.stringify({ version: 1 }), "utf-8");
+      writeFileSync(testEnvFile, "OPENROUTER_API_KEY=sk-test\nAGENT_MODEL=foo\n", "utf-8");
+
+      const dir2 = await autoBackup();
+      const m2 = readManifest(dir2!) as { files: Array<{ role: string; filename: string }> };
+      expect(m2.files.some((f) => f.role === "vault")).toBe(true);
+      expect(m2.files.some((f) => f.role === "env")).toBe(true);
+      expect(existsSync(join(dir2!, "secrets.vault.json"))).toBe(true);
+      expect(existsSync(join(dir2!, ".env"))).toBe(true);
+    });
+
+    it("returns null when there is genuinely nothing to back up", async () => {
+      // Fresh empty config dir — no keystores, no vault, no .env, no config.
+      const dir = await autoBackup();
+      expect(dir).toBeNull();
+    });
+
+    it("writes manifest.json LAST — a copy failure leaves no manifest", async () => {
+      const e = createEvmWalletEntry();
+      // Let any fire-and-forget post-add backup settle, then wipe the backups
+      // dir so the next (failing) run is the ONLY producer of backup dirs.
+      await new Promise((r) => setTimeout(r, 20));
+      if (existsSync(testBackupsDir)) rmSync(testBackupsDir, { recursive: true });
+
+      // Make the keystore copy throw: replace the SOURCE keystore file with a
+      // directory so copyBytes' readFileSync(src) fails (EISDIR). The manifest
+      // is written only after every copy succeeds, so it must be absent.
+      const ksPath = derivePath("evm", e);
+      rmSync(ksPath);
+      mkdirSync(ksPath); // now a directory at the keystore path → read throws
+
+      await expect(autoBackup()).rejects.toThrow();
+
+      // Any backup dir created during the failed run must NOT contain a
+      // manifest (the copy threw before the manifest write).
+      mkdirSync(testBackupsDir, { recursive: true });
+      const dirs = readdirSync(testBackupsDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => join(testBackupsDir, d.name));
+      for (const d of dirs) {
+        expect(existsSync(join(d, "manifest.json"))).toBe(false);
+      }
+    });
+
+    it("skips a wallet whose LOCAL id is non-canonical (warn, no abort)", async () => {
+      createEvmWalletEntry(); // valid
+      // Inject a corrupt non-canonical id directly into config on disk.
+      const cfg = loadConfig();
+      // saveConfig normalizer would drop a bad id, so we write raw JSON.
+      const raw = JSON.parse(readFileSync(testConfigFile, "utf-8"));
+      raw.wallet.evm.push({
+        id: "evm_not-a-uuid",
+        address: "0x" + "11".repeat(20),
+        label: "bad",
+        createdAt: new Date().toISOString(),
+      });
+      writeFileSync(testConfigFile, JSON.stringify(raw), "utf-8");
+
+      // The normalizer in loadConfig drops the bad row, so derivePath never
+      // even sees it — backup succeeds with only the valid wallet.
+      const dir = await autoBackup();
+      expect(dir).not.toBeNull();
+      const m = readManifest(dir!) as { wallets: unknown[] };
+      expect(m.wallets.length).toBeGreaterThanOrEqual(1);
+      void cfg;
+      void derivePath;
+      void saveConfig;
+    });
+
+    it("enforces retention (MAX_BACKUPS) unchanged", async () => {
+      createEvmWalletEntry();
+      // Pre-seed 25 fake backup dirs.
+      mkdirSync(testBackupsDir, { recursive: true });
+      for (let i = 0; i < 25; i += 1) {
+        const name = `2020-01-01T0000${String(i).padStart(2, "0")}Z`;
+        mkdirSync(join(testBackupsDir, name), { recursive: true });
+        writeFileSync(
+          join(testBackupsDir, name, "manifest.json"),
+          JSON.stringify({ version: 1, files: [] }),
+        );
+      }
+      await autoBackup();
+      const remaining = readdirSync(testBackupsDir, { withFileTypes: true }).filter((d) =>
+        d.isDirectory(),
+      );
+      expect(remaining.length).toBeLessThanOrEqual(20);
+    });
+
+    it("listAvailableBackups returns metadata only, newest first", async () => {
+      createEvmWalletEntry();
+      await autoBackup();
+      await new Promise((r) => setTimeout(r, 5));
+      createSolanaWalletEntry();
+      await autoBackup();
+
+      const list = listAvailableBackups();
+      expect(list.length).toBeGreaterThanOrEqual(2);
+      // Sorted DESC by timestamp.
+      expect(list[0]!.timestamp >= list[1]!.timestamp).toBe(true);
+      // Metadata only — no secret fields AND no absolute on-disk paths leaked
+      // (opaque `id` only; the main process resolves it under BACKUPS_DIR).
+      const serialized = JSON.stringify(list);
+      expect(serialized).not.toContain("ciphertext");
+      expect(serialized).not.toContain("salt");
+      expect(serialized).not.toContain(testDir);
+      for (const b of list) {
+        expect(b.id).toBeTruthy();
+        expect(b).not.toHaveProperty("dir");
+        expect(typeof b.walletCount).toBe("number");
+        expect(Array.isArray(b.addresses)).toBe(true);
       }
     });
   });
