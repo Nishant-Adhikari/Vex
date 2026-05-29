@@ -186,8 +186,13 @@ export interface InferenceProvider {
 
   /**
    * Load inference configuration (model, pricing, context limit).
-   * Returns null if provider is not configured or unavailable.
-   * Called once at startup — fail fast on misconfiguration.
+   *
+   * Called per turn but expected to cache: a successful fetch is reused for a
+   * provider-defined TTL, refreshed on demand after the TTL, and may be served
+   * stale on a transient metadata failure. Returns null when the model is absent from
+   * the provider catalog (misconfig/delisting) or when the very first fetch
+   * fails (no last-good to fall back on). The returned object is owned by the
+   * caller — implementations must not hand out a shared mutable reference.
    */
   loadConfig(): Promise<InferenceConfig | null>;
 

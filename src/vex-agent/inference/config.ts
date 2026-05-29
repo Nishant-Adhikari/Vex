@@ -146,6 +146,22 @@ export const INFERENCE_SIMPLE_TIMEOUT_MS = 120_000;
 /** Balance cache TTL (30s) */
 export const BALANCE_CACHE_TTL_MS = 30_000;
 
+/**
+ * Model config (pricing) cache TTL (1h). `loadConfig()` runs per turn but the
+ * underlying `/models` pricing is stable, so a successful fetch is reused for
+ * this long before a refresh. Bounds cost-estimate staleness while removing the
+ * per-turn `/models` round-trip (F4). Pricing here feeds cost accounting only.
+ */
+export const MODEL_CONFIG_CACHE_TTL_MS = 3_600_000;
+
+/**
+ * Minimum gap between `/models` refresh attempts while serving a STALE last-good
+ * config after a transient metadata failure (F4). Prevents every subsequent turn
+ * from blocking on a failing `/models` refetch during an OpenRouter outage — we
+ * serve the last-good config immediately and re-attempt at most this often.
+ */
+export const MODEL_CONFIG_STALE_RETRY_MS = 30_000;
+
 /** OpenRouter app URL for rankings */
 export const OPENROUTER_APP_URL = "https://vexlabs.ai";
 

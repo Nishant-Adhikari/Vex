@@ -40,6 +40,8 @@ import {
   OPENROUTER_APP_TITLE,
   OPENROUTER_SDK_TIMEOUT_MS,
   OPENROUTER_LOW_BALANCE_USD,
+  MODEL_CONFIG_CACHE_TTL_MS,
+  MODEL_CONFIG_STALE_RETRY_MS,
 } from "./config.js";
 
 import logger from "@utils/logger.js";
@@ -59,6 +61,18 @@ export class OpenRouterProvider implements InferenceProvider {
   private readonly temperature: number | undefined;
   private readonly maxOutputTokens: number;
   private readonly client: OpenRouter;
+
+  // ── loadConfig cache (F4) ───────────────────────────────────────
+  // `loadConfig()` is called once per turn but `/models` pricing is stable.
+  // We memoize the last SUCCESSFUL config and reuse it for the TTL, dedup
+  // concurrent fetches, and serve the last-good config on a transient
+  // metadata failure (throttled). `cachedConfig` is the single canonical
+  // reference — every return path hands out a fresh shallow copy so callers
+  // can never mutate the cache.
+  private cachedConfig: InferenceConfig | null = null;
+  private cachedAt = 0;
+  private staleServeUntil = 0;
+  private inFlight: Promise<InferenceConfig | null> | null = null;
 
   constructor() {
     const env = loadEnvConfig();
@@ -93,67 +107,150 @@ export class OpenRouterProvider implements InferenceProvider {
     });
   }
 
-  // ── loadConfig ──────────────────────────────────────────────────
+  // ── loadConfig (cached) ─────────────────────────────────────────
+  //
+  // F4: the raw `/models` fetch lives in `_fetchConfig()`; this wrapper
+  // memoizes the result so the per-turn call sites do not each hit the
+  // network. Semantics:
+  //   - fresh hit (within TTL) → cached config (copied);
+  //   - concurrent calls → share one in-flight fetch, each gets its own copy;
+  //   - transient metadata failure WITH a last-good → serve stale (copied),
+  //     throttled so we re-attempt `/models` at most every STALE_RETRY window;
+  //   - `model_not_found` (catalog responded, model absent) → null even if a
+  //     last-good exists, so a delisted/misconfigured model stays loud;
+  //   - first-fetch failure (no last-good) → null, re-attempted next turn.
+  // The cached object is canonical and never handed out by reference — every
+  // return is a fresh shallow copy.
 
   async loadConfig(): Promise<InferenceConfig | null> {
+    const now = Date.now();
+
+    // 1. Fresh cache hit.
+    if (this.cachedConfig && now - this.cachedAt < MODEL_CONFIG_CACHE_TTL_MS) {
+      return { ...this.cachedConfig };
+    }
+    // 2. Concurrent dedup — await the canonical fetch, copy per caller.
+    if (this.inFlight) {
+      const c = await this.inFlight;
+      return c ? { ...c } : null;
+    }
+    // 3. Throttled stale-serve: a recent metadata failure left a last-good
+    //    config and we're inside the retry window — serve stale without a
+    //    network call.
+    if (this.cachedConfig && now < this.staleServeUntil) {
+      return { ...this.cachedConfig };
+    }
+
+    // 4. Fetch. The stored promise resolves to the CANONICAL reference (or
+    //    null) — never a copy — so all awaiters clone independently.
+    this.inFlight = this._fetchConfig()
+      .then((result) => {
+        if (result.kind === "success") {
+          this.cachedConfig = result.config;
+          this.cachedAt = Date.now();
+          this.staleServeUntil = 0;
+          return this.cachedConfig;
+        }
+        if (result.kind === "metadata_unavailable" && this.cachedConfig) {
+          // Transient `/models` failure but we have a last-good — serve it and
+          // throttle the next refetch attempt so we don't block every turn.
+          this.staleServeUntil = Date.now() + MODEL_CONFIG_STALE_RETRY_MS;
+          logger.warn("inference.openrouter.config_stale_served", {
+            model: this.model,
+            cachedAt: new Date(this.cachedAt).toISOString(),
+          });
+          return this.cachedConfig;
+        }
+        // `model_not_found` (surface delisting/misconfig), or metadata failure
+        // with no last-good to fall back on.
+        return null;
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
+
+    // 5. Starter clones the canonical result too.
+    const c = await this.inFlight;
+    return c ? { ...c } : null;
+  }
+
+  // ── _fetchConfig (uncached `/models` read) ──────────────────────
+  //
+  // Classifies the outcome so `loadConfig()` can decide stale-vs-null:
+  //   - `success`              → catalog responded and contains `this.model`;
+  //   - `model_not_found`      → catalog responded but lacks the model (hard);
+  //   - `metadata_unavailable` → the `/models` request itself failed.
+
+  private async _fetchConfig(): Promise<
+    | { kind: "success"; config: InferenceConfig }
+    | { kind: "model_not_found" }
+    | { kind: "metadata_unavailable" }
+  > {
     let inputPricePerM = 0;
     let outputPricePerM = 0;
     let cachePricePerM: number | null = null;
     let reasoningPricePerM: number | null = null;
 
+    // `/models` transport/server/SDK failure → metadata_unavailable (the
+    // caller may serve a last-good config). A successful catalog that lacks
+    // the model is a distinct, hard `model_not_found`.
+    let models: Awaited<ReturnType<typeof this.client.models.list>>;
     try {
-      const models = await this.client.models.list({});
-      const found = models.data?.find((m: { id: string }) => m.id === this.model);
-
-      if (!found) {
-        logger.error("inference.openrouter.model_not_found", {
-          model: this.model,
-          hint: "Check AGENT_MODEL or OpenRouter model availability",
-        });
-        return null;
-      }
-
-      if (found.pricing) {
-        // PublicPricing: prompt/completion are per-TOKEN strings (not per-1M)
-        inputPricePerM = parseFloat(String(found.pricing.prompt)) * 1_000_000;
-        outputPricePerM = parseFloat(String(found.pricing.completion)) * 1_000_000;
-
-        if (found.pricing.inputCacheRead) {
-          cachePricePerM = parseFloat(String(found.pricing.inputCacheRead)) * 1_000_000;
-        }
-        if (found.pricing.internalReasoning) {
-          reasoningPricePerM = parseFloat(String(found.pricing.internalReasoning)) * 1_000_000;
-        }
-      }
-
-      logger.info("inference.openrouter.config_loaded", {
-        model: this.model,
-        contextLimit: this.contextLimit,
-        inputPricePerM: inputPricePerM.toFixed(4),
-        outputPricePerM: outputPricePerM.toFixed(4),
-        hasCachePrice: cachePricePerM !== null,
-        hasReasoningPrice: reasoningPricePerM !== null,
-      });
+      models = await this.client.models.list({});
     } catch (err) {
       logger.error("inference.openrouter.api_unreachable", {
         model: this.model,
         error: err instanceof Error ? err.message : String(err),
         hint: "Check OPENROUTER_API_KEY and network connectivity",
       });
-      return null;
+      return { kind: "metadata_unavailable" };
     }
 
-    return {
-      provider: this.id,
+    const found = models.data?.find((m: { id: string }) => m.id === this.model);
+    if (!found) {
+      logger.error("inference.openrouter.model_not_found", {
+        model: this.model,
+        hint: "Check AGENT_MODEL or OpenRouter model availability",
+      });
+      return { kind: "model_not_found" };
+    }
+
+    if (found.pricing) {
+      // PublicPricing: prompt/completion are per-TOKEN strings (not per-1M)
+      inputPricePerM = parseFloat(String(found.pricing.prompt)) * 1_000_000;
+      outputPricePerM = parseFloat(String(found.pricing.completion)) * 1_000_000;
+
+      if (found.pricing.inputCacheRead) {
+        cachePricePerM = parseFloat(String(found.pricing.inputCacheRead)) * 1_000_000;
+      }
+      if (found.pricing.internalReasoning) {
+        reasoningPricePerM = parseFloat(String(found.pricing.internalReasoning)) * 1_000_000;
+      }
+    }
+
+    logger.info("inference.openrouter.config_loaded", {
       model: this.model,
       contextLimit: this.contextLimit,
-      temperature: this.temperature,
-      maxOutputTokens: this.maxOutputTokens,
-      inputPricePerM,
-      outputPricePerM,
-      priceCurrency: "USD",
-      cachePricePerM,
-      reasoningPricePerM,
+      inputPricePerM: inputPricePerM.toFixed(4),
+      outputPricePerM: outputPricePerM.toFixed(4),
+      hasCachePrice: cachePricePerM !== null,
+      hasReasoningPrice: reasoningPricePerM !== null,
+    });
+
+    return {
+      kind: "success",
+      config: {
+        provider: this.id,
+        model: this.model,
+        contextLimit: this.contextLimit,
+        temperature: this.temperature,
+        maxOutputTokens: this.maxOutputTokens,
+        inputPricePerM,
+        outputPricePerM,
+        priceCurrency: "USD",
+        cachePricePerM,
+        reasoningPricePerM,
+      },
     };
   }
 
