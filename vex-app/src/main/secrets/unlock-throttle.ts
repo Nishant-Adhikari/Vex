@@ -1,7 +1,7 @@
 /**
  * In-process unlock backoff gate for the secrets vault.
  *
- * Scrypt N=16384 protects the at-rest vault, but a process-resident attacker
+ * Scrypt N=2^17 (131072) protects the at-rest vault, but a process-resident attacker
  * could still attempt rapid in-memory unlocks. This module rate-limits the
  * `vex:secrets:unlock` IPC handler with an exponential-ish backoff that ramps
  * quickly toward a 5-minute lockout, on top of single-user desktop semantics

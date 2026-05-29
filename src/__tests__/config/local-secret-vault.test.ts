@@ -171,7 +171,7 @@ describe("local secret vault", () => {
       r: CURRENT_KDF_PARAMS.r,
       p: CURRENT_KDF_PARAMS.p,
     });
-    expect(CURRENT_KDF_PARAMS.N).toBe(65536);
+    expect(CURRENT_KDF_PARAMS.N).toBe(131072); // 2^17 — OWASP scrypt minimum
   });
 
   it("opportunistically re-encrypts stale-KDF vaults on successful unlock", () => {

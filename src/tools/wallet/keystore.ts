@@ -24,9 +24,9 @@ export interface KeystoreV1 {
 
 const KDF_PARAMS = {
   name: "scrypt" as const,
-  N: 2 ** 16, // 65536 — vault parity (src/lib/local-secret-vault.ts). OWASP scrypt
-  // guidance is N>=2^17; 65536 is the same deliberate interactive-unlock compromise
-  // the vault documents. A future bump to 2^17 should move keystore + vault together.
+  N: 2 ** 17, // 131072 — OWASP scrypt minimum, vault parity (src/lib/local-secret-vault.ts).
+  // Bumped from 2^16 to 2^17 in lockstep with the vault (F10-OWASP). ~128 MiB working set,
+  // ~400ms per derive — a deliberate security/UX trade-off for at-rest key material.
   r: 8,
   p: 1,
   dkLen: 32,
@@ -35,11 +35,13 @@ const KDF_PARAMS = {
 function deriveKey(password: string, salt: Uint8Array, dkLen: number, params = KDF_PARAMS): Buffer {
   // Node's scrypt enforces a soft memory cap of 32 MiB by default; once N exceeds
   // 2^15 (with r=8, p=1) the buffer requirement (128*N*r bytes) passes that cap and
-  // the call fails with `memory limit exceeded`. Raise the ceiling to 256 MiB —
-  // enough headroom for any KDF params we currently target (covers up to N=2^18) and
-  // still reasonable for a desktop unlock. Mirrors local-secret-vault.ts deriveKey.
-  // Applied in this shared helper so it covers encrypt AND decrypt; decrypt passes the
-  // file's own `kdf` params, so keystores written at any supported N still open.
+  // the call fails with `memory limit exceeded`. Raise the ceiling to 256 MiB — our
+  // target N=2^17 needs ~128 MiB, so this leaves headroom while staying reasonable for
+  // a desktop unlock. (N=2^18 sits at the ceiling and Node rejects it with
+  // ERR_CRYPTO_INVALID_SCRYPT_PARAMS, so do not raise N past 2^17 without also raising
+  // maxmem.) Mirrors local-secret-vault.ts deriveKey. Applied in this shared helper so it
+  // covers encrypt AND decrypt; decrypt passes the file's own `kdf` params, so keystores
+  // written at any supported N still open.
   const maxmem = 256 * 1024 * 1024;
   return scryptSync(password, salt, dkLen, {
     N: params.N,

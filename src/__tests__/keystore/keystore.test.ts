@@ -18,13 +18,13 @@ describe("keystore", () => {
       expect(keystore.kdf.name).toBe("scrypt");
     });
 
-    it("uses scrypt N=65536 (vault parity, FINDING F10)", () => {
+    it("uses scrypt N=131072 (2^17 OWASP, vault parity, FINDING F10)", () => {
       // Pins the KDF cost. The roundtrip tests below exercise this N end-to-end —
-      // without the 256 MiB maxmem in deriveKey, scryptSync at N=65536 (64 MiB)
+      // without the 256 MiB maxmem in deriveKey, scryptSync at N=131072 (~128 MiB)
       // would throw "memory limit exceeded" and these tests would fail. That is the
       // regression guard against re-introducing the wallet-bricking gap.
       const keystore = encryptPrivateKey(testPrivateKey, testPassword);
-      expect(keystore.kdf.N).toBe(65536);
+      expect(keystore.kdf.N).toBe(131072);
       expect(keystore.kdf.r).toBe(8);
       expect(keystore.kdf.p).toBe(1);
     });

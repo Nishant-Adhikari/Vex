@@ -17,7 +17,7 @@ import {
 import { join } from "node:path";
 
 // Crypto-heavy suite: each test does vi.resetModules() + re-imports the wallet
-// graph (viem/solana) AND runs real scrypt at N=65536. Under load a single
+// graph (viem/solana) AND runs real scrypt at N=131072 (2^17). Under load a single
 // setup/test can exceed vitest's 10s default, so raise the ceiling for this file.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 

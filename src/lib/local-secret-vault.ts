@@ -20,9 +20,10 @@ import {
 const VAULT_VERSION = 1;
 /**
  * Current scrypt KDF parameters used when encrypting new vaults or rewriting
- * existing ones. N=65536 is a deliberate compromise between OWASP guidance
- * (scrypt p=1 N>=2^17 ~ 400ms unlock) and an interactive desktop unlock
- * latency target (~200ms on commodity hardware).
+ * existing ones. N=131072 (2^17), r=8, p=1 is the OWASP Password Storage
+ * scrypt recommendation (~128 MiB working set, ~400ms unlock on commodity
+ * hardware) — a deliberate security/UX trade-off favouring OWASP compliance
+ * for an at-rest secret vault.
  *
  * Vault files carry their own `kdf` block so older files remain decryptable
  * with their original params; `unlockSecretVault` opportunistically rewrites
@@ -30,7 +31,7 @@ const VAULT_VERSION = 1;
  */
 export const CURRENT_KDF_PARAMS = {
   name: "scrypt",
-  N: 65536,
+  N: 131072, // 2^17 — OWASP scrypt minimum
   r: 8,
   p: 1,
   dkLen: 32,
@@ -98,9 +99,10 @@ function deriveKey(password: string, salt: Buffer, params: VaultFile["kdf"]): Bu
   // Node's scrypt enforces a soft memory cap of 32 MiB by default; once N
   // exceeds 2^15 (with r=8, p=1) the buffer requirement passes that cap and
   // the call fails with `digital envelope routines::memory limit exceeded`.
-  // Raise the ceiling to 256 MiB — enough headroom for any KDF params we
-  // currently target, and still well within reasonable bounds for a desktop
-  // unlock operation.
+  // Raise the ceiling to 256 MiB — our target N=2^17 needs ~128 MiB
+  // (128*N*r), so this leaves headroom while staying reasonable for a desktop
+  // unlock. (N=2^18 would sit at the ceiling and Node rejects it, so do not
+  // raise N past 2^17 without also raising maxmem.)
   const maxmem = 256 * 1024 * 1024;
   return scryptSync(password, salt, params.dkLen, {
     N: params.N,

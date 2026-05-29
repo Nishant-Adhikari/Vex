@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 // Crypto-heavy suite: vi.resetModules() re-imports the wallet graph and real
-// scrypt at N=65536 runs per test; raise the ceiling above vitest's 10s default.
+// scrypt at N=131072 (2^17) runs per test; raise the ceiling above vitest's 10s default.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 // Real temp CONFIG_DIR per the inventory.test.ts harness pattern: a hoisted,
