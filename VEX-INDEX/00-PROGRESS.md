@@ -302,7 +302,25 @@ Build/config (root + vex-app) consolidated by the lead (me) during Structure.md 
   (RED→GREEN: required keeping the 5s approvals fallback) → inline implement → `pnpm --dir vex-app lint`
   (tsc + boundaries) clean + focused vitest 70 pass (incl. new `renderer/lib/api/__tests__/runtime.test.ts`,
   6) → Codex final review GREEN LIGHT. Index refresh: parallel doc-sweep workflow (10 files) +
-  coverage-gaps/Structure/boundaries/flows/00-PROGRESS by hand. NOT committed (awaiting explicit user
-  request). STILL OPEN (Bundle B remainder): F4 (OpenRouter /models per-turn cache), F10-KDF-OWASP
-  (joint vault+keystore bump to 2^17), F12 (updater), codex-002 (fetchJson Zod),
-  codex-003 (reembed runtime trigger).
+  coverage-gaps/Structure/boundaries/flows/00-PROGRESS by hand. Committed `85ed941` (code) +
+  `4334708` (docs); pushed to main.
+- 2026-05-29: BUNDLE B — FINDING-codex-002 SHIPPED (HTTP-response Zod validation), pushed to main.
+  User chose FULL UNIFORMITY, executed in two reviewable phases:
+  - Phase 1 (commit `9b8d18e`): `parseJsonResponse`/`fetchJson` (`src/utils/http.ts`) take an optional
+    Zod schema + throw new `HTTP_RESPONSE_INVALID` (non-retryable); error-body hardened to `unknown`.
+    Every raw `fetchJson<T>` cast migrated to a permissive `.passthrough()` schema with FIRM
+    signing-bound fields (base64 tx / base58 pubkey / instruction wire, shared
+    `solana-ecosystem/shared/schemas.ts`): all Jupiter clients (swaps/prices/tokens/+content/lend/
+    prediction) + embeddings. OpenRouter inference already SDK-Zod-validated. 151 tests.
+  - Phase 2 (commit `cb43764`): converted ALL hand-written validators (Khalani, Polymarket ×5,
+    KyberSwap ×5, DexScreener) to Zod, BEHAVIOR-PRESERVING (shared `src/utils/zod-validation-helpers.ts`;
+    `zNumberField` custom guard — Zod 4 `z.number()` rejects Infinity but the original `asNumber`
+    accepted it; per-validator throw type / lenient defaults / element-wise filtering / raw subtrees
+    preserved), proven by per-validator equivalence tests. 1211 tests; central tsc clean.
+  Process: 5-agent recon → Codex named session `codex002-harness` (design RED→GREEN) → blessed
+  templates (jupiter-swaps financial; Khalani strict + Polymarket-CLOB lenient) → workflow fan-outs
+  (5 Jupiter + 10 validators) → per-checkpoint Codex reviews. The gate caught 6 real would-be
+  regressions (swaps `transaction:""` error-path, base64 length, jupiter-tokens/content omission,
+  prediction comment, Zod-4 Infinity drift, zaas raw-subtree cast). STILL OPEN (Bundle B remainder):
+  F4 (OpenRouter /models per-turn cache), F10-KDF-OWASP (joint vault+keystore bump to 2^17),
+  F12 (updater), codex-003 (reembed runtime trigger).

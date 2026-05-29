@@ -13,8 +13,8 @@ paths:
   - "src/utils/minimatch.ts"
   - "src/utils/output.ts"
   - "src/errors.ts"
-source_commit: 152af27
-indexed_at: 2026-05-28
+source_commit: cb43764
+indexed_at: 2026-05-29
 stale_when_paths_change:
   - "src/lib/db/migrate-runner.ts"
   - "src/utils/logger.ts"
@@ -141,9 +141,13 @@ Out of scope: `utils/dotenv.ts` + `utils/env.ts` (covered by
 - `src/utils/http.ts:16 fetchWithTimeout` — wraps `fetch` with `AbortController`
   timeout (default 30 s); AbortError → `VexError(HTTP_TIMEOUT)`, other errors →
   `VexError(HTTP_REQUEST_FAILED)`.
-  `:52 parseJsonResponse` — checks `response.ok`, attempts to extract `errorBody.error`
-  on failure; casts result to `T` (no runtime schema validation).
-  `:79 fetchJson` — `fetchWithTimeout` + `parseJsonResponse` composed.
+  `:52 parseJsonResponse(response, schema?)` — checks `response.ok`, safely extracts a
+  string `errorBody.error` (treated as `unknown`) on failure. codex-002 (commits
+  `9b8d18e`/`cb43764`): takes an optional Zod `schema`; when supplied it `safeParse`s the
+  body and throws `HTTP_RESPONSE_INVALID` (non-retryable, distinct from network fail) on
+  mismatch; without a schema it falls back to the legacy `as T` cast. All external-API
+  callers now pass schemas (Jupiter/embeddings) or validate via converted Zod validators.
+  `:79 fetchJson(url, options?, schema?)` — `fetchWithTimeout` + `parseJsonResponse(…, schema)`.
   `:91 readJson` — safe JSON read that returns `null` on parse failure (for error-body
   inspection before mapping).
 
