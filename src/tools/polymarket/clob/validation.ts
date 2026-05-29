@@ -1,9 +1,23 @@
 /**
  * Runtime validators for Polymarket CLOB API responses.
+ *
+ * codex-002 Phase 2: these gate the SHAPE of CLOB market-data, order, and
+ * trade responses at the HTTP boundary (the values feed pricing, order, and
+ * cancel flows). The CLOB API is LENIENT-DEFAULTING: every field falls back to
+ * a safe default rather than rejecting, so a single malformed field never fails
+ * the whole response. Schema failure is reserved for a root-type mismatch
+ * (object expected but array/null given, or array expected but object given) —
+ * the wrapper then throws the SAME plain `Error` the hand-written code threw;
+ * the price/midpoint/scoring/batch validators that defaulted on a bad root keep
+ * defaulting (no throw).
+ *
+ * The schemas are intentionally NOT the type source of truth — the wire
+ * interfaces in `types.ts` remain canonical, and each exported validator keeps
+ * its declared return type so `tsc` verifies the inferred schema output is
+ * assignable to that interface.
  */
 
-import { ErrorCodes } from "../../../errors.js";
-import { isRecord, createFieldValidators } from "../../../utils/validation-helpers.js";
+import { z } from "zod";
 import type {
   OrderBookSummary, OrderSummary, SendOrderResponse,
   OpenOrder, PaginatedOrders, CancelResponse,
@@ -11,165 +25,281 @@ import type {
   LastTradePrice, OrderScoringResponse,
 } from "./types.js";
 
-const { asString, asOptionalString } = createFieldValidators(
-  ErrorCodes.POLYMARKET_API_ERROR, "Polymarket CLOB",
-);
+// ── Reusable lenient field primitives ─────────────────────────────────
+//
+// Each mirrors a hand-written `typeof x === "..." ? x : default` guard. They
+// never reject: a wrong-typed/missing field is replaced with the same default
+// the original produced, so the enclosing object schema fails ONLY on a
+// root-type mismatch.
 
-function parseOrderSummary(raw: unknown): OrderSummary {
-  if (!isRecord(raw)) return { price: "0", size: "0" };
+/** `typeof v === "string" ? v : def` */
+const strDefault = (def: string) => z.unknown().transform((v) => (typeof v === "string" ? v : def));
+
+/** `typeof v === "number" ? v : def` */
+const numDefault = (def: number) => z.unknown().transform((v) => (typeof v === "number" ? v : def));
+
+/** `v === true` (only the literal boolean true is truthy here). */
+const isTrue = z.unknown().transform((v) => v === true);
+
+/**
+ * `asOptionalString` semantics: a non-empty string passes through, anything
+ * else (missing, empty, wrong type) becomes `undefined`.
+ */
+const asOptionalString = z
+  .unknown()
+  .transform((v) => (typeof v === "string" && v.length > 0 ? v : undefined));
+
+/**
+ * Element-wise string filter: `Array.isArray(v) ? v.filter(isString) : <def>`.
+ * Non-array root collapses to the supplied default (`[]` or `undefined`);
+ * an array keeps only its string elements.
+ */
+const stringArrayFilter = <D extends string[] | undefined>(def: D) =>
+  z.unknown().transform((v): string[] | D =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : def,
+  );
+
+// ── OrderSummary / OrderBook ───────────────────────────────────────────
+
+const orderSummarySchema: z.ZodType<OrderSummary> = z.unknown().transform((raw) => {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { price: "0", size: "0" };
+  }
+  const r = raw as Record<string, unknown>;
   return {
-    price: typeof raw.price === "string" ? raw.price : String(raw.price ?? "0"),
-    size: typeof raw.size === "string" ? raw.size : String(raw.size ?? "0"),
+    price: typeof r.price === "string" ? r.price : String(r.price ?? "0"),
+    size: typeof r.size === "string" ? r.size : String(r.size ?? "0"),
   };
-}
+});
+
+const orderBookSchema = z.object({
+  market: strDefault(""),
+  asset_id: strDefault(""),
+  timestamp: strDefault(""),
+  hash: strDefault(""),
+  // Non-array → []; array → element-mapped via orderSummarySchema (which itself
+  // defaults non-record elements rather than throwing — matching `parseOrderSummary`).
+  bids: z.unknown().transform((v) => (Array.isArray(v) ? v.map((e) => orderSummarySchema.parse(e)) : [])),
+  asks: z.unknown().transform((v) => (Array.isArray(v) ? v.map((e) => orderSummarySchema.parse(e)) : [])),
+  min_order_size: strDefault("1"),
+  tick_size: strDefault("0.01"),
+  neg_risk: isTrue,
+  last_trade_price: strDefault("0.5"),
+});
 
 export function validateOrderBookResponse(raw: unknown): OrderBookSummary {
-  if (!isRecord(raw)) throw new Error("Expected orderbook object");
-  return {
-    market: typeof raw.market === "string" ? raw.market : "",
-    asset_id: typeof raw.asset_id === "string" ? raw.asset_id : "",
-    timestamp: typeof raw.timestamp === "string" ? raw.timestamp : "",
-    hash: typeof raw.hash === "string" ? raw.hash : "",
-    bids: Array.isArray(raw.bids) ? raw.bids.map(parseOrderSummary) : [],
-    asks: Array.isArray(raw.asks) ? raw.asks.map(parseOrderSummary) : [],
-    min_order_size: typeof raw.min_order_size === "string" ? raw.min_order_size : "1",
-    tick_size: typeof raw.tick_size === "string" ? raw.tick_size : "0.01",
-    neg_risk: raw.neg_risk === true,
-    last_trade_price: typeof raw.last_trade_price === "string" ? raw.last_trade_price : "0.5",
-  };
+  const parsed = orderBookSchema.safeParse(raw);
+  if (!parsed.success) throw new Error("Expected orderbook object");
+  return parsed.data;
 }
+
+// ── SendOrderResponse ──────────────────────────────────────────────────
+
+const sendOrderStatusSchema = z
+  .unknown()
+  .transform((v) => (v === "live" || v === "matched" || v === "delayed" ? v : "delayed"));
+
+const sendOrderResponseSchema = z.object({
+  success: isTrue,
+  orderID: strDefault(""),
+  status: sendOrderStatusSchema,
+  makingAmount: asOptionalString,
+  takingAmount: asOptionalString,
+  transactionsHashes: stringArrayFilter(undefined),
+  tradeIDs: stringArrayFilter(undefined),
+  errorMsg: strDefault(""),
+});
 
 export function validateSendOrderResponse(raw: unknown): SendOrderResponse {
-  if (!isRecord(raw)) throw new Error("Expected order response object");
-  return {
-    success: raw.success === true,
-    orderID: typeof raw.orderID === "string" ? raw.orderID : "",
-    status: (raw.status === "live" || raw.status === "matched" || raw.status === "delayed") ? raw.status : "delayed",
-    makingAmount: asOptionalString(raw.makingAmount),
-    takingAmount: asOptionalString(raw.takingAmount),
-    transactionsHashes: Array.isArray(raw.transactionsHashes) ? raw.transactionsHashes.filter((t): t is string => typeof t === "string") : undefined,
-    tradeIDs: Array.isArray(raw.tradeIDs) ? raw.tradeIDs.filter((t): t is string => typeof t === "string") : undefined,
-    errorMsg: typeof raw.errorMsg === "string" ? raw.errorMsg : "",
-  };
+  const parsed = sendOrderResponseSchema.safeParse(raw);
+  if (!parsed.success) throw new Error("Expected order response object");
+  return parsed.data;
 }
 
+// ── OpenOrder ──────────────────────────────────────────────────────────
+
+const openOrderSideSchema = z.unknown().transform((v) => (v === "SELL" ? "SELL" : "BUY"));
+const openOrderTypeSchema = z
+  .unknown()
+  .transform((v) => (v === "GTC" || v === "FOK" || v === "GTD" || v === "FAK" ? v : "GTC"));
+
+const openOrderSchema = z.object({
+  id: strDefault(""),
+  status: strDefault(""),
+  owner: strDefault(""),
+  maker_address: strDefault(""),
+  market: strDefault(""),
+  asset_id: strDefault(""),
+  side: openOrderSideSchema,
+  original_size: strDefault("0"),
+  size_matched: strDefault("0"),
+  price: strDefault("0"),
+  outcome: strDefault(""),
+  expiration: strDefault(""),
+  order_type: openOrderTypeSchema,
+  associate_trades: stringArrayFilter<string[]>([]),
+  created_at: numDefault(0),
+});
+
 function parseOpenOrder(raw: unknown): OpenOrder {
-  if (!isRecord(raw)) throw new Error("order must be an object");
-  return {
-    id: typeof raw.id === "string" ? raw.id : "",
-    status: typeof raw.status === "string" ? raw.status : "",
-    owner: typeof raw.owner === "string" ? raw.owner : "",
-    maker_address: typeof raw.maker_address === "string" ? raw.maker_address : "",
-    market: typeof raw.market === "string" ? raw.market : "",
-    asset_id: typeof raw.asset_id === "string" ? raw.asset_id : "",
-    side: raw.side === "SELL" ? "SELL" : "BUY",
-    original_size: typeof raw.original_size === "string" ? raw.original_size : "0",
-    size_matched: typeof raw.size_matched === "string" ? raw.size_matched : "0",
-    price: typeof raw.price === "string" ? raw.price : "0",
-    outcome: typeof raw.outcome === "string" ? raw.outcome : "",
-    expiration: typeof raw.expiration === "string" ? raw.expiration : "",
-    order_type: (raw.order_type === "GTC" || raw.order_type === "FOK" || raw.order_type === "GTD" || raw.order_type === "FAK") ? raw.order_type : "GTC",
-    associate_trades: Array.isArray(raw.associate_trades) ? raw.associate_trades.filter((t): t is string => typeof t === "string") : [],
-    created_at: typeof raw.created_at === "number" ? raw.created_at : 0,
-  };
+  const parsed = openOrderSchema.safeParse(raw);
+  if (!parsed.success) throw new Error("order must be an object");
+  return parsed.data;
 }
 
 export function validatePaginatedOrders(raw: unknown): PaginatedOrders {
-  if (!isRecord(raw)) throw new Error("Expected paginated orders");
-  return {
-    limit: typeof raw.limit === "number" ? raw.limit : 100,
-    next_cursor: typeof raw.next_cursor === "string" ? raw.next_cursor : "",
-    count: typeof raw.count === "number" ? raw.count : 0,
-    data: Array.isArray(raw.data) ? raw.data.map(parseOpenOrder) : [],
-  };
+  const parsed = paginatedOrdersSchema.safeParse(raw);
+  if (!parsed.success) throw new Error("Expected paginated orders");
+  return parsed.data;
 }
+
+const paginatedOrdersSchema = z.object({
+  limit: numDefault(100),
+  next_cursor: strDefault(""),
+  count: numDefault(0),
+  // Non-array → []; array → map each through parseOpenOrder, which THROWS
+  // "order must be an object" for a non-record element (matching the original
+  // `raw.data.map(parseOpenOrder)`). The throw escapes safeParse, so it
+  // surfaces directly to the caller — identical to the hand-written behavior.
+  data: z.unknown().transform((v) => (Array.isArray(v) ? v.map(parseOpenOrder) : [])),
+});
 
 export function validateOpenOrder(raw: unknown): OpenOrder {
   return parseOpenOrder(raw);
 }
 
+// ── CancelResponse ─────────────────────────────────────────────────────
+
+const cancelResponseSchema = z.object({
+  canceled: stringArrayFilter<string[]>([]),
+  // Preserve the raw record subtree exactly as `raw.not_canceled as Record<string,string>`:
+  // non-record → {}; record → kept as-is (no element filtering in the original).
+  not_canceled: z
+    .unknown()
+    .transform((v) =>
+      typeof v === "object" && v !== null && !Array.isArray(v)
+        ? (v as Record<string, string>)
+        : ({} as Record<string, string>),
+    ),
+});
+
 export function validateCancelResponse(raw: unknown): CancelResponse {
-  if (!isRecord(raw)) throw new Error("Expected cancel response");
-  return {
-    canceled: Array.isArray(raw.canceled) ? raw.canceled.filter((c): c is string => typeof c === "string") : [],
-    not_canceled: isRecord(raw.not_canceled) ? raw.not_canceled as Record<string, string> : {},
-  };
+  const parsed = cancelResponseSchema.safeParse(raw);
+  if (!parsed.success) throw new Error("Expected cancel response");
+  return parsed.data;
 }
+
+// ── ClobTrade ──────────────────────────────────────────────────────────
+
+const traderSideSchema = z.unknown().transform((v) => (v === "MAKER" ? "MAKER" : "TAKER"));
+
+const clobTradeSchema = z.object({
+  id: strDefault(""),
+  taker_order_id: strDefault(""),
+  market: strDefault(""),
+  asset_id: strDefault(""),
+  side: openOrderSideSchema,
+  size: strDefault("0"),
+  fee_rate_bps: strDefault("0"),
+  price: strDefault("0"),
+  status: strDefault(""),
+  match_time: strDefault(""),
+  last_update: strDefault(""),
+  outcome: strDefault(""),
+  owner: strDefault(""),
+  maker_address: strDefault(""),
+  // `asOptionalString(raw.transaction_hash) ?? null` → non-empty string | null.
+  transaction_hash: asOptionalString.transform((v) => v ?? null),
+  trader_side: traderSideSchema,
+});
 
 function parseClobTrade(raw: unknown): ClobTrade {
-  if (!isRecord(raw)) throw new Error("trade must be an object");
-  return {
-    id: typeof raw.id === "string" ? raw.id : "",
-    taker_order_id: typeof raw.taker_order_id === "string" ? raw.taker_order_id : "",
-    market: typeof raw.market === "string" ? raw.market : "",
-    asset_id: typeof raw.asset_id === "string" ? raw.asset_id : "",
-    side: raw.side === "SELL" ? "SELL" : "BUY",
-    size: typeof raw.size === "string" ? raw.size : "0",
-    fee_rate_bps: typeof raw.fee_rate_bps === "string" ? raw.fee_rate_bps : "0",
-    price: typeof raw.price === "string" ? raw.price : "0",
-    status: typeof raw.status === "string" ? raw.status : "",
-    match_time: typeof raw.match_time === "string" ? raw.match_time : "",
-    last_update: typeof raw.last_update === "string" ? raw.last_update : "",
-    outcome: typeof raw.outcome === "string" ? raw.outcome : "",
-    owner: typeof raw.owner === "string" ? raw.owner : "",
-    maker_address: typeof raw.maker_address === "string" ? raw.maker_address : "",
-    transaction_hash: asOptionalString(raw.transaction_hash) ?? null,
-    trader_side: raw.trader_side === "MAKER" ? "MAKER" : "TAKER",
-  };
+  const parsed = clobTradeSchema.safeParse(raw);
+  if (!parsed.success) throw new Error("trade must be an object");
+  return parsed.data;
 }
+
+const paginatedTradesSchema = z.object({
+  limit: numDefault(100),
+  next_cursor: strDefault(""),
+  count: numDefault(0),
+  data: z.unknown().transform((v) => (Array.isArray(v) ? v.map(parseClobTrade) : [])),
+});
 
 export function validatePaginatedTrades(raw: unknown): PaginatedTrades {
-  if (!isRecord(raw)) throw new Error("Expected paginated trades");
-  return {
-    limit: typeof raw.limit === "number" ? raw.limit : 100,
-    next_cursor: typeof raw.next_cursor === "string" ? raw.next_cursor : "",
-    count: typeof raw.count === "number" ? raw.count : 0,
-    data: Array.isArray(raw.data) ? raw.data.map(parseClobTrade) : [],
-  };
+  const parsed = paginatedTradesSchema.safeParse(raw);
+  if (!parsed.success) throw new Error("Expected paginated trades");
+  return parsed.data;
 }
+
+// ── PriceHistory (defaults on bad root — never throws) ─────────────────
+
+const priceHistoryPointSchema = z.unknown().transform((p) => {
+  if (typeof p !== "object" || p === null || Array.isArray(p)) return { t: 0, p: 0 };
+  const r = p as Record<string, unknown>;
+  return { t: typeof r.t === "number" ? r.t : 0, p: typeof r.p === "number" ? r.p : 0 };
+});
+
+const priceHistoryResponseSchema = z.object({
+  history: z.unknown().transform((v) =>
+    Array.isArray(v) ? v.map((p) => priceHistoryPointSchema.parse(p)) : [],
+  ),
+});
 
 export function validatePriceHistoryResponse(raw: unknown): PriceHistoryResponse {
-  if (!isRecord(raw)) return { history: [] };
-  return {
-    history: Array.isArray(raw.history) ? raw.history.map((p: unknown) => {
-      if (!isRecord(p)) return { t: 0, p: 0 };
-      return { t: typeof p.t === "number" ? p.t : 0, p: typeof p.p === "number" ? p.p : 0 };
-    }) : [],
-  };
+  const parsed = priceHistoryResponseSchema.safeParse(raw);
+  if (!parsed.success) return { history: [] };
+  return parsed.data;
 }
 
+// ── Scalar market-data responses (default on bad root — never throw) ───
+
+const priceResponseSchema = z.object({ price: numDefault(0) });
 export function validatePriceResponse(raw: unknown): { price: number } {
-  if (!isRecord(raw)) return { price: 0 };
-  return { price: typeof raw.price === "number" ? raw.price : 0 };
+  const parsed = priceResponseSchema.safeParse(raw);
+  if (!parsed.success) return { price: 0 };
+  return parsed.data;
 }
 
+const midpointResponseSchema = z.object({ mid_price: strDefault("0") });
 export function validateMidpointResponse(raw: unknown): { mid_price: string } {
-  if (!isRecord(raw)) return { mid_price: "0" };
-  return { mid_price: typeof raw.mid_price === "string" ? raw.mid_price : "0" };
+  const parsed = midpointResponseSchema.safeParse(raw);
+  if (!parsed.success) return { mid_price: "0" };
+  return parsed.data;
 }
 
+const spreadResponseSchema = z.object({ spread: strDefault("0") });
 export function validateSpreadResponse(raw: unknown): { spread: string } {
-  if (!isRecord(raw)) return { spread: "0" };
-  return { spread: typeof raw.spread === "string" ? raw.spread : "0" };
+  const parsed = spreadResponseSchema.safeParse(raw);
+  if (!parsed.success) return { spread: "0" };
+  return parsed.data;
 }
 
+const lastTradePriceResponseSchema = z.object({
+  price: strDefault("0.5"),
+  side: strDefault(""),
+});
 export function validateLastTradePriceResponse(raw: unknown): { price: string; side: string } {
-  if (!isRecord(raw)) return { price: "0.5", side: "" };
-  return {
-    price: typeof raw.price === "string" ? raw.price : "0.5",
-    side: typeof raw.side === "string" ? raw.side : "",
-  };
+  const parsed = lastTradePriceResponseSchema.safeParse(raw);
+  if (!parsed.success) return { price: "0.5", side: "" };
+  return parsed.data;
 }
 
+const tickSizeResponseSchema = z.object({ minimum_tick_size: numDefault(0.01) });
 export function validateTickSizeResponse(raw: unknown): { minimum_tick_size: number } {
-  if (!isRecord(raw)) return { minimum_tick_size: 0.01 };
-  return { minimum_tick_size: typeof raw.minimum_tick_size === "number" ? raw.minimum_tick_size : 0.01 };
+  const parsed = tickSizeResponseSchema.safeParse(raw);
+  if (!parsed.success) return { minimum_tick_size: 0.01 };
+  return parsed.data;
 }
 
+const feeRateResponseSchema = z.object({ base_fee: numDefault(0) });
 export function validateFeeRateResponse(raw: unknown): { base_fee: number } {
-  if (!isRecord(raw)) return { base_fee: 0 };
-  return { base_fee: typeof raw.base_fee === "number" ? raw.base_fee : 0 };
+  const parsed = feeRateResponseSchema.safeParse(raw);
+  if (!parsed.success) return { base_fee: 0 };
+  return parsed.data;
 }
+
+// ── Array-root validators ──────────────────────────────────────────────
 
 export function validateSendOrdersResponse(raw: unknown): SendOrderResponse[] {
   if (!Array.isArray(raw)) throw new Error("Expected orders response array");
@@ -183,11 +313,15 @@ export function validateBatchOrderBooksResponse(raw: unknown): OrderBookSummary[
   return raw.map(validateOrderBookResponse);
 }
 
-export function validateBatchPricesResponse(raw: unknown): Record<string, Record<string, number>> {
-  if (!isRecord(raw)) return {};
+/**
+ * token → side → numeric price. Non-record root → {}; per token, non-record
+ * value is skipped; per side, non-number price is skipped. Built element-wise,
+ * so a token with no numeric sides yields `{}` (matching the original).
+ */
+const batchPricesSchema = z.record(z.string(), z.unknown()).transform((raw) => {
   const result: Record<string, Record<string, number>> = {};
   for (const [tokenId, sides] of Object.entries(raw)) {
-    if (isRecord(sides)) {
+    if (typeof sides === "object" && sides !== null && !Array.isArray(sides)) {
       result[tokenId] = {};
       for (const [side, price] of Object.entries(sides as Record<string, unknown>)) {
         if (typeof price === "number") result[tokenId][side] = price;
@@ -195,36 +329,55 @@ export function validateBatchPricesResponse(raw: unknown): Record<string, Record
     }
   }
   return result;
+});
+
+export function validateBatchPricesResponse(raw: unknown): Record<string, Record<string, number>> {
+  const parsed = batchPricesSchema.safeParse(raw);
+  if (!parsed.success) return {};
+  return parsed.data;
 }
 
-export function validateBatchMidpointsResponse(raw: unknown): Record<string, string> {
-  if (!isRecord(raw)) return {};
+const batchStringMapSchema = z.record(z.string(), z.unknown()).transform((raw) => {
   const result: Record<string, string> = {};
-  for (const [tokenId, price] of Object.entries(raw)) {
-    if (typeof price === "string") result[tokenId] = price;
+  for (const [tokenId, value] of Object.entries(raw)) {
+    if (typeof value === "string") result[tokenId] = value;
   }
   return result;
+});
+
+export function validateBatchMidpointsResponse(raw: unknown): Record<string, string> {
+  const parsed = batchStringMapSchema.safeParse(raw);
+  if (!parsed.success) return {};
+  return parsed.data;
 }
 
 export function validateBatchSpreadsResponse(raw: unknown): Record<string, string> {
-  if (!isRecord(raw)) return {};
-  const result: Record<string, string> = {};
-  for (const [tokenId, spread] of Object.entries(raw)) {
-    if (typeof spread === "string") result[tokenId] = spread;
-  }
-  return result;
+  const parsed = batchStringMapSchema.safeParse(raw);
+  if (!parsed.success) return {};
+  return parsed.data;
 }
+
+const lastTradePriceEntrySchema: z.ZodType<LastTradePrice> = z.unknown().transform((item) => {
+  const r = item as Record<string, unknown>;
+  return {
+    token_id: typeof r.token_id === "string" ? r.token_id : "",
+    price: typeof r.price === "string" ? r.price : "0.5",
+    side: r.side === "BUY" || r.side === "SELL" ? r.side : "BUY",
+  };
+});
 
 export function validateBatchLastTradesPricesResponse(raw: unknown): LastTradePrice[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter(isRecord).map((item) => ({
-    token_id: typeof item.token_id === "string" ? item.token_id : "",
-    price: typeof item.price === "string" ? item.price : "0.5",
-    side: (item.side === "BUY" || item.side === "SELL") ? item.side : "BUY",
-  }));
+  return raw
+    .filter((item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null && !Array.isArray(item),
+    )
+    .map((item) => lastTradePriceEntrySchema.parse(item));
 }
 
+const orderScoringResponseSchema = z.object({ scoring: isTrue });
 export function validateOrderScoringResponse(raw: unknown): OrderScoringResponse {
-  if (!isRecord(raw)) return { scoring: false };
-  return { scoring: raw.scoring === true };
+  const parsed = orderScoringResponseSchema.safeParse(raw);
+  if (!parsed.success) return { scoring: false };
+  return parsed.data;
 }

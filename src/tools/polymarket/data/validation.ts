@@ -1,252 +1,379 @@
 /**
- * Runtime validators for Polymarket Data API responses.
+ * Runtime validators for Polymarket Data API responses (Zod rewrite).
+ *
+ * codex-002 Phase 2 (full uniformity): these gate the SHAPE of positions,
+ * activity, trades, holders, leaderboard, and accounting responses at the HTTP
+ * boundary before the values feed wallet/position views and bot decisions. The
+ * Data API is LENIENT-DEFAULTING at the FIELD level — every field falls back to
+ * a safe default (`""`, `0`, `null`, `false`, `[]`) rather than rejecting, so a
+ * single malformed field never fails the whole response. The ROOT behaviour is
+ * MIXED per validator and preserved exactly:
+ *   - array-root list validators (positions, closed positions, activity, trades,
+ *     holders, leaderboard, market positions) throw a plain `Error` with the
+ *     ORIGINAL message when the root is not an array;
+ *   - builder leaderboard / builder volume / open-interest map their element
+ *     defaults and NEVER throw (a non-array root collapses to `[]`; per the
+ *     original, open-interest still throws on a non-array root);
+ *   - live-volume / value / traded NEVER throw and return their scalar default
+ *     on a bad root.
+ *
+ * Numeric note (Zod 4 gotcha): the original `num()` accepts any
+ * `typeof v === "number" && !Number.isNaN(v)` (INCLUDING ±Infinity) and the
+ * loose `typeof x === "number" ? x : 0` fields ALSO accept NaN. `z.number()`
+ * rejects ±Infinity, so it is NOT used here — `numDefault` (NaN-rejecting,
+ * Infinity-accepting) and `numLoose` (accepts NaN too) reproduce the two exact
+ * original guards.
+ *
+ * The schemas are intentionally NOT the type source of truth — the wire
+ * interfaces in `types.ts` remain canonical, and each exported validator keeps
+ * its declared return type so `tsc` verifies the inferred schema output is
+ * assignable to that interface. Exported function names, signatures, and return
+ * types are preserved so `client.ts` call sites stay unchanged.
  */
 
-import { ErrorCodes } from "../../../errors.js";
-import { isRecord, createFieldValidators } from "../../../utils/validation-helpers.js";
+import { z } from "zod";
+import { isRecord } from "../../../utils/validation-helpers.js";
+import { zOptionalString } from "../../../utils/zod-validation-helpers.js";
 import type {
   DataPosition, DataClosedPosition, DataActivity, DataTrade,
-  DataMetaHolder, DataOpenInterest, DataLiveVolume,
+  DataHolder, DataMetaHolder, DataOpenInterest, DataLiveVolume,
   DataLeaderboardEntry, DataBuilderEntry, DataBuilderVolumeEntry,
-  DataMetaMarketPosition,
+  DataMarketPositionV1, DataMetaMarketPosition,
 } from "./types.js";
 
-const { asOptionalString, asOptionalNumber } = createFieldValidators(
-  ErrorCodes.POLYMARKET_API_ERROR, "Polymarket Data",
-);
+// ── Lenient field primitives (mirror the hand-written guards exactly) ──
+//
+// `zOptStrNull` reproduces `asOptionalString(x) ?? null`: a non-empty string
+// passes through, everything else becomes `null`.
+const zOptStrNull = zOptionalString.transform((v) => v ?? null);
 
-function num(v: unknown, def = 0): number {
-  return typeof v === "number" && !Number.isNaN(v) ? v : def;
-}
+/** `str(v, def)`: `typeof v === "string" ? v : def` (accepts empty string). */
+const strDefault = (def = "") =>
+  z.unknown().transform((v) => (typeof v === "string" ? v : def));
 
-function str(v: unknown, def = ""): string {
-  return typeof v === "string" ? v : def;
-}
+/**
+ * `num(v, def)`: `typeof v === "number" && !Number.isNaN(v) ? v : def`.
+ * Accepts ±Infinity, rejects NaN — NOT `z.number()`.
+ */
+const numDefault = (def = 0) =>
+  z.unknown().transform((v) => (typeof v === "number" && !Number.isNaN(v) ? v : def));
+
+/**
+ * Loose numeric guard `typeof x === "number" ? x : def` — used by the original
+ * for `outcomeIndex`, `timestamp`, `activeUsers`, and `traded`. This ACCEPTS
+ * NaN (no `Number.isNaN` check), so it must stay distinct from `numDefault`.
+ */
+const numLoose = (def = 0) =>
+  z.unknown().transform((v) => (typeof v === "number" ? v : def));
+
+/** `v === true` — only the literal boolean `true` is truthy. */
+const isTrue = z.unknown().transform((v) => v === true);
+
+/** `side === "BUY" || side === "SELL" ? side : null` (activity side). */
+const activitySideSchema = z
+  .unknown()
+  .transform((v) => (v === "BUY" || v === "SELL" ? v : null));
+
+/** `side === "SELL" ? "SELL" : "BUY"` (trade side). */
+const tradeSideSchema = z.unknown().transform((v) => (v === "SELL" ? "SELL" : "BUY"));
+
+// ── Positions ──────────────────────────────────────────────────────────
+
+const positionSchema: z.ZodType<DataPosition> = z.object({
+  proxyWallet: strDefault(),
+  asset: strDefault(),
+  conditionId: strDefault(),
+  size: numDefault(),
+  avgPrice: numDefault(),
+  initialValue: numDefault(),
+  currentValue: numDefault(),
+  cashPnl: numDefault(),
+  percentPnl: numDefault(),
+  totalBought: numDefault(),
+  realizedPnl: numDefault(),
+  curPrice: numDefault(),
+  redeemable: isTrue,
+  mergeable: isTrue,
+  title: zOptStrNull,
+  slug: zOptStrNull,
+  eventSlug: zOptStrNull,
+  outcome: zOptStrNull,
+  outcomeIndex: numLoose(),
+  endDate: zOptStrNull,
+  negativeRisk: isTrue,
+});
 
 export function validatePositionsResponse(raw: unknown): DataPosition[] {
   if (!Array.isArray(raw)) throw new Error("Expected positions array");
   return raw.map((r) => {
     if (!isRecord(r)) throw new Error("position must be an object");
-    return {
-      proxyWallet: str(r.proxyWallet),
-      asset: str(r.asset),
-      conditionId: str(r.conditionId),
-      size: num(r.size),
-      avgPrice: num(r.avgPrice),
-      initialValue: num(r.initialValue),
-      currentValue: num(r.currentValue),
-      cashPnl: num(r.cashPnl),
-      percentPnl: num(r.percentPnl),
-      totalBought: num(r.totalBought),
-      realizedPnl: num(r.realizedPnl),
-      curPrice: num(r.curPrice),
-      redeemable: r.redeemable === true,
-      mergeable: r.mergeable === true,
-      title: asOptionalString(r.title) ?? null,
-      slug: asOptionalString(r.slug) ?? null,
-      eventSlug: asOptionalString(r.eventSlug) ?? null,
-      outcome: asOptionalString(r.outcome) ?? null,
-      outcomeIndex: typeof r.outcomeIndex === "number" ? r.outcomeIndex : 0,
-      endDate: asOptionalString(r.endDate) ?? null,
-      negativeRisk: r.negativeRisk === true,
-    };
+    return positionSchema.parse(r);
   });
 }
+
+// ── Closed positions ────────────────────────────────────────────────────
+
+const closedPositionSchema: z.ZodType<DataClosedPosition> = z.object({
+  proxyWallet: strDefault(),
+  asset: strDefault(),
+  conditionId: strDefault(),
+  avgPrice: numDefault(),
+  totalBought: numDefault(),
+  realizedPnl: numDefault(),
+  curPrice: numDefault(),
+  timestamp: numLoose(),
+  title: zOptStrNull,
+  slug: zOptStrNull,
+  eventSlug: zOptStrNull,
+  outcome: zOptStrNull,
+  outcomeIndex: numLoose(),
+  endDate: zOptStrNull,
+});
 
 export function validateClosedPositionsResponse(raw: unknown): DataClosedPosition[] {
   if (!Array.isArray(raw)) throw new Error("Expected closed positions array");
   return raw.map((r) => {
     if (!isRecord(r)) throw new Error("closed position must be an object");
-    return {
-      proxyWallet: str(r.proxyWallet),
-      asset: str(r.asset),
-      conditionId: str(r.conditionId),
-      avgPrice: num(r.avgPrice),
-      totalBought: num(r.totalBought),
-      realizedPnl: num(r.realizedPnl),
-      curPrice: num(r.curPrice),
-      timestamp: typeof r.timestamp === "number" ? r.timestamp : 0,
-      title: asOptionalString(r.title) ?? null,
-      slug: asOptionalString(r.slug) ?? null,
-      eventSlug: asOptionalString(r.eventSlug) ?? null,
-      outcome: asOptionalString(r.outcome) ?? null,
-      outcomeIndex: typeof r.outcomeIndex === "number" ? r.outcomeIndex : 0,
-      endDate: asOptionalString(r.endDate) ?? null,
-    };
+    return closedPositionSchema.parse(r);
   });
 }
+
+// ── Activity ────────────────────────────────────────────────────────────
+
+const activitySchema: z.ZodType<DataActivity> = z.object({
+  proxyWallet: strDefault(),
+  timestamp: numLoose(),
+  conditionId: strDefault(),
+  // Original: `str(r.type, "TRADE") as DataActivity["type"]` — any string passes
+  // through (cast), missing/non-string -> "TRADE". Preserve the loose cast.
+  type: z
+    .unknown()
+    .transform((v) => (typeof v === "string" ? v : "TRADE") as DataActivity["type"]),
+  size: numDefault(),
+  usdcSize: numDefault(),
+  price: numDefault(),
+  asset: strDefault(),
+  side: activitySideSchema,
+  outcomeIndex: numLoose(),
+  title: zOptStrNull,
+  slug: zOptStrNull,
+  outcome: zOptStrNull,
+  transactionHash: zOptStrNull,
+});
 
 export function validateActivityResponse(raw: unknown): DataActivity[] {
   if (!Array.isArray(raw)) throw new Error("Expected activity array");
   return raw.map((r) => {
     if (!isRecord(r)) throw new Error("activity must be an object");
-    return {
-      proxyWallet: str(r.proxyWallet),
-      timestamp: typeof r.timestamp === "number" ? r.timestamp : 0,
-      conditionId: str(r.conditionId),
-      type: str(r.type, "TRADE") as DataActivity["type"],
-      size: num(r.size),
-      usdcSize: num(r.usdcSize),
-      price: num(r.price),
-      asset: str(r.asset),
-      side: r.side === "BUY" || r.side === "SELL" ? r.side : null,
-      outcomeIndex: typeof r.outcomeIndex === "number" ? r.outcomeIndex : 0,
-      title: asOptionalString(r.title) ?? null,
-      slug: asOptionalString(r.slug) ?? null,
-      outcome: asOptionalString(r.outcome) ?? null,
-      transactionHash: asOptionalString(r.transactionHash) ?? null,
-    };
+    return activitySchema.parse(r);
   });
 }
+
+// ── Trades ──────────────────────────────────────────────────────────────
+
+const tradeSchema: z.ZodType<DataTrade> = z.object({
+  proxyWallet: strDefault(),
+  side: tradeSideSchema,
+  asset: strDefault(),
+  conditionId: strDefault(),
+  size: numDefault(),
+  price: numDefault(),
+  timestamp: numLoose(),
+  title: zOptStrNull,
+  slug: zOptStrNull,
+  outcome: zOptStrNull,
+  outcomeIndex: numLoose(),
+  transactionHash: zOptStrNull,
+  name: zOptStrNull,
+  pseudonym: zOptStrNull,
+  profileImage: zOptStrNull,
+});
 
 export function validateTradesResponse(raw: unknown): DataTrade[] {
   if (!Array.isArray(raw)) throw new Error("Expected trades array");
   return raw.map((r) => {
     if (!isRecord(r)) throw new Error("trade must be an object");
-    return {
-      proxyWallet: str(r.proxyWallet),
-      side: r.side === "SELL" ? "SELL" : "BUY",
-      asset: str(r.asset),
-      conditionId: str(r.conditionId),
-      size: num(r.size),
-      price: num(r.price),
-      timestamp: typeof r.timestamp === "number" ? r.timestamp : 0,
-      title: asOptionalString(r.title) ?? null,
-      slug: asOptionalString(r.slug) ?? null,
-      outcome: asOptionalString(r.outcome) ?? null,
-      outcomeIndex: typeof r.outcomeIndex === "number" ? r.outcomeIndex : 0,
-      transactionHash: asOptionalString(r.transactionHash) ?? null,
-      name: asOptionalString(r.name) ?? null,
-      pseudonym: asOptionalString(r.pseudonym) ?? null,
-      profileImage: asOptionalString(r.profileImage) ?? null,
-    };
+    return tradeSchema.parse(r);
   });
 }
+
+// ── Holders ─────────────────────────────────────────────────────────────
+
+// Default for a non-record holder element (matches the original's inline default).
+const holderDefault: DataHolder = {
+  proxyWallet: "", bio: null, asset: "", pseudonym: null, amount: 0,
+  displayUsernamePublic: false, outcomeIndex: 0, name: null, profileImage: null,
+};
+
+const holderSchema: z.ZodType<DataHolder> = z.object({
+  proxyWallet: strDefault(),
+  bio: zOptStrNull,
+  asset: strDefault(),
+  pseudonym: zOptStrNull,
+  amount: numDefault(),
+  displayUsernamePublic: isTrue,
+  outcomeIndex: numLoose(),
+  name: zOptStrNull,
+  profileImage: zOptStrNull,
+});
+
+const metaHolderSchema: z.ZodType<DataMetaHolder> = z.object({
+  token: strDefault(),
+  // Non-array -> []; array -> element-mapped: non-record element -> holderDefault.
+  holders: z.unknown().transform((v) =>
+    Array.isArray(v) ? v.map((h) => (isRecord(h) ? holderSchema.parse(h) : holderDefault)) : [],
+  ),
+});
 
 export function validateHoldersResponse(raw: unknown): DataMetaHolder[] {
   if (!Array.isArray(raw)) throw new Error("Expected holders array");
   return raw.map((r) => {
     if (!isRecord(r)) throw new Error("meta holder must be an object");
-    return {
-      token: str(r.token),
-      holders: Array.isArray(r.holders) ? r.holders.map((h: unknown) => {
-        if (!isRecord(h)) return { proxyWallet: "", bio: null, asset: "", pseudonym: null, amount: 0, displayUsernamePublic: false, outcomeIndex: 0, name: null, profileImage: null };
-        return {
-          proxyWallet: str(h.proxyWallet),
-          bio: asOptionalString(h.bio) ?? null,
-          asset: str(h.asset),
-          pseudonym: asOptionalString(h.pseudonym) ?? null,
-          amount: num(h.amount),
-          displayUsernamePublic: h.displayUsernamePublic === true,
-          outcomeIndex: typeof h.outcomeIndex === "number" ? h.outcomeIndex : 0,
-          name: asOptionalString(h.name) ?? null,
-          profileImage: asOptionalString(h.profileImage) ?? null,
-        };
-      }) : [],
-    };
+    return metaHolderSchema.parse(r);
   });
 }
 
+// ── Open interest (throws on non-array root; per-element default) ───────
+
+const openInterestDefault: DataOpenInterest = { market: "", value: 0 };
+const openInterestSchema: z.ZodType<DataOpenInterest> = z.object({
+  market: strDefault(),
+  value: numDefault(),
+});
+
 export function validateOpenInterestResponse(raw: unknown): DataOpenInterest[] {
   if (!Array.isArray(raw)) throw new Error("Expected OI array");
-  return raw.map((r) => {
-    if (!isRecord(r)) return { market: "", value: 0 };
-    return { market: str(r.market), value: num(r.value) };
-  });
+  return raw.map((r) => (isRecord(r) ? openInterestSchema.parse(r) : openInterestDefault));
 }
+
+// ── Live volume (never throws; default on bad root/first element) ───────
+
+const liveVolumeMarketSchema = z.object({
+  market: strDefault(),
+  value: numDefault(),
+});
 
 export function validateLiveVolumeResponse(raw: unknown): DataLiveVolume {
   if (!Array.isArray(raw) || !isRecord(raw[0])) return { total: 0, markets: [] };
   const r = raw[0];
   return {
-    total: num(r.total),
-    markets: Array.isArray(r.markets) ? r.markets.map((m: unknown) => {
-      if (!isRecord(m)) return { market: "", value: 0 };
-      return { market: str(m.market), value: num(m.value) };
-    }) : [],
+    total: numDefault().parse(r.total),
+    markets: Array.isArray(r.markets)
+      ? r.markets.map((m) => (isRecord(m) ? liveVolumeMarketSchema.parse(m) : { market: "", value: 0 }))
+      : [],
   };
 }
+
+// ── Leaderboard (throws on non-array root) ──────────────────────────────
+
+const leaderboardEntrySchema: z.ZodType<DataLeaderboardEntry> = z.object({
+  rank: strDefault(),
+  proxyWallet: strDefault(),
+  userName: zOptStrNull,
+  vol: numDefault(),
+  pnl: numDefault(),
+  profileImage: zOptStrNull,
+  xUsername: zOptStrNull,
+  verifiedBadge: isTrue,
+});
 
 export function validateLeaderboardResponse(raw: unknown): DataLeaderboardEntry[] {
   if (!Array.isArray(raw)) throw new Error("Expected leaderboard array");
   return raw.map((r) => {
     if (!isRecord(r)) throw new Error("leaderboard entry must be an object");
-    return {
-      rank: str(r.rank),
-      proxyWallet: str(r.proxyWallet),
-      userName: asOptionalString(r.userName) ?? null,
-      vol: num(r.vol),
-      pnl: num(r.pnl),
-      profileImage: asOptionalString(r.profileImage) ?? null,
-      xUsername: asOptionalString(r.xUsername) ?? null,
-      verifiedBadge: r.verifiedBadge === true,
-    };
+    return leaderboardEntrySchema.parse(r);
   });
 }
+
+// ── Builder leaderboard (never throws; [] on bad root) ──────────────────
+
+const builderEntryDefault: DataBuilderEntry = {
+  rank: "", builder: "", volume: 0, activeUsers: 0, verified: false, builderLogo: null,
+};
+const builderEntrySchema: z.ZodType<DataBuilderEntry> = z.object({
+  rank: strDefault(),
+  builder: strDefault(),
+  volume: numDefault(),
+  activeUsers: numLoose(),
+  verified: isTrue,
+  builderLogo: zOptStrNull,
+});
 
 export function validateBuilderLeaderboardResponse(raw: unknown): DataBuilderEntry[] {
   if (!Array.isArray(raw)) return [];
-  return raw.map((r) => {
-    if (!isRecord(r)) return { rank: "", builder: "", volume: 0, activeUsers: 0, verified: false, builderLogo: null };
-    return {
-      rank: str(r.rank),
-      builder: str(r.builder),
-      volume: num(r.volume),
-      activeUsers: typeof r.activeUsers === "number" ? r.activeUsers : 0,
-      verified: r.verified === true,
-      builderLogo: asOptionalString(r.builderLogo) ?? null,
-    };
-  });
+  return raw.map((r) => (isRecord(r) ? builderEntrySchema.parse(r) : builderEntryDefault));
 }
+
+// ── Builder volume (never throws; [] on bad root) ──────────────────────
+
+const builderVolumeDefault: DataBuilderVolumeEntry = {
+  dt: "", builder: "", builderLogo: null, verified: false, volume: 0, activeUsers: 0, rank: "",
+};
+const builderVolumeSchema: z.ZodType<DataBuilderVolumeEntry> = z.object({
+  dt: strDefault(),
+  builder: strDefault(),
+  builderLogo: zOptStrNull,
+  verified: isTrue,
+  volume: numDefault(),
+  activeUsers: numLoose(),
+  rank: strDefault(),
+});
 
 export function validateBuilderVolumeResponse(raw: unknown): DataBuilderVolumeEntry[] {
   if (!Array.isArray(raw)) return [];
-  return raw.map((r) => {
-    if (!isRecord(r)) return { dt: "", builder: "", builderLogo: null, verified: false, volume: 0, activeUsers: 0, rank: "" };
-    return {
-      dt: str(r.dt),
-      builder: str(r.builder),
-      builderLogo: asOptionalString(r.builderLogo) ?? null,
-      verified: r.verified === true,
-      volume: num(r.volume),
-      activeUsers: typeof r.activeUsers === "number" ? r.activeUsers : 0,
-      rank: str(r.rank),
-    };
-  });
+  return raw.map((r) => (isRecord(r) ? builderVolumeSchema.parse(r) : builderVolumeDefault));
 }
+
+// ── Value / traded scalars (never throw) ────────────────────────────────
 
 export function validateValueResponse(raw: unknown): { user: string; value: number } {
   if (Array.isArray(raw) && isRecord(raw[0])) {
-    return { user: str(raw[0].user), value: num(raw[0].value) };
+    return { user: strDefault().parse(raw[0].user), value: numDefault().parse(raw[0].value) };
   }
-  if (isRecord(raw)) return { user: str(raw.user), value: num(raw.value) };
+  if (isRecord(raw)) return { user: strDefault().parse(raw.user), value: numDefault().parse(raw.value) };
   return { user: "", value: 0 };
 }
 
 export function validateTradedResponse(raw: unknown): { user: string; traded: number } {
-  if (isRecord(raw)) return { user: str(raw.user), traded: typeof raw.traded === "number" ? raw.traded : 0 };
+  if (isRecord(raw)) return { user: strDefault().parse(raw.user), traded: numLoose().parse(raw.traded) };
   return { user: "", traded: 0 };
 }
 
+// ── Market positions (throws on non-array root; per-element default) ────
+
+const marketPositionDefault: DataMarketPositionV1 = {
+  proxyWallet: "", name: null, profileImage: null, verified: false, asset: "", conditionId: "",
+  avgPrice: 0, size: 0, currPrice: 0, currentValue: 0, cashPnl: 0, totalBought: 0,
+  realizedPnl: 0, totalPnl: 0, outcome: null, outcomeIndex: 0,
+};
+const marketPositionSchema: z.ZodType<DataMarketPositionV1> = z.object({
+  proxyWallet: strDefault(),
+  name: zOptStrNull,
+  profileImage: zOptStrNull,
+  verified: isTrue,
+  asset: strDefault(),
+  conditionId: strDefault(),
+  avgPrice: numDefault(),
+  size: numDefault(),
+  currPrice: numDefault(),
+  currentValue: numDefault(),
+  cashPnl: numDefault(),
+  totalBought: numDefault(),
+  realizedPnl: numDefault(),
+  totalPnl: numDefault(),
+  outcome: zOptStrNull,
+  outcomeIndex: numLoose(),
+});
+
+const metaMarketPositionDefault: DataMetaMarketPosition = { token: "", positions: [] };
+const metaMarketPositionSchema: z.ZodType<DataMetaMarketPosition> = z.object({
+  token: strDefault(),
+  positions: z.unknown().transform((v) =>
+    Array.isArray(v) ? v.map((p) => (isRecord(p) ? marketPositionSchema.parse(p) : marketPositionDefault)) : [],
+  ),
+});
+
 export function validateMarketPositionsResponse(raw: unknown): DataMetaMarketPosition[] {
   if (!Array.isArray(raw)) throw new Error("Expected market positions array");
-  return raw.map((r) => {
-    if (!isRecord(r)) return { token: "", positions: [] };
-    return {
-      token: str(r.token),
-      positions: Array.isArray(r.positions) ? r.positions.map((p: unknown) => {
-        if (!isRecord(p)) return { proxyWallet: "", name: null, profileImage: null, verified: false, asset: "", conditionId: "", avgPrice: 0, size: 0, currPrice: 0, currentValue: 0, cashPnl: 0, totalBought: 0, realizedPnl: 0, totalPnl: 0, outcome: null, outcomeIndex: 0 };
-        return {
-          proxyWallet: str(p.proxyWallet), name: asOptionalString(p.name) ?? null,
-          profileImage: asOptionalString(p.profileImage) ?? null, verified: p.verified === true,
-          asset: str(p.asset), conditionId: str(p.conditionId),
-          avgPrice: num(p.avgPrice), size: num(p.size), currPrice: num(p.currPrice),
-          currentValue: num(p.currentValue), cashPnl: num(p.cashPnl),
-          totalBought: num(p.totalBought), realizedPnl: num(p.realizedPnl),
-          totalPnl: num(p.totalPnl), outcome: asOptionalString(p.outcome) ?? null,
-          outcomeIndex: typeof p.outcomeIndex === "number" ? p.outcomeIndex : 0,
-        };
-      }) : [],
-    };
-  });
+  return raw.map((r) => (isRecord(r) ? metaMarketPositionSchema.parse(r) : metaMarketPositionDefault));
 }
