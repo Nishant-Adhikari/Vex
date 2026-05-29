@@ -86,7 +86,7 @@ A doc is **stale** when any path in its `stale_when_paths_change` has changed si
 
 ## Conventions for round-N audit agents
 
-Round 1 = `modules/vex-agent/*`. Round 2 = `modules/src-root/*` + Stage-1/2 refresh. Round 3 = `modules/vex-app/*` deep + dedicated `flows/*` + `boundaries/*` (done, 041ce57). Round 4 = independent Codex audit (5 subagents) → Bundle A fixes (F-S3 lock scrub, F-S5 document_delete gate, F11 sync worker) via `/harness`-style Codex gating; index refreshed. Remaining open: F4, F5, F6, F10-KDF, F12, FINDING-codex-001/002/003 (candidate Bundle B).
+Round 1 = `modules/vex-agent/*`. Round 2 = `modules/src-root/*` + Stage-1/2 refresh. Round 3 = `modules/vex-app/*` deep + dedicated `flows/*` + `boundaries/*` (done, 041ce57). Round 4 = independent Codex audit (5 subagents) → Bundle A fixes (F-S3 lock scrub, F-S5 document_delete gate, F11 sync worker) via `/harness`-style Codex gating; index refreshed. Remaining open: F10-KDF-OWASP (vault+keystore 2^17), F12 (updater), FINDING-codex-003 (reembed runtime trigger).
 
 Agents:
 - Use `general-purpose` subagent type (have `Write` to land directly here).

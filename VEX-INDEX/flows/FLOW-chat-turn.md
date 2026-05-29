@@ -11,7 +11,7 @@ paths:
   - src/vex-agent/engine/ingress.ts
   - src/vex-agent/engine/core/turn.ts
   - src/vex-agent/engine/core/turn-loop.ts
-source_commit: 85ed941
+source_commit: e02f73b
 indexed_at: 2026-05-29
 stale_when_paths_change:
   - vex-app/src/renderer/features/appShell/SessionComposer.tsx
@@ -48,7 +48,7 @@ User types in `SessionComposer` and presses Enter (or hits Submit). Active sessi
 ## Preconditions
 - `setup-complete` marker present; renderer routed past `splash/systemCheck/docker/compose/migrations/wizard/unlock`.
 - Vault unlocked, so `OPENROUTER_API_KEY` is in `process.env` (F1 boot-load + post-onboarding overwrite handles `.env`-side keys).
-- `inference/registry.ts resolveProvider()` returns non-null. F4 caveat: `OpenRouterProvider.loadConfig()` calls models API every turn; transient API failure can still surface as `provider.unavailable`.
+- `inference/registry.ts resolveProvider()` returns non-null. F4 FIXED: `OpenRouterProvider.loadConfig()` is now cached (1h TTL) and serves the stale config on a transient `/models` failure, so `provider.unavailable` now only surfaces on a genuine first-fetch failure or a model absent from the catalog.
 - ADR-0001: model is GLOBAL — handler reads `process.env.AGENT_MODEL`, not `sessions.model_id`.
 
 ## Steps
@@ -81,10 +81,10 @@ User types in `SessionComposer` and presses Enter (or hits Submit). Active sessi
 - `module.vex-app.main-ipc-engine-orchestration` — `CAP-vexapp-chat-submit`, `CAP-vexapp-chat-cancel`, `CAP-vexapp-ipc-cancel-register`
 - `module.vex-app.main-agent-bridge` — `CAP-vexapp-bridge-publish-stream`, `CAP-vexapp-bridge-publish-transcript`
 - `module.vex-agent.engine-core` — `CAP-engine-execute-turn`, `CAP-engine-run-turn-loop`
-- `module.vex-agent.inference` — F1 evidence (resolveProvider gates by env), F4 caveat (loadConfig per turn)
+- `module.vex-agent.inference` — F1 evidence (resolveProvider gates by env), F4 fixed (loadConfig cached)
 
 ## Known failure modes
-- **Provider unavailable.** Vault locked OR `.env` missing `AGENT_MODEL` OR OpenRouter models API transiently down → chat handler returns `provider.unavailable`. Renderer surfaces composer red banner ("No inference provider is available. Unlock Vex or complete provider setup, then retry.").
+- **Provider unavailable.** Vault locked OR `.env` missing `AGENT_MODEL` OR genuine first-fetch `/models` failure (no last-good config) OR model absent from the catalog → chat handler returns `provider.unavailable`. F4 FIXED: a transient `/models` failure with a cached last-good config now serves stale (1h TTL) and no longer trips this. Renderer surfaces composer red banner ("No inference provider is available. Unlock Vex or complete provider setup, then retry.").
 - **Cancellation.** User triggers cancel → `vex:cancel` invocation aborts the AbortController → engine receives signal → turn loop breaks at next yield → `appendMessage("cancelled")` → transcript refresh.
 - **Sender mismatch.** Trusted-sender check in `registerHandler` rejects renderer that didn't originate from the privileged window.
 - **F5 RESOLVED (Bundle B).** `EV.engine.controlState` now reaches the renderer via preload `onControlState` + `useControlStateLiveSync` (mounted in `SessionPanel`), which invalidates `runtimeKeys.state` on each event (30s fallback for missed events). Runtime status changes (pause/resume/stop) are pushed instead of poll-only. Chat itself was always unaffected.

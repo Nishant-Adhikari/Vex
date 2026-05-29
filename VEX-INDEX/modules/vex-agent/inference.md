@@ -3,8 +3,8 @@ id: module.vex-agent.inference
 kind: module
 paths:
   - "src/vex-agent/inference/**"
-source_commit: dee0d08
-indexed_at: 2026-05-28
+source_commit: e02f73b
+indexed_at: 2026-05-29
 stale_when_paths_change:
   - "src/vex-agent/inference/**"
   - "src/lib/agent-config.ts"
@@ -73,8 +73,9 @@ No DB state. No Zustand. No filesystem writes.
 
 ## Boundary crossings
 
-- **Network (OpenRouter API)**: `loadConfig()` calls `client.models.list({})` on every
-  turn (see FINDING note under Open questions — F4). `chatCompletionStream` / `chatCompletion`
+- **Network (OpenRouter API)**: `loadConfig()` fetches `client.models.list({})` only when
+  the per-instance config cache is cold/stale (F4 fix — 1h TTL + stale-serve; see Open
+  questions — F4). `chatCompletionStream` / `chatCompletion`
   / `chatCompletionSimple` send completion requests. `getBalance()` calls
   `/credits` or `/keys/current` endpoints.
 - **`process.env` (read)**: all config reads are `process.env.*` at call time;
@@ -114,10 +115,16 @@ No DB state. No Zustand. No filesystem writes.
 - `src/vex-agent/inference/openrouter.ts:52 OpenRouterProvider` — sole `InferenceProvider`
   implementation. Constructor calls `loadEnvConfig()` and throws if `OPENROUTER_API_KEY`
   or `AGENT_MODEL` is absent. SDK client built in constructor with backoff retry config.
-- `src/vex-agent/inference/openrouter.ts:98 OpenRouterProvider.loadConfig` — fetches
-  `client.models.list({})` on EVERY CALL to resolve pricing. Returns `null` on
-  `model_not_found` (model absent from OpenRouter catalog) or `api_unreachable`
-  (network failure). **Called once per turn by all engine entry points** — see F4 note.
+- `src/vex-agent/inference/openrouter.ts:98 OpenRouterProvider.loadConfig` — memoizes the
+  last-good `InferenceConfig` on the instance (F4 fix). Fresh hit within
+  `MODEL_CONFIG_CACHE_TTL_MS` (1h) returns a shallow copy; concurrent callers dedup on one
+  in-flight fetch (resolves to the canonical ref, every return path hands out its own copy).
+  Raw `client.models.list({})` read extracted verbatim into private `_fetchConfig()` →
+  discriminated union `success | model_not_found | metadata_unavailable`. A transient
+  metadata failure WITH a last-good config serves the stale config and throttles the next
+  refetch (`MODEL_CONFIG_STALE_RETRY_MS` = 30s); a successful catalog that no longer lists
+  the model (delist) still returns `null`; first-fetch failure with no last-good → `null`.
+  **Called once per turn by all engine entry points; signature unchanged.**
 - `src/vex-agent/inference/openrouter.ts:162 OpenRouterProvider.chatCompletion` — non-streaming
   with tools; used by tool-calling round-trips and as the `bufferedFallback` path in the
   stream consumer.
@@ -174,8 +181,9 @@ No DB state. No Zustand. No filesystem writes.
   w.r.t. session. No session id, no wallet, no per-session model field. **ADR-0001 invariant:
   the provider is GLOBAL — any code adding a session-specific model field here is a divergence.**
 - `InferenceConfig` (`types.ts:12`) — snapshot produced by `loadConfig()`. Contains `model`,
-  `contextLimit`, `temperature`, `maxOutputTokens`, per-M pricing. Produced fresh per turn
-  from the models API; not cached between turns.
+  `contextLimit`, `temperature`, `maxOutputTokens`, per-M pricing. Memoized on the provider
+  instance with a 1h TTL (F4 fix); callers always receive a shallow copy so the cache cannot
+  be mutated. Refreshed from the models API on cold/stale fetch.
 - `EnvConfig` (`config.ts:31`) — raw env parse result. `agentProvider` is `ProviderType | null`
   (null = not set, auto-detect); `openrouterApiKey` and `agentModel` are `string | null`
   (null = absent, provider ctor will throw).
@@ -195,7 +203,8 @@ No DB state. No Zustand. No filesystem writes.
   concurrency dedup — `registry.ts:100 resolveProvider`
 - **CAP-inference-reset-provider**: Cache invalidation + generation bump for env change
   (F1 reconfigure path) — `registry.ts:134 resetProvider`
-- **CAP-inference-load-config**: Per-turn model metadata fetch from OpenRouter models API
+- **CAP-inference-load-config**: Instance-memoized model metadata fetch from OpenRouter
+  models API (1h TTL + stale-serve + concurrent dedup; F4 fix)
   — `openrouter.ts:98 OpenRouterProvider.loadConfig`
 - **CAP-inference-stream**: Abortable streaming completion with tool-call delta accumulation
   — `openrouter.ts:209 chatCompletionStream` + `stream-consumer.ts:137 runStreamingInference`
@@ -243,9 +252,12 @@ No DB state. No Zustand. No filesystem writes.
 4. `OpenRouterProvider` constructor: `loadEnvConfig()` again; throws if key/model absent.
    Builds `OpenRouter` SDK client with `retryConfig.strategy:"backoff"` + 5-min timeout.
 5. On resolve success and matching generation: `cachedProvider = provider`.
-6. Engine runner calls `provider.loadConfig()` (fresh every turn).
-7. `loadConfig()` calls `client.models.list({})` → finds model by id → extracts pricing.
-   Returns `null` on model-not-found or network error → engine returns `provider_unavailable`.
+6. Engine runner calls `provider.loadConfig()` (instance-memoized, 1h TTL — F4 fix).
+7. `loadConfig()` returns a shallow copy of the cached config on a fresh hit; on a cold/stale
+   fetch it calls `_fetchConfig()` (`client.models.list({})` → finds model by id → extracts
+   pricing). A transient metadata failure with a last-good config serves the stale copy (and
+   throttles the next refetch); a model delisted from the catalog or a first fetch with no
+   last-good returns `null` → engine returns `provider_unavailable`.
 8. `executeTurn` calls `runStreamingInference(provider, messages, tools, config, { onDelta, signal })`.
 9. `runStreamingInference`: checks pre-abort → calls `provider.chatCompletionStream(...)`.
    Streams chunks: dispatches `onDelta` for each (feeding `streamDeltaBus`), accumulates
@@ -313,7 +325,8 @@ No DB state. No Zustand. No filesystem writes.
   canonical wiring for same-session reconfigure correctness.
 - **vex-app coverage**: `audits/current/coverage-gaps.md#CAP-inference-resolve-provider`
 - **quality findings**: `audits/current/quality-findings.md#FINDING-inference-001` (F4 –
-  `loadConfig` models API hit every turn; see Open questions)
+  `loadConfig` models API hit every turn; **FIXED** in commit `e02f73b` — instance cache
+  + 1h TTL + stale-serve; see Open questions)
 - **related flows**: `flows/FLOW-chat-turn.md` (Round 2), `flows/FLOW-mission-start.md` (Round 2)
 
 ## Refresh triggers
@@ -331,12 +344,20 @@ No DB state. No Zustand. No filesystem writes.
 
 ## Open questions
 
-1. **F4 — `loadConfig()` models API hit every turn**: `OpenRouterProvider.loadConfig` calls
-   `client.models.list({})` on every invocation (no in-process cache). A transient network
-   failure or model de-listing returns `null`, causing a `provider_unavailable` error for
-   that turn. The pricing data could be cached with a TTL (e.g. `BALANCE_CACHE_TTL_MS = 30s`
-   already exists for balance). No per-session-model concern — caching would be global.
-   Not fixed; cross-reference `audits/current/quality-findings.md#FINDING-inference-001`.
+1. **F4 — `loadConfig()` models API hit every turn — FIXED (commit `e02f73b`)**:
+   `OpenRouterProvider.loadConfig` now memoizes the last-good `InferenceConfig` on the
+   instance: fresh hit within `MODEL_CONFIG_CACHE_TTL_MS` (1h) returns a shallow copy,
+   concurrent callers dedup on one in-flight fetch, and a transient `/models` metadata
+   failure with a last-good config serves the stale config + throttles the next refetch
+   (`MODEL_CONFIG_STALE_RETRY_MS` = 30s) — so an OpenRouter outage no longer kills every
+   turn. A model delisted from a successful catalog (or a first fetch with no last-good)
+   still returns `null` (stays loud). The raw `/models` read was extracted verbatim into
+   private `_fetchConfig()` (discriminated union `success | model_not_found |
+   metadata_unavailable`); the 6 per-turn call sites and the `loadConfig()` signature are
+   unchanged. The "no `resetProvider` on unlock" worry is moot — at boot (locked)
+   `resolveProvider` returns `null` (never cached), so the next resolve after unlock builds
+   a fresh instance; lock already calls `resetProvider` (Bundle A security-003).
+   Cross-reference `audits/current/quality-findings.md#FINDING-inference-001`.
 2. **Track 2 chunker bypasses registry singleton**: `callChunkerLLM` instantiates
    `new OpenRouterProvider()` directly rather than calling `resolveProvider()`. This means
    the chunker's provider instance is not invalidated by `resetProvider()` — a reconfigure
