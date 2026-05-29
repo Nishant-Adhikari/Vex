@@ -2,7 +2,7 @@
 id: index.boundaries
 kind: boundary-index
 paths: ["VEX-INDEX/boundaries/**/*.md", "VEX-INDEX/Structure.md"]
-source_commit: 85ed941
+source_commit: 1c858ee
 indexed_at: 2026-05-29
 stale_when_paths_change: ["VEX-INDEX/Structure.md", "VEX-INDEX/boundaries/**/*.md"]
 related: [index.structure, index.modules]
@@ -14,7 +14,7 @@ Boundary docs are the contract surfaces between Vex components. Use them to answ
 
 - `boundary.process-boundaries` — `boundaries/boundary-process.md`. Renderer ↔ preload ↔ main ↔ engine; what each owns; forbidden imports; F5/F6 RESOLVED (Bundle B) — control-state bridge (`onControlState`) wired through preload→bridge→renderer live-sync, 5s approvals poll retained as fast fallback; runtime bridge now uses per-action result unions (legacy `RuntimeRequestResult` removed).
 - `boundary.ipc-contracts` — `boundaries/boundary-ipc.md`. CH/EV/error/domains/cancel inventory; validation hops; reserved/unbridged constants.
-- `boundary.env-secrets` — `boundaries/boundary-env-secrets.md`. `.env` vs vault (N=65536) vs keystore (N=16384); lock semantics; F1 boot order; renderer secret discipline.
+- `boundary.env-secrets` — `boundaries/boundary-env-secrets.md`. `.env` vs vault + keystore (both N=131072, 2^17); lock semantics; F1 boot order; renderer secret discipline.
 - `boundary.database-contracts` — `boundaries/boundary-database.md`. Engine pool vs main raw `pg`; schema version 027 / 24 SQL files; mirror parity; ADR-0001 column contract.
 
 Open extensions (not yet written; capture under audits/current rather than new boundary docs unless they grow):

@@ -21,7 +21,7 @@ paths:
   - "src/tools/wallet/family.ts"
   - "src/tools/wallet/native-balances.ts"
   - "src/config/store.ts"
-source_commit: 53f1266
+source_commit: 1c858ee
 indexed_at: 2026-05-29
 stale_when_paths_change:
   - "src/lib/wallet.ts"
@@ -55,7 +55,7 @@ crosses the `src → renderer` boundary.
 ## Retrieval keywords
 
 - user wallet, hot wallet, keystore, EVM wallet, Solana wallet
-- AES-256-GCM, scrypt, KDF, N=16384, scrypt params, KDF params
+- AES-256-GCM, scrypt, KDF, N=131072 (2^17), OWASP scrypt, scrypt params, KDF params
 - wallet inventory, WalletInventoryEntry, per-family cap, multi-wallet
 - WalletResolution, session-scoped wallet, source session, fail-closed drift
 - isValidWalletId, path traversal guard, wallet id validation, WALLET_ID_PATTERN
@@ -99,7 +99,7 @@ crosses the `src → renderer` boundary.
 ### Keystore (EVM + shared crypto)
 
 - `src/tools/wallet/keystore.ts:10` `KeystoreV1` — on-disk format: version(1), ciphertext(base64), iv(12-byte base64), salt(32-byte base64), tag(16-byte GCM-auth base64), kdf(scrypt params).
-- `src/tools/wallet/keystore.ts:25` `KDF_PARAMS` — **N=2^14=16384, r=8, p=1, dkLen=32**. See Security note below.
+- `src/tools/wallet/keystore.ts:25` `KDF_PARAMS` — **N=2^17=131072, r=8, p=1, dkLen=32** (OWASP scrypt recommendation). See Security note below.
 - `src/tools/wallet/keystore.ts:33` `deriveKey` — `scryptSync(password, salt, dkLen, {N,r,p})`.
 - `src/tools/wallet/keystore.ts:53` `encryptPrivateKey` — normalizes hex PK → `encryptSecretBytes`.
 - `src/tools/wallet/keystore.ts:58` `encryptSecretBytes` — random 32-byte salt + 12-byte IV, AES-256-GCM, returns `KeystoreV1`. Shared by EVM and Solana paths.
@@ -113,7 +113,7 @@ crosses the `src → renderer` boundary.
 
 - `src/tools/wallet/solana-keystore.ts:14` `SOLANA_SECRET_KEY_LENGTH=64` — full keypair (32-byte private + 32-byte public).
 - `src/tools/wallet/solana-keystore.ts:36` `normalizeSolanaSecretKey` — accepts JSON byte array `[0..255]×64` OR base58-encoded 64-byte key; validates length; throws `VexError(INVALID_PRIVATE_KEY)`.
-- `src/tools/wallet/solana-keystore.ts:60` `encryptSolanaSecretKey` — delegates to `encryptSecretBytes` (same KDF: N=16384).
+- `src/tools/wallet/solana-keystore.ts:60` `encryptSolanaSecretKey` — delegates to `encryptSecretBytes` (same KDF: N=131072 / 2^17).
 - `src/tools/wallet/solana-keystore.ts:67` `decryptSolanaSecretKey` — delegates to `decryptSecretBytes`; validates 64-byte length post-decrypt.
 - `src/tools/wallet/solana-keystore.ts:75` `deriveSolanaAddress` — `Keypair.fromSecretKey(secretKey).publicKey.toBase58()`.
 - `src/tools/wallet/solana-keystore.ts:79` `encodeSolanaSecretKey` — bs58 encode; validates 64-byte length.
@@ -190,7 +190,7 @@ crosses the `src → renderer` boundary.
 ## Key types & invariants
 
 - `KeystoreV1` (`src/tools/wallet/keystore.ts:10`) — version field enables future format migration; `decryptSecretBytes` hard-checks `version === 1`.
-- `KDF_PARAMS.N = 2^14 = 16384` (`src/tools/wallet/keystore.ts:27`) — **SECURITY NOTE (Z5, flagged in Structure.md F10)**: keystore scrypt cost is materially weaker than the vault (`lib/local-secret-vault.ts` uses N=65536). The factor-4 gap means offline brute-force of a stolen keystore file is 4x faster than offline brute-force of a stolen vault file. Both protect the same master password. This is a documented asymmetry, not an accidental omission. Relevant file:line: `src/tools/wallet/keystore.ts:27 KDF_PARAMS`.
+- `KDF_PARAMS.N = 2^17 = 131072` (`src/tools/wallet/keystore.ts:25`) — **SECURITY NOTE (Z5, F10-OWASP FIXED, commit 1c858ee)**: keystore scrypt cost is now at full parity with the vault (`lib/local-secret-vault.ts` `CURRENT_KDF_PARAMS.N=131072`). Both at-rest stores use N=2^17, r=8, p=1, dkLen=32 — the OWASP Password Storage scrypt recommendation. No remaining keystore-vs-vault KDF asymmetry; FINDING-security-004 / Structure.md F10 is RESOLVED. Both files persist KDF params per file (keystore carries a `kdf` field, decrypt uses the file's own params; the vault carries a `kdf` block + opportunistic rewrite to `CURRENT_KDF_PARAMS` on a successful unlock), so older files still decrypt and the vault upgrades on next unlock. `deriveKey` sets `maxmem=256 MiB`; N=2^17 needs ~128 MiB, and N=2^18 is rejected by Node at that ceiling (`ERR_CRYPTO_INVALID_SCRYPT_PARAMS`), so 2^17 is the max without raising maxmem. Cost ~400ms/derive (was ~200ms at 2^16). Relevant file:line: `src/tools/wallet/keystore.ts:25 KDF_PARAMS`.
 - `isValidWalletId` (`src/config/store.ts:36`) — **path-traversal guard**: enforces `<family-prefix>_<uuid>` for non-legacy ids. A crafted id containing `/`, `\`, `..` cannot produce a path outside `CONFIG_DIR` because the UUID regex `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` rejects those characters. Checked at both config-load time (drops invalid rows) and `derivePath` call site (throws before building any path).
 - `WalletResolution` (`src/tools/wallet/multi-auth.ts:82`) — discriminated union load-bearing for session isolation. `source:"session"` with `evm:null` DOES NOT fall through to the primary wallet. The engine always uses `source:"session"` (enforced by `buildSessionWalletResolution` in `hydrate.ts`). `source:"default"` is only for trusted, non-session-scoped callers.
 - **Fail-closed on address drift**: `resolveSelectedEntry` checks `walletAddressesEqual(inv, entry.address, selected.address)`. If a user force-re-imports a key under the same wallet id, the new key's address would differ from the session-pinned snapshot, triggering `WALLET_SCOPE_MISMATCH` (not a silent upgrade). This is the load-bearing invariant for per-session wallet isolation.
@@ -308,7 +308,7 @@ vex-app/src/main/ipc/onboarding/wallets.ts: createEvmWalletEntry({label?})
   requireKeystorePassword()     ← VEX_KEYSTORE_PASSWORD must be set
   generatePrivateKey()          ← viem random
   privateKeyToAddress(pk)
-  encryptPrivateKey(pk, password) → KeystoreV1 (N=16384)
+  encryptPrivateKey(pk, password) → KeystoreV1 (N=131072 / 2^17)
   appendWalletEntry("evm", address, keystore, label)
     assertCanAddWallet           ← cap=3, no duplicate address
     generateWalletId("evm")      ← "evm_<uuid>"
@@ -341,9 +341,9 @@ vex-app/src/main/ipc/onboarding/wallets.ts: createEvmWalletEntry({label?})
 ## Cross-references
 
 - related decisions: `decisions/ADR-0001-global-model-session-wallet` (per-session wallet selection invariant; selection immutable post-creation; EVM + Solana columns in `sessions` via mig 026)
-- related module: `module.src-root.lib-vault-secrets` (vault uses N=65536; keystore uses N=16384 — documented asymmetry)
+- related module: `module.src-root.lib-vault-secrets` (vault and keystore both use N=131072 / 2^17 — OWASP scrypt parity, F10-OWASP commit 1c858ee)
 - related module: `module.vex-agent.tools-internal` (wallet tool handlers — `CAP-tools-wallet-resolve-address`, `CAP-tools-wallet-resolve-signer`, `CAP-tools-wallet-confirm`)
-- quality finding: Structure.md F10 — KDF asymmetry keystore N=16384 < vault N=65536 (`src/tools/wallet/keystore.ts:27 KDF_PARAMS`)
+- quality finding: Structure.md F10 / FINDING-security-004 — RESOLVED (F10-OWASP, commit 1c858ee): keystore and vault both at N=131072 / 2^17 (OWASP scrypt parity) (`src/tools/wallet/keystore.ts:25 KDF_PARAMS`)
 - vex-app coverage: `audits/current/coverage-gaps.md#CAP-wallet-export-secret`
 
 ## Refresh triggers
@@ -362,7 +362,7 @@ Stale when any of the following change:
 
 2. **`getPublicClient` dead code**: `src/tools/wallet/client.ts:getPublicClient` similarly has no callers in vex-agent or vex-app main. The module-level cache (by RPC URL) is stateful and would not be cleared across config changes unless `clearClientCache()` is called. If retained, confirm ownership of cache lifecycle.
 
-3. **KDF asymmetry (reaffirm)**: Keystore scrypt N=16384 (`keystore.ts:27`) vs vault N=65536. Both protect the same master password. An attacker who steals only `keystore.json` (without `secrets.vault.json`) faces 4x less compute to brute-force. This is the documented Z5/F10 finding. A future hardening pass could upgrade keystores to N=65536 with a re-encrypt step on first unlock.
+3. ~~**KDF asymmetry**~~ RESOLVED (F10-OWASP, commit 1c858ee): keystore and vault now both use scrypt N=131072 / 2^17 (`keystore.ts:25 KDF_PARAMS`; `local-secret-vault.ts:31 CURRENT_KDF_PARAMS`) — full OWASP scrypt parity, no remaining keystore-vs-vault gap. Per-file KDF params let older files keep decrypting; the vault opportunistically rewrites to the current params on next unlock. See the Key types & invariants SECURITY NOTE above.
 
 4. **EVM string secret in export**: `decryptExportSecret` for EVM returns a JS `string` (immutable; cannot be zeroed). The `wallet-export.ts` handler notes this at line 309 and clears the reference immediately. Solana plaintext is zeroized via `finally`. Evaluate whether a `Uint8Array` path for EVM (returning hex bytes, not a string) would reduce exposure window.
 

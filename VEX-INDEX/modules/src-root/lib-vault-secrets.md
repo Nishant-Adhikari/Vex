@@ -7,8 +7,8 @@ paths:
   - "src/lib/polymarket.ts"
   - "src/tools/polymarket/credential-map.ts"
   - "src/tools/wallet/polymarket-credentials.ts"
-source_commit: 152af27
-indexed_at: 2026-05-28
+source_commit: 1c858ee
+indexed_at: 2026-05-29
 stale_when_paths_change:
   - "src/lib/local-secret-vault.ts"
   - "src/lib/secret-keys.ts"
@@ -120,10 +120,11 @@ immutable; nulling the reference is the strongest in-process defense.
 
 ## File map
 
-- `src/lib/local-secret-vault.ts:31 CURRENT_KDF_PARAMS` — `{ name:"scrypt", N:65536,
+- `src/lib/local-secret-vault.ts:31 CURRENT_KDF_PARAMS` — `{ name:"scrypt", N:131072,
   r:8, p:1, dkLen:32 }`. Authoritative KDF params for new vaults and rewrites.
 - `src/lib/local-secret-vault.ts:97 deriveKey` — wraps `scryptSync` with `maxmem:256 MiB`
-  ceiling (bypasses Node's default 32 MiB cap which would reject N=65536).
+  ceiling (N=2^17 needs ~128 MiB, far above Node's default 32 MiB cap; N=2^18 is rejected
+  at this 256 MiB ceiling with `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`, so 2^17 is the max).
 - `src/lib/local-secret-vault.ts:125 encryptContents` — fresh 16-byte salt + 12-byte IV per
   call; AES-256-GCM cipher; returns `VaultFile` including GCM auth tag.
 - `src/lib/local-secret-vault.ts:147 vaultFileNeedsKdfUpgrade` — compares on-disk `kdf`
@@ -186,10 +187,9 @@ immutable; nulling the reference is the strongest in-process defense.
 
 ## Key types & invariants
 
-- `CURRENT_KDF_PARAMS` (`local-secret-vault.ts:31`) — `{ N:65536, r:8, p:1, dkLen:32 }`.
-  N=65536 is a deliberate desktop compromise: ~200ms on commodity hardware vs OWASP
-  minimum recommendation of N≥131072 (~400ms). **OWASP gap: N=65536 is 2× below the
-  current OWASP interactive guideline (N=2^17=131072).** See Security section.
+- `CURRENT_KDF_PARAMS` (`local-secret-vault.ts:31`) — `{ N:131072, r:8, p:1, dkLen:32 }`.
+  N=131072 (2^17) MEETS the OWASP scrypt minimum (~400ms on commodity hardware); the prior
+  OWASP gap is CLOSED (F10-OWASP, commit 1c858ee). See Security section.
 - `vaultFileSchema` (`local-secret-vault.ts:39`) — strict Zod schema; `kdf` block is stored
   per-file so legacy vaults remain decryptable after a `CURRENT_KDF_PARAMS` bump.
 - `LocalSecretVaultError` (`local-secret-vault.ts:82`) — typed error with codes:
@@ -367,31 +367,30 @@ immutable; nulling the reference is the strongest in-process defense.
   vault unlock injects the key.
 - **Related module**: `module.src-root.lib-wallet` — `polymarket-credentials.ts` imports
   `loadKeystore`, `decryptPrivateKey`, and inventory helpers from the wallet module.
-  The wallet module's keystore KDF uses N=16384 (weaker than vault N=65536 — flagged).
+  The wallet module's keystore KDF is now at full parity with the vault (N=131072, 2^17 —
+  both raised in lockstep by F10-OWASP, commit 1c858ee).
 - **Related module**: `module.src-root.lib-env-config` — `stripManagedSecretsFromDotenvFile`
   is called after every env write to maintain the invariant that managed secrets never
   persist in the plaintext `.env` that `lib-env-config` reads.
 - **vex-app coverage**: `audits/current/coverage-gaps.md#CAP-vault-unlock` etc.
-- **quality findings**: `audits/current/quality-findings.md#FINDING-vault-001` (KDF N gap)
-  `#FINDING-vault-002` (env not cleared on lock)
+- **quality findings**: `audits/current/quality-findings.md#FINDING-vault-001` (KDF N gap —
+  RESOLVED by F10-OWASP, commit 1c858ee) `#FINDING-vault-002` (env not cleared on lock)
 
 ## Security notes
 
-### KDF parameters — OWASP divergence
+### KDF parameters — OWASP compliant (F10-OWASP, FIXED)
 
-`CURRENT_KDF_PARAMS`: N=65536, r=8, p=1, dkLen=32.
+`CURRENT_KDF_PARAMS`: N=131072, r=8, p=1, dkLen=32.
 
 Current OWASP recommendation for interactive `scrypt`: N ≥ 2^17 (131072), r=8, p=1
-(~400ms). The vault uses N=65536 (2^16), which is **2× below the current OWASP
-interactive guideline**. The code comment acknowledges this explicitly: "deliberate
-compromise between OWASP guidance and ~200ms on commodity hardware."
+(~400ms). The vault now uses N=131072 (2^17), MEETING the OWASP minimum. F10-OWASP
+(commit 1c858ee) raised the vault from N=65536 to 131072; the prior OWASP gap is CLOSED.
 
-The `vaultFileNeedsKdfUpgrade` mechanism is already in place to migrate existing
-vaults opportunistically. Upgrading `CURRENT_KDF_PARAMS.N` from 65536 to 131072 would
-double unlock time (~400ms) and bring it into OWASP compliance; the migration path
-exists. No immediate exploitability — an offline attacker who obtains the vault file
-has 2× more work with N=131072 than N=65536. For comparison, the wallet keystore uses
-N=16384 (4× weaker than the vault), flagged in Z5 findings.
+The `vaultFileNeedsKdfUpgrade` mechanism opportunistically migrates existing vaults: the
+on-disk `kdf` block is honored on decrypt, and a successful unlock rewrites the file to
+`CURRENT_KDF_PARAMS`, so older vaults upgrade transparently on next unlock. The wallet
+keystore was raised to the same N=131072 (2^17) in lockstep, so there is NO remaining
+keystore-vs-vault KDF asymmetry — both stores are at full OWASP parity.
 
 Salt: 16 bytes (random per encrypt call). IV: 12 bytes (random per encrypt call).
 Both are appropriate for AES-256-GCM.
@@ -430,11 +429,11 @@ correct behavior for GCM integrity protection.
 
 ## Open questions
 
-1. **KDF upgrade path**: `CURRENT_KDF_PARAMS.N = 65536` is below OWASP interactive
-   recommendation (131072). The migration infrastructure (`vaultFileNeedsKdfUpgrade` +
-   `unlockSecretVault` opportunistic rewrite) already exists. Decision: bump N to 131072
-   to reach OWASP compliance (~400ms on commodity desktop). Would be a one-time transparent
-   rewrite on next unlock. Cross-reference `audits/current/quality-findings.md#FINDING-vault-001`.
+1. **KDF upgrade path** (RESOLVED — F10-OWASP, commit 1c858ee): `CURRENT_KDF_PARAMS.N` is now
+   131072, meeting the OWASP interactive recommendation. The migration infrastructure
+   (`vaultFileNeedsKdfUpgrade` + `unlockSecretVault` opportunistic rewrite) transparently
+   rewrites existing vaults to the new params on next unlock (~400ms on commodity desktop).
+   Cross-reference `audits/current/quality-findings.md#FINDING-vault-001`.
 2. **Vault secrets not cleared from `process.env` on `lockSecretSession`**: `lockSecretSession()`
    nulls `unlockedMasterPassword` but does NOT iterate `VAULT_SECRET_KEYS` and delete them
    from `process.env`. Vault secrets (including `OPENROUTER_API_KEY`) remain in env after
@@ -444,8 +443,8 @@ correct behavior for GCM integrity protection.
 3. **`verifySecretVaultPassword` vs `unlockSecretVault` double-decrypt**: Both `polymarket-setup.ts`
    and `wallet-export.ts` call `verifySecretVaultPassword` for re-auth and then `writeUnlockedSecrets`
    (which calls `unlockSecretVault` again internally). This is two full scrypt derivations. At
-   N=65536 that's ~400ms total per operation on commodity hardware. At N=131072 it would be ~800ms.
-   Acceptable for a one-shot interactive sudo re-auth flow; worth noting if N is bumped.
+   N=131072 that's ~800ms total per operation on commodity hardware (~400ms per derive).
+   Acceptable for a one-shot interactive sudo re-auth flow.
 4. **`acquired` credential null-out race**: In `polymarket-setup.ts`, `acquired = null` runs after
    `withEnvWriteLock` resolves (step 8). If the lock's async fn throws internally and the catch
    path returns early from `persistOutcome.write_failed`, `acquired` is NOT yet nulled (the

@@ -15,8 +15,8 @@ paths:
   - vex-app/src/main/ipc/secrets.ts
   - vex-app/src/main/wallet/**
   - vex-app/src/main/ipc/wallet-export*.ts
-source_commit: cf05003
-indexed_at: 2026-05-28
+source_commit: 1c858ee
+indexed_at: 2026-05-29
 stale_when_paths_change:
   - src/lib/local-secret-vault.ts
   - src/lib/secret-keys.ts
@@ -55,8 +55,8 @@ related:
 | Zone | File(s) | Crypto | Holds | Lifetime |
 |---|---|---|---|---|
 | Non-secret env | `.env` | none (plain text) | `AGENT_MODEL`, `AGENT_PROVIDER`, `AGENT_CONTEXT_LIMIT`, `AGENT_MAX_OUTPUT_TOKENS`, `AGENT_TEMPERATURE`, `SUBAGENT_*`, `EMBEDDING_*` | persistent on disk |
-| Vault | `secrets.vault.json` | AES-256-GCM + scrypt N=65536 | `OPENROUTER_API_KEY`, `JUPITER_API_KEY`, `TAVILY_API_KEY`, `RETTIWT_API_KEY`, Polymarket creds, wallet private keys (per-chain wallet keystores live in separate file but share password discipline) | persistent encrypted; decrypted into memory on unlock |
-| Keystore | `keystore.json` / `solana-keystore.json` | AES-256-GCM + scrypt N=16384 (WEAKER than vault) | EVM wallet private key, Solana wallet private key | persistent encrypted |
+| Vault | `secrets.vault.json` | AES-256-GCM + scrypt N=131072 (2^17, OWASP) | `OPENROUTER_API_KEY`, `JUPITER_API_KEY`, `TAVILY_API_KEY`, `RETTIWT_API_KEY`, Polymarket creds, wallet private keys (per-chain wallet keystores live in separate file but share password discipline) | persistent encrypted; decrypted into memory on unlock |
+| Keystore | `keystore.json` / `solana-keystore.json` | AES-256-GCM + scrypt N=131072 (2^17, vault parity) | EVM wallet private key, Solana wallet private key | persistent encrypted |
 | Public config | `config.json` | none | Public wallet addresses, chain/RPC/service URLs | persistent on disk |
 | Markers | `.setup-complete`, `.install-id`, `.electron-state/{preferences,wizard-state}.json` | none | Setup status, telemetry id, persisted wizard state | persistent on disk |
 | Rendered compose | `compose/docker-compose.yml` | none | Rendered template with `127.0.0.1` binds, SCRAM Postgres secrets in compose secrets | rendered each up |
@@ -99,7 +99,7 @@ Provider persist path (onboarding step) does the same in reverse: write `.env` a
 - Secrets ONLY flow main ↔ disk and main ↔ process.env. NEVER reach renderer.
 - `withEnvWriteLock()` serializes all `.env` writes across wizard steps and IPC retries.
 - Atomic writes (temp + rename) for `.env`, vault, keystore — partial-write rollback is automatic.
-- Vault scrypt N=65536 ≥ keystore N=16384 (4× weaker is tracked as `FINDING-security-004`).
+- Vault and keystore both scrypt N=131072 (2^17, OWASP); `FINDING-security-004` resolved (F10-OWASP, commit 1c858ee). Both files persist their KDF params per file, so older files still decrypt; the vault opportunistically rewrites to `CURRENT_KDF_PARAMS` on a successful unlock.
 - ADR-0001: `AGENT_MODEL` / `AGENT_PROVIDER` are global; no per-session model env override.
 - Wallet selection is per-session at session creation; the SELECTED wallet's keystore is unlocked on demand (signing time).
 - Clipboard lease for private-key export uses a TTL token; renderer cannot reuse a stale token.
@@ -117,4 +117,4 @@ Any change to: `src/lib/local-secret-vault.ts`, `secret-keys.ts`, `src/utils/dot
 - `module.vex-app.main-docker-compose-onboarding` — wizard writers + `withEnvWriteLock`.
 - `boundary.process-boundaries` — what cannot cross at all.
 - `fix-plan.F1` — model/provider env boot + reload.
-- `audit.current.security-review` — FINDING-security-003 (lock semantics), 004 (KDF asymmetry).
+- `audit.current.security-review` — FINDING-security-003 (lock semantics), 004 (KDF parity — resolved by F10-OWASP, commit 1c858ee).

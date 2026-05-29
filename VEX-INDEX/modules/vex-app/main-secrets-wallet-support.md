@@ -2,8 +2,8 @@
 id: module.vex-app.main-secrets-wallet-support
 kind: module
 domain: vex-app
-source_commit: cf05003
-indexed_at: 2026-05-28
+source_commit: 1c858ee
+indexed_at: 2026-05-29
 paths:
   - vex-app/src/main/secrets/**
   - vex-app/src/main/wallet/**
@@ -48,14 +48,14 @@ related:
 
 This module owns the main process surface for end-user secrets (master password + vault encryption), wallet private-key export with clipboard auto-clear, telemetry consent and Sentry integration, and support/bug-report collection — all of which are untrusted from the renderer perspective.
 
-The vault is the single encryption boundary: `AES-256-GCM + scrypt N=65536`. The master password is held in memory only; locking clears it from the in-process reference but intentionally **does not** clear vault-injected API keys from `process.env` (FINDING-security-003). Wallet export requires re-authentication (sudo-style) and routes the plaintext secret through a clipboard lease with a 10-second auto-clear TTL.
+The vault is the single encryption boundary: `AES-256-GCM + scrypt N=131072` (2^17, OWASP). The master password is held in memory only; locking clears it from the in-process reference but intentionally **does not** clear vault-injected API keys from `process.env` (FINDING-security-003). Wallet export requires re-authentication (sudo-style) and routes the plaintext secret through a clipboard lease with a 10-second auto-clear TTL.
 
 Telemetry is opt-in (default OFF) using Sentry when DSN is resolvable; Sentry is never loaded until user consent flips on. Support bundles use redaction guards to strip secrets before local persistence.
 
 ## Retrieval Keywords
 
 - unlock, lock, master password
-- vault inject, scrypt N=65536 vs N=16384
+- vault inject, scrypt N=131072 (2^17, vault+keystore parity)
 - OPENROUTER_API_KEY, env injection, provider config
 - wallet export, private key export, clipboard lease
 - throttle, unlock-throttle, export-throttle
@@ -194,8 +194,8 @@ Telemetry is opt-in (default OFF) using Sentry when DSN is resolvable; Sentry is
    - This is intentional (verified Round 2): locking is UI-level, not cryptographic isolation.
    - Mitigation: `process.env` keys expire on app restart or Chromium sandbox boundary.
 
-3. **Scrypt KDF N=65536** (vault) vs **N=16384** (keystore) (FINDING-security-004).
-   - Vault uses stronger KDF; keystore uses weaker.
+3. **Scrypt KDF N=131072 (2^17)** — vault AND keystore at parity, the OWASP scrypt minimum (FINDING-security-004 RESOLVED, F10-OWASP commit 1c858ee).
+   - Both stores use the same OWASP-recommended cost; the earlier keystore-weaker-than-vault asymmetry is gone.
    - Confirmed from `src/lib/local-secret-vault.ts` and `src/tools/wallet/keystore.ts`.
    - Documented as open tracking item; no immediate change planned.
 
@@ -444,7 +444,7 @@ Telemetry is opt-in (default OFF) using Sentry when DSN is resolvable; Sentry is
 
 **Security audit:**
 - FINDING-security-003: Vault lock does not clear process.env keys (documented, intentional).
-- FINDING-security-004: Wallet keystore uses weaker KDF N=16384 (tracked, no planned change).
+- FINDING-security-004: RESOLVED — keystore + vault both scrypt N=2^17 (131072) parity (F10-OWASP, commit 1c858ee).
 
 **ADR-0001:**
 - Global model (AGENT_MODEL + OPENROUTER_API_KEY in vault).
@@ -608,7 +608,7 @@ Both throttle modules comment at lines ~73–78:
 **Risk level:** LOW, because:
 1. Process-level access to a single-user desktop already grants access to clipboard, screenshots, etc.
 2. Restarting the app logs the attempt in `log.warn()`.
-3. Vault KDF (N=65536) is the real defense, not throttle alone.
+3. Vault KDF (N=2^17=131072) is the real defense, not throttle alone.
 
 **Confidence:** HIGH. Throttle is in-process rate-limiting only, not a cryptographic boundary.
 

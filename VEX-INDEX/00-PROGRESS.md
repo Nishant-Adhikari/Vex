@@ -107,7 +107,7 @@ Legend: ⛔ broken/gap · ⚠ partial/fragile · ✅ implemented (confirm e2e) �
 - [ ] ✅ Compaction + **parallel** chunk creation (Track1 sync + Track2 async) — confirm; Track2 needs key
 - [ ] ✅ Slash `/mission start`,`/rewind`,`/restore`,`/mission-renew` exist both sides — confirm round-trip
 - [ ] ❓ Messages do not overflow session area (UI) — F9: no virtualization, 500-node cap
-- [ ] ❓ Security review of full Electron app — F10 keystore KDF; trust boundaries look respected
+- [x] ✅ Security review of full Electron app — F10-OWASP FIXED (commit `1c858ee`): vault + keystore scrypt both at N=2^17 (131072), OWASP parity (keystore 16384→65536 in B1a→131072 now); no remaining KDF asymmetry. Trust boundaries respected.
 
 ---
 
@@ -347,3 +347,26 @@ Build/config (root + vex-app) consolidated by the lead (me) during Structure.md 
   `tsc --noEmit` clean. Index refresh: parallel doc-sweep workflow (Structure / inference / FLOW-chat-turn /
   flows/_INDEX / README) + this entry. STILL OPEN (Bundle B remainder): F10-KDF-OWASP (vault+keystore 2^17),
   F12 (updater), codex-003 (reembed runtime trigger).
+- 2026-05-29: BUNDLE B — F10-OWASP SHIPPED (vault + keystore scrypt KDF → OWASP N=2^17; `/codex`-gated,
+  committed `1c858ee`, push pending user OK). OWASP Password Storage scrypt rec is N>=2^17, r=8, p=1; both
+  at-rest stores were at N=65536 (2^16) — the vault by design, the keystore after B1a's parity bump (it was
+  originally 2^14=16384, the FINDING-security-004 / F10 asymmetry). Raised BOTH to N=131072 (2^17) in lockstep:
+  `CURRENT_KDF_PARAMS.N` (`src/lib/local-secret-vault.ts`) + `KDF_PARAMS.N` (`src/tools/wallet/keystore.ts`).
+  NO migration (pre-release dev, user-confirmed no existing vaults/keystores). Both stores persist KDF params
+  per file (vault `kdf` block + opportunistic rewrite to CURRENT params on unlock; keystore `kdf` field, decrypt
+  uses the file's own params), so any older file still decrypts and the vault upgrades on next unlock. The
+  existing 256 MiB `maxmem` ceiling covers 2^17 (~128 MiB, ~400ms/derive); Codex empirically confirmed on Node
+  v24.15.0 that 2^17 succeeds and **2^18 throws `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`** at that ceiling — so the
+  prior "covers up to N=2^18" comments (keystore.ts, WALLET.md) were FALSE and were corrected. Decrypted-key
+  caching deliberately NOT added (the +~200ms lands only on signed-broadcast paths via `resolveSigningWallet`;
+  extending decrypted-key lifetime is a worse trade than the latency). Fixed two stale comment sites Codex
+  caught: `vex-app/src/main/secrets/unlock-throttle.ts` header (said N=16384) and `src/tools/wallet/WALLET.md`.
+  RESULT: keystore↔vault KDF asymmetry fully resolved (parity at OWASP 2^17); FINDING-security-004 RESOLVED.
+  Process: inline recon (2 KDF sites, per-record params, maxmem, signing hot-path) → Codex named session
+  `f10-owasp-harness` (GREEN with plan-notes: don't claim 2^18 maxmem headroom; keep caching out of scope; fix
+  2 stale comments) → final review on the live diff GREEN. Tests: keystore + vault N assertions updated to
+  131072 (legacy 16384 fixtures kept as upgrade-path inputs); `tsc --noEmit` clean; keystore/vault/wallet crypto
+  suites 102 pass at the new cost (~89s real scrypt, within 60s per-test ceiling). Index refresh: parallel
+  doc-sweep workflow (Structure / glossary / boundaries×2 / security-review / lib-wallet / lib-vault-secrets /
+  ADR-0001 / README) + this entry — also corrected the doubly-stale keystore "N=16384" text the index never
+  updated after B1a. STILL OPEN (Bundle B remainder): F12 (updater), codex-003 (reembed runtime trigger).

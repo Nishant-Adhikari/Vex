@@ -39,9 +39,9 @@ Two independent pnpm package roots, not a pnpm workspace:
 ### Config/secret layout (`${CONFIG_DIR}` = `%APPDATA%/vex` | `~/Library/Application Support/vex` | `~/.config/vex`)
 
 - `.env` — non-secret runtime config: `AGENT_MODEL`, `AGENT_PROVIDER=openrouter`, `AGENT_CONTEXT_LIMIT`, `AGENT_MAX_OUTPUT_TOKENS`, `AGENT_TEMPERATURE`, `SUBAGENT_*`, `EMBEDDING_*`.
-- `secrets.vault.json` — AES-256-GCM + scrypt(N=65536); holds `OPENROUTER_API_KEY`, `JUPITER_API_KEY`, `TAVILY_API_KEY`, `RETTIWT_API_KEY`, Polymarket creds. Injected to `process.env` only after unlock.
+- `secrets.vault.json` — AES-256-GCM + scrypt(N=131072 (2^17)); holds `OPENROUTER_API_KEY`, `JUPITER_API_KEY`, `TAVILY_API_KEY`, `RETTIWT_API_KEY`, Polymarket creds. Injected to `process.env` only after unlock.
 - `config.json` — public wallet addresses, chain/RPC/service URLs.
-- `keystore.json` / `solana-keystore.json` — wallet keystores (AES-256-GCM + scrypt N=16384, weaker than vault; tracked as security finding).
+- `keystore.json` / `solana-keystore.json` — wallet keystores (AES-256-GCM + scrypt N=131072 (2^17), vault parity (F10-OWASP fixed)).
 - `.setup-complete`, `.install-id`, `.electron-state/{preferences,wizard-state}.json`, and rendered `compose/docker-compose.yml`.
 
 ---
@@ -248,7 +248,7 @@ Untrusted UI. It talks to main only via `window.vex` and pure shared schemas/typ
 | **F7** | ADR-0001 holds: global model, no `sessions.model_id`, per-session wallet selection. | implemented | HIGH | migration 026, `sessions.getModel`, ADR-0001 |
 | **F8** | Subagents are implemented but intentionally disabled at registry/dispatcher surface. | intentional | HIGH | `tools/registry/subagents.ts`, `tools/dispatcher.ts` |
 | **F9** | UI polish/perf: slash placeholder incomplete; transcript cap/no virtualization. | open | HIGH | Z8 appShell files |
-| **F10** | Wallet keystore KDF N=16384 is weaker than vault N=65536 (still open). Lock-clear half FIXED by Bundle A: `lockSecretSession()` now sweeps `MANAGED_SECRET_ENV_KEYS` from `process.env` + resets the cached provider. | partial (KDF open; lock-clear fixed) | MED | `src/tools/wallet/keystore.ts`, `vex-app/src/main/secrets/session.ts` |
+| **F10** | At-rest KDF FIXED: both vault and keystore now scrypt N=131072 (2^17), r=8, p=1, dkLen=32 (OWASP Password Storage scrypt rec) in lockstep — full parity, no remaining keystore-vs-vault gap. Earlier lock-clear half FIXED by Bundle A: `lockSecretSession()` sweeps `MANAGED_SECRET_ENV_KEYS` from `process.env` + resets the cached provider. FINDING-security-004 resolved. | fixed | HIGH | `src/tools/wallet/keystore.ts:25` (KDF_PARAMS), `src/lib/local-secret-vault.ts:31` (CURRENT_KDF_PARAMS), `vex-app/src/main/secrets/session.ts`, commit `1c858ee` |
 | **F11** | Sync executor wiring FIXED by Bundle A: `setupSyncWorker()` started at boot (after wake) + drained on quit; new `agent/sync-worker.ts` + `database/sync-db.ts` (probe `protocol_sync_jobs`). No provider gate (public-address egress, no key access). | fixed | HIGH | `src/vex-agent/sync/executor.ts:39`, `vex-app/src/main/index.ts`, `vex-app/src/main/agent/sync-worker.ts` |
 | **F-S5** | `document_delete` approval-gate bypass FIXED by Bundle A: `mutating:true` so restricted mode now gates it. `document_write` intentionally stays ungated. | fixed | HIGH | `src/vex-agent/tools/registry/documents.ts:54`, `src/vex-agent/tools/dispatcher.ts:293` |
 | **F12** | Updater/release is placeholder-only: dependency/channels exist, no implementation, no production signing/notarization/update workflow. | open | HIGH | `vex-app/package.json`, `shared/ipc/channels.ts`, `.github/workflows/ci.yml` |

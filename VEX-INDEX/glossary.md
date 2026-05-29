@@ -1,7 +1,8 @@
 ---
 id: index.glossary
 kind: glossary
-indexed_at: 2026-05-28
+indexed_at: 2026-05-29
+source_commit: 1c858ee
 ---
 
 # Glossary
@@ -69,7 +70,7 @@ liberally — this file is a retrieval hub for future LLMs that may guess.
   `process.env` on boot + post-onboarding overwrite-reload.
 - **`config.json`**: public wallet addresses, RPCs, service URLs. No secrets, no private keys.
 - **Keystore** (`keystore.json` EVM + `solana-keystore.json` Solana): user-wallet hot keys,
-  AES-256-GCM + scrypt N=16384 (weaker than vault; flagged).
+  AES-256-GCM + scrypt N=131072 (2^17), vault parity (F10-OWASP fix, commit 1c858ee).
 - **Wallet**: user-created hot wallet (EVM or Solana). **Per-session selection** (see
   `ADR-0001`) via `sessions.selected_evm_wallet_id/address` + Solana equivalents (mig 026).
 

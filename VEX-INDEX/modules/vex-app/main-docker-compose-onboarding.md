@@ -13,8 +13,8 @@ paths:
   - vex-app/resources/compose/docker-compose.template.yml
   - vex-app/scripts/check-build-artifacts.mjs
   - vex-app/scripts/copy-migrations.mjs
-source_commit: cf05003
-indexed_at: 2026-05-28
+source_commit: 1c858ee
+indexed_at: 2026-05-29
 stale_when_paths_change:
   - vex-app/resources/compose/docker-compose.template.yml
   - vex-app/src/main/docker/*.ts
@@ -496,7 +496,7 @@ Renderer: completeSetup({ telemetryConsent: boolean })
 ### ADRs & Fixes
 
 - **F1** — Provider reset on persistence (codex turn 2 RED #1). Reset happens inside env-write lock in `provider.ts:70–73`. Required for next `resolveProvider()` to see fresh model.
-- **F10** — Keystore security (N=16384 scrypt params). Enforced in `@vex-lib/wallet.ts` (external); this module never touches keystore encryption directly.
+- **F10** — FIXED (F10-OWASP, commit 1c858ee): keystore + vault scrypt both N=2^17 (131072), OWASP parity. Enforced in `@vex-lib/wallet.ts` (external); this module never touches keystore encryption directly.
 - **F13** — Embeddings endpoint. Template hardcodes `:55134` (compose port); legacy `:12434` is status drift only. `embeddings-health.ts` validates on the final published port.
 
 ### Project Rules
