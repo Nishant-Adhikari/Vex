@@ -16,12 +16,13 @@ paths:
   - "src/tools/wallet/solana-create.ts"
   - "src/tools/wallet/solana-import.ts"
   - "src/tools/wallet/backup.ts"
+  - "src/tools/wallet/backup-restore.ts"
   - "src/tools/wallet/auth.ts"
   - "src/tools/wallet/family.ts"
   - "src/tools/wallet/native-balances.ts"
   - "src/config/store.ts"
-source_commit: 152af27
-indexed_at: 2026-05-28
+source_commit: 53f1266
+indexed_at: 2026-05-29
 stale_when_paths_change:
   - "src/lib/wallet.ts"
   - "src/lib/wallet-backup.ts"
@@ -162,8 +163,11 @@ crosses the `src → renderer` boundary.
 
 ### Backup
 
-- `src/tools/wallet/backup.ts:43` `autoBackup()` — copies `keystore.json`, `solana-keystore.json`, `config.json` (whichever exist) into a timestamped directory under `BACKUPS_DIR`. Writes `manifest.json` (version, cliVersion, createdAt, walletAddress, solanaWalletAddress, chainId, files). Calls `enforceBackupRetention()`. Returns backup path or null (nothing to backup). Throws `VexError(AUTO_BACKUP_FAILED)` on write failure.
-- `src/tools/wallet/backup.ts:104` `enforceBackupRetention()` — best-effort; removes oldest dirs when count > `MAX_BACKUPS=20`.
+- `src/tools/wallet/backup.ts:149` `autoBackup()` (B1b) — copies the FULL wallet surface into a timestamped dir under `BACKUPS_DIR`: every inventory keystore (legacy fixed files + per-id `wallet-<id>.json`, enumerated via `derivePath` over `cfg.wallet[evm|solana]`) + `secrets.vault.json` + `.env` + `config.json` (whichever exist). Writes **manifest v2** LAST (`{version:2, cliVersion, createdAt, wallets:[{id,family,address,label,createdAt,legacy}], files:[{filename,role,walletId?,walletFamily?,address?}]}`). Returns path or null. Throws `VexError(AUTO_BACKUP_FAILED)`. (Pre-B1b copied only legacy keystores + config — the codex-001 data-loss bug.)
+- `src/tools/wallet/backup.ts` `listAvailableBackups()` (B1b) — metadata-only listing (opaque `id`, timestamp, walletCount, addresses, vault/env flags; NO paths/secrets), newest-first; tolerant of v1/v2. `readArchiveManifest()` + `backupManifestSchema` (v1|v2 union, rejects v>2).
+- `src/tools/wallet/backup.ts` `enforceBackupRetention(protectName?)` — removes oldest dirs when count > `MAX_BACKUPS=20`; NEVER evicts the just-created snapshot (`protectName`), so a pre-restore backup survives its own retention pass.
+- `src/tools/wallet/backup-restore.ts` `restoreFromBackupArchive({archiveDir,password,confirmReplace?})` (B1b, NEW) — symmetric archive-restore, 4 phases fail-closed: VALIDATE (realpath containment; Zod manifest v2-only; basename/illegal/dup checks; canonical vault/env/config filename guard; full wallets↔files 1:1 reconciliation; per-family dup-address rejection; lstat symlink/dir rejection; decrypt+verify each keystore, Class-A address mismatch ALWAYS → `SIGNER_MISMATCH`; cap check; Class-B legacy-replace → `confirmReplace`) → STAGE to temp (before backup) → MANDATORY pre-restore `autoBackup` hard gate (abort if null/missing/unusable or orphan fixed keystore uncaptured) → JOURNALED COMMIT (preimage every touched file; sanitized `.env` drops `MANAGED_SECRET_ENV_KEYS`; vault verbatim; inventory rebuilt from manifest into current config — archive `config.json` never trusted; rollback names the pre-restore dir). Returns `{filesRestored, walletsRestored, backupDir, vaultRestored, vaultLocked}`; Solana bytes zeroized.
+- `src/tools/wallet/inventory-create.ts` `appendWalletEntry()` (B1b) — fires `autoBackup()` (fire-and-forget, warn-on-fail, never rolls back the saved wallet) after a new wallet persists, keeping create/import backups current.
 
 ### Clients
 
@@ -362,6 +366,6 @@ Stale when any of the following change:
 
 4. **EVM string secret in export**: `decryptExportSecret` for EVM returns a JS `string` (immutable; cannot be zeroed). The `wallet-export.ts` handler notes this at line 309 and clears the reference immediately. Solana plaintext is zeroized via `finally`. Evaluate whether a `Uint8Array` path for EVM (returning hex bytes, not a string) would reduce exposure window.
 
-5. **`autoBackup` scope**: Only backs up `keystore.json`, `solana-keystore.json`, and `config.json`. Does NOT back up per-id `wallet-<id>.json` files created by the non-legacy inventory paths. Users with multiple wallets created after onboarding could lose the additional keystores in a backup-restore scenario. Confirm whether `autoBackup` should iterate `CONFIG_DIR/wallet-*.json` files.
+5. ~~**`autoBackup` scope**~~ RESOLVED (B1b / codex-001, commits a35d4f4·6a1f7ab·53f1266): `autoBackup` now enumerates every inventory keystore (legacy + per-id `wallet-<id>.json`) + vault + `.env` + config into a manifest-v2 archive, and `restoreFromBackupArchive` (`backup-restore.ts`) recovers it symmetrically. See the Backup section above.
 
 6. **`normalizeWalletSection` silent drop**: Malformed or non-canonical inventory rows are dropped with a `logger.warn` (not thrown). This means a corrupt config row is silently invisible after the next `saveConfig`. Consider whether a UI-visible warning or a `bug_reports` row should surface this condition.

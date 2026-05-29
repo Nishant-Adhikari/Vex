@@ -264,3 +264,27 @@ Build/config (root + vex-app) consolidated by the lead (me) during Structure.md 
   (awaiting explicit user request). Index refreshed: audits/Structure/README/tools-protocols/
   FLOW-compaction/data-memory + boot docs updated to fixed; new findings tracked as candidate Bundle B
   (F4, F5, F6, F10-KDF, F12, codex-001/002/003).
+- 2026-05-28/29: BUNDLE B SHIPPED (3 fixes, all `/codex`-gated + pushed to main):
+  - B1a (F10): keystore scrypt KDF → vault parity N=65536 + maxmem=256MiB (mirrors vault;
+    fixes the latent wallet-brick — bumping N without maxmem throws on every decrypt). No
+    migration (dev/"na czysto"). Commit `cadeb6f`. Codex GREEN (plan v2 + final).
+  - B1b (codex-001): complete backup + symmetric archive-restore + ADD-flow hooks, implemented
+    as 3 sequenced Codex-gated checkpoints — C1 root primitive `a35d4f4`, C2 vex-app IPC
+    `6a1f7ab`, C3 renderer screen `53f1266`. Design+adversarial workflow (5 design + 3 skeptics,
+    38 guards) → Codex plan v3 (3 hardening rounds) → per-checkpoint final reviews (C1 ×3, C2 ×3,
+    C3 ×2). autoBackup now captures the full wallet surface (legacy + per-id keystores + vault +
+    .env + config, manifest v2); `backup-restore.ts restoreFromBackupArchive` recovers it with
+    fail-closed validation (realpath/symlink/manifest-1:1/dup-address/signer-mismatch/canonical
+    vault filename), staged journaled commit + rollback, mandatory pre-restore snapshot
+    (retention-protected), `.env` sanitize, role-based vault refresh. IPC `walletListBackups`/
+    `walletRestoreArchive` (metadata-only, opaque id) + renderer restore panel. New error codes:
+    wallet.signer_mismatch, validation.archive_incomplete, validation.archive_manifest_malformed.
+  - Earlier in Bundle A this session: F-S5 document_delete gate, F-S3 lock secret scrub, F11 sync
+    worker (commits 823d2b6/9410be6). Index refreshed for each.
+  Tooling note: B1b used the dynamic Workflow tool for design+adversarial verification (the
+  resumed run recovered from a synth-agent StructuredOutput failure by re-running synthesis
+  schema-less). Implementation delegated to Opus subagents per checkpoint; main agent reviewed
+  diffs + re-ran tests independently + drove the Codex gates. STILL OPEN (Bundle B remainder):
+  F4 (OpenRouter /models per-turn cache), F5 (controlState preload bridge), F6 (RuntimeRequestResult
+  drift), F10-KDF-OWASP (joint vault+keystore bump to 2^17), F12 (updater), codex-002 (fetchJson Zod),
+  codex-003 (reembed runtime trigger).
