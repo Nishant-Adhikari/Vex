@@ -24,9 +24,12 @@ describe("khalani validation", () => {
         .toThrow("missing chain.name");
     });
 
-    it("rejects unsupported chain type", () => {
-      expect(() => validateChainsResponse([{ type: "cosmos", id: 1, name: "X", nativeCurrency: { name: "X", symbol: "X", decimals: 1 } }]))
-        .toThrow("unsupported chain type cosmos");
+    it("skips unsupported chain type (filtered, not thrown)", () => {
+      // Khalani's /v1/chains serves families Vex does not support (tron/flow/…);
+      // a single foreign family must not fail the whole balances sync. parseChain
+      // stays strict elsewhere (autocomplete) — only the chains-list validator skips.
+      expect(validateChainsResponse([{ type: "cosmos", id: 1, name: "X", nativeCurrency: { name: "X", symbol: "X", decimals: 1 } }]))
+        .toEqual([]);
     });
 
     it("parses valid chain array", () => {

@@ -92,11 +92,24 @@ describe("khalani validation equivalence (Zod conversion)", () => {
       );
     });
 
-    it("unsupported chain type throws unsupported-chain-type", () => {
-      expectKhalaniError(
-        () => validateChainsResponse([{ type: "cosmos", id: 1, name: "X", nativeCurrency: { symbol: "X", decimals: 1 } }]),
-        "Invalid Khalani response: unsupported chain type cosmos",
-      );
+    it("unsupported chain type is SKIPPED (filtered), not thrown — Khalani serves families Vex does not support", () => {
+      // Khalani's /v1/chains returns tron/flow/etc.; a single foreign family must
+      // not fail the whole balances sync. parseChain stays strict elsewhere
+      // (autocomplete) — only the chains-list validator skips foreign families.
+      expect(
+        validateChainsResponse([
+          { type: "cosmos", id: 1, name: "X", nativeCurrency: { symbol: "X", decimals: 1 } },
+        ]),
+      ).toEqual([]);
+    });
+
+    it("mixed list keeps only eip155/solana and skips foreign families (tron)", () => {
+      const result = validateChainsResponse([
+        { type: "eip155", id: 1, name: "Ethereum", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+        { type: "tron", id: 728126428, name: "Tron", nativeCurrency: { symbol: "TRX", decimals: 6 } },
+        { type: "solana", id: 20011000000, name: "Solana", nativeCurrency: { symbol: "SOL", decimals: 9 } },
+      ]);
+      expect(result.map((c) => c.type)).toEqual(["eip155", "solana"]);
     });
 
     it("missing chain.name throws missing chain.name", () => {

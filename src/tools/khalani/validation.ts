@@ -391,7 +391,31 @@ export function validateChainsResponse(raw: unknown): KhalaniChain[] {
   if (!Array.isArray(raw)) {
     throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected chains array");
   }
-  return raw.map(parseChain);
+  // Khalani's /v1/chains serves chain families Vex does not support (e.g. tron
+  // / flow / hyperevm — the API returns more `type` values than its own schema
+  // doc admits). Skip a foreign family instead of throwing, so a single tron
+  // entry can't fail the whole periodic balances sync. Only a NON-EMPTY,
+  // unsupported STRING type is skipped: missing/empty/non-string `type` still
+  // throws "missing chain.type", non-objects still throw "chain must be an
+  // object", and malformed eip155/solana entries still throw — all via
+  // `parseChain`, which stays strict (it is also used by the autocomplete
+  // validator, where an unsupported chain must still be rejected).
+  const chains: KhalaniChain[] = [];
+  for (const entry of raw) {
+    if (isRecordValue(entry)) {
+      const type = entry.type;
+      if (
+        typeof type === "string" &&
+        type.length > 0 &&
+        type !== "eip155" &&
+        type !== "solana"
+      ) {
+        continue;
+      }
+    }
+    chains.push(parseChain(entry));
+  }
+  return chains;
 }
 
 export function validateTokensResponse(raw: unknown): KhalaniToken[] {
