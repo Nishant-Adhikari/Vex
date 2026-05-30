@@ -28,6 +28,10 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUp01Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { useSubmitChat } from "../../lib/api/chat.js";
+import {
+  flattenTranscriptPages,
+  useTranscriptInfinite,
+} from "../../lib/api/messages.js";
 import { useMissionDraft } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -147,13 +151,35 @@ export function SessionComposer({
         setDraft(message);
         return;
       }
-      setNotice({ tone: "info", text: submitSuccessText(outcome.data) });
+      const successText = submitSuccessText(outcome.data);
+      if (successText !== null) setNotice({ tone: "info", text: successText });
     })();
   }, [sessionId, pendingFirstMessage, clearPendingFirstMessage, submitTurn]);
 
   const runStatus = readRunStatus(runtimeQuery.data);
   const freeTextGate = runStatus !== null && FREE_TEXT_DISALLOWED.has(runStatus);
-  const showQuickActions = activeSession?.mode !== "mission";
+
+  // Quick-action chips are starters for an EMPTY conversation. Show them on the
+  // welcome screen and in a freshly created, still-empty session; hide them
+  // once the session has any messages (reuses the transcript query already
+  // mounted by SessionTranscript — same cache key, no extra fetch). Gated on
+  // a resolved `activeSession` + a SUCCEEDED transcript query so a loading or
+  // errored session never flickers the chips in or out.
+  const transcriptQuery = useTranscriptInfinite(sessionId ?? "");
+  const transcriptPages = transcriptQuery.data?.pages;
+  const transcriptEmpty = useMemo(
+    () =>
+      transcriptPages === undefined
+        ? true
+        : flattenTranscriptPages(transcriptPages).length === 0,
+    [transcriptPages],
+  );
+  const showQuickActions =
+    sessionId === null ||
+    (activeSession !== null &&
+      activeSession.mode !== "mission" &&
+      transcriptQuery.isSuccess &&
+      transcriptEmpty);
 
   const dispatchSlash = useCallback(
     async (command: SlashCommand): Promise<void> => {
@@ -230,7 +256,8 @@ export function SessionComposer({
         setDraft((cur) => (cur.length === 0 ? message : cur));
         return;
       }
-      setNotice({ tone: "info", text: submitSuccessText(outcome.data) });
+      const successText = submitSuccessText(outcome.data);
+      if (successText !== null) setNotice({ tone: "info", text: successText });
     },
     [
       sessionId,

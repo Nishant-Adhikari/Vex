@@ -49,17 +49,17 @@ export function gatedReason(status: MissionRunStatus | null): string {
 }
 
 /**
- * Notice text for a completed chat submit. Shared by the composer's own
- * submit path AND the welcome→create hand-off so mission first-message UX
- * ("Mission goal received.") and the stopped state don't regress to a
- * generic "Message sent."
+ * Notice text for a completed chat submit, or `null` when no notice should
+ * show. Shared by the composer's own submit path AND the welcome→create
+ * hand-off. The two state-changing outcomes still surface — a stopped turn
+ * ("Stopped.") and a mission's first goal ("Mission goal received.") — but a
+ * plain chat send shows NOTHING: the reply already renders in the transcript,
+ * so a redundant "Message sent." line below the input is just noise.
  */
-export function submitSuccessText(data: ChatSubmitResult): string {
+export function submitSuccessText(data: ChatSubmitResult): string | null {
   if (data.stopReason === "user_stopped") return "Stopped.";
-  // Generic confirmation only — never echo `data.text` (the assistant reply),
-  // which already renders in the transcript bubble + streaming preview. Echoing
-  // it here duplicated the whole reply below the composer input.
-  return data.treatedAsInitialGoal ? "Mission goal received." : "Message sent.";
+  if (data.treatedAsInitialGoal) return "Mission goal received.";
+  return null;
 }
 
 export function placeholderFor(session: SessionListItem | null): string {

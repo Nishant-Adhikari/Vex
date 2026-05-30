@@ -332,7 +332,52 @@ describe("AppShell", () => {
       message: "Research $TAO liquidity and thesis",
     });
     await waitFor(() => expect(draft.value).toBe(""));
-    await screen.findByText("Message sent.");
+    // Batch 3: a plain chat send no longer shows a redundant "Message sent."
+    // notice — the reply renders in the transcript instead.
+    expect(screen.queryByText("Message sent.")).toBeNull();
+  });
+
+  it("shows quick-action chips in an empty session and hides them once it has messages", async () => {
+    const row = makeAgentRow("Chips");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+    // Empty transcript (default mock) → chips are visible as conversation starters.
+    renderShell();
+    await screen.findByText("Chips");
+    expect(await screen.findByRole("button", { name: /Swap/i })).not.toBeNull();
+  });
+
+  it("hides quick-action chips once the session transcript has messages", async () => {
+    const row = makeAgentRow("Has msgs");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+    messagesListMock.mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          {
+            id: 1,
+            sessionId: row.id,
+            role: "user",
+            kind: "text",
+            content: "hi vex",
+            createdAt: new Date().toISOString(),
+            toolCallId: null,
+            toolName: null,
+            toolCalls: null,
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      },
+    });
+    renderShell();
+    await screen.findByText("hi vex");
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Swap/i })).toBeNull(),
+    );
   });
 
   it("ENTER in the draft sends the message and clears the input", async () => {
@@ -482,6 +527,10 @@ describe("AppShell", () => {
       sessionId: row.id,
       message: "hello while loading",
     });
+    // activeSessionId is set but the detail (activeSession) is still unresolved
+    // → quick-action chips stay hidden even though the transcript query
+    // succeeded empty (gated on a resolved activeSession, no flicker).
+    expect(screen.queryByRole("button", { name: /Swap/i })).toBeNull();
   });
 
   it("enables Send when the detail query errors (bug A)", async () => {
@@ -513,6 +562,8 @@ describe("AppShell", () => {
         message: "send despite error",
       }),
     );
+    // Errored detail → activeSession null → chips hidden (no flicker).
+    expect(screen.queryByRole("button", { name: /Swap/i })).toBeNull();
   });
 
   it("welcome composer Send opens the creator with the draft carried + name pre-filled (welcome→create)", async () => {
