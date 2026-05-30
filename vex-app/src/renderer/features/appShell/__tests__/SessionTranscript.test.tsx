@@ -44,6 +44,7 @@ function msg(p: {
     createdAt: ISO,
     toolCallId: null,
     toolName: p.toolName ?? null,
+    toolCalls: null,
   };
 }
 
@@ -141,7 +142,8 @@ describe("SessionTranscript", () => {
     expect(
       container.querySelector('[data-vex-message-role="system"]'),
     ).not.toBeNull();
-    expect(screen.getByText("swap")).not.toBeNull();
+    // tool_result rows now render a collapsed disclosure labeled `<tool>_output`.
+    expect(screen.getByText("swap_output")).not.toBeNull();
     expect(screen.getByText("context compacted")).not.toBeNull();
     expect(screen.getByText(/onerror="alert\(1\)"/)).not.toBeNull();
     expect(container.querySelector("img[onerror]")).toBeNull();

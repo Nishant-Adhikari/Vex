@@ -15,6 +15,7 @@ import { StopCircleIcon } from "@hugeicons/core-free-icons";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
+import { ToolDisclosure } from "./ToolDisclosure.js";
 import type { TranscriptRowModel } from "./transcriptRowModel.js";
 
 const BUBBLE =
@@ -73,13 +74,33 @@ export function TranscriptMessage({
     case "tool":
       return (
         <div data-vex-message-role="tool" className="flex justify-start">
-          <div className="max-w-[80%] rounded-md border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 font-mono text-[11px] text-[var(--color-text-secondary)]">
-            <span className="text-[var(--color-text-muted)]">{row.label}</span>
-            {row.content.length > 0 ? (
-              <span className="ml-2 whitespace-pre-wrap break-words">
-                {row.content}
-              </span>
-            ) : null}
+          <div className="flex max-w-[80%] flex-col gap-1.5">
+            {row.toolKind === "result" ? (
+              // Tool output — collapsed by default, labeled `<tool>_output`.
+              <ToolDisclosure
+                label={row.label ?? "tool_output"}
+                body={row.content}
+                emptyHint="(no output)"
+              />
+            ) : (
+              <>
+                {/* Assistant prose accompanying the tool call (often empty). */}
+                {row.content.length > 0 ? (
+                  <div className="rounded-lg bg-white/[0.04] px-3 py-2 text-sm leading-relaxed text-foreground">
+                    <MarkdownContent text={row.content} />
+                  </div>
+                ) : null}
+                {/* One disclosure per executed tool — params collapsed by default. */}
+                {(row.toolCalls ?? []).map((call) => (
+                  <ToolDisclosure
+                    key={call.toolCallId}
+                    label={call.toolName}
+                    body={call.toolArgs}
+                    emptyHint="(no parameters)"
+                  />
+                ))}
+              </>
+            )}
           </div>
         </div>
       );

@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe("messages-db mapper", () => {
-  it("extracts namespace:command from tool_calls without leaking raw JSONB", async () => {
+  it("exposes sanitized tool args (drop secret keys, redact secret values, keep public)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
         {
@@ -78,10 +78,16 @@ describe("messages-db mapper", () => {
           tool_call_id: null,
           tool_calls: [
             {
+              id: "call_1",
               namespace: "wallet",
               command: "send",
-              args: { to: "0xLEAK", value: "0xSECRET" },
-              extraField: "private",
+              args: {
+                to: "0x1111111111111111111111111111111111111111", // public 40-hex addr
+                amount: "1.5",
+                privateKey: `0x${"a".repeat(64)}`, // secret KEY → dropped entirely
+                note: `0x${"b".repeat(64)}`, // benign key, secret-shaped VALUE → redacted
+              },
+              extraField: "private", // sibling of args — never crosses
             },
           ],
           created_at: "2026-05-21T10:00:00.000Z",
@@ -95,25 +101,127 @@ describe("messages-db mapper", () => {
     const result = await getMessageTail(SESSION, 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.items).toHaveLength(1);
     const msg = result.data.items[0]!;
     expect(msg.toolName).toBe("wallet:send");
-    // The DTO surface must NOT carry the args / extraField / secretKey
-    expect(Object.keys(msg)).toEqual(
-      expect.arrayContaining([
-        "id",
-        "sessionId",
-        "role",
-        "kind",
-        "content",
-        "createdAt",
-        "toolCallId",
-        "toolName",
-      ]),
-    );
+
+    const calls = msg.toolCalls!;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.toolCallId).toBe("call_1");
+    expect(calls[0]!.toolName).toBe("wallet:send");
+    const args = calls[0]!.toolArgs!;
+    expect(args).toContain("0x1111111111111111111111111111111111111111"); // public addr kept
+    expect(args).toContain("amount");
+    expect(args).not.toContain("privateKey"); // secret key dropped
+    expect(args).not.toContain("aaaaaaaa"); // private-key value never present
+    expect(args).toContain("[redacted:key]"); // 0x{64} value redacted (the `note`)
+
+    // Raw JSONB siblings + metadata still never cross the boundary.
+    expect(args).not.toContain("extraField");
+    expect(args).not.toContain("secretKey");
     expect(msg).not.toHaveProperty("metadata");
     expect(msg).not.toHaveProperty("tool_calls");
-    expect(msg).not.toHaveProperty("toolCalls");
+  });
+
+  it("redacts secret-SHAPED values (jwt, mnemonic, long base58) while keeping addresses + amounts", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 11,
+          session_id: SESSION,
+          role: "assistant",
+          content: "",
+          tool_call_id: null,
+          tool_calls: [
+            {
+              id: "c",
+              command: "do",
+              args: {
+                payload: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123", // JWT value
+                words:
+                  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", // 12-word mnemonic
+                blob: "z".repeat(60), // long base58/base64
+                mint: "So11111111111111111111111111111111111111112", // 44-char Solana mint (public)
+                amount: "10",
+              },
+            },
+          ],
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "agent",
+          message_type: "chat",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const args = result.data.items[0]!.toolCalls![0]!.toolArgs!;
+    expect(args).toContain("[redacted:jwt]");
+    expect(args).toContain("[redacted:mnemonic]");
+    expect(args).toContain("[redacted:secret]");
+    expect(args).not.toContain("eyJhbGci"); // raw jwt never present
+    expect(args).toContain("So11111111111111111111111111111111111111112"); // public mint kept
+    expect(args).toContain("amount");
+  });
+
+  it("maps every tool call in a multi-tool batch, skipping malformed entries (no coercion)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 12,
+          session_id: SESSION,
+          role: "assistant",
+          content: "two calls",
+          tool_call_id: null,
+          tool_calls: [
+            { id: "c1", namespace: "wallet", command: "read", args: { chain: "base" } },
+            { command: "no_id", args: {} }, // no string id → skipped
+            { id: 42, command: "numeric_id" }, // numeric id → skipped (no coercion)
+            { id: "", command: "empty_id" }, // empty id → skipped (schema min-length)
+            { id: "c9", command: "" }, // empty name → skipped (schema min-length)
+            { id: "c2", command: "dexscreener_search", args: {} }, // empty args → toolArgs null
+          ],
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "agent",
+          message_type: "chat",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const calls = result.data.items[0]!.toolCalls!;
+    expect(calls.map((c) => c.toolCallId)).toEqual(["c1", "c2"]);
+    expect(calls[0]!.toolName).toBe("wallet:read");
+    expect(calls[1]!.toolName).toBe("dexscreener_search");
+    expect(calls[1]!.toolArgs).toBeNull(); // empty args → null
+  });
+
+  it("leaves toolCalls null on a tool_result row (output lives in content)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 13,
+          session_id: SESSION,
+          role: "tool",
+          content: "0.5 ETH",
+          tool_call_id: "call_1",
+          tool_calls: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "agent",
+          message_type: "chat",
+          metadata: null,
+        },
+      ],
+    });
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const msg = result.data.items[0]!;
+    expect(msg.kind).toBe("tool_result");
+    expect(msg.toolCalls).toBeNull();
+    expect(msg.content).toBe("0.5 ETH");
   });
 
   it("falls back to command, then name, then null when namespace is absent", async () => {

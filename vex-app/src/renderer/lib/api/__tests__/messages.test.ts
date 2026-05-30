@@ -184,6 +184,7 @@ function msg(id: number): SessionMessageDto {
     createdAt: ISO,
     toolCallId: null,
     toolName: null,
+    toolCalls: null,
   };
 }
 

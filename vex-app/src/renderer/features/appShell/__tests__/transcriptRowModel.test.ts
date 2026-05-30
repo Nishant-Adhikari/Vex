@@ -9,23 +9,27 @@ import type {
   MessageRole,
   SessionMessageDto,
 } from "@shared/schemas/messages.js";
-import { toTranscriptRow } from "../transcriptRowModel.js";
+import { toTranscriptRow, toTranscriptRows } from "../transcriptRowModel.js";
 
 function dto(p: {
   readonly role: MessageRole;
   readonly kind: MessageKind;
   readonly content?: string;
   readonly toolName?: string | null;
+  readonly toolCallId?: string | null;
+  readonly toolCalls?: SessionMessageDto["toolCalls"];
+  readonly id?: number;
 }): SessionMessageDto {
   return {
-    id: 1,
+    id: p.id ?? 1,
     sessionId: "00000000-0000-4000-8000-000000000001",
     role: p.role,
     kind: p.kind,
     content: p.content ?? "x",
     createdAt: "2026-05-26T10:00:00.000Z",
-    toolCallId: null,
+    toolCallId: p.toolCallId ?? null,
     toolName: p.toolName ?? null,
+    toolCalls: p.toolCalls ?? null,
   };
 }
 
@@ -64,11 +68,17 @@ describe("toTranscriptRow", () => {
     ).toBe("tool");
   });
 
-  it("falls back to a 'tool' label when a tool row has no toolName", () => {
+  it("a tool_call row carries the tool name as label (null when none) and toolKind 'call'", () => {
+    const r = toTranscriptRow(
+      dto({ role: "assistant", kind: "tool_call", toolName: "swap" }),
+    );
+    expect(r.toolKind).toBe("call");
+    expect(r.label).toBe("swap");
     expect(
-      toTranscriptRow(dto({ role: "assistant", kind: "tool_call", toolName: null }))
-        .label,
-    ).toBe("tool");
+      toTranscriptRow(
+        dto({ role: "assistant", kind: "tool_call", toolName: null }),
+      ).label,
+    ).toBeNull();
   });
 
   it("maps runtime_notice and error kinds to the notice variant", () => {
@@ -118,5 +128,72 @@ describe("toTranscriptRow", () => {
     expect(row.variant).toBe("assistant_stopped");
     expect(row.label).toBeNull();
     expect(row.content).toBe("partial…");
+  });
+});
+
+describe("toTranscriptRows — tool call/result correlation (batch 3)", () => {
+  it("labels a tool_result `<toolName>_output` by correlating toolCallId to its call", () => {
+    const call = dto({
+      id: 1,
+      role: "assistant",
+      kind: "tool_call",
+      content: "",
+      toolCalls: [
+        { toolCallId: "abc", toolName: "wallet:read", toolArgs: '{"chain":"base"}' },
+      ],
+    });
+    const result = dto({
+      id: 2,
+      role: "tool",
+      kind: "tool_result",
+      content: "0.5 ETH",
+      toolCallId: "abc",
+    });
+    const rows = toTranscriptRows([call, result]);
+    const resRow = rows.find((r) => r.id === 2)!;
+    expect(resRow.toolKind).toBe("result");
+    expect(resRow.label).toBe("wallet:read_output");
+    expect(resRow.content).toBe("0.5 ETH"); // output preserved as the disclosure body
+  });
+
+  it("falls back to `tool_output` when a result cannot be correlated", () => {
+    const orphan = dto({
+      id: 9,
+      role: "tool",
+      kind: "tool_result",
+      content: "x",
+      toolCallId: "missing",
+    });
+    expect(toTranscriptRows([orphan])[0]!.label).toBe("tool_output");
+  });
+
+  it("preserves assistant prose and exposes every call's disclosure on a multi-tool row", () => {
+    const call = dto({
+      id: 5,
+      role: "assistant",
+      kind: "tool_call",
+      content: "Checking two things.",
+      toolCalls: [
+        { toolCallId: "a", toolName: "wallet:read", toolArgs: '{"chain":"base"}' },
+        { toolCallId: "b", toolName: "dexscreener:search", toolArgs: null },
+      ],
+    });
+    const result = dto({
+      id: 6,
+      role: "tool",
+      kind: "tool_result",
+      content: "",
+      toolCallId: "b",
+    });
+    const rows = toTranscriptRows([call, result]);
+    const callRow = rows.find((r) => r.id === 5)!;
+    expect(callRow.toolKind).toBe("call");
+    expect(callRow.content).toBe("Checking two things."); // prose preserved
+    expect(callRow.toolCalls?.map((c) => c.toolName)).toEqual([
+      "wallet:read",
+      "dexscreener:search",
+    ]);
+    // The second tool's result correlates to the second tool's name.
+    expect(rows.find((r) => r.id === 6)!.label).toBe("dexscreener:search_output");
   });
 });

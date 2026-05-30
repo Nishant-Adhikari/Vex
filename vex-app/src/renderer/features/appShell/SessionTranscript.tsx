@@ -26,7 +26,7 @@ import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { StreamingBubble } from "./StreamingBubble.js";
 import { TranscriptMessage } from "./TranscriptMessage.js";
-import { toTranscriptRow } from "./transcriptRowModel.js";
+import { toTranscriptRows } from "./transcriptRowModel.js";
 
 const PINNED_THRESHOLD_PX = 48;
 const LOAD_OLDER_THRESHOLD_PX = 64;
@@ -53,6 +53,8 @@ export function SessionTranscript({
     () => (pages === undefined ? [] : flattenTranscriptPages(pages)),
     [pages],
   );
+  // One pass that also correlates each tool_result row to its call's name.
+  const rows = useMemo(() => toTranscriptRows(items), [items]);
   const newestId = items.at(-1)?.id ?? 0;
   const oldestId = items.at(0)?.id ?? 0;
   const firstPage = pages?.[0];
@@ -196,8 +198,8 @@ export function SessionTranscript({
           Couldn&apos;t load older messages.
         </div>
       ) : null}
-      {items.map((m) => (
-        <TranscriptMessage key={m.id} row={toTranscriptRow(m)} />
+      {rows.map((row) => (
+        <TranscriptMessage key={row.id} row={row} />
       ))}
       {preview !== null ? <StreamingBubble preview={preview} /> : null}
     </div>

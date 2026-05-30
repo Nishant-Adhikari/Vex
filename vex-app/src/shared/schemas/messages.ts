@@ -69,6 +69,28 @@ export const messageCursorSchema = z
 export type MessageCursor = z.infer<typeof messageCursorSchema>;
 
 /**
+ * One displayable tool call extracted from a `tool_call` row's
+ * `messages.tool_calls` JSONB. The mapper in `messages-db.ts` is the only
+ * place this is built — `toolArgs` is a SANITIZED, pre-serialized JSON string
+ * (secret-like keys dropped, secret-shaped values hard-redacted, size-capped)
+ * so the untrusted renderer receives strings only, never raw JSONB. The
+ * `.max()` bounds below are enforced at the IPC boundary by the read handlers'
+ * `outputSchema: messagePageSchema`, so an oversize mapper output is rejected
+ * rather than shipped.
+ */
+export const toolCallDisplaySchema = z
+  .object({
+    /** Provider tool-call id — correlates a `tool_result` back to its call. */
+    toolCallId: z.string().min(1).max(200),
+    /** `namespace:command` (or `command`/`name`) — string fields only. */
+    toolName: z.string().min(1).max(120),
+    /** Sanitized JSON string of the call args; `null` when there were none. */
+    toolArgs: z.string().max(2000).nullable(),
+  })
+  .strict();
+export type ToolCallDisplay = z.infer<typeof toolCallDisplaySchema>;
+
+/**
  * Renderer-visible message DTO. `metadata` from `messages.metadata`
  * JSONB is deliberately absent — engine markers come back in puzzle 02
  * once the controlled metadata DTO union exists. Until then the mapper
@@ -92,6 +114,14 @@ export const sessionMessageDtoSchema = z
      * registry metadata is wired in puzzle 05.
      */
     toolName: z.string().nullable(),
+    /**
+     * Per-call display rows for a `tool_call` row (one entry per executed
+     * tool in the batch); `null` on every non-call row. Carries the
+     * sanitized args the renderer reveals in its collapsible tool disclosure,
+     * and the per-call id the renderer uses to label the matching
+     * `tool_result` row `<toolName>_output`.
+     */
+    toolCalls: z.array(toolCallDisplaySchema).max(32).nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

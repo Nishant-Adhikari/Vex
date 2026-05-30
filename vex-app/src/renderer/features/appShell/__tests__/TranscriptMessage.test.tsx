@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { TranscriptMessage } from "../TranscriptMessage.js";
 import type {
@@ -90,6 +90,53 @@ describe("TranscriptMessage markers (8-4)", () => {
     expect(
       container.querySelector("[data-vex-marker-content]"),
     ).toBeNull();
+  });
+});
+
+describe("TranscriptMessage tool disclosures (batch 3)", () => {
+  it("renders a tool_call row's prose plus a collapsed per-call disclosure", () => {
+    render(
+      createElement(TranscriptMessage, {
+        row: {
+          id: 1,
+          variant: "tool",
+          toolKind: "call",
+          label: "wallet:read",
+          content: "Let me check.",
+          toolCalls: [
+            {
+              toolCallId: "a",
+              toolName: "wallet:read",
+              toolArgs: '{"chain":"base"}',
+            },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByText("Let me check.")).not.toBeNull(); // prose preserved
+    const btn = screen.getByRole("button", { name: /wallet:read/ });
+    expect(btn.getAttribute("aria-expanded")).toBe("false"); // collapsed by default
+    expect(screen.queryByText('{"chain":"base"}')).toBeNull();
+    fireEvent.click(btn);
+    expect(screen.getByText('{"chain":"base"}')).not.toBeNull(); // params on expand
+  });
+
+  it("renders a tool_result row as a collapsed `<tool>_output` disclosure", () => {
+    render(
+      createElement(TranscriptMessage, {
+        row: {
+          id: 2,
+          variant: "tool",
+          toolKind: "result",
+          label: "wallet:read_output",
+          content: "0.5 ETH",
+        },
+      }),
+    );
+    const btn = screen.getByRole("button", { name: /wallet:read_output/ });
+    expect(screen.queryByText("0.5 ETH")).toBeNull(); // collapsed
+    fireEvent.click(btn);
+    expect(screen.getByText("0.5 ETH")).not.toBeNull();
   });
 });
 

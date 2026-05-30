@@ -53,8 +53,64 @@ describe("messages schemas", () => {
       createdAt: ISO,
       toolCallId: null,
       toolName: null,
+      toolCalls: null,
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("sessionMessageDtoSchema accepts a bounded toolCalls display array", () => {
+    const parsed = sessionMessageDtoSchema.safeParse({
+      id: 13,
+      sessionId: SESSION,
+      role: "assistant",
+      kind: "tool_call",
+      content: "",
+      createdAt: ISO,
+      toolCallId: null,
+      toolName: "wallet:read",
+      toolCalls: [
+        { toolCallId: "call_1", toolName: "wallet:read", toolArgs: '{\n  "chain": "base"\n}' },
+        { toolCallId: "call_2", toolName: "dexscreener:search", toolArgs: null },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects toolArgs over the 2000-char cap (boundary size limit)", () => {
+    const parsed = sessionMessageDtoSchema.safeParse({
+      id: 14,
+      sessionId: SESSION,
+      role: "assistant",
+      kind: "tool_call",
+      content: "",
+      createdAt: ISO,
+      toolCallId: null,
+      toolName: "x:y",
+      toolCalls: [
+        { toolCallId: "c", toolName: "x:y", toolArgs: "a".repeat(2001) },
+      ],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects a toolCalls array over the 32-entry cap", () => {
+    const calls = Array.from({ length: 33 }, (_, i) => ({
+      toolCallId: `c${i}`,
+      toolName: "x:y",
+      toolArgs: null,
+    }));
+    const parsed = sessionMessageDtoSchema.safeParse({
+      id: 15,
+      sessionId: SESSION,
+      role: "assistant",
+      kind: "tool_call",
+      content: "",
+      createdAt: ISO,
+      toolCallId: null,
+      toolName: "x:y",
+      toolCalls: calls,
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects DTO with extra fields (.strict)", () => {
