@@ -57,7 +57,16 @@ import type { SlashCommand } from "./slash/types.js";
 import { SlashCommandMenu } from "./SlashCommandMenu.js";
 
 type ComposerNotice =
-  | { readonly tone: "info" | "error"; readonly text: string }
+  | {
+      readonly tone: "info" | "error";
+      readonly text: string;
+      /**
+       * Present only for a retryable provider error in a known agent session:
+       * an inline Retry re-sends `message` into `sessionId`. Bound to the
+       * session so switching sessions can never resend into the wrong one.
+       */
+      readonly retry?: { readonly sessionId: string; readonly message: string };
+    }
   | null;
 
 interface PendingConfirm {
@@ -116,6 +125,12 @@ export function SessionComposer({
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  // Synchronous in-flight mutex (render `submitPending` lags a tick) + a mirror
+  // of the latest active session so a submit that settles after a session
+  // switch is dropped instead of painting a notice on the wrong session.
+  const inFlightRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(sessionId);
+  sessionIdRef.current = sessionId;
   const slashMenu = useSlashMenu({ draft, setDraft, textareaRef, mode: composerMode });
 
   useLayoutEffect((): void => {
@@ -124,6 +139,60 @@ export function SessionComposer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [draft]);
+
+  // Clear the composer notice when the active session changes so a stale
+  // error / Retry from one session never renders on (or resends into) another.
+  useEffect(() => {
+    setNotice(null);
+  }, [sessionId]);
+
+  // Single owner of a chat-turn submit + its failure/success notice. A
+  // retryable provider error in a KNOWN agent session arms an inline Retry
+  // bound to that session; every other failure keeps the restore-draft
+  // behavior. The in-flight ref is the real mutex (render state lags), and a
+  // session switch mid-flight drops the now-stale outcome.
+  const runChatSubmit = useCallback(
+    async (message: string): Promise<void> => {
+      const targetSessionId = sessionId;
+      if (targetSessionId === null || inFlightRef.current) return;
+      inFlightRef.current = true;
+      setNotice(null);
+      try {
+        const outcome = await submitTurn({ sessionId: targetSessionId, message });
+        if (sessionIdRef.current !== targetSessionId) return;
+        if (!outcome.ok) {
+          const armRetry =
+            activeSession?.id === targetSessionId &&
+            activeSession?.mode === "agent" &&
+            outcome.error.retryable;
+          if (armRetry) {
+            setNotice({
+              tone: "error",
+              text: outcome.error.message,
+              retry: { sessionId: targetSessionId, message },
+            });
+          } else {
+            // No Retry → keep the message so it is not lost (restore only if the
+            // user has not typed something new into the now-empty input).
+            setNotice({ tone: "error", text: outcome.error.message });
+            setDraft((cur) => (cur.length === 0 ? message : cur));
+          }
+          return;
+        }
+        const successText = submitSuccessText(outcome.data);
+        if (successText !== null) setNotice({ tone: "info", text: successText });
+      } finally {
+        inFlightRef.current = false;
+      }
+    },
+    [sessionId, submitTurn, activeSession],
+  );
+
+  const handleRetry = useCallback(async (): Promise<void> => {
+    const r = notice?.retry;
+    if (r === undefined || r.sessionId !== sessionId) return;
+    await runChatSubmit(r.message);
+  }, [notice, sessionId, runChatSubmit]);
 
   // Welcome→create hand-off: when this composer mounts for the freshly
   // created session, consume the first message stashed by SessionCreator and
@@ -144,17 +213,8 @@ export function SessionComposer({
     handedOffRef.current = key;
     const message = pendingFirstMessage.message;
     clearPendingFirstMessage();
-    void (async () => {
-      const outcome = await submitTurn({ sessionId, message });
-      if (!outcome.ok) {
-        setNotice({ tone: "error", text: outcome.error.message });
-        setDraft(message);
-        return;
-      }
-      const successText = submitSuccessText(outcome.data);
-      if (successText !== null) setNotice({ tone: "info", text: successText });
-    })();
-  }, [sessionId, pendingFirstMessage, clearPendingFirstMessage, submitTurn]);
+    void runChatSubmit(message);
+  }, [sessionId, pendingFirstMessage, clearPendingFirstMessage, runChatSubmit]);
 
   const runStatus = readRunStatus(runtimeQuery.data);
   const freeTextGate = runStatus !== null && FREE_TEXT_DISALLOWED.has(runStatus);
@@ -244,20 +304,10 @@ export function SessionComposer({
         return;
       }
       // Clear optimistically — the message is on its way to the agent and the
-      // transcript already shows it. On failure, restore the draft ONLY if the
-      // user has not typed something new into the (now-empty) input.
+      // transcript already shows it. runChatSubmit owns failure handling
+      // (retryable → inline Retry; otherwise restore the draft).
       setDraft("");
-      const outcome = await submitTurn({
-        sessionId,
-        message,
-      });
-      if (!outcome.ok) {
-        setNotice({ tone: "error", text: outcome.error.message });
-        setDraft((cur) => (cur.length === 0 ? message : cur));
-        return;
-      }
-      const successText = submitSuccessText(outcome.data);
-      if (successText !== null) setNotice({ tone: "info", text: successText });
+      await runChatSubmit(message);
     },
     [
       sessionId,
@@ -268,7 +318,7 @@ export function SessionComposer({
       runStatus,
       slashDispatch,
       submitPending,
-      submitTurn,
+      runChatSubmit,
       composerMode,
     ],
   );
@@ -374,15 +424,29 @@ export function SessionComposer({
       </div>
 
       {notice !== null ? (
-        <p
+        <div
           role={notice.tone === "error" ? "alert" : "status"}
-          className={cn(
-            "mt-3 text-xs",
-            notice.tone === "error" ? "text-destructive" : "text-[#8da5ff]",
-          )}
+          className="mt-3 flex items-center gap-2 text-xs"
         >
-          {notice.text}
-        </p>
+          <span
+            className={
+              notice.tone === "error" ? "text-destructive" : "text-[#8da5ff]"
+            }
+          >
+            {notice.text}
+          </span>
+          {notice.retry !== undefined ? (
+            <button
+              type="button"
+              onClick={() => void handleRetry()}
+              disabled={submitPending || slashDispatch.pending}
+              aria-label="Retry sending the message"
+              className="inline-flex h-6 shrink-0 items-center rounded-md border border-[#3275f8]/40 bg-[#3275f8]/10 px-2 font-medium text-[#9bb2ff] transition-colors hover:bg-[#3275f8]/16 hover:text-[#bcccff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {showQuickActions ? (

@@ -27,6 +27,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   AiChat01Icon: "AiChat01Icon",
   AlertCircleIcon: "AlertCircleIcon",
   Archive02Icon: "Archive02Icon",
+  ArrowDown01Icon: "ArrowDown01Icon",
   ArrowLeft01Icon: "ArrowLeft01Icon",
   ArrowRight01Icon: "ArrowRight01Icon",
   ArrowUp01Icon: "ArrowUp01Icon",
@@ -442,6 +443,223 @@ describe("AppShell", () => {
     expect(chatSubmitMock).toHaveBeenCalledTimes(1);
   });
 
+  it("arms an inline Retry on a retryable provider error and re-sends the same message", async () => {
+    const row = makeAgentRow("Retry chat");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: false,
+        error: {
+          code: "provider.unavailable",
+          domain: "chat",
+          message: "No inference provider is available.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "c",
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("Retry chat");
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "do the thing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(chatSubmitMock).toHaveBeenCalledTimes(1));
+    await screen.findByText("No inference provider is available.");
+    const retry = await screen.findByRole("button", {
+      name: "Retry sending the message",
+    });
+    // Retryable agent error → the message lives behind Retry; draft NOT restored.
+    await waitFor(() => expect(draft.value).toBe(""));
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(chatSubmitMock).toHaveBeenCalledTimes(2));
+    expect(chatSubmitMock).toHaveBeenLastCalledWith({
+      sessionId: row.id,
+      message: "do the thing",
+    });
+  });
+
+  it("does not double-submit when Retry is clicked twice before the first settles", async () => {
+    const row = makeAgentRow("Retry guard");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+    chatSubmitMock.mockReturnValueOnce({
+      promise: Promise.resolve({
+        ok: false,
+        error: {
+          code: "provider.unavailable",
+          domain: "chat",
+          message: "No inference provider is available.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "c",
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("Retry guard");
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "retry me" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    const retry = await screen.findByRole("button", {
+      name: "Retry sending the message",
+    });
+
+    // The retry submit never settles → the in-flight ref (+ disabled button)
+    // guarantee a second click cannot start a second submit.
+    chatSubmitMock.mockReturnValue({
+      promise: new Promise<never>(() => {}),
+      cancel: vi.fn(),
+    });
+    chatSubmitMock.mockClear();
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    await waitFor(() => expect(chatSubmitMock).toHaveBeenCalledTimes(1));
+    expect(chatSubmitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not arm Retry for a non-retryable error and restores the draft", async () => {
+    const row = makeAgentRow("No retry");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: false,
+        error: {
+          code: "internal.unexpected",
+          domain: "chat",
+          message: "Unable to process the message.",
+          retryable: false,
+          userActionable: false,
+          redacted: true,
+          correlationId: "c",
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("No retry");
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "keep me" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await screen.findByText("Unable to process the message.");
+    // Non-retryable → no Retry button; the message is restored to the draft.
+    expect(
+      screen.queryByRole("button", { name: "Retry sending the message" }),
+    ).toBeNull();
+    await waitFor(() => expect(draft.value).toBe("keep me"));
+  });
+
+  it("does not arm Retry for a retryable error in a resolved MISSION session (mode gate fails closed)", async () => {
+    const missionRow: SessionListItem = {
+      id: "77777777-7777-4777-8777-777777777777",
+      mode: "mission",
+      permission: "restricted",
+      title: "Mission no retry",
+      initialGoal: null,
+      startedAt: localIsoDaysAgo(0),
+      endedAt: null,
+      missionStatus: null,
+      pinnedAt: null,
+    };
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [missionRow] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: missionRow });
+    useUiStore.setState({ activeSessionId: missionRow.id });
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: false,
+        error: {
+          code: "provider.unavailable",
+          domain: "chat",
+          message: "No inference provider is available.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "c",
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("Mission no retry");
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "mission goal" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await screen.findByText("No inference provider is available.");
+    // Retryable but mission mode → the agent-mode gate fails closed: no Retry,
+    // draft restored (mission error handling is owned by later phases).
+    expect(
+      screen.queryByRole("button", { name: "Retry sending the message" }),
+    ).toBeNull();
+    await waitFor(() => expect(draft.value).toBe("mission goal"));
+  });
+
+  it("clears the notice + Retry when the session is switched after a failure (no cross-session resend)", async () => {
+    const a: SessionListItem = {
+      ...makeAgentRow("Session A"),
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    };
+    const b: SessionListItem = {
+      ...makeAgentRow("Session B"),
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    };
+    sessionsListMock.mockResolvedValue({ ok: true, data: [a, b] });
+    sessionsGetMock.mockImplementation(async ({ id }) => ({
+      ok: true,
+      data: id === a.id ? a : b,
+    }));
+    useUiStore.setState({ activeSessionId: a.id });
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: false,
+        error: {
+          code: "provider.unavailable",
+          domain: "chat",
+          message: "No inference provider is available.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "c",
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("Session A");
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "msg for A" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByRole("button", { name: "Retry sending the message" });
+    chatSubmitMock.mockClear();
+
+    // Switch to session B via the sidebar → the notice + its Retry must clear,
+    // and nothing may resend A's message into B.
+    fireEvent.click(screen.getAllByText("Session B")[0]!);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Retry sending the message" }),
+      ).toBeNull(),
+    );
+    expect(chatSubmitMock).not.toHaveBeenCalled();
+  });
+
   it("swaps Send for a Stop button while a turn streams and cancels it (9-5b)", async () => {
     const row = makeAgentRow("Stoppable chat");
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
@@ -602,7 +820,7 @@ describe("AppShell", () => {
     );
   });
 
-  it("welcome→create: a failed first send surfaces the error AND preserves the draft", async () => {
+  it("welcome→create: a failed first send surfaces the error AND offers Retry (message not lost)", async () => {
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
     useUiStore.setState({ activeSessionId: null });
     chatSubmitMock.mockReturnValue({
@@ -628,13 +846,19 @@ describe("AppShell", () => {
     await screen.findByRole("heading", { name: "New session" });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
-    // Hand-off submit fails → the now-active composer shows the error and
-    // repopulates the draft so the first message is never silently lost.
+    // Hand-off submit fails (retryable, agent session) → the composer shows the
+    // error + an inline Retry holding the first message (never silently lost);
+    // clicking Retry re-sends the same message into the new session.
     await screen.findByText("send failed");
+    const retry = await screen.findByRole("button", {
+      name: "Retry sending the message",
+    });
+    fireEvent.click(retry);
     await waitFor(() =>
-      expect(
-        (screen.getByLabelText("Session draft") as HTMLTextAreaElement).value,
-      ).toBe("first message"),
+      expect(chatSubmitMock).toHaveBeenLastCalledWith({
+        sessionId: "a6bf4f85-e645-4df7-9bc5-70ec2eb0bd51",
+        message: "first message",
+      }),
     );
   });
 
