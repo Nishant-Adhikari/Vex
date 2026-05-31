@@ -49,5 +49,7 @@ export function Empty({ label }: { readonly label: string }): JSX.Element {
 
 export function fmtDate(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+  // Force en-US so timestamps read in English regardless of OS locale
+  // (display-only; matches the sidebar date locale).
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-US");
 }

@@ -182,6 +182,47 @@ body,
   animation: vex-cascade-row 240ms ease-out both;
 }
 
+/* New-session button shine — silver→white sweep across gradient-clipped text.
+ * Implemented as build-time CSS @keyframes (NOT motion/react inline styles) so
+ * it stays CSP-safe under `style-src 'self'` and passes check-build-artifacts.
+ * Reduced-motion users get static, readable silver text (see the rule below;
+ * with `animation: none` the background-position rests at its silver start).
+ * `color` is a fallback if `background-clip: text` is unsupported — full
+ * support on Electron/Chromium. */
+@keyframes vex-shine {
+  from {
+    background-position: 150% center;
+  }
+  to {
+    background-position: -50% center;
+  }
+}
+
+.vex-shiny-text {
+  --shiny-base: #b5b5b5;
+  --shiny-shine: #ffffff;
+  background-image: linear-gradient(
+    120deg,
+    var(--shiny-base) 0%,
+    var(--shiny-base) 35%,
+    var(--shiny-shine) 50%,
+    var(--shiny-base) 65%,
+    var(--shiny-base) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--shiny-base);
+  animation: vex-shine 2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-shiny-text {
+    animation: none;
+  }
+}
+
 /* Respect reduced-motion preference (WCAG AA) */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -13,6 +13,7 @@ import type {
   SessionListItem,
 } from "@shared/schemas/sessions.js";
 import { cn } from "../../lib/utils.js";
+import { ShinyText } from "../../components/ui/shiny-text.js";
 import {
   useDeleteSession,
   useSessionsList,
@@ -197,13 +198,16 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
           type="button"
           onClick={onCreate}
           className={cn(
-            "flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#3275f8]/32 bg-[#3275f8]/10 text-sm font-medium text-[#6f91ff] transition-colors hover:bg-[#3275f8]/16 hover:text-[#9bb2ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+            // Neutral container so the silver→white ShinyText label reads as
+            // the accent (was electric-blue text on a blue tint). Focus ring
+            // kept #3275f8 for app-shell consistency + visible focus.
+            "flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
             sidebarOpen ? "px-3" : "px-0",
           )}
           aria-label="New session"
         >
           <HugeiconsIcon icon={Add01Icon} size={17} aria-hidden />
-          {sidebarOpen ? <span>New session</span> : null}
+          {sidebarOpen ? <ShinyText text="New session" /> : null}
         </button>
       </div>
 

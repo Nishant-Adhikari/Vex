@@ -84,9 +84,11 @@ function restoreErrorMessage(code: VexErrorCode, fallback: string): string {
 
 function backupCardLabel(backup: WalletAvailableBackup): string {
   const date = new Date(backup.timestamp);
+  // Force en-US so the backup timestamp reads in English regardless of OS
+  // locale (display-only; does not affect restore parsing or storage).
   const when = Number.isNaN(date.getTime())
     ? backup.timestamp
-    : date.toLocaleString();
+    : date.toLocaleString("en-US");
   const count =
     backup.walletCount === 1 ? "1 wallet" : `${backup.walletCount} wallets`;
   return `Backup from ${when}, ${count}`;

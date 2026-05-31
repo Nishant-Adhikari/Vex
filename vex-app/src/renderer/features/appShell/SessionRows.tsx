@@ -310,7 +310,7 @@ function SessionRow({
           // button. Native buttons inside a non-interactive wrapper —
           // no nested buttons, no role="button" parent, so Enter/Space
           // on either action cannot bubble into a row-select handler.
-          <div className="absolute right-3 top-3 flex items-center gap-1">
+          <div className="absolute bottom-3 right-3 flex items-center gap-1">
             <RemoveButton onClick={handleRemoveClick} />
             <PinToggle
               pinned={isPinned}

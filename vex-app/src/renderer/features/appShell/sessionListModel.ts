@@ -158,13 +158,17 @@ export function formatSessionTime(iso: string): string {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     const bucket = getSessionBucket(iso);
+    // Force en-US so the sidebar date reads in English ("May 31") regardless
+    // of the OS locale; `undefined` previously deferred to the system locale
+    // (a Polish system rendered "31 maj"). Display-only — does not affect
+    // bucket math, parsing, or storage.
     if (bucket === "older") {
-      return d.toLocaleDateString(undefined, {
+      return d.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
       });
     }
-    return d.toLocaleTimeString(undefined, {
+    return d.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     });
