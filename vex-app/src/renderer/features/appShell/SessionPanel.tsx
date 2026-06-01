@@ -27,6 +27,7 @@ import { useSession } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { ApprovalsRegion } from "./ApprovalsRegion.js";
 import { MissionContractCard } from "./MissionContractCard.js";
+import { MissionControls } from "./MissionControls.js";
 import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
 import { SessionTranscript } from "./SessionTranscript.js";
@@ -109,6 +110,9 @@ export function SessionPanel(): JSX.Element {
         ) : null}
         {activeSession !== null ? (
           <ApprovalsRegion sessionId={activeSession.id} />
+        ) : null}
+        {showMissionCard && activeSession !== null ? (
+          <MissionControls sessionId={activeSession.id} />
         ) : null}
         <SessionComposer activeSession={activeSession} activeSessionId={activeSessionId} />
       </div>

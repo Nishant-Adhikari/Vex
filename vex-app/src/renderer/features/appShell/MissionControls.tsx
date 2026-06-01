@@ -1,0 +1,258 @@
+/**
+ * MissionControls — the mission control surface that replaces the mission-*
+ * slash commands (Phase 4b-2). A single strip mounted above the composer for
+ * mission sessions, the sole owner of runtime-gated mission controls:
+ *
+ *  - NO ACTIVE RUN + accepted/ready contract → a "Start mission" button
+ *    (ShinyText label) → mission.start.
+ *  - ACTIVE RUN → a status-gated toolbar:
+ *      Continue (paused_wake/paused_user), Recover (paused_error),
+ *      Edit (any status except paused_approval), Stop (always).
+ *
+ * Every control surfaces refusal outcomes (the backend returns `ok:true`
+ * classified outcomes like not_accepted / lease_busy / blocked_terminal), not
+ * just transport errors, so a race never silently does nothing. Buttons are
+ * disabled while any control mutation is in flight OR a control request is
+ * already pending (runtime.pendingControlKind), preventing double-fire.
+ */
+
+import { useCallback, useState } from "react";
+import type { JSX } from "react";
+import type { Result } from "@shared/ipc/result.js";
+import type {
+  MissionDraftDto,
+  MissionGetDiffResult,
+} from "@shared/schemas/mission.js";
+import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
+import {
+  useEditMission,
+  useMissionContinue,
+  useMissionDiff,
+  useMissionDraft,
+  useMissionRetry,
+  useMissionStart,
+  useMissionStop,
+} from "../../lib/api/mission.js";
+import { useRuntimeState } from "../../lib/api/runtime.js";
+import { cn } from "../../lib/utils.js";
+import { ShinyText } from "../../components/ui/shiny-text.js";
+
+export interface MissionControlsProps {
+  readonly sessionId: string;
+}
+
+type ControlNotice = { readonly tone: "error"; readonly text: string } | null;
+
+/** Outcomes that mean the control succeeded — no notice needed. */
+const SUCCESS_OUTCOMES: ReadonlySet<string> = new Set([
+  "dispatched",
+  "resumed",
+  "already_running",
+  "stopped",
+  "queued",
+]);
+
+/**
+ * Map a control Result to a user notice. `null` = success (clear the notice).
+ * Refusal outcomes (`ok:true` but not a success literal) get friendly copy so
+ * a race / blocked control is never invisible.
+ */
+function noticeFor(r: Result<{ readonly outcome: string }>): string | null {
+  if (!r.ok) return r.error.message;
+  if (SUCCESS_OUTCOMES.has(r.data.outcome)) return null;
+  switch (r.data.outcome) {
+    case "lease_busy":
+      return "Busy — another operation is in progress. Try again.";
+    case "no_active_run":
+      return "No active mission run.";
+    case "not_accepted":
+    case "stale_acceptance":
+      return "Accept the contract before starting.";
+    case "not_ready":
+      return "Outline the mission before starting.";
+    case "blocked_approval":
+      return "Resolve the pending approval first.";
+    case "blocked_error":
+      return "Mission paused after an error — use Recover.";
+    case "blocked_terminal":
+    case "already_terminal":
+      return "The mission run has already ended.";
+    case "not_recoverable":
+      return "This pause isn't an error — use Continue.";
+    case "session_has_active_run":
+    case "active_run_exists":
+      return "A mission run is already active.";
+    case "no_failed_run":
+      return "No failed run to recover.";
+    case "provider_unavailable":
+      return "No inference provider — unlock Vex or set up a provider.";
+    case "status_changed":
+      return "Mission state changed — re-check and retry.";
+    default:
+      return "Couldn't complete the action. Re-check the mission state.";
+  }
+}
+
+function readDraft(
+  data: Result<MissionDraftDto | null> | undefined,
+): MissionDraftDto | null {
+  return data && data.ok ? data.data : null;
+}
+
+function readReadyDiff(
+  data: Result<MissionGetDiffResult> | undefined,
+): Extract<MissionGetDiffResult, { outcome: "ready" }> | null {
+  if (!data || !data.ok || data.data.outcome !== "ready") return null;
+  return data.data;
+}
+
+function readRuntime(
+  data: Result<RuntimeStateDto> | undefined,
+): RuntimeStateDto | null {
+  return data && data.ok ? data.data : null;
+}
+
+export function MissionControls({
+  sessionId,
+}: MissionControlsProps): JSX.Element | null {
+  const runtimeQuery = useRuntimeState(sessionId);
+  const draftQuery = useMissionDraft(sessionId);
+  const draft = readDraft(draftQuery.data);
+  const diffQuery = useMissionDiff(sessionId, draft?.missionId ?? null);
+
+  const start = useMissionStart();
+  const cont = useMissionContinue();
+  const recover = useMissionRetry();
+  const edit = useEditMission();
+  const stop = useMissionStop();
+
+  const [notice, setNotice] = useState<ControlNotice>(null);
+
+  const run = useCallback(
+    async (
+      action: () => Promise<Result<{ readonly outcome: string }>>,
+    ): Promise<void> => {
+      try {
+        const text = noticeFor(await action());
+        setNotice(text === null ? null : { tone: "error", text });
+      } catch {
+        setNotice({
+          tone: "error",
+          text: "Couldn't complete the action. Re-check the mission state.",
+        });
+      }
+    },
+    [],
+  );
+
+  const runtime = readRuntime(runtimeQuery.data);
+  // Render gate: wait for runtime + a mission draft to resolve.
+  if (runtime === null || draft === null) return null;
+
+  const anyPending =
+    start.isPending ||
+    cont.isPending ||
+    recover.isPending ||
+    edit.isPending ||
+    stop.isPending;
+  // Disable while a control is in flight OR one is already pending server-side.
+  const disabled = anyPending || runtime.pendingControlKind !== null;
+
+  if (!runtime.hasActiveRun) {
+    const diff = readReadyDiff(diffQuery.data);
+    const canStart =
+      draft.status === "ready" && diff !== null && diff.isAccepted && !diff.isDirty;
+    if (!canStart) return null;
+    const missionId = draft.missionId;
+    return (
+      <div data-vex-area="mission-controls" className="mt-3">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() =>
+            void run(() => start.mutateAsync({ sessionId, missionId }))
+          }
+          aria-label="Start mission"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ShinyText text="Start mission" />
+        </button>
+        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+      </div>
+    );
+  }
+
+  const status = runtime.status;
+  const canContinue = status === "paused_wake" || status === "paused_user";
+  const canRecover = status === "paused_error";
+  const canEdit = status !== "paused_approval";
+
+  return (
+    <div
+      data-vex-area="mission-controls"
+      role="group"
+      aria-label="Mission controls"
+      className="mt-3 flex flex-wrap items-center gap-2"
+    >
+      <ControlButton
+        label="Continue"
+        disabled={disabled || !canContinue}
+        onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
+      />
+      <ControlButton
+        label="Recover"
+        disabled={disabled || !canRecover}
+        onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
+      />
+      <ControlButton
+        label="Edit"
+        disabled={disabled || !canEdit}
+        onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
+      />
+      <ControlButton
+        label="Stop"
+        tone="danger"
+        disabled={disabled}
+        onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
+      />
+      {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+    </div>
+  );
+}
+
+function ControlButton({
+  label,
+  onClick,
+  disabled,
+  tone,
+}: {
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly disabled: boolean;
+  readonly tone?: "danger";
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={`${label} mission`}
+      className={cn(
+        "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8] disabled:cursor-not-allowed disabled:opacity-40",
+        tone === "danger"
+          ? "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/16"
+          : "border-white/[0.08] bg-white/[0.03] text-[var(--color-text-secondary)] hover:bg-white/[0.06] hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function ControlNoticeLine({ text }: { readonly text: string }): JSX.Element {
+  return (
+    <p role="alert" className="w-full text-xs text-destructive">
+      {text}
+    </p>
+  );
+}
