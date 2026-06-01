@@ -1,13 +1,21 @@
 /**
  * MissionControls — the mission control surface that replaces the mission-*
- * slash commands (Phase 4b-2). A single strip mounted above the composer for
- * mission sessions, the sole owner of runtime-gated mission controls:
+ * slash commands. A single strip mounted above the composer for mission
+ * sessions, the sole owner of runtime-gated mission controls:
  *
- *  - NO ACTIVE RUN + accepted/ready contract → a "Start mission" button
- *    (ShinyText label) → mission.start.
  *  - ACTIVE RUN → a status-gated toolbar:
  *      Continue (paused_wake/paused_user), Recover (paused_error),
  *      Edit (any status except paused_approval), Stop (always).
+ *  - NO ACTIVE RUN + accepted/ready contract → a "Start mission" button
+ *    (ShinyText label) → mission.start.
+ *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) → a
+ *    "Renew mission" button → mission.renew (clones it into a fresh draft).
+ *
+ * The render gate keys off `runtime` ALONE — never the draft. A started
+ * mission flips its row past `ready` (commit-start → `running`; terminal on
+ * finalize), so `getDraft` returns null for the entire active/terminal run;
+ * gating the toolbar on a draft hid it for every active run. Start reads the
+ * draft, Renew reads the renew-source query — both AFTER the runtime gate.
  *
  * Every control surfaces refusal outcomes (the backend returns `ok:true`
  * classified outcomes like not_accepted / lease_busy / blocked_terminal), not
@@ -18,10 +26,12 @@
 
 import { useCallback, useState } from "react";
 import type { JSX } from "react";
-import type { Result } from "@shared/ipc/result.js";
+import { assertNever, type Result } from "@shared/ipc/result.js";
 import type {
   MissionDraftDto,
   MissionGetDiffResult,
+  MissionGetRenewableSourceResult,
+  MissionRenewResult,
 } from "@shared/schemas/mission.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import {
@@ -29,9 +39,11 @@ import {
   useMissionContinue,
   useMissionDiff,
   useMissionDraft,
+  useMissionRenew,
   useMissionRetry,
   useMissionStart,
   useMissionStop,
+  useRenewableMissionSource,
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
@@ -93,6 +105,33 @@ function noticeFor(r: Result<{ readonly outcome: string }>): string | null {
   }
 }
 
+/**
+ * Renew has its own outcome vocabulary that collides by STRING with the other
+ * controls (e.g. `not_accepted` here means "the source mission was never
+ * accepted", not "accept this draft"; `session_has_active_run` is renew-only),
+ * so it gets a dedicated mapper instead of the shared `noticeFor`. `renewed` is
+ * the success literal → null (clears the notice).
+ */
+function renewNoticeFor(r: Result<MissionRenewResult>): string | null {
+  if (!r.ok) return r.error.message;
+  switch (r.data.outcome) {
+    case "renewed":
+      return null;
+    case "previous_mission_not_found":
+      return "The mission to renew was not found.";
+    case "session_mismatch":
+      return "That mission belongs to a different session.";
+    case "not_accepted":
+      return "The source mission was never accepted — nothing to renew from.";
+    case "not_terminal_yet":
+      return `The source mission isn't finished yet (status ${r.data.runStatus}). Wait for it to finish first.`;
+    case "session_has_active_run":
+      return `A mission run is already active (status ${r.data.runStatus}). Stop it before renewing.`;
+    default:
+      return assertNever(r.data);
+  }
+}
+
 function readDraft(
   data: Result<MissionDraftDto | null> | undefined,
 ): MissionDraftDto | null {
@@ -112,6 +151,13 @@ function readRuntime(
   return data && data.ok ? data.data : null;
 }
 
+/** The renew source ({ missionId } when a terminal accepted mission exists) or null. */
+function readRenewable(
+  data: Result<MissionGetRenewableSourceResult> | undefined,
+): MissionGetRenewableSourceResult {
+  return data && data.ok ? data.data : null;
+}
+
 export function MissionControls({
   sessionId,
 }: MissionControlsProps): JSX.Element | null {
@@ -119,21 +165,24 @@ export function MissionControls({
   const draftQuery = useMissionDraft(sessionId);
   const draft = readDraft(draftQuery.data);
   const diffQuery = useMissionDiff(sessionId, draft?.missionId ?? null);
+  const renewableQuery = useRenewableMissionSource(sessionId);
 
   const start = useMissionStart();
   const cont = useMissionContinue();
   const recover = useMissionRetry();
   const edit = useEditMission();
   const stop = useMissionStop();
+  const renew = useMissionRenew();
 
   const [notice, setNotice] = useState<ControlNotice>(null);
 
   const run = useCallback(
-    async (
-      action: () => Promise<Result<{ readonly outcome: string }>>,
+    async <T extends { readonly outcome: string }>(
+      action: () => Promise<Result<T>>,
+      map: (r: Result<T>) => string | null = noticeFor,
     ): Promise<void> => {
       try {
-        const text = noticeFor(await action());
+        const text = map(await action());
         setNotice(text === null ? null : { tone: "error", text });
       } catch {
         setNotice({
@@ -146,23 +195,70 @@ export function MissionControls({
   );
 
   const runtime = readRuntime(runtimeQuery.data);
-  // Render gate: wait for runtime + a mission draft to resolve.
-  if (runtime === null || draft === null) return null;
+  // Render gate: only the runtime state is required. The active-run toolbar and
+  // every gate below read it; the draft / renew-source are read AFTER this so a
+  // null draft (always true mid-run) never hides the controls.
+  if (runtime === null) return null;
 
   const anyPending =
     start.isPending ||
     cont.isPending ||
     recover.isPending ||
     edit.isPending ||
-    stop.isPending;
+    stop.isPending ||
+    renew.isPending;
   // Disable while a control is in flight OR one is already pending server-side.
   const disabled = anyPending || runtime.pendingControlKind !== null;
 
-  if (!runtime.hasActiveRun) {
-    const diff = readReadyDiff(diffQuery.data);
-    const canStart =
-      draft.status === "ready" && diff !== null && diff.isAccepted && !diff.isDirty;
-    if (!canStart) return null;
+  // ACTIVE RUN → status-gated toolbar (keys off runtime.status alone).
+  if (runtime.hasActiveRun) {
+    const status = runtime.status;
+    const canContinue = status === "paused_wake" || status === "paused_user";
+    const canRecover = status === "paused_error";
+    const canEdit = status !== "paused_approval";
+    return (
+      <div
+        data-vex-area="mission-controls"
+        role="group"
+        aria-label="Mission controls"
+        className="mt-3 flex flex-wrap items-center gap-2"
+      >
+        <ControlButton
+          label="Continue"
+          disabled={disabled || !canContinue}
+          onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
+        />
+        <ControlButton
+          label="Recover"
+          disabled={disabled || !canRecover}
+          onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
+        />
+        <ControlButton
+          label="Edit"
+          disabled={disabled || !canEdit}
+          onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
+        />
+        <ControlButton
+          label="Stop"
+          tone="danger"
+          disabled={disabled}
+          onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
+        />
+        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+      </div>
+    );
+  }
+
+  // NO ACTIVE RUN → Start an accepted/ready draft; Start wins over Renew when
+  // both could apply (a freshly accepted contract is the more immediate action).
+  const diff = readReadyDiff(diffQuery.data);
+  const canStart =
+    draft !== null &&
+    draft.status === "ready" &&
+    diff !== null &&
+    diff.isAccepted &&
+    !diff.isDirty;
+  if (canStart) {
     const missionId = draft.missionId;
     return (
       <div data-vex-area="mission-controls" className="mt-3">
@@ -182,42 +278,34 @@ export function MissionControls({
     );
   }
 
-  const status = runtime.status;
-  const canContinue = status === "paused_wake" || status === "paused_user";
-  const canRecover = status === "paused_error";
-  const canEdit = status !== "paused_approval";
+  // No startable draft, but a terminal accepted mission exists → Renew clones it
+  // into a fresh draft (the new contract must still be accepted before it runs,
+  // so this is non-destructive and needs no confirm step).
+  const renewSource = readRenewable(renewableQuery.data);
+  if (renewSource !== null) {
+    const previousMissionId = renewSource.missionId;
+    return (
+      <div data-vex-area="mission-controls" className="mt-3">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() =>
+            void run(
+              () => renew.mutateAsync({ sessionId, previousMissionId }),
+              renewNoticeFor,
+            )
+          }
+          aria-label="Renew mission"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Renew mission
+        </button>
+        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+      </div>
+    );
+  }
 
-  return (
-    <div
-      data-vex-area="mission-controls"
-      role="group"
-      aria-label="Mission controls"
-      className="mt-3 flex flex-wrap items-center gap-2"
-    >
-      <ControlButton
-        label="Continue"
-        disabled={disabled || !canContinue}
-        onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
-      />
-      <ControlButton
-        label="Recover"
-        disabled={disabled || !canRecover}
-        onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
-      />
-      <ControlButton
-        label="Edit"
-        disabled={disabled || !canEdit}
-        onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
-      />
-      <ControlButton
-        label="Stop"
-        tone="danger"
-        disabled={disabled}
-        onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
-      />
-      {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
-    </div>
-  );
+  return null;
 }
 
 function ControlButton({

@@ -5,7 +5,7 @@
  * refusal outcomes (ok:true non-success) surface a notice.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
@@ -22,11 +22,13 @@ function ok<T>(data: T) {
 const getStateMock = vi.fn();
 const getDraftMock = vi.fn();
 const getDiffMock = vi.fn();
+const getRenewableMock = vi.fn();
 const startMock = vi.fn();
 const continueMock = vi.fn();
 const retryMock = vi.fn();
 const editMock = vi.fn();
 const stopMock = vi.fn();
+const renewMock = vi.fn();
 
 function setVex(): void {
   Object.defineProperty(window, "vex", {
@@ -37,11 +39,13 @@ function setVex(): void {
       mission: {
         getDraft: getDraftMock,
         getDiff: getDiffMock,
+        getRenewableSource: getRenewableMock,
         start: startMock,
         continue: continueMock,
         retry: retryMock,
         edit: editMock,
         stop: stopMock,
+        renew: renewMock,
       },
     },
   });
@@ -96,6 +100,12 @@ function renderControls() {
     wrapper: Wrapper,
   });
 }
+
+beforeEach(() => {
+  // Default: no renewable source. The hook fires for every render (active or
+  // not), so give it a safe value; renew-specific tests override it.
+  getRenewableMock.mockResolvedValue(ok(null));
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -240,5 +250,83 @@ describe("MissionControls", () => {
     const startBtn = await screen.findByRole("button", { name: "Start mission" });
     fireEvent.click(startBtn);
     await screen.findByText(/Accept the contract before starting/i);
+  });
+
+  it("renders the active-run toolbar even when getDraft is null (mission row is past 'ready' mid-run)", async () => {
+    // Reality: a started mission's row is flipped to running/terminal, so
+    // getDraft returns null for the whole active run. The toolbar must key off
+    // runtime alone — this pins the gate fix.
+    getStateMock.mockResolvedValue(
+      runtimeState({ hasActiveRun: true, status: "paused_error", missionRunId: "r1" }),
+    );
+    getDraftMock.mockResolvedValue(ok(null));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      screen.getByRole("button", { name: "Stop mission" }),
+    ).toBeTruthy();
+  });
+
+  it("no active run + renew source (no startable draft) → Renew dispatches mission.renew", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok(null));
+    getRenewableMock.mockResolvedValue(ok({ missionId: "m-done" }));
+    renewMock.mockResolvedValue(
+      ok({ outcome: "renewed", newMissionId: "m-new", sourceMissionId: "m-done" }),
+    );
+    renderControls();
+
+    const renewBtn = await screen.findByRole("button", { name: "Renew mission" });
+    fireEvent.click(renewBtn);
+    await waitFor(() =>
+      expect(renewMock).toHaveBeenCalledWith({
+        sessionId: SESSION,
+        previousMissionId: "m-done",
+      }),
+    );
+  });
+
+  it("Start wins over Renew when an accepted ready draft exists", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    getRenewableMock.mockResolvedValue(ok({ missionId: "m-done" }));
+    renderControls();
+
+    await screen.findByRole("button", { name: "Start mission" });
+    expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
+  });
+
+  it("surfaces a renew refusal (not_terminal_yet → notice)", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok(null));
+    getRenewableMock.mockResolvedValue(ok({ missionId: "m-done" }));
+    renewMock.mockResolvedValue(
+      ok({
+        outcome: "not_terminal_yet",
+        sourceMissionId: "m-done",
+        missionRunId: "r1",
+        runStatus: "running",
+      }),
+    );
+    renderControls();
+
+    const renewBtn = await screen.findByRole("button", { name: "Renew mission" });
+    fireEvent.click(renewBtn);
+    await screen.findByText(/isn't finished yet/i);
+  });
+
+  it("no active run, no startable draft, no renew source → renders nothing", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok(null));
+    getRenewableMock.mockResolvedValue(ok(null));
+    renderControls();
+
+    await waitFor(() => expect(getRenewableMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("button", { name: "Start mission" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
   });
 });
