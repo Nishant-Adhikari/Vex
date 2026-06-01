@@ -15,6 +15,7 @@
 import type { ToolCallRequest, ToolResult } from "./types.js";
 import type { InternalToolContext } from "./internal/types.js";
 import { getActionKind, getPressureSafety, isInternalTool, isMutatingTool, isToolBlockedForRole } from "./registry.js";
+import { getProtocolManifest } from "./protocols/catalog.js";
 import { discoverProtocolCapabilities } from "./protocols/runtime.js";
 import { executeProtocolTool } from "./protocols/runtime.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "./protocols/discovery.telemetry.js";
@@ -133,10 +134,41 @@ export async function dispatchTool(
 
 // ── Routing ──────────────────────────────────────────────────────
 
+/**
+ * Phase 4d: does this dispatch run an IRREVERSIBLE (mutating) tool? For
+ * `execute_tool` the answer comes from the TARGET protocol manifest (the
+ * wrapper itself is `mutating: false`); a missing/unknown target is treated as
+ * non-mutating. For internal tools it is the registry `mutating` flag. Preview
+ * / dryRun targets are stamped conservatively (a mutating manifest stamps
+ * regardless) — safer to over-stamp than to miss a broadcast.
+ */
+export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
+  if (call.name === "execute_tool") {
+    const toolId = typeof call.args.toolId === "string" ? call.args.toolId : "";
+    if (!toolId) return false;
+    return getProtocolManifest(toolId)?.mutating === true;
+  }
+  return isMutatingTool(call.name);
+}
+
 async function routeToolCall(
   call: ToolCallRequest,
   context: InternalToolContext,
 ): Promise<ToolResult> {
+  // Phase 4d safety stamp: durably mark the mission run auto-retry-UNSAFE
+  // BEFORE any mutating tool runs (sticky double-spend gate — an error after a
+  // side effect can then never auto-retry). FAIL-CLOSED: if the stamp write
+  // throws we propagate, so dispatchTool's catch returns a failed result and
+  // the mutating handler never executes. Read-only tools and non-mission
+  // dispatches (missionRunId === null) skip this. Dynamic import mirrors the
+  // protocol runtime's DB-access pattern and avoids a static tool→DB cycle.
+  if (context.missionRunId !== null && dispatchTargetIsMutating(call)) {
+    const { markAutoRetryUnsafe } = await import(
+      "@vex-agent/db/repos/mission-runs.js"
+    );
+    await markAutoRetryUnsafe(context.missionRunId);
+  }
+
   // Protocol meta-tools
   if (call.name === "discover_tools") {
     const discoveryRequest = {

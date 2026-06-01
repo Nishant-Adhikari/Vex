@@ -39,6 +39,10 @@ export interface MissionRun {
   iterationCount: number;
   contractSnapshotJson: Record<string, unknown> | null;
   recoveredFromRunId: string | null;
+  /** Phase 4d: count of auto-retries scheduled for this run (budget + wake epoch). */
+  errorRetryCount: number;
+  /** Phase 4d: STICKY fail-closed stamp — true once the run touched a mutating tool. */
+  autoRetryUnsafe: boolean;
 }
 
 /** SQL `IN (…)` literal compiled once from `ACTIVE_OR_PAUSED_RUN_STATUSES`. */
@@ -76,6 +80,8 @@ function mapRow(r: Record<string, unknown>): MissionRun {
     iterationCount: (r.iteration_count as number) ?? 0,
     contractSnapshotJson: r.contract_snapshot_json as Record<string, unknown> | null,
     recoveredFromRunId: r.recovered_from_run_id as string | null,
+    errorRetryCount: (r.error_retry_count as number) ?? 0,
+    autoRetryUnsafe: (r.auto_retry_unsafe as boolean) ?? false,
   };
 }
 
@@ -170,6 +176,47 @@ export async function incrementIterations(id: string): Promise<number> {
     [id],
   );
   return row?.iteration_count ?? 0;
+}
+
+/**
+ * Phase 4d: STICKY fail-closed stamp. Set the instant the run is about to
+ * dispatch a mutating tool. Once true it is never cleared within the run's
+ * life, so an error after a side effect can never auto-retry (double-spend
+ * gate). Idempotent — re-stamping an already-unsafe run is a harmless no-op.
+ */
+export async function markAutoRetryUnsafe(
+  id: string,
+  client?: PoolClient,
+): Promise<void> {
+  const sql = "UPDATE mission_runs SET auto_retry_unsafe = true WHERE id = $1";
+  // Verify the stamp actually landed. A drifted/missing run id affects 0 rows;
+  // returning silently would let a mutating handler proceed with NO durable
+  // unsafe stamp (fail-OPEN). Throwing keeps the dispatcher fail-closed.
+  const affected = client
+    ? (await client.query(sql, [id])).rowCount ?? 0
+    : await execute(sql, [id]);
+  if (affected !== 1) {
+    throw new Error(
+      `markAutoRetryUnsafe: expected to stamp exactly 1 run, affected ${affected} (run ${id})`,
+    );
+  }
+}
+
+/**
+ * Phase 4d: bump the auto-retry budget/epoch. Returns the new count. The
+ * scheduler calls this inside the same locked tx that persists `paused_error`
+ * so the count and the scheduled wake's `attempt` payload stay consistent.
+ */
+export async function incrementErrorRetryCount(
+  id: string,
+  client?: PoolClient,
+): Promise<number> {
+  const sql =
+    "UPDATE mission_runs SET error_retry_count = error_retry_count + 1 WHERE id = $1 RETURNING error_retry_count";
+  const row = client
+    ? (await client.query<{ error_retry_count: number }>(sql, [id])).rows[0]
+    : await queryOne<{ error_retry_count: number }>(sql, [id]);
+  return row?.error_retry_count ?? 0;
 }
 
 export async function getActiveRun(

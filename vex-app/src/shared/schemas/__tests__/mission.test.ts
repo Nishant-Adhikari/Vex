@@ -24,6 +24,18 @@ describe("mission schemas", () => {
     expect(missionConstraintsSchema.safeParse({}).success).toBe(true);
   });
 
+  it("missionConstraintsSchema accepts the Phase 4d autoRetryEnabled flag", () => {
+    expect(
+      missionConstraintsSchema.safeParse({ autoRetryEnabled: true }).success,
+    ).toBe(true);
+    const parsed = missionConstraintsSchema.parse({ autoRetryEnabled: false });
+    expect(parsed.autoRetryEnabled).toBe(false);
+    // Wrong type is rejected.
+    expect(
+      missionConstraintsSchema.safeParse({ autoRetryEnabled: "yes" }).success,
+    ).toBe(false);
+  });
+
   it("missionListEntrySchema enforces trim + length + non-empty", () => {
     expect(missionListEntrySchema.safeParse("").success).toBe(false);
     expect(missionListEntrySchema.safeParse("ok").success).toBe(true);

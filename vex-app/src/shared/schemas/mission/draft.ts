@@ -34,6 +34,12 @@ export const missionConstraintsSchema = z
     maxIterations: z.number().int().min(0).nullable().optional(),
     deadlineAt: z.string().datetime({ offset: true }).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
+    /**
+     * Phase 4d opt-in: when true AND the session is autonomous-full, the engine
+     * auto-retries a paused_error run after a transient provider/runtime error
+     * (<=5x, backoff), never after the run touched a side effect. Default off.
+     */
+    autoRetryEnabled: z.boolean().nullable().optional(),
   })
   .strict();
 export type MissionConstraints = z.infer<typeof missionConstraintsSchema>;

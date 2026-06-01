@@ -21,6 +21,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
 const {
   createRun, updateStatus, setLastCheckpoint, incrementIterations,
   getActiveRun, getRun, getRunBySession, casFlipToRunning,
+  markAutoRetryUnsafe, incrementErrorRetryCount,
 } = await import("../../../../vex-agent/db/repos/mission-runs.js");
 
 describe("mission-runs repo", () => {
@@ -149,6 +150,31 @@ describe("mission-runs repo", () => {
       expect(run!.endedAt).toBeNull();
     });
 
+    it("maps the Phase 4d auto-retry columns (default + present)", async () => {
+      mockQueryOne.mockResolvedValueOnce({
+        id: "run-1", mission_id: "mission-1", session_id: "session-1",
+        status: "running",
+        started_at: new Date("2026-03-28"), ended_at: null,
+        last_checkpoint_at: null, stop_reason: null, iteration_count: 0,
+        error_retry_count: 3, auto_retry_unsafe: true,
+      });
+      const run = await getActiveRun("mission-1");
+      expect(run!.errorRetryCount).toBe(3);
+      expect(run!.autoRetryUnsafe).toBe(true);
+    });
+
+    it("defaults the auto-retry columns when absent (pre-028 rows)", async () => {
+      mockQueryOne.mockResolvedValueOnce({
+        id: "run-1", mission_id: "mission-1", session_id: "session-1",
+        status: "running",
+        started_at: new Date("2026-03-28"), ended_at: null,
+        last_checkpoint_at: null, stop_reason: null, iteration_count: 0,
+      });
+      const run = await getActiveRun("mission-1");
+      expect(run!.errorRetryCount).toBe(0);
+      expect(run!.autoRetryUnsafe).toBe(false);
+    });
+
     it("throws on unknown DB status instead of defaulting to failed", async () => {
       mockQueryOne.mockResolvedValueOnce({
         id: "run-1", mission_id: "mission-1", session_id: "session-1",
@@ -206,6 +232,64 @@ describe("mission-runs repo", () => {
       expect(
         mockClientQuery.mock.calls.some((call) => String(call[0]).startsWith("UPDATE mission_runs")),
       ).toBe(false);
+    });
+  });
+
+  // ── markAutoRetryUnsafe (Phase 4d sticky stamp) ─────────────
+
+  describe("markAutoRetryUnsafe", () => {
+    it("sets auto_retry_unsafe = true (idempotent SET, no count) when 1 row matches", async () => {
+      mockExecute.mockResolvedValueOnce(1);
+      await markAutoRetryUnsafe("run-1");
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("auto_retry_unsafe = true");
+      expect(sql).not.toContain("false");
+      expect(params).toEqual(["run-1"]);
+    });
+
+    it("uses the provided client when in a tx", async () => {
+      mockClientQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      const client = { query: mockClientQuery } as unknown as Parameters<
+        typeof markAutoRetryUnsafe
+      >[1];
+      await markAutoRetryUnsafe("run-1", client);
+      expect(mockClientQuery).toHaveBeenCalledWith(
+        expect.stringContaining("auto_retry_unsafe = true"),
+        ["run-1"],
+      );
+      expect(mockExecute).not.toHaveBeenCalled();
+    });
+
+    it("THROWS when the stamp matches 0 rows (drifted/missing run → fail-closed)", async () => {
+      mockExecute.mockResolvedValueOnce(0);
+      await expect(markAutoRetryUnsafe("ghost")).rejects.toThrow(
+        /expected to stamp exactly 1 run, affected 0/,
+      );
+    });
+  });
+
+  // ── incrementErrorRetryCount (Phase 4d budget/epoch) ────────
+
+  describe("incrementErrorRetryCount", () => {
+    it("increments and returns the new count", async () => {
+      mockQueryOne.mockResolvedValueOnce({ error_retry_count: 2 });
+      const count = await incrementErrorRetryCount("run-1");
+      expect(count).toBe(2);
+      const [sql] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain("error_retry_count + 1");
+      expect(sql).toContain("RETURNING error_retry_count");
+    });
+
+    it("reads via the provided client inside a tx", async () => {
+      mockClientQuery.mockResolvedValueOnce({
+        rows: [{ error_retry_count: 1 }], rowCount: 1,
+      });
+      const client = { query: mockClientQuery } as unknown as Parameters<
+        typeof incrementErrorRetryCount
+      >[1];
+      const count = await incrementErrorRetryCount("run-1", client);
+      expect(count).toBe(1);
+      expect(mockQueryOne).not.toHaveBeenCalled();
     });
   });
 
