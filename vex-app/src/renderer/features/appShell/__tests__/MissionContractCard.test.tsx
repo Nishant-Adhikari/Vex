@@ -35,8 +35,6 @@ const mockBridge = {
   start: vi.fn(),
   continue: vi.fn(),
   recover: vi.fn(),
-  rewind: vi.fn(),
-  restore: vi.fn(),
   renew: vi.fn(),
   stop: vi.fn(),
   getRenewableSource: vi.fn(),

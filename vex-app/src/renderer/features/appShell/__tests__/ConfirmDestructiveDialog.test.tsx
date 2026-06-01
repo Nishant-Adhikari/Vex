@@ -36,9 +36,9 @@ function renderDialog(opts: RenderOpts = {}) {
   render(
     <ConfirmDestructiveDialog
       open={opts.open ?? true}
-      title="Rewind 3 user turns?"
-      description="This archives the suffix. You can /restore later."
-      confirmLabel="Rewind"
+      title="Delete 3 items?"
+      description="This permanently removes the selected items."
+      confirmLabel="Delete"
       tone={opts.tone ?? "destructive"}
       pending={opts.pending ?? false}
       onConfirm={onConfirm}
@@ -51,13 +51,13 @@ function renderDialog(opts: RenderOpts = {}) {
 describe("ConfirmDestructiveDialog", () => {
   it("renders title + description + buttons when open", () => {
     renderDialog();
-    expect(screen.queryByText(/Rewind 3 user turns/)).not.toBeNull();
-    expect(screen.queryByText(/archives the suffix/i)).not.toBeNull();
+    expect(screen.queryByText(/Delete 3 items/)).not.toBeNull();
+    expect(screen.queryByText(/permanently removes/i)).not.toBeNull();
     expect(
       screen.queryByRole("button", { name: /Cancel/i, hidden: true }),
     ).not.toBeNull();
     expect(
-      screen.queryByRole("button", { name: /Rewind/i, hidden: true }),
+      screen.queryByRole("button", { name: /Delete/i, hidden: true }),
     ).not.toBeNull();
   });
 
@@ -68,9 +68,9 @@ describe("ConfirmDestructiveDialog", () => {
     const { container } = render(
       <ConfirmDestructiveDialog
         open={false}
-        title="Rewind?"
+        title="Delete?"
         description="…"
-        confirmLabel="Rewind"
+        confirmLabel="Delete"
         tone="destructive"
         pending={false}
         onConfirm={vi.fn()}
@@ -111,7 +111,7 @@ describe("ConfirmDestructiveDialog", () => {
     const onConfirm = vi.fn();
     renderDialog({ onCancel, onConfirm });
     fireEvent.click(
-      screen.getByRole("button", { name: /Rewind/i, hidden: true }),
+      screen.getByRole("button", { name: /Delete/i, hidden: true }),
     );
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
@@ -120,7 +120,7 @@ describe("ConfirmDestructiveDialog", () => {
   it("destructive tone applies the danger class to the confirm button", () => {
     renderDialog({ tone: "destructive" });
     const confirm = screen.getByRole("button", {
-      name: /Rewind/i,
+      name: /Delete/i,
       hidden: true,
     });
     expect(confirm.className).toMatch(/destructive/);
@@ -129,7 +129,7 @@ describe("ConfirmDestructiveDialog", () => {
   it("primary tone uses the brand blue class instead", () => {
     renderDialog({ tone: "primary" });
     const confirm = screen.getByRole("button", {
-      name: /Rewind/i,
+      name: /Delete/i,
       hidden: true,
     });
     expect(confirm.className).toMatch(/3758ff|4668ff/);

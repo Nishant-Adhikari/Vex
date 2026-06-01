@@ -19,9 +19,7 @@ import {
   missionRecoverInputSchema,
   missionRenewInputSchema,
   missionEditInputSchema,
-  missionRestoreInputSchema,
   missionRetryInputSchema,
-  missionRewindInputSchema,
   missionSetAutoRetryInputSchema,
   missionStartInputSchema,
   missionStopInputSchema,
@@ -36,9 +34,7 @@ import type {
   MissionRecoverInput,
   MissionRenewInput,
   MissionEditInput,
-  MissionRestoreInput,
   MissionRetryInput,
-  MissionRewindInput,
   MissionSetAutoRetryInput,
   MissionStartInput,
   MissionStopInput,
@@ -95,20 +91,6 @@ export const mission = {
       CH.mission.recover,
       input,
       missionRecoverInputSchema,
-    );
-  },
-  rewind(input: MissionRewindInput) {
-    return invokeWithSchema(
-      CH.mission.rewind,
-      input,
-      missionRewindInputSchema,
-    );
-  },
-  restore(input: MissionRestoreInput) {
-    return invokeWithSchema(
-      CH.mission.restore,
-      input,
-      missionRestoreInputSchema,
     );
   },
   renew(input: MissionRenewInput) {

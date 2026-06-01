@@ -5,14 +5,10 @@
  *
  *   - `missionKeys.draft` invalidates on every mutation that may
  *     change the mission row (acceptContract, start, continue,
- *     recover, rewind, restore, renew, stop)
- *   - `missionKeys.diff` invalidates on acceptContract / start /
- *     stop / rewind / restore / renew
+ *     recover, edit, renew, setAutoRetry, stop)
+ *   - `missionKeys.diff` invalidates on acceptContract / start
  *   - `runtimeKeys.state` invalidates on start / continue / recover /
- *     stop / rewind / restore (runtime control state changes)
- *   - `messagesKeys.forSession` invalidates on rewind / restore
- *     (transcript prefix-match catch-all so tail/list/around all
- *     refetch)
+ *     stop (runtime control state changes)
  *
  * `useMissionDiff` query reader follows the same staleTime as
  * `useMissionDraft`.
@@ -42,12 +38,8 @@ import type {
   MissionRenewResult,
   MissionEditInput,
   MissionEditResult,
-  MissionRestoreInput,
-  MissionRestoreResult,
   MissionRetryInput,
   MissionRetryResult,
-  MissionRewindInput,
-  MissionRewindResult,
   MissionSetAutoRetryInput,
   MissionSetAutoRetryResult,
   MissionStartInput,
@@ -58,7 +50,6 @@ import type {
   MissionUpdateDraftResult,
 } from "@shared/schemas/mission.js";
 import {
-  messagesKeys,
   missionKeys,
   runtimeKeys,
 } from "./queryKeys.js";
@@ -302,53 +293,6 @@ export function useMissionRecover(): UseMutationResult<
       qc.invalidateQueries({
         queryKey: missionKeys.renewableSource(input.sessionId),
       });
-    },
-  });
-}
-
-export function useMissionRewind(): UseMutationResult<
-  Result<MissionRewindResult>,
-  Error,
-  MissionRewindInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) => window.vex.mission.rewind(input),
-    retry: false,
-    onSuccess: (_result, input) => {
-      // forSession catch-all matches every tail/list/around variant —
-      // the prefix lookup is critical because rewind moves arbitrary
-      // ranges of messages out of the live tape.
-      qc.invalidateQueries({
-        queryKey: messagesKeys.forSession(input.sessionId),
-      });
-      qc.invalidateQueries({ queryKey: runtimeKeys.state(input.sessionId) });
-      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
-      // Rewind can flip the live mission_run to `stopped` (terminal), or
-      // shuffle the draft back. Either way `/mission-renew` eligibility
-      // for this session changes.
-      qc.invalidateQueries({
-        queryKey: missionKeys.renewableSource(input.sessionId),
-      });
-    },
-  });
-}
-
-export function useMissionRestore(): UseMutationResult<
-  Result<MissionRestoreResult>,
-  Error,
-  MissionRestoreInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) => window.vex.mission.restore(input),
-    retry: false,
-    onSuccess: (_result, input) => {
-      qc.invalidateQueries({
-        queryKey: messagesKeys.forSession(input.sessionId),
-      });
-      qc.invalidateQueries({ queryKey: runtimeKeys.state(input.sessionId) });
-      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
     },
   });
 }

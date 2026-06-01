@@ -33,7 +33,6 @@ import {
 
 export {
   archivePrefix,
-  archiveSuffix,
   forkToolMessageToArchive,
 } from "./sessions-archive.js";
 

@@ -6,12 +6,9 @@
  *
  *   - acceptContract → missionKeys.draft + missionKeys.diff
  *   - start          → missionKeys.draft + missionKeys.diff + runtimeKeys.state
- *   - rewind/restore → messagesKeys.forSession + runtimeKeys.state + missionKeys.draft
  *   - continue/stop  → runtimeKeys.state
  *   - renew          → missionKeys.all
- *
- * `messagesKeys.forSession` is the prefix-match catch-all that the
- * rewind/restore paths must invalidate (codex puzzle-04 phase-6 #6).
+ *   - setAutoRetry   → missionKeys.draft
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,23 +23,19 @@ import {
   useMissionContinue,
   useMissionRecover,
   useMissionRenew,
-  useMissionRestore,
   useMissionRetry,
-  useMissionRewind,
   useMissionStart,
   useMissionStop,
   useRenewableMissionSource,
   useSetAutoRetry,
 } from "../mission.js";
 import {
-  messagesKeys,
   missionKeys,
   runtimeKeys,
 } from "../queryKeys.js";
 
 const SESSION = "00000000-0000-4000-8000-000000000001";
 const MISSION = "mission-1";
-const IDEMPOTENCY = "11111111-1111-4111-8111-111111111111";
 
 const mockMissionBridge = {
   getDraft: vi.fn(),
@@ -52,8 +45,6 @@ const mockMissionBridge = {
   start: vi.fn(),
   continue: vi.fn(),
   recover: vi.fn(),
-  rewind: vi.fn(),
-  restore: vi.fn(),
   renew: vi.fn(),
   retry: vi.fn(),
   edit: vi.fn(),
@@ -244,57 +235,6 @@ describe("mission hook invalidations", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: missionKeys.renewableSource(SESSION),
-    });
-  });
-
-  it("useMissionRewind invalidates messagesKeys.forSession (prefix match)", async () => {
-    mockMissionBridge.rewind.mockResolvedValue({
-      ok: true,
-      data: { outcome: "noop" },
-    });
-    const { client, invalidateSpy } = makeClient();
-    const { result } = renderHook(() => useMissionRewind(), {
-      wrapper: makeWrapper(client),
-    });
-    await act(async () => {
-      await result.current.mutateAsync({
-        sessionId: SESSION,
-        turns: 1,
-      });
-    });
-    await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: messagesKeys.forSession(SESSION),
-      });
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: runtimeKeys.state(SESSION),
-    });
-    // Phase 7 — rewind can flip mission_run terminal.
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: missionKeys.renewableSource(SESSION),
-    });
-  });
-
-  it("useMissionRestore invalidates messagesKeys.forSession + runtime state", async () => {
-    mockMissionBridge.restore.mockResolvedValue({
-      ok: true,
-      data: { outcome: "no_checkpoint" },
-    });
-    const { client, invalidateSpy } = makeClient();
-    const { result } = renderHook(() => useMissionRestore(), {
-      wrapper: makeWrapper(client),
-    });
-    await act(async () => {
-      await result.current.mutateAsync({
-        sessionId: SESSION,
-        idempotencyKey: IDEMPOTENCY,
-      });
-    });
-    await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: messagesKeys.forSession(SESSION),
-      });
     });
   });
 

@@ -122,8 +122,6 @@ describe("preload bridge surface", () => {
       "CH.mission.start",
       "CH.mission.continue",
       "CH.mission.recover",
-      "CH.mission.rewind",
-      "CH.mission.restore",
       "CH.mission.renew",
       "CH.mission.retry",
       "CH.mission.edit",

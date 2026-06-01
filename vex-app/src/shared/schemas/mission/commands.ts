@@ -4,9 +4,9 @@
  * focused sub-files (codex puzzle 04 phase 6 review #2 — file-size
  * budget 350 LOC):
  *
- *   - `contract.ts`      — acceptContract, getDiff, updateDraft
+ *   - `contract.ts`      — acceptContract, getDiff, updateDraft, setAutoRetry
  *   - `run-lifecycle.ts` — start, continue, recover, stop
- *   - `transcript.ts`    — rewind, restore, renew
+ *   - `transcript.ts`    — renew, getRenewableSource
  */
 
 export * from "./contract.js";

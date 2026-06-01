@@ -27,12 +27,11 @@ import { nullableJsonb } from "../params.js";
  * `messages_archive`, whose only extra column is `rewind_checkpoint_id`
  * from migration 023).
  *
- * Single source of truth — `sessions-archive.ts` archive writers and
- * `engine/mission/restore-internals.ts` unarchive writer import this
- * tuple instead of typing `SELECT *`. Adding a column to `messages`
- * therefore forces a deliberate update here, and any forgotten archive
- * path fails typecheck instead of silently dropping data into NULL or
- * mismatched positions.
+ * Single source of truth — the `sessions-archive.ts` archive writers
+ * import this tuple instead of typing `SELECT *`. Adding a column to
+ * `messages` therefore forces a deliberate update here, and any
+ * forgotten archive path fails typecheck instead of silently dropping
+ * data into NULL or mismatched positions.
  */
 export const MESSAGE_DB_COLUMNS = [
   "id",

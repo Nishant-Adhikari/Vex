@@ -12,8 +12,6 @@
  *   - get-draft.ts         (read-only DB)
  *   - accept-contract.ts   (engine acceptContract)
  *   - get-diff.ts          (engine getContractStatus)
- *   - rewind.ts            (engine rewindSession)
- *   - restore.ts           (engine restoreLatestCheckpoint, LIFO)
  *   - renew.ts             (engine renewMission)
  *   - start.ts             (prepareMissionStart + fire-and-forget)
  *   - continue.ts          (shared resume dispatcher)

@@ -55,7 +55,5 @@ export {
 export type { AbortMissionRunResult, StopMissionRunForEditResult } from "./core/runner/abort.js";
 
 export { retryActiveMissionRun } from "./core/runner/retry.js";
-export { rewindSession } from "./core/rewind.js";
-export type { RewindOutcome } from "./core/rewind.js";
 
 export * from "./types.js";

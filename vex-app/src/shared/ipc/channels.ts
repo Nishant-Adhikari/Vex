@@ -107,8 +107,8 @@ export const CH = {
   // puzzle ships its backing runtime. Renderer never sees raw DB JSONB —
   // every mapper is allowlist + Zod validated in main.
 
-  // Messages — paginated transcript reads. Live transcript only (archive
-  // rows are out of scope until restore/history view in puzzle 04).
+  // Messages — paginated transcript reads. Live transcript only; archive
+  // rows are not exposed to the renderer.
   messages: {
     list: "vex:messages:list",
     getTail: "vex:messages:getTail",
@@ -127,8 +127,8 @@ export const CH = {
   },
 
   // Mission — draft/contract/command surface. `getDraft` is read-only;
-  // `getDiff` and the command mutations fail closed until puzzle 04 lands
-  // host-only acceptance + `/rewind`/`/restore`/`/mission-renew`.
+  // host-only acceptance + lifecycle commands drive the rest. Mission
+  // control is button-driven (the slash-command layer was removed).
   mission: {
     getDraft: "vex:mission:getDraft",
     updateDraft: "vex:mission:updateDraft",
@@ -137,8 +137,6 @@ export const CH = {
     start: "vex:mission:start",
     continue: "vex:mission:continue",
     recover: "vex:mission:recover",
-    rewind: "vex:mission:rewind",
-    restore: "vex:mission:restore",
     renew: "vex:mission:renew",
     retry: "vex:mission:retry",
     edit: "vex:mission:edit",
