@@ -128,3 +128,40 @@ export const missionUpdateDraftResultSchema = z.discriminatedUnion("outcome", [
 export type MissionUpdateDraftResult = z.infer<
   typeof missionUpdateDraftResultSchema
 >;
+
+// ── setAutoRetry (phase 4d-5) ────────────────────────────────────
+
+export const missionSetAutoRetryInputSchema = z
+  .object({
+    sessionId: sessionIdField,
+    missionId: missionIdField,
+    enabled: z.boolean(),
+  })
+  .strict();
+export type MissionSetAutoRetryInput = z.infer<
+  typeof missionSetAutoRetryInputSchema
+>;
+
+/**
+ * Host-only auto-retry opt-in (phase 4d-5). Authority is server-side:
+ * the engine refuses non-full sessions (`blocked_permission`) and any
+ * mission past the editable draft/ready window (`blocked_status`); a
+ * cross-session / missing id collapses to `not_found` (no existence
+ * leak). The renderer hides the toggle for non-full sessions, but that
+ * is UX only — the engine is the gate. `autoRetryEnabled` is NOT part
+ * of the contract hash, so toggling never dirties an accepted contract.
+ */
+export const missionSetAutoRetryResultSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z.object({ outcome: z.literal("updated"), enabled: z.boolean() }).strict(),
+    z.object({ outcome: z.literal("not_found") }).strict(),
+    z.object({ outcome: z.literal("blocked_permission") }).strict(),
+    z
+      .object({ outcome: z.literal("blocked_status"), status: z.string() })
+      .strict(),
+  ],
+);
+export type MissionSetAutoRetryResult = z.infer<
+  typeof missionSetAutoRetryResultSchema
+>;

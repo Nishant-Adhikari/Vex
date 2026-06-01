@@ -40,6 +40,7 @@ const mockBridge = {
   renew: vi.fn(),
   stop: vi.fn(),
   getRenewableSource: vi.fn(),
+  setAutoRetry: vi.fn(),
 };
 
 const SAMPLE_DRAFT = {
@@ -112,7 +113,7 @@ describe("MissionContractCard render states", () => {
     mockBridge.getDraft.mockResolvedValue({ ok: true, data: null });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
     const { container } = render(
-      <MissionContractCard sessionId={SESSION} />,
+      <MissionContractCard sessionId={SESSION} permission="full" />,
       { wrapper: Wrapper(makeClient()) },
     );
     expect(container.firstChild).toBeNull();
@@ -124,7 +125,7 @@ describe("MissionContractCard render states", () => {
       data: { ...SAMPLE_DRAFT, status: "draft" },
     });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
-    render(<MissionContractCard sessionId={SESSION} />, {
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
       wrapper: Wrapper(makeClient()),
     });
     await waitFor(() => {
@@ -136,7 +137,7 @@ describe("MissionContractCard render states", () => {
   it("shows 'Awaiting acceptance' + Accept button when ready + unaccepted", async () => {
     mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
-    render(<MissionContractCard sessionId={SESSION} />, {
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
       wrapper: Wrapper(makeClient()),
     });
     await waitFor(() => {
@@ -173,7 +174,7 @@ describe("MissionContractCard render states", () => {
         isDirty: false,
       },
     });
-    render(<MissionContractCard sessionId={SESSION} />, {
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
       wrapper: Wrapper(makeClient()),
     });
     await waitFor(() => {
@@ -207,7 +208,7 @@ describe("MissionContractCard render states", () => {
         isDirty: true,
       },
     });
-    render(<MissionContractCard sessionId={SESSION} />, {
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
       wrapper: Wrapper(makeClient()),
     });
     await waitFor(() => {
@@ -226,7 +227,7 @@ describe("MissionContractCard render states", () => {
       ok: true,
       data: { outcome: "accepted" },
     });
-    render(<MissionContractCard sessionId={SESSION} />, {
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
       wrapper: Wrapper(makeClient()),
     });
     const accept = await screen.findByRole("button", {
@@ -242,6 +243,72 @@ describe("MissionContractCard render states", () => {
     });
   });
 
+  // ── Auto-retry toggle (phase 4d-5) ──────────────────────────────
+
+  it("shows the auto-retry toggle (off by default) for full-permission sessions", async () => {
+    mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+    mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
+      wrapper: Wrapper(makeClient()),
+    });
+    const toggle = await screen.findByRole("switch", {
+      name: /Auto-retry on error/i,
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("reflects a persisted autoRetryEnabled=true as a checked toggle", async () => {
+    mockBridge.getDraft.mockResolvedValue({
+      ok: true,
+      data: {
+        ...SAMPLE_DRAFT,
+        constraints: { ...SAMPLE_DRAFT.constraints, autoRetryEnabled: true },
+      },
+    });
+    mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
+      wrapper: Wrapper(makeClient()),
+    });
+    const toggle = await screen.findByRole("switch", {
+      name: /Auto-retry on error/i,
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("hides the auto-retry toggle for restricted sessions", async () => {
+    mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+    mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+    render(<MissionContractCard sessionId={SESSION} permission="restricted" />, {
+      wrapper: Wrapper(makeClient()),
+    });
+    // The card still mounts (Accept button proves it) — only the toggle is gone.
+    await screen.findByRole("button", { name: /Accept contract/i });
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("clicking the toggle calls setAutoRetry with the negated value", async () => {
+    mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+    mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+    mockBridge.setAutoRetry.mockResolvedValue({
+      ok: true,
+      data: { outcome: "updated", enabled: true },
+    });
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
+      wrapper: Wrapper(makeClient()),
+    });
+    const toggle = await screen.findByRole("switch", {
+      name: /Auto-retry on error/i,
+    });
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(mockBridge.setAutoRetry).toHaveBeenCalledWith({
+        sessionId: SESSION,
+        missionId: MISSION,
+        enabled: true, // negation of the default-off state
+      });
+    });
+  });
+
   it("renders renewedFromMissionId pointer when set", async () => {
     mockBridge.getDraft.mockResolvedValue({
       ok: true,
@@ -251,7 +318,7 @@ describe("MissionContractCard render states", () => {
       },
     });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
-    render(<MissionContractCard sessionId={SESSION} />, {
+    render(<MissionContractCard sessionId={SESSION} permission="full" />, {
       wrapper: Wrapper(makeClient()),
     });
     await waitFor(() => {

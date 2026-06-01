@@ -32,6 +32,7 @@ import {
   useMissionStart,
   useMissionStop,
   useRenewableMissionSource,
+  useSetAutoRetry,
 } from "../mission.js";
 import {
   messagesKeys,
@@ -58,6 +59,7 @@ const mockMissionBridge = {
   edit: vi.fn(),
   stop: vi.fn(),
   getRenewableSource: vi.fn(),
+  setAutoRetry: vi.fn(),
 };
 
 beforeEach(() => {
@@ -150,6 +152,54 @@ describe("mission hook invalidations", () => {
     // Phase 7 — start lifts source out of terminal-latest state.
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: missionKeys.renewableSource(SESSION),
+    });
+  });
+
+  it("useSetAutoRetry invalidates the draft on success", async () => {
+    mockMissionBridge.setAutoRetry.mockResolvedValue({
+      ok: true,
+      data: { outcome: "updated", enabled: true },
+    });
+    const { client, invalidateSpy } = makeClient();
+    const { result } = renderHook(() => useSetAutoRetry(), {
+      wrapper: makeWrapper(client),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({
+        sessionId: SESSION,
+        missionId: MISSION,
+        enabled: true,
+      });
+    });
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: missionKeys.draft(SESSION),
+      });
+    });
+  });
+
+  it("useSetAutoRetry resyncs the draft even when the engine refuses (blocked_permission)", async () => {
+    // onSettled (not onSuccess) → a server refusal still snaps the toggle
+    // back to the persisted value.
+    mockMissionBridge.setAutoRetry.mockResolvedValue({
+      ok: true,
+      data: { outcome: "blocked_permission" },
+    });
+    const { client, invalidateSpy } = makeClient();
+    const { result } = renderHook(() => useSetAutoRetry(), {
+      wrapper: makeWrapper(client),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({
+        sessionId: SESSION,
+        missionId: MISSION,
+        enabled: true,
+      });
+    });
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: missionKeys.draft(SESSION),
+      });
     });
   });
 

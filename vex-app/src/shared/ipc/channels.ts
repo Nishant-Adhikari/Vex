@@ -144,6 +144,7 @@ export const CH = {
     edit: "vex:mission:edit",
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
+    setAutoRetry: "vex:mission:setAutoRetry",
   },
 
   // Approvals — queue browsing + decisions. Pending/get/history are

@@ -103,7 +103,10 @@ export function SessionPanel(): JSX.Element {
           error={detailError}
         />
         {showMissionCard && activeSession !== null ? (
-          <MissionContractCard sessionId={activeSession.id} />
+          <MissionContractCard
+            sessionId={activeSession.id}
+            permission={activeSession.permission}
+          />
         ) : null}
         {activeSession !== null ? (
           <SessionTranscript sessionId={activeSession.id} />

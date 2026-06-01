@@ -48,6 +48,8 @@ import type {
   MissionRetryResult,
   MissionRewindInput,
   MissionRewindResult,
+  MissionSetAutoRetryInput,
+  MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
   MissionStopInput,
@@ -139,6 +141,32 @@ export function useAcceptMissionContract(): UseMutationResult<
       qc.invalidateQueries({
         queryKey: missionKeys.diff(input.sessionId, input.missionId),
       });
+    },
+  });
+}
+
+/**
+ * Phase 4d-5 — host-only auto-retry opt-in toggle. Persists
+ * `constraints_json.autoRetryEnabled` for a draft/ready mission.
+ *
+ * Invalidate-based (no optimistic write): the toggle reflects whatever
+ * the draft refetch reports, so a server refusal (blocked_permission /
+ * blocked_status / not_found) — or a transport error — cleanly snaps the
+ * control back to the persisted value. `onSettled` covers both the
+ * resolved-outcome and thrown-error paths. The engine is the authority;
+ * the card hides the toggle for non-full sessions (UX only).
+ */
+export function useSetAutoRetry(): UseMutationResult<
+  Result<MissionSetAutoRetryResult>,
+  Error,
+  MissionSetAutoRetryInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.mission.setAutoRetry(input),
+    retry: false,
+    onSettled: (_result, _error, input) => {
+      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
     },
   });
 }

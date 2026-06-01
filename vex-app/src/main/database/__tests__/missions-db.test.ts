@@ -48,6 +48,27 @@ const { getDraftForSession } = await import("../missions-db.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000cccc";
 
+/** A minimal draft row with a custom `constraints_json` blob. */
+function rowWithConstraints(constraints: Record<string, unknown>) {
+  return {
+    id: "mission-ar",
+    root_session_id: SESSION,
+    status: "draft",
+    title: "AR",
+    goal: "g",
+    constraints_json: constraints,
+    success_criteria_json: [],
+    stop_conditions_json: [],
+    risk_profile: null,
+    allowed_protocols: [],
+    allowed_chains: [],
+    allowed_wallets: [],
+    created_at: "2026-05-21T10:00:00.000Z",
+    updated_at: "2026-05-21T10:00:00.000Z",
+    approved_at: null,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.buildPoolConfig.mockResolvedValue({
@@ -112,6 +133,54 @@ describe("missions-db mapper", () => {
       maxLossUsd: 10,
     });
     expect(result.data.constraints).not.toHaveProperty("secretApiKey");
+  });
+
+  it("projects autoRetryEnabled=true through the allowlist (4d-5)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        rowWithConstraints({
+          autoRetryEnabled: true,
+          maxSpendUsd: 50,
+          secretApiKey: "leak", // forces the allowlist projection branch
+        }),
+      ],
+    });
+    const result = await getDraftForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) {
+      expect.fail("Expected mission draft to be present");
+      return;
+    }
+    expect(result.data.constraints.autoRetryEnabled).toBe(true);
+    expect(result.data.constraints.maxSpendUsd).toBe(50);
+    expect(result.data.constraints).not.toHaveProperty("secretApiKey");
+  });
+
+  it("preserves autoRetryEnabled=false (typeof guard, not truthiness)", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [rowWithConstraints({ autoRetryEnabled: false, secretApiKey: "x" })],
+    });
+    const result = await getDraftForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) {
+      expect.fail("Expected mission draft to be present");
+      return;
+    }
+    expect(result.data.constraints.autoRetryEnabled).toBe(false);
+  });
+
+  it("drops a non-boolean autoRetryEnabled", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [rowWithConstraints({ autoRetryEnabled: "yes", maxSpendUsd: 50 })],
+    });
+    const result = await getDraftForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) {
+      expect.fail("Expected mission draft to be present");
+      return;
+    }
+    expect(result.data.constraints).not.toHaveProperty("autoRetryEnabled");
+    expect(result.data.constraints.maxSpendUsd).toBe(50);
   });
 
   it("collapses constraints_json to empty when entirely unparseable", async () => {

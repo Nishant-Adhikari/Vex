@@ -22,6 +22,7 @@ import {
   missionRestoreInputSchema,
   missionRetryInputSchema,
   missionRewindInputSchema,
+  missionSetAutoRetryInputSchema,
   missionStartInputSchema,
   missionStopInputSchema,
   missionUpdateDraftInputSchema,
@@ -38,6 +39,7 @@ import type {
   MissionRestoreInput,
   MissionRetryInput,
   MissionRewindInput,
+  MissionSetAutoRetryInput,
   MissionStartInput,
   MissionStopInput,
   MissionUpdateDraftInput,
@@ -142,6 +144,13 @@ export const mission = {
       CH.mission.getRenewableSource,
       input,
       missionGetRenewableSourceInputSchema,
+    );
+  },
+  setAutoRetry(input: MissionSetAutoRetryInput) {
+    return invokeWithSchema(
+      CH.mission.setAutoRetry,
+      input,
+      missionSetAutoRetryInputSchema,
     );
   },
 } satisfies MissionBridge;

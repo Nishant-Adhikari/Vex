@@ -1,11 +1,12 @@
 /**
- * Mission IPC barrel — registers all 10 mission handlers.
+ * Mission IPC barrel — registers every mission handler (one per file).
  *
  * Layout mirrors `runtime/`: one handler per file, shared helpers in
  * `_engine-dispatch.ts`, this barrel composes them.
  *
- * Phase 6 ships 9 real handlers + 1 fail-closed (`updateDraft` —
- * structured setup form lands in phase 7+).
+ * `updateDraft` stays fail-closed (the structured setup form lands in a
+ * later phase); `setAutoRetry` (phase 4d-5) is the first live host-side
+ * constraints writer.
  */
 
 import { registerMissionAcceptContractHandler } from "./accept-contract.js";
@@ -19,6 +20,7 @@ import { registerMissionRenewHandler } from "./renew.js";
 import { registerMissionRestoreHandler } from "./restore.js";
 import { registerMissionRetryHandler } from "./retry.js";
 import { registerMissionRewindHandler } from "./rewind.js";
+import { registerMissionSetAutoRetryHandler } from "./set-auto-retry.js";
 import { registerMissionStartHandler } from "./start.js";
 import { registerMissionStopHandler } from "./stop.js";
 import { registerMissionUpdateDraftHandler } from "./update-draft.js";
@@ -39,5 +41,6 @@ export function registerMissionHandlers(): ReadonlyArray<() => void> {
     registerMissionRenewHandler(),
     registerMissionStopHandler(),
     registerMissionGetRenewableSourceHandler(),
+    registerMissionSetAutoRetryHandler(),
   ];
 }

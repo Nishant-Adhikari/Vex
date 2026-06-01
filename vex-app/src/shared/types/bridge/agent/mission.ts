@@ -22,6 +22,8 @@ import type {
   MissionRetryResult,
   MissionRewindInput,
   MissionRewindResult,
+  MissionSetAutoRetryInput,
+  MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
   MissionStopInput,
@@ -79,4 +81,7 @@ export interface MissionBridge {
   readonly getRenewableSource: (
     input: MissionGetRenewableSourceInput,
   ) => Promise<Result<MissionGetRenewableSourceResult>>;
+  readonly setAutoRetry: (
+    input: MissionSetAutoRetryInput,
+  ) => Promise<Result<MissionSetAutoRetryResult>>;
 }

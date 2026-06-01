@@ -15,6 +15,7 @@ import { domainToRow, missionToDraft } from "./mapper.js";
 import { validateDraft } from "./validator.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import type { Mission } from "@vex-agent/db/repos/missions.js";
+import { withTransaction } from "@vex-agent/db/client.js";
 
 export interface SetupResult {
   missionId: string;
@@ -78,9 +79,10 @@ export async function applyMissionPatch(
   missionId: string,
   rawModelOutput: unknown,
 ): Promise<SetupResult> {
-  // Load current mission
-  const mission = await missionsRepo.getMission(missionId);
-  if (!mission) throw new Error(`Mission ${missionId} not found`);
+  // Early existence guard — preserves the "not found" contract for the
+  // no-write path (the model can send an empty/no-op patch).
+  const existing = await missionsRepo.getMission(missionId);
+  if (!existing) throw new Error(`Mission ${missionId} not found`);
 
   // Parse + sanitize (safe boundary).
   // Puzzle 04: model can no longer set `stopConditionsAccepted` — patch
@@ -92,15 +94,33 @@ export async function applyMissionPatch(
     if (Object.keys(sanitized).length > 0) {
       const rowPatch = domainToRow(sanitized);
 
-      // Merge capital_source_json with existing to avoid losing fields on partial update
-      if (rowPatch.capital_source_json && mission.capitalSourceJson) {
-        rowPatch.capital_source_json = { ...mission.capitalSourceJson, ...rowPatch.capital_source_json };
-      }
-      if (rowPatch.constraints_json && mission.constraintsJson) {
-        rowPatch.constraints_json = { ...mission.constraintsJson, ...rowPatch.constraints_json };
-      }
+      // Phase 4d-5: read-merge-write the JSONB partial-update fields under a
+      // row lock so a concurrent host write (mission.setAutoRetry merging
+      // `autoRetryEnabled` into constraints_json) is not lost to a stale
+      // in-memory merge. Both writers serialize on the missions row lock;
+      // the merge runs against the FRESH locked row, never a pre-tx snapshot.
+      await withTransaction(async (client) => {
+        const locked = await missionsRepo.getMissionForUpdate(client, missionId);
+        if (!locked) {
+          throw new Error(`Mission ${missionId} disappeared before update`);
+        }
+        // Merge JSONB blobs with existing to avoid losing fields on a
+        // partial update.
+        if (rowPatch.capital_source_json && locked.capitalSourceJson) {
+          rowPatch.capital_source_json = {
+            ...locked.capitalSourceJson,
+            ...rowPatch.capital_source_json,
+          };
+        }
+        if (rowPatch.constraints_json && locked.constraintsJson) {
+          rowPatch.constraints_json = {
+            ...locked.constraintsJson,
+            ...rowPatch.constraints_json,
+          };
+        }
 
-      await missionsRepo.updateDraft(missionId, rowPatch);
+        await missionsRepo.updateDraft(missionId, rowPatch, client);
+      });
     }
   }
 

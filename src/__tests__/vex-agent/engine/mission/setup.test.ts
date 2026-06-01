@@ -4,12 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockCreateDraft = vi.fn();
 const mockGetMission = vi.fn();
+const mockGetMissionForUpdate = vi.fn();
 const mockUpdateDraft = vi.fn();
 const mockSetStatus = vi.fn();
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   createDraft: (...a: unknown[]) => mockCreateDraft(...a),
   getMission: (...a: unknown[]) => mockGetMission(...a),
+  getMissionForUpdate: (...a: unknown[]) => mockGetMissionForUpdate(...a),
   updateDraft: (...a: unknown[]) => mockUpdateDraft(...a),
   setStatus: (...a: unknown[]) => mockSetStatus(...a),
 }));
@@ -18,6 +20,9 @@ vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(),
   query: vi.fn().mockResolvedValue([]),
   queryOne: vi.fn().mockResolvedValue(null),
+  // Phase 4d-5: applyMissionPatch now read-merge-writes under a row lock.
+  // The stub just runs the callback with a throwaway client.
+  withTransaction: vi.fn(async (fn: (client: unknown) => unknown) => fn({})),
 }));
 
 const { createMissionDraft, applyMissionPatch, getMissionSetupState } = await import(
@@ -56,6 +61,10 @@ function makeMission(overrides = {}) {
 describe("mission setup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default locked read for the write-path tx (overridden where the
+    // merge content matters). clearAllMocks wipes calls but not the
+    // withTransaction factory impl, so we only reseed this one.
+    mockGetMissionForUpdate.mockResolvedValue(makeMission());
   });
 
   // ── createMissionDraft ──────────────────────────────────────
@@ -89,10 +98,15 @@ describe("mission setup", () => {
         goal: "Accumulate SOL",
       });
 
-      expect(mockUpdateDraft).toHaveBeenCalledWith("mission-1", expect.objectContaining({
-        title: "SOL DCA",
-        goal: "Accumulate SOL",
-      }));
+      expect(mockUpdateDraft).toHaveBeenCalledWith(
+        "mission-1",
+        expect.objectContaining({
+          title: "SOL DCA",
+          goal: "Accumulate SOL",
+        }),
+        // Phase 4d-5: the write now runs on the tx client (3rd arg).
+        expect.anything(),
+      );
       expect(result.currentDraft.title).toBe("SOL DCA");
       expect(result.ready).toBe(false); // Still missing fields
     });
@@ -236,6 +250,38 @@ describe("mission setup", () => {
     it("throws for nonexistent mission", async () => {
       mockGetMission.mockResolvedValueOnce(null);
       await expect(applyMissionPatch("nonexistent", {})).rejects.toThrow("not found");
+    });
+
+    it("preserves a host-set autoRetryEnabled across a model deadline patch (4d-5)", async () => {
+      // Host toggled auto-retry ON; the FRESH locked row carries it in
+      // constraints_json. A model patch that only changes the deadline must
+      // not clobber it (read-merge-write under the row lock).
+      const locked = makeMission({ constraintsJson: { autoRetryEnabled: true } });
+      mockGetMission.mockResolvedValueOnce(makeMission()); // early existence guard
+      mockGetMissionForUpdate.mockResolvedValueOnce(locked); // locked read for the merge
+      mockGetMission.mockResolvedValueOnce(
+        makeMission({
+          constraintsJson: {
+            autoRetryEnabled: true,
+            deadline: "2030-01-01T00:00:00Z",
+          },
+        }),
+      ); // reload after update
+
+      await applyMissionPatch("mission-1", { deadline: "2030-01-01T00:00:00Z" });
+
+      // The write merges the model deadline OVER the locked constraints,
+      // preserving the host's autoRetryEnabled flag, and runs on the tx client.
+      expect(mockUpdateDraft).toHaveBeenLastCalledWith(
+        "mission-1",
+        expect.objectContaining({
+          constraints_json: {
+            autoRetryEnabled: true,
+            deadline: "2030-01-01T00:00:00Z",
+          },
+        }),
+        expect.anything(),
+      );
     });
   });
 

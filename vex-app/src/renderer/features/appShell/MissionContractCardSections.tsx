@@ -234,6 +234,63 @@ function formatRestrictions(draft: MissionDraftDto): string[] {
   ];
 }
 
+export interface AutoRetrySectionProps {
+  readonly enabled: boolean;
+  readonly pending: boolean;
+  readonly onToggle: (next: boolean) => void;
+}
+
+/**
+ * Auto-retry opt-in toggle (phase 4d-5). Rendered by the card only for
+ * autonomous-full sessions. CSP-safe (Tailwind classes only, no inline
+ * styles); accessible `role="switch"` + `aria-checked`. The card owns
+ * the mutation; this stays presentational.
+ */
+export function AutoRetrySection({
+  enabled,
+  pending,
+  onToggle,
+}: AutoRetrySectionProps): JSX.Element {
+  return (
+    <div className="border-t border-white/[0.06] px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+            Auto-retry on error
+          </div>
+          <p className="text-xs text-[var(--color-text-secondary)]">
+            Re-attempt up to 5× after a provider or runtime error. Turns itself
+            off once the run performs a wallet, signing, or other
+            state-changing action.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Auto-retry on error"
+          disabled={pending}
+          onClick={() => onToggle(!enabled)}
+          data-vex-action="toggle-auto-retry"
+          className={cn(
+            "relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8] disabled:cursor-not-allowed disabled:opacity-50",
+            enabled
+              ? "border-[#3758ff]/60 bg-[#3758ff]/70"
+              : "border-white/[0.12] bg-white/[0.06]",
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
+              enabled ? "translate-x-[18px]" : "translate-x-[3px]",
+            )}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export interface CardFooterProps {
   readonly kind: CardStateKind;
   readonly currentHash: string | null;

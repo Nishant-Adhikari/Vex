@@ -135,7 +135,11 @@ export async function createDraft(id: string, rootSessionId: string): Promise<vo
   );
 }
 
-export async function updateDraft(id: string, fields: MissionDraftRow): Promise<void> {
+export async function updateDraft(
+  id: string,
+  fields: MissionDraftRow,
+  client?: PoolClient,
+): Promise<void> {
   const sets: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
@@ -156,10 +160,15 @@ export async function updateDraft(id: string, fields: MissionDraftRow): Promise<
   sets.push(`updated_at = NOW()`);
   params.push(id);
 
-  await execute(
-    `UPDATE missions SET ${sets.join(", ")} WHERE id = $${idx}`,
-    params,
-  );
+  // Client-aware so `applyMissionPatch` can run the read-merge-write of
+  // JSONB partial-update fields inside one row-locked transaction (mirrors
+  // setStatus / setApprovedAt). The overwrite semantics are unchanged.
+  const sql = `UPDATE missions SET ${sets.join(", ")} WHERE id = $${idx}`;
+  if (client) {
+    await executeWith(client, sql, params);
+  } else {
+    await execute(sql, params);
+  }
 }
 
 export async function setStatus(
@@ -292,5 +301,33 @@ export async function clearAcceptance(
             updated_at = NOW()
       WHERE id = $1`,
     [id],
+  );
+}
+
+/**
+ * Merge a single `autoRetryEnabled` flag into `constraints_json`
+ * without clobbering sibling keys (SQL-side JSONB `||`). The caller
+ * MUST hold the missions row lock (via `getMissionForUpdate`) so the
+ * status/permission decision and this write commit atomically and
+ * serialize against `applyMissionPatch`'s read-merge-write.
+ *
+ * Phase 4d-5 — the host-only auto-retry opt-in toggle. `autoRetryEnabled`
+ * is NOT part of the contract hash (see engine/mission/contract-hash.ts),
+ * so toggling it never dirties an accepted contract.
+ */
+export async function mergeConstraintAutoRetry(
+  client: PoolClient,
+  id: string,
+  enabled: boolean,
+): Promise<void> {
+  await executeWith(
+    client,
+    `UPDATE missions
+        SET constraints_json =
+              COALESCE(constraints_json, '{}'::jsonb)
+              || jsonb_build_object('autoRetryEnabled', $2::boolean),
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id, enabled],
   );
 }

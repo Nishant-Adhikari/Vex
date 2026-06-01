@@ -123,6 +123,11 @@ export function normaliseConstraints(raw: unknown): MissionConstraints {
   if (typeof rec["notes"] === "string") {
     projection.notes = rec["notes"];
   }
+  // Phase 4d-5 — host-only auto-retry opt-in. Boolean-only; absent/wrong
+  // type leaves the key off the DTO (the renderer treats absence as off).
+  if (typeof rec["autoRetryEnabled"] === "boolean") {
+    projection.autoRetryEnabled = rec["autoRetryEnabled"];
+  }
   const reparsed = missionConstraintsSchema.safeParse(projection);
   if (reparsed.success) return reparsed.data;
   log.warn("[missions-db] constraints_json projection failed Zod parse");

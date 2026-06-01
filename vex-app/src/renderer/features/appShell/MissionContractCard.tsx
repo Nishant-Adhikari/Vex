@@ -29,8 +29,10 @@ import {
   useAcceptMissionContract,
   useMissionDiff,
   useMissionDraft,
+  useSetAutoRetry,
 } from "../../lib/api/mission.js";
 import {
+  AutoRetrySection,
   CardBody,
   CardFooter,
   CardHeader,
@@ -46,16 +48,20 @@ interface CardState {
 
 export interface MissionContractCardProps {
   readonly sessionId: string;
+  /** Owning session permission — auto-retry toggle shows only for "full". */
+  readonly permission: "full" | "restricted";
 }
 
 export function MissionContractCard({
   sessionId,
+  permission,
 }: MissionContractCardProps): JSX.Element | null {
   const draftQuery = useMissionDraft(sessionId);
   const draft = readDraft(draftQuery.data);
   const diffQuery = useMissionDiff(sessionId, draft?.missionId ?? null);
   const diff = readDiff(diffQuery.data);
   const accept = useAcceptMissionContract();
+  const autoRetry = useSetAutoRetry();
 
   const state = useMemo<CardState | null>(() => {
     if (draft === null) return null;
@@ -94,6 +100,19 @@ export function MissionContractCard({
     });
   };
 
+  // Auto-retry opt-in is meaningful only for autonomous-full sessions (the
+  // engine refuses it otherwise). Hide the toggle for restricted — the
+  // server is still the authority.
+  const showAutoRetry = permission === "full";
+  const autoRetryEnabled = state.draft.constraints.autoRetryEnabled === true;
+  const onToggleAutoRetry = (next: boolean): void => {
+    autoRetry.mutate({
+      sessionId,
+      missionId: state.draft.missionId,
+      enabled: next,
+    });
+  };
+
   const title = state.draft.title?.trim() || "Mission contract";
 
   return (
@@ -105,6 +124,13 @@ export function MissionContractCard({
     >
       <CardHeader kind={state.kind} title={title} />
       <CardBody draft={state.draft} />
+      {showAutoRetry ? (
+        <AutoRetrySection
+          enabled={autoRetryEnabled}
+          pending={autoRetry.isPending}
+          onToggle={onToggleAutoRetry}
+        />
+      ) : null}
       <CardFooter
         kind={state.kind}
         currentHash={state.currentHash}

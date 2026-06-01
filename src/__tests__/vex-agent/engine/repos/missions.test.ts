@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockExecute = vi.fn().mockResolvedValue(0);
+const mockExecuteWith = vi.fn().mockResolvedValue(0);
 const mockQueryOne = vi.fn().mockResolvedValue(null);
 const mockQuery = vi.fn().mockResolvedValue([]);
 
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: (...args: unknown[]) => mockExecute(...args),
+  executeWith: (...args: unknown[]) => mockExecuteWith(...args),
   queryOne: (...args: unknown[]) => mockQueryOne(...args),
   query: (...args: unknown[]) => mockQuery(...args),
 }));
 
 const {
-  createDraft, updateDraft, setStatus, setApprovedAt,
+  createDraft, updateDraft, mergeConstraintAutoRetry, setStatus, setApprovedAt,
   getMission, getMissionBySession, getActiveMission,
 } = await import("../../../../vex-agent/db/repos/missions.js");
 
@@ -94,6 +96,43 @@ describe("missions repo", () => {
       await updateDraft("mission-1", { title: "Test" });
       const [sql] = mockExecute.mock.calls[0];
       expect(sql).toContain("updated_at = NOW()");
+    });
+
+    it("runs on the tx client when one is supplied", async () => {
+      const client = {} as never;
+      await updateDraft("mission-1", { title: "Test" }, client);
+      // Routed through executeWith (the locked applyMissionPatch path),
+      // never the pool-level execute.
+      expect(mockExecuteWith).toHaveBeenCalledTimes(1);
+      expect(mockExecute).not.toHaveBeenCalled();
+      const [c] = mockExecuteWith.mock.calls[0]!;
+      expect(c).toBe(client);
+    });
+  });
+
+  // ── mergeConstraintAutoRetry (phase 4d-5) ──────────────────────
+
+  describe("mergeConstraintAutoRetry", () => {
+    it("merges the flag with `||` (never overwrites the column)", async () => {
+      const client = {} as never;
+      await mergeConstraintAutoRetry(client, "mission-1", true);
+      expect(mockExecuteWith).toHaveBeenCalledTimes(1);
+      const [c, sql, params] = mockExecuteWith.mock.calls[0]!;
+      expect(c).toBe(client);
+      expect(sql).toContain("||");
+      expect(sql).toContain(
+        "jsonb_build_object('autoRetryEnabled', $2::boolean)",
+      );
+      expect(sql).toContain("updated_at = NOW()");
+      expect(params).toEqual(["mission-1", true]);
+      // Guard against a regression to overwrite semantics.
+      expect(sql).not.toMatch(/constraints_json\s*=\s*\$\d+::jsonb/);
+    });
+
+    it("passes enabled=false through unchanged", async () => {
+      await mergeConstraintAutoRetry({} as never, "mission-1", false);
+      const [, , params] = mockExecuteWith.mock.calls[0]!;
+      expect(params).toEqual(["mission-1", false]);
     });
   });
 
