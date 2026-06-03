@@ -11,6 +11,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { DEFAULT_EMBED_PORT } from "../onboarding/embedding-defaults.js";
+import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
 
 export interface SecretAdapter {
   /** Returns the absolute path that compose should mount via `secrets:`. */
@@ -72,8 +73,6 @@ const COMPOSE_OUT_FILE_NAME = "docker-compose.yml";
 const INSTALL_ID_FILE_NAME = ".install-id";
 const SECRETS_DIR_NAME = path.join("local-infra", "secrets");
 const PG_PASSWORD_FILE_NAME = "pg_password";
-
-const DEFAULT_PG_PORT = 55432;
 
 async function fileExists(p: string): Promise<boolean> {
   try {

@@ -22,6 +22,7 @@ import {
   EMBEDDING_MODEL_FILENAME,
   EMBEDDING_MODEL_SHA256,
 } from "../../onboarding/embedding-defaults.js";
+import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
 
 const TEMPLATE_PATH = path.resolve(
   __dirname,
@@ -67,6 +68,16 @@ describe("docker-compose.template.yml ↔ embedding-defaults.ts sync", () => {
   it("defaults the embed port placeholder to DEFAULT_EMBED_PORT", () => {
     expect(template).toContain(
       `\${VEX_EMBED_PORT:-${DEFAULT_EMBED_PORT}}`
+    );
+  });
+
+  it("defaults the pg port placeholder to DEFAULT_PG_PORT", () => {
+    // Lockstep with `local-service-ports.ts`: render.ts builds the
+    // replace string from DEFAULT_PG_PORT, so a drift between the
+    // constant and this template default would silently publish the
+    // wrong host port. (Codex harness-vexup-docker-ports requirement.)
+    expect(template).toContain(
+      `\${VEX_PG_PORT:-${DEFAULT_PG_PORT}}`
     );
   });
 

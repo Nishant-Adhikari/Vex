@@ -20,7 +20,7 @@ describe("aggregateServiceState", () => {
   it("flips Postgres to ready after probe.ready event", () => {
     const events: ParsedLogEvent[] = [
       { kind: "postgres.waiting" },
-      { kind: "postgres.probe.connecting", attempt: 1, port: 55432 },
+      { kind: "postgres.probe.connecting", attempt: 1, port: 27432 },
       { kind: "postgres.probe.ready", attempt: 1 },
     ];
     const [pg] = aggregateServiceState(events);
@@ -30,13 +30,13 @@ describe("aggregateServiceState", () => {
 
   it("flips Embeddings to ready after runtime.ready event", () => {
     const events: ParsedLogEvent[] = [
-      { kind: "embeddings.probe.connecting", attempt: 1, port: 55134 },
+      { kind: "embeddings.probe.connecting", attempt: 1, port: 27134 },
       {
         kind: "embeddings.probe.not_ready",
         attempt: 1,
         reason: "health",
       },
-      { kind: "embeddings.probe.connecting", attempt: 2, port: 55134 },
+      { kind: "embeddings.probe.connecting", attempt: 2, port: 27134 },
       { kind: "embeddings.probe.health_ok" },
       { kind: "embeddings.probe.ready", dim: 768, attempts: 2 },
     ];

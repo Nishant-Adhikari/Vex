@@ -78,7 +78,7 @@ describe("waitForEmbeddingsRuntimeReady", () => {
     });
 
     const result = await waitForEmbeddingsRuntimeReady({
-      embedPort: 55134,
+      embedPort: 27134,
       overallTimeoutMs: 1_000,
     });
     expect(result.kind).toBe("ready");
@@ -98,7 +98,7 @@ describe("waitForEmbeddingsRuntimeReady", () => {
     });
 
     const result = await waitForEmbeddingsRuntimeReady({
-      embedPort: 55134,
+      embedPort: 27134,
       overallTimeoutMs: 1_000,
     });
     expect(result.kind).toBe("dim_mismatch");
@@ -119,7 +119,7 @@ describe("waitForEmbeddingsRuntimeReady", () => {
     });
 
     const promise = waitForEmbeddingsRuntimeReady({
-      embedPort: 55134,
+      embedPort: 27134,
       overallTimeoutMs: 5_000,
     });
     // Advance well past the budget; setTimeout chains resolve in order.
@@ -135,7 +135,7 @@ describe("waitForEmbeddingsRuntimeReady", () => {
     const ac = new AbortController();
     ac.abort();
     const result = await waitForEmbeddingsRuntimeReady({
-      embedPort: 55134,
+      embedPort: 27134,
       signal: ac.signal,
       overallTimeoutMs: 1_000,
     });
@@ -153,7 +153,7 @@ describe("waitForEmbeddingsRuntimeReady", () => {
     });
 
     const promise = waitForEmbeddingsRuntimeReady({
-      embedPort: 55134,
+      embedPort: 27134,
       overallTimeoutMs: 3_000,
     });
     await vi.advanceTimersByTimeAsync(4_000);

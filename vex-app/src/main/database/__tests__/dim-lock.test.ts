@@ -42,7 +42,7 @@ const { countRowsWithDimNotMatching, probeDbReachable } = await import(
 
 const HEALTHY_CFG = {
   host: "127.0.0.1",
-  port: 55432,
+  port: 27432,
   database: "vex",
   user: "vex",
   password: "secret",

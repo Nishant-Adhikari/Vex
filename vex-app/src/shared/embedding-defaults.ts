@@ -17,7 +17,15 @@
  * (codex review turn 2 RED #2).
  */
 
-export const DEFAULT_EMBED_PORT = 55134;
+/**
+ * Embeddings runtime host port published on 127.0.0.1. An uncommon
+ * FIXED port BELOW the Windows TCP dynamic range (49152-65535): inside
+ * that band Hyper-V/WinNAT excluded-range reservations make
+ * `docker compose up` fail with WSAEACCES on Windows (Microsoft KB
+ * 3039044). Was 55134 (inside the danger band) before 2026-06; see
+ * `local-service-ports.ts` for the matching Postgres default.
+ */
+export const DEFAULT_EMBED_PORT = 27134;
 export const EMBEDDING_MODEL_ALIAS = "ai/embeddinggemma:300M-Q8_0";
 export const EMBEDDING_DIM = 768;
 export const EMBEDDING_PROVIDER = "local";

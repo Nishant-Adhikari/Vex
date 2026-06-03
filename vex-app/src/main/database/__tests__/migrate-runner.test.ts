@@ -70,7 +70,7 @@ const { MigrationError } = await import("@vex-lib/db/migrate-runner.js");
 
 const VALID_CONFIG = {
   host: "127.0.0.1",
-  port: 55432,
+  port: 27432,
   database: "vex",
   user: "vex",
   password: "secret",
@@ -210,7 +210,7 @@ describe("runMigrationsForIpc", () => {
     expect(PoolCtor).toHaveBeenCalledWith(
       expect.objectContaining({
         host: "127.0.0.1",
-        port: 55432,
+        port: 27432,
         database: "vex",
         user: "vex",
         password: "secret",

@@ -16,12 +16,12 @@ describe("parseComposeLog", () => {
   it("matches Postgres probe connecting", () => {
     expect(
       parseComposeLog(
-        "Postgres health probe #2: connecting on 127.0.0.1:55432…",
+        "Postgres health probe #2: connecting on 127.0.0.1:27432…",
       ),
     ).toEqual({
       kind: "postgres.probe.connecting",
       attempt: 2,
-      port: 55432,
+      port: 27432,
     });
   });
 
@@ -47,12 +47,12 @@ describe("parseComposeLog", () => {
   it("matches Embeddings probe connecting", () => {
     expect(
       parseComposeLog(
-        "Embeddings probe #1: GET /health on 127.0.0.1:55134…",
+        "Embeddings probe #1: GET /health on 127.0.0.1:27134…",
       ),
     ).toEqual({
       kind: "embeddings.probe.connecting",
       attempt: 1,
-      port: 55134,
+      port: 27134,
     });
   });
 

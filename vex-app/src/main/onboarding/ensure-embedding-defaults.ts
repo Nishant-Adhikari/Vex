@@ -49,7 +49,7 @@ const EMBEDDING_KEYS = [
 export interface EnsureEmbeddingDefaultsOptions {
   /**
    * Embed port published by the compose stack. Defaults to
-   * `DEFAULT_EMBED_PORT` (55134). Phase 1 hardcodes this; Phase 2
+   * `DEFAULT_EMBED_PORT` (27134). Phase 1 hardcodes this; Phase 2
    * may surface a Settings → Advanced override and call this with
    * the live `composeUp` result port.
    */

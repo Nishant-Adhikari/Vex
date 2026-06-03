@@ -49,7 +49,7 @@ services:
       start_period: 10s
     ports:
       - target: 5432
-        published: "${VEX_PG_PORT:-55432}"
+        published: "${VEX_PG_PORT:-27432}"
         host_ip: 127.0.0.1
         protocol: tcp
         mode: host
@@ -123,7 +123,7 @@ services:
       - vex-embed-models-${VEX_INSTALL_ID}:/models
     ports:
       - target: 8080
-        published: "${VEX_EMBED_PORT:-55134}"
+        published: "${VEX_EMBED_PORT:-27134}"
         host_ip: 127.0.0.1
         protocol: tcp
         mode: host

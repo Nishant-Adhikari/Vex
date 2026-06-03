@@ -1,7 +1,7 @@
 /**
  * Branch: error.port_collision — Compose detected a port already in use
  * (typical: Postgres :5432 already running on host, or a stale Vex
- * stack from a previous install holding :55432). MVP path: surface the
+ * stack from a previous install holding :27432). MVP path: surface the
  * full error message + nudge user to stop the conflicting process and
  * Try again (codex plan v2 SHOULD-FIX #9 — no port input in MVP, the
  * IPC contract only accepts `pgPort` and the conflict may equally be

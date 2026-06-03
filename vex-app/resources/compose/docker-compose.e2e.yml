@@ -2,7 +2,7 @@
 #
 # Hardcoded credentials + port 5777 retained for parity with the
 # existing engine test suite (decision 2026-05-08: keep 5777 in test
-# fixtures, 55432 in production). Tmpfs storage so containers can be
+# fixtures, 27432 in production). Tmpfs storage so containers can be
 # torn down between runs without touching the host filesystem.
 
 name: vex-e2e

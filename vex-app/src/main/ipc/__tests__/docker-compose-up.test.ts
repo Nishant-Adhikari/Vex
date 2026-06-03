@@ -140,8 +140,8 @@ function successResult(): {
     composeOutPath: "/tmp/out/docker-compose.yml",
     installId: "fake-install-id",
     message: "Vex stack is running.",
-    pgPort: 55432,
-    embedPort: 55134,
+    pgPort: 27432,
+    embedPort: 27134,
     pgPasswordPath: "/tmp/secrets/pg_password",
     embeddingsReadiness: "ready" as const,
   };

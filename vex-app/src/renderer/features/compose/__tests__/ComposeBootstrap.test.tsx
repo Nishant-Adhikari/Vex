@@ -140,7 +140,7 @@ describe("ComposeBootstrap — terminal kinds", () => {
           kind: "running",
           composeOutPath: "/tmp/compose.yml",
           installId: "vex-1031ec52-40c8-4951-8e94-b55702346ba6",
-          message: "Vex stack is running (pg :55432, embeddings :55134, dim=768).",
+          message: "Vex stack is running (pg :27432, embeddings :27134, dim=768).",
         },
       }),
       cancel: mockCancel,
@@ -188,7 +188,7 @@ describe("ComposeBootstrap — terminal kinds", () => {
           kind: "port_collision",
           composeOutPath: "/tmp/compose.yml",
           installId: "vex-1031ec52",
-          message: "Port 55432 is already in use by another process.",
+          message: "Port 27432 is already in use by another process.",
         },
       }),
       cancel: mockCancel,
@@ -197,7 +197,7 @@ describe("ComposeBootstrap — terminal kinds", () => {
     await waitFor(() => {
       expect(view.container.textContent).toMatch(/Port already in use/);
     });
-    expect(view.container.textContent).toMatch(/Port 55432/);
+    expect(view.container.textContent).toMatch(/Port 27432/);
     const retry = Array.from(view.container.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("Retry") || b.textContent?.includes("Try again"),
     );

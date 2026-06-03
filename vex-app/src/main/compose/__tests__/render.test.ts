@@ -71,13 +71,13 @@ services:
       - pg_password
     ports:
       - target: 5432
-        published: "\${VEX_PG_PORT:-55432}"
+        published: "\${VEX_PG_PORT:-27432}"
         host_ip: 127.0.0.1
   embeddings-runtime:
     image: ghcr.io/ggml-org/llama.cpp:server-b9115@sha256:def
     ports:
       - target: 8080
-        published: "\${VEX_EMBED_PORT:-55134}"
+        published: "\${VEX_EMBED_PORT:-27134}"
         host_ip: 127.0.0.1
 
 volumes:
@@ -162,10 +162,10 @@ describe("compose/render core", () => {
     expect(written).not.toContain("${VEX_");
   });
 
-  it("renderCompose defaults pgPort to 55432 when not provided", async () => {
+  it("renderCompose defaults pgPort to 27432 when not provided", async () => {
     const result = await renderCompose(deps);
     const written = readFileSync(result.outPath, "utf8");
-    expect(written).toContain('published: "55432"');
+    expect(written).toContain('published: "27432"');
   });
 
   it("renderCompose substitutes VEX_EMBED_PORT placeholder + returns embedPort in result", async () => {
@@ -176,11 +176,11 @@ describe("compose/render core", () => {
     expect(written).not.toContain("${VEX_EMBED_PORT");
   });
 
-  it("renderCompose defaults embedPort to 55134 when not provided", async () => {
+  it("renderCompose defaults embedPort to 27134 when not provided", async () => {
     const result = await renderCompose(deps);
-    expect(result.embedPort).toBe(55134);
+    expect(result.embedPort).toBe(27134);
     const written = readFileSync(result.outPath, "utf8");
-    expect(written).toContain('published: "55134"');
+    expect(written).toContain('published: "27134"');
   });
 
   it("renderCompose is idempotent (same output across runs with same deps)", async () => {

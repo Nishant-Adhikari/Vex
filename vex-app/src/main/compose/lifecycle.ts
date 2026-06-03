@@ -24,6 +24,7 @@ import {
 import { ensureDockerDaemonReady } from "../docker/daemon.js";
 import { inspectDockerEndpointPolicy } from "../docker/endpoint-policy.js";
 import { DEFAULT_EMBED_PORT } from "../onboarding/embedding-defaults.js";
+import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
 import { wizardStateStore } from "../onboarding/wizard-state-store.js";
 import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import { pgConnectProbe } from "./pg-health.js";
@@ -181,7 +182,6 @@ async function clearStaleSecretCache(
   return { wiped: true };
 }
 
-const DEFAULT_PG_PORT = 55432;
 const HEALTH_POLL_INTERVAL_MS = 2_000;
 const HEALTH_TIMEOUT_MS = 60_000;
 const PULL_TIMEOUT_MS = 10 * 60_000;   // 10 min for first pull on slow networks
@@ -403,7 +403,7 @@ export async function composeUp(
 
   // Pre-flight: are BOTH host ports free? Codex turn 1 RED #5 — we
   // never trusted the embed port preflight before, so a collision with
-  // another LLM tool on 55134 would surface as the embeddings runtime
+  // another LLM tool on 27134 would surface as the embeddings runtime
   // failing health rather than a clean port_collision message.
   const [pgFree, embedFree] = await Promise.all([
     isPortFree("127.0.0.1", pgPort, signal),
