@@ -36,8 +36,14 @@ function nativeTokenMetadata(): ResolvedKyberTokenMetadata {
  * "native"/"eth" OR the native sentinel ADDRESS (case-insensitive). The
  * sentinel must short-circuit BEFORE generic `isAddress` handling so it is
  * never mistaken for an ERC-20 contract.
+ *
+ * Exported so the Stage-7 prequote execute-gate reuses the EXACT native-input
+ * semantics the quote recorder relied on (the quote's `resolveTokenMetadata`
+ * maps a native leg to `NATIVE_TOKEN_ADDRESS`, so the gate must canonicalize a
+ * native input to the same sentinel for the match-hash to collide). Do NOT
+ * duplicate this predicate at the gate.
  */
-function isNativeTokenInput(input: string): boolean {
+export function isNativeTokenInput(input: string): boolean {
   const lower = input.toLowerCase();
   return lower === "native" || lower === "eth" || lower === NATIVE_TOKEN_ADDRESS.toLowerCase();
 }

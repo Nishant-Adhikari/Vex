@@ -7,6 +7,7 @@
  */
 
 import type { ActionKind } from "./taxonomy.js";
+import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 
 // ── Tool definition (what LLM sees) ─────────────────────────────
 
@@ -187,6 +188,19 @@ export interface ToolResult {
    * policy metadata (Codex review, puzzle 5/1A, 2026-05-23).
    */
   actionKind?: ActionKind;
+  /**
+   * Stage-7 prequote-gate binding. Set ONLY by `executeProtocolTool` when the
+   * execute-time prequote gate ALLOWS a swap execute and the call still needs
+   * restricted-mode approval — it carries the matched prequote's safety
+   * `verdict` (`pass` or `unknown`; a `fail` blocks at the gate and never
+   * reaches here) onto the `pendingApproval` result. The turn-loop passes this
+   * TYPED field into `buildIntentPreview` so the human sees the safety verdict
+   * (especially `unknown` → "UNVERIFIED") in the approval preview before
+   * approving. It is NOT sourced from raw tool args, so the renderer preview's
+   * allow-listed `criticalArgs` can never be spoofed by the LLM (Stage 7 R5,
+   * Codex guardrail #3).
+   */
+  prequote?: { readonly verdict: SafetyVerdict };
 }
 
 /**

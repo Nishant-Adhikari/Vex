@@ -1,29 +1,43 @@
 /**
- * Swap prequote recording (Stage 6c).
+ * Swap prequote recording (Stage 6c) + execute-time gate (Stage 7).
  *
- * For a SUCCESSFUL swap QUOTE this module computes:
+ * RECORDER — for a SUCCESSFUL swap QUOTE this module computes:
  *   1. a deterministic match-hash over the trade identity (reused verbatim by
  *      the Stage-7 execute gate so record-time and gate-time hashes collide),
- *   2. a fail-closed 3-state token-safety verdict (`pass` | `fail` | `unknown`),
+ *   2. a 3-state token-safety verdict (`pass` | `fail` | `unknown`),
  *   3. a bounded, structural-only `safetyDetail` payload,
  * then records a `swap_prequotes` row. Recording is best-effort: any failure is
  * swallowed (logged structurally) so it never alters the quote's ToolResult. A
- * missing prequote is safe — the Stage-7 gate fails closed.
+ * missing prequote is safe — the Stage-7 gate blocks the execute instead.
+ *
+ * GATE (`evaluateSwapPrequoteGate`) — before a swap EXECUTE broadcasts, this
+ * enforces quote-before-transaction. It BLOCKS on (no fresh matching `swap`
+ * prequote) OR (a fresh `fail` row); both `pass` AND `unknown` PASS the gate.
+ * An allowed `unknown` is surfaced in the restricted-mode approval preview
+ * ("safety: UNVERIFIED") and logged in full-auto. The gate is the INVERSE of
+ * the recorder: the recorder swallows errors, the gate FAILS CLOSED to BLOCK on
+ * any error / missing session / un-gateable token identity.
  *
  * The quote result payload (`ToolResult.data`) is UNTRUSTED here: it is
  * re-validated with Zod at this boundary. We deliberately do NOT import the
  * handler-local `QuoteSafetyLeg` type from kyberswap/handlers/swap.ts (it is
  * not exported); we structurally re-validate instead.
  *
- * NEVER persist raw provider/HTTP/error text — only bounded structural labels.
+ * NEVER persist or log raw provider/HTTP/DB/error text — only bounded
+ * structural labels (recorder) or bounded reason classes (gate).
  */
 
 import { createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { isAddress } from "viem";
 
 import type { ChainFamily } from "@tools/khalani/types.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
+import { isNativeTokenInput } from "@tools/kyberswap/helpers.js";
+import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
+import { resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
+import { requireJupiterResolvedToken } from "@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { VexError } from "../../../errors.js";
 import logger from "@utils/logger.js";
@@ -33,6 +47,7 @@ import * as prequoteRepo from "@vex-agent/db/repos/swap-prequotes.js";
 import type {
   CreatePrequoteInput,
   PrequoteFamily,
+  PrequoteKind,
   SafetyVerdict,
 } from "@vex-agent/db/repos/swap-prequotes.js";
 
@@ -453,4 +468,226 @@ export async function recordPrequoteFromQuote(
     family: registered.family,
     verdict: extracted.verdict,
   });
+}
+
+// ── Stage 7 — execute-time prequote gate ────────────────────────────────────
+//
+// Quote-before-transaction: a swap EXECUTE may broadcast ONLY when a fresh
+// matching `swap` prequote exists and that prequote is not a confirmed scam.
+// The gate is the INVERSE of the recorder: the recorder swallows its errors
+// (a missing prequote is safe), but the gate FAILS CLOSED — any error, a
+// missing session, or an un-gateable token identity → BLOCK. The gate runs
+// BEFORE the approval gate in `executeProtocolTool`; an allow carries the
+// matched verdict to the restricted-mode approval preview (R5).
+//
+// NEVER leaks raw provider/DB/wallet text — only a bounded structural reason
+// class reaches the log and the agent-facing message.
+
+/**
+ * Swap EXECUTE tools subject to the Stage-7 gate, mapped to their family. Only
+ * these three tool ids are gated; bridge/send and all non-swap tools pass
+ * through untouched.
+ */
+export const EXECUTE_GATE_TOOLS: Record<string, { family: PrequoteFamily }> = {
+  "kyberswap.swap.sell": { family: "eip155" },
+  "kyberswap.swap.buy": { family: "eip155" },
+  "solana.swap.execute": { family: "solana" },
+};
+
+/** All gated swaps share one kind; bridge prequotes never authorize a swap. */
+const SWAP_GATE_KIND: PrequoteKind = "swap";
+
+/**
+ * Single gate decision. `allow` carries the matched prequote's verdict +
+ * id (the verdict rides to the approval preview). `block` carries a BOUNDED
+ * structural `reason` (for the log) and an agent-facing `message`. No row
+ * contents, addresses, or raw error text appear in either field.
+ */
+export type GateDecision =
+  | { readonly kind: "allow"; readonly verdict: SafetyVerdict; readonly prequoteId: string }
+  | { readonly kind: "block"; readonly reason: GateBlockReason; readonly message: string };
+
+/** Bounded reason class for a gate block — never raw provider/DB/wallet text. */
+type GateBlockReason =
+  | "gate_error"        // any thrown failure (DB / chain parse / resolve) — fail-closed
+  | "no_session"        // missing sessionId on the execution context
+  | "unresolved_token"  // EVM bare-symbol leg at execute (un-gateable identity)
+  | "no_quote"          // no fresh matching swap prequote for these exact params
+  | "safety_fail";      // a fresh prequote flagged the trade as a confirmed scam
+
+const BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Swap blocked: could not verify a fresh quote. Re-run the swap quote and retry.",
+  no_session:
+    "Swap blocked: could not verify a fresh quote (no session). Re-run the swap quote and retry.",
+  unresolved_token:
+    "Swap blocked: unresolved execute token — pass the exact token address the quote returned, then retry.",
+  no_quote:
+    "Swap blocked: no fresh quote for these exact params. Call the swap quote first, then retry.",
+  safety_fail:
+    "Swap blocked: the quoted token was flagged unsafe (honeypot/scam). Aborting.",
+};
+
+function block(reason: GateBlockReason): GateDecision {
+  return { kind: "block", reason, message: BLOCK_MESSAGES[reason] };
+}
+
+/** A thrown identity-build error that already names its block reason. */
+class GateIdentityError extends Error {
+  constructor(readonly gateReason: GateBlockReason) {
+    super(gateReason);
+    this.name = "GateIdentityError";
+  }
+}
+
+/** EVM trade identity for the match-hash. `chainId` is the numeric chain id. */
+interface GateIdentity {
+  readonly family: PrequoteFamily;
+  readonly chainId: number | null;
+  readonly tokenIn: string;
+  readonly tokenOut: string;
+  readonly amount: string;
+}
+
+/**
+ * Canonicalize one EVM execute-leg token to the identity the quote recorded:
+ *   - native input ("ETH"/"native"/sentinel) → `NATIVE_TOKEN_ADDRESS` (the hash
+ *     lowercases it; the quote recorded the same sentinel),
+ *   - a hex address → used verbatim (the hash lowercases it),
+ *   - a bare symbol → un-gateable at execute → BLOCK (Kyber execute is strict
+ *     address-only anyway; the gate never network-resolves an EVM symbol).
+ */
+function evmLegIdentity(param: string): string {
+  if (isNativeTokenInput(param)) return NATIVE_TOKEN_ADDRESS;
+  if (isAddress(param)) return param;
+  throw new GateIdentityError("unresolved_token");
+}
+
+/** Build the EVM trade identity from validated execute params. Throws on a bare symbol. */
+function buildEvmIdentity(params: Record<string, unknown>): GateIdentity {
+  const chainParam = typeof params.chain === "string" ? params.chain : "";
+  const tokenInParam = typeof params.tokenIn === "string" ? params.tokenIn : "";
+  const tokenOutParam = typeof params.tokenOut === "string" ? params.tokenOut : "";
+  const amount = typeof params.amountIn === "string" ? params.amountIn : "";
+  // resolveChainSlug + slugToChainId are local (no network); an unsupported
+  // chain throws a VexError → caught upstream → gate_error block (fail-closed).
+  const chainId = slugToChainId(resolveChainSlug(chainParam));
+  return {
+    family: "eip155",
+    chainId,
+    tokenIn: evmLegIdentity(tokenInParam),
+    tokenOut: evmLegIdentity(tokenOutParam),
+    amount,
+  };
+}
+
+/**
+ * Build the Solana trade identity. `inputToken`/`outputToken` are symbol-OR-mint
+ * at execute; resolve BOTH to their mint with the SAME resolver
+ * `executeJupiterSwap` uses (`requireJupiterResolvedToken`, which returns
+ * `.address` = mint) so the gate mint matches the recorded mint. A resolve
+ * failure throws → caught upstream → gate_error block.
+ */
+async function buildSolanaIdentity(params: Record<string, unknown>): Promise<GateIdentity> {
+  const inputParam = typeof params.inputToken === "string" ? params.inputToken : "";
+  const outputParam = typeof params.outputToken === "string" ? params.outputToken : "";
+  const [inToken, outToken] = await Promise.all([
+    requireJupiterResolvedToken(inputParam),
+    requireJupiterResolvedToken(outputParam),
+  ]);
+  return {
+    family: "solana",
+    chainId: null,
+    tokenIn: inToken.address,
+    tokenOut: outToken.address,
+    amount: String(params.amount),
+  };
+}
+
+/**
+ * Evaluate the execute-time prequote gate for a swap EXECUTE. Single decision;
+ * fail-closed to BLOCK on ANY failure. Guardrail #1: a fresh `fail` row can
+ * never slip through — `existsFreshFailByMatch` is checked FIRST (a later
+ * `pass`/`unknown` for the same identity cannot override it), and the latest-row
+ * `fail` is re-checked as belt-and-suspenders.
+ */
+export async function evaluateSwapPrequoteGate(
+  toolId: string,
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): Promise<GateDecision> {
+  const gated = EXECUTE_GATE_TOOLS[toolId];
+  if (!gated) {
+    // Defensive: callers only invoke for gated tools. Treat an unexpected tool
+    // as a block rather than silently allowing an ungated execute.
+    return block("gate_error");
+  }
+
+  try {
+    const sessionId = context.sessionId;
+    if (!sessionId) return block("no_session");
+
+    // Resolve the SELECTED address (never decrypts). A wallet-scope throw is
+    // caught below → gate_error block (fail-closed, never fabricate).
+    const walletAddress = resolveSelectedAddress(
+      context.walletResolution,
+      context.walletPolicy,
+      gated.family as ChainFamily,
+    );
+
+    const identity =
+      gated.family === "eip155"
+        ? buildEvmIdentity(params)
+        : await buildSolanaIdentity(params);
+
+    const matchHash = computePrequoteMatchHash({
+      sessionId,
+      family: gated.family,
+      chainId: identity.chainId,
+      walletAddress,
+      tokenIn: identity.tokenIn,
+      tokenOut: identity.tokenOut,
+      amount: identity.amount,
+    });
+
+    // Guardrail #1 — a fresh confirmed-scam row dominates everything else.
+    if (await prequoteRepo.existsFreshFailByMatch(sessionId, matchHash, SWAP_GATE_KIND)) {
+      return block("safety_fail");
+    }
+
+    const latest = await prequoteRepo.findLatestFreshByMatch(sessionId, matchHash, SWAP_GATE_KIND);
+    if (!latest) return block("no_quote");
+
+    // Belt-and-suspenders: even though existsFreshFail already ruled out a fresh
+    // fail, never allow a `fail` latest row (guardrail #1).
+    if (latest.safetyVerdict === "fail") return block("safety_fail");
+
+    if (latest.safetyVerdict === "unknown") {
+      // Surface that an un-audited leg is being allowed (preview/full-auto see
+      // it downstream). Prefix only — never the full hash or any address.
+      logger.warn("protocol.prequote.gate.unknown_allowed", {
+        toolId,
+        family: gated.family,
+        matchHashPrefix: matchHash.slice(0, 8),
+      });
+    }
+    return { kind: "allow", verdict: latest.safetyVerdict, prequoteId: latest.prequoteId };
+  } catch (err) {
+    const reason =
+      err instanceof GateIdentityError
+        ? err.gateReason
+        : ("gate_error" as const);
+    // Bounded structural log only — never raw provider/DB/wallet text.
+    logger.warn("protocol.prequote.gate.error", {
+      toolId,
+      reason,
+      errorClass:
+        err instanceof VexError
+          ? err.code
+          : err instanceof Error
+            ? err.constructor.name
+            : "unknown",
+    });
+    return block(reason);
+  }
 }

@@ -23,6 +23,7 @@
  */
 
 import type { InternalToolContext } from "../../tools/internal/types.js";
+import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
 
 /**
  * Allow-list of `tool_call.arguments` keys eligible for the preview
@@ -83,8 +84,41 @@ export interface IntentPreview {
   toolName: string;
   /** Optional protocol namespace (e.g. "kyberswap", "polymarket"). */
   namespace?: string;
-  /** Flat map of allow-listed argument keys → coerced scalars. */
+  /**
+   * Flat map of allow-listed argument keys → coerced scalars. Stage 7 also
+   * injects a non-arg `safety` key here (sourced from the typed prequote
+   * verdict, NOT from raw args) so the renderer's strict
+   * `approvalPreviewSchema` — which permits arbitrary scalar `criticalArgs`
+   * keys — surfaces the swap safety verdict with zero cross-process schema
+   * change. See {@link IntentPreviewExtras}.
+   */
   criticalArgs: Record<string, string | number | boolean | null>;
+}
+
+/**
+ * Typed, non-arg preview enrichment. Stage 7 R5: the swap prequote gate's
+ * matched safety verdict reaches the approval preview through THIS channel —
+ * never through `args`. `safety` is deliberately NOT in
+ * {@link PREVIEW_KEY_ALLOWLIST}, so the LLM cannot spoof it via tool args; the
+ * value is injected after allow-list extraction from `prequoteVerdict` only.
+ */
+export interface IntentPreviewExtras {
+  /** Matched prequote safety verdict for a gated swap execute (`pass`/`unknown`). */
+  prequoteVerdict?: SafetyVerdict;
+}
+
+/** Render a swap safety verdict for the approval preview's `criticalArgs.safety`. */
+function renderSafetyVerdict(verdict: SafetyVerdict): string {
+  switch (verdict) {
+    case "pass":
+      return "pass";
+    case "unknown":
+      return "UNVERIFIED — audit unavailable";
+    case "fail":
+      // A `fail` is blocked at the gate and never reaches the approval preview;
+      // render defensively if it ever does (must never read as safe).
+      return "FAILED — flagged unsafe";
+  }
 }
 
 /**
@@ -129,6 +163,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export function buildIntentPreview(
   toolName: string,
   args: Record<string, unknown>,
+  extras?: IntentPreviewExtras,
 ): IntentPreview {
   const effective = resolveEffectiveCall(toolName, args);
 
@@ -136,6 +171,13 @@ export function buildIntentPreview(
   for (const key of Object.keys(effective.args)) {
     if (!PREVIEW_KEY_ALLOWLIST.has(key)) continue;
     criticalArgs[key] = coerceSummaryValue(effective.args[key]);
+  }
+
+  // Stage 7 R5: inject the swap safety verdict AFTER allow-list extraction,
+  // sourced ONLY from the typed `extras.prequoteVerdict` — never from raw args
+  // (`safety` is not in PREVIEW_KEY_ALLOWLIST, so the LLM cannot spoof it).
+  if (extras?.prequoteVerdict !== undefined) {
+    criticalArgs.safety = renderSafetyVerdict(extras.prequoteVerdict);
   }
 
   // Derive namespace from dotted tool name (e.g. "kyberswap.swap.sell" → "kyberswap").

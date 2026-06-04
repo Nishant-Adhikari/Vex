@@ -1,13 +1,16 @@
 /**
- * Swap prequotes repo — durable swap-quote safety preview store (Stage 6c).
+ * Swap prequotes repo — durable swap-quote safety preview store (Stage 6c)
+ * read by the Stage-7 execute gate.
  *
- * Every successful swap QUOTE records one row here capturing the fail-closed
- * token-safety verdict computed at quote time, keyed by a deterministic
- * match-hash over the trade identity (see
- * `src/vex-agent/tools/protocols/swap-prequote.ts` for the hash + verdict
- * computation). A future runtime gate (Stage 7, NOT in this repo) reads the
- * latest fresh matching row before a swap EXECUTE and fails closed when none
- * exists.
+ * Every successful swap QUOTE records one row here capturing the token-safety
+ * verdict computed at quote time, keyed by a deterministic match-hash over the
+ * trade identity (see `src/vex-agent/tools/protocols/swap-prequote.ts` for the
+ * hash + verdict computation and the gate). The Stage-7 gate reads two of the
+ * three reads below before a swap EXECUTE: `existsFreshFailByMatch` (any fresh
+ * `fail` → block) then `findLatestFreshByMatch` (no fresh row → block; else the
+ * verdict authorizes — `pass`/`unknown` allow, a `fail` latest row is a
+ * belt-and-suspenders block). All reads are session- AND kind-scoped so a
+ * cross-session row or a `bridge` prequote can never authorize/block a `swap`.
  *
  * Migration: `src/vex-agent/db/migrations/029_swap_prequotes.sql`.
  *
@@ -141,27 +144,63 @@ export async function create(input: CreatePrequoteInput): Promise<void> {
   ]);
 }
 
-// ── findLatestFreshByMatch (session-scoped) ─────────────────────────────
+// ── findLatestFreshByMatch (session + kind-scoped) ──────────────────────
 
 /**
- * Newest non-expired prequote row for a (session, match_hash). Returns `null`
- * when no fresh row exists (including cross-session: a row recorded under a
- * different session never matches). Freshness is `expires_at > NOW()` — an
- * expired row is invisible. Stage 7 adds verdict filtering at the gate; this
- * read stays simple + correct.
+ * Newest non-expired prequote row for a (session, match_hash, kind). Returns
+ * `null` when no fresh row exists (including cross-session: a row recorded under
+ * a different session never matches; and cross-kind: a `bridge` row never
+ * authorizes a `swap`). Freshness is `expires_at > NOW()` — an expired row is
+ * invisible.
+ *
+ * The Stage-7 gate calls this with `kind = "swap"` AFTER `existsFreshFailByMatch`
+ * has ruled out any fresh `fail` row, then inspects the returned `safetyVerdict`
+ * (`pass` / `unknown` both authorize; `fail` is a belt-and-suspenders block —
+ * see the gate's guardrail #1). The `kind` predicate keeps a future `bridge`
+ * prequote from ever authorizing or blocking a `swap` (Stage 7 R1).
  */
 export async function findLatestFreshByMatch(
   sessionId: string,
   matchHash: string,
+  kind: PrequoteKind,
 ): Promise<SwapPrequote | null> {
   const row = await queryOne<Record<string, unknown>>(
     `SELECT ${SELECT_COLUMNS} FROM swap_prequotes
       WHERE session_id = $1
         AND match_hash = $2
+        AND kind = $3
         AND expires_at > NOW()
       ORDER BY created_at DESC
       LIMIT 1`,
-    [sessionId, matchHash],
+    [sessionId, matchHash, kind],
   );
   return row ? mapRow(row) : null;
+}
+
+// ── existsFreshFailByMatch (session + kind-scoped) ──────────────────────
+
+/**
+ * True when ANY fresh `fail`-verdict prequote exists for a (session, match_hash,
+ * kind). The Stage-7 gate calls this FIRST (before `findLatestFreshByMatch`) so a
+ * confirmed-scam quote can NEVER be authorized even if a later `pass`/`unknown`
+ * row exists for the identical identity (gate guardrail #1: a fresh `fail`
+ * dominates the latest row). Freshness + session + kind scoping mirror
+ * `findLatestFreshByMatch`. Returns a boolean only — never leaks row contents.
+ */
+export async function existsFreshFailByMatch(
+  sessionId: string,
+  matchHash: string,
+  kind: PrequoteKind,
+): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT 1 FROM swap_prequotes
+      WHERE session_id = $1
+        AND match_hash = $2
+        AND kind = $3
+        AND safety_verdict = 'fail'
+        AND expires_at > NOW()
+      LIMIT 1`,
+    [sessionId, matchHash, kind],
+  );
+  return row !== null;
 }

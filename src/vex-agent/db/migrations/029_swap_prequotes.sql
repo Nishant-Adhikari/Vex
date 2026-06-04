@@ -1,14 +1,22 @@
 -- Stage 6c — swap_prequotes (durable swap-quote safety preview store).
 --
 -- Purpose: every successful swap QUOTE records a row here capturing the
--- fail-closed token-safety verdict computed at quote time, keyed by a
--- deterministic match-hash over the trade identity. A future runtime gate
--- (Stage 7, NOT in this migration) reads the LATEST FRESH matching row before
--- a swap EXECUTE and blocks when no fresh safety-passed preview exists — the
--- agent equivalent of Claude Code's Read-before-Edit precondition. This table
--- only RECORDS the preview; it never gates anything on its own.
+-- token-safety verdict computed at quote time, keyed by a deterministic
+-- match-hash over the trade identity. The Stage-7 runtime gate
+-- (`evaluateSwapPrequoteGate`) reads the matching rows before a swap EXECUTE —
+-- the agent equivalent of Claude Code's Read-before-Edit precondition. This
+-- table only RECORDS the preview; the gate logic lives in the runtime.
 --
--- Fail-closed verdict semantics (`safety_verdict`):
+-- Stage-7 gate policy (what blocks vs passes):
+--   The gate BLOCKS a swap execute on (no fresh matching `swap` prequote) OR
+--   (a fresh `fail` row for the identity). Both `pass` AND `unknown` PASS the
+--   gate. An `unknown` is surfaced in the restricted-mode approval preview
+--   ("safety: UNVERIFIED — audit unavailable") and logged when allowed in
+--   full-auto, so a human (or the audit trail) sees that an un-audited leg was
+--   permitted. A fresh `fail` can never be authorized even if a later
+--   `pass`/`unknown` row exists for the same identity (gate guardrail #1).
+--
+-- Verdict semantics (`safety_verdict`):
 --   pass    — every audited leg passed its risk check; no leg is unknown.
 --   fail    — at least one leg is a hard reject (EVM honeypot, or EVM
 --             fee-on-transfer with tax > 50; Solana isSus = true). Mirrors the
@@ -17,7 +25,8 @@
 --   unknown — at least one non-native leg could NOT be audited (EVM
 --             checkFailed / malformed leg, Solana audit data absent for a
 --             non-native non-wSOL mint) and no leg is a hard fail. "Could not
---             verify" is treated as fail-closed by the Stage-7 gate.
+--             verify" passes the gate but is surfaced to the human/audit (see
+--             gate policy above), it does NOT block on its own.
 --   Aggregation is worst-leg: any fail → fail; else any unknown → unknown;
 --   else pass. Native legs (EVM native sentinel, Solana SOL/wSOL) never worsen
 --   the verdict.

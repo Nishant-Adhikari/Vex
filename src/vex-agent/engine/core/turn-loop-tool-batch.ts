@@ -183,7 +183,14 @@ export async function processTurnToolBatch(args: {
       approvalId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const intentActionKind = result.actionKind;
       const intentRiskLevel = riskLevelFromActionKind(intentActionKind);
-      const intentPreview = buildIntentPreview(toolCall.name, toolCall.arguments);
+      // Stage 7 R5: carry the gate-matched swap safety verdict (typed, off the
+      // ToolResult — NOT raw args) into the preview so restricted-mode approval
+      // surfaces `pass` / `unknown` ("UNVERIFIED") before the human approves.
+      const intentPreview = buildIntentPreview(
+        toolCall.name,
+        toolCall.arguments,
+        result.prequote ? { prequoteVerdict: result.prequote.verdict } : undefined,
+      );
       const intentPolicy = buildPolicySnapshot(toolContext);
       // Phase 3: stamp `expires_at` at enqueue so the approve gate +
       // scheduled sweep have a DB-visible TTL boundary (see APPROVAL_TTL_MS

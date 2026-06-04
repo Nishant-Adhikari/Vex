@@ -13,7 +13,13 @@ import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution, validateCaptureContract } from "./capture-validator.js";
 import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js";
 import { MUTATION_MATRIX } from "./mutation-matrix.js";
-import { PREQUOTE_QUOTE_TOOLS, recordPrequoteFromQuote } from "./swap-prequote.js";
+import {
+  PREQUOTE_QUOTE_TOOLS,
+  recordPrequoteFromQuote,
+  EXECUTE_GATE_TOOLS,
+  evaluateSwapPrequoteGate,
+} from "./swap-prequote.js";
+import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import { sanitizeJsonbValue } from "@vex-agent/db/params.js";
 import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
@@ -188,15 +194,41 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
+  // ── Stage-7 prequote gate — quote-before-transaction on the swap BROADCAST
+  // path. Runs BEFORE the approval gate (a block must short-circuit even a
+  // call that would otherwise be enqueued for approval). Only the three swap
+  // EXECUTE tools are gated; preview/dryRun is read-only simulation and is
+  // never gated. The gate is fail-closed: any error → BLOCK. On ALLOW it yields
+  // the matched prequote's safety verdict, carried to the approval preview (R5).
+  let prequoteVerdict: SafetyVerdict | undefined;
+  if (request.toolId in EXECUTE_GATE_TOOLS && !isPreviewExecution(request.toolId, params)) {
+    const decision = await evaluateSwapPrequoteGate(request.toolId, params, scopedContext);
+    if (decision.kind === "block") {
+      logger.info("protocol.execute.prequote_gate_blocked", {
+        toolId: request.toolId,
+        reason: decision.reason,
+      });
+      return withActionKind({ success: false, output: decision.message }, effectiveActionKind);
+    }
+    prequoteVerdict = decision.verdict;
+  }
+
   // Approval gate — mutating tools require approval under restricted permission.
   // Preview (dryRun) is read-only simulation — skip approval.
   if (manifest.mutating && !context.approved && context.sessionPermission === "restricted" && !isPreviewExecution(request.toolId, params)) {
     logger.info("protocol.execute.approval_required", { toolId: request.toolId, permission: context.sessionPermission });
-    return withActionKind({
+    // Carry the gate-matched prequote verdict to the restricted-mode approval
+    // preview via the TYPED `prequote` field (NOT raw args) so the human sees
+    // the safety verdict — especially `unknown` — before approving (R5).
+    const pending: ToolResult = {
       success: false,
       output: `${request.toolId} requires approval — mutating tool in restricted permission mode.`,
       pendingApproval: true,
-    }, effectiveActionKind);
+    };
+    if (prequoteVerdict !== undefined) {
+      pending.prequote = { verdict: prequoteVerdict };
+    }
+    return withActionKind(pending, effectiveActionKind);
   }
 
   // Determine preview BEFORE handler call — flag survives thrown exceptions

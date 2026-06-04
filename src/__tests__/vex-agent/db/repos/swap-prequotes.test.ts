@@ -4,9 +4,11 @@
  * Pins:
  *   - INSERT shape (16 params order matches migration 029 columns)
  *   - safety_detail / route_ref bound via jsonb()::jsonb
- *   - findLatestFreshByMatch predicate: session_id AND match_hash AND
+ *   - findLatestFreshByMatch predicate: session_id AND match_hash AND kind AND
  *     expires_at > NOW() ORDER BY created_at DESC LIMIT 1 (cross-session +
- *     expired rows miss)
+ *     expired + cross-kind rows miss) — Stage 7 R1 adds the kind predicate
+ *   - existsFreshFailByMatch predicate: session_id AND match_hash AND kind AND
+ *     safety_verdict='fail' AND expires_at > NOW() LIMIT 1 (boolean) — Stage 7
  *   - TIMESTAMPTZ Date → ISO normalisation; BIGINT chain_id string → number
  */
 
@@ -153,30 +155,32 @@ describe("create", () => {
 // ── findLatestFreshByMatch ──────────────────────────────────────────────
 
 describe("findLatestFreshByMatch", () => {
-  it("SELECTs newest fresh row with session_id + match_hash + expires_at predicate", async () => {
+  it("SELECTs newest fresh row with session_id + match_hash + kind + expires_at predicate", async () => {
     mockQueryOne.mockResolvedValueOnce(null);
-    await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH);
+    await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH, "swap");
     const [sql, params] = mockQueryOne.mock.calls[0]!;
     expect(sql).toContain("FROM swap_prequotes");
     expect(sql).toContain("WHERE session_id = $1");
     expect(sql).toContain("AND match_hash = $2");
+    expect(sql).toContain("AND kind = $3");
     expect(sql).toContain("AND expires_at > NOW()");
     expect(sql).toContain("ORDER BY created_at DESC");
     expect(sql).toContain("LIMIT 1");
-    expect(params).toEqual([SESSION_ID, MATCH_HASH]);
+    expect(params).toEqual([SESSION_ID, MATCH_HASH, "swap"]);
   });
 
-  it("returns null when no fresh row matches (expired row OR cross-session miss)", async () => {
-    // The DB enforces freshness + session scope in the predicate; a miss returns
-    // null here. Both 'expired' and 'other-session' surface as the same null.
+  it("returns null when no fresh row matches (expired OR cross-session OR cross-kind miss)", async () => {
+    // The DB enforces freshness + session + kind scope in the predicate; a miss
+    // returns null here. 'expired', 'other-session', and 'other-kind' all
+    // surface as the same null (the bridge-kind isolation test relies on this).
     mockQueryOne.mockResolvedValueOnce(null);
-    const result = await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH);
+    const result = await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH, "swap");
     expect(result).toBeNull();
   });
 
   it("maps a full row, normalising BIGINT chain_id (string) → number", async () => {
     mockQueryOne.mockResolvedValueOnce(fullRow());
-    const row = await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH);
+    const row = await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH, "swap");
     expect(row).toEqual({
       prequoteId: PREQUOTE_ID,
       sessionId: SESSION_ID,
@@ -209,11 +213,48 @@ describe("findLatestFreshByMatch", () => {
         expires_at: new Date("2026-06-04T10:15:00.000Z"),
       }),
     );
-    const row = await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH);
+    const row = await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH, "swap");
     expect(row?.chainId).toBeNull();
     expect(row?.slippageBps).toBeNull();
     expect(row?.createdAt).toBe("2026-06-04T10:00:00.000Z");
     expect(row?.expiresAt).toBe("2026-06-04T10:15:00.000Z");
     expect(typeof row?.createdAt).toBe("string");
+  });
+
+  it("passes the kind through to the predicate (bridge isolation)", async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH, "bridge");
+    const [, params] = mockQueryOne.mock.calls[0]!;
+    expect(params).toEqual([SESSION_ID, MATCH_HASH, "bridge"]);
+  });
+});
+
+// ── existsFreshFailByMatch (Stage 7) ────────────────────────────────────
+
+describe("existsFreshFailByMatch", () => {
+  it("SELECTs 1 with session_id + match_hash + kind + safety_verdict='fail' + freshness", async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await repo.existsFreshFailByMatch(SESSION_ID, MATCH_HASH, "swap");
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SELECT 1 FROM swap_prequotes");
+    expect(sql).toContain("WHERE session_id = $1");
+    expect(sql).toContain("AND match_hash = $2");
+    expect(sql).toContain("AND kind = $3");
+    expect(sql).toContain("AND safety_verdict = 'fail'");
+    expect(sql).toContain("AND expires_at > NOW()");
+    expect(sql).toContain("LIMIT 1");
+    expect(params).toEqual([SESSION_ID, MATCH_HASH, "swap"]);
+  });
+
+  it("returns true when a fresh fail row exists", async () => {
+    mockQueryOne.mockResolvedValueOnce({ "?column?": 1 });
+    expect(await repo.existsFreshFailByMatch(SESSION_ID, MATCH_HASH, "swap")).toBe(true);
+  });
+
+  it("returns false when no fresh fail row exists (expired / other-session / other-kind miss)", async () => {
+    // The DB predicate enforces freshness + session + kind + verdict='fail'; any
+    // of expired, cross-session, or cross-kind surfaces as the same null → false.
+    mockQueryOne.mockResolvedValueOnce(null);
+    expect(await repo.existsFreshFailByMatch(SESSION_ID, MATCH_HASH, "swap")).toBe(false);
   });
 });
