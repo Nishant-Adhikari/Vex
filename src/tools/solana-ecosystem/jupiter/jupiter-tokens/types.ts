@@ -117,6 +117,22 @@ export interface JupiterResolvedToken {
   metadata: TokenMetadata;
 }
 
+/**
+ * Per-token risk signals lifted from Jupiter's `JupiterMintInformation.audit`
+ * plus the verification flag. All fields are optional/nullable because Jupiter
+ * may omit them and because resolution paths that do not hit the token API
+ * (well-known list, local cache) have no audit data. This is informational
+ * surfacing only — Stage 6a does not gate on these values.
+ */
+export interface JupiterTokenSafety {
+  isSus?: boolean | null;
+  mintAuthorityDisabled?: boolean | null;
+  freezeAuthorityDisabled?: boolean | null;
+  topHoldersPercentage?: number | null;
+  isVerified?: boolean | null;
+  organicScore?: number | null;
+}
+
 export function jupiterMintInformationToMetadata(token: JupiterMintInformation): TokenMetadata {
   return {
     chain: "solana",
@@ -126,4 +142,29 @@ export function jupiterMintInformationToMetadata(token: JupiterMintInformation):
     decimals: token.decimals,
     logoUri: token.icon ?? undefined,
   };
+}
+
+/**
+ * Extract the per-token safety block from a fetched mint information record.
+ * Builds the block with ONLY the fields Jupiter actually provided: each field
+ * is included when its source value is not `undefined`/`null`, while meaningful
+ * `false`/`0` signals (e.g. `freezeAuthorityDisabled: false`,
+ * `topHoldersPercentage: 0`, `isVerified: false`) are preserved. Returns
+ * `undefined` when no field survives, so absence is an absent block rather than
+ * a bag of `undefined` values. Never throws on missing fields.
+ */
+export function jupiterMintInformationToSafety(
+  token: JupiterMintInformation,
+): JupiterTokenSafety | undefined {
+  const audit = token.audit;
+  const safety: JupiterTokenSafety = {};
+
+  if (audit?.isSus != null) safety.isSus = audit.isSus;
+  if (audit?.mintAuthorityDisabled != null) safety.mintAuthorityDisabled = audit.mintAuthorityDisabled;
+  if (audit?.freezeAuthorityDisabled != null) safety.freezeAuthorityDisabled = audit.freezeAuthorityDisabled;
+  if (audit?.topHoldersPercentage != null) safety.topHoldersPercentage = audit.topHoldersPercentage;
+  if (token.isVerified != null) safety.isVerified = token.isVerified;
+  if (token.organicScore != null) safety.organicScore = token.organicScore;
+
+  return Object.keys(safety).length > 0 ? safety : undefined;
 }

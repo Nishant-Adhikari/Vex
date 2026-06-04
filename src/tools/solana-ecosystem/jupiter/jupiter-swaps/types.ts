@@ -8,6 +8,7 @@ import type {
   SolanaInstructionWire,
   TokenMetadata,
 } from "../../shared/types.js";
+import type { JupiterTokenSafety } from "../jupiter-tokens/types.js";
 
 export const JUPITER_SWAP_V2_BASE_URL = "https://api.jup.ag/swap/v2";
 
@@ -189,9 +190,21 @@ export interface JupiterSwapBuildOptions {
   blockhashSlotsToExpiry?: number;
 }
 
+/**
+ * Per-token risk signals surfaced at quote time so the agent can see Solana
+ * token risk before swapping. Optional/nullable because Jupiter may omit the
+ * audit and because non-API resolution paths (well-known list, local cache)
+ * have no audit data. Informational only in Stage 6a — no gating.
+ */
+export interface JupiterSwapTokenSafety {
+  inputToken?: JupiterTokenSafety;
+  outputToken?: JupiterTokenSafety;
+}
+
 export interface JupiterSwapQuoteSummary {
   inputToken: TokenMetadata;
   outputToken: TokenMetadata;
+  safety?: JupiterSwapTokenSafety;
   inputAmount: string;
   outputAmount: string;
   inputAmountRaw: string;

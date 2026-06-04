@@ -103,6 +103,9 @@ describe("jupiter prices v3 service", () => {
     expect(result.found).toBe(true);
     expect(result.price?.usdPrice).toBe(147.48);
     expect(result.token.symbol).toBe("SOL");
+    // Price-path token output is plain metadata — no safety field leaks in.
+    expect(result.token).toEqual(SOL_TOKEN);
+    expect("safety" in result.token).toBe(false);
   });
 
   it("deduplicates resolved mint fetches while preserving query-level results", async () => {

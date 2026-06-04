@@ -31,6 +31,7 @@ const {
   getJupiterTokensByCategory,
   getJupiterRecentTokens,
   resolveJupiterToken,
+  resolveJupiterTokenWithSafety,
   requireJupiterResolvedToken,
 } = await import("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js");
 const { ErrorCodes } = await import("../../../../errors.js");
@@ -90,6 +91,132 @@ describe("jupiter tokens v2 service", () => {
     expect(mockCacheSolanaTokens).toHaveBeenCalledTimes(1);
     expect(token?.address).toBe(mint);
     expect(token?.logoUri).toBe("https://example.com/fresh.png");
+  });
+
+  it("surfaces the safety block from the token API audit + verification signals", async () => {
+    const mint = "GkwFnmMDvn3HGMpJpWBg8tgJxr3NxNvg3AXxvXVPbRGJ";
+
+    mockTokensByMint.mockResolvedValueOnce([
+      {
+        id: mint,
+        symbol: "SUSY",
+        name: "Suspicious Token",
+        decimals: 6,
+        isVerified: false,
+        organicScore: 12.5,
+        audit: {
+          isSus: true,
+          mintAuthorityDisabled: false,
+          freezeAuthorityDisabled: true,
+          topHoldersPercentage: 87.4,
+        },
+      },
+    ]);
+
+    const resolved = await resolveJupiterTokenWithSafety(mint);
+
+    expect(resolved?.token.address).toBe(mint);
+    // Safety is separate from the base metadata, never merged onto the token.
+    expect("safety" in (resolved?.token ?? {})).toBe(false);
+    expect(resolved?.safety).toEqual({
+      isSus: true,
+      mintAuthorityDisabled: false,
+      freezeAuthorityDisabled: true,
+      topHoldersPercentage: 87.4,
+      isVerified: false,
+      organicScore: 12.5,
+    });
+  });
+
+  it("keeps meaningful false/0 safety signals while dropping absent fields", async () => {
+    const mint = "GkwFnmMDvn3HGMpJpWBg8tgJxr3NxNvg3AXxvXVPbRGJ";
+
+    mockTokensByMint.mockResolvedValueOnce([
+      {
+        id: mint,
+        symbol: "EDGE",
+        name: "Edge Token",
+        decimals: 6,
+        isVerified: false,
+        // organicScore absent -> omitted entirely
+        audit: {
+          freezeAuthorityDisabled: false,
+          topHoldersPercentage: 0,
+          // isSus / mintAuthorityDisabled absent -> omitted entirely
+        },
+      },
+    ]);
+
+    const resolved = await resolveJupiterTokenWithSafety(mint);
+
+    expect(resolved?.safety).toEqual({
+      freezeAuthorityDisabled: false,
+      topHoldersPercentage: 0,
+      isVerified: false,
+    });
+  });
+
+  it("omits the safety block when the token API returns no audit/verification data", async () => {
+    const mint = "So11111111111111111111111111111111111111119";
+
+    mockTokensByMint.mockResolvedValueOnce([
+      { id: mint, symbol: "PLAIN", name: "Plain Token", decimals: 9 },
+    ]);
+
+    const resolved = await resolveJupiterTokenWithSafety(mint);
+
+    expect(resolved?.token.address).toBe(mint);
+    expect(resolved?.safety).toBeUndefined();
+  });
+
+  it("omits the safety block for an empty audit and an all-null audit (no undefined bag)", async () => {
+    const emptyAuditMint = "EmptyAuditMintAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const nullAuditMint = "NuxxAuditMintBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+
+    mockTokensByMint.mockResolvedValueOnce([
+      { id: emptyAuditMint, symbol: "EMPTY", name: "Empty Audit", decimals: 6, audit: {} },
+    ]);
+    const empty = await resolveJupiterTokenWithSafety(emptyAuditMint);
+    expect(empty?.safety).toBeUndefined();
+
+    mockTokensByMint.mockResolvedValueOnce([
+      {
+        id: nullAuditMint,
+        symbol: "NULLS",
+        name: "Null Audit",
+        decimals: 6,
+        isVerified: null,
+        organicScore: null,
+        audit: {
+          isSus: null,
+          mintAuthorityDisabled: null,
+          freezeAuthorityDisabled: null,
+          topHoldersPercentage: null,
+        },
+      },
+    ]);
+    const nulls = await resolveJupiterTokenWithSafety(nullAuditMint);
+    expect(nulls?.safety).toBeUndefined();
+  });
+
+  it("resolveJupiterToken returns plain metadata with no safety field even when audit exists", async () => {
+    const mint = "GkwFnmMDvn3HGMpJpWBg8tgJxr3NxNvg3AXxvXVPbRGJ";
+
+    mockTokensByMint.mockResolvedValueOnce([
+      {
+        id: mint,
+        symbol: "SUSY",
+        name: "Suspicious Token",
+        decimals: 6,
+        isVerified: false,
+        audit: { isSus: true },
+      },
+    ]);
+
+    const token = await resolveJupiterToken(mint);
+
+    expect(token?.address).toBe(mint);
+    expect("safety" in (token ?? {})).toBe(false);
   });
 
   it("prefers exact symbol matches from search results", async () => {

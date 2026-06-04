@@ -5,7 +5,7 @@
 
 import { Keypair } from "@solana/web3.js";
 import { VexError, ErrorCodes } from "../../../../errors.js";
-import { requireJupiterResolvedToken } from "../jupiter-tokens/service.js";
+import { requireJupiterResolvedTokenWithSafety } from "../jupiter-tokens/service.js";
 import { deserializeVersionedTx, signVersionedTx } from "../../shared/solana-transaction.js";
 import { solanaExplorerUrl, tokenAmountToUi, uiToTokenAmount } from "../../shared/solana-validation.js";
 import { jupiterSwapBuild, jupiterSwapExecute, jupiterSwapOrder } from "./client.js";
@@ -17,7 +17,9 @@ import type {
   JupiterSwapOrderOptions,
   JupiterSwapOrderResponse,
   JupiterSwapQuoteSummary,
+  JupiterSwapTokenSafety,
 } from "./types.js";
+import type { JupiterTokenSafety } from "../jupiter-tokens/types.js";
 import type { TokenMetadata } from "../../shared/types.js";
 
 export interface SwapOptions extends JupiterSwapOrderOptions {}
@@ -32,24 +34,58 @@ function toPriceImpactPct(raw: JupiterSwapOrderResponse): string {
   return "0";
 }
 
+/**
+ * Resolve both swap legs to plain `TokenMetadata`. Build and execute use only
+ * the tokens; the quote path additionally reads the optional per-token safety
+ * blocks (kept separate so `safety` never lands on the base token objects).
+ */
 async function resolveSwapTokens(
   inputSymbolOrMint: string,
   outputSymbolOrMint: string,
-): Promise<{ inputToken: TokenMetadata; outputToken: TokenMetadata }> {
-  const inputToken = await requireJupiterResolvedToken(inputSymbolOrMint);
-  const outputToken = await requireJupiterResolvedToken(outputSymbolOrMint);
+): Promise<{
+  inputToken: TokenMetadata;
+  outputToken: TokenMetadata;
+  inputSafety?: JupiterTokenSafety;
+  outputSafety?: JupiterTokenSafety;
+}> {
+  const input = await requireJupiterResolvedTokenWithSafety(inputSymbolOrMint);
+  const output = await requireJupiterResolvedTokenWithSafety(outputSymbolOrMint);
 
-  return { inputToken, outputToken };
+  return {
+    inputToken: input.token,
+    outputToken: output.token,
+    ...(input.safety ? { inputSafety: input.safety } : {}),
+    ...(output.safety ? { outputSafety: output.safety } : {}),
+  };
+}
+
+/**
+ * Collapse the per-token safety blocks into a single quote-level block, omitted
+ * entirely when neither leg carries risk data (well-known/cache resolution).
+ */
+function buildSwapSafety(
+  inputSafety: JupiterTokenSafety | undefined,
+  outputSafety: JupiterTokenSafety | undefined,
+): JupiterSwapTokenSafety | undefined {
+  if (!inputSafety && !outputSafety) return undefined;
+  return {
+    ...(inputSafety ? { inputToken: inputSafety } : {}),
+    ...(outputSafety ? { outputToken: outputSafety } : {}),
+  };
 }
 
 function summarizeOrder(
   raw: JupiterSwapOrderResponse,
   inputToken: TokenMetadata,
   outputToken: TokenMetadata,
+  inputSafety: JupiterTokenSafety | undefined,
+  outputSafety: JupiterTokenSafety | undefined,
 ): JupiterSwapQuoteSummary {
+  const safety = buildSwapSafety(inputSafety, outputSafety);
   return {
     inputToken,
     outputToken,
+    ...(safety ? { safety } : {}),
     inputAmount: formatUiAmount(raw.inAmount, inputToken.decimals),
     outputAmount: formatUiAmount(raw.outAmount, outputToken.decimals),
     inputAmountRaw: raw.inAmount,
@@ -115,7 +151,10 @@ export async function getJupiterSwapQuote(
   uiAmount: number,
   opts: SwapOptions = {},
 ): Promise<{ quote: JupiterSwapQuoteSummary; raw: JupiterSwapOrderResponse }> {
-  const { inputToken, outputToken } = await resolveSwapTokens(inputSymbolOrMint, outputSymbolOrMint);
+  const { inputToken, outputToken, inputSafety, outputSafety } = await resolveSwapTokens(
+    inputSymbolOrMint,
+    outputSymbolOrMint,
+  );
   const atomicAmount = uiToTokenAmount(uiAmount, inputToken.decimals);
 
   const raw = await jupiterSwapOrder({
@@ -130,7 +169,10 @@ export async function getJupiterSwapQuote(
     throw new VexError(ErrorCodes.SOLANA_QUOTE_FAILED, message);
   }
 
-  return { quote: summarizeOrder(raw, inputToken, outputToken), raw };
+  return {
+    quote: summarizeOrder(raw, inputToken, outputToken, inputSafety, outputSafety),
+    raw,
+  };
 }
 
 export async function buildSwapTransaction(
