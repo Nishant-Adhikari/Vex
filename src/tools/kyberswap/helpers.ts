@@ -20,6 +20,28 @@ export interface ResolvedKyberTokenMetadata {
   isNative: boolean;
 }
 
+/** Native EVM token metadata — sentinel address, 18 decimals, isNative. */
+function nativeTokenMetadata(): ResolvedKyberTokenMetadata {
+  return {
+    address: NATIVE_TOKEN_ADDRESS,
+    symbol: "NATIVE",
+    name: "Native token",
+    decimals: 18,
+    isNative: true,
+  };
+}
+
+/**
+ * True when the input denotes the native EVM token: the keywords
+ * "native"/"eth" OR the native sentinel ADDRESS (case-insensitive). The
+ * sentinel must short-circuit BEFORE generic `isAddress` handling so it is
+ * never mistaken for an ERC-20 contract.
+ */
+function isNativeTokenInput(input: string): boolean {
+  const lower = input.toLowerCase();
+  return lower === "native" || lower === "eth" || lower === NATIVE_TOKEN_ADDRESS.toLowerCase();
+}
+
 /** Resolve --chain option to validated KyberChainSlug. */
 export function resolveChain(chainInput: string): KyberChainSlug {
   return resolveChainSlug(chainInput);
@@ -47,9 +69,7 @@ export function requireFeature(slug: KyberChainSlug, feature: "aggregator" | "li
  * Accepts: hex address, "native"/"ETH", or searches by symbol via Token API.
  */
 export async function resolveTokenAddress(input: string, chainId: number): Promise<Address> {
-  const lower = input.toLowerCase();
-
-  if (lower === "native" || lower === "eth") {
+  if (isNativeTokenInput(input)) {
     return NATIVE_TOKEN_ADDRESS;
   }
 
@@ -103,16 +123,10 @@ function pickBestTokenMatch(tokens: KyberToken[], input: string, exactAddress?: 
  * 18-decimal EVM denomination expected by the API.
  */
 export async function resolveTokenMetadata(input: string, chainId: number): Promise<ResolvedKyberTokenMetadata> {
-  const lower = input.toLowerCase();
-
-  if (lower === "native" || lower === "eth") {
-    return {
-      address: NATIVE_TOKEN_ADDRESS,
-      symbol: "NATIVE",
-      name: "Native token",
-      decimals: 18,
-      isNative: true,
-    };
+  // Native token — keyword OR sentinel address. Must precede the generic
+  // `isAddress` branch so the sentinel is not read as an ERC-20 contract.
+  if (isNativeTokenInput(input)) {
+    return nativeTokenMetadata();
   }
 
   // Address input → read metadata directly from chain (authoritative for decimals/symbol/name)
@@ -169,16 +183,11 @@ export async function resolveTokenMetadata(input: string, chainId: number): Prom
  * via khalani.tokens.search BEFORE calling mutating swap/order tools.
  */
 export async function resolveTokenMetadataStrict(input: string, chainId: number): Promise<ResolvedKyberTokenMetadata> {
-  const lower = input.toLowerCase();
-
-  if (lower === "native" || lower === "eth") {
-    return {
-      address: NATIVE_TOKEN_ADDRESS,
-      symbol: "NATIVE",
-      name: "Native token",
-      decimals: 18,
-      isNative: true,
-    };
+  // Native token — keyword OR sentinel address. The sentinel is a valid address
+  // but is NOT an ERC-20, so it must resolve to native here rather than fall
+  // through to an on-chain ERC-20 metadata read.
+  if (isNativeTokenInput(input)) {
+    return nativeTokenMetadata();
   }
 
   if (!isAddress(input)) {

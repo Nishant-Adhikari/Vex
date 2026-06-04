@@ -81,6 +81,22 @@ describe("resolveTokenMetadata — address path", () => {
     expect(result.isNative).toBe(true);
     expect(result.decimals).toBe(18);
   });
+
+  it("returns native metadata for the native SENTINEL ADDRESS (not an ERC-20 read)", async () => {
+    const { resolveTokenMetadata } = await import("@tools/kyberswap/helpers.js");
+    const { NATIVE_TOKEN_ADDRESS } = await import("@tools/kyberswap/constants.js");
+    const { readErc20Metadata } = await import("../../tools/kyberswap/evm-utils.js");
+    const mockRead = vi.mocked(readErc20Metadata);
+    mockRead.mockClear();
+
+    // Lowercased sentinel proves case-insensitive matching.
+    const result = await resolveTokenMetadata(NATIVE_TOKEN_ADDRESS.toLowerCase(), 137);
+    expect(result.isNative).toBe(true);
+    expect(result.address).toBe(NATIVE_TOKEN_ADDRESS);
+    expect(result.decimals).toBe(18);
+    // Sentinel short-circuited BEFORE the ERC-20 metadata read.
+    expect(mockRead).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveTokenMetadata — symbol path with fallback", () => {
@@ -135,6 +151,20 @@ describe("resolveTokenMetadataStrict", () => {
     const { resolveTokenMetadataStrict } = await import("@tools/kyberswap/helpers.js");
     const result = await resolveTokenMetadataStrict("eth", 1);
     expect(result.isNative).toBe(true);
+  });
+
+  it("resolves the native SENTINEL ADDRESS to native (does NOT throw, does NOT ERC-20 read)", async () => {
+    const { resolveTokenMetadataStrict } = await import("@tools/kyberswap/helpers.js");
+    const { NATIVE_TOKEN_ADDRESS } = await import("@tools/kyberswap/constants.js");
+    const { readErc20Metadata } = await import("../../tools/kyberswap/evm-utils.js");
+    const mockRead = vi.mocked(readErc20Metadata);
+    mockRead.mockClear();
+
+    const result = await resolveTokenMetadataStrict(NATIVE_TOKEN_ADDRESS, 1);
+    expect(result.isNative).toBe(true);
+    expect(result.address).toBe(NATIVE_TOKEN_ADDRESS);
+    expect(result.decimals).toBe(18);
+    expect(mockRead).not.toHaveBeenCalled();
   });
 });
 
