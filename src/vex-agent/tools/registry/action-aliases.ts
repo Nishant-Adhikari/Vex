@@ -1,27 +1,35 @@
 /**
- * Action-named READ-ONLY internal tool aliases (Stage 8a).
+ * Action-named internal tool aliases (Stage 8a read-only + Stage 8b mutating).
  *
  * These present the model with an obvious, action-named menu that routes to
- * existing protocol QUOTE / READ tools. They are ADDITIVE — the underlying
- * protocol tools stay reachable via discover_tools / execute_tool. All four
- * are non-mutating, so dispatching them through `executeProtocolTool` fires no
- * approval gate.
+ * existing protocol tools. They are ADDITIVE — the underlying protocol tools
+ * stay reachable via discover_tools / execute_tool.
  *
  *   swap_quote   → family router: EVM → kyberswap.swap.quote, Solana → solana.swap.quote
  *   token_check  → kyberswap.tokens.check   (EVM honeypot / fee-on-transfer)
  *   bridge_status→ khalani.orders.get (with id) / khalani.orders.list (without)
  *   bridge_quote → khalani.quote.get        (read-only bridge preview)
+ *   swap         → MUTATING family router (Stage 8b): EVM → kyberswap.swap.buy /
+ *                  kyberswap.swap.sell, Solana → solana.swap.execute
+ *
+ * The four 8a aliases are non-mutating, so dispatching them through
+ * `executeProtocolTool` fires no approval gate. `swap` (8b) IS mutating: it is
+ * dispatched through a DEDICATED dispatcher branch (`mutating-aliases.ts`) that
+ * resolves the target and calls `executeProtocolTool` directly — letting that
+ * function SOLELY own the ordering (Stage-7 prequote gate → approval gate →
+ * capture). `swap` MUST NOT travel through the dispatcher's internal
+ * mutating-approval gate (that would enqueue approval BEFORE the prequote gate).
  *
  * `swap_quote` routes to the kyber/solana quote toolIds that already record a
  * Stage-6c prequote via the hook in `executeProtocolTool` — calling a quote
  * before a swap naturally seeds the Stage-7 execute gate. No prequote wiring
  * lives here.
  *
- * NOTE: `swap_quote` is deliberately NOT `requiresEnv`-gated. It is a router
- * spanning both families; the Solana target's `JUPITER_API_KEY` requirement is
- * enforced downstream by `executeProtocolTool` (manifest.requiresEnv) only when
- * a Solana route is actually taken — gating the whole alias on a Solana-only
- * env var would wrongly hide the EVM path.
+ * NOTE: `swap_quote` / `swap` are deliberately NOT `requiresEnv`-gated. They
+ * are routers spanning both families; the Solana target's `JUPITER_API_KEY`
+ * requirement is enforced downstream by `executeProtocolTool`
+ * (manifest.requiresEnv) only when a Solana route is actually taken — gating the
+ * whole alias on a Solana-only env var would wrongly hide the EVM path.
  */
 
 import type { ToolDef } from "../types.js";
@@ -58,6 +66,59 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         slippageBps: {
           type: "number",
           description: "Optional slippage tolerance in basis points (50 = 0.5%).",
+        },
+      },
+      required: ["chain", "tokenIn", "tokenOut", "amount"],
+    },
+  },
+  {
+    name: "swap",
+    kind: "internal",
+    mutating: true,
+    // Mirrors the TARGET swap-execute manifests (kyberswap.swap.sell/buy,
+    // solana.swap.execute are all mutating). At context pressure barrier+ the
+    // dispatcher hard-denies the alias before the router resolves — conservative
+    // and equivalent to denying the mutating target directly.
+    pressureSafety: "mutating",
+    // SAME actionKind the target swap manifests carry (user_wallet_broadcast) —
+    // do NOT invent one. Used as the dispatcher fallback stamp; on dispatch the
+    // result already carries the target's actionKind from executeProtocolTool.
+    actionKind: "user_wallet_broadcast",
+    description:
+      "Execute a REAL on-chain token swap (spends funds, broadcasts a signed transaction). Auto-routes by chain: any EVM chain (ethereum, base, arbitrum, …) → KyberSwap; chain \"solana\" → Jupiter. REQUIRES a fresh matching swap_quote FIRST — the execute gate blocks a swap that has no fresh quote for these exact params, so always preview with swap_quote before calling this. `amount` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). `side` (\"sell\"/\"buy\") is EVM-only; it tags the trade for portfolio tracking and does not apply to Solana. Resolve token addresses via token_find first.",
+    parameters: {
+      type: "object",
+      properties: {
+        chain: {
+          type: "string",
+          description:
+            "Chain to swap on. Any EVM slug/alias (ethereum, eth, base, arbitrum, arb, polygon, …) routes to KyberSwap; the literal \"solana\" routes to Jupiter.",
+        },
+        tokenIn: {
+          type: "string",
+          description: "Input token — contract address (EVM) / mint (Solana), or a symbol the provider can resolve.",
+        },
+        tokenOut: {
+          type: "string",
+          description: "Output token — contract address (EVM) / mint (Solana), or a symbol the provider can resolve.",
+        },
+        amount: {
+          type: "string",
+          description: "Amount of tokenIn to swap, in HUMAN decimal units (e.g. \"1.5\"). Not wei/lamports.",
+        },
+        side: {
+          type: "string",
+          enum: ["sell", "buy"],
+          description:
+            "EVM-only. \"sell\" (default) routes to kyberswap.swap.sell; \"buy\" routes to kyberswap.swap.buy (opens a portfolio lot on tokenOut). Do not set for Solana swaps.",
+        },
+        slippageBps: {
+          type: "number",
+          description: "Optional slippage tolerance in basis points (50 = 0.5%).",
+        },
+        recipient: {
+          type: "string",
+          description: "EVM-only. Recipient address for the output token (defaults to the sender). Do not set for Solana swaps.",
         },
       },
       required: ["chain", "tokenIn", "tokenOut", "amount"],

@@ -29,7 +29,7 @@ import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
-import { resolveChainSlug } from "@tools/kyberswap/chains.js";
+import { classifySwapFamily } from "./swap-family.js";
 
 // ── Shared dispatch context projection ───────────────────────────────
 //
@@ -49,9 +49,10 @@ function protocolContext(context: InternalToolContext): Parameters<typeof execut
 }
 
 // ── swap_quote — EVM/Solana family router ────────────────────────────
-
-/** Chain values that route to the Solana (Jupiter) quote. Checked before EVM. */
-const SOLANA_CHAIN_VALUES: ReadonlySet<string> = new Set(["solana", "sol"]);
+//
+// The family classifier (`classifySwapFamily`) is shared with the Stage 8b
+// MUTATING `swap` alias router (`tools/mutating-aliases.ts`) so the read-only
+// quote and the execute can never disagree on which family a chain maps to.
 
 const SwapQuoteArgs = z.object({
   chain: z.string().min(1, { message: "chain is required" }),
@@ -62,27 +63,6 @@ const SwapQuoteArgs = z.object({
 });
 
 type SwapQuoteArgs = z.infer<typeof SwapQuoteArgs>;
-
-type SwapFamily =
-  | { readonly kind: "evm"; readonly chainSlug: string }
-  | { readonly kind: "solana" }
-  | { readonly kind: "unknown" };
-
-/**
- * Decide the swap family from the `chain` arg. Solana is matched explicitly
- * FIRST (its slug is not a `KyberChainSlug`); EVM is confirmed by
- * `resolveChainSlug` (throws on unknown). Anything neither Solana nor a known
- * EVM chain is `unknown` → the handler fails clearly instead of guessing.
- */
-function classifySwapFamily(chain: string): SwapFamily {
-  const normalized = chain.toLowerCase().trim();
-  if (SOLANA_CHAIN_VALUES.has(normalized)) return { kind: "solana" };
-  try {
-    return { kind: "evm", chainSlug: resolveChainSlug(normalized) };
-  } catch {
-    return { kind: "unknown" };
-  }
-}
 
 export async function handleSwapQuote(
   args: Record<string, unknown>,

@@ -18,6 +18,11 @@ import { getActionKind, getPressureSafety, isInternalTool, isMutatingTool, isToo
 import { getProtocolManifest } from "./protocols/catalog.js";
 import { discoverProtocolCapabilities } from "./protocols/runtime.js";
 import { executeProtocolTool } from "./protocols/runtime.js";
+import {
+  MUTATING_PROTOCOL_ALIAS_ROUTERS,
+  MutatingAliasRouteError,
+  isMutatingProtocolAlias,
+} from "./mutating-aliases.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "./protocols/discovery.telemetry.js";
 import { toResultData } from "./protocols/handler-helpers.js";
 import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
@@ -138,15 +143,35 @@ export async function dispatchTool(
  * Phase 4d: does this dispatch run an IRREVERSIBLE (mutating) tool? For
  * `execute_tool` the answer comes from the TARGET protocol manifest (the
  * wrapper itself is `mutating: false`); a missing/unknown target is treated as
- * non-mutating. For internal tools it is the registry `mutating` flag. Preview
- * / dryRun targets are stamped conservatively (a mutating manifest stamps
- * regardless) — safer to over-stamp than to miss a broadcast.
+ * non-mutating. For a MUTATING protocol-alias (Stage 8b, e.g. `swap`) the
+ * answer ALSO comes from the resolved TARGET manifest, so the mission
+ * auto-retry-unsafe stamp reflects the target — not a generic alias default.
+ * For other internal tools it is the registry `mutating` flag. Preview / dryRun
+ * targets are stamped conservatively (a mutating manifest stamps regardless) —
+ * safer to over-stamp than to miss a broadcast.
+ *
+ * This predicate must classify SIDE-EFFECT RISK, not validate args. A router
+ * throw (invalid args, Solana + EVM-only `side`, unknown family) is swallowed
+ * here and falls back to the alias's own registry `mutating` flag (true for a
+ * mutating alias) so the stamp still fires conservatively; the real router
+ * error surfaces later as a bounded failure in the dedicated dispatch branch.
  */
 export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
   if (call.name === "execute_tool") {
     const toolId = typeof call.args.toolId === "string" ? call.args.toolId : "";
     if (!toolId) return false;
     return getProtocolManifest(toolId)?.mutating === true;
+  }
+  if (isMutatingProtocolAlias(call.name)) {
+    const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
+    try {
+      const target = router(call.args);
+      return getProtocolManifest(target.toolId)?.mutating === true;
+    } catch {
+      // Un-routable args are NOT a side-effect signal — fall back to the
+      // alias's registry classification (mutating) so the stamp is conservative.
+      return isMutatingTool(call.name);
+    }
   }
   return isMutatingTool(call.name);
 }
@@ -212,12 +237,51 @@ async function routeToolCall(
     );
   }
 
-  // Hard role enforcement — blocked tools rejected even if model emits them
+  // Hard role enforcement — blocked tools rejected even if model emits them.
+  // Runs BEFORE the mutating-alias branch so `excludeRoles` still gates the
+  // alias name (defense-in-depth for any future subagent-blocked alias).
   if (isToolBlockedForRole(call.name, context.role)) {
     return {
       success: false,
       output: `Tool "${call.name}" is not available for this session role (${context.role}).`,
     };
+  }
+
+  // Mutating protocol-alias branch (Stage 8b — e.g. `swap`). DEDICATED path:
+  // resolve the TARGET protocol toolId + translated params via the router, then
+  // dispatch DIRECTLY through `executeProtocolTool`. This deliberately SKIPS
+  // `routeInternalTool`'s internal mutating-approval gate so approval is owned
+  // SOLELY by `executeProtocolTool`, which runs the ordering the alias depends
+  // on: Stage-7 prequote gate → approval gate → capture. The returned
+  // ToolResult is passed back VERBATIM (it already carries `pendingApproval` +
+  // the typed `prequote.verdict` for the restricted-mode approval preview, and
+  // the TARGET manifest's `actionKind`). The target was already used for the
+  // mission auto-retry-unsafe stamp (`dispatchTargetIsMutating`) and the
+  // pressure-deny used the alias's `mutating` pressureSafety (equivalent — the
+  // router only ever resolves to mutating targets). A router throw is a bounded
+  // failure ToolResult — NO target is dispatched on an un-routable request.
+  if (isMutatingProtocolAlias(call.name)) {
+    const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
+    let target: ReturnType<typeof router>;
+    try {
+      target = router(call.args);
+    } catch (err) {
+      if (err instanceof MutatingAliasRouteError) {
+        return { success: false, output: err.message };
+      }
+      throw err; // unexpected — let dispatchTool's catch produce a failed result
+    }
+    return executeProtocolTool(
+      { toolId: target.toolId, params: target.params },
+      {
+        sessionPermission: context.sessionPermission,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+      },
+    );
   }
 
   // Internal tools — route by name
@@ -236,8 +300,10 @@ async function routeToolCall(
 // only parsed when its tool is actually dispatched.
 //
 // Adding a new internal tool: add a row here. `registry-completeness.test.ts`
-// asserts every ToolDef with `kind: "internal"` (except meta-tools
-// `discover_tools` / `execute_tool`) has a loader entry.
+// asserts every ToolDef with `kind: "internal"` has a loader entry — EXCEPT
+// the direct-dispatch tools that `routeToolCall` handles via a dedicated
+// branch above: the meta-tools `discover_tools` / `execute_tool` and the
+// MUTATING protocol-aliases (`MUTATING_PROTOCOL_ALIAS_ROUTERS`, e.g. `swap`).
 
 type InternalHandler = (
   args: Record<string, unknown>,

@@ -25,6 +25,7 @@ import {
   isKnownProtocolNamespace,
 } from "@vex-agent/tools/protocols/catalog.js";
 import { INTERNAL_TOOL_LOADERS } from "@vex-agent/tools/dispatcher.js";
+import { MUTATING_PROTOCOL_ALIAS_ROUTERS } from "@vex-agent/tools/mutating-aliases.js";
 import { getAllTools } from "@vex-agent/tools/registry.js";
 
 describe("registry completeness", () => {
@@ -120,19 +121,29 @@ describe("registry completeness", () => {
 // silently returns `Unknown internal tool: X` at runtime — these asserts
 // surface the mismatch at test time instead.
 //
-// Meta-tools `discover_tools` and `execute_tool` intentionally live
-// outside `INTERNAL_TOOL_LOADERS` (they are dispatched directly in
-// `routeToolCall` before the internal-tool fallback), so they are
-// excluded from the symmetry check.
+// DIRECT-DISPATCH internal tools live OUTSIDE `INTERNAL_TOOL_LOADERS` because
+// `routeToolCall` dispatches them via a dedicated branch BEFORE the
+// internal-tool fallback:
+//   - meta-tools `discover_tools` / `execute_tool` → protocol runtime,
+//   - MUTATING protocol-aliases (Stage 8b, e.g. `swap`) → resolved target via
+//     `executeProtocolTool`. These MUST bypass `routeInternalTool` so they skip
+//     its internal mutating-approval gate (approval is owned by
+//     `executeProtocolTool` after the Stage-7 prequote gate).
+// They are excluded from the loader symmetry check; the exclusion is sourced
+// from `MUTATING_PROTOCOL_ALIAS_ROUTERS` keys so it stays self-maintaining, and
+// a separate assertion below proves every alias key is a real internal ToolDef
+// (so the exclusion can never hide an orphan).
 
 const META_TOOL_NAMES = new Set(["discover_tools", "execute_tool"]);
+const MUTATING_ALIAS_NAMES = new Set(Object.keys(MUTATING_PROTOCOL_ALIAS_ROUTERS));
+const DIRECT_DISPATCH_TOOL_NAMES = new Set([...META_TOOL_NAMES, ...MUTATING_ALIAS_NAMES]);
 
 describe("dispatcher INTERNAL_TOOL_LOADERS completeness", () => {
-  it("every kind='internal' ToolDef (except meta-tools) has an INTERNAL_TOOL_LOADERS entry", () => {
+  it("every kind='internal' ToolDef (except direct-dispatch tools) has an INTERNAL_TOOL_LOADERS entry", () => {
     const expected = getAllTools()
       .filter((t) => t.kind === "internal")
       .map((t) => t.name)
-      .filter((n) => !META_TOOL_NAMES.has(n));
+      .filter((n) => !DIRECT_DISPATCH_TOOL_NAMES.has(n));
     const loaders = new Set(Object.keys(INTERNAL_TOOL_LOADERS));
     const missing = expected.filter((n) => !loaders.has(n));
     expect(missing, "internal tools declared in registry without a dispatcher loader").toEqual([]);
@@ -148,10 +159,25 @@ describe("dispatcher INTERNAL_TOOL_LOADERS completeness", () => {
     expect(orphans, "INTERNAL_TOOL_LOADERS entries with no corresponding ToolDef").toEqual([]);
   });
 
-  it("no INTERNAL_TOOL_LOADERS entry shadows a meta-tool name", () => {
+  it("no INTERNAL_TOOL_LOADERS entry shadows a direct-dispatch tool name", () => {
     const loaders = Object.keys(INTERNAL_TOOL_LOADERS);
-    const shadowed = loaders.filter((k) => META_TOOL_NAMES.has(k));
-    expect(shadowed, "meta-tools must stay out of INTERNAL_TOOL_LOADERS").toEqual([]);
+    const shadowed = loaders.filter((k) => DIRECT_DISPATCH_TOOL_NAMES.has(k));
+    expect(shadowed, "direct-dispatch tools must stay out of INTERNAL_TOOL_LOADERS").toEqual([]);
+  });
+
+  it("every MUTATING_PROTOCOL_ALIAS_ROUTERS key is a registered kind='internal' mutating ToolDef", () => {
+    // Orphan-guard: the loader-exclusion above hides alias keys from the
+    // symmetry check, so prove each key is a real internal ToolDef that is
+    // mutating — otherwise the exclusion could mask a typo'd / stale alias.
+    const byName = new Map(getAllTools().map((t) => [t.name, t]));
+    const problems: string[] = [];
+    for (const name of MUTATING_ALIAS_NAMES) {
+      const def = byName.get(name);
+      if (!def) problems.push(`${name}: no ToolDef`);
+      else if (def.kind !== "internal") problems.push(`${name}: kind=${def.kind} (expected internal)`);
+      else if (def.mutating !== true) problems.push(`${name}: mutating=${def.mutating} (expected true)`);
+    }
+    expect(problems, "mutating protocol-alias keys not backed by a mutating internal ToolDef").toEqual([]);
   });
 
   it("every INTERNAL_TOOL_LOADERS value is a function (loader factory)", () => {
