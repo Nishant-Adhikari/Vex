@@ -56,7 +56,7 @@ unless its tool is actually dispatched.
 - mission_draft_update, mission_stop, mission signal
 - subagent_spawn, subagent_status, subagent disabled, TODO subagent-disabled
 - portfolio, inspect views, proj_balances, proj_pnl_lots
-- evm_read, wallet_balances, discover_tools, execute_tool, protocol meta-tool
+- chain_read, wallet_balances, discover_tools, execute_tool, protocol meta-tool
 - pressureSafety, safe_at_barrier, read_only, mutating, compact_only
 - EngineSignal, stop_mission, defer_until, compact_committed, wait_for_parent
 - InternalToolContext, WalletResolution, WalletPolicy, sessionPermission
@@ -142,7 +142,7 @@ unless its tool is actually dispatched.
 - `tools/registry/mission.ts:5` `MISSION_TOOLS` — `mission_draft_update` (local_write/mutating, requiresMissionSetup), `mission_stop` (local_write/safe_at_barrier, requiresMissionRun); both excludeRoles:subagent
 - `tools/registry/autonomy.ts:26` `AUTONOMY_TOOLS` — `tool_output_read` (read/read_only), `loop_defer` (schedule/mutating, requiresMissionActiveRun, excludeRoles:subagent)
 - `tools/registry/subagents.ts:14` `SUBAGENT_TOOLS` — empty array; all 6 entries commented out (`TODO(subagent-disabled)`)
-- `tools/registry/evm.ts:8` `EVM_TOOLS` — `evm_read` (read/read_only); 4 actions (tx_receipt, erc721_mint, erc20_metadata, balance)
+- `tools/registry/evm.ts:11` `EVM_TOOLS` — `chain_read` (read/read_only); 2 actions (tx_receipt, erc721_mint)
 - `tools/registry/wallet.ts:10` `WALLET_TOOLS` — `wallet_balances` (read/read_only), `wallet_send_prepare` (approval_prepare/mutating:false), `wallet_send_confirm` (user_wallet_broadcast/mutating:true)
 - `tools/registry/compact.ts:15` `COMPACT_TOOLS` — `compact_now` (local_write/compact_only, visibility.band:barrier, excludeRoles:subagent)
 - `tools/registry/memory.ts:21` `MEMORY_TOOLS` — `memory_recall` (read/read_only), `mark_outstanding_resolved` (local_write/read_only — classified read_only for pressure because resolving items at barrier is productive pre-compact work)

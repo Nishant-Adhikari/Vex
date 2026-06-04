@@ -305,8 +305,8 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // subagent_request_parent: async () => (await import("./internal/subagent.js")).handleSubagentRequestParent,
   // subagent_report_complete: async () => (await import("./internal/subagent.js")).handleSubagentReportComplete,
 
-  // EVM on-chain reads
-  evm_read: async () => (await import("./internal/evm-read.js")).handleEvmRead,
+  // EVM on-chain forensics — receipts + ERC-721 mint detection
+  chain_read: async () => (await import("./internal/chain-read.js")).handleChainRead,
 
   // Wallet
   wallet_balances: async () => (await import("./internal/wallet/read.js")).handleWalletBalances,

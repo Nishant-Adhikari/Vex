@@ -78,7 +78,7 @@ describe("ActionKind — pinned critical classifications", () => {
     ["wallet_balances", "read"],
 
     // Read-only DB / RPC / external API surfaces
-    ["evm_read", "read"],
+    ["chain_read", "read"],
     ["portfolio", "read"],
     ["memory_recall", "read"],
     ["tool_output_read", "read"],

@@ -39,7 +39,7 @@ export const COMPACT_TOOLS: readonly ToolDef[] = [
       "✓ [\"kyber_quote_timeout_debug\", \"base_swap_route_validation\"]",
       "✗ [\"debug\", \"task\", \"memory\"] (stoplist — rejected by validator)",
       "",
-      "DO NOT include live snapshots (balances, prices, gas, intent IDs, tx hashes as facts) — those are queryable via wallet_balances / evm_read / quote tools each turn and would just become stale in the rolling summary.",
+      "DO NOT include live snapshots (balances, prices, gas, intent IDs, tx hashes as facts) — those are queryable via wallet_balances / quote tools each turn and would just become stale in the rolling summary.",
       "DO include: mission state, decision rationale, observed patterns, lessons from failures, open follow-ups, user signals/preferences observed.",
     ].join(" "),
     parameters: {

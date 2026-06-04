@@ -1,11 +1,13 @@
 /**
- * EVM read tool — on-chain reads via khalani chain discovery + viem public client.
+ * Chain read tool — on-chain EVM forensics via khalani chain discovery + viem
+ * public client.
  *
  * Read-only, scoped actions:
- *   tx_receipt     — transaction receipt (status, gasUsed, logs count)
- *   erc721_mint    — extract minted NFT IDs from receipt logs
- *   erc20_metadata — decimals, symbol, name from contract
- *   balance        — native token balance
+ *   tx_receipt   — transaction receipt (status, gasUsed, logs count)
+ *   erc721_mint  — extract minted NFT IDs from receipt logs
+ *
+ * Native balances are owned by `wallet_balances`; token metadata
+ * (decimals/symbol/name) by `token_find` (khalani.tokens.search).
  *
  * Chain resolution: khalani.getChains() → resolveChainId → createDynamicPublicClient.
  */
@@ -16,13 +18,12 @@ import { getKhalaniClient } from "@tools/khalani/client.js";
 import { resolveChainId, getChain } from "@tools/khalani/chains.js";
 import { createDynamicPublicClient } from "@tools/khalani/evm-client.js";
 import { extractMintedNftId } from "@tools/kyberswap/evm-utils.js";
-import logger from "@utils/logger.js";
 
 function str(p: Record<string, unknown>, k: string): string {
   const v = p[k]; return typeof v === "string" ? v : "";
 }
 
-export async function handleEvmRead(
+export async function handleChainRead(
   params: Record<string, unknown>,
   _context: InternalToolContext,
 ): Promise<ToolResult> {
@@ -110,53 +111,7 @@ export async function handleEvmRead(
       };
     }
 
-    case "erc20_metadata": {
-      const address = str(params, "address");
-      if (!address) return { success: false, output: "Missing required: address" };
-
-      const ERC20_ABI = [
-        { inputs: [], name: "decimals", outputs: [{ type: "uint8" }], stateMutability: "view", type: "function" },
-        { inputs: [], name: "symbol", outputs: [{ type: "string" }], stateMutability: "view", type: "function" },
-        { inputs: [], name: "name", outputs: [{ type: "string" }], stateMutability: "view", type: "function" },
-      ] as const;
-
-      let decimals: number | undefined;
-      let symbol = "UNKNOWN";
-      let name = "Unknown Token";
-
-      try {
-        decimals = await client.readContract({ address: address as `0x${string}`, abi: ERC20_ABI, functionName: "decimals" });
-      } catch {
-        return { success: false, output: `Cannot read decimals for ${address} on ${chain.name} — not a valid ERC-20` };
-      }
-      try { symbol = await client.readContract({ address: address as `0x${string}`, abi: ERC20_ABI, functionName: "symbol" }); } catch { /* tolerant */ }
-      try { name = await client.readContract({ address: address as `0x${string}`, abi: ERC20_ABI, functionName: "name" }); } catch { /* tolerant */ }
-
-      return {
-        success: true,
-        output: JSON.stringify({ chain: chain.name, chainId, address, decimals, symbol, name }, null, 2),
-      };
-    }
-
-    case "balance": {
-      const address = str(params, "address");
-      if (!address) return { success: false, output: "Missing required: address" };
-
-      const balance = await client.getBalance({ address: address as `0x${string}` });
-      return {
-        success: true,
-        output: JSON.stringify({
-          chain: chain.name,
-          chainId,
-          address,
-          balanceWei: balance.toString(),
-          balanceHuman: (Number(balance) / 1e18).toFixed(6),
-          nativeCurrency: chain.nativeCurrency.symbol,
-        }, null, 2),
-      };
-    }
-
     default:
-      return { success: false, output: `Unknown action: ${action}. Valid: tx_receipt, erc721_mint, erc20_metadata, balance` };
+      return { success: false, output: `Unknown action: ${action}. Valid: tx_receipt, erc721_mint` };
   }
 }

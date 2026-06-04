@@ -19,7 +19,7 @@ export function buildMemoryRoutingRule(): string {
   return [
     "# Memory Routing",
     "",
-    "- Current state (balances, prices, gas, positions, quotes) → live tools (`wallet_balances`, `evm_read`, `khalani_tokens_balances`, `portfolio`).",
+    "- Current state (balances, prices, gas, positions, quotes) → live tools (`wallet_balances`, `khalani_tokens_balances`, `portfolio`).",
     "- Something earlier in THIS conversation/mission → `memory_recall` (per-session narrative).",
     "- Durable cross-session lessons / strategies / observed preferences → `knowledge_recall` (curated, cross-session).",
     "- Freeform scratchpad by slug → `document_read` (NOT semantic; exact slug lookup only).",

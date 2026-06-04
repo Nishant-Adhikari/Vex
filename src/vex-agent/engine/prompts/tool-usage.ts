@@ -33,7 +33,7 @@ Balances, prices, gas, open positions, quotes, transaction hashes are LIVE state
 
 - Your own wallet across all families in one call: \`wallet_balances\`.
 - One family / different address: \`khalani_tokens_balances\`.
-- On-chain EVM reads: \`evm_read\`.
+- On-chain EVM forensics (tx receipts, ERC-721 mint detection): \`chain_read\`. (Native balances → \`wallet_balances\`; token metadata/decimals → \`token_find\`.)
 - Your projected portfolio (positions, lots, PnL, history): \`portfolio\` — reads from your own DB projections (\`portfolio(view="summary")\`, \`open_positions\`, \`lots\`, \`profits\`, \`unrealized\`, \`bridges\`, \`orders\`, \`activity\`, \`executions\`).
 
 If a fact is queryable live, querying is cheaper than remembering — and the memorized version is stale by definition.

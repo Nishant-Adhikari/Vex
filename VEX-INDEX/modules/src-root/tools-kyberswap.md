@@ -163,7 +163,7 @@ Z5 shared utility — all business logic, approval routing, and signing are call
 - `src/vex-agent/tools/protocols/kyberswap/handlers/swap.ts` → `getKyberAggregatorClient`, `getKyberTokenApiClient`, `getKyberCommonClient`, `getKyberChains`, `resolveChainSlug`, `slugToChainId`, `ensureKyberAllowance`, `sendKyberTransaction`, `META_AGGREGATION_ROUTER_V2`, `NATIVE_TOKEN_ADDRESS`, `resolveTokenMetadata`, `resolveTokenMetadataStrict`, `requireFeature`, `resolveChainWithId`
 - `src/vex-agent/tools/protocols/kyberswap/handlers/limit-order.ts` → `getKyberLimitOrderClient`, `getKyberLimitOrderTakerClient`, `signEip712Message`, `sendKyberTransaction`, `ensureKyberAllowance`, `ensureErc721Approval`, `DSLO_PROTOCOL`, `resolveTokenMetadataStrict`, `requireFeature`, `resolveChainWithId`
 - `src/vex-agent/tools/protocols/kyberswap/handlers/zap.ts` → `getKyberZaasClient`, `ensureKyberAllowance`, `sendKyberTransaction`, `sendKyberTransactionWithReceipt`, `ensureErc721Approval`, `ensureErc1155ApprovalForAll`, `KS_ZAP_ROUTER_POSITION`, `NATIVE_TOKEN_ADDRESS`, `resolveChainSlug`, `requireFeature`, `ZapDexEntry`, `ZapRouteResponse`; dynamic imports `getZapDexConfig`
-- `src/vex-agent/tools/internal/evm-read.ts` → `extractMintedNftId` (via `@tools/kyberswap/evm-utils.js`)
+- `src/vex-agent/tools/internal/chain-read.ts` → `extractMintedNftId` (via `@tools/kyberswap/evm-utils.js`)
 - `src/vex-agent/sync/lp-economics.ts` → `ZapDetails`, `ZapAction` (type-only)
 - `src/vex-agent/sync/projectors/lp.ts` → `ZapDetails` (type-only, inline import)
 - **No vex-app/src/renderer or vex-app/src/main consumers** — all access is through the engine protocol layer.
@@ -240,7 +240,7 @@ handler/zap.ts (zap-in branch):
   - `viem`, `viem/accounts` — `createPublicClient`, `createWalletClient`, `privateKeyToAccount`, `signTypedData`, `writeContract`, `sendTransaction`, `waitForTransactionReceipt`, `getAddress`, `maxUint256`
 - **Consumed BY**:
   - `module.vex-agent.tools-protocols` — `src/vex-agent/tools/protocols/kyberswap/handlers/{swap,limit-order,zap}.ts` via `@tools/kyberswap` alias
-  - `src/vex-agent/tools/internal/evm-read.ts` — `extractMintedNftId`
+  - `src/vex-agent/tools/internal/chain-read.ts` — `extractMintedNftId`
   - `src/vex-agent/sync/lp-economics.ts`, `src/vex-agent/sync/projectors/lp.ts` — `ZapDetails`/`ZapAction` types only
 
 ## Cross-references
