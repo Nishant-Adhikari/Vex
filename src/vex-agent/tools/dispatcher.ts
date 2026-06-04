@@ -272,6 +272,12 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   token_find: async () => (await import("./internal/khalani.js")).handleTokenFind,
   khalani_tokens_balances: async () => (await import("./internal/khalani.js")).handleKhalaniTokensBalances,
 
+  // Action-named read-only aliases (Stage 8a) — quote/preview/status routers
+  swap_quote: async () => (await import("./internal/action-aliases.js")).handleSwapQuote,
+  token_check: async () => (await import("./internal/action-aliases.js")).handleTokenCheck,
+  bridge_status: async () => (await import("./internal/action-aliases.js")).handleBridgeStatus,
+  bridge_quote: async () => (await import("./internal/action-aliases.js")).handleBridgeQuote,
+
   // Setup / Configuration
   polymarket_setup: async () => (await import("./internal/polymarket-setup.js")).handlePolymarketSetup,
 

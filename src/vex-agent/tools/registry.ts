@@ -82,6 +82,7 @@ export function defaultVisibilityContext(
 
 import { PROTOCOL_TOOLS } from "./registry/protocol.js";
 import { KHALANI_INTERNAL_TOOLS } from "./registry/khalani.js";
+import { ACTION_ALIAS_TOOLS } from "./registry/action-aliases.js";
 import { WEB_TOOLS } from "./registry/web.js";
 import { TWITTER_ACCOUNT_TOOLS } from "./registry/twitter-account.js";
 import { KNOWLEDGE_TOOLS } from "./registry/knowledge.js";
@@ -101,6 +102,7 @@ import { MEMORY_TOOLS } from "./registry/memory.js";
 const TOOLS: readonly ToolDef[] = [
   ...PROTOCOL_TOOLS,
   ...KHALANI_INTERNAL_TOOLS,
+  ...ACTION_ALIAS_TOOLS,
   ...WEB_TOOLS,
   ...TWITTER_ACCOUNT_TOOLS,
   ...KNOWLEDGE_TOOLS,
@@ -304,6 +306,10 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
       "token_find",
       "khalani_tokens_balances",
     ],
+  },
+  {
+    label: "Swap & bridge previews (read-only)",
+    toolNames: ["swap_quote", "token_check", "bridge_quote", "bridge_status"],
   },
   { label: "Research", toolNames: ["web_research", "twitter_account"] },
   { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },

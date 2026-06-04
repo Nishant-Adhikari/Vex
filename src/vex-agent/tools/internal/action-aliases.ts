@@ -1,0 +1,240 @@
+/**
+ * Action-named READ-ONLY alias handlers (Stage 8a).
+ *
+ * Each handler validates its (untrusted) args with Zod at the boundary,
+ * translates them into the TARGET protocol tool's exact param names, and
+ * dispatches via `executeProtocolTool`. Because every target is non-mutating,
+ * no approval gate fires. `swap_quote` is a family ROUTER (EVM vs Solana); the
+ * other three are pass-through / mode selectors.
+ *
+ * Param translation is the whole point — the alias presents ONE clean
+ * LLM-facing shape and maps to whatever the underlying manifest calls things:
+ *
+ *   swap_quote (EVM)    { chain, tokenIn, tokenOut, amount, slippageBps? }
+ *                       → kyberswap.swap.quote { chain, tokenIn, tokenOut, amountIn: amount, slippageBps? }
+ *   swap_quote (Solana) → solana.swap.quote   { inputToken: tokenIn, outputToken: tokenOut, amount: Number(amount), slippageBps? }
+ *   token_check         { chain, address }      → kyberswap.tokens.check (same keys)
+ *   bridge_status (id)  { orderId }              → khalani.orders.get { orderId }
+ *   bridge_status (list)→ khalani.orders.list (pass through list filters)
+ *   bridge_quote        → khalani.quote.get (same keys)
+ *
+ * Units: kyber/jupiter swap `amount` is HUMAN decimal (e.g. "1.5"); khalani
+ * bridge `amount` is SMALLEST units (wei/lamports). The alias schemas document
+ * this and translation preserves it (no unit conversion happens here).
+ */
+
+import { z } from "zod";
+
+import type { ToolResult } from "../types.js";
+import type { InternalToolContext } from "./types.js";
+import { fail } from "./types.js";
+import { executeProtocolTool } from "../protocols/runtime.js";
+import { resolveChainSlug } from "@tools/kyberswap/chains.js";
+
+// ── Shared dispatch context projection ───────────────────────────────
+//
+// The read-only aliases need the same execution-context slice the Khalani
+// read aliases pass (no `contextUsageBand` — these are never mutating, so the
+// protocol-runtime pressure guard is a no-op for them; mirrors
+// internal/khalani.ts).
+
+function protocolContext(context: InternalToolContext): Parameters<typeof executeProtocolTool>[1] {
+  return {
+    sessionPermission: context.sessionPermission,
+    approved: context.approved,
+    sessionId: context.sessionId,
+    walletResolution: context.walletResolution,
+    walletPolicy: context.walletPolicy,
+  };
+}
+
+// ── swap_quote — EVM/Solana family router ────────────────────────────
+
+/** Chain values that route to the Solana (Jupiter) quote. Checked before EVM. */
+const SOLANA_CHAIN_VALUES: ReadonlySet<string> = new Set(["solana", "sol"]);
+
+const SwapQuoteArgs = z.object({
+  chain: z.string().min(1, { message: "chain is required" }),
+  tokenIn: z.string().min(1, { message: "tokenIn is required" }),
+  tokenOut: z.string().min(1, { message: "tokenOut is required" }),
+  amount: z.string().min(1, { message: "amount is required (human decimal string)" }),
+  slippageBps: z.number().int().nonnegative().optional(),
+});
+
+type SwapQuoteArgs = z.infer<typeof SwapQuoteArgs>;
+
+type SwapFamily =
+  | { readonly kind: "evm"; readonly chainSlug: string }
+  | { readonly kind: "solana" }
+  | { readonly kind: "unknown" };
+
+/**
+ * Decide the swap family from the `chain` arg. Solana is matched explicitly
+ * FIRST (its slug is not a `KyberChainSlug`); EVM is confirmed by
+ * `resolveChainSlug` (throws on unknown). Anything neither Solana nor a known
+ * EVM chain is `unknown` → the handler fails clearly instead of guessing.
+ */
+function classifySwapFamily(chain: string): SwapFamily {
+  const normalized = chain.toLowerCase().trim();
+  if (SOLANA_CHAIN_VALUES.has(normalized)) return { kind: "solana" };
+  try {
+    return { kind: "evm", chainSlug: resolveChainSlug(normalized) };
+  } catch {
+    return { kind: "unknown" };
+  }
+}
+
+export async function handleSwapQuote(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const parsed = SwapQuoteArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`swap_quote: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const a: SwapQuoteArgs = parsed.data;
+
+  const family = classifySwapFamily(a.chain);
+  if (family.kind === "unknown") {
+    return fail(
+      `swap_quote: cannot determine swap family for chain "${a.chain}". ` +
+        `Use a supported EVM chain (e.g. ethereum, base, arbitrum) or "solana".`,
+    );
+  }
+
+  if (family.kind === "solana") {
+    // Solana quote manifest types `amount` as a NUMBER (human decimal) — coerce
+    // the unified string here so the protocol-runtime type check passes.
+    const amount = Number(a.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return fail(`swap_quote: amount "${a.amount}" is not a positive number.`);
+    }
+    const params: Record<string, unknown> = {
+      inputToken: a.tokenIn,
+      outputToken: a.tokenOut,
+      amount,
+      ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
+    };
+    return executeProtocolTool({ toolId: "solana.swap.quote", params }, protocolContext(context));
+  }
+
+  // EVM → KyberSwap. amount → amountIn (both human decimal strings).
+  const params: Record<string, unknown> = {
+    chain: family.chainSlug,
+    tokenIn: a.tokenIn,
+    tokenOut: a.tokenOut,
+    amountIn: a.amount,
+    ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
+  };
+  return executeProtocolTool({ toolId: "kyberswap.swap.quote", params }, protocolContext(context));
+}
+
+// ── token_check — EVM honeypot / fee-on-transfer ─────────────────────
+
+const TokenCheckArgs = z.object({
+  chain: z.string().min(1, { message: "chain is required" }),
+  address: z.string().min(1, { message: "address is required" }),
+});
+
+export async function handleTokenCheck(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const parsed = TokenCheckArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`token_check: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const { chain, address } = parsed.data;
+  return executeProtocolTool(
+    { toolId: "kyberswap.tokens.check", params: { chain, address } },
+    protocolContext(context),
+  );
+}
+
+// ── bridge_status — order get (by id) / orders list ──────────────────
+
+const BridgeStatusArgs = z.object({
+  orderId: z.string().min(1).optional(),
+  address: z.string().min(1).optional(),
+  wallet: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  cursor: z.number().int().nonnegative().optional(),
+  fromChain: z.string().min(1).optional(),
+  toChain: z.string().min(1).optional(),
+  orderIds: z.string().min(1).optional(),
+  txHashSearch: z.string().min(1).optional(),
+});
+
+export async function handleBridgeStatus(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const parsed = BridgeStatusArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`bridge_status: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const a = parsed.data;
+
+  if (a.orderId !== undefined) {
+    return executeProtocolTool(
+      { toolId: "khalani.orders.get", params: { orderId: a.orderId } },
+      protocolContext(context),
+    );
+  }
+
+  // List mode — forward only the list filters that were provided.
+  const params: Record<string, unknown> = {};
+  if (a.address !== undefined) params.address = a.address;
+  if (a.wallet !== undefined) params.wallet = a.wallet;
+  if (a.limit !== undefined) params.limit = a.limit;
+  if (a.cursor !== undefined) params.cursor = a.cursor;
+  if (a.fromChain !== undefined) params.fromChain = a.fromChain;
+  if (a.toChain !== undefined) params.toChain = a.toChain;
+  if (a.orderIds !== undefined) params.orderIds = a.orderIds;
+  if (a.txHashSearch !== undefined) params.txHashSearch = a.txHashSearch;
+  return executeProtocolTool({ toolId: "khalani.orders.list", params }, protocolContext(context));
+}
+
+// ── bridge_quote — read-only cross-chain bridge preview ──────────────
+
+const BridgeQuoteArgs = z.object({
+  fromChain: z.string().min(1, { message: "fromChain is required" }),
+  fromToken: z.string().min(1, { message: "fromToken is required" }),
+  toChain: z.string().min(1, { message: "toChain is required" }),
+  toToken: z.string().min(1, { message: "toToken is required" }),
+  amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+  tradeType: z.string().min(1).optional(),
+  fromAddress: z.string().min(1).optional(),
+  recipient: z.string().min(1).optional(),
+  refundTo: z.string().min(1).optional(),
+  referrer: z.string().min(1).optional(),
+  referrerFeeBps: z.string().min(1).optional(),
+  filler: z.string().min(1).optional(),
+});
+
+export async function handleBridgeQuote(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const parsed = BridgeQuoteArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`bridge_quote: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const a = parsed.data;
+
+  const params: Record<string, unknown> = {
+    fromChain: a.fromChain,
+    fromToken: a.fromToken,
+    toChain: a.toChain,
+    toToken: a.toToken,
+    amount: a.amount,
+  };
+  if (a.tradeType !== undefined) params.tradeType = a.tradeType;
+  if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
+  if (a.recipient !== undefined) params.recipient = a.recipient;
+  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
+  if (a.referrer !== undefined) params.referrer = a.referrer;
+  if (a.referrerFeeBps !== undefined) params.referrerFeeBps = a.referrerFeeBps;
+  if (a.filler !== undefined) params.filler = a.filler;
+  return executeProtocolTool({ toolId: "khalani.quote.get", params }, protocolContext(context));
+}
