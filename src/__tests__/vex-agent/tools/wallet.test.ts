@@ -70,6 +70,16 @@ vi.mock("@tools/khalani/chains.js", () => ({
   getCachedKhalaniChains: async () => [MOCK_CHAIN, MOCK_SOLANA_CHAIN],
 }));
 
+// The EVM native top-up calls createDynamicPublicClient(...).getBalance().
+// The mocked Khalani response above already returns an ETH entry on chain 1, so
+// the native top-up dedupes and never calls getBalance — but mock the public
+// client anyway so this suite can never reach a real RPC.
+const mockGetBalance = vi.fn().mockResolvedValue(0n);
+
+vi.mock("@tools/khalani/evm-client.js", () => ({
+  createDynamicPublicClient: () => ({ getBalance: mockGetBalance }),
+}));
+
 const { handleWalletBalances } = await import(
   "../../../vex-agent/tools/internal/wallet.js"
 );

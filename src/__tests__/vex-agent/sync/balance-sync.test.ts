@@ -86,6 +86,40 @@ describe("syncWalletBalances", () => {
     await syncWalletBalances("eip155", EVM_A, [1, 8453]);
     expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: [1, 8453] });
   });
+
+  // ── Native top-up MUST stay off on the projection path ──────────
+  // The sync path full-replaces proj_balances per chain. If it opted into the
+  // EVM native top-up, a transient native RPC failure could drop a previously
+  // cached synthetic native row from the replace set. Assert the scan is invoked
+  // WITHOUT includeNative (so the scanner's default-false path keeps it native-
+  // free) and that a synthetic native row is never written.
+  it("never requests the native top-up (no includeNative) so it cannot delete cached native rows", async () => {
+    const NATIVE_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+    // Even though a real RPC would report 5 ETH, the sync scan returns ERC-20s
+    // only — the mock proves syncWalletBalances asks for a native-free scan.
+    mockScan.mockResolvedValue({
+      tokens: [
+        { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
+      ],
+      scannedChainIds: [1],
+      chainErrors: [],
+    });
+
+    await syncWalletBalances("eip155", EVM_A);
+
+    // The sync call carries no includeNative flag at all.
+    const [scanArg] = mockScan.mock.calls[0] as [Record<string, unknown>];
+    expect(scanArg).not.toHaveProperty("includeNative");
+    expect(scanArg.includeNative).toBeUndefined();
+
+    // The per-chain replace set written to proj_balances has no synthetic native row.
+    const replacedRows = mockReplaceBalances.mock.calls.flatMap(
+      (call) => (call[2] as Array<{ tokenAddress: string }>),
+    );
+    expect(
+      replacedRows.some((row) => row.tokenAddress.toLowerCase() === NATIVE_SENTINEL.toLowerCase()),
+    ).toBe(false);
+  });
 });
 
 // ── fullBalanceSync ─────────────────────────────────────────────

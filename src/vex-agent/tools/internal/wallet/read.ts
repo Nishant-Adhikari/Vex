@@ -69,7 +69,10 @@ export async function handleWalletBalances(
 
     try {
       const address = resolveSelectedAddress(context.walletResolution, context.walletPolicy, family);
-      const scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
+      // Live read: opt into the EVM native-coin top-up. The sync/projection path
+      // (syncWalletBalances) deliberately does NOT, to avoid deleting cached
+      // native rows on a transient RPC failure.
+      const scan = await getTokenBalancesAcrossChains({ address, family, chainIds, includeNative: true });
       snapshots.push({
         wallet: family,
         address,
