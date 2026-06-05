@@ -6,10 +6,18 @@
  * Execution validates params, finds the handler, and calls it.
  */
 
-import type { ProtocolExecuteRequest, ProtocolExecutionContext } from "./types.js";
+import { z } from "zod";
+
+import type {
+  ProtocolExecuteRequest,
+  ProtocolExecutionContext,
+  ProtocolParamDef,
+  ProtocolToolManifest,
+} from "./types.js";
 import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
+import { redact } from "@vex-agent/memory/redaction.js";
 import { isPreviewExecution, validateCaptureContract } from "./capture-validator.js";
 import { extractExternalRefs, populateCaptureItems } from "./capture-pipeline.js";
 import { MUTATION_MATRIX } from "./mutation-matrix.js";
@@ -53,6 +61,217 @@ export { discoverProtocolCapabilities } from "./discovery.js";
  */
 function withActionKind(result: ToolResult, actionKind: ActionKind): ToolResult {
   return { ...result, actionKind };
+}
+
+// ── Strict param-boundary validation (B-002) ─────────────────────
+//
+// The protocol param surface is an UNTRUSTED boundary: `execute_tool` params
+// come straight from the LLM. Pre-B-002 the runtime only checked declared
+// params for `required` presence + `typeof`; it let UNKNOWN/extra keys flow
+// into handlers untouched and never rejected nested shape drift. This closes
+// the boundary with manifest-derived Zod schemas (rule 20 §2): every declared
+// key is type-validated by `primitiveSchema(...).safeParse`, and an explicit
+// strict-key pass REJECTS any undeclared key (the `.strict()` equivalent)
+// before the handler is invoked. We keep the strict-key + required checks
+// separate from Zod's per-field parse so the exact pre-B-002 messages and the
+// "empty-string/null = missing" semantics are preserved byte-for-byte.
+//
+// Manifest params are primitive-only today (`string | number | boolean`), so
+// the generated schemas are flat. `primitiveSchema` is deliberately written
+// with an exhaustiveness guard so a future manifest declaring a nested
+// `object`/`array` param must map to a recursive Zod schema HERE rather than
+// fall through — the boundary stays at runtime.ts and never silently passes
+// nested/extra keys.
+
+/** Runtime-owned control keys recognised regardless of manifest declaration. */
+//
+// `dryRun` is read by the runtime ITSELF (`isPreviewExecution`) before the
+// handler runs, so it is part of the runtime contract, not a per-handler param.
+// Every production tool that supports preview ALSO declares `dryRun` in its
+// manifest; this set only guarantees the runtime's own control key is never
+// rejected as "unknown" even for a manifest that omits the declaration.
+const RESERVED_RUNTIME_PARAM_KEYS: ReadonlySet<string> = new Set(["dryRun"]);
+
+/** Map a primitive `ProtocolParamDef.type` to its base Zod schema. */
+function primitiveSchema(type: ProtocolParamDef["type"]): z.ZodTypeAny {
+  switch (type) {
+    case "string":
+      return z.string();
+    case "number":
+      return z.number();
+    case "boolean":
+      return z.boolean();
+    default:
+      // Exhaustiveness guard — a new param `type` must extend this mapping
+      // (e.g. nested object/array → recursive schema) rather than fall through.
+      return assertNeverParamType(type);
+  }
+}
+
+function assertNeverParamType(value: never): never {
+  throw new Error(`Unhandled protocol param type: ${String(value)}`);
+}
+
+/**
+ * Outcome of strict param validation. `ok` carries no payload — the runtime
+ * keeps operating on the already-validated `params` object; this is a boundary
+ * gate, not a transform.
+ */
+type ParamValidation =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Validate `params` against `manifest.params` at the trust boundary.
+ *
+ * Order (each fails closed BEFORE the handler runs):
+ *  1. UNKNOWN keys — any key neither declared nor runtime-reserved is rejected.
+ *  2. REQUIRED presence — `undefined | null | ""` for a required param is
+ *     "missing" (preserves the pre-B-002 empty-string-as-absent semantics so
+ *     an empty optional is allowed and an empty required is rejected).
+ *  3. TYPE — a PRESENT param whose value fails its declared primitive schema is
+ *     rejected. Missing optionals are not type-checked.
+ *
+ * Messages are agent-actionable and contain only the offending KEY + declared
+ * type — never a value (which could carry untrusted/secret-adjacent content).
+ */
+function validateProtocolParams(
+  manifest: ProtocolToolManifest,
+  params: Record<string, unknown>,
+): ParamValidation {
+  const declared = new Map(manifest.params.map((p) => [p.key, p] as const));
+
+  // 1. Strict unknown-key rejection.
+  for (const key of Object.keys(params)) {
+    if (!declared.has(key) && !RESERVED_RUNTIME_PARAM_KEYS.has(key)) {
+      return {
+        ok: false,
+        reason:
+          `Unknown parameter "${key}" for ${manifest.toolId}. `
+          + `Allowed parameters: ${manifest.params.map((p) => p.key).join(", ") || "(none)"}.`,
+      };
+    }
+  }
+
+  // 2 + 3. Per-declared-param required presence + strict type.
+  for (const param of manifest.params) {
+    const value = params[param.key];
+    const missing = value === undefined || value === null || value === "";
+    if (param.required && missing) {
+      return {
+        ok: false,
+        reason: `Missing required parameter "${param.key}" for ${manifest.toolId}`,
+      };
+    }
+    if (missing) continue; // optional + absent — not type-checked
+
+    const parsed = primitiveSchema(param.type).safeParse(value);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        reason:
+          `Parameter "${param.key}" for ${manifest.toolId} has invalid type: `
+          + `expected ${param.type}, got ${typeof value}`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+// ── Provider-safe error summarisation (B-003) ────────────────────
+//
+// A thrown handler error (or any provider/SDK error) can embed URLs, request /
+// response bodies, auth headers, and key material. NONE of that may reach the
+// tool output, the structured logs, or (downstream) the renderer. We emit ONLY:
+//   - a coarse cause CATEGORY (transient vs permanent classification signal),
+//   - a bounded message that has been run through the secret redactor AND
+//     stripped of URLs, then length-capped.
+// The original error is never logged or returned verbatim.
+
+type ErrorCategory =
+  | "timeout"
+  | "network"
+  | "rate_limit"
+  | "auth"
+  | "provider_error"
+  | "unknown";
+
+interface SafeErrorSummary {
+  readonly category: ErrorCategory;
+  readonly message: string;
+}
+
+const MAX_SAFE_ERROR_MESSAGE = 200;
+
+// Structured/sensitive fragments stripped from the message BEFORE it is
+// surfaced anywhere. These cover the provider/SDK internals the B-003 note
+// forbids emitting (URLs, request/response bodies, auth) while leaving short
+// human-readable error phrases (e.g. "network down") intact. Each replaces the
+// offending span with a coarse placeholder rather than deleting it, so the
+// summary still signals "an internal was removed here".
+const SENSITIVE_FRAGMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  // URLs — provider endpoints often carry tokens/ids in path or query.
+  [/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]"],
+  // Brace- or bracket-delimited bodies (JSON request/response payloads).
+  [/[{[][^{}[\]]*[}\]]/g, "[body]"],
+  // Auth headers + key/secret/token assignments (header: value OR key=value).
+  [/\b(authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*\S+/gi, "[auth]"],
+  [/\bbearer\s+\S+/gi, "[auth]"],
+  [/\b(api[_-]?key|apikey|access[_-]?token|secret|password|passwd|pwd|token|key)\s*[:=]\s*\S+/gi, "[auth]"],
+];
+
+/** Coarse, non-sensitive classification from the error's shape/text. */
+function classifyError(raw: string, err: unknown): ErrorCategory {
+  const name = err instanceof Error ? err.name.toLowerCase() : "";
+  const text = raw.toLowerCase();
+  if (name.includes("abort") || text.includes("timeout") || text.includes("timed out")) {
+    return "timeout";
+  }
+  if (text.includes("rate limit") || text.includes("429") || text.includes("too many requests")) {
+    return "rate_limit";
+  }
+  if (text.includes("unauthorized") || text.includes("forbidden") || text.includes("401") || text.includes("403")) {
+    return "auth";
+  }
+  if (
+    name.includes("fetch")
+    || text.includes("econn")
+    || text.includes("enotfound")
+    || text.includes("network")
+    || text.includes("socket")
+  ) {
+    return "network";
+  }
+  if (err instanceof Error) return "provider_error";
+  return "unknown";
+}
+
+/**
+ * Reduce any thrown value to a `{ category, message }` summary that is safe to
+ * log, return to the agent, and forward to the renderer. Bounded + redacted.
+ */
+function summarizeProtocolError(err: unknown): SafeErrorSummary {
+  const raw = err instanceof Error ? err.message : String(err);
+  const category = classifyError(raw, err);
+
+  // Defense-in-depth, applied in order:
+  //  1. redact known SECRET shapes (keys, JWTs, mnemonics, addresses),
+  //  2. strip structured provider INTERNALS (URLs, bodies, auth) the B-003 note
+  //     forbids emitting — placeholder-replaced, not just secret-matched,
+  //  3. collapse whitespace and hard-cap the length.
+  // We never trust the provider not to embed internals, so we keep only this
+  // bounded summary regardless of what the raw text contained.
+  let cleaned = redact(raw).text;
+  for (const [pattern, replacement] of SENSITIVE_FRAGMENT_PATTERNS) {
+    cleaned = cleaned.replace(pattern, replacement);
+  }
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  const bounded = cleaned.length > MAX_SAFE_ERROR_MESSAGE
+    ? `${cleaned.slice(0, MAX_SAFE_ERROR_MESSAGE)}…`
+    : cleaned;
+
+  return { category, message: bounded || category };
 }
 
 // ── Execution ────────────────────────────────────────────────────
@@ -157,32 +376,17 @@ export async function executeProtocolTool(
     }
   }
 
-  // Validate params — presence (required) and runtime type (§1f).
-  // Pre-PR1 runtime only checked `required`; that left handlers defending
-  // against bad types with `as-any` casts on SDK enum params. Rejecting the
-  // call here gives the LLM a clear error instead of silently coercing via
-  // `str()` / `num()` readers inside each handler.
-  for (const param of manifest.params) {
-    const value = params[param.key];
-    const missing = value === undefined || value === null || value === "";
-    if (param.required && missing) {
-      return withActionKind({
-        success: false,
-        output: `Missing required parameter "${param.key}" for ${request.toolId}`,
-      }, effectiveActionKind);
-    }
-    if (!missing) {
-      const actualType = typeof value;
-      // `ProtocolParamDef.type` is "string" | "number" | "boolean" — all
-      // primitives observable via `typeof`. If we later add "object" /
-      // "array" variants, widen the check (or move to a JsonSchema walker).
-      if (actualType !== param.type) {
-        return withActionKind({
-          success: false,
-          output: `Parameter "${param.key}" for ${request.toolId} has invalid type: expected ${param.type}, got ${actualType}`,
-        }, effectiveActionKind);
-      }
-    }
+  // Strict param-boundary validation (B-002) — UNKNOWN/extra keys, missing
+  // required params, and wrong-typed declared params are ALL rejected here,
+  // BEFORE the handler runs. Manifest-derived Zod schema; see
+  // `validateProtocolParams`. Pre-B-002 this only checked required+typeof and
+  // let undeclared keys flow into handlers untouched.
+  const paramValidation = validateProtocolParams(manifest, params);
+  if (!paramValidation.ok) {
+    return withActionKind({
+      success: false,
+      output: paramValidation.reason,
+    }, effectiveActionKind);
   }
 
   // Find handler
@@ -282,9 +486,13 @@ export async function executeProtocolTool(
       try {
         await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs);
       } catch (err) {
+        // B-003: capture/DB errors can embed a credential-bearing connection
+        // URL — log only the redacted, bounded summary.
+        const safe = summarizeProtocolError(err);
         logger.warn("protocol.execute.capture_failed", {
           toolId: request.toolId,
-          error: err instanceof Error ? err.message : String(err),
+          code: safe.category,
+          message: safe.message,
         });
       }
     }
@@ -292,27 +500,35 @@ export async function executeProtocolTool(
     return withActionKind(result, effectiveActionKind);
   } catch (err) {
     const durationMs = Date.now() - startTime;
-    const message = err instanceof Error ? err.message : String(err);
+    // B-003: reduce the raw provider/SDK error to a redacted, bounded summary.
+    // The original message may carry URLs, request/response bodies, auth, or
+    // key material — none of which may reach the log, the tool output, or the
+    // renderer. We surface ONLY the cause CATEGORY + a bounded redacted message.
+    const safe = summarizeProtocolError(err);
 
     logger.warn("protocol.execute.failed", {
       toolId: request.toolId,
-      error: message,
+      code: safe.category,
+      message: safe.message,
       durationMs,
     });
 
     // Capture thrown mutations to audit trail only (no projections for failures)
     // Preview: skip capture even for thrown exceptions
     const failedResult: ToolResult = withActionKind(
-      { success: false, output: `${request.toolId} failed: ${message}` },
+      { success: false, output: `${request.toolId} failed (${safe.category}): ${safe.message}` },
       effectiveActionKind,
     );
     if (shouldCapture) {
       try {
         await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, failedResult, durationMs);
       } catch (captureErr) {
+        // B-003: same redaction discipline on the failure-capture path.
+        const safeCapture = summarizeProtocolError(captureErr);
         logger.warn("protocol.execute.capture_failed", {
           toolId: request.toolId,
-          error: captureErr instanceof Error ? captureErr.message : String(captureErr),
+          code: safeCapture.category,
+          message: safeCapture.message,
         });
       }
     }

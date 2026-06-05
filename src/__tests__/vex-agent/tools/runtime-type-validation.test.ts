@@ -158,3 +158,77 @@ describe("runtime type validation (execute_tool)", () => {
     expect(handlerCalls).toBe(0);
   });
 });
+
+// ── B-002: strict unknown-key boundary ───────────────────────────────────
+//
+// Pre-B-002 the runtime only checked DECLARED params (required + typeof) and
+// let any UNDECLARED key flow straight into the handler. B-002 closes the
+// boundary: a manifest-derived strict schema REJECTS any key that is neither
+// declared nor a runtime-reserved control key (`dryRun`), BEFORE the handler.
+describe("runtime strict param boundary (B-002 — unknown keys)", () => {
+  it("rejects an UNKNOWN/extra key before the handler is invoked", async () => {
+    handlerCalls = 0;
+    const result = await executeProtocolTool(
+      {
+        toolId: "test.type_validation.strict",
+        // `injected` is not declared on the manifest and is not a reserved
+        // runtime control key — it must be rejected, not silently forwarded.
+        params: { required_str: "ok", injected: "smuggled" },
+      },
+      { sessionPermission: "full", approved: true },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/unknown parameter "injected"/i);
+    expect(handlerCalls).toBe(0);
+  });
+
+  it("names the allowed parameters in the rejection so the agent can self-correct", async () => {
+    const result = await executeProtocolTool(
+      { toolId: "test.type_validation.strict", params: { required_str: "ok", nope: 1 } },
+      { sessionPermission: "full", approved: true },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/allowed parameters: sort, limit, active, required_str/i);
+  });
+
+  it("a nested object value for a primitive-declared param is rejected (type), not passed through", async () => {
+    handlerCalls = 0;
+    // `sort` is declared `string`; a nested object must fail the strict type
+    // check rather than reach the handler. Guards the 'no nested/extra shape
+    // silently passes' invariant for today's primitive-only manifests.
+    const result = await executeProtocolTool(
+      { toolId: "test.type_validation.strict", params: { required_str: "ok", sort: { deep: true } } },
+      { sessionPermission: "full", approved: true },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/invalid type.*expected string.*got object/i);
+    expect(handlerCalls).toBe(0);
+  });
+
+  it("the reserved runtime control key `dryRun` is allowed even when the manifest does NOT declare it", async () => {
+    handlerCalls = 0;
+    // The synthetic manifest above declares no `dryRun` param, yet the runtime
+    // owns `dryRun` (drives isPreviewExecution). It must NOT be rejected as
+    // 'unknown'. (This manifest has no previewSupport, so the call still runs
+    // the handler normally — we only assert dryRun is not rejected at the gate.)
+    const result = await executeProtocolTool(
+      { toolId: "test.type_validation.strict", params: { required_str: "ok", dryRun: true } },
+      { sessionPermission: "full", approved: true },
+    );
+    expect(result.success).toBe(true);
+    expect(handlerCalls).toBe(1);
+  });
+
+  it("accepts a call with ONLY declared keys (no false-positive rejection)", async () => {
+    handlerCalls = 0;
+    const result = await executeProtocolTool(
+      {
+        toolId: "test.type_validation.strict",
+        params: { required_str: "ok", sort: "hot", limit: 5, active: false },
+      },
+      { sessionPermission: "full", approved: true },
+    );
+    expect(result.success).toBe(true);
+    expect(handlerCalls).toBe(1);
+  });
+});
