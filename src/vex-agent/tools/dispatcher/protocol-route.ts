@@ -1,0 +1,162 @@
+// ── Routing ──────────────────────────────────────────────────────
+//
+// Route-selection logic: protocol meta-tools (`discover_tools` /
+// `execute_tool`), the dedicated mutating protocol-alias path, role
+// enforcement, and the internal-tool lazy-loader dispatch. The
+// auto-retry-unsafe stamp fires here BEFORE any route dispatch.
+
+import type { ToolCallRequest, ToolResult } from "../types.js";
+import type { InternalToolContext } from "../internal/types.js";
+import { isInternalTool, isMutatingTool, isToolBlockedForRole } from "../registry.js";
+import { discoverProtocolCapabilities } from "../protocols/runtime.js";
+import { executeProtocolTool } from "../protocols/runtime.js";
+import {
+  MUTATING_PROTOCOL_ALIAS_ROUTERS,
+  MutatingAliasRouteError,
+  isMutatingProtocolAlias,
+} from "../mutating-aliases.js";
+import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery.telemetry.js";
+import { toResultData } from "../protocols/handler-helpers.js";
+import logger from "@utils/logger.js";
+import { dispatchTargetIsMutating } from "./mutating-targets.js";
+import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
+
+export async function routeToolCall(
+  call: ToolCallRequest,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  // Phase 4d safety stamp: durably mark the mission run auto-retry-UNSAFE
+  // BEFORE any mutating tool runs (sticky double-spend gate — an error after a
+  // side effect can then never auto-retry). FAIL-CLOSED: if the stamp write
+  // throws we propagate, so dispatchTool's catch returns a failed result and
+  // the mutating handler never executes. Read-only tools and non-mission
+  // dispatches (missionRunId === null) skip this. Dynamic import mirrors the
+  // protocol runtime's DB-access pattern and avoids a static tool→DB cycle.
+  if (context.missionRunId !== null && dispatchTargetIsMutating(call)) {
+    const { markAutoRetryUnsafe } = await import(
+      "@vex-agent/db/repos/mission-runs.js"
+    );
+    await markAutoRetryUnsafe(context.missionRunId);
+  }
+
+  // Protocol meta-tools
+  if (call.name === "discover_tools") {
+    const discoveryRequest = {
+      query: typeof call.args.query === "string" ? call.args.query : undefined,
+      namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
+      limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
+      contextUsageBand: context.contextUsageBand,
+    };
+    const result = await discoverProtocolCapabilities(discoveryRequest);
+    logDiscoveryTelemetry({
+      request: discoveryRequest, result, discoveryRunId: newDiscoveryRunId(),
+      sourceSurface: context.sourceSurface, sourceSession: context.sourceSession,
+    });
+    return {
+      success: result.success,
+      output: JSON.stringify(result, null, 2),
+      data: toResultData(result),
+    };
+  }
+
+  if (call.name === "execute_tool") {
+    const toolId = typeof call.args.toolId === "string" ? call.args.toolId : "";
+    const params = typeof call.args.params === "object" && call.args.params !== null
+      ? call.args.params as Record<string, unknown>
+      : {};
+
+    if (!toolId) {
+      return { success: false, output: "Missing required parameter: toolId" };
+    }
+
+    return executeProtocolTool(
+      { toolId, params },
+      {
+        sessionPermission: context.sessionPermission,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+      },
+    );
+  }
+
+  // Hard role enforcement — blocked tools rejected even if model emits them.
+  // Runs BEFORE the mutating-alias branch so `excludeRoles` still gates the
+  // alias name (defense-in-depth for any future subagent-blocked alias).
+  if (isToolBlockedForRole(call.name, context.role)) {
+    return {
+      success: false,
+      output: `Tool "${call.name}" is not available for this session role (${context.role}).`,
+    };
+  }
+
+  // Mutating protocol-alias branch (Stage 8b — e.g. `swap`). DEDICATED path:
+  // resolve the TARGET protocol toolId + translated params via the router, then
+  // dispatch DIRECTLY through `executeProtocolTool`. This deliberately SKIPS
+  // `routeInternalTool`'s internal mutating-approval gate so approval is owned
+  // SOLELY by `executeProtocolTool`, which runs the ordering the alias depends
+  // on: Stage-7 prequote gate → approval gate → capture. The returned
+  // ToolResult is passed back VERBATIM (it already carries `pendingApproval` +
+  // the typed `prequote.verdict` for the restricted-mode approval preview, and
+  // the TARGET manifest's `actionKind`). The target was already used for the
+  // mission auto-retry-unsafe stamp (`dispatchTargetIsMutating`) and the
+  // pressure-deny used the alias's `mutating` pressureSafety (equivalent — the
+  // router only ever resolves to mutating targets). A router throw is a bounded
+  // failure ToolResult — NO target is dispatched on an un-routable request.
+  if (isMutatingProtocolAlias(call.name)) {
+    const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
+    let target: ReturnType<typeof router>;
+    try {
+      target = router(call.args);
+    } catch (err) {
+      if (err instanceof MutatingAliasRouteError) {
+        return { success: false, output: err.message };
+      }
+      throw err; // unexpected — let dispatchTool's catch produce a failed result
+    }
+    return executeProtocolTool(
+      { toolId: target.toolId, params: target.params },
+      {
+        sessionPermission: context.sessionPermission,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+      },
+    );
+  }
+
+  // Internal tools — route by name
+  if (!isInternalTool(call.name)) {
+    return { success: false, output: `Unknown tool: ${call.name}` };
+  }
+
+  return routeInternalTool(call, context);
+}
+
+async function routeInternalTool(
+  call: ToolCallRequest,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  const loader = INTERNAL_TOOL_LOADERS[call.name];
+  if (!loader) {
+    return { success: false, output: `Unknown internal tool: ${call.name}` };
+  }
+  if (isMutatingTool(call.name) && context.sessionPermission === "restricted" && !context.approved) {
+    logger.info("tools.dispatch.approval_required", {
+      tool: call.name,
+      permission: context.sessionPermission,
+    });
+    return {
+      success: false,
+      output: `${call.name} requires approval — mutating tool in restricted permission mode.`,
+      pendingApproval: true,
+    };
+  }
+
+  const handler = await loader();
+  return handler(call.args, context);
+}
