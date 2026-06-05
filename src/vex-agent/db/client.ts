@@ -22,6 +22,34 @@ import logger from "@utils/logger.js";
 
 const { Pool } = pg;
 
+/**
+ * Single source of truth for the dev-convenience fallback connection string,
+ * used both as the actual `connectionString` and as the input to the redacted
+ * warning hint. Embeds dev credentials (`vex:vex`) by necessity — those
+ * credentials MUST NOT be emitted to logs/support bundles, so anything derived
+ * for logging goes through `redactConnectionString()` first.
+ */
+const FALLBACK_DB_URL = "postgresql://vex:vex@localhost:5777/vex_test";
+
+/**
+ * Strip credential material from a Postgres connection string for safe logging.
+ * Returns a `host:port/db` descriptor only — never the username, password, or
+ * the credential-bearing URL. Parsing failures fall back to the literal
+ * `"<unparseable url>"` so we never echo the raw (possibly secret) input.
+ */
+function redactConnectionString(connectionString: string): string {
+  try {
+    const url = new URL(connectionString);
+    const host = url.hostname || "<unknown-host>";
+    const port = url.port ? `:${url.port}` : "";
+    // url.pathname is the leading-slash db path, e.g. "/vex_test".
+    const db = url.pathname.replace(/^\//, "") || "<unknown-db>";
+    return `${host}${port}/${db}`;
+  } catch {
+    return "<unparseable url>";
+  }
+}
+
 let pool: pg.Pool | null = null;
 
 export function getPool(): pg.Pool {
@@ -31,12 +59,14 @@ export function getPool(): pg.Pool {
       // Loud warning: the fallback exists for dev convenience but the canonical
       // expectation is that VEX_DB_URL is set explicitly (matches the
       // compose stack on port 5777). A future PR may remove the fallback entirely.
+      // The hint carries only a redacted host/port/db descriptor — never the
+      // fallback credentials — so the warning is safe in logs and support bundles.
       logger.warn("vex-db.pool.using_fallback_url", {
-        hint: "VEX_DB_URL not set — using fallback postgresql://vex:vex@localhost:5777/vex_test. Set explicitly to silence this warning.",
+        hint: "VEX_DB_URL not set — using local fallback. Set VEX_DB_URL explicitly to silence this warning.",
+        fallbackTarget: redactConnectionString(FALLBACK_DB_URL),
       });
     }
-    const connectionString = explicitUrl
-      ?? "postgresql://vex:vex@localhost:5777/vex_test";
+    const connectionString = explicitUrl ?? FALLBACK_DB_URL;
     pool = new Pool({ connectionString, max: 10, idleTimeoutMillis: 30_000 });
     pool.on("error", (err) => {
       logger.error("vex-db.pool.error", { error: err.message });
