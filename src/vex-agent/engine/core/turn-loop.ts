@@ -29,7 +29,8 @@ import type { InferenceProvider, InferenceConfig, ToolDefinition } from "@vex-ag
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 import { executeTurn, saveAssistantMessage } from "./turn.js";
-import type { ToolVisibilityBase } from "@vex-agent/tools/registry.js";
+import type { TurnLoopConfig, TurnLoopResult } from "./turn-loop/state.js";
+export type { TurnLoopConfig, TurnLoopResult } from "./turn-loop/state.js";
 import {
   appendPendingOperatorInstructions,
   maxOperatorInstructionId,
@@ -53,28 +54,6 @@ import {
 } from "./turn-loop-state-init.js";
 
 const MEMORY_ROUTING_PROMPT = buildMemoryRoutingRule();
-
-export interface TurnLoopConfig {
-  maxIterations: number;
-  timeoutMs: number;
-  contextLimit: number;
-  /**
-   * Static visibility axes (permission, role, sessionKind, missionRunActive)
-   * the runner knows up-front. `buildTurnPromptStack` augments this per turn
-   * with the live band + `hasSessionMemory` to build the SINGLE
-   * `ToolVisibilityContext` that drives BOTH the tools array and the Tool Map.
-   */
-  baseVisibility?: ToolVisibilityBase;
-}
-
-export interface TurnLoopResult {
-  text: string | null;
-  toolCallsMade: number;
-  pendingApprovals: string[];
-  stopReason: StopReason | null;
-  /** Structured stop payload — summary/evidence from mission_stop or complete_subagent. */
-  stopPayload?: { summary?: string; evidence?: Record<string, unknown> };
-}
 
 /**
  * Run the turn loop.
