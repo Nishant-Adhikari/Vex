@@ -18,7 +18,8 @@ import type { ProtocolParamDef, ProtocolToolManifest } from "../types.js";
 // into handlers untouched and never rejected nested shape drift. This closes
 // the boundary with manifest-derived Zod schemas (rule 20 §2): every declared
 // key is type-validated by `primitiveSchema(...).safeParse`, and an explicit
-// strict-key pass REJECTS any undeclared key (the `.strict()` equivalent)
+// strict-key pass REJECTS any undeclared key with a defined value (the
+// `.strict()` equivalent)
 // before the handler is invoked. We keep the strict-key + required checks
 // separate from Zod's per-field parse so the exact pre-B-002 messages and the
 // "empty-string/null = missing" semantics are preserved byte-for-byte.
@@ -72,7 +73,9 @@ export type ParamValidation =
  * Validate `params` against `manifest.params` at the trust boundary.
  *
  * Order (each fails closed BEFORE the handler runs):
- *  1. UNKNOWN keys — any key neither declared nor runtime-reserved is rejected.
+ *  1. UNKNOWN keys — any key with a DEFINED value that is neither declared nor
+ *     runtime-reserved is rejected. A key whose value is `undefined` is treated
+ *     as absent (JSON/storage semantics) and skipped, not rejected.
  *  2. REQUIRED presence — `undefined | null | ""` for a required param is
  *     "missing" (preserves the pre-B-002 empty-string-as-absent semantics so
  *     an empty optional is allowed and an empty required is rejected).
@@ -90,6 +93,12 @@ export function validateProtocolParams(
 
   // 1. Strict unknown-key rejection.
   for (const key of Object.keys(params)) {
+    // A key whose value is `undefined` is equivalent to an absent key: JSON
+    // drops it, LLM tool-call params arrive via JSON.parse and never carry
+    // `undefined`, and capture/storage already normalises `undefined` away.
+    // Treat it as absent rather than an "unknown key"; a real unknown VALUE is
+    // still rejected here, and a wrong-typed declared value is still rejected below.
+    if (params[key] === undefined) continue;
     if (!declared.has(key) && !RESERVED_RUNTIME_PARAM_KEYS.has(key)) {
       return {
         ok: false,

@@ -182,6 +182,23 @@ describe("runtime strict param boundary (B-002 — unknown keys)", () => {
     expect(handlerCalls).toBe(0);
   });
 
+  it("an UNKNOWN key whose value is `undefined` is treated as absent (handler runs)", async () => {
+    handlerCalls = 0;
+    // `{ undeclared_opt: undefined }` is equivalent to an absent key: JSON drops
+    // it, and real tool-call params arrive via JSON.parse and never carry
+    // `undefined`. It must NOT be rejected as an unknown key. The validator is a
+    // gate (not a transform), so we assert handler invocation only — not removal.
+    const result = await executeProtocolTool(
+      {
+        toolId: "test.type_validation.strict",
+        params: { required_str: "ok", undeclared_opt: undefined },
+      },
+      { sessionPermission: "full", approved: true },
+    );
+    expect(result.success).toBe(true);
+    expect(handlerCalls).toBe(1);
+  });
+
   it("names the allowed parameters in the rejection so the agent can self-correct", async () => {
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", nope: 1 } },
