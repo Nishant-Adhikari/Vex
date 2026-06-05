@@ -1,15 +1,36 @@
 /**
  * Direct tool invocation — bypasses the LLM. Used by power-user / debug
- * surfaces (shell settings panel) to exercise a handler with explicit args.
+ * surfaces (the local operator shell — "shell settings panel") to exercise a
+ * handler with explicit args.
  *
  * Builds a minimal but real `InternalToolContext` from the session row + any
  * active mission run, then calls `dispatchTool`. The result is a normal
  * `ToolResult` — no approval queue, no turn-loop deferred save. Caller
  * decides whether to persist to `messages`.
  *
- * **Security**: direct invoke is inherently privileged (operator intent).
- * `approved: true` is set so mutating tools do not get queued for approval.
- * Do not expose this behind an unauthenticated surface.
+ * **Security — OPERATOR / LOCAL-SHELL ONLY. Do NOT wire to vex-app.**
+ *
+ * This context is built with `approved: true`, which makes `runTool` the
+ * ONE path that BYPASSES the approval gate: mutating tools run immediately
+ * without an approval card, even under a `restricted` session. That is a
+ * deliberate operator escape hatch for the local agent shell, where the
+ * human at the keyboard *is* the operator and the invocation already carries
+ * explicit privileged intent.
+ *
+ * Because it skips approval, exposing `runTool` through any vex-app surface
+ * (IPC handler, preload bridge, or renderer) is FORBIDDEN. The renderer is
+ * untrusted UI; reaching `runTool` from it would let untrusted input execute
+ * mutating tools with the approval gate already lifted — defeating the
+ * agent-policy approval invariant. The vex-app desktop UI must drive the
+ * normal agent/turn-loop dispatch path instead, where mutating tools under
+ * `restricted` still require approval (see `dispatchTool` →
+ * `routeInternalTool`'s `pendingApproval` gate).
+ *
+ * A guard test pins this: see
+ * `vex-app/src/main/ipc/__tests__/run-tool-boundary.test.ts`, which fails the
+ * build if any file under `vex-app/src/` imports `runTool` (named, via the
+ * `@vex-agent/engine` barrel, or as a namespace member). Do not relax that
+ * guard to "make it compile" — move the call back behind the operator shell.
  */
 
 import type { ToolResult } from "../../tools/types.js";
