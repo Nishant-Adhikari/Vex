@@ -53,6 +53,16 @@ export interface ToolVisibility {
    * gate only controls what the LLM sees, not what it can be made to attempt.
    */
   requiresSessionMemory?: boolean;
+  /**
+   * True → show only when session-scoped plan-mode is enabled
+   * (`ToolVisibilityContext.planMode === true`). Used by `plan_write` so the
+   * plan-authoring tool appears only when the user opted into plan-mode.
+   * Combined with `hiddenInMissionSetup` it yields: visible in agent sessions
+   * and active mission runs (plan-mode on), hidden during mission setup and
+   * whenever plan-mode is off. The handler also re-checks DB state as
+   * defense-in-depth — this gate only controls what the LLM sees.
+   */
+  requiresPlanMode?: boolean;
 }
 
 /**
@@ -199,8 +209,16 @@ export interface ToolResult {
    * approving. It is NOT sourced from raw tool args, so the renderer preview's
    * allow-listed `criticalArgs` can never be spoofed by the LLM (Stage 7 R5,
    * Codex guardrail #3).
+   *
+   * `fotTax` (Stage 9 safety doctrine) carries the MAX fee-on-transfer tax
+   * (percent) across the matched prequote's EVM legs when any leg is a
+   * fee-on-transfer token. Because FoT is no longer a verdict `fail` (only a
+   * CONFIRMED honeypot blocks), a restricted human would otherwise see "safety:
+   * pass" and miss a high tax — so the gate threads this through the same TYPED
+   * channel (never raw args) for the preview to disclose. Bounded number,
+   * EVM-only, omitted when there is no fee-on-transfer leg.
    */
-  prequote?: { readonly verdict: SafetyVerdict };
+  prequote?: { readonly verdict: SafetyVerdict; readonly fotTax?: number };
 }
 
 /**
@@ -216,6 +234,12 @@ export interface ToolResult {
  *   reloads live messages, merges operator interrupts, updates
  *   `mission_runs.last_checkpoint_at`, and injects a deterministic resume
  *   packet for `POST_COMPACT_BRIDGE_CYCLES` subsequent turns.
+ * - plan_pause: a `plan_write` in an ACTIVE mission run created/changed a plan
+ *   that is not user-accepted. Turn-loop maps it to a `plan_acceptance_pause`
+ *   tool-batch outcome → flips the run to `paused_plan_acceptance` (stop reason
+ *   `plan_acceptance_required`); the run resumes only via the `plan.accept`
+ *   IPC, never a user chat message. Uses the existing `reason`/`summary`; the
+ *   run is identified by session/missionRunId so no extra payload is needed.
  */
 export interface EngineSignal {
   type:
@@ -223,7 +247,8 @@ export interface EngineSignal {
     | "wait_for_parent"
     | "complete_subagent"
     | "defer_until"
-    | "compact_committed";
+    | "compact_committed"
+    | "plan_pause";
   reason: string;
   summary: string;
   evidence?: Record<string, unknown>;

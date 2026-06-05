@@ -189,7 +189,9 @@ export async function processTurnToolBatch(args: {
       const intentPreview = buildIntentPreview(
         toolCall.name,
         toolCall.arguments,
-        result.prequote ? { prequoteVerdict: result.prequote.verdict } : undefined,
+        result.prequote
+          ? { prequoteVerdict: result.prequote.verdict, fotTax: result.prequote.fotTax }
+          : undefined,
       );
       const intentPolicy = buildPolicySnapshot(toolContext);
       // Phase 3: stamp `expires_at` at enqueue so the approve gate +

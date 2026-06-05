@@ -10,6 +10,10 @@
  *   - a gated swap with a fresh `fail` → blocked (safety_fail message).
  *   - a restricted-mode allowed swap (pass / unknown) → pendingApproval with
  *     the TYPED `prequote.verdict` carried onto the result (R5).
+ *   - FIX 3 (Stage 9): an allowed pass whose matched prequote has a
+ *     fee-on-transfer EVM leg carries the MAX FoT tax on `prequote.fotTax`
+ *     (FoT is `pass`, not a block, but still disclosed); a clean pass carries
+ *     no `fotTax`.
  *   - a non-gated mutating tool is NOT gated (no repo reads).
  *   - dryRun preview is NOT gated.
  */
@@ -101,12 +105,15 @@ const restrictedCtx = {
 
 const swapParams = { chain: "base", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amountIn: "1" };
 
-function prequoteRow(verdict: SwapPrequote["safetyVerdict"]): SwapPrequote {
+function prequoteRow(
+  verdict: SwapPrequote["safetyVerdict"],
+  safetyDetail: Record<string, unknown> = {},
+): SwapPrequote {
   return {
     prequoteId: "prequote-1", sessionId: SESSION_ID, matchHash: "h".repeat(64),
     kind: "swap", family: "eip155", provider: "kyberswap", chainId: 8453,
     walletAddress: "0xWALLET", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amount: "1",
-    slippageBps: 50, safetyVerdict: verdict, safetyDetail: {}, routeRef: null,
+    slippageBps: 50, safetyVerdict: verdict, safetyDetail, routeRef: null,
     createdAt: "2026-06-04T10:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
   };
 }
@@ -153,6 +160,48 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
     const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "unknown" });
+  });
+
+  // ── Stage 9 doctrine: fee-on-transfer is `pass` but still disclosed ──────
+  // FoT is no longer a verdict `fail` (only a confirmed honeypot blocks), so a
+  // high-tax token is allowed at the gate; the MAX FoT tax across the matched
+  // prequote's EVM legs rides the TYPED `prequote.fotTax` to the approval
+  // preview so a restricted human still sees it.
+
+  it("FIX 3: an allowed (pass) swap whose matched prequote has an FoT leg → prequote carries verdict='pass' + fotTax=60", async () => {
+    mockFindLatest.mockResolvedValue(
+      prequoteRow("pass", {
+        tokenIn: { isHoneypot: false, isFOT: true, tax: 60 },
+        tokenOut: { isHoneypot: false, isFOT: false, tax: 0 },
+      }),
+    );
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    expect(result.pendingApproval).toBe(true);
+    expect(result.prequote).toEqual({ verdict: "pass", fotTax: 60 });
+    expect(handlerSpy).not.toHaveBeenCalled();
+  });
+
+  it("FIX 3: carries the MAX FoT tax across both EVM legs", async () => {
+    mockFindLatest.mockResolvedValue(
+      prequoteRow("pass", {
+        tokenIn: { isHoneypot: false, isFOT: true, tax: 12 },
+        tokenOut: { isHoneypot: false, isFOT: true, tax: 75 },
+      }),
+    );
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    expect(result.prequote).toEqual({ verdict: "pass", fotTax: 75 });
+  });
+
+  it("FIX 3: a clean pass (no FoT leg) carries NO fotTax — plain verdict only", async () => {
+    mockFindLatest.mockResolvedValue(
+      prequoteRow("pass", {
+        tokenIn: { isHoneypot: false, isFOT: false, tax: 0 },
+        tokenOut: { isHoneypot: false, isFOT: false, tax: 0 },
+      }),
+    );
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    expect(result.prequote).toEqual({ verdict: "pass" });
+    expect(result.prequote).not.toHaveProperty("fotTax");
   });
 
   it("full-auto (approved): an allowed swap passes the gate and runs the handler", async () => {

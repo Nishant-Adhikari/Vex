@@ -10,7 +10,7 @@ import logger from "@utils/logger.js";
 
 // ── Product type mapping ────────────────────────────────────────
 
-const TYPE_TO_PRODUCT: Record<string, string> = {
+export const TYPE_TO_PRODUCT: Record<string, string> = {
   swap: "spot",
   bridge: "bridge",
   perps: "perps",

@@ -705,3 +705,136 @@ describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
     expect(mockGetHoneypotFotInfo).toHaveBeenCalledWith(1, TOKEN_B);
   });
 });
+
+// ── executeKyberSwap inline safety gate (broadcast path, FIX 1) ──────────────
+//
+// Owner doctrine (Stage 9): the ONLY hard safety block for an EVM swap is a
+// CONFIRMED honeypot (`isHoneypot === true`). Fee-on-transfer / high tax is the
+// model's decision (warn-only), and a THROWN safety check (API down/429/timeout)
+// must NOT abort a legit trade — it logs ONE bounded reason class and proceeds.
+//
+// We exercise the gate through `kyberswap.swap.sell` with `dryRun: true`: the
+// executor runs the safety gate, then fetches the route, then short-circuits at
+// the dryRun return BEFORE any signer decrypt / allowance / broadcast. So
+// "reached the dryRun route step" == "the safety gate did NOT abort", and a
+// `success: false` with an "Aborting" message == "the safety gate blocked".
+// This proves early-return-vs-proceed without mocking the full broadcast.
+
+describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
+  const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC-like
+  const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7"; // USDT-like
+  const EXEC_CTX = ctx({ sessionPermission: "full", approved: true });
+
+  /** A swap.sell dryRun call: runs the safety gate + route, stops before broadcast. */
+  function sellDryRun() {
+    return KYBERSWAP_HANDLERS["kyberswap.swap.sell"]!(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1", dryRun: true },
+      EXEC_CTX,
+    );
+  }
+
+  beforeEach(() => {
+    mockGetHoneypotFotInfo.mockReset();
+    mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
+    mockGetRoute.mockReset();
+    mockGetRoute.mockResolvedValue({
+      data: {
+        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5" },
+        routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+      },
+    });
+    mockReadErc20Metadata.mockReset();
+    mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
+      address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
+    }));
+    mockLoggerWarn.mockClear();
+  });
+
+  it("a CONFIRMED honeypot tokenIn STILL aborts — never reaches the route step", async () => {
+    mockGetHoneypotFotInfo.mockImplementation(async (_chainId: number, address: string) => {
+      if (address.toLowerCase() === TOKEN_A.toLowerCase()) return { isHoneypot: true, isFOT: false, tax: 0 };
+      return { isHoneypot: false, isFOT: false, tax: 0 };
+    });
+
+    const result = await sellDryRun();
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/honeypot/i);
+    expect(result.output).toMatch(/aborting/i);
+    // Aborted before the route fetch.
+    expect(mockGetRoute).not.toHaveBeenCalled();
+  });
+
+  it("a CONFIRMED honeypot tokenOut STILL aborts", async () => {
+    mockGetHoneypotFotInfo.mockImplementation(async (_chainId: number, address: string) => {
+      if (address.toLowerCase() === TOKEN_B.toLowerCase()) return { isHoneypot: true, isFOT: false, tax: 0 };
+      return { isHoneypot: false, isFOT: false, tax: 0 };
+    });
+
+    const result = await sellDryRun();
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/honeypot/i);
+    expect(mockGetRoute).not.toHaveBeenCalled();
+  });
+
+  it("FoT tax > 50 does NOT abort — proceeds past the gate to the dryRun route step + warns", async () => {
+    mockGetHoneypotFotInfo.mockImplementation(async (_chainId: number, address: string) => {
+      if (address.toLowerCase() === TOKEN_A.toLowerCase()) return { isHoneypot: false, isFOT: true, tax: 60 };
+      return { isHoneypot: false, isFOT: false, tax: 0 };
+    });
+
+    const result = await sellDryRun();
+    // Reached the dryRun route step → the safety gate did NOT abort on FoT.
+    expect(result.success).toBe(true);
+    const out = JSON.parse(result.output);
+    expect(out.dryRun).toBe(true);
+    expect(mockGetRoute).toHaveBeenCalledTimes(1);
+    // A high-tax FoT still emits a (warn-only) structural log.
+    const fotWarn = mockLoggerWarn.mock.calls.find((c) => c[0] === "kyberswap.swap.fot_warning");
+    expect(fotWarn).toBeDefined();
+    expect((fotWarn![1] as Record<string, unknown>).tax).toBe(60);
+  });
+
+  it("a THROWN safety check does NOT abort — proceeds + logs ONE bounded reason class (no raw text)", async () => {
+    const RAW =
+      "Honeypot check failed: 503 https://token-api.kyberswap.com/x?apiKey=sk_live_ABC <!DOCTYPE html><html>boom</html>";
+    mockGetHoneypotFotInfo.mockImplementation(async (_chainId: number, address: string) => {
+      if (address.toLowerCase() === TOKEN_A.toLowerCase()) throw new Error(RAW);
+      return { isHoneypot: false, isFOT: false, tax: 0 };
+    });
+
+    const result = await sellDryRun();
+    // A transient external-API failure must NOT abort a legit trade.
+    expect(result.success).toBe(true);
+    expect(JSON.parse(result.output).dryRun).toBe(true);
+    expect(mockGetRoute).toHaveBeenCalledTimes(1);
+
+    // ONE bounded structural warn — reason class only, never raw provider/HTTP text.
+    const failWarn = mockLoggerWarn.mock.calls.find((c) => c[0] === "kyberswap.swap.safety_check_failed");
+    expect(failWarn).toBeDefined();
+    const payload = failWarn![1] as Record<string, unknown>;
+    expect(["timeout", "rate_limited", "kyber_error", "unavailable"]).toContain(payload.reason);
+    const serialized = JSON.stringify(payload).toLowerCase();
+    expect(serialized).not.toContain("https://");
+    expect(serialized).not.toContain("kyberswap.com");
+    expect(serialized).not.toContain("<!doctype");
+    expect(serialized).not.toContain("html");
+    expect(serialized).not.toContain("apikey=");
+    expect(serialized).not.toContain("sk_live");
+    expect(serialized).not.toContain("503");
+  });
+
+  it("a confirmed honeypot caught at execute STILL aborts even when the OTHER leg's check threw", async () => {
+    // Owner residual-risk note: the execute-time honeypot gate is the hard block
+    // whenever the check SUCCEEDS and returns honeypot — independent of a
+    // transient failure on the other leg.
+    mockGetHoneypotFotInfo.mockImplementation(async (_chainId: number, address: string) => {
+      if (address.toLowerCase() === TOKEN_A.toLowerCase()) throw new Error("transient 429");
+      if (address.toLowerCase() === TOKEN_B.toLowerCase()) return { isHoneypot: true, isFOT: false, tax: 0 };
+      return { isHoneypot: false, isFOT: false, tax: 0 };
+    });
+
+    const result = await sellDryRun();
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/honeypot/i);
+  });
+});

@@ -89,6 +89,19 @@ export const PREQUOTE_MAX_AGE_MS = 15 * 60_000;
  * Swap trade identity (Stage 6c/7). `kind: "swap"` is the discriminant tag —
  * Stage 8c made `PrequoteMatchInput` a union so a swap identity and a bridge
  * identity with otherwise-similar values can never collide in the hash.
+ *
+ * The execute-only money/safety leg (`recipient`/`approveExact`/`slippageBps`)
+ * is bound too (Stage 9 security fix). `recipient` (where the output lands) and
+ * `approveExact` (allowance behavior) are EVM-execute-only — the swap QUOTE has
+ * no such params — so the recorder DEFAULTS them to the executor's omitted-value
+ * defaults (recipient → the resolved selected wallet, i.e. output-to-self;
+ * approveExact → false). A quote then authorizes an execute ONLY when the
+ * execute uses those same defaulted values; an execute that SETS a different
+ * recipient/approveExact produces a different digest → the gate blocks. Solana
+ * has neither concept (recipient=self, approveExact=false are constants there),
+ * so they never affect Solana matching — uniform and inert. `slippageBps` IS in
+ * both the quote and the execute params (both families), so binding it stops a
+ * 50bps quote from authorizing a 10000bps execute.
  */
 export interface SwapMatchInput {
   readonly kind: "swap";
@@ -101,6 +114,27 @@ export interface SwapMatchInput {
   readonly tokenOut: string;
   /** Human decimal amount the quote was computed for. */
   readonly amount: string;
+  /**
+   * Output recipient. Defaulted to the resolved selected wallet (output-to-self)
+   * when the execute omits it — mirrors `executeKyberSwap`'s
+   * `str(p,"recipient") || signer.address`. Canonicalized per family (EVM
+   * lowercase / Solana case-preserve). Solana = the selected wallet (constant).
+   */
+  readonly recipient: string;
+  /**
+   * Token-allowance behavior (EVM). `true` iff the execute set `approveExact`;
+   * the executor's default when omitted is `false`. Canonicalized to "1"/"0" in
+   * the hash. Solana = false (constant — no allowance concept).
+   */
+  readonly approveExact: boolean;
+  /**
+   * Slippage tolerance in basis points, taken from the QUOTE params (recorder)
+   * and the EXECUTE params (gate). A number canonicalizes to its integer string;
+   * omitted/null → the stable sentinel "" so a quote-omitted and an
+   * execute-omitted slippage collide, while a 50bps quote and a 10000bps execute
+   * diverge → block.
+   */
+  readonly slippageBps: string;
 }
 
 /**
@@ -170,6 +204,32 @@ function canonAddress(family: PrequoteFamily, value: string): string {
 }
 
 /**
+ * Canonicalize a slippage value for the swap match-hash. A finite number → its
+ * integer string (so `50` and `"50"`-derived `50` collide); null/undefined →
+ * the stable sentinel "" (a quote-omitted and an execute-omitted slippage
+ * collide; a 50bps quote and a 10000bps execute diverge → the gate blocks).
+ * A non-integer/non-finite number is floored to its integer string defensively
+ * (the providers treat slippage as an integer bps value).
+ */
+function canonSlippageBps(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "";
+  return String(Math.trunc(value));
+}
+
+/**
+ * Read `slippageBps` from a tool's PARAMS for the swap match-hash. Both swap
+ * quotes (kyber/jupiter) and both EVM executes type slippageBps as a number;
+ * anything non-numeric (absent / wrong type) is treated as omitted (null) so the
+ * canonicalizer maps it to the stable "" sentinel. Bound from params on BOTH
+ * sides (recorder reads the quote params, gate reads the execute params) so a
+ * quote↔execute that both omit slippage collide while differing values diverge.
+ */
+function readParamSlippageBps(params: Record<string, unknown>): number | null {
+  const raw = params.slippageBps;
+  return typeof raw === "number" ? raw : null;
+}
+
+/**
  * Canonicalize a human decimal amount so `"1.0"`, `"1"`, `"1.00"`, `"01"` and
  * `" 1 "` all hash identically. Strips sign-less leading/trailing zeros around
  * a single decimal point. Non-numeric input falls back to the trimmed string so
@@ -195,23 +255,34 @@ function canonAmount(raw: string): string {
 
 /**
  * Deterministic sha256-hex match-hash over the trade identity. Identical at
- * record-time and gate-time. Slippage and provider are deliberately EXCLUDED
- * (slippage tweaks must not invalidate the safety preview; provider derives
+ * record-time and gate-time. `provider` is deliberately EXCLUDED (it derives
  * from family). Exported so the gate reuses the EXACT function.
  *
  * Stage 8c: the material is prefixed with the `kind` discriminant tag and then
  * the kind-specific fields in a FIXED order, so a swap and a bridge with
  * otherwise-similar values produce different digests (Codex requirement #4).
- *   - swap   : ["swap", sessionId, family, chainId|"", wallet, tokenIn, tokenOut, amount]
+ *   - swap   : ["swap", sessionId, family, chainId|"", wallet, tokenIn, tokenOut,
+ *               amount, recipient, approveExact, slippageBps]
  *   - bridge : ["bridge", sessionId, sourceFamily, destFamily, fromChainId,
  *               toChainId, sourceWallet, recipient, fromToken, toToken, amount,
  *               tradeType, refundTo, referrer, referrerFeeBps, filler]
  * EVM addresses/tokens lowercase; Solana mints case-preserved; amount via
- * `canonAmount`. The source family canonicalizes `sourceWallet`/`fromToken`/
- * `refundTo`; the dest family canonicalizes `recipient`/`toToken` (derived from
- * each chain id). The money/fee tail (FIXED order, appended after `tradeType`):
- * `refundTo` (source-family address), `referrer` (EVM → lowercase), the already-
- * canonical `referrerFeeBps` integer string, and `filler` (opaque provider name,
+ * `canonAmount`.
+ *
+ * Stage 9 swap tail (FIXED order, appended after `amount`): `recipient`
+ * (family-canonical address — where the output lands), `approveExact` (stable
+ * "1"/"0" allowance token), and `slippageBps` (integer string, or "" when
+ * omitted). The recorder defaults `recipient`/`approveExact` to the executor's
+ * omitted-value defaults (self / false) since the quote can't carry them, so a
+ * quote↔execute that both omit them collide; an execute that redirects the
+ * output or flips approveExact, or quotes 50bps then executes 10000bps,
+ * diverges → block.
+ *
+ * Bridge: the source family canonicalizes `sourceWallet`/`fromToken`/`refundTo`;
+ * the dest family canonicalizes `recipient`/`toToken` (derived from each chain
+ * id). The money/fee tail (FIXED order, appended after `tradeType`): `refundTo`
+ * (source-family address), `referrer` (EVM → lowercase), the already-canonical
+ * `referrerFeeBps` integer string, and `filler` (opaque provider name,
  * case-preserved). Omitted money/fee fields are "" so a quote↔execute that both
  * omit them still collide.
  */
@@ -235,6 +306,11 @@ function swapHashMaterial(input: SwapMatchInput): string {
     canonAddress(input.family, input.tokenIn),
     canonAddress(input.family, input.tokenOut),
     canonAmount(input.amount),
+    // Stage 9 tail (FIXED order): recipient (family-canonical address),
+    // approveExact (stable "1"/"0"), slippageBps (integer string or "").
+    canonAddress(input.family, input.recipient),
+    input.approveExact ? "1" : "0",
+    input.slippageBps,
   ].join(" ");
 }
 
@@ -451,11 +527,15 @@ interface LegVerdictDetail {
 }
 
 /**
- * Per-leg EVM verdict + bounded detail. Mirrors the hard-abort in
- * `executeKyberSwap`: honeypot OR (FoT && tax > 50) → fail. FoT with tax <= 50
- * is info-only (NOT a fail — the model decides on fee-bearing tokens). A
- * checkFailed or malformed leg is fail-closed → unknown. Native does not worsen
- * the verdict (treated as pass at the leg level; aggregation ignores it anyway).
+ * Per-leg EVM verdict + bounded detail. Mirrors the ONE hard-abort in
+ * `executeKyberSwap`: a CONFIRMED honeypot (`isHoneypot === true`) → fail. Per
+ * owner doctrine that is the ONLY hard safety block for a swap — fee-on-transfer
+ * / high tax is NOT a fail (the model decides on fee-bearing tokens, even in
+ * full-autonomous + full-agent modes). The bounded detail STILL discloses
+ * `{ isHoneypot, isFOT, tax }` so the model/human can see the fee-on-transfer in
+ * the quote output (the verdict softens, the disclosure does not). A checkFailed
+ * or malformed leg is fail-closed → unknown. Native does not worsen the verdict
+ * (treated as pass at the leg level; aggregation ignores it anyway).
  */
 function evmLegVerdict(leg: EvmLeg): LegVerdictDetail {
   if ("native" in leg) {
@@ -466,9 +546,8 @@ function evmLegVerdict(leg: EvmLeg): LegVerdictDetail {
     const reason = EVM_CHECK_FAILED_REASONS.has(leg.reason) ? leg.reason : "unavailable";
     return { verdict: "unknown", detail: { checkFailed: true, reason } };
   }
-  const isHardFail = leg.isHoneypot || (leg.isFOT && leg.tax > 50);
   return {
-    verdict: isHardFail ? "fail" : "pass",
+    verdict: leg.isHoneypot ? "fail" : "pass",
     detail: { isHoneypot: leg.isHoneypot, isFOT: leg.isFOT, tax: leg.tax },
   };
 }
@@ -717,6 +796,13 @@ async function recordSwapPrequote(
     return;
   }
 
+  // Stage 9: bind the execute-only money/safety leg. The QUOTE carries none of
+  // recipient/approveExact, so default them to what the executor uses when they
+  // are omitted (output-to-self == the resolved selected wallet; approveExact
+  // false). `slippageBps` is read from the QUOTE PARAMS (not the echoed quote
+  // response) so it stays in lockstep with the gate, which reads it from the
+  // execute params. Solana has no recipient/approveExact concept — self/false
+  // are inert constants there.
   const matchHash = computePrequoteMatchHash({
     kind: "swap",
     sessionId,
@@ -726,6 +812,9 @@ async function recordSwapPrequote(
     tokenIn: extracted.tokenIn,
     tokenOut: extracted.tokenOut,
     amount: extracted.amount,
+    recipient: walletAddress,
+    approveExact: false,
+    slippageBps: canonSlippageBps(readParamSlippageBps(params)),
   });
 
   const input: CreatePrequoteInput = {
@@ -857,12 +946,21 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
 
 /**
  * Single gate decision. `allow` carries the matched prequote's verdict +
- * id (the verdict rides to the approval preview). `block` carries a BOUNDED
- * structural `reason` (for the log) and an agent-facing `message`. No row
- * contents, addresses, or raw error text appear in either field.
+ * id (the verdict rides to the approval preview) and, when the matched quote
+ * had a fee-on-transfer EVM leg, the bounded `fotTax` (max FoT tax percent
+ * across the legs) so the restricted-mode approval preview can disclose it —
+ * FoT is no longer a verdict `fail`, so without this a high-tax token would
+ * read as a plain "pass". `block` carries a BOUNDED structural `reason` (for
+ * the log) and an agent-facing `message`. No row contents, addresses, or raw
+ * error text appear in any field.
  */
 export type GateDecision =
-  | { readonly kind: "allow"; readonly verdict: SafetyVerdict; readonly prequoteId: string }
+  | {
+      readonly kind: "allow";
+      readonly verdict: SafetyVerdict;
+      readonly prequoteId: string;
+      readonly fotTax?: number;
+    }
   | { readonly kind: "block"; readonly reason: GateBlockReason; readonly message: string };
 
 /** Bounded reason class for a gate block — never raw provider/DB/wallet text. */
@@ -914,6 +1012,34 @@ function block(reason: GateBlockReason, kind: PrequoteKind): GateDecision {
   return { kind: "block", reason, message: messages[reason] };
 }
 
+/**
+ * Extract the max fee-on-transfer tax (percent) across a matched prequote's EVM
+ * legs from its bounded `safetyDetail`, for the restricted-mode approval preview.
+ *
+ * The EVM `safetyDetail` shape (built by `recordSwapPrequote`) is
+ * `{ tokenIn: leg, tokenOut: leg }`, where a non-native, checked leg is
+ * `{ isHoneypot, isFOT, tax }`. Per owner doctrine FoT is no longer a verdict
+ * `fail`, so a high-tax token reaches the ALLOW path as `pass`; the human still
+ * needs to SEE the tax, so we surface it through the typed channel.
+ *
+ * Defensive: the row's `safetyDetail` is `Record<string, unknown>` (it round-
+ * trips through the DB as JSONB), so every field is treated as untrusted and
+ * narrowed. Bridge/Solana details have no `isFOT`/`tax` leg shape, so they
+ * naturally yield `undefined`. Returns the MAX FoT tax across legs that are
+ * `isFOT === true && tax > 0`, or `undefined` when there is no such leg.
+ */
+function maxFotTaxFromSafetyDetail(safetyDetail: Record<string, unknown>): number | undefined {
+  let max: number | undefined;
+  for (const legValue of Object.values(safetyDetail)) {
+    if (typeof legValue !== "object" || legValue === null) continue;
+    const leg = legValue as Record<string, unknown>;
+    if (leg.isFOT !== true) continue;
+    const tax = typeof leg.tax === "number" && Number.isFinite(leg.tax) ? leg.tax : 0;
+    if (tax > 0 && (max === undefined || tax > max)) max = tax;
+  }
+  return max;
+}
+
 /** A thrown identity-build error that already names its block reason. */
 class GateIdentityError extends Error {
   constructor(readonly gateReason: GateBlockReason) {
@@ -922,13 +1048,25 @@ class GateIdentityError extends Error {
   }
 }
 
-/** EVM trade identity for the match-hash. `chainId` is the numeric chain id. */
+/**
+ * Swap execute trade identity for the match-hash. `chainId` is the numeric chain
+ * id (null for Solana). `recipient`/`approveExact` are the Stage-9 money/safety
+ * leg: the EVM builder reads them from the execute params (mirroring
+ * `executeKyberSwap`'s `str(p,"recipient") || signer.address` and
+ * `p.approveExact === true`); the Solana builder pins self/false (Jupiter has no
+ * such params). `slippageBps` is bound separately in `computeGateMatch` (read
+ * uniformly from the execute params for both families, matching the recorder).
+ */
 interface GateIdentity {
   readonly family: PrequoteFamily;
   readonly chainId: number | null;
   readonly tokenIn: string;
   readonly tokenOut: string;
   readonly amount: string;
+  /** Output recipient (execute param if non-empty, else the selected wallet). */
+  readonly recipient: string;
+  /** Allowance behavior — true iff the execute set `approveExact`. */
+  readonly approveExact: boolean;
 }
 
 /**
@@ -945,8 +1083,17 @@ function evmLegIdentity(param: string): string {
   throw new GateIdentityError("unresolved_token");
 }
 
-/** Build the EVM trade identity from validated execute params. Throws on a bare symbol. */
-function buildEvmIdentity(params: Record<string, unknown>): GateIdentity {
+/**
+ * Build the EVM trade identity from validated execute params. Throws on a bare
+ * symbol. `selectedWallet` is the resolved signer (output-to-self default).
+ *
+ * Stage 9: `recipient` mirrors `executeKyberSwap` — `str(p,"recipient")` if a
+ * non-empty string, else the selected wallet (self). `approveExact` mirrors
+ * `p.approveExact === true`. Both flow into the swap hash, so an execute that
+ * redirects the output or flips the allowance behavior produces a different
+ * digest than the quote (which defaulted self/false) → the gate blocks.
+ */
+function buildEvmIdentity(params: Record<string, unknown>, selectedWallet: string): GateIdentity {
   const chainParam = typeof params.chain === "string" ? params.chain : "";
   const tokenInParam = typeof params.tokenIn === "string" ? params.tokenIn : "";
   const tokenOutParam = typeof params.tokenOut === "string" ? params.tokenOut : "";
@@ -954,12 +1101,15 @@ function buildEvmIdentity(params: Record<string, unknown>): GateIdentity {
   // resolveChainSlug + slugToChainId are local (no network); an unsupported
   // chain throws a VexError → caught upstream → gate_error block (fail-closed).
   const chainId = slugToChainId(resolveChainSlug(chainParam));
+  const recipientParam = typeof params.recipient === "string" ? params.recipient.trim() : "";
   return {
     family: "eip155",
     chainId,
     tokenIn: evmLegIdentity(tokenInParam),
     tokenOut: evmLegIdentity(tokenOutParam),
     amount,
+    recipient: recipientParam !== "" ? recipientParam : selectedWallet,
+    approveExact: params.approveExact === true,
   };
 }
 
@@ -969,8 +1119,16 @@ function buildEvmIdentity(params: Record<string, unknown>): GateIdentity {
  * `executeJupiterSwap` uses (`requireJupiterResolvedToken`, which returns
  * `.address` = mint) so the gate mint matches the recorded mint. A resolve
  * failure throws → caught upstream → gate_error block.
+ *
+ * Stage 9: Jupiter execute has no recipient/approveExact param — pin `recipient`
+ * to the selected wallet (self) and `approveExact` to false, matching the
+ * recorder's Solana constants. (If Jupiter ever gained such params, treat them
+ * like EVM — read from the execute params here.)
  */
-async function buildSolanaIdentity(params: Record<string, unknown>): Promise<GateIdentity> {
+async function buildSolanaIdentity(
+  params: Record<string, unknown>,
+  selectedWallet: string,
+): Promise<GateIdentity> {
   const inputParam = typeof params.inputToken === "string" ? params.inputToken : "";
   const outputParam = typeof params.outputToken === "string" ? params.outputToken : "";
   const [inToken, outToken] = await Promise.all([
@@ -983,6 +1141,8 @@ async function buildSolanaIdentity(params: Record<string, unknown>): Promise<Gat
     tokenIn: inToken.address,
     tokenOut: outToken.address,
     amount: String(params.amount),
+    recipient: selectedWallet,
+    approveExact: false,
   };
 }
 
@@ -1034,14 +1194,17 @@ async function computeGateMatch(
   }
 
   // Resolve the SELECTED address (never decrypts). A wallet-scope throw
-  // propagates → caught upstream → gate_error block (never fabricate).
+  // propagates → caught upstream → gate_error block (never fabricate). It is
+  // both the signer and the output-to-self recipient default.
   const walletAddress = resolveSelectedAddress(
     context.walletResolution,
     context.walletPolicy,
     gated.family as ChainFamily,
   );
   const identity =
-    gated.family === "eip155" ? buildEvmIdentity(params) : await buildSolanaIdentity(params);
+    gated.family === "eip155"
+      ? buildEvmIdentity(params, walletAddress)
+      : await buildSolanaIdentity(params, walletAddress);
   const matchHash = computePrequoteMatchHash({
     kind: "swap",
     sessionId,
@@ -1051,6 +1214,12 @@ async function computeGateMatch(
     tokenIn: identity.tokenIn,
     tokenOut: identity.tokenOut,
     amount: identity.amount,
+    // Stage 9 money/safety leg — read from the EXECUTE params (recipient/
+    // approveExact via the identity builder; slippageBps read uniformly here,
+    // matching the recorder which reads the quote params).
+    recipient: identity.recipient,
+    approveExact: identity.approveExact,
+    slippageBps: canonSlippageBps(readParamSlippageBps(params)),
   });
   return { matchHash, family: gated.family };
 }
@@ -1105,7 +1274,14 @@ export async function evaluatePrequoteGate(
         matchHashPrefix: matchHash.slice(0, 8),
       });
     }
-    return { kind: "allow", verdict: latest.safetyVerdict, prequoteId: latest.prequoteId };
+    // Surface a fee-on-transfer tax (if any) so the restricted-mode approval
+    // preview can disclose it — FoT is no longer a verdict `fail` (only a
+    // confirmed honeypot blocks), so without this a high-tax token reads as a
+    // plain "pass". Sourced from the matched row's bounded `safetyDetail`, not
+    // raw args. Bridge/Solana details have no FoT leg → undefined (omitted).
+    const fotTax = maxFotTaxFromSafetyDetail(latest.safetyDetail);
+    const allow: GateDecision = { kind: "allow", verdict: latest.safetyVerdict, prequoteId: latest.prequoteId };
+    return fotTax !== undefined ? { ...allow, fotTax } : allow;
   } catch (err) {
     const reason =
       err instanceof GateIdentityError

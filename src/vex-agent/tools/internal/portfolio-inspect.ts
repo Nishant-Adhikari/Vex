@@ -1,10 +1,10 @@
 /**
  * Portfolio inspect — DB-backed read-only self-inspection tool.
  *
- * 14 views across 4 families:
+ * 15 views across 4 families:
  *   Trading: lots, profits, unrealized
  *   Positions: open_positions, closed_positions, orders
- *   Activity: activity, bridges, lp_history, non_trading_history
+ *   Activity: activity, bridges, lp_history, non_trading_history, transactions
  *   Portfolio: summary, balances, snapshots, executions
  *
  * View implementations in inspect-views/*.ts — this file is the router only.
@@ -21,13 +21,14 @@ import { inspectLots, inspectProfits, inspectUnrealized } from "./inspect-views/
 import { inspectOpenPositions, inspectClosedPositions, inspectOrders } from "./inspect-views/positions.js";
 // Activity views
 import { inspectActivity, inspectBridges, inspectLpHistory, inspectNonTradingHistory } from "./inspect-views/activity.js";
+import { inspectTransactions } from "./inspect-views/transactions.js";
 // Portfolio views
 import { inspectSummary, inspectBalances, inspectSnapshots, inspectExecutions } from "./inspect-views/portfolio.js";
 
 const VALID_VIEWS = new Set<string>([
   "open_positions", "activity", "executions", "balances", "snapshots", "summary",
   "lots", "profits", "closed_positions", "non_trading_history",
-  "bridges", "lp_history", "orders", "unrealized",
+  "bridges", "lp_history", "orders", "unrealized", "transactions",
 ]);
 
 /**
@@ -40,6 +41,7 @@ const WALLET_SCOPED_VIEWS = new Set<string>([
   "open_positions", "closed_positions", "orders",
   "lots", "profits", "unrealized",
   "activity", "bridges", "lp_history", "non_trading_history",
+  "transactions",
 ]);
 
 export async function handlePortfolio(
@@ -76,6 +78,13 @@ export async function handlePortfolio(
       case "profits": return inspectProfits(addresses, namespace, str(params, "instrumentKey") || undefined, str(params, "groupBy") || undefined);
       case "unrealized": return inspectUnrealized(addresses, namespace);
       case "activity": return inspectActivity(addresses, namespace, productType, limit);
+      case "transactions": return inspectTransactions(addresses, context.sessionId, {
+        productType,
+        namespace,
+        txHash: str(params, "txHash") || undefined,
+        cursor: str(params, "cursor") || undefined,
+        limit,
+      });
       case "bridges": return inspectBridges(addresses, namespace, limit);
       case "lp_history": return inspectLpHistory(addresses, namespace, limit);
       case "non_trading_history": return inspectNonTradingHistory(addresses, namespace, limit);

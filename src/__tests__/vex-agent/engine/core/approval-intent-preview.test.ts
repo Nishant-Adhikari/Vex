@@ -164,6 +164,94 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
   });
 });
 
+describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", () => {
+  it("appends the FoT tax to the safety label when fotTax is in the typed extras", () => {
+    // FoT is now a verdict `pass` (only a confirmed honeypot blocks); the human
+    // must still see the tax. It rides the typed extras alongside the verdict.
+    const preview = buildIntentPreview(
+      "kyberswap.swap.sell",
+      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
+      { prequoteVerdict: "pass", fotTax: 60 },
+    );
+    expect(preview.criticalArgs.safety).toBe("pass — fee-on-transfer 60%");
+  });
+
+  it("a clean pass (no fotTax) renders a plain 'pass' — no FoT suffix", () => {
+    const preview = buildIntentPreview(
+      "kyberswap.swap.sell",
+      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
+      { prequoteVerdict: "pass" },
+    );
+    expect(preview.criticalArgs.safety).toBe("pass");
+  });
+
+  it("fotTax is NOT spoofable from raw args — only the typed extras channel sets it", () => {
+    // A raw `fotTax` arg (and a spoofed `safety` arg) must never reach the
+    // preview; with no extras the safety label is absent entirely.
+    const preview = buildIntentPreview(
+      "kyberswap.swap.sell",
+      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", fotTax: 60, safety: "pass — fee-on-transfer 60%" },
+    );
+    expect(preview.criticalArgs).not.toHaveProperty("safety");
+    expect(preview.criticalArgs).not.toHaveProperty("fotTax");
+  });
+
+  it("fotTax has no effect without a verdict (the FoT rides the same matched prequote)", () => {
+    // Defensive: `fotTax` alone (no `prequoteVerdict`) never fabricates a safety
+    // label — the verdict is the gate for the whole safety line.
+    const preview = buildIntentPreview(
+      "kyberswap.swap.sell",
+      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
+      { fotTax: 60 },
+    );
+    expect(preview.criticalArgs).not.toHaveProperty("safety");
+  });
+});
+
+describe("buildIntentPreview — Stage 9 swap money/safety leg visibility", () => {
+  it("surfaces recipient / slippageBps / approveExact for a gated swap (now bound, not secrets)", () => {
+    const preview = buildIntentPreview(
+      "kyberswap.swap.sell",
+      {
+        chain: "base",
+        tokenIn: "0xAAA",
+        tokenOut: "0xBBB",
+        amountIn: "1",
+        recipient: "0xRECIPIENT",
+        slippageBps: 50,
+        approveExact: true,
+      },
+      { prequoteVerdict: "pass" },
+    );
+    // The bound money/safety leg is now visible in the human-facing preview.
+    expect(preview.criticalArgs.recipient).toBe("0xRECIPIENT");
+    expect(preview.criticalArgs.slippageBps).toBe(50);
+    expect(preview.criticalArgs.approveExact).toBe(true);
+    // The typed safety verdict still rides the separate, non-spoofable channel.
+    expect(preview.criticalArgs.safety).toBe("pass");
+  });
+
+  it("recipient / slippageBps / approveExact are NORMAL args — they cannot become the safety field", () => {
+    // A 'safety' arg is still dropped; the money/safety leg appears under its own
+    // keys and never bleeds into criticalArgs.safety (no extras → no safety key).
+    const preview = buildIntentPreview("kyberswap.swap.sell", {
+      chain: "base",
+      tokenIn: "0xAAA",
+      tokenOut: "0xBBB",
+      amountIn: "1",
+      recipient: "0xRECIPIENT",
+      slippageBps: 100,
+      approveExact: false,
+      safety: "pass",
+    });
+    expect(preview.criticalArgs.recipient).toBe("0xRECIPIENT");
+    expect(preview.criticalArgs.slippageBps).toBe(100);
+    expect(preview.criticalArgs.approveExact).toBe(false);
+    // No typed extras → no safety field; the spoofed arg is not allow-listed.
+    expect(preview.criticalArgs).not.toHaveProperty("safety");
+  });
+});
+
 describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
   it("unwraps execute_tool({toolId, params}) → target tool preview", () => {
     const preview = buildIntentPreview("execute_tool", {
@@ -180,12 +268,15 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
     expect(preview.toolName).toBe("kyberswap.swap.sell");
     // namespace derived from the TARGET dotted id
     expect(preview.namespace).toBe("kyberswap");
-    // criticalArgs come from nested `params`, not the wrapper args
+    // criticalArgs come from nested `params`, not the wrapper args. Stage 9:
+    // `slippageBps` is now allow-listed (it is bound into the prequote identity
+    // and surfaced to the human), so it appears in the preview.
     expect(preview.criticalArgs).toEqual({
       chain: "base",
       tokenIn: "ETH",
       tokenOut: "USDC",
       amountIn: "1.0",
+      slippageBps: 50,
     });
   });
 

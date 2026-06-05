@@ -127,18 +127,32 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
   const tokenIn = await resolveTokenMetadataStrict(tokenInRaw, chainId);
   const tokenOut = await resolveTokenMetadataStrict(tokenOutRaw, chainId);
 
-  // Token safety gate — check honeypot + FoT/tax for non-native tokens (R8)
+  // Token safety gate — the ONLY hard block here is a CONFIRMED honeypot
+  // (owner doctrine). FoT/high-tax is warn-only (the model decides, even in
+  // full-autonomous + full-agent modes). The check call is fail-SOFT: a THROW
+  // means the safety check is UNAVAILABLE (API down / 429 / timeout), which the
+  // prequote gate already recorded as 'unknown' and allowed per doctrine — so a
+  // transient external-API failure must NOT abort a legit trade. We emit ONE
+  // bounded structural warn (a reason CLASS only — never raw provider/HTTP text)
+  // and PROCEED. Confirmed honeypot caught here (even if the quote's check was
+  // down) STILL aborts — that is the one hard gate.
   if (!tokenIn.isNative) {
-    const inCheck = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, tokenIn.address);
-    if (inCheck.isHoneypot) return fail(`Token ${tokenIn.symbol} (${tokenIn.address}) flagged as honeypot. Aborting swap.`);
-    if (inCheck.isFOT && inCheck.tax > 50) return fail(`Token ${tokenIn.symbol} has ${inCheck.tax}% fee-on-transfer tax — likely a scam. Aborting.`);
-    if (inCheck.isFOT && inCheck.tax > 0) logger.warn("kyberswap.swap.fot_warning", { token: tokenIn.symbol, address: tokenIn.address, tax: inCheck.tax });
+    try {
+      const inCheck = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, tokenIn.address);
+      if (inCheck.isHoneypot) return fail(`Token ${tokenIn.symbol} (${tokenIn.address}) flagged as honeypot. Aborting swap.`);
+      if (inCheck.isFOT && inCheck.tax > 0) logger.warn("kyberswap.swap.fot_warning", { token: tokenIn.symbol, address: tokenIn.address, tax: inCheck.tax });
+    } catch (err) {
+      logger.warn("kyberswap.swap.safety_check_failed", { address: tokenIn.address, reason: classifySafetyCheckFailure(err) });
+    }
   }
   if (!tokenOut.isNative) {
-    const outCheck = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, tokenOut.address);
-    if (outCheck.isHoneypot) return fail(`Token ${tokenOut.symbol} (${tokenOut.address}) flagged as honeypot. Aborting swap.`);
-    if (outCheck.isFOT && outCheck.tax > 50) return fail(`Token ${tokenOut.symbol} has ${outCheck.tax}% fee-on-transfer tax — likely a scam. Aborting.`);
-    if (outCheck.isFOT && outCheck.tax > 0) logger.warn("kyberswap.swap.fot_warning", { token: tokenOut.symbol, address: tokenOut.address, tax: outCheck.tax });
+    try {
+      const outCheck = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, tokenOut.address);
+      if (outCheck.isHoneypot) return fail(`Token ${tokenOut.symbol} (${tokenOut.address}) flagged as honeypot. Aborting swap.`);
+      if (outCheck.isFOT && outCheck.tax > 0) logger.warn("kyberswap.swap.fot_warning", { token: tokenOut.symbol, address: tokenOut.address, tax: outCheck.tax });
+    } catch (err) {
+      logger.warn("kyberswap.swap.safety_check_failed", { address: tokenOut.address, reason: classifySafetyCheckFailure(err) });
+    }
   }
   const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
 

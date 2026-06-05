@@ -203,6 +203,7 @@ export async function executeProtocolTool(
   // Fail-closed: any error → BLOCK. On ALLOW it yields the matched prequote's
   // safety verdict, carried to the approval preview (R5; bridge is 'unknown').
   let prequoteVerdict: SafetyVerdict | undefined;
+  let prequoteFotTax: number | undefined;
   if (request.toolId in EXECUTE_GATE_TOOLS && !isPreviewExecution(request.toolId, params)) {
     const decision = await evaluatePrequoteGate(request.toolId, params, scopedContext);
     if (decision.kind === "block") {
@@ -213,6 +214,8 @@ export async function executeProtocolTool(
       return withActionKind({ success: false, output: decision.message }, effectiveActionKind);
     }
     prequoteVerdict = decision.verdict;
+    // Fee-on-transfer tax (if any) rides the same TYPED channel for the preview.
+    prequoteFotTax = decision.fotTax;
   }
 
   // Approval gate — mutating tools require approval under restricted permission.
@@ -221,14 +224,19 @@ export async function executeProtocolTool(
     logger.info("protocol.execute.approval_required", { toolId: request.toolId, permission: context.sessionPermission });
     // Carry the gate-matched prequote verdict to the restricted-mode approval
     // preview via the TYPED `prequote` field (NOT raw args) so the human sees
-    // the safety verdict — especially `unknown` — before approving (R5).
+    // the safety verdict — especially `unknown` — before approving (R5). A
+    // fee-on-transfer tax (when the gate provided one) rides the same typed
+    // field so the human still sees a high tax even though FoT is now `pass`.
     const pending: ToolResult = {
       success: false,
       output: `${request.toolId} requires approval — mutating tool in restricted permission mode.`,
       pendingApproval: true,
     };
     if (prequoteVerdict !== undefined) {
-      pending.prequote = { verdict: prequoteVerdict };
+      pending.prequote =
+        prequoteFotTax !== undefined
+          ? { verdict: prequoteVerdict, fotTax: prequoteFotTax }
+          : { verdict: prequoteVerdict };
     }
     return withActionKind(pending, effectiveActionKind);
   }

@@ -38,6 +38,13 @@ const PREVIEW_KEY_ALLOWLIST: ReadonlySet<string> = new Set([
   "amount",
   "amountIn",
   "amountUsdc",
+  // Stage 9: swap money/safety leg now BOUND into the prequote identity (it
+  // cannot change post-quote). These are normal args, not secrets — surface
+  // them so a restricted-mode approval shows where the output lands, the
+  // slippage tolerance, and the allowance behavior. (`recipient` is already
+  // allow-listed above.)
+  "slippageBps",
+  "approveExact",
   "chain",
   "chainId",
   "network",
@@ -105,6 +112,15 @@ export interface IntentPreview {
 export interface IntentPreviewExtras {
   /** Matched prequote safety verdict for a gated swap execute (`pass`/`unknown`). */
   prequoteVerdict?: SafetyVerdict;
+  /**
+   * Fee-on-transfer tax (percent) of the matched prequote, when any EVM leg is
+   * a fee-on-transfer token. Stage 9 doctrine: FoT is no longer a verdict
+   * `fail` (only a confirmed honeypot blocks), so a high-tax token reaches the
+   * preview as `pass`; this surfaces the tax alongside the verdict so a
+   * restricted human still sees it. Sourced ONLY from the typed prequote
+   * channel (NOT raw args), so it is unspoofable. Omitted when there is no FoT.
+   */
+  fotTax?: number;
 }
 
 /** Render a swap safety verdict for the approval preview's `criticalArgs.safety`. */
@@ -178,6 +194,14 @@ export function buildIntentPreview(
   // (`safety` is not in PREVIEW_KEY_ALLOWLIST, so the LLM cannot spoof it).
   if (extras?.prequoteVerdict !== undefined) {
     criticalArgs.safety = renderSafetyVerdict(extras.prequoteVerdict);
+    // Stage 9 doctrine: FoT is no longer a verdict `fail`, so append the
+    // fee-on-transfer tax to the safety label when present so a restricted
+    // human still sees a high tax instead of a bare "pass". Sourced ONLY from
+    // the typed `extras.fotTax` (NOT raw args) → unspoofable. The verdict must
+    // be present for an FoT to exist (it rides the same matched prequote).
+    if (extras.fotTax !== undefined && Number.isFinite(extras.fotTax)) {
+      criticalArgs.safety = `${criticalArgs.safety} — fee-on-transfer ${extras.fotTax}%`;
+    }
   }
 
   // Derive namespace from dotted tool name (e.g. "kyberswap.swap.sell" → "kyberswap").

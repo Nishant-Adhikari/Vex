@@ -2,9 +2,11 @@
  * Swap prequote module — Stage 6c unit tests.
  *
  * Pins:
- *   - Verdict (EVM): honeypot→fail, FoT tax>50→fail, FoT tax<=50→pass,
- *     checkFailed→unknown, native→ok, clean→pass, malformed leg→unknown,
- *     worst-leg aggregation.
+ *   - Verdict (EVM): honeypot→fail (the ONLY hard block per owner doctrine),
+ *     FoT tax>50→pass, FoT tax<=50→pass (fee-on-transfer is the model's call,
+ *     not a fail), checkFailed→unknown, native→ok, clean→pass, malformed
+ *     leg→unknown, worst-leg aggregation. safety_detail STILL discloses
+ *     { isHoneypot, isFOT, tax } even though the verdict softened.
  *   - Verdict (Solana): isSus:true→fail, isSus:false→pass, absent entry for
  *     non-native mint→unknown, native/wSOL leg→ok, worst-leg aggregation.
  *   - Match-hash: determinism; EVM lowercases address+wallet; Solana preserves
@@ -171,8 +173,9 @@ describe("verdict — EVM (kyberswap.swap.quote)", () => {
     expect(verdictOf({ isHoneypot: true, isFOT: false, tax: 0 }, { native: true })).toBe("fail");
   });
 
-  it("FoT with tax > 50 → fail", () => {
-    expect(verdictOf({ isHoneypot: false, isFOT: true, tax: 60 }, { native: true })).toBe("fail");
+  it("FoT with tax > 50 → pass (owner doctrine: only a confirmed honeypot is a hard block)", () => {
+    expect(verdictOf({ isHoneypot: false, isFOT: true, tax: 60 }, { native: true })).toBe("pass");
+    expect(verdictOf({ isHoneypot: false, isFOT: true, tax: 9999 }, { native: true })).toBe("pass");
   });
 
   it("FoT with tax <= 50 → pass (info-only, not a fail)", () => {
@@ -220,6 +223,16 @@ describe("verdict — EVM (kyberswap.swap.quote)", () => {
     ).toBe("unknown");
   });
 
+  it("worst-leg aggregation: clean + FoT(any tax, not honeypot) → pass (no longer a fail)", () => {
+    // A non-honeypot FoT leg no longer worsens the verdict, regardless of tax.
+    expect(
+      verdictOf({ isHoneypot: false, isFOT: false, tax: 0 }, { isHoneypot: false, isFOT: true, tax: 80 }),
+    ).toBe("pass");
+    expect(
+      verdictOf({ isHoneypot: false, isFOT: true, tax: 51 }, { isHoneypot: false, isFOT: false, tax: 0 }),
+    ).toBe("pass");
+  });
+
   it("worst-leg aggregation: fail dominates unknown", () => {
     expect(
       verdictOf({ checkFailed: true, reason: "timeout" }, { isHoneypot: true, isFOT: false, tax: 0 }),
@@ -234,6 +247,21 @@ describe("verdict — EVM (kyberswap.swap.quote)", () => {
     );
     expect(extracted?.safetyDetail).toEqual({
       tokenIn: { isHoneypot: false, isFOT: true, tax: 12 },
+      tokenOut: { native: true },
+    });
+  });
+
+  it("safety_detail STILL discloses a high-tax FoT leg even though the verdict is now pass", () => {
+    // The verdict softens (pass), but the disclosure must NOT — the model/human
+    // still sees the fee-on-transfer in the quote output.
+    const extracted = mod.extractQuote(
+      "kyberswap.swap.quote",
+      { amountIn: "1" },
+      evmResult({ isHoneypot: false, isFOT: true, tax: 75 }, { native: true }),
+    );
+    expect(extracted?.verdict).toBe("pass");
+    expect(extracted?.safetyDetail).toEqual({
+      tokenIn: { isHoneypot: false, isFOT: true, tax: 75 },
       tokenOut: { native: true },
     });
   });
@@ -339,6 +367,11 @@ describe("computePrequoteMatchHash", () => {
     tokenIn: EVM_TOKEN_IN,
     tokenOut: EVM_TOKEN_OUT,
     amount: "1.0",
+    // Stage 9 money/safety leg — recorder defaults (output-to-self / no
+    // approveExact / slippage omitted).
+    recipient: "0xWALLET",
+    approveExact: false,
+    slippageBps: "",
   };
 
   it("is deterministic", () => {
@@ -370,6 +403,9 @@ describe("computePrequoteMatchHash", () => {
       tokenIn: SOLANA_MINT_A,
       tokenOut: SOL_MINT,
       amount: "1",
+      recipient: "SolWalletAddr",
+      approveExact: false,
+      slippageBps: "",
     };
     const original = mod.computePrequoteMatchHash(solBase);
     const lowered = mod.computePrequoteMatchHash({ ...solBase, tokenIn: SOLANA_MINT_A.toLowerCase() });
@@ -421,10 +457,38 @@ describe("computePrequoteMatchHash", () => {
           EVM_TOKEN_IN.toLowerCase(),
           EVM_TOKEN_OUT.toLowerCase(),
           "1",
+          // Stage 9 tail: recipient (family-canonical), approveExact "1"/"0",
+          // slippageBps integer string or "".
+          "0xwallet",
+          "0",
+          "",
         ].join(" "),
       )
       .digest("hex");
     expect(mod.computePrequoteMatchHash(base)).toBe(expected);
+  });
+
+  // ── Stage 9 — recipient / approveExact / slippageBps sensitivity ──────────
+
+  it("a different recipient changes the swap hash", () => {
+    const h = mod.computePrequoteMatchHash(base);
+    expect(mod.computePrequoteMatchHash({ ...base, recipient: "0xATTACKER" })).not.toBe(h);
+    // recipient is family-canonical for EVM (case-insensitive).
+    expect(mod.computePrequoteMatchHash({ ...base, recipient: "0xWALLET".toUpperCase() })).toBe(h);
+  });
+
+  it("flipping approveExact changes the swap hash", () => {
+    const h = mod.computePrequoteMatchHash(base);
+    expect(mod.computePrequoteMatchHash({ ...base, approveExact: true })).not.toBe(h);
+  });
+
+  it("a different slippageBps changes the swap hash; omitted ('') is its own token", () => {
+    const omitted = mod.computePrequoteMatchHash(base); // slippageBps: ""
+    const fifty = mod.computePrequoteMatchHash({ ...base, slippageBps: "50" });
+    const tenK = mod.computePrequoteMatchHash({ ...base, slippageBps: "10000" });
+    expect(fifty).not.toBe(omitted);
+    expect(tenK).not.toBe(fifty);
+    expect(tenK).not.toBe(omitted);
   });
 });
 
@@ -459,6 +523,8 @@ describe("recordPrequoteFromQuote", () => {
     expect(typeof input.prequoteId).toBe("string");
     expect(String(input.prequoteId).startsWith("prequote-")).toBe(true);
     // match_hash must equal the exported pure function on the SAME identity.
+    // Stage 9: the recorder defaults recipient → the resolved wallet (self) and
+    // approveExact → false, and reads slippageBps from the QUOTE params (30 here).
     expect(input.matchHash).toBe(
       mod.computePrequoteMatchHash({
         kind: "swap",
@@ -469,6 +535,9 @@ describe("recordPrequoteFromQuote", () => {
         tokenIn: EVM_TOKEN_IN,
         tokenOut: EVM_TOKEN_OUT,
         amount: "1.0",
+        recipient: evmWallet,
+        approveExact: false,
+        slippageBps: "30",
       }),
     );
     // expires_at is in the future.
@@ -684,6 +753,9 @@ describe("evaluateSwapPrequoteGate", () => {
     const hashFromSentinel = mockFindLatest.mock.calls[0]![1];
     expect(hashFromKeyword).toBe(hashFromSentinel);
     // And both equal the recorder-side hash for a native-sentinel leg.
+    // Stage 9: the EVM_PARAMS carry no recipient/approveExact/slippageBps, so the
+    // gate defaults recipient → the selected wallet (self), approveExact → false,
+    // slippageBps → "" (omitted), matching the recorder's quote-time defaults.
     expect(hashFromKeyword).toBe(
       mod.computePrequoteMatchHash({
         kind: "swap",
@@ -694,6 +766,9 @@ describe("evaluateSwapPrequoteGate", () => {
         tokenIn: NATIVE_TOKEN_ADDRESS,
         tokenOut: GATE_TOKEN_OUT,
         amount: "1",
+        recipient: "0xWALLET",
+        approveExact: false,
+        slippageBps: "",
       }),
     );
   });
@@ -724,6 +799,9 @@ describe("evaluateSwapPrequoteGate", () => {
       tokenIn: GATE_TOKEN_IN,
       tokenOut: GATE_TOKEN_OUT,
       amount: "1",
+      recipient: "0xWALLET",
+      approveExact: false,
+      slippageBps: "",
     });
     await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
     expect(mockFindLatest.mock.calls[0]![1]).toBe(matchHash);
@@ -752,6 +830,8 @@ describe("evaluateSwapPrequoteGate", () => {
     );
     expect(d.kind).toBe("allow");
     // Hash must equal the recorder hash for the RESOLVED mint (not the symbol).
+    // Stage 9: Solana pins recipient → self, approveExact → false; slippageBps
+    // omitted ("") here as the execute params carry none.
     const expected = mod.computePrequoteMatchHash({
       kind: "swap",
       sessionId: SESSION_ID,
@@ -761,6 +841,9 @@ describe("evaluateSwapPrequoteGate", () => {
       tokenIn: SOLANA_MINT_A,
       tokenOut: SOL_MINT,
       amount: "1",
+      recipient: "0xWALLET",
+      approveExact: false,
+      slippageBps: "",
     });
     expect(mockFindLatest.mock.calls[0]![1]).toBe(expected);
     expect(mockFindLatest.mock.calls[0]![2]).toBe("swap");
@@ -821,5 +904,109 @@ describe("evaluateSwapPrequoteGate", () => {
       ctx(),
     );
     expect(d.kind === "block" && d.reason).toBe("gate_error");
+  });
+
+  // ── Stage 9 EXPLOIT GUARDS — recipient / approveExact / slippageBps binding ─
+  //
+  // The recorder defaults a swap QUOTE's recipient → the resolved wallet (self),
+  // approveExact → false, and reads slippageBps from the quote params. The gate
+  // reads recipient/approveExact/slippageBps from the EXECUTE params. A recorded
+  // quote (defaulted self / false / omitted) must NOT authorize an execute that
+  // redirects the output, flips approveExact, or changes slippage.
+
+  /** Record from a QUOTE then return the recorded match-hash (recorder ≡ gate proof). */
+  async function recordedSwapHash(quoteParams: Record<string, unknown>): Promise<string> {
+    resetMocks();
+    await mod.recordPrequoteFromQuote(
+      "kyberswap.swap.quote",
+      quoteParams,
+      evmResult({ isHoneypot: false, isFOT: false, tax: 0 }, { isHoneypot: false, isFOT: false, tax: 0 }),
+      ctx(),
+    );
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    return (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
+  }
+
+  /** Drive the gate with EXECUTE params; capture the gate hash + the decision. */
+  async function gateHashAndDecision(
+    executeParams: Record<string, unknown>,
+    recordedHash: string,
+  ): Promise<{ gateHash: string; decision: Awaited<ReturnType<typeof mod.evaluateSwapPrequoteGate>> }> {
+    resetMocks();
+    let gateHash = "";
+    // The DB returns a fresh row ONLY when the gate's hash equals the recorded
+    // one — exactly the real session+kind+match lookup semantics.
+    mockFindLatest.mockImplementation(async (_s, h) => {
+      gateHash = h;
+      return h === recordedHash ? prequoteRow("pass", { matchHash: h }) : null;
+    });
+    const decision = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", executeParams, ctx());
+    return { gateHash, decision };
+  }
+
+  it("EXPLOIT(recipient): a quote (no recipient) does NOT authorize an execute with a different recipient → block(no_quote)", async () => {
+    // Quote omits recipient → recorder defaults to the wallet (self).
+    const recordedHash = await recordedSwapHash({ amountIn: "1" });
+
+    // Execute redirects the output to a DIFFERENT address → hash diverges → block.
+    const attacker = "0xcccccccccccccccccccccccccccccccccccccccc";
+    const tampered = await gateHashAndDecision({ ...EVM_PARAMS, recipient: attacker }, recordedHash);
+    expect(tampered.gateHash).not.toBe(recordedHash);
+    expect(tampered.decision.kind).toBe("block");
+    if (tampered.decision.kind === "block") expect(tampered.decision.reason).toBe("no_quote");
+
+    // Execute that OMITS recipient (→ self) collides → allow.
+    const matching = await gateHashAndDecision({ ...EVM_PARAMS }, recordedHash);
+    expect(matching.gateHash).toBe(recordedHash);
+    expect(matching.decision.kind).toBe("allow");
+
+    // Execute that explicitly passes the SELF recipient also collides → allow.
+    const selfExplicit = await gateHashAndDecision({ ...EVM_PARAMS, recipient: "0xWALLET" }, recordedHash);
+    expect(selfExplicit.gateHash).toBe(recordedHash);
+    expect(selfExplicit.decision.kind).toBe("allow");
+  });
+
+  it("EXPLOIT(approveExact): a quote (default false) does NOT authorize an execute with approveExact=true → block(no_quote)", async () => {
+    const recordedHash = await recordedSwapHash({ amountIn: "1" });
+
+    const tampered = await gateHashAndDecision({ ...EVM_PARAMS, approveExact: true }, recordedHash);
+    expect(tampered.gateHash).not.toBe(recordedHash);
+    expect(tampered.decision.kind).toBe("block");
+    if (tampered.decision.kind === "block") expect(tampered.decision.reason).toBe("no_quote");
+
+    // approveExact omitted (or explicitly false) → matches the default → allow.
+    const omitted = await gateHashAndDecision({ ...EVM_PARAMS }, recordedHash);
+    expect(omitted.decision.kind).toBe("allow");
+    const explicitFalse = await gateHashAndDecision({ ...EVM_PARAMS, approveExact: false }, recordedHash);
+    expect(explicitFalse.decision.kind).toBe("allow");
+  });
+
+  it("EXPLOIT(slippage): a 50bps quote does NOT authorize a 10000bps execute → block(no_quote); same slippage → allow", async () => {
+    // Quote pins slippageBps=50.
+    const recordedHash = await recordedSwapHash({ amountIn: "1", slippageBps: 50 });
+
+    // Execute jacks slippage to 10000bps (100%) → hash diverges → block.
+    const tampered = await gateHashAndDecision({ ...EVM_PARAMS, slippageBps: 10000 }, recordedHash);
+    expect(tampered.gateHash).not.toBe(recordedHash);
+    expect(tampered.decision.kind).toBe("block");
+    if (tampered.decision.kind === "block") expect(tampered.decision.reason).toBe("no_quote");
+
+    // Execute with the SAME slippage collides → allow.
+    const matching = await gateHashAndDecision({ ...EVM_PARAMS, slippageBps: 50 }, recordedHash);
+    expect(matching.gateHash).toBe(recordedHash);
+    expect(matching.decision.kind).toBe("allow");
+  });
+
+  it("EXPLOIT(slippage omitted): quote-omitted and execute-omitted slippage collide; a value diverges from omitted", async () => {
+    // Both quote and execute omit slippage → sentinel "" on both sides → allow.
+    const recordedHash = await recordedSwapHash({ amountIn: "1" });
+    const bothOmit = await gateHashAndDecision({ ...EVM_PARAMS }, recordedHash);
+    expect(bothOmit.gateHash).toBe(recordedHash);
+    expect(bothOmit.decision.kind).toBe("allow");
+
+    // Execute that ADDS a slippage to an omitted quote diverges → block.
+    const added = await gateHashAndDecision({ ...EVM_PARAMS, slippageBps: 50 }, recordedHash);
+    expect(added.gateHash).not.toBe(recordedHash);
+    expect(added.decision.kind).toBe("block");
   });
 });

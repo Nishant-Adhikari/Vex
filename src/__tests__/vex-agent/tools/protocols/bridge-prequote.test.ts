@@ -215,6 +215,11 @@ describe("computePrequoteMatchHash — bridge identity", () => {
       tokenIn: EVM_TOKEN,
       tokenOut: SOL_MINT_TOKEN,
       amount: "1000000",
+      // Stage 9 swap tail (irrelevant to the cross-kind non-collision, but the
+      // SwapMatchInput now requires it).
+      recipient: "0xEVMWALLET",
+      approveExact: false,
+      slippageBps: "",
     });
     expect(mod.computePrequoteMatchHash(bridgeBase)).not.toBe(swapHash);
   });
