@@ -33,6 +33,7 @@ import type {
   ToolDefinition,
 } from "./types.js";
 import logger from "@utils/logger.js";
+import { attachStatus, scrubMessage } from "./openrouter/errors.js";
 
 const ZERO_USAGE: InferenceUsage = {
   promptTokens: 0,
@@ -96,9 +97,14 @@ function assembleToolCalls(
         arguments: JSON.parse(entry.argsBuffer) as Record<string, unknown>,
       });
     } catch {
+      // Never log the raw argument JSON — it can carry addresses, amounts, or
+      // other user/transaction content. `JSON.parse`'s own error message also
+      // echoes a fragment of the offending input, so we log a fixed reason +
+      // the arg length only.
       logger.warn("inference.openrouter.malformed_tool_args", {
         name: entry.name,
-        raw: entry.argsBuffer.slice(0, 200),
+        argsLength: entry.argsBuffer.length,
+        reason: "invalid_json",
       });
     }
   }
@@ -238,7 +244,17 @@ export async function runStreamingInference(
         case "error":
           // Provider-reported error: the delta is already emitted above.
           // This is NOT a setup failure, so we never fall back — fail.
-          throw new Error(chunk.errorMessage ?? "stream error");
+          // `errorCode` is OpenRouter's HTTP-status-like error code (e.g. 429,
+          // 502); attach it as the same lean status own-property the
+          // normalizer uses so the mission classifier can auto-retry transient
+          // mid-stream 429/5xx instead of pausing for a human.
+          // Scrub the provider-supplied message through the same redaction
+          // pipeline as normalizeOpenRouterError before surfacing it, so a
+          // token/URL/body embedded in a stream error never reaches logs/UI.
+          throw attachStatus(
+            new Error(scrubMessage(chunk.errorMessage ?? "stream error") ?? "stream error"),
+            chunk.errorCode,
+          );
         case "done":
           // Informational only — assembly happens on generator exhaustion.
           break;

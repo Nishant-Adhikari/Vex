@@ -14,9 +14,12 @@
  * double-spend gate, and this classifier is the second, independent line —
  * both must say "yes" before a run auto-retries.
  *
- * Note the layering: the OpenRouter SDK already retries 429/5xx internally
- * (~60s). An error that still reaches here is therefore a longer outage; the
- * mission auto-retry is a second, longer-horizon layer on top.
+ * Note the layering: the OpenRouter SDK only retries 5XX internally by default
+ * (`retryCodes: ['5XX']`); 429 is NOT retried by the SDK and is owned by this
+ * mission auto-retry layer. `normalizeOpenRouterError` attaches the HTTP status
+ * as a lean `statusCode`/`status` own-property on the error it throws, so a
+ * transient 429/5xx is classified `"transient"` here from the STATUS PROPERTY
+ * (not a message regex) and the run auto-retries instead of pausing.
  */
 
 export type MissionErrorClass = "transient" | "permanent";

@@ -50,6 +50,20 @@ import { extractUsage, parseNonStreamingResponse, processToolCallDelta } from ".
 import { buildOpenRouterParams } from "./openrouter/params.js";
 import { computeRequestCost } from "./openrouter/cost.js";
 
+// ── Pricing parse ────────────────────────────────────────────────
+//
+// OpenRouter `/models` pricing fields are per-TOKEN decimal strings. Convert
+// to per-1M and reject any non-finite result (missing field, non-numeric, NaN,
+// Infinity) so a malformed catalog entry can never propagate NaN into cost
+// math — it becomes `null`, and required prices fall back to 0 at the call site.
+function parsePricePerM(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const perToken = parseFloat(String(raw));
+  if (!Number.isFinite(perToken)) return null;
+  const perM = perToken * 1_000_000;
+  return Number.isFinite(perM) ? perM : null;
+}
+
 // ── Provider ─────────────────────────────────────────────────────
 
 export class OpenRouterProvider implements InferenceProvider {
@@ -217,16 +231,14 @@ export class OpenRouterProvider implements InferenceProvider {
     }
 
     if (found.pricing) {
-      // PublicPricing: prompt/completion are per-TOKEN strings (not per-1M)
-      inputPricePerM = parseFloat(String(found.pricing.prompt)) * 1_000_000;
-      outputPricePerM = parseFloat(String(found.pricing.completion)) * 1_000_000;
-
-      if (found.pricing.inputCacheRead) {
-        cachePricePerM = parseFloat(String(found.pricing.inputCacheRead)) * 1_000_000;
-      }
-      if (found.pricing.internalReasoning) {
-        reasoningPricePerM = parseFloat(String(found.pricing.internalReasoning)) * 1_000_000;
-      }
+      // PublicPricing: prompt/completion are per-TOKEN strings (not per-1M).
+      // A malformed/non-numeric price must NOT poison cost math as NaN — guard
+      // each parse so a bad value falls back to 0 (required prices) or null
+      // (optional prices).
+      inputPricePerM = parsePricePerM(found.pricing.prompt) ?? 0;
+      outputPricePerM = parsePricePerM(found.pricing.completion) ?? 0;
+      cachePricePerM = parsePricePerM(found.pricing.inputCacheRead);
+      reasoningPricePerM = parsePricePerM(found.pricing.internalReasoning);
     }
 
     logger.info("inference.openrouter.config_loaded", {
@@ -266,9 +278,10 @@ export class OpenRouterProvider implements InferenceProvider {
 
     let response: ChatResult;
     try {
+      // `stream: false` selects the non-streaming `ChatResult` overload — no cast.
       response = await this.client.chat.send({
-        chatRequest: params,
-      }) as ChatResult;
+        chatRequest: { ...params, stream: false },
+      });
     } catch (err) {
       throw normalizeOpenRouterError(err, "chat completion");
     }
@@ -286,9 +299,10 @@ export class OpenRouterProvider implements InferenceProvider {
 
     let response: ChatResult;
     try {
+      // `stream: false` selects the non-streaming `ChatResult` overload — no cast.
       response = await this.client.chat.send({
-        chatRequest: params,
-      }) as ChatResult;
+        chatRequest: { ...params, stream: false },
+      });
     } catch (err) {
       throw normalizeOpenRouterError(err, "simple chat completion");
     }
@@ -317,10 +331,11 @@ export class OpenRouterProvider implements InferenceProvider {
       // `signal` is a flattened RequestInit field on the SDK's RequestOptions
       // (takes precedence over the client timeout); it cancels the fetch so a
       // chat-turn "stop generating" tears down the HTTP stream (Stage 9-5a).
+      // `stream: true` selects the `EventStream<ChatStreamChunk>` overload — no cast.
       stream = await this.client.chat.send(
         { chatRequest: { ...params, stream: true } },
         signal ? { signal } : undefined,
-      ) as EventStream<ChatStreamChunk>;
+      );
     } catch (err) {
       throw normalizeOpenRouterError(err, "streaming chat completion");
     }

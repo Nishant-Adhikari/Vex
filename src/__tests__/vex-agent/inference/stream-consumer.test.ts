@@ -226,6 +226,27 @@ describe("runStreamingInference — error chunks (no fallback)", () => {
     await expect(runStreamingInference(provider, MSGS, TOOLS, CFG)).rejects.toThrow("mid-stream reject");
     expect(chatCompletion).not.toHaveBeenCalled();
   });
+
+  it("scrubs URLs/bearer tokens from a provider stream error message and preserves status", async () => {
+    const provider = providerFrom(
+      fromChunks([
+        {
+          type: "error",
+          errorMessage: "Upstream error Bearer tok_live_SECRET at https://api.example.com/v1?token=leak",
+          errorCode: 429,
+        },
+      ]),
+    );
+    const e = (await runStreamingInference(provider, MSGS, TOOLS, CFG).then(
+      () => null,
+      (err: unknown) => err,
+    )) as (Error & { statusCode?: number }) | null;
+    expect(e).toBeInstanceOf(Error);
+    expect(e?.message).not.toContain("tok_live_SECRET");
+    expect(e?.message).not.toContain("https://api.example.com");
+    expect(e?.message).toContain("Upstream error"); // scrubbed, not dropped
+    expect(e?.statusCode).toBe(429); // status own-property still attached for the classifier
+  });
 });
 
 describe("runStreamingInference — fallback to chatCompletion", () => {

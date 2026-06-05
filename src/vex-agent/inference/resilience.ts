@@ -1,7 +1,9 @@
 /**
- * Retry and timeout utilities for inference calls.
+ * Retry and timeout utilities for inference-adjacent calls.
  *
- * Used by OpenRouter fallback paths.
+ * Consumed only by `embeddings/client.ts` (idempotent embedding reads). The
+ * OpenRouter provider does NOT use these — its retry/backoff/timeout are
+ * handled by the `@openrouter/sdk` client config.
  * Never used for writes or streaming — only idempotent reads.
  */
 

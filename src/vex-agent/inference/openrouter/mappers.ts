@@ -148,9 +148,14 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
           arguments: JSON.parse(tc.function.arguments),
         });
       } catch {
+        // Never log the raw argument JSON — it can carry addresses, amounts,
+        // or other user/transaction content. `JSON.parse`'s own error message
+        // also echoes a fragment of the offending input, so we log a fixed
+        // reason + the arg length only.
         logger.warn("inference.openrouter.malformed_tool_args", {
           name: tc.function.name,
-          raw: tc.function.arguments.slice(0, 200),
+          argsLength: tc.function.arguments.length,
+          reason: "invalid_json",
         });
       }
     }
