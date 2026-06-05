@@ -26,6 +26,7 @@ import { getSessionMemoryStats } from "@vex-agent/db/repos/session-memories/inde
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
+import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
 import { buildMemoryStateBanner } from "../prompts/memory-state.js";
 import { MEMORY_BANNER_RECENT_THEMES_LIMIT } from "@vex-agent/memory/policy.js";
 import {
@@ -106,6 +107,35 @@ export async function buildTurnPromptStack(args: {
     });
   }
 
+  // Plan-mode prompt layers (session-scoped). When plan-mode is ON and a plan
+  // exists, inject the advisory "# Active Plan" layer (turn-start snapshot from
+  // hydration). When plan-mode is OFF, surface the one-shot "switched off" note
+  // exactly once (consume the off_notice flag) — a targeted read only on the
+  // off path, so the common (plan-mode-off, no prior plan) case is one cheap
+  // PK lookup that returns null.
+  if (args.context.planMode && args.context.planMd && args.context.planMd.length > 0) {
+    promptOptions.activePlanBlock = buildActivePlanBlock(
+      args.context.planMd,
+      args.context.planAccepted ?? false,
+    );
+  } else if (!args.context.planMode) {
+    try {
+      const { getActivePlan, consumeOffNotice } = await import(
+        "@vex-agent/db/repos/session-plans.js"
+      );
+      const plan = await getActivePlan(args.context.sessionId);
+      if (plan?.offNoticePending) {
+        promptOptions.planOffNotice = PLAN_OFF_NOTICE;
+        await consumeOffNotice(args.context.sessionId);
+      }
+    } catch (err) {
+      logger.warn("turn.plan_off_notice.fetch_failed", {
+        sessionId: args.context.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // SINGLE visibility context for BOTH `getOpenAITools` (the OpenAI tools
   // array) AND `buildToolCatalogPrompt` (the system-prompt Tool Map).
   // Built from the runner's static axes (`baseVisibility`) — falling back to
@@ -117,6 +147,7 @@ export async function buildTurnPromptStack(args: {
     role: args.context.isSubagent ? "subagent" : "parent",
     sessionKind: args.context.sessionKind,
     missionRunActive: args.context.missionRunId !== null,
+    planMode: args.context.planMode ?? false,
   };
   const visibilityCtx: ToolVisibilityContext = {
     ...base,

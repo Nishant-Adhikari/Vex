@@ -159,6 +159,7 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 const runnerModule = await import("../../../../vex-agent/engine/core/runner.js");
 const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
 const { MissionRunPausedError } = await import("../../../../vex-agent/engine/types.js");
+const { ITERATION_LIMIT_REPLY } = await import("../../../../vex-agent/engine/core/runner/shared.js");
 
 function makeProvider() {
   return {
@@ -312,6 +313,40 @@ describe("runner", () => {
       mockHydrate.mockResolvedValueOnce(null);
       await expect(processAgentTurn("nonexistent", "Hi")).rejects.toThrow("not found");
     });
+
+    it("synthesises a graceful reply when the loop hits iteration_limit with no text", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: null, toolCallsMade: 50, pendingApprovals: [], stopReason: "iteration_limit",
+      });
+
+      const result = await processAgentTurn("session-1", "Hi");
+
+      expect(result.text).toBe(ITERATION_LIMIT_REPLY);
+      expect(result.stopReason).toBe("iteration_limit");
+      expect(mockAddMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.objectContaining({ role: "assistant", content: ITERATION_LIMIT_REPLY }),
+        expect.objectContaining({ source: "assistant", messageType: "chat", visibility: "user" }),
+      );
+    });
+
+    it("preserves a partial reply on iteration_limit (no synthesis when text exists)", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Partial progress so far.", toolCallsMade: 50, pendingApprovals: [], stopReason: "iteration_limit",
+      });
+
+      const result = await processAgentTurn("session-1", "Hi");
+
+      expect(result.text).toBe("Partial progress so far.");
+      // No synthesised assistant message persisted (only the user message).
+      expect(mockAddMessage).not.toHaveBeenCalledWith(
+        "session-1",
+        expect.objectContaining({ content: ITERATION_LIMIT_REPLY }),
+        expect.anything(),
+      );
+    });
   });
 
   // ── processMissionSetupTurn ────────────────────────────────
@@ -352,6 +387,55 @@ describe("runner", () => {
           }),
         }),
       );
+    });
+
+    it("synthesises a graceful reply on iteration_limit and skips mission-patch parsing", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }))
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: null,
+        toolCallsMade: 25,
+        pendingApprovals: [],
+        stopReason: "iteration_limit",
+      });
+
+      const result = await processMissionSetupTurn("session-1", "Hi");
+
+      expect(result.text).toBe(ITERATION_LIMIT_REPLY);
+      expect(mockAddMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.objectContaining({ role: "assistant", content: ITERATION_LIMIT_REPLY }),
+        expect.objectContaining({ source: "assistant", messageType: "mission_setup", visibility: "user" }),
+      );
+      // Synthesised text must NOT be parsed/applied as a mission draft patch.
+      expect(mockUpdateDraft).not.toHaveBeenCalled();
+    });
+
+    it("forces plan-mode OFF in the dispatch context during setup (gate must not block mission_draft_update)", async () => {
+      // Session has plan-mode enabled, but setup is the WHAT phase — the plan
+      // execution gate must be inactive so mission_draft_update (local_write)
+      // is not blocked. Regression for the Codex holistic-review blocker.
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+        planMode: true,
+      }));
+      mockGetMission
+        .mockResolvedValueOnce(makeMission({ title: "SOL" }))
+        .mockResolvedValueOnce(makeMission({ title: "SOL" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "ok", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await processMissionSetupTurn("session-1", "hi");
+
+      const passedContext = mockRunTurnLoop.mock.calls[0][0] as { planMode?: boolean };
+      expect(passedContext.planMode).toBe(false);
     });
   });
 

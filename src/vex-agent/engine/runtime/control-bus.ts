@@ -21,6 +21,7 @@ export type ControlEventStatus =
   | "paused_wake"
   | "paused_error"
   | "paused_user"
+  | "paused_plan_acceptance"
   | "completed"
   | "failed"
   | "stopped"

@@ -29,7 +29,7 @@ import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendEngineMessage, appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
-import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
+import { toToolDefinitions, DEFAULT_LOOP_CONFIG, ITERATION_LIMIT_REPLY } from "./shared.js";
 
 export async function processMissionSetupTurn(
   sessionId: string,
@@ -98,6 +98,12 @@ export async function processMissionSetupTurn(
     sessionKind: "mission" as const,
     missionId,
     missionRunId: null,
+    // Mission setup defines the WHAT (mission_draft_update). The plan-mode
+    // execution gate must NOT fire here — plan authoring/acceptance belongs to
+    // the active run (plan_write is hidden in setup). Force the dispatch-path
+    // snapshot off so an enabled-but-unaccepted session plan can't block
+    // mission_draft_update (a local_write) during setup.
+    planMode: false,
   };
 
   const baseVisibility: ToolVisibilityBase = {
@@ -105,6 +111,9 @@ export async function processMissionSetupTurn(
     role: "parent",
     sessionKind: "mission",
     missionRunActive: false, // setup — no run yet
+    // plan_write is hidden in setup via hiddenInMissionSetup regardless; plan
+    // authoring happens in the active run, so setup carries plan-mode off.
+    planMode: false,
   };
   // Seed tools — overridden per turn by buildTurnPromptStack with the live band
   // + `hasSessionMemory`.
@@ -116,10 +125,10 @@ export async function processMissionSetupTurn(
 
   const loopConfig: TurnLoopConfig = {
     ...DEFAULT_LOOP_CONFIG,
-    // Setup runs research tool-calls before applying mission patch; 15 fits
-    // 3-4 tool-call paths plus clarifying Q&A. Mission-run's
+    // Setup runs research tool-calls before applying a mission patch; 25 fits
+    // a few tool-call paths plus clarifying Q&A with headroom. Mission-run's
     // DEFAULT_LOOP_CONFIG.maxIterations=50 still dominates actual execution.
-    maxIterations: 15,
+    maxIterations: 25,
     contextLimit: config.contextLimit,
     baseVisibility,
   };
@@ -143,8 +152,23 @@ export async function processMissionSetupTurn(
     promptOptions,
   );
 
-  // Apply mission patch from model response to draft
-  if (result.text && missionId) {
+  // Graceful cap-hit reply (setup): when the loop exhausted maxIterations
+  // WITHOUT the model emitting text, synthesise a deterministic assistant
+  // message so the turn is never silent. The synthesised text is NOT model
+  // output, so it must NOT be parsed as a mission patch nor trigger the
+  // not-ready notice below. The turn-loop persists real model text itself;
+  // nothing was saved on this path, so we persist the synthesised reply here.
+  const capHit = result.stopReason === "iteration_limit" && !result.text;
+  if (capHit) {
+    await appendMessage(
+      sessionId,
+      { role: "assistant", content: ITERATION_LIMIT_REPLY, timestamp: new Date().toISOString() },
+      { source: "assistant", messageType: "mission_setup", visibility: "user" },
+    );
+  }
+
+  // Apply mission patch from model response to draft (never from synthesised text)
+  if (!capHit && result.text && missionId) {
     const parsed = parseModelMissionOutput(result.text);
     if (parsed) {
       await applyMissionPatch(missionId, parsed);
@@ -156,9 +180,10 @@ export async function processMissionSetupTurn(
   // mission can start unless the structured draft update made it ready.
   const latestSetupState = await getMissionSetupState(missionId);
   const missionStatus = (latestSetupState?.status ?? "draft") as MissionStatus;
-  let text = result.text;
+  let text = capHit ? ITERATION_LIMIT_REPLY : result.text;
   if (
-    latestSetupState
+    !capHit
+    && latestSetupState
     && latestSetupState.status !== "ready"
     && textSuggestsMissionStart(text)
   ) {

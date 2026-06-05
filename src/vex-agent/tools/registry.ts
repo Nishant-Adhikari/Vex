@@ -38,6 +38,14 @@ export interface ToolVisibilityContext {
   sessionKind: SessionKind;
   /** True iff `missionRunId !== null`. Mission setup is `false` even when sessionKind="mission". */
   missionRunActive: boolean;
+  /**
+   * True iff session-scoped plan-mode is enabled (turn-start snapshot from
+   * `EngineContext.planMode`). A STATIC axis (part of `ToolVisibilityBase`) —
+   * gates `plan_write` via `ToolVisibility.requiresPlanMode`. The dispatcher's
+   * hard execution gate uses a live DB read instead (acceptance can change
+   * mid-batch); this flag only controls what the LLM sees.
+   */
+  planMode: boolean;
   contextUsageBand: ContextUsageBand;
   /**
    * True iff the session has at least one active narrative memory chunk
@@ -74,6 +82,7 @@ export function defaultVisibilityContext(
     role: "parent",
     sessionKind: "agent",
     missionRunActive: false,
+    planMode: false,
     contextUsageBand: "normal",
     hasSessionMemory: false,
     ...overrides,
@@ -95,6 +104,7 @@ import { EVM_TOOLS } from "./registry/evm.js";
 import { WALLET_TOOLS } from "./registry/wallet.js";
 import { COMPACT_TOOLS } from "./registry/compact.js";
 import { MEMORY_TOOLS } from "./registry/memory.js";
+import { PLAN_TOOLS } from "./registry/plan.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -115,6 +125,7 @@ const TOOLS: readonly ToolDef[] = [
   ...WALLET_TOOLS,
   ...COMPACT_TOOLS,
   ...MEMORY_TOOLS,
+  ...PLAN_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
@@ -262,6 +273,12 @@ function passesVisibility(
   // session (a fresh session has nothing to recall). Recomputed per turn.
   if (v.requiresSessionMemory && !ctx.hasSessionMemory) return false;
 
+  // Plan-mode gate — hide `plan_write` unless the user enabled plan-mode for
+  // this session. Combined with `hiddenInMissionSetup` on the tool def this
+  // yields: visible in agent + active mission runs (plan-mode on), hidden in
+  // mission setup and whenever plan-mode is off.
+  if (v.requiresPlanMode && !ctx.planMode) return false;
+
   return true;
 }
 
@@ -337,6 +354,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Mission setup draft", toolNames: ["mission_draft_update"] },
   { label: "Mission run stop", toolNames: ["mission_stop"] },
   { label: "Mission run scheduling", toolNames: ["loop_defer"] },
+  { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["plan_write"] },
   { label: "Setup/onboarding", toolNames: ["polymarket_setup"] },
 ];
 

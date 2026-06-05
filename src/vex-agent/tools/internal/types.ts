@@ -35,6 +35,16 @@ export interface InternalToolContext {
   role: "parent" | "subagent";
   /** Active mission run ID — for mission_stop guard */
   missionRunId: string | null;
+  /**
+   * Session-scoped plan-mode flag (turn-start snapshot from EngineContext).
+   * Gates the dispatcher's plan-acceptance check: when false (the default /
+   * common case) the gate skips its live `session_plans` read entirely — so a
+   * non-plan-mode dispatch costs no extra DB query. Plan-mode cannot toggle
+   * mid-turn (the IPC toggle is out-of-band), so the snapshot is accurate for
+   * the gate-activation decision; the live read inside the gate then resolves
+   * the (mid-turn-mutable) acceptance state.
+   */
+  planMode: boolean;
   /** Mission ID when the session is in mission setup or an active mission run. */
   missionId: string | null;
   /**

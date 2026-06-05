@@ -93,6 +93,11 @@ export const CH = {
      * is no per-session model write.
      */
     getModel: "vex:sessions:getModel",
+    // Session-scoped plan-mode (the agent-authored "HOW"). Works in agent AND
+    // mission sessions. `planAccept` also resumes a plan-acceptance-paused run.
+    planGet: "vex:sessions:planGet",
+    planSetEnabled: "vex:sessions:planSetEnabled",
+    planAccept: "vex:sessions:planAccept",
   },
 
   // Chat — operator text routed to agent or mission setup/run.

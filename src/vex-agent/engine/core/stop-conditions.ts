@@ -35,6 +35,11 @@ const RUNTIME_PAUSES = new Set<string>([
   "waiting_for_compact_commit",
   "compact_unable_at_critical",
   "system_error",
+  // Plan-mode acceptance pause: a runtime pause, but deliberately NOT a
+  // RESUMABLE_STOP — once the plan is accepted it resumes via `plan.accept` or
+  // any control resume path, never via a plain user chat message, so ingress
+  // must not treat an incoming message as a resume.
+  "plan_acceptance_required",
 ]);
 
 /**

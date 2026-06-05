@@ -237,9 +237,10 @@ export interface ToolResult {
  * - plan_pause: a `plan_write` in an ACTIVE mission run created/changed a plan
  *   that is not user-accepted. Turn-loop maps it to a `plan_acceptance_pause`
  *   tool-batch outcome → flips the run to `paused_plan_acceptance` (stop reason
- *   `plan_acceptance_required`); the run resumes only via the `plan.accept`
- *   IPC, never a user chat message. Uses the existing `reason`/`summary`; the
- *   run is identified by session/missionRunId so no extra payload is needed.
+ *   `plan_acceptance_required`); once accepted the run resumes via `plan.accept`
+ *   or any control resume path, never a user chat message. Uses the existing
+ *   `reason`/`summary`; the run is identified by session/missionRunId so no
+ *   extra payload is needed.
  */
 export interface EngineSignal {
   type:

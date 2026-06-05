@@ -13,6 +13,16 @@ import type {
   SessionGetModelInput,
   SessionSetPinnedInput,
 } from "../../shared/schemas/sessions.js";
+import {
+  planGetInputSchema,
+  planSetEnabledInputSchema,
+  planAcceptInputSchema,
+} from "../../shared/schemas/session-plan.js";
+import type {
+  PlanGetInput,
+  PlanSetEnabledInput,
+  PlanAcceptInput,
+} from "../../shared/schemas/session-plan.js";
 import type { SessionsBridge } from "../../shared/types/bridge/agent/sessions.js";
 import { invokeWithSchema } from "../_dispatch.js";
 
@@ -46,5 +56,24 @@ export const sessions = {
       input,
       sessionGetModelInputSchema
     );
+  },
+  plan: {
+    get(input: PlanGetInput) {
+      return invokeWithSchema(CH.sessions.planGet, input, planGetInputSchema);
+    },
+    setEnabled(input: PlanSetEnabledInput) {
+      return invokeWithSchema(
+        CH.sessions.planSetEnabled,
+        input,
+        planSetEnabledInputSchema
+      );
+    },
+    accept(input: PlanAcceptInput) {
+      return invokeWithSchema(
+        CH.sessions.planAccept,
+        input,
+        planAcceptInputSchema
+      );
+    },
   },
 } satisfies SessionsBridge;

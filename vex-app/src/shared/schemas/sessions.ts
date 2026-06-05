@@ -57,6 +57,7 @@ export const missionRunStatusSchema = z.enum([
   "paused_wake",
   "paused_error",
   "paused_user",
+  "paused_plan_acceptance",
   "completed",
   "failed",
   "stopped",

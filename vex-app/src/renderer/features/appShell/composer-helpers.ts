@@ -21,6 +21,7 @@ export const FREE_TEXT_DISALLOWED: ReadonlySet<MissionRunStatus> = new Set([
   "paused_user",
   "paused_wake",
   "paused_error",
+  "paused_plan_acceptance",
 ]);
 
 export function readRunStatus(
@@ -42,6 +43,8 @@ export function gatedReason(status: MissionRunStatus | null): string {
       return "Mission is waiting on a scheduled wake. Use Continue to resume now, or wait.";
     case "paused_error":
       return "Mission is paused after an error. Use the Recover button.";
+    case "paused_plan_acceptance":
+      return "Mission is paused for plan acceptance. Review and accept the action plan to resume.";
     default:
       return "Composer is gated until the mission run reaches a free state.";
   }

@@ -35,6 +35,7 @@ import { registerSessionsGetHandler } from "./sessions/get.js";
 import { registerSessionsGetModelHandler } from "./sessions/get-model.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
 import { registerSessionsSetPinnedHandler } from "./sessions/set-pinned.js";
+import { registerSessionPlanHandlers } from "./sessions/plan.js";
 import { registerSecretsHandlers } from "./secrets.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerSupportHandler } from "./support.js";
@@ -68,6 +69,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsGetHandler());
   teardowns.push(registerSessionsSetPinnedHandler());
   teardowns.push(registerSessionsDeleteHandler());
+  teardowns.push(...registerSessionPlanHandlers());
   // Agent integration puzzle 1: typed bridge surface for the chat panel,
   // runtime control, mission contract/commands, approvals, wallet scope,
   // the global model, and usage meter. Read-only handlers serve real DB

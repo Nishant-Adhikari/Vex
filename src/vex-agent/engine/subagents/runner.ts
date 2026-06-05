@@ -128,6 +128,7 @@ export async function runSubagentEngine(
     role: "subagent",
     sessionKind: "agent", // subagents run in isolated agent-like sessions
     missionRunActive: false,
+    planMode: false, // subagents never author plans (plan_write excludeRoles: subagent)
   };
   // Seed tools — overridden per turn by buildTurnPromptStack.
   const initialBand = computeBand(hydrated.tokenCount, subConfig.contextLimit);

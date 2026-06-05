@@ -12,6 +12,14 @@ import type {
   SessionSetPinnedInput,
   SessionSetPinnedResult,
 } from "../../../schemas/sessions.js";
+import type {
+  PlanGetInput,
+  PlanGetResult,
+  PlanSetEnabledInput,
+  PlanSetEnabledResult,
+  PlanAcceptInput,
+  PlanAcceptResult,
+} from "../../../schemas/session-plan.js";
 
 export interface SessionsBridge {
   readonly create: (
@@ -46,4 +54,18 @@ export interface SessionsBridge {
   readonly getModel: (
     input: SessionGetModelInput
   ) => Promise<Result<SessionModelDto>>;
+  /**
+   * Session-scoped plan-mode (the agent-authored "HOW"). `setEnabled`/`accept`
+   * are server-authoritative; `accept` also resumes a plan-acceptance-paused
+   * mission run (`resumed`). `get` returns null when plan-mode was never used.
+   */
+  readonly plan: {
+    readonly get: (input: PlanGetInput) => Promise<Result<PlanGetResult>>;
+    readonly setEnabled: (
+      input: PlanSetEnabledInput
+    ) => Promise<Result<PlanSetEnabledResult>>;
+    readonly accept: (
+      input: PlanAcceptInput
+    ) => Promise<Result<PlanAcceptResult>>;
+  };
 }

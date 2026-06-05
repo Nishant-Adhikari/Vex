@@ -135,6 +135,10 @@ export async function applyApproveSideEffects(
       missionRunId,
       missionId: null,
       sessionKind: "agent",
+      // Resuming an action the user already approved is explicit per-action
+      // authorization — the plan-acceptance gate (agent-autonomy) does not
+      // re-gate it (and the gate already cleared it at enqueue time).
+      planMode: false,
       contextUsageBand: "normal",
       sourceSurface: "vex_agent",
       sourceSession: sessionId,

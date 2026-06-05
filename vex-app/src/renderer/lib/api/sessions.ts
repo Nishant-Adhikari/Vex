@@ -32,6 +32,13 @@ import type {
   SessionSetPinnedInput,
   SessionSetPinnedResult,
 } from "@shared/schemas/sessions.js";
+import type {
+  PlanGetResult,
+  PlanSetEnabledInput,
+  PlanSetEnabledResult,
+  PlanAcceptInput,
+  PlanAcceptResult,
+} from "@shared/schemas/session-plan.js";
 import { sessionModelKeys } from "./queryKeys.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
@@ -39,6 +46,7 @@ export const sessionKeys = {
   all: ["sessions"] as const,
   list: () => ["sessions", "list"] as const,
   detail: (id: string) => ["sessions", "detail", id] as const,
+  plan: (id: string) => ["sessions", "plan", id] as const,
 };
 
 function sessionsListOptions() {
@@ -192,4 +200,59 @@ export function useSessionModel(
   sessionId: string | null,
 ): UseQueryResult<Result<SessionModelDto>> {
   return useQuery(sessionModelOptions(sessionId ?? ""));
+}
+
+// ── Plan mode (session-scoped) ───────────────────────────────────────────
+//
+// `useSessionPlan` reads the plan-mode state for a session (null when never
+// used). `useSetPlanMode` / `useAcceptPlan` are invalidate-based (no optimistic
+// write): the control reflects whatever the plan refetch reports, so a server
+// refusal cleanly snaps back. `useAcceptPlan` also invalidates the session
+// detail (its run status may flip from paused_plan_acceptance to running).
+
+const SESSION_PLAN_STALE_MS = 5_000;
+
+export function useSessionPlan(
+  sessionId: string | null,
+): UseQueryResult<Result<PlanGetResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: sessionKeys.plan(sessionId ?? ""),
+      queryFn: () => window.vex.sessions.plan.get({ sessionId: sessionId ?? "" }),
+      staleTime: SESSION_PLAN_STALE_MS,
+      enabled: (sessionId?.length ?? 0) > 0,
+    }),
+  );
+}
+
+export function useSetPlanMode(): UseMutationResult<
+  Result<PlanSetEnabledResult>,
+  Error,
+  PlanSetEnabledInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.sessions.plan.setEnabled(input),
+    retry: false,
+    onSettled: (_result, _error, input) => {
+      void qc.invalidateQueries({ queryKey: sessionKeys.plan(input.sessionId) });
+    },
+  });
+}
+
+export function useAcceptPlan(): UseMutationResult<
+  Result<PlanAcceptResult>,
+  Error,
+  PlanAcceptInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.sessions.plan.accept(input),
+    retry: false,
+    onSettled: (_result, _error, input) => {
+      void qc.invalidateQueries({ queryKey: sessionKeys.plan(input.sessionId) });
+      // Accept may resume a paused_plan_acceptance run → refresh session detail.
+      void qc.invalidateQueries({ queryKey: sessionKeys.detail(input.sessionId) });
+    },
+  });
 }

@@ -45,6 +45,7 @@ import { processTurnToolBatch } from "./turn-loop-tool-batch.js";
 import { emitTurnLoopControlState } from "./turn-loop-control-emit.js";
 import { runIterationEntryGuards } from "./turn-loop-iteration-entry.js";
 import { applyWaitingForWakePostBatch } from "./turn-loop-waiting-for-wake.js";
+import { applyPlanAcceptancePausePostBatch } from "./turn-loop-plan-acceptance-pause.js";
 import { handleTextResponse } from "./turn-loop-text-response.js";
 import {
   armPostCompactBridge,
@@ -314,6 +315,19 @@ export async function runTurnLoop(
           handlePostCompactBookkeeping,
         });
         stopReason = "waiting_for_wake";
+        return {
+          text: batchOutcome.text,
+          toolCallsMade: totalToolCalls,
+          pendingApprovals,
+          stopReason,
+          stopPayload: batchOutcome.stopPayload,
+        };
+      }
+      if (batchOutcome.kind === "plan_acceptance_pause") {
+        await applyPlanAcceptancePausePostBatch({
+          missionRunId: context.missionRunId ?? null,
+        });
+        stopReason = "plan_acceptance_required";
         return {
           text: batchOutcome.text,
           toolCallsMade: totalToolCalls,

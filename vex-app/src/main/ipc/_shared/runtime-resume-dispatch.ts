@@ -84,7 +84,23 @@ export async function runResumeDispatch(
     ) {
       return ok({ outcome: "blocked_error", reason: status });
     }
-    // paused_user or paused_wake — claim + flip + dispatch.
+    // Plan-acceptance pause: resume is gated on plan ACCEPTANCE, not on the
+    // caller. Refuse while the plan is unaccepted; once accepted, ANY resume
+    // path (plan.accept OR the user's Resume button) may lift it — so an
+    // accepted-but-still-paused run (e.g. a resume that failed to launch) is
+    // always recoverable. Server-side gate (renderer is untrusted). Fail closed
+    // on a read error.
+    if (status === "paused_plan_acceptance") {
+      const { getActivePlan } = await import(
+        "@vex-agent/db/repos/session-plans.js"
+      );
+      const plan = await getActivePlan(input.sessionId);
+      if (!plan || !plan.accepted) {
+        return ok({ outcome: "blocked_error", reason: "plan_acceptance_required" });
+      }
+    }
+    // paused_user, paused_wake, or an ACCEPTED paused_plan_acceptance —
+    // claim + flip + dispatch.
     const { enqueueRequest, markObserved, markCleared, markFailed } =
       await import("@vex-agent/db/repos/runtime-control-requests.js");
     const auditRequest = await enqueueRequest({

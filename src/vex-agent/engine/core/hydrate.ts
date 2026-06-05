@@ -14,6 +14,7 @@ import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as sessionLinksRepo from "@vex-agent/db/repos/session-links.js";
+import * as sessionPlansRepo from "@vex-agent/db/repos/session-plans.js";
 import { loadPersona } from "../../../lib/persona.js";
 import { PERSONA_FILE } from "@config/paths.js";
 
@@ -113,6 +114,12 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
   // a missing/malformed persona.md degrades to the default ("Vex", no block).
   const persona = loadPersona(PERSONA_FILE);
 
+  // Session-scoped plan-mode (turn-start snapshot for tool visibility + the
+  // "# Active Plan" prompt layer). A missing row means plan-mode is off. The
+  // dispatcher execution gate re-reads acceptance live per call, so this
+  // snapshot drives only what the model SEES, not what it can execute.
+  const plan = await sessionPlansRepo.getActivePlan(sessionId);
+
   return {
     context: {
       sessionId,
@@ -131,6 +138,9 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
       personaName: persona.name,
       personaBlock: persona.block,
       personaConfigured: persona.configured,
+      planMode: plan?.enabled ?? false,
+      planMd: plan?.enabled ? plan.planMd : null,
+      planAccepted: plan?.accepted ?? false,
     },
     messages,
     summary: session.summary ?? null,

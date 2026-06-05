@@ -125,6 +125,7 @@ export async function runPreparedMissionStart(
       role: "parent",
       sessionKind: "mission",
       missionRunActive: true,
+      planMode: hydrated.context.planMode ?? false,
     };
     // Seed tools — overridden per turn by buildTurnPromptStack with the live
     // band + `hasSessionMemory`.
@@ -242,6 +243,7 @@ export async function resumePreparedMissionRun(
       role: "parent",
       sessionKind: "mission",
       missionRunActive: true,
+      planMode: hydrated.context.planMode ?? false,
     };
     // Seed tools — overridden per turn by buildTurnPromptStack with the live
     // band + `hasSessionMemory`.

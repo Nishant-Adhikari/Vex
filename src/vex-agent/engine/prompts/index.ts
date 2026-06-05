@@ -46,6 +46,21 @@ export interface PromptStackOptions {
    */
   activeKnowledgeBlock?: string;
   /**
+   * Pre-formatted "# Active Plan" layer — the session's accepted action plan
+   * (sanitised + length-capped) rendered as ADVISORY HOW guidance. Built in
+   * `buildTurnPromptStack` only when plan-mode is on and a plan exists. Sits
+   * among the advisory banners, subordinate to the authoritative permission /
+   * wallet / mission-contract layers; it never widens permissions or bypasses
+   * approval/safety gates. Empty/undefined omits it.
+   */
+  activePlanBlock?: string;
+  /**
+   * One-shot note injected the turn AFTER the user toggles plan-mode OFF while
+   * a plan existed (consumed via the `off_notice_pending` flag). Prompts the
+   * agent to ask about next moves. Empty/undefined omits it.
+   */
+  planOffNotice?: string;
+  /**
    * Pre-formatted context-pressure banner from `buildContextPressureBanner`.
    * Empty string (band='normal') omits the section. Built by `runTurnLoop`
    * from the lagging token-count + context-limit before invoking `executeTurn`.
@@ -106,6 +121,10 @@ export function buildPromptStack(
   if (options.personaSetupHint && options.personaSetupHint.length > 0) {
     layers.push(options.personaSetupHint);
   }
+  // One-shot note: plan-mode was just toggled off while a plan existed.
+  if (options.planOffNotice && options.planOffNotice.length > 0) {
+    layers.push(options.planOffNotice);
+  }
   layers.push(buildRuntimeClockPrompt(options.runtimeClock ?? buildRuntimeClockSnapshot({
     sessionStartedAt: context.sessionStartedAt ?? null,
     missionRunStartedAt: context.missionRunStartedAt ?? null,
@@ -130,6 +149,11 @@ export function buildPromptStack(
   }
   if (options.activeKnowledgeBlock && options.activeKnowledgeBlock.length > 0) {
     layers.push(options.activeKnowledgeBlock);
+  }
+  // Active Plan (advisory HOW) — subordinate to the authoritative permission /
+  // wallet / mission-contract layers pushed later in this stack.
+  if (options.activePlanBlock && options.activePlanBlock.length > 0) {
+    layers.push(options.activePlanBlock);
   }
   // Memory Routing Rule sits between the memory/knowledge state signals
   // and the Tool Map so the model has the substrate decision hierarchy

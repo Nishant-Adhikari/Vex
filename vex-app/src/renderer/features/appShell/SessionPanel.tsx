@@ -28,6 +28,7 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { ApprovalsRegion } from "./ApprovalsRegion.js";
 import { MissionContractCard } from "./MissionContractCard.js";
 import { MissionControls } from "./MissionControls.js";
+import { SessionPlanCard } from "./SessionPlanCard.js";
 import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
 import { SessionTranscript } from "./SessionTranscript.js";
@@ -106,6 +107,12 @@ export function SessionPanel(): JSX.Element {
           <MissionContractCard
             sessionId={activeSession.id}
             permission={activeSession.permission}
+          />
+        ) : null}
+        {activeSession !== null ? (
+          <SessionPlanCard
+            sessionId={activeSession.id}
+            missionStatus={activeSession.missionStatus}
           />
         ) : null}
         {activeSession !== null ? (

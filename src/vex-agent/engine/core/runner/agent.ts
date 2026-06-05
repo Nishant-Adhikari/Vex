@@ -17,7 +17,7 @@ import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
-import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
+import { toToolDefinitions, DEFAULT_LOOP_CONFIG, ITERATION_LIMIT_REPLY } from "./shared.js";
 import { buildPersonaSetupHint } from "@vex-agent/engine/prompts/persona-setup.js";
 
 // ── processAgentTurn ────────────────────────────────────────────
@@ -94,6 +94,7 @@ export async function processAgentTurn(
     role: "parent",
     sessionKind: "agent",
     missionRunActive: false,
+    planMode: agentContext.planMode ?? false,
   };
   // Seed tools — overridden per turn by buildTurnPromptStack with the live band
   // + `hasSessionMemory`; a fresh agent turn has no narrative chunks yet.
@@ -108,8 +109,10 @@ export async function processAgentTurn(
     // Agent iterates through tool-call rounds until the model emits a final
     // text reply; turn-loop.ts breaks on text for sessionKind="agent", so this
     // cap only engages when the model loops on tool-calls without ever
-    // summarising.
-    maxIterations: 10,
+    // summarising. Raised 10 -> 50 so a heavy multi-source task (research +
+    // execution + verify) is not cut off mid-work; on cap-hit we still
+    // synthesise a graceful reply (below) so the turn is never silent.
+    maxIterations: 50,
     contextLimit: config.contextLimit,
     baseVisibility,
   };
@@ -128,8 +131,25 @@ export async function processAgentTurn(
     signal, // inferenceAbortSignal (9-5a) — chat-turn "stop generating"
   );
 
+    // Graceful cap-hit reply: when the loop exhausted maxIterations WITHOUT the
+    // model ever emitting text (`text` is null/empty), persist a deterministic
+    // assistant message so the user never sees a silent empty turn. Only when
+    // text is empty — a partial earlier reply (lastText) is preserved as-is.
+    // The turn-loop persists real assistant text itself, so nothing was saved
+    // on this path; we persist the synthesised reply here as a normal
+    // user-visible assistant message (same metadata saveAssistantMessage uses).
+    let text = result.text;
+    if (result.stopReason === "iteration_limit" && !text) {
+      text = ITERATION_LIMIT_REPLY;
+      await appendMessage(
+        sessionId,
+        { role: "assistant", content: text, timestamp: new Date().toISOString() },
+        { source: "assistant", messageType: "chat", visibility: "user" },
+      );
+    }
+
     return {
-      text: result.text,
+      text,
       toolCallsMade: result.toolCallsMade,
       pendingApprovals: result.pendingApprovals,
       stopReason: result.stopReason,

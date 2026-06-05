@@ -62,6 +62,12 @@ export const MISSION_RUN_STATUSES = [
   "paused_wake",
   "paused_error",
   "paused_user",
+  // Plan-mode: an active run paused because the agent wrote/changed a plan that
+  // is not yet user-accepted. Resume is gated on plan ACCEPTANCE: refused while
+  // unaccepted; once accepted it resumes via `plan.accept` OR any control resume
+  // path. Never resumed by a plain user chat message (a runtime pause but NOT a
+  // RESUMABLE_STOP).
+  "paused_plan_acceptance",
   "completed",
   "failed",
   "stopped",
@@ -82,6 +88,7 @@ export const PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "paused_wake",
   "paused_error",
   "paused_user",
+  "paused_plan_acceptance",
 ]);
 export const TERMINAL_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "completed",
@@ -145,7 +152,10 @@ export type RuntimeStopReason =
   | "compact_unable_at_critical"
   | "system_error"
   /** User requested pause at the next safe checkpoint (puzzle 03). */
-  | "user_paused";
+  | "user_paused"
+  /** Plan-mode: agent wrote/changed a plan that needs user acceptance before
+   *  execution can resume. Resumed only by the `plan.accept` IPC. */
+  | "plan_acceptance_required";
 
 export type StopReason = BusinessStopReason | RuntimeStopReason;
 
@@ -282,6 +292,21 @@ export interface EngineContext {
    * not treated as "unconfigured". Optional → `undefined` is treated as false.
    */
   personaConfigured?: boolean;
+  /**
+   * Plan-mode (session-scoped). Set by hydration as the turn-start snapshot
+   * driving tool visibility and the `# Active Plan` prompt layer. Optional so
+   * non-hydrated/test contexts default to plan-mode OFF.
+   *
+   * NOTE: the dispatcher's hard execution gate does NOT read `planAccepted`
+   * from here — it does a live per-call repo read, because a `plan_write` can
+   * invalidate acceptance mid-batch (esp. in agent mode, which does not pause).
+   * These fields are the model-facing snapshot only.
+   */
+  planMode?: boolean;
+  /** Active plan markdown for this session, or null when none/disabled. */
+  planMd?: string | null;
+  /** True when the current `planMd` has been user-accepted (snapshot). */
+  planAccepted?: boolean;
 }
 
 // ── Turn result ─────────────────────────────────────────────────

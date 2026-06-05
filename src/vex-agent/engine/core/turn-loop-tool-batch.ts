@@ -90,6 +90,13 @@ export type ToolBatchOutcome =
       readonly lastText: string | null;
     }
   | {
+      readonly kind: "plan_acceptance_pause";
+      readonly text: string | null;
+      readonly stopPayload: StopPayload;
+      readonly toolCallsExecuted: number;
+      readonly lastText: string | null;
+    }
+  | {
       readonly kind: "engine_stop";
       readonly stopReason: StopReason;
       readonly text: string | null;
@@ -148,6 +155,9 @@ export async function processTurnToolBatch(args: {
       missionRunId: context.missionRunId,
       missionId: context.missionId,
       sessionKind: context.sessionKind,
+      // Agent-autonomy path — the plan-acceptance gate applies here (turn-start
+      // snapshot from EngineContext; the gate's live read resolves acceptance).
+      planMode: context.planMode ?? false,
       contextUsageBand: dispatchBand,
       sourceSurface: "vex_agent",
       sourceSession: context.sessionId,
@@ -265,6 +275,18 @@ export async function processTurnToolBatch(args: {
         batchStopOutput = result.output;
         break;
       }
+      if (sig.type === "plan_pause") {
+        // `plan_write` in an active mission run created/changed an unaccepted
+        // plan. Park the run in `paused_plan_acceptance`; once accepted it
+        // resumes via `plan.accept` or any control resume path (not a user chat
+        // message — see RUNTIME_PAUSES vs RESUMABLE_STOPS). Pause IMMEDIATELY
+        // (don't wait for an execution attempt — mission text does not break the
+        // loop).
+        batchStopReason = "plan_acceptance_required";
+        batchStopOutput = result.output;
+        batchStopPayload = { summary: sig.summary, evidence: { reason: sig.reason } };
+        break;
+      }
       if (sig.type === "defer_until") {
         // `loop_defer` handler already persisted the pending wake row.
         // Turn-loop parks the mission run in `paused_wake` and exits.
@@ -357,6 +379,15 @@ export async function processTurnToolBatch(args: {
   if (batchStopReason === "waiting_for_wake") {
     return {
       kind: "waiting_for_wake",
+      text: batchStopOutput ?? lastText,
+      stopPayload: batchStopPayload ?? {},
+      toolCallsExecuted,
+      lastText,
+    };
+  }
+  if (batchStopReason === "plan_acceptance_required") {
+    return {
+      kind: "plan_acceptance_pause",
       text: batchStopOutput ?? lastText,
       stopPayload: batchStopPayload ?? {},
       toolCallsExecuted,

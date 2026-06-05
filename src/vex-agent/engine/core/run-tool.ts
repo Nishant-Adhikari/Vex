@@ -55,6 +55,10 @@ export async function runTool(
     missionRunId: activeRun?.id ?? null,
     missionId,
     sessionKind,
+    // Direct operator invoke is explicit, privileged intent — NOT agent
+    // autonomy — so the plan-acceptance gate (which gates the agent's
+    // autonomous execution) does not apply here.
+    planMode: false,
     contextUsageBand: computeBand(session.tokenCount, DEFAULT_CONTEXT_LIMIT),
     sourceSurface: "vex_agent",
     sourceSession: sessionId,
