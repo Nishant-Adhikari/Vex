@@ -108,6 +108,118 @@ export async function confirmVersionedTx(
   throw error;
 }
 
+/**
+ * Idempotency-safe broadcast of a signed versioned transaction.
+ *
+ * Splits the operation into two distinct phases so a retryable error after
+ * broadcast can NEVER trigger a second `sendRawTransaction` (= duplicate
+ * spend):
+ *
+ *   1. Pre-broadcast: `sendRawTransaction` is retried up to `networkRetries`
+ *      times. This is safe because no transaction has hit the chain yet — a
+ *      retryable send failure means the broadcast did not happen.
+ *   2. Post-broadcast: once a signature is returned, the function switches to
+ *      CONFIRM-ONLY. A confirmation timeout / unrecognised confirm error is
+ *      surfaced as `confirmation_unknown` with the signature attached; it is
+ *      NEVER re-broadcast.
+ *
+ * Returns a `StagedSubmissionResult` whose `signature` is always present.
+ * Confirmation classification matches `signAndSubmitLegacyTxStaged`.
+ */
+export async function signAndSubmitVersionedTxStaged(
+  txInput: Uint8Array | string,
+  signers: Keypair[],
+  options: {
+    connection?: Connection;
+    skipPreflight?: boolean;
+    sendMaxRetries?: number;
+    confirmTimeoutMs?: number;
+    networkRetries?: number;
+  } = {},
+): Promise<StagedSubmissionResult> {
+  const {
+    connection = getConfiguredSolanaConnection(),
+    networkRetries = DEFAULT_NETWORK_RETRIES,
+    skipPreflight = false,
+    sendMaxRetries = DEFAULT_SEND_RETRIES,
+    confirmTimeoutMs = DEFAULT_CONFIRM_TIMEOUT_MS,
+  } = options;
+
+  const tx = deserializeVersionedTx(txInput);
+  signVersionedTx(tx, signers);
+  const serialized = tx.serialize();
+
+  // ── Phase 1: pre-broadcast send (retry-safe; no signature exists yet) ──
+  let signature: string | undefined;
+  let lastSendError: unknown;
+  for (let attempt = 1; attempt <= networkRetries; attempt += 1) {
+    try {
+      signature = await connection.sendRawTransaction(serialized, {
+        skipPreflight,
+        maxRetries: sendMaxRetries,
+      });
+      break;
+    } catch (err) {
+      lastSendError = err;
+      const retryable = err instanceof VexError ? err.retryable : true;
+      if (!retryable || attempt >= networkRetries) {
+        throw new VexError(
+          ErrorCodes.SOLANA_TX_FAILED,
+          `Failed to send transaction: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  // Unreachable in practice (loop either sets `signature` or throws), but the
+  // narrowing keeps the post-broadcast section type-safe without a `!`.
+  if (signature === undefined) {
+    throw new VexError(
+      ErrorCodes.SOLANA_TX_FAILED,
+      `Failed to send transaction: ${lastSendError instanceof Error ? lastSendError.message : String(lastSendError)}`,
+    );
+  }
+
+  // ── Phase 2: post-broadcast confirm-only (NEVER re-broadcasts) ──
+  try {
+    await confirmVersionedTx(connection, signature, confirmTimeoutMs);
+    return { signature, phase: "confirmed" };
+  } catch (cause) {
+    const phase = classifyConfirmFailure(cause);
+    const errorKind =
+      cause instanceof VexError
+        ? cause.code
+        : cause instanceof Error
+          ? cause.constructor.name
+          : typeof cause;
+    return {
+      signature,
+      phase,
+      errorKind,
+      errorHash: structuralHash(cause),
+    };
+  }
+}
+
+/**
+ * Idempotency-safe versioned send that preserves the original
+ * `Promise<string>` contract for callers that expect a confirmed signature.
+ *
+ * Delegates to `signAndSubmitVersionedTxStaged`, so `sendRawTransaction` runs
+ * AT MOST ONCE per call path that reaches broadcast. Post-broadcast outcomes
+ * are mapped to the legacy throw contract WITHOUT resending:
+ *
+ *   - `confirmed`            -> returns the signature.
+ *   - `chain_failed`         -> throws `SOLANA_TX_FAILED` (non-retryable;
+ *                               the chain rejected it, a resend would not be
+ *                               idempotent).
+ *   - `confirmation_unknown` -> throws `SOLANA_TX_TIMEOUT` (non-retryable),
+ *                               with the signature in the hint so callers can
+ *                               inspect on-chain state instead of resending.
+ *
+ * The thrown errors carry `retryable = false` so no upstream retry loop can
+ * turn an unknown post-broadcast state into a duplicate broadcast.
+ */
 export async function signAndSendVersionedTx(
   txInput: Uint8Array | string,
   signers: Keypair[],
@@ -119,28 +231,31 @@ export async function signAndSendVersionedTx(
     networkRetries?: number;
   } = {},
 ): Promise<string> {
-  const {
-    connection = getConfiguredSolanaConnection(),
-    networkRetries = DEFAULT_NETWORK_RETRIES,
-    ...sendOptions
-  } = options;
+  const submission = await signAndSubmitVersionedTxStaged(txInput, signers, options);
 
-  const tx = deserializeVersionedTx(txInput);
-  signVersionedTx(tx, signers);
-
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= networkRetries; attempt += 1) {
-    try {
-      return await sendSignedVersionedTx(connection, tx, sendOptions);
-    } catch (err) {
-      lastError = err;
-      if (!(err instanceof VexError) || !err.retryable || attempt >= networkRetries) {
-        throw err;
-      }
-    }
+  if (submission.phase === "confirmed") {
+    return submission.signature;
   }
 
-  throw lastError;
+  if (submission.phase === "chain_failed") {
+    const error = new VexError(
+      ErrorCodes.SOLANA_TX_FAILED,
+      `Transaction failed after broadcast (${submission.errorKind ?? "unknown"})`,
+      `Signature: ${submission.signature}\nExplorer: ${solanaExplorerUrl(submission.signature)}`,
+    );
+    error.retryable = false;
+    throw error;
+  }
+
+  // confirmation_unknown: broadcast happened, confirmation did not resolve.
+  // Surface the on-chain trace; do NOT resend.
+  const error = new VexError(
+    ErrorCodes.SOLANA_TX_TIMEOUT,
+    `Transaction broadcast but confirmation is unknown (${submission.errorKind ?? "unknown"})`,
+    `Signature: ${submission.signature}\nExplorer: ${solanaExplorerUrl(submission.signature)}`,
+  );
+  error.retryable = false;
+  throw error;
 }
 
 export function signVersionedTx(

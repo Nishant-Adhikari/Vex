@@ -78,6 +78,7 @@ const {
 } = await import("@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js");
 
 const { Keypair } = await import("@solana/web3.js");
+const { VexError, ErrorCodes } = await import("../../../../errors.js");
 
 const USER = Keypair.generate();
 const USER_ADDRESS = USER.publicKey.toBase58();
@@ -192,5 +193,46 @@ describe("jupiter prediction api service", () => {
     expect(result.results[1].kind).toBe("claim");
     expect(result.results[0].signature).toBe("sig-1");
     expect(result.results[1].signature).toBe("sig-2");
+  });
+
+  it("B-007: close-all halts and surfaces an unknown post-broadcast state without resending remaining items", async () => {
+    mockCloseAll.mockResolvedValueOnce({
+      data: [
+        {
+          transaction: "close-all-1",
+          txMeta: { blockhash: "bh", lastValidBlockHeight: 1 },
+          externalOrderId: "ext-1",
+          order: { orderPubkey: "order-1" },
+        },
+        {
+          transaction: "close-all-2",
+          txMeta: { blockhash: "bh", lastValidBlockHeight: 1 },
+          position: { positionPubkey: POSITION },
+        },
+      ],
+    });
+
+    // First item: broadcast succeeded but confirmation is unknown. The
+    // idempotency-safe send helper throws a non-retryable error carrying the
+    // signature instead of re-broadcasting.
+    const unknown = new VexError(
+      ErrorCodes.SOLANA_TX_TIMEOUT,
+      "Transaction broadcast but confirmation is unknown (SOLANA_TX_TIMEOUT)",
+      "Signature: sig-1\nExplorer: https://explorer.solana.com/tx/sig-1",
+    );
+    unknown.retryable = false;
+    mockSignAndSend.mockRejectedValueOnce(unknown);
+
+    await expect(
+      executeJupiterPredictionCloseAllPositions(USER.secretKey),
+    ).rejects.toMatchObject({
+      code: ErrorCodes.SOLANA_TX_TIMEOUT,
+      retryable: false,
+    });
+
+    // The unknown state halts the loop: only the first item was sent, the
+    // second item is NEVER broadcast (no blind resend / continuation).
+    expect(mockSignAndSend).toHaveBeenCalledTimes(1);
+    expect(mockSignAndSend.mock.calls[0][0]).toBe("close-all-1");
   });
 });

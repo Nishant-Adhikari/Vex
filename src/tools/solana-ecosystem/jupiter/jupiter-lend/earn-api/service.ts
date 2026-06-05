@@ -56,6 +56,9 @@ async function executeEarnTransaction(
   requestTx: Promise<JupiterLendEarnTransactionResponse>,
 ): Promise<JupiterLendEarnExecutionResult> {
   const raw = await requestTx;
+  // `signAndSendVersionedTx` is idempotency-safe (B-007): `sendRawTransaction`
+  // runs at most once. A post-broadcast confirmation-unknown state throws a
+  // non-retryable error carrying the signature instead of re-broadcasting.
   const signature = await signAndSendVersionedTx(raw.transaction, [signer]);
 
   return {

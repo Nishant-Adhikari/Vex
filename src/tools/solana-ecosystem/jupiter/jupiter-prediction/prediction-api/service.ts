@@ -98,6 +98,11 @@ async function executePredictionTransaction<T extends { transaction: string | nu
   raw: T,
   feature: string,
 ): Promise<JupiterPredictionExecutionResult<T>> {
+  // `signAndSendVersionedTx` is idempotency-safe (B-007): `sendRawTransaction`
+  // runs at most once. A post-broadcast confirmation-unknown state throws a
+  // non-retryable error carrying the signature rather than re-broadcasting, so
+  // the multi-step close-all loop halts on the unknown item instead of blindly
+  // resending the remaining ones.
   const signature = await signAndSendVersionedTx(requireTransaction(raw.transaction, feature), [signer]);
 
   return {
