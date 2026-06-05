@@ -7,8 +7,11 @@
  * Pipeline: validate → recordExecution() → populateCaptureItems()
  * → activity-populator → position-projector
  *
- * NOT in MUTATION_MATRIX (no phantom entries). capture-validator returns
- * true for unknown toolIds, so the standard pipeline handles them.
+ * NOT in MUTATION_MATRIX (no phantom entries). Synthetic captures therefore
+ * bypass the matrix-driven `capture-validator`, so this module owns the
+ * boundary contract: SYNTHETIC_CONTRACTS is the allowlist of known synthetic
+ * tool-ids and their required fields. Unknown synthetic tool-ids reject. See
+ * B-006.
  */
 
 import { extractExternalRefs, populateCaptureItems } from "@vex-agent/tools/protocols/capture-pipeline.js";
@@ -28,31 +31,95 @@ export interface SyntheticCaptureOpts {
 }
 
 /**
- * Validate synthetic capture has minimum required fields.
- * Own boundary guard since MUTATION_MATRIX is bypassed.
+ * Contract for a known synthetic tool-id.
+ *
+ * Synthetic captures skip MUTATION_MATRIX, so this is the matrix-equivalent
+ * minimum each synthetic source must satisfy. `requiredFields` always covers
+ * the wallet / position / valuation triple plus the type/status discriminators
+ * the projection pipeline reads.
  */
-function validateSyntheticCapture(capture: Record<string, unknown>): void {
-  const type = capture.type;
-  const status = capture.status;
-  const walletAddress = capture.walletAddress;
-  const positionKey = capture.positionKey;
+interface SyntheticCaptureContract {
+  /** Expected `type` discriminator for this synthetic source. */
+  readonly expectedType: string;
+  /** Capture fields that must be present, non-null, non-empty strings. */
+  readonly requiredFields: readonly string[];
+}
 
-  if (typeof type !== "string" || !type) {
-    throw new Error("synthetic capture: missing type");
+/**
+ * Allowlist of synthetic tool-ids. A tool-id NOT in this map is rejected — a
+ * new synthetic source must register an explicit contract here, it cannot
+ * silently inherit the fail-open behaviour the runtime grants non-synthetic
+ * unknown tools.
+ *
+ * The wallet/position/valuation triple is required for every entry:
+ * - `walletAddress` — account scoping for projections.
+ * - `positionKey`   — position the settlement closes/claims.
+ * - `valuationSource` — provenance of USD economics ("none" is valid, "" / absent is not).
+ */
+const SYNTHETIC_CONTRACTS: ReadonlyMap<string, SyntheticCaptureContract> = new Map([
+  ["settlement_sync.jupiter", {
+    expectedType: "prediction",
+    requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
+  }],
+  ["settlement_sync.polymarket", {
+    expectedType: "prediction",
+    requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
+  }],
+]);
+
+/**
+ * Namespace prefix that marks the synthetic-capture family. Membership is by
+ * prefix (not allowlist) so an unregistered `settlement_sync.*` id is still
+ * routed into the synthetic validator and REJECTED there — it must never fall
+ * back to the fail-open non-synthetic path. See B-006.
+ */
+const SYNTHETIC_TOOL_PREFIX = "settlement_sync.";
+
+/** Whether a tool-id belongs to the synthetic-capture family (by prefix). */
+export function isSyntheticToolId(toolId: string): boolean {
+  return toolId.startsWith(SYNTHETIC_TOOL_PREFIX);
+}
+
+/**
+ * Validate a synthetic capture against its per-tool-id contract.
+ *
+ * Throws on: unknown synthetic tool-id, wrong `type`, or any missing required
+ * field (wallet/position/valuation included). This is the boundary guard that
+ * replaces MUTATION_MATRIX enforcement for synthetic sources.
+ */
+export function validateSyntheticCapture(
+  toolId: string,
+  capture: Record<string, unknown>,
+): void {
+  const contract = SYNTHETIC_CONTRACTS.get(toolId);
+  if (!contract) {
+    // Reject unknown synthetic tool-ids — no fail-open for the synthetic family.
+    throw new Error(`synthetic capture: unknown synthetic tool-id "${toolId}"`);
   }
-  if (typeof status !== "string" || !status) {
-    throw new Error("synthetic capture: missing status");
+
+  const missing: string[] = [];
+  for (const field of contract.requiredFields) {
+    const value = capture[field];
+    if (typeof value !== "string" || value === "") {
+      missing.push(field);
+    }
   }
-  if (typeof walletAddress !== "string" || !walletAddress) {
-    throw new Error("synthetic capture: missing walletAddress");
+  if (missing.length > 0) {
+    throw new Error(
+      `synthetic capture: missing required field(s) for "${toolId}": ${missing.join(", ")}`,
+    );
   }
-  if (typeof positionKey !== "string" || !positionKey) {
-    throw new Error("synthetic capture: missing positionKey");
+
+  const type = capture.type as string;
+  if (type !== contract.expectedType) {
+    throw new Error(
+      `synthetic capture: unexpected type "${type}" for "${toolId}" (expected "${contract.expectedType}")`,
+    );
   }
 
   // instrumentKey optional (claim has exception), but warn if missing for prediction
   if (type === "prediction" && !capture.instrumentKey) {
-    logger.warn("synthetic_capture.no_instrument_key", { positionKey });
+    logger.warn("synthetic_capture.no_instrument_key", { positionKey: capture.positionKey });
   }
 }
 
@@ -64,8 +131,8 @@ function validateSyntheticCapture(capture: Record<string, unknown>): void {
 export async function recordSyntheticCapture(opts: SyntheticCaptureOpts): Promise<number> {
   const { toolId, namespace, sessionId, tradeCapture, source } = opts;
 
-  // Local validation boundary
-  validateSyntheticCapture(tradeCapture);
+  // Local validation boundary — synthetic contract (allowlist + required fields).
+  validateSyntheticCapture(toolId, tradeCapture);
 
   const externalRefs = extractExternalRefs({ _tradeCapture: tradeCapture });
 

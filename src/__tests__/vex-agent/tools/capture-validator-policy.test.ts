@@ -48,4 +48,59 @@ describe("capture validator — policy decisions", () => {
   // MUTATION_MATRIX row. Duplicating a wrapper call here would add no
   // observable behaviour, so the policy file stays focused on the
   // fail-open unknown-toolId decision.
+
+  // ── B-006: synthetic captures are fail-CLOSED, distinct from the
+  // fail-open non-synthetic unknown-tool path above. ───────────────
+  describe("synthetic toolId branch (settlement_sync.*) — fail-closed", () => {
+    const validSyntheticCapture = {
+      type: "prediction",
+      status: "closed",
+      walletAddress: "GoVYsnz1111",
+      positionKey: "PK1",
+      instrumentKey: "solana:predict:POLY-123:yes",
+      valuationSource: "none",
+    };
+
+    it("passes a valid synthetic capture through its contract", () => {
+      expect(validateCaptureContract("settlement_sync.jupiter", validSyntheticCapture)).toBe(true);
+    });
+
+    it("returns false when a synthetic capture is missing required fields", () => {
+      const { walletAddress: _drop, ...missingWallet } = validSyntheticCapture;
+      void _drop;
+      expect(validateCaptureContract("settlement_sync.jupiter", missingWallet)).toBe(false);
+    });
+
+    it("returns false for an unknown synthetic tool-id even with a full capture", () => {
+      // The synthetic family does NOT inherit the fail-open path — an
+      // unregistered settlement_sync.* tool is rejected.
+      expect(validateCaptureContract("settlement_sync.notreal", validSyntheticCapture)).toBe(false);
+    });
+
+    it("returns false when a synthetic capture is null", () => {
+      expect(validateCaptureContract("settlement_sync.jupiter", null)).toBe(false);
+    });
+  });
+
+  // ── REGRESSION GUARD (Codex hard note): the synthetic branch must
+  // NOT change the existing non-synthetic unknown-tool fall-through.
+  // A non-synthetic tool with no MUTATION_MATRIX row still passes. ──
+  describe("regression guard — non-synthetic unknown tool still fail-open", () => {
+    it("a non-synthetic unknown tool with a capture still returns true", () => {
+      expect(
+        validateCaptureContract("some.unregistered.mutating.tool", { type: "swap" }),
+      ).toBe(true);
+    });
+
+    it("a non-synthetic unknown tool with null capture still returns true", () => {
+      expect(validateCaptureContract("some.unregistered.mutating.tool", null)).toBe(true);
+    });
+
+    it("'settlement_sync' as a bare prefix is NOT treated as synthetic (exact allowlist match only)", () => {
+      // Guard the matcher is an exact allowlist, not a loose `startsWith`:
+      // a tool literally named "settlement_sync" (no `.jupiter`/.polymarket)
+      // is unknown→non-synthetic→fail-open, not synthetic→fail-closed.
+      expect(validateCaptureContract("settlement_sync", { type: "swap" })).toBe(true);
+    });
+  });
 });

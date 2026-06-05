@@ -7,6 +7,7 @@ const mockClaimPendingRun = vi.fn().mockResolvedValue(null);
 const mockGetJob = vi.fn().mockResolvedValue(null);
 const mockCompleteRun = vi.fn().mockResolvedValue(undefined);
 const mockFailRun = vi.fn().mockResolvedValue(undefined);
+const mockRecoverStaleRuns = vi.fn().mockResolvedValue(0);
 
 vi.mock("@vex-agent/db/repos/sync.js", () => ({
   claimAllPending: () => mockClaimAllPending(),
@@ -14,6 +15,7 @@ vi.mock("@vex-agent/db/repos/sync.js", () => ({
   getJob: (...args: unknown[]) => mockGetJob(...args),
   completeRun: (...args: unknown[]) => mockCompleteRun(...args),
   failRun: (...args: unknown[]) => mockFailRun(...args),
+  recoverStaleRuns: (...args: unknown[]) => mockRecoverStaleRuns(...args),
   enqueueRun: vi.fn().mockResolvedValue(1),
   getAllJobs: vi.fn().mockResolvedValue([]),
   getLastCompletedRun: vi.fn().mockResolvedValue(null),
@@ -110,6 +112,53 @@ describe("sync worker", () => {
 
       expect(result.errors).toBe(1);
       expect(mockFailRun).toHaveBeenCalledTimes(1);
+    });
+
+    // ── B-005: stale `running` recovery ─────────────────────────
+    describe("stale running recovery", () => {
+      it("recovers stale runs once per drain, before claiming new work", async () => {
+        await drainPendingRuns();
+
+        // Recovery runs exactly once per drain with a positive lease timeout.
+        expect(mockRecoverStaleRuns).toHaveBeenCalledTimes(1);
+        const timeoutArg = mockRecoverStaleRuns.mock.calls[0][0];
+        expect(typeof timeoutArg).toBe("number");
+        expect(timeoutArg).toBeGreaterThan(0);
+
+        // Recovery must precede the claim — the orphan flip frees nothing to
+        // claim here, but the ordering is what makes recovery effective.
+        const recoverOrder = mockRecoverStaleRuns.mock.invocationCallOrder[0];
+        const claimOrder = mockClaimAllPending.mock.invocationCallOrder[0];
+        expect(recoverOrder).toBeLessThan(claimOrder);
+      });
+
+      it("recovering a stale orphan does not requeue it (recovered count is observable only)", async () => {
+        // Stale orphan flipped to `failed` by recoverStaleRuns; it is NOT
+        // returned by claimAllPending (only `pending` rows are claimable), so
+        // the drain processes nothing from it — recovered exactly once.
+        mockRecoverStaleRuns.mockResolvedValueOnce(1);
+        mockClaimAllPending.mockResolvedValueOnce([]);
+
+        const result = await drainPendingRuns();
+
+        expect(result).toEqual({ processed: 0, deduped: 0, errors: 0 });
+        expect(mockCompleteRun).not.toHaveBeenCalled();
+        expect(mockFailRun).not.toHaveBeenCalled();
+      });
+
+      it("does not abort the drain when recovery fails", async () => {
+        mockRecoverStaleRuns.mockRejectedValueOnce(new Error("db blip"));
+        mockClaimAllPending.mockResolvedValueOnce([
+          { id: 1, syncJobId: 10, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+        ]);
+        mockGetJob.mockResolvedValue({ id: 10, syncType: "balances", namespace: "khalani", strategy: "post_mutation" });
+
+        const result = await drainPendingRuns();
+
+        // Drain still proceeds despite recovery error.
+        expect(result.processed).toBe(1);
+        expect(mockClaimAllPending).toHaveBeenCalled();
+      });
     });
   });
 

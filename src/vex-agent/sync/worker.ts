@@ -19,12 +19,39 @@ export interface DrainResult {
 }
 
 /**
+ * Lease window for a `running` sync run. A run whose `started_at` (claim time)
+ * is older than this is treated as an orphan from a crashed/killed process and
+ * recovered before each drain. Comfortably larger than the worst-case real run
+ * (settlement reconciliation paginates read APIs per wallet), so a healthy
+ * in-flight run is never reclaimed. See B-005.
+ */
+const STALE_RUN_TIMEOUT_SECONDS = 600;
+
+/**
  * Drain all pending sync runs with dedup.
  *
  * For balances: extracts chain hints from linked executions,
  * merges into per-family sets, does one Khalani call per family.
  */
 export async function drainPendingRuns(): Promise<DrainResult> {
+  // Recover orphaned `running` rows from a prior crash before claiming new work.
+  // Stale rows are marked `failed` (not requeued) — the recovered work is not
+  // idempotent across a partial-crash boundary; a fresh run re-derives state.
+  try {
+    const recovered = await syncRepo.recoverStaleRuns(STALE_RUN_TIMEOUT_SECONDS);
+    if (recovered > 0) {
+      logger.warn("sync.worker.stale_runs_recovered", {
+        recovered,
+        timeoutSeconds: STALE_RUN_TIMEOUT_SECONDS,
+      });
+    }
+  } catch (err) {
+    // Recovery is best-effort housekeeping — never block the drain on it.
+    logger.warn("sync.worker.stale_recovery_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const claimed = await syncRepo.claimAllPending();
   if (claimed.length === 0) return { processed: 0, deduped: 0, errors: 0 };
 

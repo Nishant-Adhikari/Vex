@@ -7,6 +7,7 @@
  */
 
 import { MUTATION_MATRIX, isExpectedType } from "./mutation-matrix.js";
+import { isSyntheticToolId, validateSyntheticCapture } from "@vex-agent/sync/synthetic-capture.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -18,6 +19,27 @@ export function validateCaptureContract(
   toolId: string,
   tradeCapture: Record<string, unknown> | null,
 ): boolean {
+  // Synthetic captures (settlement_sync.*) are NOT in MUTATION_MATRIX — route
+  // them to their own allowlist+required-field contract instead of the
+  // fail-open unknown-tool path below. Unknown synthetic tool-ids and
+  // missing wallet/position/valuation fields reject (fail-closed). See B-006.
+  if (isSyntheticToolId(toolId)) {
+    if (!tradeCapture) {
+      logger.error("capture.validator.synthetic_missing_capture", { toolId });
+      return false;
+    }
+    try {
+      validateSyntheticCapture(toolId, tradeCapture);
+      return true;
+    } catch (err) {
+      logger.error("capture.validator.synthetic_rejected", {
+        toolId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
   const contract = MUTATION_MATRIX.get(toolId);
   if (!contract) {
     // Tool not in matrix — non-mutating or unknown. Let it through (no contract to validate against).

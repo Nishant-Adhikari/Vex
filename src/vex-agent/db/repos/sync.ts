@@ -59,6 +59,43 @@ export async function claimPendingRun(): Promise<SyncRun | null> {
   return row ? mapRun(row) : null;
 }
 
+/**
+ * Recover orphaned `running` rows left by a crashed/killed process.
+ *
+ * A run is "stale" when its `started_at` is older than `timeoutSeconds`. Such a
+ * row will never be picked up again — `claimPendingRun`/`claimAllPending` only
+ * select `status='pending'` — so without recovery it blocks the job's history
+ * forever.
+ *
+ * Recovery marks stale rows `failed` (NOT requeued). The work a run performs
+ * (settlement reconciliation → synthetic capture writes) is not transactionally
+ * tied to the run row: a crash after some captures were written but before the
+ * run was completed would double-write on a naive requeue. Failing is the
+ * conservative, idempotent choice — the periodic scheduler re-enqueues a fresh
+ * `pending` run on its interval, and balance/settlement syncs re-derive current
+ * state (balance sync overwrites; settlement only re-reads still-`open`
+ * positions). See B-005.
+ *
+ * `started_at` is the claim timestamp: `claimPendingRun`/`claimAllPending` set
+ * it to `NOW()` at claim time, so it doubles as the lease start.
+ *
+ * Returns the number of rows recovered. Idempotent: once flipped to `failed`,
+ * a row is no longer `running`, so a second call recovers nothing.
+ */
+export async function recoverStaleRuns(timeoutSeconds: number): Promise<number> {
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) return 0;
+  const rows = await query<{ id: number }>(
+    `UPDATE protocol_sync_runs
+     SET status = 'failed', ended_at = NOW(),
+         error = 'stale running run recovered: exceeded ' || $1::int || 's lease (process crash/restart)'
+     WHERE status = 'running'
+       AND started_at < NOW() - make_interval(secs => $1::int)
+     RETURNING id`,
+    [Math.floor(timeoutSeconds)],
+  );
+  return rows.length;
+}
+
 export async function completeRun(id: number, result: Record<string, unknown>, rowsAffected: number): Promise<void> {
   await execute(
     "UPDATE protocol_sync_runs SET status = 'completed', ended_at = NOW(), result = $2::jsonb, rows_affected = $3 WHERE id = $1",
