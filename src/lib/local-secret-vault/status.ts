@@ -1,0 +1,42 @@
+import { existsSync } from "node:fs";
+import { SECRETS_VAULT_FILE } from "../../config/paths.js";
+import type { VaultSecretKey } from "../secret-keys.js";
+import type { VAULT_VERSION } from "./crypto.js";
+
+export interface LocalSecretVaultOptions {
+  readonly filePath?: string;
+}
+
+export interface LocalSecretVaultStatus {
+  readonly configured: boolean;
+}
+
+export interface LocalSecretVaultContents {
+  readonly version: typeof VAULT_VERSION;
+  readonly secrets: Partial<Record<VaultSecretKey, string>>;
+}
+
+export class LocalSecretVaultError extends Error {
+  constructor(
+    message: string,
+    readonly code: "missing" | "invalid_password" | "corrupt" | "io",
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "LocalSecretVaultError";
+  }
+}
+
+export function resolveVaultPath(options: LocalSecretVaultOptions): string {
+  return options.filePath ?? SECRETS_VAULT_FILE;
+}
+
+export function secretVaultExists(options: LocalSecretVaultOptions = {}): boolean {
+  return existsSync(resolveVaultPath(options));
+}
+
+export function getSecretVaultStatus(
+  options: LocalSecretVaultOptions = {},
+): LocalSecretVaultStatus {
+  return { configured: secretVaultExists(options) };
+}
