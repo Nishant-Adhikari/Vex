@@ -31,89 +31,35 @@
  * besides DB writes via `dispatchTool` / `saveAssistantMessage` /
  * `persistToolResultWithOverflow` / `approvalsRepo.enqueue` /
  * `missionRunsRepo.updateStatus("paused_approval")`.
+ *
+ * Structural split: the outcome contract lives in
+ * `./turn-loop-tool-batch/outcome.ts`, the per-call tool-context builder in
+ * `./turn-loop-tool-batch/execute.ts`, the approval-enqueue helpers in
+ * `./turn-loop-tool-batch/approval-stop.ts`, and the deferred-save +
+ * outcome-mapping helpers in `./turn-loop-tool-batch/results.ts`.
+ * `processTurnToolBatch` stays here as the orchestrator: it keeps the
+ * per-batch mutable state and the dispatch/approval/persistence ordering
+ * bit-for-bit.
  */
 
 import type { EngineContext, StopReason } from "../types.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
-import type {
-  ParsedToolCall,
-} from "@vex-agent/inference/types.js";
-import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
-import { buildSessionWalletResolution } from "./hydrate.js";
-import { saveAssistantMessage } from "./turn.js";
+import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import { computeBand } from "./context-band.js";
-import { persistToolResultWithOverflow } from "./tool-output-overflow.js";
-import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
-import * as approvalIntentsRepo from "@vex-agent/db/repos/approval-intents.js";
-import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import { withTransaction } from "@vex-agent/db/client.js";
-import { riskLevelFromActionKind } from "@vex-agent/tools/risk-level.js";
-import { buildIntentPreview, buildPolicySnapshot } from "./approval-intent-preview.js";
+import type { BatchTurnResult, StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
+import { buildToolContext } from "./turn-loop-tool-batch/execute.js";
+import {
+  assertApprovalActionKind,
+  enqueueApprovalIntent,
+} from "./turn-loop-tool-batch/approval-stop.js";
+import {
+  BATCH_ABORTED_BY_COMPACT_OUTPUT,
+  mapBatchOutcome,
+  persistBatchTranscript,
+} from "./turn-loop-tool-batch/results.js";
 
-/** Synthetic tool-result emitted for batch tool calls skipped after a `compact_committed` signal. */
-const BATCH_ABORTED_BY_COMPACT_OUTPUT =
-  "batch_aborted_by_compact: this tool call was emitted in the same batch as compact_now and was not dispatched. "
-  + "The conversation has been compacted; re-emit this call on the next turn if it is still relevant.";
-
-/**
- * Puzzle 5 phase 3 — TTL stamped at enqueue (not at approve). The approve
- * gate (`prepareApprove` snapshot) and the scheduled sweep both rely on a
- * DB-visible `expires_at` so a stale approval gets auto-rejected even
- * without operator action. Single 1h default for all action kinds; phase 7
- * will introduce per-kind TTLs if real workloads need them.
- */
-const APPROVAL_TTL_MS = 60 * 60 * 1000;
-
-interface BatchTurnResult {
-  readonly content: string | null;
-  readonly toolCalls: ParsedToolCall[];
-}
-
-export interface StopPayload {
-  readonly summary?: string;
-  readonly evidence?: Record<string, unknown>;
-}
-
-export type ToolBatchOutcome =
-  | {
-      readonly kind: "approval_break";
-      readonly pendingApprovalId: string;
-      readonly toolCallsExecuted: number;
-      readonly lastText: string | null;
-    }
-  | {
-      readonly kind: "waiting_for_wake";
-      readonly text: string | null;
-      readonly stopPayload: StopPayload;
-      readonly toolCallsExecuted: number;
-      readonly lastText: string | null;
-    }
-  | {
-      readonly kind: "plan_acceptance_pause";
-      readonly text: string | null;
-      readonly stopPayload: StopPayload;
-      readonly toolCallsExecuted: number;
-      readonly lastText: string | null;
-    }
-  | {
-      readonly kind: "engine_stop";
-      readonly stopReason: StopReason;
-      readonly text: string | null;
-      readonly stopPayload?: StopPayload;
-      readonly toolCallsExecuted: number;
-      readonly lastText: string | null;
-    }
-  | {
-      readonly kind: "compact_committed";
-      readonly toolCallsExecuted: number;
-      readonly lastText: string | null;
-    }
-  | {
-      readonly kind: "normal_complete";
-      readonly toolCallsExecuted: number;
-      readonly lastText: string | null;
-    };
+export type { StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 
 export async function processTurnToolBatch(args: {
   readonly context: EngineContext;
@@ -146,24 +92,7 @@ export async function processTurnToolBatch(args: {
     const toolCall = turnResult.toolCalls[i];
     toolCallsExecuted++;
 
-    const toolContext: InternalToolContext = {
-      sessionId: context.sessionId,
-      loadedDocuments: context.loadedDocuments,
-      sessionPermission: context.sessionPermission,
-      approved: false,
-      role: context.isSubagent ? "subagent" : "parent",
-      missionRunId: context.missionRunId,
-      missionId: context.missionId,
-      sessionKind: context.sessionKind,
-      // Agent-autonomy path — the plan-acceptance gate applies here (turn-start
-      // snapshot from EngineContext; the gate's live read resolves acceptance).
-      planMode: context.planMode ?? false,
-      contextUsageBand: dispatchBand,
-      sourceSurface: "vex_agent",
-      sourceSession: context.sessionId,
-      walletResolution: buildSessionWalletResolution(context),
-      walletPolicy: context.walletPolicy,
-    };
+    const toolContext = buildToolContext(context, dispatchBand);
 
     const result = await dispatchTool(
       { name: toolCall.name, args: toolCall.arguments, toolCallId: toolCall.id },
@@ -180,73 +109,16 @@ export async function processTurnToolBatch(args: {
       // registration or in the dispatcher fallback. Fail fast (Codex
       // 2/1B ruling) instead of silently inserting a pseudo-kind or
       // downgrading to a default — neither preserves the policy invariant.
-      if (result.actionKind === undefined) {
-        throw new Error(
-          `Approval intent requires result.actionKind for tool "${toolCall.name}" — ` +
-          `dispatcher fallback should have stamped it. ` +
-          `Check the tool's actionKind classification in tools/registry/ or protocols/.`,
-        );
-      }
+      const intentActionKind = assertApprovalActionKind(result, toolCall);
 
       executedCalls.push(toolCall);
 
-      approvalId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const intentActionKind = result.actionKind;
-      const intentRiskLevel = riskLevelFromActionKind(intentActionKind);
-      // Stage 7 R5: carry the gate-matched swap safety verdict (typed, off the
-      // ToolResult — NOT raw args) into the preview so restricted-mode approval
-      // surfaces `pass` / `unknown` ("UNVERIFIED") before the human approves.
-      const intentPreview = buildIntentPreview(
-        toolCall.name,
-        toolCall.arguments,
-        result.prequote
-          ? { prequoteVerdict: result.prequote.verdict, fotTax: result.prequote.fotTax }
-          : undefined,
-      );
-      const intentPolicy = buildPolicySnapshot(toolContext);
-      // Phase 3: stamp `expires_at` at enqueue so the approve gate +
-      // scheduled sweep have a DB-visible TTL boundary (see APPROVAL_TTL_MS
-      // header). `CreateIntentInput.previewJson/policyJson` were widened in
-      // phase 3 to accept the structured builder shapes directly — no
-      // `as unknown as Record<string, unknown>` cast needed.
-      const intentExpiresAt = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
-
-      // Single transaction: queue + intent + mission-status flip. A
-      // partial state (queue without intent, or queue+intent without
-      // `paused_approval`) is unrepresentable. Codex 2 phase-2 ruling:
-      // the existing pattern of "queue insert, then updateStatus outside
-      // tx" could leave a pending approval without the run actually
-      // paused if the status update fails.
-      await withTransaction(async (client) => {
-        await approvalsRepo.enqueueWith(
-          client,
-          approvalId!,
-          { command: toolCall.name, args: toolCall.arguments },
-          result.output,
-          context.sessionId,
-          toolCall.id,
-          context.sessionPermission,
-        );
-        await approvalIntentsRepo.createWith(client, {
-          approvalId: approvalId!,
-          sessionId: context.sessionId,
-          missionRunId: context.missionRunId,
-          toolCallId: toolCall.id ?? null,
-          actionKind: intentActionKind,
-          riskLevel: intentRiskLevel,
-          previewJson: intentPreview,
-          policyJson: intentPolicy,
-          expiresAt: intentExpiresAt,
-        });
-        if (context.missionRunId) {
-          await missionRunsRepo.updateStatus(
-            context.missionRunId,
-            "paused_approval",
-            "approval_required",
-            undefined,
-            client,
-          );
-        }
+      approvalId = await enqueueApprovalIntent({
+        context,
+        toolCall,
+        result,
+        toolContext,
+        intentActionKind,
       });
       batchStopReason = "approval_required";
       break; // remaining calls are NOT dispatched
@@ -325,89 +197,24 @@ export async function processTurnToolBatch(args: {
     }
   }
 
-  // ── DEFERRED SAVE: assistant message with canonical calls only ──
-  await saveAssistantMessage(context.sessionId, turnResult.content, executedCalls);
-
-  liveMessages.push({
-    role: "assistant",
-    content: turnResult.content ?? "",
-    toolCalls: executedCalls.map((tc) => ({
-      id: tc.id,
-      command: tc.name,
-      args: tc.arguments,
-    })),
-    timestamp: new Date().toISOString(),
+  await persistBatchTranscript({
+    sessionId: context.sessionId,
+    content: turnResult.content,
+    executedCalls,
+    executedResults,
+    liveMessages,
   });
-
-  // Save tool results (only for fully-executed, non-approval calls).
-  // Oversized outputs are externalised into tool_output_blobs (PR-11) —
-  // transcript gets a short stub with `metadata.payload.blob_key` so
-  // archive-aware checkpoint and resume paths can keep the pointer alive.
-  for (const { toolCallId, toolName, output, success } of executedResults) {
-    const persisted = await persistToolResultWithOverflow(
-      context.sessionId,
-      toolCallId,
-      toolName,
-      output,
-      success,
-    );
-
-    liveMessages.push({
-      role: "tool",
-      content: persisted.content,
-      toolCallId,
-      timestamp: new Date().toISOString(),
-      metadata: persisted.metadata,
-    });
-  }
 
   // Update lastText from current turn (assistant may have content alongside toolCalls)
   const lastText = turnResult.content ?? args.lastTextSoFar;
 
-  if (batchStopReason === "approval_required") {
-    // Helper invariant: approval_required path always set approvalId before break.
-    if (approvalId === null) {
-      throw new Error("turn-loop-tool-batch: approval_required without approvalId");
-    }
-    return {
-      kind: "approval_break",
-      pendingApprovalId: approvalId,
-      toolCallsExecuted,
-      lastText,
-    };
-  }
-  if (batchStopReason === "waiting_for_wake") {
-    return {
-      kind: "waiting_for_wake",
-      text: batchStopOutput ?? lastText,
-      stopPayload: batchStopPayload ?? {},
-      toolCallsExecuted,
-      lastText,
-    };
-  }
-  if (batchStopReason === "plan_acceptance_required") {
-    return {
-      kind: "plan_acceptance_pause",
-      text: batchStopOutput ?? lastText,
-      stopPayload: batchStopPayload ?? {},
-      toolCallsExecuted,
-      lastText,
-    };
-  }
-  if (batchStopReason) {
-    return {
-      kind: "engine_stop",
-      stopReason: batchStopReason,
-      text: batchStopOutput ?? lastText,
-      stopPayload: batchStopPayload,
-      toolCallsExecuted,
-      lastText,
-    };
-  }
-
-  if (compactCommittedThisBatch) {
-    return { kind: "compact_committed", toolCallsExecuted, lastText };
-  }
-
-  return { kind: "normal_complete", toolCallsExecuted, lastText };
+  return mapBatchOutcome({
+    batchStopReason,
+    batchStopOutput,
+    batchStopPayload,
+    compactCommittedThisBatch,
+    approvalId,
+    toolCallsExecuted,
+    lastText,
+  });
 }
