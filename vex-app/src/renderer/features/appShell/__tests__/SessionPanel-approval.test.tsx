@@ -26,9 +26,18 @@ vi.mock("../../../lib/api/usage.js", () => ({
 vi.mock("../../../lib/api/streams.js", () => ({
   useStreamPreviewSync: () => undefined,
 }));
-vi.mock("../../../lib/api/runtime.js", () => ({
-  useControlStateLiveSync: () => undefined,
-}));
+// Stub only the live-sync subscription; keep real query/mutation hooks intact
+// (SessionPanel now mounts SessionPlanCard, which uses useRequestResume). Using
+// importActual keeps the mock robust against children adding more runtime hooks.
+vi.mock("../../../lib/api/runtime.js", async (importActual) => {
+  const actual = await importActual<
+    typeof import("../../../lib/api/runtime.js")
+  >();
+  return {
+    ...actual,
+    useControlStateLiveSync: () => undefined,
+  };
+});
 
 // Provide an active session via useSession; keep other sessions exports intact.
 vi.mock("../../../lib/api/sessions.js", async (importActual) => {
