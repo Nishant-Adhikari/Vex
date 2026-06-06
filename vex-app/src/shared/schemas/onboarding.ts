@@ -1,9 +1,12 @@
 /**
- * Schema for `vex.onboarding.getEnvState()` — file-presence-only checks
+ * Schema for `vex.onboarding.getEnvState()` — presence-only checks
  * (codex turn 3 RED #3). MUST NOT decrypt keystores or expose private
  * key material before the wallet-unlock flow. Wallet status is
  * deliberately reduced to `present | missing` rather than the richer
- * decrypt-tested status the post-unlock helper returns.
+ * decrypt-tested status the post-unlock helper returns. Presence is
+ * derived from the multi-wallet inventory (`config.json wallet.evm[]` /
+ * `wallet.solana[]`) plus the primary entry's keystore file existing on
+ * disk — NOT from a fixed keystore filename alone (see env-state.ts).
  *
  * `embeddings` lives here (not in DockerStatus) because the endpoint is
  * user-configured via `EMBEDDING_BASE_URL` — it might be Docker Model
@@ -16,11 +19,11 @@ import { polymarketStatusSchema } from "./api-keys.js";
 export const walletPresenceSchema = z.enum(["present", "missing"]);
 export type WalletPresence = z.infer<typeof walletPresenceSchema>;
 
-// M8: public addresses sourced from `config.json` so the wizard can
-// display them across sessions without the renderer needing to talk to
-// the keystore. NULL when the config has no address for that chain.
-// Optional on the schema so existing M2/M7 tests + envState handling
-// keep parsing without changes.
+// Public PRIMARY addresses (index 0 per family) sourced from the
+// `config.json` wallet inventory so the wizard can display them across
+// sessions without the renderer talking to the keystore. NULL when the
+// inventory has no wallet for that chain. Optional on the schema so
+// existing M2/M7 tests + envState handling keep parsing without changes.
 export const walletAddressesSchema = z
   .object({
     evm: z.string().nullable(),

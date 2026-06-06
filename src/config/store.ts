@@ -177,7 +177,7 @@ function parseClaudeConfig(raw: unknown): VexConfig["claude"] | undefined {
  * single corrupt row cannot brick config load; the keystore file survives and
  * the wallet can be re-imported.
  */
-function normalizeWalletSection(raw: unknown): VexConfig["wallet"] {
+export function normalizeWalletSection(raw: unknown): VexConfig["wallet"] {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     return { evm: [], solana: [] };
   }
