@@ -1,0 +1,51 @@
+import type { JSX } from "react";
+import type { WalletRestoreArchiveResult } from "@shared/schemas/wallets.js";
+import { AddressDisplay } from "../../../../../components/common/AddressDisplay.js";
+
+interface RestoreResultView {
+  readonly result: WalletRestoreArchiveResult;
+}
+
+export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
+  const walletWord =
+    result.walletsRestored.length === 1 ? "wallet" : "wallets";
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] p-3"
+      role="status"
+      aria-live="polite"
+      data-vex-restore-success
+    >
+      <p className="text-sm text-emerald-700 dark:text-emerald-400">
+        Restored {result.walletsRestored.length} {walletWord} and{" "}
+        {result.filesRestored.length} file
+        {result.filesRestored.length === 1 ? "" : "s"} from the backup.
+      </p>
+      {result.walletsRestored.length > 0 ? (
+        <ul className="flex flex-col gap-2">
+          {result.walletsRestored.map((wallet) => (
+            <li key={wallet.id} className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                {wallet.label}
+                {wallet.legacy === true ? " · legacy" : ""}
+              </span>
+              <AddressDisplay address={wallet.address} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {result.vaultLocked ? (
+        <p
+          className="rounded-md border border-amber-500/40 bg-amber-500/[0.08] p-3 text-sm text-amber-700 dark:text-amber-400"
+          role="alert"
+          data-vex-restore-vault-locked
+        >
+          This backup&apos;s vault uses a different master password. Vex is now
+          locked — unlock it again using <strong>this backup&apos;s</strong>{" "}
+          master password (not your previous one) to access the restored
+          wallets.
+        </p>
+      ) : null}
+    </div>
+  );
+}
