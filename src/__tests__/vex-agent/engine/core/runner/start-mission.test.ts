@@ -36,11 +36,11 @@ vi.mock("@vex-agent/db/repos/messages.js", () => ({
   getLiveMessages: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../../../../vex-agent/engine/core/hydrate.js", () => ({
+vi.mock("../../../../../vex-agent/engine/core/hydrate.js", () => ({
   hydrateEngineSession: (...a: unknown[]) => mockHydrate(...a),
 }));
 
-vi.mock("../../../../vex-agent/engine/core/turn-loop.js", () => ({
+vi.mock("../../../../../vex-agent/engine/core/turn-loop.js", () => ({
   runTurnLoop: (...a: unknown[]) => mockRunTurnLoop(...a),
 }));
 
@@ -63,7 +63,7 @@ vi.mock("@vex-agent/db/repos/missions.js", () => ({
 // downstream `startMissionRunBody` flow stays unchanged. Tests that
 // exercise gate-rejection paths override this.
 const mockCommitMissionStart = vi.fn();
-vi.mock("../../../../vex-agent/engine/mission/commit-start.js", () => ({
+vi.mock("../../../../../vex-agent/engine/mission/commit-start.js", () => ({
   commitMissionStart: (...a: unknown[]) => mockCommitMissionStart(...a),
 }));
 
@@ -156,10 +156,10 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
   PROTOCOL_NAMESPACE_ALLOWLIST: [],
 }));
 
-const runnerModule = await import("../../../../vex-agent/engine/core/runner.js");
+const runnerModule = await import("../../../../../vex-agent/engine/core/runner.js");
 const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
-const { MissionRunPausedError } = await import("../../../../vex-agent/engine/types.js");
-const { ITERATION_LIMIT_REPLY } = await import("../../../../vex-agent/engine/core/runner/shared.js");
+const { MissionRunPausedError } = await import("../../../../../vex-agent/engine/types.js");
+const { ITERATION_LIMIT_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
 
 function makeProvider() {
   return {
@@ -282,161 +282,6 @@ describe("runner", () => {
         frozenMission: {},
       },
     }));
-  });
-
-  // ── processAgentTurn ─────────────────────────────────────────
-
-  describe("processAgentTurn", () => {
-    it("saves user message and runs turn loop", async () => {
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
-      mockRunTurnLoop.mockResolvedValueOnce({
-        text: "Hello!", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
-      });
-
-      const result = await processAgentTurn("session-1", "Hi");
-
-      expect(mockAddMessage).toHaveBeenCalledWith(
-        "session-1",
-        expect.objectContaining({ role: "user", content: "Hi" }),
-        expect.objectContaining({ source: "user", messageType: "chat" }),
-      );
-      expect(result.text).toBe("Hello!");
-      expect(result.missionStatus).toBeNull();
-    });
-
-    it("throws if no provider", async () => {
-      mockResolveProvider.mockResolvedValueOnce(null);
-      await expect(processAgentTurn("session-1", "Hi")).rejects.toThrow("No inference provider");
-    });
-
-    it("throws if session not found", async () => {
-      mockHydrate.mockResolvedValueOnce(null);
-      await expect(processAgentTurn("nonexistent", "Hi")).rejects.toThrow("not found");
-    });
-
-    it("synthesises a graceful reply when the loop hits iteration_limit with no text", async () => {
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
-      mockRunTurnLoop.mockResolvedValueOnce({
-        text: null, toolCallsMade: 50, pendingApprovals: [], stopReason: "iteration_limit",
-      });
-
-      const result = await processAgentTurn("session-1", "Hi");
-
-      expect(result.text).toBe(ITERATION_LIMIT_REPLY);
-      expect(result.stopReason).toBe("iteration_limit");
-      expect(mockAddMessage).toHaveBeenCalledWith(
-        "session-1",
-        expect.objectContaining({ role: "assistant", content: ITERATION_LIMIT_REPLY }),
-        expect.objectContaining({ source: "assistant", messageType: "chat", visibility: "user" }),
-      );
-    });
-
-    it("preserves a partial reply on iteration_limit (no synthesis when text exists)", async () => {
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
-      mockRunTurnLoop.mockResolvedValueOnce({
-        text: "Partial progress so far.", toolCallsMade: 50, pendingApprovals: [], stopReason: "iteration_limit",
-      });
-
-      const result = await processAgentTurn("session-1", "Hi");
-
-      expect(result.text).toBe("Partial progress so far.");
-      // No synthesised assistant message persisted (only the user message).
-      expect(mockAddMessage).not.toHaveBeenCalledWith(
-        "session-1",
-        expect.objectContaining({ content: ITERATION_LIMIT_REPLY }),
-        expect.anything(),
-      );
-    });
-  });
-
-  // ── processMissionSetupTurn ────────────────────────────────
-
-  describe("processMissionSetupTurn", () => {
-    it("adds a DB-not-ready correction when setup text suggests starting a draft", async () => {
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
-        sessionKind: "mission",
-        missionId: "mission-1",
-      }));
-      mockGetMission
-        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }))
-        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }));
-      mockRunTurnLoop.mockResolvedValueOnce({
-        text: "You can now start the mission from the host UI.",
-        toolCallsMade: 1,
-        pendingApprovals: [],
-        stopReason: null,
-      });
-
-      const result = await processMissionSetupTurn("session-1", "ready");
-
-      expect(result.missionStatus).toBe("draft");
-      expect(result.text).toContain("You can now start the mission from the host UI.");
-      expect(result.text).toContain("Mission draft is not ready in the database.");
-      expect(result.text).toContain("Missing fields:");
-      expect(mockAddEngineMessage).toHaveBeenCalledWith(
-        "session-1",
-        expect.stringContaining("Mission draft is not ready in the database."),
-        expect.objectContaining({
-          source: "engine",
-          messageType: "mission_setup",
-          visibility: "internal",
-          payload: expect.objectContaining({
-            missionId: "mission-1",
-            status: "draft",
-            correction: "db_not_ready_start_suggestion",
-          }),
-        }),
-      );
-    });
-
-    it("synthesises a graceful reply on iteration_limit and skips mission-patch parsing", async () => {
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
-        sessionKind: "mission",
-        missionId: "mission-1",
-      }));
-      mockGetMission
-        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }))
-        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }));
-      mockRunTurnLoop.mockResolvedValueOnce({
-        text: null,
-        toolCallsMade: 25,
-        pendingApprovals: [],
-        stopReason: "iteration_limit",
-      });
-
-      const result = await processMissionSetupTurn("session-1", "Hi");
-
-      expect(result.text).toBe(ITERATION_LIMIT_REPLY);
-      expect(mockAddMessage).toHaveBeenCalledWith(
-        "session-1",
-        expect.objectContaining({ role: "assistant", content: ITERATION_LIMIT_REPLY }),
-        expect.objectContaining({ source: "assistant", messageType: "mission_setup", visibility: "user" }),
-      );
-      // Synthesised text must NOT be parsed/applied as a mission draft patch.
-      expect(mockUpdateDraft).not.toHaveBeenCalled();
-    });
-
-    it("forces plan-mode OFF in the dispatch context during setup (gate must not block mission_draft_update)", async () => {
-      // Session has plan-mode enabled, but setup is the WHAT phase — the plan
-      // execution gate must be inactive so mission_draft_update (local_write)
-      // is not blocked. Regression for the Codex holistic-review blocker.
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
-        sessionKind: "mission",
-        missionId: "mission-1",
-        planMode: true,
-      }));
-      mockGetMission
-        .mockResolvedValueOnce(makeMission({ title: "SOL" }))
-        .mockResolvedValueOnce(makeMission({ title: "SOL" }));
-      mockRunTurnLoop.mockResolvedValueOnce({
-        text: "ok", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
-      });
-
-      await processMissionSetupTurn("session-1", "hi");
-
-      const passedContext = mockRunTurnLoop.mock.calls[0][0] as { planMode?: boolean };
-      expect(passedContext.planMode).toBe(false);
-    });
   });
 
   // ── startMission ────────────────────────────────────────────
@@ -715,7 +560,7 @@ describe("runner", () => {
       });
 
       const releaseModule = await import(
-        "../../../../vex-agent/engine/runtime/release-and-emit.js"
+        "../../../../../vex-agent/engine/runtime/release-and-emit.js"
       );
       const releaseMock = vi.mocked(releaseModule.releaseLeaseAndEmitControlState);
       releaseMock.mockClear();
@@ -736,7 +581,7 @@ describe("runner", () => {
       });
 
       const releaseModule = await import(
-        "../../../../vex-agent/engine/runtime/release-and-emit.js"
+        "../../../../../vex-agent/engine/runtime/release-and-emit.js"
       );
       const releaseMock = vi.mocked(releaseModule.releaseLeaseAndEmitControlState);
       releaseMock.mockClear();
@@ -754,68 +599,6 @@ describe("runner", () => {
       const commitCall = mockCommitMissionStart.mock.calls[0]!;
       const candidateRunId = (commitCall[0] as { runId: string }).runId;
       expect(releaseRunId).toBe(candidateRunId);
-    });
-  });
-
-  // ── resumeMissionRun ────────────────────────────────────────
-
-  describe("resumeMissionRun", () => {
-    it("resumes run and enters loop", async () => {
-      mockGetRun.mockResolvedValueOnce({
-        id: "run-1", missionId: "mission-1", sessionId: "session-1",
-        status: "running", iterationCount: 5,
-      });
-      mockGetMission.mockResolvedValueOnce({
-        id: "mission-1", rootSessionId: "session-1", status: "running",
-        title: "SOL DCA", goal: "Accumulate", capitalSourceJson: {},
-        allowedWallets: ["sol"], allowedChains: ["sol"], allowedProtocols: ["sol"],
-        riskProfile: "conservative", successCriteriaJson: [], stopConditionsJson: [],
-        constraintsJson: {}, createdAt: "", updatedAt: "", approvedAt: "",
-      });
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
-        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
-      }));
-      mockRunTurnLoop.mockResolvedValueOnce({
-        text: "Resumed", toolCallsMade: 1, pendingApprovals: [], stopReason: null,
-      });
-
-      const result = await resumeMissionRun("run-1");
-
-      expect(result.text).toBe("Resumed");
-      expect(result.missionStatus).toBe("running");
-    });
-
-    it("pauses the run with evidence when resume throws inside the loop", async () => {
-      mockGetRun.mockResolvedValueOnce({
-        id: "run-1", missionId: "mission-1", sessionId: "session-1",
-        status: "paused_wake", iterationCount: 5,
-      });
-      mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
-      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
-        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
-      }));
-      mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
-
-      await expect(resumeMissionRun("run-1")).rejects.toBeInstanceOf(MissionRunPausedError);
-
-      expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-1", "running");
-      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
-        "run-1",
-        "paused_error",
-        "provider_error",
-        expect.objectContaining({
-          evidence: expect.objectContaining({
-            errorMessage: "provider exploded",
-            runId: "run-1",
-          }),
-        }),
-        expect.anything(),
-      );
-    });
-
-    it("throws if run not found", async () => {
-      mockGetRun.mockResolvedValueOnce(null);
-      await expect(resumeMissionRun("nonexistent")).rejects.toThrow("not found");
     });
   });
 });
