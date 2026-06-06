@@ -30,225 +30,53 @@
  * main returns `wallet.keystore_locked`. We render the explanation and
  * auto-close so the user lands on the global unlock screen — the global
  * lock observer in `UnlockScreen` / `uiStore` then takes over.
+ *
+ * Structure: state + export mechanics live in the local `useExportPrivateKey`
+ * hook; the header / idle form / status banners / footer are co-located
+ * presentational subcomponents under `./ExportPrivateKeyModal/`. This file
+ * owns the controlled dialog shell and composes those pieces. Public exports
+ * (`ExportPrivateKeyModalProps`, `ExportPrivateKeyModal`) are unchanged.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type JSX,
-} from "react";
-import { PASSWORD_MIN_LENGTH } from "@shared/schemas/secrets.js";
-import { getErrorCopy } from "../../lib/errors/error-copy.js";
-import { Button } from "../../components/ui/button.js";
+import { type JSX } from "react";
 import {
   Dialog,
   DialogBody,
   DialogContent,
   DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "../../components/ui/dialog.js";
-import { Input } from "../../components/ui/input.js";
-import { Label } from "../../components/ui/label.js";
-import { ExportLockIcon } from "./ExportLockIcon.js";
-import {
-  ExportWalletPicker,
-  type ExportWalletSelection,
-} from "./ExportWalletPicker.js";
-
-type Chain = "evm" | "solana";
-
-type Phase = "idle" | "copied" | "cleared" | "closing";
+import { useExportPrivateKey } from "./ExportPrivateKeyModal/useExportPrivateKey.js";
+import { ExportPrivateKeyHeader } from "./ExportPrivateKeyModal/ExportPrivateKeyHeader.js";
+import { ExportPrivateKeyForm } from "./ExportPrivateKeyModal/ExportPrivateKeyForm.js";
+import { ExportPrivateKeyBanners } from "./ExportPrivateKeyModal/ExportPrivateKeyBanners.js";
+import { ExportPrivateKeyFooter } from "./ExportPrivateKeyModal/ExportPrivateKeyFooter.js";
+import type { Chain } from "./ExportPrivateKeyModal/types.js";
 
 export interface ExportPrivateKeyModalProps {
   readonly chain: Chain;
   readonly onClose: () => void;
 }
 
-const CHAIN_LABEL: Record<Chain, string> = {
-  evm: "EVM",
-  solana: "Solana",
-};
-
-/**
- * Auto-close delay (ms) once the clipboard-scrub countdown has elapsed and
- * before invoking `onClose()`. Gives the user time to read the
- * confirmation banner.
- */
-const POST_CLEAR_AUTOCLOSE_MS = 3000;
-/**
- * Auto-close delay (ms) for session-lock recovery. Same idea as the
- * post-clear close — the user reads the explanation, then we close so the
- * global unlock observer can take over.
- */
-const SESSION_LOCK_AUTOCLOSE_MS = 3000;
-
 export function ExportPrivateKeyModal({
   chain,
   onClose,
 }: ExportPrivateKeyModalProps): JSX.Element {
-  // Password stays in the DOM (uncontrolled input). React state only tracks
-  // the boolean "is current value long enough to enable submit" — the secret
-  // value itself never lives in a React fiber.
-  const passwordRef = useRef<HTMLInputElement | null>(null);
-  const [passwordLongEnough, setPasswordLongEnough] = useState<boolean>(false);
-  const [riskAcknowledged, setRiskAcknowledged] = useState<boolean>(false);
-  const [pending, setPending] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [clearCountdown, setClearCountdown] = useState<number>(0);
-  // Which wallet to export — set by the picker; null disables submit.
-  const [selected, setSelected] = useState<ExportWalletSelection | null>(null);
-
-  // Ref-based reentry guard so the auto-close `setTimeout` callbacks never
-  // call `onClose` twice (StrictMode double-mount, fast user double-click).
-  const closedRef = useRef<boolean>(false);
-  // Track whether a session-lock auto-close is already scheduled so a
-  // re-render or a re-submission can't queue a second close.
-  const lockAutoCloseScheduledRef = useRef<boolean>(false);
-  // Timer id for the session-lock auto-close, so we can cancel it on unmount.
-  const lockAutoCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-
-  const wipePasswordField = useCallback((): void => {
-    if (passwordRef.current !== null) passwordRef.current.value = "";
-    setPasswordLongEnough(false);
-  }, []);
-
-  const safeClose = useCallback((): void => {
-    if (closedRef.current) return;
-    closedRef.current = true;
-    onClose();
-  }, [onClose]);
-
-  // Countdown timer: ticks once per second while phase === "copied".
-  // Stops when the countdown reaches 0 and transitions to "cleared".
-  useEffect(() => {
-    if (phase !== "copied") return;
-    if (clearCountdown <= 0) {
-      setPhase("cleared");
-      return;
-    }
-    const id = window.setInterval(() => {
-      setClearCountdown((prev) => {
-        const next = prev - 1;
-        if (next <= 0) {
-          window.clearInterval(id);
-          setPhase("cleared");
-          return 0;
-        }
-        return next;
-      });
-    }, 1000);
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [phase, clearCountdown]);
-
-  // Post-clear auto-close: schedule the dialog dismiss once the scrub
-  // banner has been on screen long enough to read.
-  useEffect(() => {
-    if (phase !== "cleared") return;
-    const id = window.setTimeout(() => {
-      setPhase("closing");
-      safeClose();
-    }, POST_CLEAR_AUTOCLOSE_MS);
-    return () => {
-      window.clearTimeout(id);
-    };
-  }, [phase, safeClose]);
-
-  // Final cleanup — guarantees no late `onClose` fires after unmount and
-  // cancels any in-flight session-lock auto-close timer.
-  useEffect(() => {
-    return () => {
-      closedRef.current = true;
-      if (lockAutoCloseTimerRef.current !== null) {
-        window.clearTimeout(lockAutoCloseTimerRef.current);
-        lockAutoCloseTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const scheduleSessionLockAutoClose = useCallback((): void => {
-    if (lockAutoCloseScheduledRef.current) return;
-    lockAutoCloseScheduledRef.current = true;
-    lockAutoCloseTimerRef.current = window.setTimeout(() => {
-      lockAutoCloseTimerRef.current = null;
-      safeClose();
-    }, SESSION_LOCK_AUTOCLOSE_MS);
-  }, [safeClose]);
-
-  const canSubmit =
-    phase === "idle" &&
-    selected !== null &&
-    riskAcknowledged &&
-    passwordLongEnough &&
-    !pending;
-
-  const onSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-      event.preventDefault();
-      if (!canSubmit || selected === null) return;
-
-      setPending(true);
-      setError(null);
-
-      try {
-        const result = await window.vex.wallet.exportPrivateKey({
-          chain,
-          walletId: selected.walletId,
-          password: passwordRef.current?.value ?? "",
-          riskAcknowledged: true,
-        });
-
-        if (!result.ok) {
-          // Always scrub the password input on a failed attempt: the user
-          // will re-type, and we don't want even the briefest stale value
-          // sitting in the DOM between attempts.
-          wipePasswordField();
-
-          const copy = getErrorCopy(result.error, { chain });
-          setError(copy.message);
-          // Helper signals that this error should auto-route the user back
-          // to the global unlock screen — schedule the modal dismiss.
-          if (copy.autoCloseMs !== undefined) {
-            scheduleSessionLockAutoClose();
-          }
-          return;
-        }
-
-        // Success path — main has already copied the key to the OS
-        // clipboard. We never see the secret. Render the scrub countdown.
-        const clearMs = result.data.clearAfterMs;
-        const clearSec = Math.max(1, Math.ceil(clearMs / 1000));
-        wipePasswordField();
-        setClearCountdown(clearSec);
-        setPhase("copied");
-      } catch (cause) {
-        // contextBridge throws synchronously on unhandled invoke (e.g.
-        // missing channel). Treat as an unknown internal failure — no
-        // secret has been produced because main never replied successfully.
-        const message =
-          cause instanceof Error
-            ? cause.message
-            : "Unexpected error during private key export.";
-        wipePasswordField();
-        setError(message);
-      } finally {
-        setPending(false);
-      }
-    },
-    [canSubmit, chain, selected, scheduleSessionLockAutoClose, wipePasswordField],
-  );
-
-  const onCancel = useCallback((): void => {
-    safeClose();
-  }, [safeClose]);
-
-  const dialogOpen = phase !== "closing";
+  const {
+    passwordRef,
+    riskAcknowledged,
+    setRiskAcknowledged,
+    setPasswordLongEnough,
+    setSelected,
+    pending,
+    error,
+    phase,
+    clearCountdown,
+    canSubmit,
+    dialogOpen,
+    onSubmit,
+    onCancel,
+    safeClose,
+  } = useExportPrivateKey({ chain, onClose });
 
   return (
     <Dialog open={dialogOpen} onOpenChange={(next) => {
@@ -263,128 +91,35 @@ export function ExportPrivateKeyModal({
         closeOnBackdropClick={false}
         data-vex-export-private-key={chain}
       >
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <ExportLockIcon />
-            <DialogTitle>
-              Export private key — {CHAIN_LABEL[chain]}
-            </DialogTitle>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Choose a wallet, then re-enter your master password.
-          </p>
-        </DialogHeader>
+        <ExportPrivateKeyHeader chain={chain} />
 
         <DialogBody>
           {phase === "idle" ? (
-            <form
-              id="vex-export-private-key-form"
+            <ExportPrivateKeyForm
+              chain={chain}
+              pending={pending}
+              riskAcknowledged={riskAcknowledged}
+              error={error}
+              passwordRef={passwordRef}
               onSubmit={(event) => {
                 void onSubmit(event);
               }}
-              className="flex flex-col gap-4"
-            >
-              <ExportWalletPicker
-                chain={chain}
-                disabled={pending}
-                onSelect={setSelected}
-              />
-              <p
-                className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
-                role="alert"
-              >
-                Your private key will be copied to the system clipboard. Vex{" "}
-                <strong>will attempt</strong> to clear the clipboard after 10
-                seconds, but this is best-effort — a crash or power loss may
-                prevent cleanup. Anyone with access to this computer during
-                that window can read the key. Do not paste it into untrusted
-                applications. The key will NOT be shown on screen.
-              </p>
-
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={riskAcknowledged}
-                  onChange={(event) => setRiskAcknowledged(event.target.checked)}
-                  disabled={pending}
-                  className="mt-0.5 h-4 w-4 rounded border-input"
-                  data-vex-export-ack
-                />
-                <span>I understand and accept the risks</span>
-              </label>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="vex-export-private-key-password">
-                  Master password
-                </Label>
-                <Input
-                  id="vex-export-private-key-password"
-                  ref={passwordRef}
-                  type="password"
-                  autoComplete="current-password"
-                  onChange={(event) =>
-                    setPasswordLongEnough(
-                      event.target.value.length >= PASSWORD_MIN_LENGTH,
-                    )
-                  }
-                  disabled={pending}
-                  data-vex-export-password
-                />
-              </div>
-
-              {error !== null ? (
-                <p
-                  className="text-sm text-destructive"
-                  role="alert"
-                  data-vex-export-error
-                >
-                  {error}
-                </p>
-              ) : null}
-            </form>
+              onSelect={setSelected}
+              onRiskAcknowledgedChange={setRiskAcknowledged}
+              onPasswordLengthChange={setPasswordLongEnough}
+            />
           ) : null}
 
-          {phase === "copied" ? (
-            <p
-              className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400"
-              role="status"
-              data-vex-export-status="copied"
-            >
-              Copied. Clipboard will be scrubbed in {clearCountdown}s.
-            </p>
-          ) : null}
-
-          {phase === "cleared" || phase === "closing" ? (
-            <p
-              className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400"
-              role="status"
-              data-vex-export-status="cleared"
-            >
-              Vex attempted to scrub the clipboard. This window will close shortly.
-            </p>
-          ) : null}
+          <ExportPrivateKeyBanners phase={phase} clearCountdown={clearCountdown} />
         </DialogBody>
 
         <DialogFooter>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onCancel}
-            disabled={pending}
-            data-vex-export-cancel
-          >
-            Cancel
-          </Button>
-          {phase === "idle" ? (
-            <Button
-              type="submit"
-              form="vex-export-private-key-form"
-              disabled={!canSubmit}
-              data-vex-export-submit
-            >
-              {pending ? "Copying…" : "Copy to clipboard"}
-            </Button>
-          ) : null}
+          <ExportPrivateKeyFooter
+            phase={phase}
+            pending={pending}
+            canSubmit={canSubmit}
+            onCancel={onCancel}
+          />
         </DialogFooter>
       </DialogContent>
     </Dialog>
