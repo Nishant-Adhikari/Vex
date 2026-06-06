@@ -27,13 +27,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowRight01Icon,
-  Radar02Icon,
-  Settings02Icon,
-  Wifi02Icon,
-} from "@hugeicons/core-free-icons";
-import { Apple, Docker, Linux, Windows } from "@thesvg/react";
+import { Radar02Icon } from "@hugeicons/core-free-icons";
 
 import { useDockerStatus } from "../../lib/api/docker.js";
 import { useEnvState } from "../../lib/api/onboarding.js";
@@ -41,7 +35,10 @@ import { useSystemHealth } from "../../lib/api/system.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { cn } from "../../lib/utils.js";
 import { WIZARD_STEP_IDS } from "@shared/schemas/wizard.js";
-import { StepRow, type StepStatus } from "./StepRow.js";
+import { type StepStatus } from "./StepRow.js";
+import { platformOf, type Platform } from "./SystemCheck/OperatingSystemIcon.js";
+import { ProbeRows } from "./SystemCheck/ProbeRows.js";
+import { Footer } from "./SystemCheck/Footer.js";
 
 /**
  * Total onboarding steps surfaced in the "Step X of N" indicator.
@@ -57,35 +54,6 @@ const SETUP_VIEWS_BEFORE_WIZARD = 4;
 const TOTAL_ONBOARDING_STEPS =
   SETUP_VIEWS_BEFORE_WIZARD + (WIZARD_STEP_IDS.length - 1);
 const SYSTEM_CHECK_STEP = 1;
-
-type Platform = "win32" | "darwin" | "linux" | "other";
-
-function platformOf(platformRaw: string | undefined): Platform {
-  switch (platformRaw) {
-    case "win32":
-    case "darwin":
-    case "linux":
-      return platformRaw;
-    default:
-      return "other";
-  }
-}
-
-function OperatingSystemIcon({ platform }: { platform: Platform }): JSX.Element {
-  const commonProps = { width: 22, height: 22, "aria-hidden": true } as const;
-  switch (platform) {
-    case "win32":
-      return <Windows {...commonProps} />;
-    case "darwin":
-      return <Apple {...commonProps} />;
-    case "linux":
-      return <Linux {...commonProps} />;
-    default:
-      return (
-        <HugeiconsIcon icon={Settings02Icon} size={22} aria-hidden />
-      );
-  }
-}
 
 export function SystemCheck(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
@@ -222,146 +190,27 @@ export function SystemCheck(): JSX.Element {
           </header>
 
           {/* ROWS */}
-          <ol className="flex flex-col gap-2 px-5 py-5">
-            {revealCount >= 1 ? (
-              <StepRow
-                label="Operating system"
-                status={osStatus}
-                icon={<OperatingSystemIcon platform={platform} />}
-                detail={
-                  health.data?.ok
-                    ? `${formatPlatform(health.data.data.os.platform, health.data.data.os.distro)} · Electron ${health.data.data.os.electronVersion}`
-                    : null
-                }
-              />
-            ) : null}
-            {revealCount >= 2 ? (
-              <StepRow
-                label="Network connectivity"
-                status={networkStatus}
-                icon={<HugeiconsIcon icon={Wifi02Icon} size={22} aria-hidden />}
-                detail={
-                  health.data?.ok
-                    ? health.data.data.network.online
-                      ? `online · ${health.data.data.network.latencyMs ?? "?"} ms`
-                      : "offline — agent will run with limited capabilities"
-                    : null
-                }
-              />
-            ) : null}
-            {revealCount >= 3 ? (
-              <StepRow
-                label="Docker Engine"
-                status={dockerStatus}
-                icon={<Docker width={22} height={22} aria-hidden />}
-                // "READY" reads more accurately than "OK" for an engine
-                // that's installed + daemon running + container available.
-                // Other states fall back to StepRow defaults (CHECKING…/WARN/FAIL).
-                badgeLabel={dockerStatus === "ok" ? "READY" : undefined}
-                detail={
-                  docker.data?.ok
-                    ? formatDockerDetail(docker.data.data)
-                    : null
-                }
-              />
-            ) : null}
-            {revealCount >= 4 ? (
-              <StepRow
-                label="Vex configuration"
-                status={envStatus}
-                icon={
-                  <HugeiconsIcon icon={Settings02Icon} size={22} aria-hidden />
-                }
-                // First-run nudge: "SETUP" beats "WARN" for a warn state that
-                // means "guided setup required" — the only warn cause for
-                // env config currently. Other states use defaults.
-                badgeLabel={envStatus === "warn" ? "SETUP" : undefined}
-                detail={
-                  env.data?.ok ? formatEnvDetail(env.data.data) : null
-                }
-              />
-            ) : null}
-          </ol>
+          <ProbeRows
+            revealCount={revealCount}
+            platform={platform}
+            osStatus={osStatus}
+            networkStatus={networkStatus}
+            dockerStatus={dockerStatus}
+            envStatus={envStatus}
+            health={health}
+            docker={docker}
+            env={env}
+          />
 
-          {/* FOOTER — step counter + Continue */}
-          <div className="flex items-center justify-between border-t border-white/[0.06] px-6 py-4">
-            <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
-              Step {SYSTEM_CHECK_STEP} of {TOTAL_ONBOARDING_STEPS}
-            </span>
-          </div>
-          <div className="px-5 pb-5">
-            <button
-              type="button"
-              disabled={anyLoading}
-              onClick={() => setCurrentView("dockerBootstrap")}
-              aria-label="Continue to Docker bootstrap"
-              className={cn(
-                "group relative inline-flex w-full items-center justify-center gap-3",
-                "rounded-2xl border border-white/[0.16] bg-[var(--systemcheck-accent)]/85 backdrop-blur-xl",
-                "px-6 py-3.5 font-mono text-sm uppercase tracking-[0.22em] text-white",
-                "shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_40px_rgba(50,117,248,0.28)]",
-                "transition-all duration-300 ease-out",
-                "hover:bg-[var(--systemcheck-accent)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.26),0_14px_50px_rgba(50,117,248,0.42)]",
-                "active:scale-[0.98] active:duration-100",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--systemcheck-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
-                "disabled:cursor-not-allowed disabled:opacity-60",
-              )}
-            >
-              <span>Continue</span>
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                size={16}
-                aria-hidden
-                className="transition-transform duration-300 group-hover:translate-x-0.5"
-              />
-            </button>
-          </div>
+          <Footer
+            stepNumber={SYSTEM_CHECK_STEP}
+            totalSteps={TOTAL_ONBOARDING_STEPS}
+            disabled={anyLoading}
+            onContinue={() => setCurrentView("dockerBootstrap")}
+          />
         </motion.div>
       </section>
 
     </div>
   );
-}
-
-function formatPlatform(
-  platform: string,
-  distro: string | null | undefined,
-): string {
-  const labelByPlatform: Record<string, string> = {
-    win32: "Windows",
-    darwin: "macOS",
-    linux: "Linux",
-  };
-  const base = labelByPlatform[platform] ?? platform;
-  return distro ? `${base} · ${distro}` : base;
-}
-
-function formatDockerDetail(
-  status: import("@shared/schemas/docker.js").DockerStatus,
-): string {
-  if (!status.endpoint.accepted) {
-    return status.endpoint.message ?? "Docker endpoint rejected.";
-  }
-  const engine = status.engine.present
-    ? `Docker ${status.engine.version ?? "?"}`
-    : "Docker not found";
-  const daemon = status.daemon.running ? "daemon running" : "daemon stopped";
-  const compose = status.compose.present
-    ? `Compose ${status.compose.version ?? "?"}`
-    : "Compose missing";
-  return `${engine} · ${daemon} · ${compose}`;
-}
-
-function formatEnvDetail(
-  state: import("@shared/schemas/onboarding.js").EnvState,
-): string {
-  if (state.setupCompleteFlag) return "Setup previously completed.";
-  const parts: string[] = [];
-  if (state.walletStatus.evm === "present") parts.push("EVM keystore present");
-  if (state.walletStatus.solana === "present")
-    parts.push("Solana keystore present");
-  if (state.embeddings.configured) parts.push("Embeddings configured");
-  return parts.length > 0
-    ? `Partial config: ${parts.join(", ")}.`
-    : "First run — guided setup required.";
 }
