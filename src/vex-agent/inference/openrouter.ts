@@ -46,9 +46,10 @@ import {
 
 import logger from "@utils/logger.js";
 import { normalizeOpenRouterError } from "./openrouter/errors.js";
-import { extractUsage, parseNonStreamingResponse, processToolCallDelta } from "./openrouter/mappers.js";
+import { extractUsage, parseNonStreamingResponse } from "./openrouter/mappers.js";
 import { buildOpenRouterParams } from "./openrouter/params.js";
 import { computeRequestCost } from "./openrouter/cost.js";
+import { consumeOpenRouterStream } from "./openrouter/stream.js";
 
 // ── Pricing parse ────────────────────────────────────────────────
 //
@@ -340,56 +341,7 @@ export class OpenRouterProvider implements InferenceProvider {
       throw normalizeOpenRouterError(err, "streaming chat completion");
     }
 
-    // Accumulate tool call deltas by index
-    const toolCallAccumulator = new Map<number, {
-      id: string;
-      name: string;
-      argsBuffer: string;
-    }>();
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices?.[0]?.delta;
-
-      // Error on chunk
-      if (chunk.error) {
-        yield {
-          type: "error",
-          errorMessage: chunk.error.message,
-          errorCode: chunk.error.code,
-        };
-        continue;
-      }
-
-      // Text content delta
-      if (delta?.content) {
-        yield { type: "content", text: delta.content };
-      }
-
-      // Reasoning delta
-      if (delta?.reasoning) {
-        yield { type: "reasoning", reasoningText: delta.reasoning };
-      }
-
-      // Tool call deltas — accumulate by index
-      if (delta?.toolCalls) {
-        for (const tc of delta.toolCalls) {
-          yield* processToolCallDelta(tc, toolCallAccumulator);
-        }
-      }
-
-      // Usage (typically in last chunk)
-      if (chunk.usage) {
-        yield { type: "usage", usage: extractUsage(chunk.usage) };
-      }
-
-      // Check finish reason
-      const finishReason = chunk.choices?.[0]?.finishReason;
-      if (finishReason === "stop" || finishReason === "tool_calls") {
-        // Yield final parsed tool calls if accumulated
-        // (done event signals completion — engine assembles final tool calls)
-        yield { type: "done" };
-      }
-    }
+    yield* consumeOpenRouterStream(stream);
   }
 
   // ── getBalance ──────────────────────────────────────────────────
