@@ -36,12 +36,7 @@
  */
 
 import { useCallback, useRef, useState, type JSX } from "react";
-import { Tavily, X } from "@thesvg/react";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
-import type { PolymarketStatus } from "@shared/schemas/api-keys.js";
-import { Button } from "../../../components/ui/button.js";
-import { Label } from "../../../components/ui/label.js";
-import { PasswordField } from "../../../components/common/PasswordField.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import {
   setApiKeys,
@@ -58,11 +53,15 @@ import {
   clearAll,
   type FieldRefs,
 } from "./api-keys/form-helpers.js";
+import { statusFor, polymarketStatusBadge } from "./api-keys/status-helpers.js";
+import { ApiKeysSkipPanel } from "./api-keys/ApiKeysSkipPanel.js";
+import { ApiKeysFormFooter } from "./api-keys/ApiKeysFormFooter.js";
 import {
-  ProviderCard,
-  type ProviderCardStatus,
-} from "./api-keys/ProviderCard.js";
-import { PolymarketAutoSetupSection } from "./polymarket-auto-setup/PolymarketAutoSetupSection.js";
+  JupiterCard,
+  TavilyCard,
+  RettiwtCard,
+  PolymarketCard,
+} from "./api-keys/ProviderCards.js";
 
 export interface ApiKeysStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -72,23 +71,6 @@ export interface ApiKeysStepProps {
 
 const POLYMARKET_PARTIAL_MESSAGE =
   "Polymarket has only some credentials saved. Use auto-configure to repair before continuing.";
-
-function statusFor(configured: boolean): ProviderCardStatus {
-  return configured
-    ? { tone: "set", label: "Set ✓" }
-    : { tone: "unset", label: "Not set" };
-}
-
-function polymarketStatusBadge(status: PolymarketStatus): ProviderCardStatus {
-  switch (status) {
-    case "configured":
-      return { tone: "set", label: "Set ✓" };
-    case "partial":
-      return { tone: "partial", label: "Partial" };
-    case "missing":
-      return { tone: "unset", label: "Not set" };
-  }
-}
 
 export function ApiKeysStep({
   completedSteps,
@@ -210,52 +192,20 @@ export function ApiKeysStep({
   const meta = WIZARD_STEP_META.apiKeys;
 
   if (canSkip) {
-    const polymarketNotConfigured = polymarketStatus !== "configured";
     return (
-      <WizardStepPanel
-        panelDataAttr={{ kind: "apikeys", value: "skip" }}
+      <ApiKeysSkipPanel
         icon={meta.icon}
-        title="API keys already configured"
-        description="Vex found your JUPITER_API_KEY in this install. Continue to keep using it. You can review or edit the optional integrations (Tavily, Rettiwt, Polymarket) from the Review step before finishing."
-        footer={
-          <Button
-            onClick={() => {
-              void onSkipContinue();
-            }}
-            disabled={stepAdvance.isPending}
-          >
-            {stepAdvance.isPending ? "Continuing…" : "Continue"}
-          </Button>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          {formError ? (
-            <p className="text-sm text-[var(--color-danger)]" role="alert">
-              {formError}
-            </p>
-          ) : null}
-          {polymarketNotConfigured ? (
-            <p
-              className="text-sm text-[var(--color-text-secondary)]"
-              data-vex-apikeys-skip-polymarket-cta="container"
-            >
-              Want to enable Polymarket trading?{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setFormError(null);
-                  setSkipExpanded(true);
-                }}
-                className="font-medium text-[var(--vex-onboarding-accent)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
-                data-vex-apikeys-skip-polymarket-cta="button"
-              >
-                Configure Polymarket now
-              </button>
-              .
-            </p>
-          ) : null}
-        </div>
-      </WizardStepPanel>
+        polymarketStatus={polymarketStatus}
+        formError={formError}
+        advancePending={stepAdvance.isPending}
+        onContinue={() => {
+          void onSkipContinue();
+        }}
+        onConfigurePolymarket={() => {
+          setFormError(null);
+          setSkipExpanded(true);
+        }}
+      />
     );
   }
 
@@ -272,213 +222,42 @@ export function ApiKeysStep({
         noValidate: true,
       }}
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              void onSkipContinue();
-            }}
-            disabled={submitting || stepAdvance.isPending}
-          >
-            Skip optional
-          </Button>
-          <Button type="submit" disabled={submitting || stepAdvance.isPending}>
-            {submitting || stepAdvance.isPending
-              ? "Saving…"
-              : flowMode === "back-edit"
-                ? "Save and return to review"
-                : "Save and continue"}
-          </Button>
-        </>
+        <ApiKeysFormFooter
+          flowMode={flowMode}
+          submitting={submitting}
+          advancePending={stepAdvance.isPending}
+          onSkip={() => {
+            void onSkipContinue();
+          }}
+        />
       }
     >
       <div className="flex flex-col gap-4">
-        {/* Jupiter — required, brand mark as PNG (decorative; the card
-            header h3 carries the accessible name). */}
-        <ProviderCard
-          slug="jupiter"
-          iconSlot={
-            <img
-              src="/logo/jupiter.png"
-              alt=""
-              aria-hidden
-              draggable={false}
-              className="h-6 w-6 object-contain"
-            />
-          }
-          name="Jupiter"
-          required
+        <JupiterCard
           status={statusFor(jupiterConfigured)}
-          description={
-            <>
-              Required for Solana swap + portfolio tools. Free API key —
-              open the portal, then{" "}
-              <span className="font-medium text-[var(--color-text-primary)]">
-                Settings → API Keys → + Create new API key
-              </span>
-              .
-            </>
-          }
-          getKey={{
-            url: "https://portal.jup.ag/",
-            label: "Open Jupiter Portal",
-          }}
-        >
-          <Label htmlFor="vex-apikey-jupiter" className="sr-only">
-            Jupiter API key
-          </Label>
-          <PasswordField
-            id="vex-apikey-jupiter"
-            autoFocus
-            autoComplete="new-password"
-            ref={refs.jupiter}
-          />
-          <p className="text-xs text-[var(--color-text-muted)]">
-            {jupiterConfigured
-              ? "Leave blank to keep, or paste a new key to overwrite."
-              : "Required to continue."}
-          </p>
-        </ProviderCard>
+          configured={jupiterConfigured}
+          inputRef={refs.jupiter}
+        />
 
-        {/* Tavily — optional, web research. Free tier: 1,000 q/month. */}
-        <ProviderCard
-          slug="tavily"
-          iconSlot={<Tavily width={20} height={20} aria-hidden />}
-          name="Tavily"
+        <TavilyCard
           status={statusFor(tavilyConfigured)}
-          description={
-            <>
-              Extends your agent with web research / search. Free tier:{" "}
-              <span className="font-medium text-[var(--color-text-primary)]">
-                1,000 queries / month
-              </span>
-              . Open the dashboard, then click the{" "}
-              <span className="font-medium text-[var(--color-text-primary)]">
-                +
-              </span>{" "}
-              next to API Keys.
-            </>
-          }
-          getKey={{
-            url: "https://app.tavily.com/home",
-            label: "Open Tavily dashboard",
-          }}
-        >
-          <Label htmlFor="vex-apikey-tavily" className="sr-only">
-            Tavily API key
-          </Label>
-          <PasswordField
-            id="vex-apikey-tavily"
-            autoComplete="new-password"
-            ref={refs.tavily}
-          />
-        </ProviderCard>
+          inputRef={refs.tavily}
+        />
 
-        {/* Rettiwt — optional, X / Twitter account tool. The key is a
-            base64-encoded session cookie, so the user-facing risk is
-            account-suspension, not API-quota. We point at the two
-            extension stores inline. */}
-        <ProviderCard
-          slug="rettiwt"
-          iconSlot={<X width={18} height={18} aria-hidden />}
-          name="Rettiwt (X / Twitter)"
+        <RettiwtCard
           status={statusFor(rettiwtConfigured)}
-          description={
-            <>
-              Unlocks the X (Twitter) account tool. The key is your X
-              session cookie, so use a{" "}
-              <span className="font-medium text-[var(--color-text-primary)]">
-                secondary X account
-              </span>{" "}
-              — Vex keeps the key encrypted locally, but X may still flag
-              automation activity (~1 in 100k risk). Sign in in an
-              incognito window, then click the extension to generate the
-              key. It stays valid for 5 years from login.
-            </>
-          }
-        >
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-            <a
-              href="https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-[var(--vex-onboarding-accent)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
-            >
-              Chrome: X Auth Helper ↗
-            </a>
-            <span aria-hidden className="text-[var(--color-text-muted)]">
-              ·
-            </span>
-            <a
-              href="https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-[var(--vex-onboarding-accent)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
-            >
-              Firefox: Rettiwt Auth Helper ↗
-            </a>
-          </div>
-          <Label htmlFor="vex-apikey-rettiwt" className="sr-only">
-            Rettiwt API key
-          </Label>
-          <PasswordField
-            id="vex-apikey-rettiwt"
-            autoComplete="new-password"
-            ref={refs.rettiwt}
-          />
-        </ProviderCard>
+          inputRef={refs.rettiwt}
+        />
 
-        {/* Polymarket — optional, auto-setup only. Manual trio entry
-            removed in PR8 redesign. Partial-state repair is the same
-            auto-setup button (PolymarketAutoSetupSection switches to
-            "replaces partial entries" label). Card root preserves the
-            `data-vex-apikeys-polymarket="fieldset"` test selector. */}
-        {polymarketPartial ? (
-          <div
-            role="alert"
-            data-vex-apikeys-warning="polymarket-partial"
-            className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] p-3 text-sm text-[var(--color-warning)]"
-          >
-            <strong className="font-semibold">
-              Polymarket needs all three credentials.
-            </strong>{" "}
-            One or two are already saved. Use auto-configure below to
-            repair the partial state.
-          </div>
-        ) : null}
-
-        <div data-vex-apikeys-polymarket="fieldset">
-          <ProviderCard
-            slug="polymarket"
-            iconSlot={
-              <img
-                src="/logo/polymarket.png"
-                alt=""
-                aria-hidden
-                draggable={false}
-                className="h-6 w-6 object-contain"
-              />
-            }
-            name="Polymarket"
-            status={polymarketStatusBadge(polymarketStatus)}
-            description={
-              <>
-                Prediction-market trading. Auto-setup derives CLOB API
-                credentials from your EVM wallet — no manual key entry,
-                nothing shown on screen. Replaces partial state in-place.
-              </>
-            }
-          >
-            <PolymarketAutoSetupSection
-              status={polymarketStatus}
-              evmWalletPresent={evmWalletPresent}
-              vaultUnlocked={vaultUnlocked}
-              disabled={submitting || stepAdvance.isPending}
-              onSuccess={invalidateEnvState}
-            />
-          </ProviderCard>
-        </div>
+        <PolymarketCard
+          status={polymarketStatusBadge(polymarketStatus)}
+          polymarketStatus={polymarketStatus}
+          polymarketPartial={polymarketPartial}
+          evmWalletPresent={evmWalletPresent}
+          vaultUnlocked={vaultUnlocked}
+          disabled={submitting || stepAdvance.isPending}
+          onSuccess={invalidateEnvState}
+        />
 
         {formError ? (
           <p className="text-sm text-[var(--color-danger)]" role="alert">
