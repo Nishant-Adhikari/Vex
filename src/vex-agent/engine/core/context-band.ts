@@ -15,7 +15,7 @@
  * before the next provider call — projecting token count pre-prompt would
  * require running the tokenizer, which is out of scope.
  *
- * Thresholds come from `memory/policy.ts` so the policy layer owns the
+ * Thresholds come from `context-pressure-policy.ts` so the policy layer owns the
  * single source of truth. `contextLimit <= 0` is treated as a degenerate
  * config (no meaningful pressure) → always `"normal"`. Prevents
  * division-by-zero.
@@ -27,7 +27,7 @@ import {
   PRESSURE_CRITICAL_FRACTION,
   classifyPressure,
   type PressureBand,
-} from "@vex-agent/memory/policy.js";
+} from "@vex-agent/engine/core/context-pressure-policy.js";
 
 export type ContextUsageBand = PressureBand;
 

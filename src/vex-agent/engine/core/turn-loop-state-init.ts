@@ -20,7 +20,7 @@
 
 import { createBandObserver, pressureFraction, type ContextUsageBand } from "./context-band.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
-import { POST_COMPACT_BRIDGE_CYCLES } from "@vex-agent/memory/policy.js";
+import { POST_COMPACT_BRIDGE_CYCLES } from "@vex-agent/engine/core/context-pressure-policy.js";
 import logger from "@utils/logger.js";
 
 export type BandObserveSource =

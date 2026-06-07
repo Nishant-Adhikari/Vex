@@ -21,7 +21,7 @@
 import { executeCompactNow, type CompactCommitResult } from "./service.js";
 import { getSessionMemoryStats } from "@vex-agent/db/repos/session-memories/index.js";
 import { query, queryOne } from "@vex-agent/db/client.js";
-import { MEMORY_BANNER_RECENT_THEMES_LIMIT } from "@vex-agent/memory/policy.js";
+import { MEMORY_BANNER_RECENT_THEMES_LIMIT } from "@vex-agent/memory/session-memory-policy.js";
 import logger from "@utils/logger.js";
 
 const SUMMARY_TAIL_CHARS = 1500;

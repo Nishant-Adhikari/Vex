@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 import type { CompactJob } from "../../db/repos/compact-jobs/index.js";
-import { TRACK2_TIMEOUT_MS } from "../../memory/policy.js";
+import { TRACK2_TIMEOUT_MS } from "./policy.js";
 import logger from "@utils/logger.js";
 import {
   renderRedactedArchivedTranscript,

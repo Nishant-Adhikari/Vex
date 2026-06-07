@@ -20,7 +20,7 @@
  * failure mode because they pollute pgvector with stale data.
  */
 
-import { EXCLUSION_REJECT_THRESHOLD } from "./policy.js";
+import { EXCLUSION_REJECT_THRESHOLD } from "./session-memory-policy.js";
 
 export interface ExclusionScanResult {
   liveStateMatches: number;

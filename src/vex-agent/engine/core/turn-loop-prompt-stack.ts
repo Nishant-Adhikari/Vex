@@ -28,7 +28,7 @@ import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
 import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
 import { buildMemoryStateBanner } from "../prompts/memory-state.js";
-import { MEMORY_BANNER_RECENT_THEMES_LIMIT } from "@vex-agent/memory/policy.js";
+import { MEMORY_BANNER_RECENT_THEMES_LIMIT } from "@vex-agent/memory/session-memory-policy.js";
 import {
   getOpenAITools,
   type ToolVisibilityContext,

@@ -8,7 +8,7 @@
 
 import type { KnowledgeEntry, InsertEntryInput } from "../knowledge.js";
 import type { KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
-import type { KnowledgeSource } from "@vex-agent/memory/policy.js";
+import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 
 /**
  * Input shape mirrors `knowledge_write` params + lineage fields. We accept the

@@ -26,7 +26,7 @@ import {
   MEMORY_BANNER_RECENT_THEMES_LIMIT,
   MEMORY_RECALL_DEFAULT_K,
   MEMORY_RECALL_MIN_SIMILARITY,
-} from "@vex-agent/memory/policy.js";
+} from "@vex-agent/memory/session-memory-policy.js";
 import logger from "@utils/logger.js";
 
 const MemoryRecallSchema = z.object({

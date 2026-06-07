@@ -8,7 +8,7 @@
 
 import type { KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
 import type { RecallCandidate } from "@vex-agent/knowledge/ranking.js";
-import type { KnowledgeSource } from "@vex-agent/memory/policy.js";
+import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 
 // ── Internal row types (not exported) ───────────────────────────
 

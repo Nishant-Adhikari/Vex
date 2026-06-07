@@ -47,7 +47,7 @@ import {
   TRACK2_RETRY_BACKOFF_BASE_MS,
   WORKER_HEARTBEAT_INTERVAL_MS,
   WORKER_STALE_THRESHOLD_MS,
-} from "@vex-agent/memory/policy.js";
+} from "@vex-agent/engine/compact-jobs/policy.js";
 import logger from "@utils/logger.js";
 
 export interface CompactJobsExecutorHandle {

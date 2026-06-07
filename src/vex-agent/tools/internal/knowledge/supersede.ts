@@ -30,7 +30,7 @@ import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { loadEmbeddingConfig } from "@vex-agent/embeddings/config.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { computeValidUntil, isValidKind } from "@vex-agent/knowledge/policy.js";
-import { isKnowledgeSource, type KnowledgeSource } from "@vex-agent/memory/policy.js";
+import { isKnowledgeSource, type KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { str, num, bool, ok, fail } from "../types.js";

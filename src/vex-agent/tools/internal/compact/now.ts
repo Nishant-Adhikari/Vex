@@ -25,7 +25,7 @@ import {
   MAX_THEME_HINTS,
   CHUNK_SECTION_MAX_CHARS,
   OUTSTANDING_ITEM_TEXT_MAX,
-} from "@vex-agent/memory/policy.js";
+} from "@vex-agent/memory/session-memory-policy.js";
 import { executeCompactNow } from "@vex-agent/engine/compact-jobs/service.js";
 import logger from "@utils/logger.js";
 

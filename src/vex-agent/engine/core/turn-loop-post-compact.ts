@@ -28,7 +28,7 @@ import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { appendEngineMessage } from "../events/append-transcript.js";
 import { appendPendingOperatorInstructions } from "./operator-instructions.js";
-import { POST_COMPACT_BRIDGE_CYCLES } from "@vex-agent/memory/policy.js";
+import { POST_COMPACT_BRIDGE_CYCLES } from "@vex-agent/engine/core/context-pressure-policy.js";
 import logger from "@utils/logger.js";
 
 export interface PostCompactStateUpdates {

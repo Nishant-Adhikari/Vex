@@ -41,7 +41,7 @@ import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
 import { validateTheme, buildFallbackTheme } from "@vex-agent/memory/theme-validation.js";
 import { redactStringArray } from "./archived-prefix.js";
 import type { ChunkerChunk } from "./chunker-call.js";
-import { MAX_OUTSTANDING_ITEMS_PER_CHUNK } from "@vex-agent/memory/policy.js";
+import { MAX_OUTSTANDING_ITEMS_PER_CHUNK } from "@vex-agent/memory/session-memory-policy.js";
 import logger from "@utils/logger.js";
 
 export interface ClaimGuard {

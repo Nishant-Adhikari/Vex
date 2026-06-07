@@ -25,7 +25,7 @@ import {
   updateEmbedding,
 } from "@vex-agent/db/repos/session-memories/index.js";
 import { embedDocument } from "@vex-agent/embeddings/client.js";
-import { OUTSTANDING_ITEM_TEXT_MAX } from "@vex-agent/memory/policy.js";
+import { OUTSTANDING_ITEM_TEXT_MAX } from "@vex-agent/memory/session-memory-policy.js";
 import { redact } from "@vex-agent/memory/redaction.js";
 import logger from "@utils/logger.js";
 

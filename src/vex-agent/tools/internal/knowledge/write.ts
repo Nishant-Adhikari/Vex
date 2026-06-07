@@ -24,7 +24,7 @@ import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { loadEmbeddingConfig } from "@vex-agent/embeddings/config.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { computeValidUntil, isValidKind } from "@vex-agent/knowledge/policy.js";
-import { isKnowledgeSource, type KnowledgeSource } from "@vex-agent/memory/policy.js";
+import { isKnowledgeSource, type KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { str, num, bool, ok, fail } from "../types.js";
@@ -162,7 +162,7 @@ export async function handleKnowledgeWrite(
           // Provenance tier — agent's own classification. Defaults to
           // 'observed' inside the repo when omitted; only 'observed' /
           // 'user_confirmed' enter Active Knowledge hot context. See PR1
-          // migration 018 + memory/policy.ts HOT_CONTEXT_SOURCES.
+          // migration 018 + memory/long-memory-source-policy.ts HOT_CONTEXT_SOURCES.
           source,
         },
         tx,

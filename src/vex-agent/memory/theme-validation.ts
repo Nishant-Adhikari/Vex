@@ -19,7 +19,7 @@
  * cross-check those — that's the chunker's job at emission time.
  */
 
-import { THEME_REGEX, THEME_STOPLIST_STANDALONE } from "./policy.js";
+import { THEME_REGEX, THEME_STOPLIST_STANDALONE } from "./session-memory-policy.js";
 
 export type ThemeValidationOutcome =
   | { ok: true; theme: string }

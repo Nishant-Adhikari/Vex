@@ -22,7 +22,7 @@ import {
 } from "@vex-agent/db/repos/knowledge.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { randVector, resetDb } from "../setup/fixtures.js";
-import type { KnowledgeSource } from "@vex-agent/memory/policy.js";
+import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 
 const EMBEDDING_MODEL = "test-model";
 const EMBEDDING_DIM = 8;

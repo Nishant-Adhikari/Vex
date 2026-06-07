@@ -26,7 +26,7 @@ import {
 } from "@vex-agent/knowledge/policy.js";
 import {
   KNOWLEDGE_BANNER_TOP_KINDS_LIMIT,
-} from "@vex-agent/memory/policy.js";
+} from "@vex-agent/memory/long-memory-source-policy.js";
 import logger from "@utils/logger.js";
 
 export interface SingleTurnResult {
