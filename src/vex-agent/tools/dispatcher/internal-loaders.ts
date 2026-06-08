@@ -73,6 +73,14 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   long_memory_suggest: async () =>
     (await import("../internal/long-memory/suggest.js")).handleLongMemorySuggest,
 
+  // Long-term memory (v2) — cross-session recall (S3)
+  long_memory_search: async () =>
+    (await import("../internal/long-memory/search.js")).handleLongMemorySearch,
+  long_memory_get: async () =>
+    (await import("../internal/long-memory/get.js")).handleLongMemoryGet,
+  long_memory_history: async () =>
+    (await import("../internal/long-memory/history.js")).handleLongMemoryHistory,
+
   // Compact primitive — agent-driven entry point for compaction at pressure
   compact_now: async () => (await import("../internal/compact/now.js")).handleCompactNow,
 

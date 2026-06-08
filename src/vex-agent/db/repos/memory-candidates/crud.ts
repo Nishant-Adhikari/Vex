@@ -24,6 +24,7 @@ import { jsonb } from "../../params.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
 import {
   CANDIDATE_COLUMNS,
+  mapRecallRow,
   mapRow,
   toIsoOrNull,
   vectorLiteral,
@@ -31,6 +32,8 @@ import {
   type InsertCandidateInput,
   type InsertCandidateResult,
   type MemoryCandidate,
+  type MemoryCandidateRecall,
+  type MemoryCandidateRecallRow,
   type MemoryCandidateRow,
   type MemoryCandidateRowWithInsertFlag,
 } from "./types.js";
@@ -296,4 +299,64 @@ export async function listCandidatesByStatus(
     [status, Math.floor(limit)],
   );
   return rows.map(mapRow);
+}
+
+// ── Dual-trace vector recall (S3) ────────────────────────────────
+
+/**
+ * Filters for `recallCandidatesTopK`. The model/dim pair is MANDATORY — the
+ * vector column has no typmod, so running `<=>` across a different-dim model
+ * crashes pgvector, and comparing similarities across model spaces is
+ * meaningless (mirrors the knowledge recall contract).
+ */
+export interface CandidateRecallFilters {
+  /** Required — current embedding model identifier. Recall ONLY returns rows produced by this model. */
+  embeddingModel: string;
+  /** Required — current embedding dim. Recall ONLY returns matching-dim rows (mixed-dim crash protection). */
+  embeddingDim: number;
+}
+
+/**
+ * Top-K cosine recall over fresh `memory_candidates` for the dual-trace read
+ * path (S3, §2-step-4). Predicate: `status='pending'` AND
+ * `retrieval_visibility='not_consolidated'` AND non-expired
+ * (`retrieval_until IS NULL OR retrieval_until > now()`) AND a matching
+ * `embedding_model` / `embedding_dim`. Suppressed, expired, and terminal
+ * (promoted/rejected/superseded/merged/expired/retained) candidates are
+ * EXCLUDED. Ordered by cosine `<=>`; fetches `k * 2` raw rows (same headroom as
+ * the knowledge recall) so the caller can rerank + cap. No migration — uses
+ * `idx_mc_embedding_match`.
+ */
+export async function recallCandidatesTopK(
+  queryEmbedding: readonly number[],
+  filters: CandidateRecallFilters,
+  k: number,
+  client?: PoolClient,
+): Promise<MemoryCandidateRecall[]> {
+  if (!Number.isFinite(k) || k <= 0) return [];
+  if (queryEmbedding.length !== filters.embeddingDim) {
+    throw new Error(
+      `recallCandidatesTopK: query embedding length ${queryEmbedding.length} does not match filter dim ${filters.embeddingDim}`,
+    );
+  }
+
+  const exec: Executor = client ?? getPool();
+  const rows = await queryWith<MemoryCandidateRecallRow>(
+    exec,
+    `SELECT
+       id, kind, title, summary, content_md, tags, evidence_refs, source,
+       retrieval_until,
+       (embedding <=> $1::vector) AS cosine_distance
+     FROM memory_candidates
+     WHERE status = 'pending'
+       AND retrieval_visibility = 'not_consolidated'
+       AND (retrieval_until IS NULL OR retrieval_until > now())
+       AND embedding_model = $2
+       AND embedding_dim = $3
+     ORDER BY embedding <=> $1::vector
+     LIMIT $4`,
+    [vectorLiteral(queryEmbedding), filters.embeddingModel, filters.embeddingDim, Math.floor(k) * 2],
+  );
+
+  return rows.map(mapRecallRow);
 }

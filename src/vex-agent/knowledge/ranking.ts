@@ -95,6 +95,18 @@ export function rerank(
   return scored.slice(0, k);
 }
 
+/**
+ * Compute the BASE recall score for a SINGLE candidate (`similarity + recency +
+ * confidence + pinned`), without filtering or slicing. Exported so the S3
+ * long-memory blend can reuse the EXACT knowledge ranking formula for its
+ * knowledge sub-list base score, then apply its own source-tier de-weight on
+ * top — without pushing candidates through `rerank` (which drops non-active
+ * rows and caps to RECALL_MAX_K). `now` defaults to `new Date()`.
+ */
+export function scoreRecallCandidate(c: RecallCandidate, now: Date = new Date()): number {
+  return computeScore(c, now);
+}
+
 // ── Internals ────────────────────────────────────────────────────
 
 function computeScore(c: RecallCandidate, now: Date): number {

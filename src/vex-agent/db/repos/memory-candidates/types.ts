@@ -207,6 +207,78 @@ export function mapRow(r: MemoryCandidateRow): MemoryCandidate {
   };
 }
 
+// ── Dual-trace recall (S3) ──────────────────────────────────────
+//
+// `recallCandidatesTopK` does its own vector SELECT (the shared
+// `CANDIDATE_COLUMNS` deliberately omits `embedding`), returning the cosine
+// distance so the mapper can expose similarity = 1 - distance. Only the fields
+// S3 ranking + output need are selected — recall stays cheap.
+
+/**
+ * Pg row shape for `recallCandidatesTopK`. A bounded projection of
+ * `memory_candidates` PLUS `cosine_distance` from the `<=>` operator. snake_case.
+ */
+export interface MemoryCandidateRecallRow {
+  id: string;
+  kind: string;
+  title: string;
+  summary: string;
+  content_md: string;
+  tags: string[] | null;
+  evidence_refs: EvidenceRefs | null;
+  source: string;
+  retrieval_until: string | null;
+  /** pgvector cosine distance via `<=>`; the mapper exposes similarity = 1 - distance. */
+  cosine_distance: number;
+}
+
+/**
+ * Domain shape for a recalled dual-trace candidate (S3). camelCase, carries the
+ * derived `similarity` (clamped [0,1]). NOT the full `MemoryCandidate` — recall
+ * only surfaces the ranking + output fields.
+ */
+export interface MemoryCandidateRecall {
+  id: string;
+  kind: string;
+  title: string;
+  summary: string;
+  contentMd: string;
+  tags: string[];
+  evidenceRefs: EvidenceRefs;
+  /** System-derived provenance tier (flat-weighted in S3 — never the agent's claim). */
+  source: KnowledgeSource;
+  retrievalUntil: string | null;
+  /** Cosine similarity in [0,1] (1 - cosine_distance, clamped). */
+  similarity: number;
+}
+
+export function mapRecallRow(r: MemoryCandidateRecallRow): MemoryCandidateRecall {
+  return {
+    id: r.id,
+    kind: r.kind,
+    title: r.title,
+    summary: r.summary,
+    contentMd: r.content_md,
+    tags: r.tags ?? [],
+    evidenceRefs: r.evidence_refs ?? [],
+    source: r.source as KnowledgeSource,
+    retrievalUntil: r.retrieval_until,
+    similarity: clampUnit(1 - r.cosine_distance),
+  };
+}
+
+/**
+ * Clamp a value to the unit interval [0,1]; non-finite → 0. Local copy of the
+ * knowledge repo helper (kept local to avoid coupling this repo to knowledge
+ * internals — the knowledge-lifecycle precedent).
+ */
+export function clampUnit(x: number): number {
+  if (!Number.isFinite(x)) return 0;
+  if (x < 0) return 0;
+  if (x > 1) return 1;
+  return x;
+}
+
 // ── Local serialization helpers (kept local to avoid cyclic imports) ──
 
 /**

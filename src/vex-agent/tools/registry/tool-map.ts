@@ -55,6 +55,10 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     toolNames: ["memory_recall", "mark_outstanding_resolved"],
   },
   {
+    label: "Long-term memory recall — durable cross-session lessons (search/get/history)",
+    toolNames: ["long_memory_search", "long_memory_get", "long_memory_history"],
+  },
+  {
     label: "Long-term memory — suggest a durable cross-session lesson (staged, not written)",
     toolNames: ["long_memory_suggest"],
   },

@@ -302,6 +302,28 @@ export function mapRow(r: KnowledgeRow): KnowledgeEntry {
   };
 }
 
+/**
+ * Long-memory recall candidate (S3) — a `RecallCandidate` PLUS the provenance
+ * `source` tier and `maturityState`, so `long_memory_search` can apply
+ * source-tier ranking (de-weight inferred/hypothesis) WITHOUT excluding them
+ * (genesis §951). Additive: `RecallCandidate` and `knowledge_recall` are
+ * untouched; only the dedicated `recallLongMemoryTopK` returns this shape.
+ */
+export interface LongMemoryRecallCandidate extends RecallCandidate {
+  /** Provenance tier — drives the S3 source-tier de-weight. */
+  source: KnowledgeSource;
+  /** Lesson-confidence FSM tier — surfaced in detailed output (S6 ranking input). */
+  maturityState: MaturityState;
+}
+
+export function mapRowToLongMemoryCandidate(r: KnowledgeRecallRow): LongMemoryRecallCandidate {
+  return {
+    ...mapRowToCandidate(r),
+    source: (r.source ?? "observed") as KnowledgeSource,
+    maturityState: (r.maturity_state ?? "established") as MaturityState,
+  };
+}
+
 export function mapRowToCandidate(r: KnowledgeRecallRow): RecallCandidate {
   // pgvector cosine distance is in [0, 2]; for normalized vectors it's in [0, 2] too
   // but TEI/embedding models normalize, so distance ∈ [0, 2]. Similarity = 1 - distance/2

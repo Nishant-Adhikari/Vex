@@ -18,6 +18,14 @@
  * - `actionKind: "local_write"` — mirrors knowledge_write.
  * - `visibility: {}` — always visible to parent AND subagent
  *   (`memory_candidates.proposed_by` supports both roles).
+ *
+ * The three READ tools (S3) — `long_memory_search` / `long_memory_get` /
+ * `long_memory_history` — are the cross-session RECALL door. All are
+ * `mutating:false`, `pressureSafety:"read_only"`, `actionKind:"read"`,
+ * `visibility:{}` (always visible — unlike session memory's
+ * `requiresSessionMemory` gate). `long_memory_search` hides its strategy
+ * (vector + dual-trace + rerank); fresh un-consolidated candidates surface as
+ * de-weighted soft signals (`notConsolidated:true`), never as fact.
  */
 
 import type { ToolDef } from "../types.js";
@@ -116,6 +124,109 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
         },
       },
       required: ["kind", "title", "summary"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "long_memory_search",
+    kind: "internal",
+    mutating: false,
+    pressureSafety: "read_only",
+    actionKind: "read",
+    visibility: {},
+    description: [
+      // WHAT
+      "Semantic recall over LONG-TERM, cross-session memory — durable lessons, strategies, risk rules, observed user preferences, and stable protocol facts learned in earlier sessions. This is how you remember what a previous session figured out.",
+      // HOW IT WORKS (strategy hidden on purpose)
+      "Hides its retrieval strategy: it blends promoted long-term entries (source:'long_memory') with FRESH un-consolidated signals from this and recent sessions (source:'memory_candidate', notConsolidated:true). A confirmed long-term lesson always outranks a fresh candidate at equal relevance; a much stronger fresh match can still surface. Treat notConsolidated results as soft hints, never as established fact.",
+      // QUERY GUIDANCE
+      "Write SEMANTIC INTENT in English, not keywords (embedding retrieval is significantly stronger on English; translate the user's intent first). ✓ 'user trading risk preferences and position sizing rules' ✗ 'risk'. Returns only active, non-expired memory.",
+      // RESPONSE
+      "response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. If results were truncated to the inline cap, the response says so and asks you to refine — there is no overflow fetch.",
+    ].join(" "),
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Semantic intent in English (translate the user's intent first). Write the way you'd ask an expert who shares your memory; 1-512 chars.",
+        },
+        k: {
+          type: "number",
+          description: "Max results to consider (default 8, hard max 15). The response is still capped to the inline limit.",
+        },
+        kind: {
+          type: "string",
+          description: "Optional exact kind filter (free-form snake_case, e.g. risk_rule, trade_lesson). Omit to search across all kinds.",
+        },
+        response_format: {
+          type: "string",
+          enum: ["concise", "detailed"],
+          description: "concise (default) → id/title/scores; detailed → adds summary, content, tags, maturity, source tier, evidence.",
+        },
+        include_candidates: {
+          type: "boolean",
+          description: "Include fresh un-consolidated dual-trace signals (default true). Set false to see only promoted long-term entries.",
+        },
+        expand_graph: {
+          type: "boolean",
+          description: "Reserved for knowledge-graph expansion (default false). Currently a no-op — returns no extra results yet.",
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "long_memory_get",
+    kind: "internal",
+    mutating: false,
+    pressureSafety: "read_only",
+    actionKind: "read",
+    visibility: {},
+    description: [
+      "Fetch a single long-term memory entry by id (the numeric id returned by long_memory_search results with source:'long_memory'). Loads its full content into context.",
+      "If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use long_memory_search to find a current id, long_memory_history to trace the version chain.",
+      "response_format: 'detailed' (default) returns the full entry + lineage; 'concise' returns id/kind/title/status + lineage links only. Does not require the embeddings service.",
+    ].join(" "),
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Long-term memory entry id (from a long_memory_search 'long_memory' result)." },
+        response_format: {
+          type: "string",
+          enum: ["concise", "detailed"],
+          description: "detailed (default) → full entry + lineage; concise → metadata + lineage links only.",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "long_memory_history",
+    kind: "internal",
+    mutating: false,
+    pressureSafety: "read_only",
+    actionKind: "read",
+    visibility: {},
+    description: [
+      "Trace the full version chain (root → head) of a long-term memory entry from any id in the chain, plus its reinforcement timeline (when it was first promoted, last reinforced, and its outcome version).",
+      "Use this when you have a historical id (e.g. from long_memory_get's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use long_memory_get for that).",
+      "Read-only. Does not require the embeddings service.",
+    ].join(" "),
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Any long-term memory entry id in the chain (root, middle, or head)." },
+        response_format: {
+          type: "string",
+          enum: ["concise", "detailed"],
+          description: "Reserved — the chain + reinforcement timeline are returned the same way for both.",
+        },
+      },
+      required: ["id"],
       additionalProperties: false,
     },
   },

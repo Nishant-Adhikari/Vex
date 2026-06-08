@@ -8,9 +8,11 @@ export type {
   MemoryCandidateRow,
   InsertCandidateInput,
   InsertCandidateResult,
+  MemoryCandidateRecall,
+  MemoryCandidateRecallRow,
 } from "./types.js";
 
-export { CANDIDATE_COLUMNS, mapRow } from "./types.js";
+export { CANDIDATE_COLUMNS, mapRow, mapRecallRow } from "./types.js";
 
 export {
   insertCandidate,
@@ -18,6 +20,8 @@ export {
   findLatestCandidateByContentHash,
   updateCandidateStatus,
   listCandidatesByStatus,
+  recallCandidatesTopK,
+  type CandidateRecallFilters,
   type UpdateCandidateStatusPatch,
   type UpdateCandidateStatusResult,
 } from "./crud.js";
