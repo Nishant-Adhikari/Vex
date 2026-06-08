@@ -279,6 +279,26 @@ describe("memory observability logger — structural guard", () => {
       ).toEqual({ correlationId: 42, promotedKnowledgeId: 98 });
       expect(filterMemoryLogMeta({ status: 7, decision: 3 })).toEqual({});
     });
+
+    // ── insertResult (S1b MF2): enum key, never a boolean ────────
+
+    it("(s13) keeps insertResult enum tokens and drops boolean / free-text / oversized", () => {
+      // MF2: the upsert `inserted` boolean is logged as an enum token
+      // ("inserted" | "duplicate") because the logger rejects booleans entirely.
+      expect(filterMemoryLogMeta({ insertResult: "inserted" })).toEqual({
+        insertResult: "inserted",
+      });
+      expect(filterMemoryLogMeta({ insertResult: "duplicate" })).toEqual({
+        insertResult: "duplicate",
+      });
+      // A raw boolean (the rejected representation) is dropped — no boolean support.
+      expect(filterMemoryLogMeta({ insertResult: true })).toEqual({});
+      // Free-text (spaces) fails the enum shape gate; a number on an enum key drops;
+      // an over-long token (> 64) is dropped by the enum length cap.
+      expect(filterMemoryLogMeta({ insertResult: "in serted" })).toEqual({});
+      expect(filterMemoryLogMeta({ insertResult: 1 })).toEqual({});
+      expect(filterMemoryLogMeta({ insertResult: "x".repeat(65) })).toEqual({});
+    });
   });
 
   // ── buildMemoryEventName: namespacing + token regex ────────────

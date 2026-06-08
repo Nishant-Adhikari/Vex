@@ -540,3 +540,83 @@ CREATE TABLE fetch_cache (
   fetched_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX idx_fetch_cached ON fetch_cache(fetched_at);
+
+-- ══════════════════════════════════════════════════════════════════
+-- Memory v2 — candidate buffer (S1b). Long-memory write buffer.
+-- ══════════════════════════════════════════════════════════════════
+-- The agent PROPOSES candidates here (via long_memory_suggest, S2); the async
+-- memory_manager (S4) DECIDES promote/supersede/merge/retain/reject/expire.
+-- Advisory-only doctrine: NOTHING in this table ever feeds sizing / approval /
+-- wallet-intent (memory-system-v2 §6). There is intentionally NO influence /
+-- execution-coupling column here — that vocabulary lives only on
+-- knowledge_entries (and is itself bounded to advisory | retrieval_boost).
+--
+-- Placed AFTER all FK targets: sessions (session_id ON DELETE CASCADE) and
+-- knowledge_entries (promoted_knowledge_id ON DELETE SET NULL) are defined
+-- earlier in this file. Evidence anchors reference protocol_executions.id /
+-- protocol_capture_items.id by VALUE inside evidence_refs (JSONB), not by FK —
+-- FIX-1: those SERIAL ids are immutable across sync/replay, the proj_* SERIALs
+-- are NOT, so evidence is anchored on the audit-trail ids + semantic keys.
+--
+-- Embedding contract mirrors knowledge_entries / session_memories: vector has NO
+-- typmod; per-row (embedding_model, embedding_dim) are authoritative and recall
+-- MUST filter on them. The embedding is computed AFTER redaction at the S2
+-- suggest boundary; S1b only stores it (FIX-4 — no raw-content processing here).
+CREATE TABLE memory_candidates (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),   -- pg18 core; no extension
+  session_id            TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  proposed_by           TEXT NOT NULL DEFAULT 'parent',
+  kind                  TEXT NOT NULL,            -- open snake_case (isValidKind), NOT an enum (matches knowledge_entries.kind)
+  title                 TEXT NOT NULL,
+  summary               TEXT NOT NULL,
+  content_md            TEXT NOT NULL DEFAULT '',
+  entities              TEXT[] NOT NULL DEFAULT '{}',
+  tags                  TEXT[] NOT NULL DEFAULT '{}',
+  source_refs           JSONB NOT NULL DEFAULT '{}',   -- strict pointer-only provenance (messageIds / toolCallIds), see memory-candidate.ts sourceRefsSchema
+  -- FIX-1 immutable anchors: array of
+  -- { executionId:int (REQUIRED), captureItemId?:int, instrumentKey?:text, positionKey?:text }
+  evidence_refs         JSONB NOT NULL DEFAULT '[]',
+  outcome               JSONB,                    -- system-derived (S5); NULL until resolved
+  source                TEXT NOT NULL DEFAULT 'observed',   -- system-derived tier (REUSE KnowledgeSource vocab); manager does NOT trust an agent-supplied tier
+  confidence            REAL,                     -- agent-supplied, clamped [0,1]
+  importance            INTEGER NOT NULL DEFAULT 5,
+  sensitivity           TEXT NOT NULL DEFAULT 'normal',
+  evidence_strength     TEXT NOT NULL DEFAULT 'none',
+  retrieval_visibility  TEXT NOT NULL DEFAULT 'not_consolidated',
+  retrieval_until       TIMESTAMPTZ,              -- dual-trace TTL (memory-system-v2 §2 layer 5)
+  status                TEXT NOT NULL DEFAULT 'pending',
+  retain_until          TIMESTAMPTZ,              -- system TTL for the candidate row
+  embedding             vector NOT NULL,          -- computed AFTER redaction (S2); no typmod (re-embed-friendly)
+  embedding_model       TEXT NOT NULL,            -- authoritative — recall filters on this
+  embedding_dim         INTEGER NOT NULL,         -- actual provider response dim, NOT a schema lock
+  content_hash          CHAR(64) NOT NULL,        -- computeContentHash → dedupe (loop-prevention §6)
+  event_time                  TIMESTAMPTZ,        -- point-in-time: when the fact occurred (S5 lookahead gating)
+  observed_at                 TIMESTAMPTZ,        -- point-in-time: when the agent observed it
+  recorded_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),     -- point-in-time: ingestion time (worker polling order)
+  available_at_decision_time  TIMESTAMPTZ,        -- as-of boundary for no-lookahead evidence deref (S5)
+  promoted_knowledge_id INTEGER REFERENCES knowledge_entries(id) ON DELETE SET NULL,  -- knowledge_entries.id is SERIAL → INTEGER
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- value-range guards (mirror ke_* style)
+  CONSTRAINT mc_embedding_dim_range        CHECK (embedding_dim > 0 AND embedding_dim <= 8192),
+  CONSTRAINT mc_embedding_dim_matches_vector CHECK (vector_dims(embedding) = embedding_dim),
+  CONSTRAINT mc_confidence_range           CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+  CONSTRAINT mc_importance_range           CHECK (importance BETWEEN 1 AND 10),
+  CONSTRAINT mc_evidence_refs_is_array     CHECK (jsonb_typeof(evidence_refs) = 'array'),
+  CONSTRAINT mc_source_refs_is_object      CHECK (jsonb_typeof(source_refs) = 'object'),
+  -- bounded-vocab enums (NAMED → lockstep-testable, mirror ke_*_valid pattern).
+  -- Single source of truth lives in TS: memory/schema/memory-candidate-enums.ts
+  -- (and memory/long-memory-source-policy.ts for `source`). The drift guard in
+  -- memory-candidate-enums.test.ts parses these IN(...) lists.
+  CONSTRAINT mc_proposed_by_valid          CHECK (proposed_by IN ('parent','subagent')),
+  CONSTRAINT mc_source_valid               CHECK (source IN ('observed','user_confirmed','inferred','hypothesis')),
+  CONSTRAINT mc_sensitivity_valid          CHECK (sensitivity IN ('normal','sensitive')),
+  CONSTRAINT mc_evidence_strength_valid    CHECK (evidence_strength IN ('none','weak','moderate','strong')),
+  CONSTRAINT mc_retrieval_visibility_valid CHECK (retrieval_visibility IN ('not_consolidated','suppressed')),
+  CONSTRAINT mc_status_valid               CHECK (status IN ('pending','promoted','superseded','merged','rejected','expired','retained'))
+);
+CREATE INDEX idx_mc_embedding_match ON memory_candidates(embedding_model, embedding_dim);
+CREATE INDEX idx_mc_status_recorded ON memory_candidates(status, recorded_at);  -- worker polling (S4)
+-- loop-prevention: at most one live (pending) candidate per content_hash. The
+-- partial predicate is the ON CONFLICT arbiter for insertCandidate's xmax upsert.
+CREATE UNIQUE INDEX uniq_mc_pending_hash ON memory_candidates(content_hash) WHERE status = 'pending';

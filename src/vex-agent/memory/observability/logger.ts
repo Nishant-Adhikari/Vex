@@ -22,7 +22,7 @@
  *     • `num`  (count, attempt, durationMs, redactionCount, embeddingDim,
  *               similarity, queueDepth): kept ONLY if a finite number.
  *     • `enum` (decision, status, statusFrom, statusTo, rejectReason, kind,
- *               errorCode, errorKind): a string is kept only if it matches
+ *               insertResult, errorCode, errorKind): a string is kept only if it matches
  *               `^[A-Za-z][A-Za-z0-9_]*$` AND is ≤ MEMORY_LOG_MAX_ENUM (64)
  *               chars. This rejects free-text (spaces/punctuation) and most
  *               secret tokens.
@@ -140,6 +140,8 @@ export type MemoryLogMeta = {
   readonly statusTo?: string | number;
   readonly rejectReason?: string | number;
   readonly kind?: string | number;
+  /** Insert outcome for an idempotent upsert: "inserted" | "duplicate" (MF2 — logged in place of the rejected boolean `inserted`). */
+  readonly insertResult?: string | number;
   readonly count?: string | number;
   readonly attempt?: string | number;
   readonly durationMs?: string | number;
@@ -172,6 +174,7 @@ const META_KEY_CATEGORY: Record<keyof MemoryLogMeta, MetaCategory> = {
   statusTo: "enum",
   rejectReason: "enum",
   kind: "enum",
+  insertResult: "enum",
   count: "num",
   attempt: "num",
   durationMs: "num",
