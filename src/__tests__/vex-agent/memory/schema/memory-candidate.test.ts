@@ -91,7 +91,7 @@ describe("evidenceRefsSchema (bounded anchor array)", () => {
   });
 });
 
-describe("sourceRefsSchema (MF3 strict pointer-only provenance)", () => {
+describe("sourceRefsSchema — strict, pointer-only provenance (no free-text)", () => {
   it("accepts pointer-only payloads (messageIds / toolCallIds / both / empty)", () => {
     expect(sourceRefsSchema.safeParse({}).success).toBe(true);
     expect(sourceRefsSchema.safeParse({ messageIds: [1, 2, 3] }).success).toBe(true);

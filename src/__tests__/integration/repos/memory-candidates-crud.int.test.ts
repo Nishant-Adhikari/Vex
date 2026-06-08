@@ -169,7 +169,7 @@ describe("memory_candidates repo CRUD (integration)", () => {
     expect(rows[0]!.n).toBe("1");
   });
 
-  it("MF1: two PARALLEL same-hash inserts → exactly one inserted, one row total", async () => {
+  it("two parallel inserts of the same content_hash → exactly one inserted, one row total (concurrency-safe upsert)", async () => {
     const sid = await makeSession();
     const hash = hex64("race");
     const input = baseInput(sid, { contentHash: hash });

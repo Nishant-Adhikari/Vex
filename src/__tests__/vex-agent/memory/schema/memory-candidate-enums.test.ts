@@ -18,10 +18,7 @@
  * influence/execution-coupling vocabulary.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { getPackageRoot } from "@utils/package-assets.js";
 import {
   CANDIDATE_PROPOSED_BY,
   CANDIDATE_SENSITIVITY,
@@ -38,38 +35,7 @@ import {
   KNOWLEDGE_SOURCES,
   knowledgeSourceSchema,
 } from "@vex-agent/memory/long-memory-source-policy.js";
-
-const MIGRATION_SQL = readFileSync(
-  join(getPackageRoot(), "src", "vex-agent", "db", "migrations", "001_initial.sql"),
-  "utf-8",
-);
-
-/**
- * Extract the quoted value list from a named CHECK of the form
- * `CONSTRAINT <name> CHECK (<column> IN ('a','b',...))`. Throws if absent so a
- * rename/removal fails loudly rather than passing against an empty set.
- */
-function parseCheckInList(sql: string, constraintName: string, column: string): string[] {
-  const re = new RegExp(
-    `CONSTRAINT\\s+${constraintName}\\s+CHECK\\s*\\(\\s*${column}\\s+IN\\s*\\(([^)]*)\\)`,
-    "i",
-  );
-  const match = re.exec(sql);
-  if (!match) {
-    throw new Error(
-      `lockstep: named CHECK '${constraintName}' on column '${column}' not found in 001_initial.sql`,
-    );
-  }
-  return match[1]!
-    .split(",")
-    .map((token) => token.trim().replace(/^'(.*)'$/, "$1"))
-    .filter((token) => token.length > 0);
-}
-
-/** Order-independent set comparison via sorted copies. */
-function sorted(values: readonly string[]): string[] {
-  return [...values].sort();
-}
+import { MIGRATION_SQL, parseCheckInList, sorted } from "./_lockstep.js";
 
 describe("memory-candidate enums ↔ 001_initial.sql CHECK lockstep", () => {
   it("proposed_by CHECK equals CANDIDATE_PROPOSED_BY and schema.options", () => {

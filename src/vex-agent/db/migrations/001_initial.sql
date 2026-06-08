@@ -620,3 +620,134 @@ CREATE INDEX idx_mc_status_recorded ON memory_candidates(status, recorded_at);  
 -- loop-prevention: at most one live (pending) candidate per content_hash. The
 -- partial predicate is the ON CONFLICT arbiter for insertCandidate's xmax upsert.
 CREATE UNIQUE INDEX uniq_mc_pending_hash ON memory_candidates(content_hash) WHERE status = 'pending';
+
+-- ══════════════════════════════════════════════════════════════════
+-- Memory v2 — manager work substrate (S1c). Batch consolidation queue.
+-- ══════════════════════════════════════════════════════════════════
+-- The async memory_manager (S4) claims a memory_job, RESERVES up to N pending
+-- memory_candidates via memory_job_items, decides per candidate, and appends one
+-- immutable memory_decisions row per decision. Pattern: compact_jobs (DEDICATED
+-- table, not shared). Advisory-only: never feeds sizing/approval/wallet-intent.
+--
+-- Table order: memory_jobs → memory_decisions → memory_job_items
+-- (job_items FKs BOTH jobs and decisions, so decisions must exist first — MF4).
+
+-- memory_jobs — durable batch/sweep queue.
+CREATE TABLE memory_jobs (
+  id                        SERIAL PRIMARY KEY,
+  job_kind                  TEXT NOT NULL DEFAULT 'consolidate',
+  status                    TEXT NOT NULL DEFAULT 'pending',
+  -- R4-MF2: per-batch progress counts (candidates reserved / done / failed) are NOT stored — they are
+  -- DERIVED from memory_job_items (GROUP BY item_status) via getJobProgress(), so retry/revive can never
+  -- drift them (rules/10 §4: no stored derived state without a perf reason; counts are a cheap indexed
+  -- GROUP BY). Only true accumulators (llm_call_count, cost_usd) live on the row.
+  reconcile_entry_id        INTEGER REFERENCES knowledge_entries(id) ON DELETE CASCADE,  -- job_kind='reconcile' (S7)
+  reconcile_outcome_version INTEGER,
+  attempt_count             INTEGER NOT NULL DEFAULT 0,
+  max_attempts              INTEGER NOT NULL DEFAULT 3,
+  next_attempt_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  locked_at                 TIMESTAMPTZ,
+  locked_by                 TEXT,
+  heartbeat_at              TIMESTAMPTZ,
+  last_error                TEXT,
+  inference_provider        TEXT,                 -- names only, no secrets
+  inference_model           TEXT,
+  inference_completed_at    TIMESTAMPTZ,
+  cost_usd                  NUMERIC(10,4),
+  llm_call_count            INTEGER NOT NULL DEFAULT 0,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  started_at                TIMESTAMPTZ,
+  completed_at              TIMESTAMPTZ,
+  CONSTRAINT mj_llm_call_count_nonneg CHECK (llm_call_count >= 0),
+  CONSTRAINT mj_reconcile_outcome_version_nonneg CHECK (reconcile_outcome_version IS NULL OR reconcile_outcome_version >= 0),  -- MF7
+  CONSTRAINT mj_reconcile_fields CHECK (   -- R6-MF1: EXACT — consolidate jobs carry NO reconcile fields
+    (job_kind = 'reconcile'   AND reconcile_entry_id IS NOT NULL AND reconcile_outcome_version IS NOT NULL)
+    OR
+    (job_kind = 'consolidate' AND reconcile_entry_id IS NULL     AND reconcile_outcome_version IS NULL)
+  ),
+  CONSTRAINT mj_job_kind_valid CHECK (job_kind IN ('consolidate','reconcile')),
+  CONSTRAINT mj_status_valid   CHECK (status IN ('pending','running','completed','failed','permanently_failed'))
+);
+CREATE INDEX idx_mj_status_due ON memory_jobs(status, next_attempt_at) WHERE status IN ('pending','failed');
+CREATE INDEX idx_mj_running_heartbeat ON memory_jobs(heartbeat_at) WHERE status = 'running';
+-- reconcile idempotency (MF6): EXACTLY ONE reconcile job per (entry, outcome_version) FOREVER —
+-- across ALL statuses (not just live). Retry = reset the terminal row (resetReconcileJob), never
+-- a second row. Prevents re-reconciling the same outcome_version after completion.
+CREATE UNIQUE INDEX uniq_mj_reconcile ON memory_jobs(reconcile_entry_id, reconcile_outcome_version)
+  WHERE job_kind = 'reconcile';
+
+-- memory_decisions — append-only audit of every manager decision event.
+-- DURABLE append-only audit (R2-MF1): the three IDENTITY references — candidate_id, reconcile_entry_id,
+-- job_id — are IMMUTABLE ANCHOR columns with NO foreign key, so a `sessions → memory_candidates
+-- ON DELETE CASCADE` (above) never nulls them and never trips `md_anchor_xor`. The row is
+-- self-contained and survives deletion of its subject. Write-time validity (the anchor ids exist) is
+-- enforced by the repo (recordDecision is only called by the S4 manager holding live rows). Only the
+-- OUTCOME pointers (promoted/supersedes/merge_target_knowledge_id) keep a live FK (SET NULL) — they
+-- point to durable knowledge_entries and are convenient join targets.
+CREATE TABLE memory_decisions (
+  id                        BIGSERIAL PRIMARY KEY,
+  candidate_id              UUID,                 -- anchor (no FK); NULL for reconcile decisions
+  reconcile_entry_id        INTEGER,              -- anchor (no FK); set for reconcile decisions (S7)
+  job_id                    INTEGER NOT NULL,     -- anchor (no FK); every decision traces to a job
+  decision_version          INTEGER NOT NULL DEFAULT 0,
+  decision_type             TEXT NOT NULL,
+  decision_hash             CHAR(64) NOT NULL,    -- MF5: sha256 of semantic payload; guards mismatched retries
+  reject_reason             TEXT,                 -- bounded enum; required iff reject/expire
+  promoted_knowledge_id     INTEGER REFERENCES knowledge_entries(id) ON DELETE SET NULL,  -- live outcome link
+  supersedes_knowledge_id   INTEGER REFERENCES knowledge_entries(id) ON DELETE SET NULL,
+  merge_target_knowledge_id INTEGER REFERENCES knowledge_entries(id) ON DELETE SET NULL,
+  outcome_version           INTEGER,              -- S7 reconcile linkage (knowledge_entries.outcome_version)
+  evidence_refs             JSONB NOT NULL DEFAULT '[]',  -- FIX-1 snapshot: protocol_* ids + semantic keys, NEVER proj_*
+  inference_provider        TEXT,
+  inference_model           TEXT,
+  cost_usd                  NUMERIC(10,4),
+  decided_by                TEXT NOT NULL DEFAULT 'manager',
+  decided_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT md_decision_version_nonneg CHECK (decision_version >= 0),
+  CONSTRAINT md_outcome_version_nonneg  CHECK (outcome_version IS NULL OR outcome_version >= 0),  -- MF7
+  CONSTRAINT md_decision_hash_hex CHECK (decision_hash ~ '^[0-9a-f]{64}$'),                       -- MF5
+  CONSTRAINT md_anchor_xor CHECK (   -- R3-MF3: EXACTLY ONE of candidate / reconcile anchor (a row must never hit both unique indexes)
+    (candidate_id IS NOT NULL)::int + (reconcile_entry_id IS NOT NULL)::int = 1),
+  CONSTRAINT md_reconcile_type CHECK ((decision_type = 'reconcile') = (reconcile_entry_id IS NOT NULL)),  -- R3-MF3: reconcile type ⇔ reconcile anchor
+  CONSTRAINT md_reconcile_fields CHECK ((reconcile_entry_id IS NOT NULL) = (outcome_version IS NOT NULL)), -- R2-MF4/R6-MF2: outcome_version present IFF reconcile (closes the NULL-key dedup hole AND forbids it on candidate decisions)
+  CONSTRAINT md_reject_reason_scope CHECK ((decision_type IN ('reject','expire')) = (reject_reason IS NOT NULL)),  -- MF7 biconditional
+  CONSTRAINT md_evidence_refs_is_array CHECK (jsonb_typeof(evidence_refs) = 'array'),
+  -- NAMED enum CHECKs → lockstep-testable (single source of truth: memory/schema/memory-decision-enums.ts).
+  -- reject_reason is nullable: `reject_reason IN (...)` evaluates to NULL (→ CHECK passes) when NULL, so the
+  -- plain form already permits NULL while staying parseable by the shared lockstep parser; md_reject_reason_scope
+  -- enforces present-iff-reject/expire.
+  CONSTRAINT md_decision_type_valid CHECK (decision_type IN ('promote','supersede','merge','retain','reject','expire','reconcile')),
+  CONSTRAINT md_reject_reason_valid CHECK (reject_reason IN
+    ('secret_or_live_state','low_confidence','duplicate','insufficient_evidence','superseded_by_existing','expired_ttl','policy')),
+  CONSTRAINT md_decided_by_valid CHECK (decided_by IN ('manager','system'))
+);
+-- candidate-driven idempotency: one decision per (candidate, version) (partial — reconcile has no candidate)
+CREATE UNIQUE INDEX uniq_md_candidate_version ON memory_decisions(candidate_id, decision_version)
+  WHERE candidate_id IS NOT NULL;
+-- reconcile-driven idempotency (MF6): one decision per (entry, outcome_version)
+CREATE UNIQUE INDEX uniq_md_reconcile ON memory_decisions(reconcile_entry_id, outcome_version)
+  WHERE reconcile_entry_id IS NOT NULL;
+CREATE INDEX idx_md_candidate ON memory_decisions(candidate_id, decision_version DESC) WHERE candidate_id IS NOT NULL;
+CREATE INDEX idx_md_type      ON memory_decisions(decision_type);   -- §4 "decisions by type"
+
+-- memory_job_items — per-candidate reservation + working state for a batch job.
+CREATE TABLE memory_job_items (
+  id            SERIAL PRIMARY KEY,
+  job_id        INTEGER NOT NULL REFERENCES memory_jobs(id) ON DELETE CASCADE,
+  candidate_id  UUID    NOT NULL REFERENCES memory_candidates(id) ON DELETE CASCADE,
+  item_status   TEXT NOT NULL DEFAULT 'reserved',
+  decision_id   BIGINT REFERENCES memory_decisions(id) ON DELETE RESTRICT,  -- MF4: durable link when item is done
+  last_error    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT mji_item_status_valid CHECK (item_status IN ('reserved','processing','done','failed','released')),
+  CONSTRAINT mji_done_has_decision CHECK (item_status <> 'done' OR decision_id IS NOT NULL),  -- MF4: no "done" without a decision row
+  CONSTRAINT mji_job_candidate_unique UNIQUE (job_id, candidate_id)
+);
+-- RESERVATION GUARD: a candidate is actively held by AT MOST ONE job at a time.
+CREATE UNIQUE INDEX uniq_mji_active_candidate ON memory_job_items(candidate_id)
+  WHERE item_status IN ('reserved','processing');
+-- one item per decision (MF4)
+CREATE UNIQUE INDEX uniq_mji_decision ON memory_job_items(decision_id) WHERE decision_id IS NOT NULL;
+CREATE INDEX idx_mji_job_status ON memory_job_items(job_id, item_status);

@@ -140,6 +140,8 @@ export type MemoryLogMeta = {
   readonly statusTo?: string | number;
   readonly rejectReason?: string | number;
   readonly kind?: string | number;
+  /** memory_jobs.job_kind: "consolidate" | "reconcile" (S1c — bounded enum). */
+  readonly jobKind?: string | number;
   /** Insert outcome for an idempotent upsert: "inserted" | "duplicate" (MF2 — logged in place of the rejected boolean `inserted`). */
   readonly insertResult?: string | number;
   readonly count?: string | number;
@@ -174,6 +176,7 @@ const META_KEY_CATEGORY: Record<keyof MemoryLogMeta, MetaCategory> = {
   statusTo: "enum",
   rejectReason: "enum",
   kind: "enum",
+  jobKind: "enum",
   insertResult: "enum",
   count: "num",
   attempt: "num",
