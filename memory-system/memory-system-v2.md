@@ -23,7 +23,13 @@ Status legend: `[ ] TODO` · `[~] IN PROGRESS` · `[x] DONE` · `[!] BLOCKED`
 ## 1. DECYZJE ZAMKNIĘTE (locked)
 
 - **Czysta karta = pełne zastąpienie 1:1.** Zero dead code, zero adapterów, zero martwych ścieżek. Odrzucamy tymczasowe adaptery z §372 starego planu.
-- **Reuse substratu, nie tabel od zera.** Reużywamy: `knowledge_entries`+lifecycle, `session_memories`, pgvector, wzorzec workera `compact_jobs`, redakcję Track-2, ranking. Migracje edytujemy W MIEJSCU (pre-release) → schemat ma być finalnie czysty, bez kolumn „na zapas".
+- **Reuse substratu, nie tabel od zera.** Reużywamy: `knowledge_entries`+lifecycle, `session_memories`, pgvector, wzorzec workera `compact_jobs`, redakcję Track-2, ranking.
+- **Strategia migracji (decyzja właściciela): EDIT-IN-PLACE — aktualizujemy istniejące migracje zamiast tworzyć nowe, jeśli się da.** Development, brak danych do zachowania → dev DB reset akceptowalny.
+  - runner aplikuje tylko `version > schema_version.MAX` → edycja zaaplikowanej migracji NIE re-runuje się → **edit wymaga resetu dev DB** (drop + re-migrate; pre-release OK).
+  - S1a–S1d: schemat v2 **edytując istniejące migracje**: kolumny knowledge_entries v2 → CREATE TABLE w `001_initial.sql`; nowe tabele memory v2 → dołożone do istniejącej migracji wg najbliższego sensu; nowy plik migracji TYLKO gdy się nie da.
+  - BEZ DROP statements; usunięcia (np. recall_cache_entries) = usunięcie z tekstu `001` + reset (S9).
+  - **Mirror:** edytujemy tylko `src/vex-agent/db/migrations/`; sync `node vex-app/scripts/copy-migrations.mjs` (auto na vex-app prebuild/predev); commit obu drzew.
+  - Schemat finalnie czysty, bez kolumn „na zapas", minimum plików migracji.
 - **Pamięć = osobny, izolowany moduł** `src/vex-agent/memory/*` z warstwą debug/observability OD POCZĄTKU. Minimalne sprzężenie z resztą — tylko zdefiniowane szwy (sekcja 4).
 - **Pełny zakres, bez defer** — z jednym wyjątkiem bezpieczeństwa (niżej). Buduje wszystkie warstwy planu + dwa dopięcia ze źródeł (bi-temporal Zep, graceful degradation paper).
 - **Infra (potwierdzona w repo):**
@@ -169,14 +175,33 @@ Wszystkie enumy: Zod + DB CHECK + TS discriminated union w LOCKSTEP (rules/20 §
 - Verify: `pnpm exec tsc --noEmit`; `pnpm exec vitest run <affected>`; grep że `memory/policy.js` nie jest importowane.
 - Done-when: tsc czysty; affected + logger-guard testy zielone; grep czysty; zero zmian zachowania (telemetry events nietknięte).
 
-### S1 — Schemat (migracje in-place + nowe tabele) `[ ] TODO`
-- Goal: finalny czysty schemat. FIX-1 (immutable anchors) + bi-temporal + influence columns.
-- Creates: migracje nowych tabel (lub edycja w miejscu wg manifestu); repo CRUD dla candidates/jobs/decisions/entities/edges; Zod schemas + TS unions.
-- Edits: `knowledge_entries` (influence/bi-temporal/outcome_version); migracje 006/016/018 (in-place wg rekomendacji Codexa). FIX-2 (`source` w export/import).
-- Deletes: kolumny/ścieżki, które stają się dead po przeprojektowaniu (wg manifestu).
-- Contracts: enum lockstep (Zod+CHECK+TS); `promoted_knowledge_id` = number; embedding columns na candidates.
-- Tests: insert/list/update candidates; pgvector (embedding_model, embedding_dim) filter; source round-trip; migration apply na czystym DB.
-- Done-when: migracje aplikują się czysto, repo testy zielone.
+### S1 — Schemat v2 (EDIT-IN-PLACE, rozbity na S1a–S1d) `[~] IN PROGRESS`
+Strategia: EDIT-IN-PLACE istniejących migracji (sekcja 1) — knowledge_entries v2 → `001` CREATE TABLE; nowe tabele → dołożone do istniejącej migracji wg sensu; nowy plik tylko gdy się nie da. Bez DROP; dev DB reset po edycji. Mirror sync przez copy-migrations.mjs. Enumy: jedno źródło `as const`/Zod w module memory + test porównujący z CHECK w SQL (lockstep testowalny, nie deklarowany). Każde pole dodane do `KnowledgeEntry` musi być mapowane przez WSZYSTKIE mappery zwracające ten typ (knowledge/crud.ts mapRow, knowledge-lifecycle/types.ts, explicit SELECT-y jak export.ts) albo świadomie węższy DTO.
+
+#### S1a — knowledge_entries v2 + influence enums + FIX-2 `[x] DONE` (2026-06-08, Codex GREEN LIGHT)
+> Zrobione: 001 +9 v2 kolumn + 6 named CHECK + source_refs immutable-anchor comment; `memory/schema/long-memory-enums.ts` (as const+z.enum) + lockstep test (czyta 001); mapRow/mapRowLocal/insertEntry/SupersedeInput INSERT +v2 (oba realne insert paths); FIX-2 pełny export/import fidelity (source+9 v2, manifest v3, legacy defaults). tsc clean, 148+31 testów, walidacja na realnym pgvector. Mirror gitignored (regen przez copy-migrations.mjs). NIE commitowane.
+- Edycja `001_initial.sql` — dodać v2 kolumny do CREATE TABLE knowledge_entries (named CHECK inline; bez ALTER/backfill bo fresh CREATE; dev reset). Bez nowej migracji. Przy okazji dotykania tabeli: poprawić stale comment `source_refs` (`proj_*` ids) → immutable anchors (`protocol_executions`/`protocol_capture_items` + semantic keys) [FIX-1 alignment]:
+  - `maturity_state TEXT NOT NULL DEFAULT 'established' CHECK(probationary|established|reinforced|decayed)` (osobna oś od `status`; legacy='established').
+  - `activation_strength REAL NOT NULL DEFAULT 1.0 CHECK(>=0 AND <=1)` (legacy=1.0).
+  - `influence_scope TEXT NOT NULL DEFAULT 'advisory' CHECK(advisory|retrieval_boost)` (OD-1; bez execution_constraint/sizing_hint).
+  - `decay_policy TEXT NOT NULL DEFAULT 'none' CHECK(none|time|regime_aware|outcome_aware)`.
+  - `regime_tags TEXT[] NOT NULL DEFAULT '{}'` + CHECK brak NULL elementów.
+  - `first_promoted_at/last_reinforced_at/next_review_at TIMESTAMPTZ` (nullable).
+  - `outcome_version INTEGER NOT NULL DEFAULT 0 CHECK(>=0)` (konsument: reconciliation S7).
+  - Bi-temporal: reuse valid_from/valid_until (valid-time) + created_at (ingestion); `expired_at` ODŁOŻONY do S7.
+  - Indeksy maturity/activation ODŁOŻONE do S3.
+- Enumy maturityState/influenceScope/decayPolicy: `as const`/Zod w module memory → TS type → CHECK; test lockstep porównujący wartości z named CHECK w `001_initial.sql`.
+- FIX-2 + export/import fidelity (PEŁNY round-trip WSZYSTKICH trwałych pól): export/import musi nieść `source` ORAZ wszystkie kolumny v2 (maturity_state, activation_strength, influence_scope, decay_policy, regime_tags, first_promoted_at, last_reinforced_at, next_review_at, outcome_version) — inaczej backup/restore cicho je zresetuje (catch Codexa). Touch: `knowledge/export.ts` SELECT (+source +v2; embedding NADAL nie — re-derived on import); `scripts/knowledge-export.ts` (cols/typ/mapping); `scripts/knowledge-import/{validators,row-pipeline}.ts` read/validate/pass; `InsertEntryInput`+`insertEntry`. Bump export manifest do **v3**. Legacy v1/v2 import bez nowych pól → defaulty (source='observed', established/1.0/advisory/none/'{}'/null/0). Testy: round-trip fidelity v2 + inferred→inferred + legacy-default.
+- Repo: `knowledge/types.ts` (+v2 w KnowledgeEntry + InsertEntryInput defaulted); `knowledge/crud.ts` mapRow+insertEntry; przejrzeć WSZYSTKIE mappery zwracające KnowledgeEntry (knowledge-lifecycle/types.ts) — mapować v2 albo węższy DTO. Behavior-neutral.
+- Tests (gate edit-in-place — BEZ legacy backfill, bo fresh CREATE po reset): fresh DB po dev reset migruje czysto; defaulty stosują się na NOWYCH insertach; named CHECK odrzucają złe wartości; lockstep Zod↔CHECK(001); export/import round-trip FIDELITY wszystkich pól v2 + `source` (inferred→inferred) + import starego pliku bez nowych pól→defaulty; mapRow/mapRowLocal v2; mirror == src.
+- Done-when: tsc clean; repo/export-import/lockstep testy zielone; fresh DB migruje czysto; `vex-app/resources/migrations` zsynchronizowany z src.
+
+#### S1b — memory_candidates `[ ] TODO`
+- Tabela + repo CRUD + Zod; FIX-1 immutable evidence anchors (executionId/captureItemId + instrumentKey/positionKey); embedding cols (embedding_model/embedding_dim/embedding); candidate enums (status/kind/source/sensitivity/evidence_strength/retrieval_visibility) lockstep; point-in-time cols; `promoted_knowledge_id INTEGER` (= SERIAL, nie string).
+#### S1c — memory_jobs + memory_decisions `[ ] TODO`
+- Worker queue (wzorzec compact_jobs: claim/heartbeat/retry/stale) + decision audit; repo.
+#### S1d — graph `[ ] TODO`
+- memory_entities/memory_entry_entities/memory_edges + repo (invalidacja krawędzi, nie kasowanie).
 
 ### S2 — Redaction boundary + `long_memory_suggest` `[ ] TODO`
 - Goal: jedyne wejście agenta do pamięci trwałej; redakcja+live-state reject na granicy.
