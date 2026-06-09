@@ -20,11 +20,32 @@
  *     invariant (§7 / D-RERANK). It maps activation ∈ [0,1] → [MIN_FACTOR, 1.0].
  *
  * Unit of time is DAYS everywhere (matching the existing reranker; never mix with
- * hours). `regime_aware` / `outcome_aware` decay policies behave as plain time
- * decay in S6a (D-SCOPE-GATE; full regime decay is S6b, outcome is S7).
+ * hours). `outcome_aware` decay still behaves as plain time decay (S7).
+ *
+ * S6b adds the REGIME layer, still pure:
+ *   - `effectiveRegime(...)` — the dwell rule (F3): the latest TWO snapshots must
+ *     agree per axis before a regime takes effect; disagreement → `unknown`
+ *     (neutral). All staleness/gap guards are here, fail-closed to null.
+ *   - `regimeMatchKind(...)` — does a lesson's closed-vocab tag set match,
+ *     mismatch, or stay neutral against the effective regime (F4: `low`
+ *     confidence → ALWAYS neutral).
+ *   - `regimeHalfLifeDays(...)` — half-life modulation (match decays slower,
+ *     mismatch faster) within HARD factor bounds (import-time assert): never
+ *     zero-decay, never deletion-like erosion (DECAY_FLOOR stays untouched).
+ * Regime data is advisory-only (OD-1): it modulates decay/reactivation and —
+ * indirectly via activation — recall rank. Never sizing/approval/execution.
  */
 
 import type { DecayPolicy, MaturityState } from "@vex-agent/memory/schema/long-memory-enums.js";
+import type { RegimeSnapshot } from "@vex-agent/db/repos/regime-snapshots.js";
+import {
+  minRegimeConfidence,
+  regimeTagSchema,
+  tagAxis,
+  type RegimeConfidence,
+  type RegimeTrendLabel,
+  type RegimeVolLabel,
+} from "@vex-agent/memory/schema/regime-enums.js";
 
 // ── Tunable constants (D-CONST: tune empirically, do not freeze) ────
 
@@ -83,6 +104,56 @@ export const ACTIVATION_MIN_FACTOR = 0.88;
  */
 export const ACTIVATION_MIN_FACTOR_PROVEN_BOUND = 0.857;
 
+// ── Regime tunables (S6b; D-CONST: tune empirically, do not freeze) ──
+
+/**
+ * Maximum age (DAYS) of the newest snapshot for a regime to be "effective". An
+ * older snapshot means the worker is down or the source accounts are unlinked —
+ * decay degrades to pure time decay (fail-closed). tune empirically, do not
+ * freeze.
+ */
+export const REGIME_SNAPSHOT_MAX_AGE_DAYS = 3;
+
+/**
+ * Maximum gap (HOURS) between the dwell pair's two snapshots. A week-old
+ * snapshot does NOT "confirm" today's reading — the two-day dwell (F3) needs
+ * two genuinely consecutive days. The LOWER bound on the gap comes from the
+ * worker's 20h cadence gate (it never writes two snapshots < 20h apart), so a
+ * valid pair is always two distinct days, also after an offline period. tune
+ * empirically, do not freeze.
+ */
+export const REGIME_DWELL_MAX_GAP_HOURS = 48;
+
+/**
+ * Half-life multiplier when a lesson's regime tags MATCH the effective regime:
+ * the lesson is in season, so it erodes SLOWER (30d → 60d at the default
+ * half-life). tune empirically, do not freeze — but NEVER outside
+ * [REGIME_MATCH_FACTOR_MIN, REGIME_MATCH_FACTOR_MAX] (import-time assert).
+ */
+export const REGIME_MATCH_HALF_LIFE_FACTOR = 2.0;
+
+/**
+ * Half-life multiplier when a lesson's regime tags MISMATCH the effective
+ * regime: the lesson is out of season, so it erodes FASTER (30d → 15d). tune
+ * empirically, do not freeze — but NEVER outside
+ * [REGIME_MISMATCH_FACTOR_MIN, REGIME_MISMATCH_FACTOR_MAX] (import-time assert).
+ */
+export const REGIME_MISMATCH_HALF_LIFE_FACTOR = 0.5;
+
+/**
+ * Hard bounds on the regime half-life factors (F4 — the regime's influence is
+ * CAPPED, whatever future tuning does):
+ *   - mismatch ∈ [0.25, 1]: at most 4× faster erosion, never an effective
+ *     delete (DECAY_FLOOR is untouched by the factor) and never a SLOWDOWN.
+ *   - match ∈ [1, 4]: at most 4× slower erosion, never zero-decay (a finite
+ *     factor can never freeze the exponential) and never a SPEED-UP.
+ * A future edit outside these bounds fails loud at import (assert below).
+ */
+export const REGIME_MISMATCH_FACTOR_MIN = 0.25;
+export const REGIME_MISMATCH_FACTOR_MAX = 1;
+export const REGIME_MATCH_FACTOR_MIN = 1;
+export const REGIME_MATCH_FACTOR_MAX = 4;
+
 // Runtime assertion of the §7 bound (mirrors the existing invariant-assert in
 // long-memory-retrieval-policy.ts). A future edit that lowers MIN_FACTOR below
 // the proven 0.857 bound would silently let a fresh candidate outrank a confirmed
@@ -90,6 +161,26 @@ export const ACTIVATION_MIN_FACTOR_PROVEN_BOUND = 0.857;
 if (ACTIVATION_MIN_FACTOR < ACTIVATION_MIN_FACTOR_PROVEN_BOUND) {
   throw new Error(
     `maturity-policy: ACTIVATION_MIN_FACTOR (${ACTIVATION_MIN_FACTOR}) is below the proven bound ${ACTIVATION_MIN_FACTOR_PROVEN_BOUND} — the "confirmed > candidate" rerank invariant would break`,
+  );
+}
+
+// Import-time asserts of the F4 regime-factor bounds (mirrors the MIN_FACTOR
+// assert above). Outside them a future tuning edit could make regime mismatch
+// behave like deletion or regime match like zero-decay — fail loud instead.
+if (
+  REGIME_MISMATCH_HALF_LIFE_FACTOR < REGIME_MISMATCH_FACTOR_MIN ||
+  REGIME_MISMATCH_HALF_LIFE_FACTOR > REGIME_MISMATCH_FACTOR_MAX
+) {
+  throw new Error(
+    `maturity-policy: REGIME_MISMATCH_HALF_LIFE_FACTOR (${REGIME_MISMATCH_HALF_LIFE_FACTOR}) is outside the hard bounds [${REGIME_MISMATCH_FACTOR_MIN}, ${REGIME_MISMATCH_FACTOR_MAX}] — regime mismatch must erode faster but never deletion-fast`,
+  );
+}
+if (
+  REGIME_MATCH_HALF_LIFE_FACTOR < REGIME_MATCH_FACTOR_MIN ||
+  REGIME_MATCH_HALF_LIFE_FACTOR > REGIME_MATCH_FACTOR_MAX
+) {
+  throw new Error(
+    `maturity-policy: REGIME_MATCH_HALF_LIFE_FACTOR (${REGIME_MATCH_HALF_LIFE_FACTOR}) is outside the hard bounds [${REGIME_MATCH_FACTOR_MIN}, ${REGIME_MATCH_FACTOR_MAX}] — regime match must erode slower but never zero-decay`,
   );
 }
 
@@ -106,21 +197,28 @@ function clampUnit(x: number): number {
 
 /**
  * Time-decayed activation. `policy === 'none'` is a no-op (pinned/legacy/frozen).
- * Otherwise `max(DECAY_FLOOR, activation × 0.5^(daysSinceReinforced / HALF_LIFE))`.
+ * Otherwise `max(DECAY_FLOOR, activation × 0.5^(daysSinceReinforced / halfLifeDays))`.
  *
- * `regime_aware` / `outcome_aware` behave as plain time decay in S6a
- * (D-SCOPE-GATE). `daysSinceReinforced < 0` (clock skew) is clamped to 0 (no
- * decay, never an increase). Activation is clamped to [0,1] on input.
+ * `halfLifeDays` defaults to `ACTIVATION_HALF_LIFE_DAYS`, so existing callers
+ * keep the S6a behavior bit-for-bit; the S6b regime path passes
+ * `regimeHalfLifeDays(matchKind)` to modulate erosion speed. A non-positive /
+ * non-finite half-life falls back to the default (defensive — production values
+ * are guarded by the import-time factor asserts). `outcome_aware` behaves as
+ * plain time decay until S7. `daysSinceReinforced < 0` (clock skew) is clamped
+ * to 0 (no decay, never an increase). Activation is clamped to [0,1] on input.
  */
 export function decayedActivation(
   activation: number,
   daysSinceReinforced: number,
   policy: DecayPolicy,
+  halfLifeDays: number = ACTIVATION_HALF_LIFE_DAYS,
 ): number {
   const current = clampUnit(activation);
   if (policy === "none") return current;
   const days = Number.isFinite(daysSinceReinforced) ? Math.max(0, daysSinceReinforced) : 0;
-  const decayed = current * Math.pow(0.5, days / ACTIVATION_HALF_LIFE_DAYS);
+  const halfLife =
+    Number.isFinite(halfLifeDays) && halfLifeDays > 0 ? halfLifeDays : ACTIVATION_HALF_LIFE_DAYS;
+  const decayed = current * Math.pow(0.5, days / halfLife);
   return Math.max(DECAY_FLOOR, decayed);
 }
 
@@ -219,4 +317,136 @@ export function daysSince(reference: Date | null, now: Date): number {
   const ms = now.getTime() - reference.getTime();
   if (!Number.isFinite(ms) || ms <= 0) return 0;
   return ms / MS_PER_DAY;
+}
+
+// ── Effective regime (S6b — dwell F3, pure) ──────────────────────
+
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+/**
+ * The dwell-confirmed regime view one decay sweep runs against. Built ONCE per
+ * sweep from the latest two snapshots; `null` whenever any guard fails
+ * (fail-closed → pure time decay). `snapshotId` is the LATEST snapshot's id,
+ * carried into `knowledge_maturity_events.trigger_refs` for the audit trail.
+ */
+export type EffectiveRegime = {
+  readonly trend: RegimeTrendLabel; // 'bull' | 'bear' | 'range' | 'unknown'
+  readonly vol: RegimeVolLabel; // 'high' | 'low' | 'unknown'
+  readonly confidence: RegimeConfidence; // 'low' | 'medium' | 'high'
+  readonly snapshotId: number; // regime_snapshots.id of the latest (trigger_refs)
+};
+
+/**
+ * Resolve the effective regime from the latest two snapshots (F3 dwell rule).
+ * Every guard fails CLOSED to `null` (= no regime influence, pure time decay):
+ *   - fewer than 2 snapshots (first day of operation — no effect, by design);
+ *   - the newest snapshot older than `REGIME_SNAPSHOT_MAX_AGE_DAYS` (worker
+ *     down / accounts unlinked → degrade);
+ *   - the pair more than `REGIME_DWELL_MAX_GAP_HOURS` apart (a stale snapshot
+ *     does not "confirm" today's);
+ *   - an unparseable timestamp (corrupt row).
+ * Per axis: equal values → effective; different → `'unknown'` (neutral) —
+ * disagreement automatically removes that axis's influence (dwell + fail-closed
+ * in one move).
+ *
+ * `confidence = min(confA, confB)` — INTENT: both days must INDEPENDENTLY
+ * sustain the level (two-day corroboration, not clipping). `[low, high]` →
+ * `low` → zero influence; reactivation requires `high` in BOTH snapshots of
+ * the pair.
+ */
+export function effectiveRegime(
+  latestTwo: readonly RegimeSnapshot[],
+  now: Date,
+): EffectiveRegime | null {
+  if (latestTwo.length < 2) return null;
+
+  // The repo returns newest-first; re-order defensively so a mis-ordered caller
+  // can never make a stale snapshot pass the freshness guard as "latest".
+  const pair = [...latestTwo]
+    .slice(0, 2)
+    .map((s) => ({ snapshot: s, ms: Date.parse(s.createdAt) }));
+  if (pair.some((p) => !Number.isFinite(p.ms))) return null; // corrupt timestamp → fail closed
+  pair.sort((a, b) => b.ms - a.ms);
+  const latest = pair[0]!;
+  const previous = pair[1]!;
+
+  const ageDays = (now.getTime() - latest.ms) / MS_PER_DAY;
+  if (ageDays > REGIME_SNAPSHOT_MAX_AGE_DAYS) return null;
+
+  const gapHours = (latest.ms - previous.ms) / MS_PER_HOUR;
+  if (gapHours > REGIME_DWELL_MAX_GAP_HOURS) return null;
+
+  return {
+    trend:
+      latest.snapshot.trendLabel === previous.snapshot.trendLabel
+        ? latest.snapshot.trendLabel
+        : "unknown",
+    vol:
+      latest.snapshot.volLabel === previous.snapshot.volLabel
+        ? latest.snapshot.volLabel
+        : "unknown",
+    confidence: minRegimeConfidence(latest.snapshot.confidence, previous.snapshot.confidence),
+    snapshotId: latest.snapshot.id,
+  };
+}
+
+// ── Regime match kind + half-life modulation (S6b, pure) ─────────
+
+export type RegimeMatchKind = "match" | "mismatch" | "neutral";
+
+/**
+ * How a lesson's regime tags relate to the effective regime. CONSERVATIVE
+ * aggregation:
+ *   - `effective.confidence === 'low'` → ALWAYS `neutral` (F4: low confidence
+ *     is recorded but exerts zero influence);
+ *   - per tag (via `tagAxis`): an `unknown` snapshot axis makes the tag neutral
+ *     (that axis is unconfirmed); otherwise the tag matches or mismatches its
+ *     axis value;
+ *   - an out-of-vocab tag (pre-F2 legacy row) is skipped — neutral, fail-closed;
+ *   - ≥1 match and 0 mismatches → `match`; ≥1 mismatch and 0 matches →
+ *     `mismatch`; mixed or empty → `neutral` (a partially-right lesson is not
+ *     punished, a partially-wrong one is not rewarded).
+ */
+export function regimeMatchKind(
+  tags: readonly string[],
+  effective: EffectiveRegime,
+): RegimeMatchKind {
+  if (effective.confidence === "low") return "neutral";
+
+  let matches = 0;
+  let mismatches = 0;
+  for (const raw of tags) {
+    const parsed = regimeTagSchema.safeParse(raw);
+    if (!parsed.success) continue; // out-of-vocab legacy tag → neutral
+    const { axis, value } = tagAxis(parsed.data);
+    const axisValue = axis === "trend" ? effective.trend : effective.vol;
+    if (axisValue === "unknown") continue; // unconfirmed axis → no influence
+    if (axisValue === value) matches += 1;
+    else mismatches += 1;
+  }
+
+  if (matches >= 1 && mismatches === 0) return "match";
+  if (mismatches >= 1 && matches === 0) return "mismatch";
+  return "neutral";
+}
+
+/**
+ * The decay half-life (DAYS) for a regime match kind: neutral keeps the base
+ * `ACTIVATION_HALF_LIFE_DAYS` (30), match slows erosion (60), mismatch speeds
+ * it up (15). The factors are import-time-asserted into hard bounds, so this
+ * can never return zero/negative or an effectively-frozen half-life.
+ */
+export function regimeHalfLifeDays(matchKind: RegimeMatchKind): number {
+  switch (matchKind) {
+    case "match":
+      return ACTIVATION_HALF_LIFE_DAYS * REGIME_MATCH_HALF_LIFE_FACTOR;
+    case "mismatch":
+      return ACTIVATION_HALF_LIFE_DAYS * REGIME_MISMATCH_HALF_LIFE_FACTOR;
+    case "neutral":
+      return ACTIVATION_HALF_LIFE_DAYS;
+    default: {
+      const _exhaustive: never = matchKind;
+      return _exhaustive;
+    }
+  }
 }

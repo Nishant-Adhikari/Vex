@@ -94,6 +94,9 @@ export function v2InfluenceSuite(ctx: SuiteCtx): void {
       ["negative outcome_version", { outcome_version: -1 }],
       ["non-integer outcome_version", { outcome_version: 1.5 }],
       ["non-array regime_tags", { regime_tags: "bull" }],
+      // S6b FIX-2: a pre-F2 free-form tag in an old backup must fail the ROW at
+      // validation (named tag in the logged error) — not deep in the DB CHECK.
+      ["out-of-vocab regime_tags element", { regime_tags: ["bull_microcap"] }],
     ];
 
     for (const [label, override] of bad) {
@@ -104,5 +107,17 @@ export function v2InfluenceSuite(ctx: SuiteCtx): void {
         expect(mockInsertEntry).not.toHaveBeenCalled();
       });
     }
+  });
+
+  describe("v3 regime_tags canonicalization (S6b)", () => {
+    it("dedupes repeated VALID tags on import (canonicalization, not coercion)", async () => {
+      const report = await importKnowledge(
+        lines(v3, makeRowLine({ regime_tags: ["bull", "bull", "high_vol"] })),
+      );
+      expect(report.inserted).toBe(1);
+      expect(report.failed).toBe(0);
+      const arg = mockInsertEntry.mock.calls[0]![0];
+      expect(arg.regimeTags).toEqual(["bull", "high_vol"]);
+    });
   });
 }

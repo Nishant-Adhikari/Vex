@@ -86,6 +86,13 @@ CREATE TABLE knowledge_entries (
   regime_tags         TEXT[] NOT NULL DEFAULT '{}',
   first_promoted_at   TIMESTAMPTZ,
   last_reinforced_at  TIMESTAMPTZ,
+  -- last_decayed_at — when a decay step was last APPLIED (written) to this row.
+  -- The INCREMENTAL decay anchor (S6b): each sweep erodes only the quantum since
+  -- max(last_reinforced_at, last_decayed_at), so re-running a sweep is a true
+  -- no-op and a stale entry decays once per elapsed interval — NEVER compounded
+  -- per sweep run (a one-shot-from-reinforcement formula applied to the already-
+  -- decayed value would halve a 30-day-stale lesson on EVERY 3h sweep).
+  last_decayed_at     TIMESTAMPTZ,
   next_review_at      TIMESTAMPTZ,
   outcome_version     INTEGER NOT NULL DEFAULT 0,
   CONSTRAINT ke_embedding_dim_range CHECK (embedding_dim > 0 AND embedding_dim <= 8192),
@@ -95,6 +102,12 @@ CREATE TABLE knowledge_entries (
   CONSTRAINT ke_influence_scope_valid CHECK (influence_scope IN ('advisory','retrieval_boost')),
   CONSTRAINT ke_decay_policy_valid CHECK (decay_policy IN ('none','time','regime_aware','outcome_aware')),
   CONSTRAINT ke_regime_tags_no_null CHECK (array_position(regime_tags, NULL) IS NULL),
+  -- S6b (F2): regime_tags drawn ONLY from the CLOSED regime-tag vocabulary —
+  -- array-containment (<@), not an IN-list, because the column is TEXT[].
+  -- Lockstep with memory/schema/regime-enums.ts REGIME_TAGS (dedicated
+  -- containment parser in the drift-guard test). Vol tags are axis-qualified
+  -- ('high_vol', not 'high') because a bare 'high' is ambiguous across axes.
+  CONSTRAINT ke_regime_tags_valid CHECK (regime_tags <@ ARRAY['bull','bear','range','high_vol','low_vol']::TEXT[]),
   CONSTRAINT ke_outcome_version_nonneg CHECK (outcome_version >= 0)
 );
 CREATE INDEX idx_ke_status_validity ON knowledge_entries(status, valid_until DESC);
@@ -152,6 +165,38 @@ CREATE TABLE knowledge_maturity_events (
 CREATE INDEX idx_kme_entry ON knowledge_maturity_events(entry_id, created_at DESC);
 -- Sweep / metric queries by event type.
 CREATE INDEX idx_kme_event ON knowledge_maturity_events(event);
+
+-- regime_snapshots — daily market-regime classification (S6b). ONE row per day
+-- (the regime worker's 20h cadence gate): two independent axes (trend × vol)
+-- plus a BUCKETED confidence (F4 — never a raw float; LLMs overstate certainty)
+-- and the evidence source. Consumed ONLY by regime-aware decay/reactivation —
+-- advisory-only by doctrine (OD-1): a snapshot never feeds sizing / approval /
+-- wallet-intent / execution. Fail-closed: a day whose sources or classifier
+-- failed simply has NO row, and decay degrades to pure time-decay (hence no
+-- 'heuristic' source — there is no fallback classifier). The snapshot is
+-- deliberately NOT replay-stable (it depends on the live web at classification
+-- time); what IS auditable is label + confidence + source + created_at.
+-- `rationale` is a short structural "why", redact()-ed at the write boundary —
+-- NEVER raw news/tweet content, amounts, or secrets. All four label columns are
+-- CLOSED enums (named CHECKs → lockstep-tested against
+-- memory/schema/regime-enums.ts).
+CREATE TABLE regime_snapshots (
+  id          SERIAL PRIMARY KEY,        -- DELIBERATELY SERIAL, not BIGSERIAL: trigger_refs.regimeSnapshotId
+                                         -- is z.number().int().positive() and pg returns BIGINT as a string;
+                                         -- at ~1 row/day a 32-bit serial is inexhaustible here.
+  trend_label TEXT NOT NULL,             -- bull | bear | range | unknown ('unknown' = unclear/average → zero influence)
+  vol_label   TEXT NOT NULL,             -- high | low | unknown
+  confidence  TEXT NOT NULL,             -- low | medium | high (F4 buckets; low = recorded, ZERO influence)
+  source      TEXT NOT NULL,             -- tavily | twitter | hybrid (single source caps confidence at medium)
+  rationale   TEXT,                      -- short structural "why"; redact() at the boundary; no amounts/secrets
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT rs_trend_valid      CHECK (trend_label IN ('bull','bear','range','unknown')),
+  CONSTRAINT rs_vol_valid        CHECK (vol_label IN ('high','low','unknown')),
+  CONSTRAINT rs_confidence_valid CHECK (confidence IN ('low','medium','high')),
+  CONSTRAINT rs_source_valid     CHECK (source IN ('tavily','twitter','hybrid'))
+);
+-- Latest-first reads: the worker's cadence gate (latest) + the dwell pair (latest two).
+CREATE INDEX idx_rs_time ON regime_snapshots(created_at DESC);
 
 -- (Removed: the `folders` + `documents` freeform-scratchpad tables. The
 --  scratchpad tool vertical (document_*) was retired in favour of the

@@ -189,23 +189,63 @@ export async function findByContentHash(hash: string): Promise<KnowledgeEntry | 
   return row ? mapRow(row) : null;
 }
 
-// ── Maturity FSM transition (S6a) ────────────────────────────────
+// ── Maturity FSM transition (S6a/S6b) ────────────────────────────
 
-/** Active-entry row needed by the maturity manager (S6a decay sweep input). */
+/** Active-entry row needed by the maturity manager (decay sweep / reinforcement input). */
 export interface MaturityEntryRow {
   id: number;
   maturityState: MaturityState;
   activationStrength: number;
   decayPolicy: DecayPolicy;
+  /** Closed-vocab regime tags (S6b — `ke_regime_tags_valid`); drive match/mismatch decay. */
+  regimeTags: string[];
   firstPromotedAt: string | null;
   lastReinforcedAt: string | null;
+  /**
+   * When a decay step was last APPLIED — the INCREMENTAL decay anchor (S6b).
+   * Each decay erodes only the quantum since max(lastReinforcedAt,
+   * lastDecayedAt); without it a sweep re-run would re-apply the FULL
+   * since-reinforcement factor to the already-decayed value (compounding).
+   */
+  lastDecayedAt: string | null;
+}
+
+// Shared row shape + mapper for the three maturity reads below (rules/10 §17:
+// 3 uses → one source of truth; adding a column means editing ONE list).
+interface MaturityRow {
+  id: number;
+  maturity_state: string;
+  activation_strength: number;
+  decay_policy: string;
+  regime_tags: string[] | null;
+  first_promoted_at: string | null;
+  last_reinforced_at: string | null;
+  last_decayed_at: string | null;
+}
+
+const MATURITY_ENTRY_COLUMNS = `id, maturity_state, activation_strength, decay_policy,
+            regime_tags, first_promoted_at, last_reinforced_at, last_decayed_at`;
+
+function mapMaturityRow(row: MaturityRow): MaturityEntryRow {
+  return {
+    id: row.id,
+    maturityState: row.maturity_state as MaturityState,
+    activationStrength: row.activation_strength,
+    decayPolicy: row.decay_policy as DecayPolicy,
+    regimeTags: row.regime_tags ?? [],
+    firstPromotedAt: row.first_promoted_at,
+    lastReinforcedAt: row.last_reinforced_at,
+    lastDecayedAt: row.last_decayed_at,
+  };
 }
 
 /**
- * Apply a maturity/activation transition to ONE knowledge entry (S6a). Updates
- * `activation_strength` + `maturity_state`, optionally bumps `last_reinforced_at`
- * (reinforcement / reactivation — NEVER on plain decay or recall), and stamps
- * `updated_at`. Guarded on `status = 'active'` (the FSM only touches live lessons)
+ * Apply a maturity/activation transition to ONE knowledge entry (S6a/S6b).
+ * Updates `activation_strength` + `maturity_state`, optionally bumps
+ * `last_reinforced_at` (reinforcement / reactivation — NEVER on plain decay or
+ * recall) and/or `last_decayed_at` (an APPLIED decay step — the incremental
+ * decay anchor; never on reinforcement), and stamps `updated_at`. Guarded on
+ * `status = 'active'` (the FSM only touches live lessons)
  * AND on the CURRENT maturity/activation values so a concurrent transition is a
  * no-op precondition miss, never a lost update. The maturity FSM NEVER deletes a
  * row — decay floors activation > 0. Runs in the caller's tx when a client is
@@ -223,18 +263,20 @@ export async function applyMaturityTransition(
     nextMaturityState: MaturityState;
     nextActivation: number;
     bumpLastReinforcedAt: boolean;
+    bumpLastDecayedAt: boolean;
   },
   client?: PoolClient,
 ): Promise<boolean> {
   if (!Number.isFinite(args.entryId) || args.entryId <= 0) return false;
   const exec: Executor = client ?? getPool();
   const setReinforced = args.bumpLastReinforcedAt ? ", last_reinforced_at = NOW()" : "";
+  const setDecayed = args.bumpLastDecayedAt ? ", last_decayed_at = NOW()" : "";
   const count = await executeWith(
     exec,
     `UPDATE knowledge_entries
         SET activation_strength = $1,
             maturity_state = $2,
-            updated_at = NOW()${setReinforced}
+            updated_at = NOW()${setReinforced}${setDecayed}
       WHERE id = $3
         AND status = 'active'
         AND maturity_state = $4
@@ -262,30 +304,14 @@ export async function getMaturityEntry(
 ): Promise<MaturityEntryRow | null> {
   if (!Number.isFinite(entryId) || entryId <= 0) return null;
   const exec: Executor = client ?? getPool();
-  const row = await queryOneWith<{
-    id: number;
-    maturity_state: string;
-    activation_strength: number;
-    decay_policy: string;
-    first_promoted_at: string | null;
-    last_reinforced_at: string | null;
-  }>(
+  const row = await queryOneWith<MaturityRow>(
     exec,
-    `SELECT id, maturity_state, activation_strength, decay_policy,
-            first_promoted_at, last_reinforced_at
+    `SELECT ${MATURITY_ENTRY_COLUMNS}
        FROM knowledge_entries
       WHERE id = $1 AND status = 'active'`,
     [entryId],
   );
-  if (!row) return null;
-  return {
-    id: row.id,
-    maturityState: row.maturity_state as MaturityState,
-    activationStrength: row.activation_strength,
-    decayPolicy: row.decay_policy as DecayPolicy,
-    firstPromotedAt: row.first_promoted_at,
-    lastReinforcedAt: row.last_reinforced_at,
-  };
+  return row ? mapMaturityRow(row) : null;
 }
 
 /**
@@ -303,17 +329,9 @@ export async function listDecayableEntries(
   if (limit === 0) return [];
   const afterId = Number.isFinite(args.afterId) && args.afterId > 0 ? Math.floor(args.afterId) : 0;
   const exec: Executor = client ?? getPool();
-  const rows = await queryWith<{
-    id: number;
-    maturity_state: string;
-    activation_strength: number;
-    decay_policy: string;
-    first_promoted_at: string | null;
-    last_reinforced_at: string | null;
-  }>(
+  const rows = await queryWith<MaturityRow>(
     exec,
-    `SELECT id, maturity_state, activation_strength, decay_policy,
-            first_promoted_at, last_reinforced_at
+    `SELECT ${MATURITY_ENTRY_COLUMNS}
        FROM knowledge_entries
       WHERE status = 'active'
         AND decay_policy <> 'none'
@@ -322,14 +340,7 @@ export async function listDecayableEntries(
       LIMIT $2`,
     [afterId, limit],
   );
-  return rows.map((row) => ({
-    id: row.id,
-    maturityState: row.maturity_state as MaturityState,
-    activationStrength: row.activation_strength,
-    decayPolicy: row.decay_policy as DecayPolicy,
-    firstPromotedAt: row.first_promoted_at,
-    lastReinforcedAt: row.last_reinforced_at,
-  }));
+  return rows.map(mapMaturityRow);
 }
 
 /**
@@ -345,30 +356,14 @@ export async function findActiveByContentHash(
 ): Promise<MaturityEntryRow | null> {
   if (!hash) return null;
   const exec: Executor = client ?? getPool();
-  const row = await queryOneWith<{
-    id: number;
-    maturity_state: string;
-    activation_strength: number;
-    decay_policy: string;
-    first_promoted_at: string | null;
-    last_reinforced_at: string | null;
-  }>(
+  const row = await queryOneWith<MaturityRow>(
     exec,
-    `SELECT id, maturity_state, activation_strength, decay_policy,
-            first_promoted_at, last_reinforced_at
+    `SELECT ${MATURITY_ENTRY_COLUMNS}
        FROM knowledge_entries
       WHERE content_hash = $1 AND status = 'active'`,
     [hash],
   );
-  if (!row) return null;
-  return {
-    id: row.id,
-    maturityState: row.maturity_state as MaturityState,
-    activationStrength: row.activation_strength,
-    decayPolicy: row.decay_policy as DecayPolicy,
-    firstPromotedAt: row.first_promoted_at,
-    lastReinforcedAt: row.last_reinforced_at,
-  };
+  return row ? mapMaturityRow(row) : null;
 }
 
 // ── Update status ────────────────────────────────────────────────

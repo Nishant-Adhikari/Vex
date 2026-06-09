@@ -119,4 +119,16 @@ describe("judge verdict schema", () => {
     const bad = { ...JSON.parse(PROMOTE_JSON), sourceTier: "trusted" };
     expect(judgeVerdictSchema.safeParse(bad).success).toBe(false);
   });
+
+  it("rejects a regimeTag outside the closed vocabulary (S6b F2 — no free-form tags)", () => {
+    const bad = { ...JSON.parse(PROMOTE_JSON), regimeTags: ["bull_microcap"] };
+    expect(judgeVerdictSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("accepts the full closed regime-tag vocabulary and rejects an over-long list", () => {
+    const all = { ...JSON.parse(PROMOTE_JSON), regimeTags: ["bull", "bear", "range", "high_vol", "low_vol"] };
+    expect(judgeVerdictSchema.safeParse(all).success).toBe(true);
+    const overLong = { ...JSON.parse(PROMOTE_JSON), regimeTags: ["bull", "bull", "bull", "bull", "bull", "bull"] };
+    expect(judgeVerdictSchema.safeParse(overLong).success).toBe(false);
+  });
 });

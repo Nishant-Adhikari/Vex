@@ -187,6 +187,16 @@ export type MemoryLogMeta = {
   readonly activationAfter?: string | number;
   /** Days since last reinforcement at a decay step (S6a — number). */
   readonly daysSinceReinforced?: string | number;
+  /** regime_snapshots.trend_label (S6b — bounded enum: bull|bear|range|unknown). */
+  readonly regimeTrend?: string | number;
+  /** regime_snapshots.vol_label (S6b — bounded enum: high|low|unknown). */
+  readonly regimeVol?: string | number;
+  /** regime_snapshots.confidence (S6b — bounded enum: low|medium|high). */
+  readonly regimeConfidence?: string | number;
+  /** regime_snapshots.source (S6b — bounded enum: tavily|twitter|hybrid). */
+  readonly regimeSource?: string | number;
+  /** regime_snapshots.id (S6b — SERIAL, plain number). */
+  readonly regimeSnapshotId?: string | number;
   readonly status?: string | number;
   readonly statusFrom?: string | number;
   readonly statusTo?: string | number;
@@ -249,6 +259,11 @@ const META_KEY_CATEGORY: Record<keyof MemoryLogMeta, MetaCategory> = {
   activationBefore: "num",
   activationAfter: "num",
   daysSinceReinforced: "num",
+  regimeTrend: "enum",
+  regimeVol: "enum",
+  regimeConfidence: "enum",
+  regimeSource: "enum",
+  regimeSnapshotId: "num",
   status: "enum",
   statusFrom: "enum",
   statusTo: "enum",

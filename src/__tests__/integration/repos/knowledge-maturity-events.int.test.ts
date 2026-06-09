@@ -170,7 +170,8 @@ describe("knowledge maturity FSM (integration)", () => {
 
     const entry = await getMaturityEntry(id);
     expect(entry).not.toBeNull();
-    const result = await decayEntry(entry!, new Date());
+    // S6b signature: regime null → bit-for-bit S6a time decay (regression pin).
+    const result = await decayEntry(entry!, new Date(), null);
     expect(result.ok).toBe(true);
 
     const row = await readEntry(id);

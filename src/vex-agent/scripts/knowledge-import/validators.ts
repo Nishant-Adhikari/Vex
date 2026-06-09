@@ -25,6 +25,11 @@ import {
   type InfluenceScope,
   type MaturityState,
 } from "@vex-agent/memory/schema/long-memory-enums.js";
+import {
+  REGIME_TAGS,
+  regimeTagSchema,
+  type RegimeTag,
+} from "@vex-agent/memory/schema/regime-enums.js";
 
 export interface ImportedRow {
   kind: string;
@@ -277,14 +282,34 @@ export function requireValidOutcomeVersionOrUndefined(
   return v;
 }
 
-/** regime_tags — array of strings (no null elements). Absent → undefined → default []. */
+/**
+ * regime_tags — array drawn from the CLOSED regime-tag vocabulary (S6b F2).
+ * Absent → undefined → default [].
+ *
+ * Each tag is parsed through `regimeTagSchema`: an out-of-vocab tag (e.g. a
+ * pre-F2 free-form `"bull_microcap"` from an old backup) is an EXPLICIT row
+ * error NAMING the bad tag — never silently normalized or stripped (fail
+ * clearly at validation, not as a cryptic DB-CHECK failure deep in the insert).
+ * Duplicates WITHIN the valid vocabulary are deduped (canonicalization, not
+ * coercion — a repeated valid tag carries no extra information).
+ */
 export function requireValidRegimeTagsOrUndefined(
   v: unknown,
   lineNumber: number,
-): string[] | undefined {
+): RegimeTag[] | undefined {
   if (v === undefined || v === null) return undefined;
   if (!isStringArray(v)) {
     throw new Error(`line ${lineNumber}: regime_tags must be an array of strings`);
   }
-  return v;
+  const tags: RegimeTag[] = [];
+  for (const raw of v) {
+    const parsed = regimeTagSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        `line ${lineNumber}: regime_tags contains "${raw}", which is not in the closed vocabulary (expected ${REGIME_TAGS.join("|")})`,
+      );
+    }
+    if (!tags.includes(parsed.data)) tags.push(parsed.data);
+  }
+  return tags;
 }

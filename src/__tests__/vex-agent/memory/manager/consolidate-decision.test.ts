@@ -88,6 +88,30 @@ describe("consolidateCandidate decision pipeline", () => {
     expect(out.llmCalls).toBe(1);
   });
 
+  it("dedupes repeated valid regime tags in the plan (S6b canonicalization, not an error)", async () => {
+    const out = await consolidateCandidate(
+      makeCandidate(),
+      EMB,
+      deps({
+        recallClusterAnchors: twoExecCluster(),
+        judge: async () => ({
+          verdict: {
+            verdict: "promote",
+            rubric: { grounding: 3, durability: 3, novelty: 3, generalizability: 4, processNotOutcome: 4 },
+            sourceTier: "observed",
+            regimeTags: ["bull", "bull", "high_vol"],
+          },
+          llmCalls: 1,
+          costUsd: null,
+        }),
+      }),
+    );
+    expect(out.plan.type).toBe("promote");
+    if (out.plan.type === "promote") {
+      expect(out.plan.regimeTags).toEqual(["bull", "high_vol"]);
+    }
+  });
+
   it("maps a judge reject verdict to a reject plan with its reason", async () => {
     const verdict: JudgeVerdict = {
       verdict: "reject",

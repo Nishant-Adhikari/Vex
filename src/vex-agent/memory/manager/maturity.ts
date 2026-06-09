@@ -1,10 +1,11 @@
 /**
- * Maturity FSM application (S6a) — `reinforceEntry` (recurrence reinforcement /
- * reactivation) and `decayEntry` (time decay). The IMPERATIVE SHELL around the
- * pure decisions in `maturity-policy.ts`: it reads the entry's current FSM state,
- * computes the next state via the policy, persists the transition with a
- * precondition guard, and records ONE append-only `knowledge_maturity_events`
- * audit row per real transition (D-AUDIT).
+ * Maturity FSM application (S6a/S6b) — `reinforceEntry` (recurrence
+ * reinforcement / reactivation) and `decayEntry` (time + regime decay). The
+ * IMPERATIVE SHELL around the pure decisions in `maturity-policy.ts`: it reads
+ * the entry's current FSM state, computes the next state via the policy,
+ * persists the transition with a precondition guard, and records ONE
+ * append-only `knowledge_maturity_events` audit row per real transition
+ * (D-AUDIT).
  *
  * Hard invariants (s6-plan §1):
  *   - D-DECAY: decay erodes activation to a floor > 0; it NEVER deletes a row and
@@ -15,6 +16,9 @@
  *   - D-AUDIT: every transition that actually changes state writes an audit row
  *     with a `reason_code` + structural `trigger_refs`. A no-op (precondition
  *     miss, or decay below the audit-delta threshold) writes nothing.
+ *   - S6b advisory-only (OD-1): the regime view modulates ONLY decay speed and
+ *     drives ONLY the decayed→established reactivation here. `regime === null`
+ *     (no/stale/unconfirmed snapshots) keeps S6a time-decay bit-for-bit.
  *
  * IO is injectable (`MaturityDeps`) so both functions are unit-testable without a
  * DB. The production wiring (`defaultMaturityDeps`) binds the knowledge repo
@@ -31,15 +35,23 @@ import {
   type MaturityEntryRow,
 } from "@vex-agent/db/repos/knowledge/crud.js";
 import { recordMaturityEvent } from "@vex-agent/db/repos/knowledge-maturity-events/index.js";
-import type { MaturityTriggerRefs } from "@vex-agent/memory/schema/knowledge-maturity-event.js";
+import type {
+  MaturityReasonCode,
+  MaturityTriggerRefs,
+} from "@vex-agent/memory/schema/knowledge-maturity-event.js";
 import {
   DECAY_FLOOR,
+  REACTIVATION_ACTIVATION,
   daysSince,
   decayedActivation,
   nextStateOnDecay,
   nextStateOnReinforce,
+  regimeHalfLifeDays,
+  regimeMatchKind,
   reinforceEventFor,
   reinforcedActivation,
+  type EffectiveRegime,
+  type RegimeMatchKind,
 } from "./maturity-policy.js";
 
 // ── Injectable IO ───────────────────────────────────────────────────
@@ -121,6 +133,7 @@ export async function reinforceEntry(
       nextMaturityState: toState,
       nextActivation: activationAfter,
       bumpLastReinforcedAt: true,
+      bumpLastDecayedAt: false,
     },
     tx,
   );
@@ -144,23 +157,54 @@ export async function reinforceEntry(
   return { ok: true, applied: true, fromState, toState, activationBefore, activationAfter };
 }
 
-// ── decayEntry (time decay) ─────────────────────────────────────────
+// ── decayEntry (time + regime decay) ────────────────────────────────
 
 /**
- * Apply one time-decay step to an entry (D-DECAY). Computes the decayed activation
+ * The later of two timestamp strings (the incremental-decay anchor pick).
+ * Either side unparseable → return `a` (the reinforcement-side anchor): an
+ * invalid date then yields 0 days via `daysSince`, so a corrupt timestamp
+ * degrades to "no decay this round" — a conservative freeze, never a wrong
+ * erosion (Phase-6: NaN handling explicit, not via NaN-comparison fallout).
+ */
+function laterOf(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  const ams = Date.parse(a);
+  const bms = Date.parse(b);
+  if (!Number.isFinite(ams) || !Number.isFinite(bms)) return a;
+  return bms > ams ? b : a;
+}
+
+/**
+ * Apply one decay step to an entry (D-DECAY). Computes the decayed activation
  * via the policy (exp half-life, floored at `DECAY_FLOOR > 0`) and the resulting
  * maturity tier (→ `decayed` once below the threshold). NEVER deletes the row and
  * NEVER drops below the floor.
  *
+ * S6b regime modulation: a `regime_aware` entry under a non-null effective
+ * regime resolves a match kind against its closed-vocab tags — match decays
+ * slower (60d half-life), mismatch faster (15d), neutral unchanged (30d) — and
+ * a `decayed` entry whose tags MATCH a HIGH-confidence regime is REACTIVATED to
+ * `established`. `regime === null` (no/stale/unconfirmed snapshots) and the
+ * `time` policy keep the S6a time-decay path bit-for-bit (floor repair,
+ * `below_delta` skip, `time_decay` reason, empty trigger_refs).
+ *
+ * INCREMENTAL by construction: each applied decay stamps `last_decayed_at`, and
+ * the next step erodes only the quantum since max(last_reinforced_at,
+ * last_decayed_at) — an immediate re-run sees Δt ≈ 0 (factor ≈ 1) and no-ops,
+ * so idempotency holds for ANY entry age (not just fresh rows).
+ *
  * Anti audit-spam: if the activation change is below `DECAY_AUDIT_MIN_DELTA` AND
- * the tier is unchanged, the step is a no-op (no write, no audit) — re-sweeping
- * the same day is idempotent. A tier change is always persisted + audited. Does
- * NOT bump `last_reinforced_at` (decay is not reinforcement). `decidedBy` is
- * `system`. `now` is injectable for deterministic tests.
+ * the tier is unchanged, the step is a no-op (no write, no audit) — sub-quantum
+ * intervals accumulate until the eroded amount is worth persisting. A tier
+ * change is always persisted + audited. Does NOT bump `last_reinforced_at`
+ * (decay is not reinforcement; reactivation IS — it restarts the decay clock).
+ * `decidedBy` is `system`. `now` is injectable for deterministic tests.
  */
 export async function decayEntry(
   entry: MaturityEntryRow,
   now: Date,
+  regime: EffectiveRegime | null,
   tx?: PoolClient,
   deps: MaturityDeps = defaultMaturityDeps(),
 ): Promise<DecayResult> {
@@ -169,15 +213,86 @@ export async function decayEntry(
     return { ok: true, applied: false, reason: "below_delta" };
   }
 
+  // ONLY regime_aware entries under a live effective regime get a non-neutral
+  // match kind ('low' dwell-confidence resolves to neutral inside the policy).
+  // Everything else — `time` policy, `outcome_aware` (gated until S7), or no
+  // regime — is neutral, i.e. the unmodulated S6a half-life.
+  const matchKind: RegimeMatchKind =
+    entry.decayPolicy === "regime_aware" && regime !== null
+      ? regimeMatchKind(entry.regimeTags, regime)
+      : "neutral";
+
   const activationBefore = entry.activationStrength;
-  const reference = entry.lastReinforcedAt ?? entry.firstPromotedAt;
-  const days = daysSince(reference ? new Date(reference) : null, now);
+
+  // 1) REACTIVATION — checked BEFORE the below_delta skip (a decayed entry sits
+  //    at/near the floor, so its day-over-day delta is ~0 and the skip branch
+  //    would swallow the resurrection forever). Requires the STRONGEST signal:
+  //    decayed entry + regime match + HIGH dwell confidence (high in BOTH
+  //    snapshots of the pair — see `effectiveRegime`'s min()). Bumps
+  //    `last_reinforced_at` (restart of the decay clock — the lesson gets a
+  //    fresh run); after the transition the entry is `established`, so this
+  //    branch cannot re-fire on the next sweep.
+  if (entry.maturityState === "decayed" && matchKind === "match" && regime !== null && regime.confidence === "high") {
+    const ok = await deps.applyMaturityTransition(
+      {
+        entryId: entry.id,
+        expectedMaturityState: "decayed",
+        expectedActivation: activationBefore,
+        nextMaturityState: "established",
+        nextActivation: REACTIVATION_ACTIVATION,
+        bumpLastReinforcedAt: true,
+        bumpLastDecayedAt: false,
+      },
+      tx,
+    );
+    if (!ok) return { ok: true, applied: false, reason: "precondition_miss" };
+
+    await deps.recordMaturityEvent(
+      {
+        entryId: entry.id,
+        event: "reactivated",
+        fromState: "decayed",
+        toState: "established",
+        reasonCode: "regime_decay",
+        activationBefore,
+        activationAfter: REACTIVATION_ACTIVATION,
+        triggerRefs: { regimeSnapshotId: regime.snapshotId },
+        decidedBy: "system",
+      },
+      tx,
+    );
+
+    return {
+      ok: true,
+      applied: true,
+      activationBefore,
+      activationAfter: REACTIVATION_ACTIVATION,
+      tierChanged: true,
+    };
+  }
+
+  // 2) Normal decay with the regime-modulated half-life (neutral = S6a base).
+  // INCREMENTAL anchor: erode only the quantum since the last APPLIED decay (or
+  // the last reinforcement, whichever is later). Anchoring on reinforcement
+  // alone would re-apply the FULL elapsed factor to the already-decayed value
+  // on every run — a 30-day-stale lesson would halve once per sweep
+  // (compounding), not once per half-life. Exponential decay composes exactly
+  // (0.5^(a/h) × 0.5^(b/h) = 0.5^((a+b)/h)), so per-interval quanta sum to the
+  // same curve — and under a TIME-VARYING half-life (regime modulation) the
+  // per-interval form is the only correct one: each interval erodes at the
+  // regime rate in force while it elapsed.
+  const anchor = laterOf(entry.lastReinforcedAt ?? entry.firstPromotedAt, entry.lastDecayedAt);
+  const days = daysSince(anchor ? new Date(anchor) : null, now);
+  const halfLifeDays = regimeHalfLifeDays(matchKind);
   // Floor UP-FRONT so the skip/persist decision sees the value we will actually
   // store. `decayedActivation` already floors at DECAY_FLOOR; the Math.max is
   // belt-and-braces AND repairs a row that arrived BELOW the floor
   // (legacy/imported/corrupt) up to it — the D-DECAY floor invariant must be
   // self-healing, not just non-decreasing.
-  const flooredAfter = Math.max(DECAY_FLOOR, decayedActivation(activationBefore, days, entry.decayPolicy));
+  const flooredAfter = Math.max(
+    DECAY_FLOOR,
+    decayedActivation(activationBefore, days, entry.decayPolicy, halfLifeDays),
+  );
   const toState = nextStateOnDecay(entry.maturityState, flooredAfter);
   const tierChanged = toState !== entry.maturityState;
 
@@ -198,10 +313,22 @@ export async function decayEntry(
       nextMaturityState: toState,
       nextActivation: flooredAfter,
       bumpLastReinforcedAt: false,
+      bumpLastDecayedAt: true,
     },
     tx,
   );
   if (!ok) return { ok: true, applied: false, reason: "precondition_miss" };
+
+  // A regime-modulated step (match OR mismatch) is audited as `regime_decay`
+  // with the driving snapshot in trigger_refs; a neutral step stays the S6a
+  // `time_decay` with empty refs. The explicit `regime !== null` re-check keeps
+  // the narrowing honest (matchKind is only non-neutral under a non-null
+  // regime, but TS cannot see that coupling).
+  const regimeDriven = matchKind !== "neutral" && regime !== null;
+  const reasonCode: MaturityReasonCode = regimeDriven ? "regime_decay" : "time_decay";
+  const triggerRefs: MaturityTriggerRefs = regimeDriven && regime !== null
+    ? { regimeSnapshotId: regime.snapshotId }
+    : {};
 
   await deps.recordMaturityEvent(
     {
@@ -209,10 +336,10 @@ export async function decayEntry(
       event: "decayed",
       fromState: entry.maturityState,
       toState,
-      reasonCode: "time_decay",
+      reasonCode,
       activationBefore,
       activationAfter: flooredAfter,
-      triggerRefs: {},
+      triggerRefs,
       decidedBy: "system",
     },
     tx,

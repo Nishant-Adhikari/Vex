@@ -40,19 +40,26 @@ const VERDICT_RULES = [
   "Do NOT emit 'merge'.",
 ].join("\n");
 
+const REGIME_TAG_RULES = [
+  "REGIME TAGS (closed vocabulary, hard rules):",
+  '- regimeTags may ONLY contain: "bull", "bear", "range", "high_vol", "low_vol". NEVER invent any other tag (no "bull_microcap", no compounds).',
+  "- Tag a lesson ONLY when it is regime-bound — true in that market regime specifically, not universally.",
+  "- An empty list [] means the lesson is timeless (regime-independent). When unsure, leave it empty.",
+].join("\n");
+
 const FEW_SHOT = [
   "EXAMPLES:",
   'Candidate: a strategy_lesson "paid dexscreener boost + buyer dominance + rising m5 volume signals a real chance" with 1 execution anchor, recurrenceCount=1.',
   '=> {"verdict":"retain","rubric":{"grounding":3,"durability":3,"novelty":4,"generalizability":4,"processNotOutcome":4},"sourceTier":"inferred","regimeTags":[]} (single occurrence — a recallable hypothesis, not yet a rule).',
   'Same lesson observed in a SECOND independent trade, recurrenceCount=2, ceiling "moderate".',
-  '=> {"verdict":"promote","rubric":{"grounding":3,"durability":3,"novelty":3,"generalizability":4,"processNotOutcome":4},"sourceTier":"observed","regimeTags":["bull_microcap"]}.',
+  '=> {"verdict":"promote","rubric":{"grounding":3,"durability":3,"novelty":3,"generalizability":4,"processNotOutcome":4},"sourceTier":"observed","regimeTags":["bull","high_vol"]}.',
   'Candidate: "token went up" with NO evidence_refs and no thesis.',
   '=> {"verdict":"reject","rubric":{"grounding":1,"durability":1,"novelty":2,"generalizability":1,"processNotOutcome":3},"sourceTier":"hypothesis","rejectReason":"insufficient_evidence"}.',
 ].join("\n");
 
 const OUTPUT_CONTRACT = [
   "Output STRICT JSON only, no prose, this exact shape:",
-  '{ "verdict": "promote|supersede|retain|reject|expire", "rubric": { "grounding": <1-5>, "durability": <1-5>, "novelty": <1-5>, "generalizability": <1-5>, "processNotOutcome": <1-5> }, "sourceTier": "observed|user_confirmed|inferred|hypothesis", "regimeTags": [..], "previousKnowledgeId": <int, supersede only>, "rejectReason": "<reject/expire only>" }',
+  '{ "verdict": "promote|supersede|retain|reject|expire", "rubric": { "grounding": <1-5>, "durability": <1-5>, "novelty": <1-5>, "generalizability": <1-5>, "processNotOutcome": <1-5> }, "sourceTier": "observed|user_confirmed|inferred|hypothesis", "regimeTags": [zero or more of "bull"|"bear"|"range"|"high_vol"|"low_vol"], "previousKnowledgeId": <int, supersede only>, "rejectReason": "<reject/expire only>" }',
 ].join("\n");
 
 export function buildJudgeSystemPrompt(): string {
@@ -62,6 +69,7 @@ export function buildJudgeSystemPrompt(): string {
     RUBRIC,
     CALIBRATION,
     VERDICT_RULES,
+    REGIME_TAG_RULES,
     FEW_SHOT,
     OUTPUT_CONTRACT,
   ].join("\n\n");

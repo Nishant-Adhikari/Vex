@@ -35,6 +35,7 @@ import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
 import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
+import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
@@ -166,6 +167,16 @@ app.whenReady().then(async () => {
   // own pre-claim OPENROUTER_API_KEY + AGENT_MODEL gate). Memory is advisory only.
   const stopMemoryManagerWorker = setupMemoryManagerWorker();
 
+  // 6a-regime. Own the engine's daily regime worker so regime_snapshots accrues
+  // one market-regime classification a day (S6b) — otherwise regime-aware decay
+  // permanently degrades to pure time decay. Like the other workers it stays
+  // idle until the regime_snapshots schema is ready (supervisor probe); the
+  // worker's own per-tick env gates (provider + Tavily/Twitter keys, injected
+  // by vault unlock) keep every tick a no-op until accounts are linked. The
+  // snapshot is advisory-only: it feeds memory decay/reactivation, never
+  // sizing/approval/execution.
+  const stopRegimeWorker = setupRegimeWorker();
+
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight
   // work BEFORE cleanupOnQuit stops Compose/Postgres — and globalCleanup runs
   // tasks concurrently, so makeOrderedQuitCleanup sequences (drain workers) ->
@@ -179,6 +190,7 @@ app.whenReady().then(async () => {
         stopWakeWorker(),
         stopSyncWorker(),
         stopMemoryManagerWorker(),
+        stopRegimeWorker(),
       ]);
       for (const r of results) {
         if (r.status === "rejected") {

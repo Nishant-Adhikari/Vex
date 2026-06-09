@@ -23,6 +23,7 @@ import { z } from "zod";
 
 import { knowledgeSourceSchema } from "@vex-agent/memory/long-memory-source-policy.js";
 import { memoryDecisionRejectReasonSchema } from "@vex-agent/memory/schema/memory-decision-enums.js";
+import { REGIME_TAGS, regimeTagSchema } from "@vex-agent/memory/schema/regime-enums.js";
 
 /** The five S4 verdict labels the judge may emit (NO `merge`). */
 export const JUDGE_VERDICTS = [
@@ -66,14 +67,18 @@ export type JudgeRubric = z.infer<typeof judgeRubricSchema>;
  * (REUSES the knowledge-source vocabulary). `previousKnowledgeId` is REQUIRED iff
  * the verdict is `supersede` (the predecessor to replace) — a refine enforces it.
  * `rejectReason` is REQUIRED iff the verdict is `reject` or `expire`. `regimeTags`
- * are bounded market-regime labels carried onto the promoted entry.
+ * are drawn from the CLOSED regime-tag vocabulary (S6b F2 — `regime-enums.ts`,
+ * lockstep with the `ke_regime_tags_valid` DB CHECK): an out-of-vocab tag fails
+ * the verdict, so a hallucinated free-form tag can never reach the DB. The max
+ * is the vocabulary size; duplicates are deduped in `planFromVerdict`
+ * (canonicalization, not an error — the LLM repeating a valid tag is noise).
  */
 export const judgeVerdictSchema = z
   .object({
     verdict: judgeVerdictTypeSchema,
     rubric: judgeRubricSchema,
     sourceTier: knowledgeSourceSchema,
-    regimeTags: z.array(z.string().min(1).max(64)).max(16).optional().default([]),
+    regimeTags: z.array(regimeTagSchema).max(REGIME_TAGS.length).optional().default([]),
     previousKnowledgeId: z.number().int().positive().optional(),
     rejectReason: memoryDecisionRejectReasonSchema.optional(),
   })

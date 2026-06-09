@@ -177,7 +177,10 @@ async function fetchUrlRawHttp(url: string): Promise<FetchedPage> {
 
 // ── Search (+ optional batch extract top N) ─────────────────────
 
-async function searchAndOptionallyFetch(
+// Exported as the regime worker's Tavily seam (S6b FIX-3 analog: an internal
+// function, NOT a ToolDef/registry surface). The worker calls it with
+// fetchTop=0 — snippets only: fewer credits, smaller injection surface.
+export async function searchAndOptionallyFetch(
   query: string,
   fetchTop: number,
   searchDepth: "basic" | "advanced" | undefined,

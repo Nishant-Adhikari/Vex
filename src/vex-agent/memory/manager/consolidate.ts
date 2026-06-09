@@ -261,12 +261,16 @@ function planFromVerdict(
     costUsd: inference.costUsd,
   };
   const sourceTier = clampSourceTier(verdict.sourceTier, evidenceStrengthCeiling);
+  // S6b F2: tags are vocabulary-validated by the verdict schema; dedupe here is
+  // CANONICALIZATION (a repeated valid tag is LLM noise, not an error) so the
+  // promoted entry never carries duplicates.
+  const regimeTags = Array.from(new Set(verdict.regimeTags));
   switch (verdict.verdict) {
     case "promote":
       return {
         type: "promote",
         sourceTier,
-        regimeTags: verdict.regimeTags,
+        regimeTags,
         ...inf,
       };
     case "supersede": {
@@ -278,7 +282,7 @@ function planFromVerdict(
         type: "supersede",
         previousKnowledgeId,
         sourceTier,
-        regimeTags: verdict.regimeTags,
+        regimeTags,
         ...inf,
       };
     }

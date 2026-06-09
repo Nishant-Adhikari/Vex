@@ -1,5 +1,5 @@
 /**
- * Activation decay sweep (S6a) — the periodic batch that erodes
+ * Activation decay sweep (S6a/S6b) — the periodic batch that erodes
  * `activation_strength` on decayable knowledge entries (D-DECAY). Runs off the
  * memory_manager maintenance cron-tick (alongside the consolidate-enqueue sweep).
  *
@@ -14,15 +14,26 @@
  *   - NON-FATAL per entry: a single entry's failure is logged and skipped; the
  *     sweep continues (one bad row never aborts the batch).
  *
+ * S6b: the effective regime (dwell-confirmed snapshot pair) is resolved ONCE per
+ * run and passed to every `decayEntry` — one consistent regime view per sweep
+ * (no mid-sweep flip), one snapshot read per run (not per entry). A failed or
+ * empty regime read degrades to `null` = pure S6a time decay (fail-closed; the
+ * sweep itself never aborts over the regime).
+ *
  * IO is injectable so the loop is unit-testable without a DB; the production
- * wiring binds `listDecayableEntries` + `decayEntry`.
+ * wiring binds `listDecayableEntries` + `decayEntry` + the snapshot-pair read.
  */
 
 import {
   listDecayableEntries,
   type MaturityEntryRow,
 } from "@vex-agent/db/repos/knowledge/crud.js";
+import { getLatestTwoRegimeSnapshots } from "@vex-agent/db/repos/regime-snapshots.js";
 import { decayEntry, type DecayResult } from "@vex-agent/memory/manager/maturity.js";
+import {
+  effectiveRegime,
+  type EffectiveRegime,
+} from "@vex-agent/memory/manager/maturity-policy.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
 
 // ── Cadence / batch sizing (tune empirically, do not freeze) ────────
@@ -42,13 +53,23 @@ export const DECAY_SWEEP_MAX_ENTRIES = 2_000;
 
 export interface DecaySweepDeps {
   listDecayableEntries: (args: { afterId: number; limit: number }) => Promise<MaturityEntryRow[]>;
-  decayEntry: (entry: MaturityEntryRow, now: Date) => Promise<DecayResult>;
+  decayEntry: (
+    entry: MaturityEntryRow,
+    now: Date,
+    regime: EffectiveRegime | null,
+  ) => Promise<DecayResult>;
+  /**
+   * The dwell-confirmed effective regime, resolved ONCE per sweep run. `null`
+   * (no/stale/disagreeing snapshots) → every entry decays as pure time decay.
+   */
+  getEffectiveRegime: () => Promise<EffectiveRegime | null>;
 }
 
 export function defaultDecaySweepDeps(): DecaySweepDeps {
   return {
     listDecayableEntries: (args) => listDecayableEntries(args),
-    decayEntry: (entry, now) => decayEntry(entry, now),
+    decayEntry: (entry, now, regime) => decayEntry(entry, now, regime),
+    getEffectiveRegime: async () => effectiveRegime(await getLatestTwoRegimeSnapshots(), new Date()),
   };
 }
 
@@ -75,6 +96,18 @@ export async function runDecaySweep(
   let decayed = 0;
   let errored = 0;
 
+  // S6b: ONE regime resolution per run. A failed read degrades to null (pure
+  // time decay) and never aborts the sweep — decay must keep running even when
+  // the regime substrate is unreachable (fail-closed, advisory-only).
+  let regime: EffectiveRegime | null = null;
+  try {
+    regime = await deps.getEffectiveRegime();
+  } catch (err: unknown) {
+    memLog.warn("decay_sweep", "regime_unavailable", {
+      errorCode: err instanceof Error ? "regime_read_error" : "regime_read_unknown",
+    });
+  }
+
   while (scanned < DECAY_SWEEP_MAX_ENTRIES) {
     const remaining = DECAY_SWEEP_MAX_ENTRIES - scanned;
     const limit = Math.min(DECAY_SWEEP_BATCH_SIZE, remaining);
@@ -85,7 +118,7 @@ export async function runDecaySweep(
       scanned += 1;
       afterId = entry.id;
       try {
-        const result = await deps.decayEntry(entry, now);
+        const result = await deps.decayEntry(entry, now, regime);
         if (result.ok && result.applied) decayed += 1;
       } catch {
         // Non-fatal: one bad row never aborts the sweep.
