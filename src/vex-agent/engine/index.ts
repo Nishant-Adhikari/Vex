@@ -47,6 +47,12 @@ export type { WakeExecutorHandle, WakeDeps, ClaimedWake, ClaimedWakeOutcome } fr
 export { startCompactJobsExecutor } from "./compact-jobs/executor.js";
 export type { CompactJobsExecutorHandle } from "./compact-jobs/executor.js";
 
+export { startMemoryManagerExecutor } from "./memory-manager/executor.js";
+export type {
+  MemoryManagerExecutorHandle,
+  StartMemoryManagerOptions,
+} from "./memory-manager/executor.js";
+
 export {
   abortMissionRun,
   abortActiveMissionForSession,

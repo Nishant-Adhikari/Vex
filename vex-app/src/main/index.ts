@@ -34,6 +34,7 @@ import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
+import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
@@ -157,6 +158,14 @@ app.whenReady().then(async () => {
   // material is touched).
   const stopSyncWorker = setupSyncWorker();
 
+  // 6a-memory. Own the engine memory_manager executor so enqueued memory_jobs
+  // (consolidate sweeps from long_memory_suggest) actually curate candidates into
+  // long-term knowledge — otherwise every suggestion sits pending forever. Like
+  // the compact/wake workers it stays idle until the memory_jobs schema is ready
+  // (supervisor probe) and the inference provider is configured (the executor's
+  // own pre-claim OPENROUTER_API_KEY + AGENT_MODEL gate). Memory is advisory only.
+  const stopMemoryManagerWorker = setupMemoryManagerWorker();
+
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight
   // work BEFORE cleanupOnQuit stops Compose/Postgres — and globalCleanup runs
   // tasks concurrently, so makeOrderedQuitCleanup sequences (drain workers) ->
@@ -169,6 +178,7 @@ app.whenReady().then(async () => {
         stopCompactWorker(),
         stopWakeWorker(),
         stopSyncWorker(),
+        stopMemoryManagerWorker(),
       ]);
       for (const r of results) {
         if (r.status === "rejected") {

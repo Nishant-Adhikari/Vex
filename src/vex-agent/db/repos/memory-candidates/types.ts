@@ -290,6 +290,28 @@ export function vectorLiteral(v: readonly number[]): string {
   return "[" + v.join(",") + "]";
 }
 
+/**
+ * Parse a pgvector text literal `[a,b,c]` back into a `number[]`. The inverse of
+ * `vectorLiteral`; used by `getCandidateEmbedding` to reuse a candidate's stored
+ * vector at promote time (no re-embed). An empty `[]` yields `[]`; a malformed
+ * literal throws (programmer error — the column is repo-owned and always valid).
+ */
+export function parseVectorLiteral(literal: string): number[] {
+  const trimmed = literal.trim();
+  if (trimmed.length < 2 || trimmed[0] !== "[" || trimmed[trimmed.length - 1] !== "]") {
+    throw new Error(`parseVectorLiteral: malformed pgvector literal (len=${literal.length})`);
+  }
+  const inner = trimmed.slice(1, -1).trim();
+  if (inner.length === 0) return [];
+  return inner.split(",").map((part) => {
+    const n = Number.parseFloat(part);
+    if (!Number.isFinite(n)) {
+      throw new Error("parseVectorLiteral: non-finite component in pgvector literal");
+    }
+    return n;
+  });
+}
+
 /** Convert an optional Date to an ISO string (or null) for a timestamptz param. */
 export function toIsoOrNull(d: Date | null | undefined): string | null {
   return d ? d.toISOString() : null;

@@ -17,6 +17,7 @@ export { CANDIDATE_COLUMNS, mapRow, mapRecallRow } from "./types.js";
 export {
   insertCandidate,
   getCandidateById,
+  getCandidateEmbedding,
   findLatestCandidateByContentHash,
   updateCandidateStatus,
   listCandidatesByStatus,

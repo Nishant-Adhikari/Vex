@@ -26,6 +26,7 @@ import {
   CANDIDATE_COLUMNS,
   mapRecallRow,
   mapRow,
+  parseVectorLiteral,
   toIsoOrNull,
   vectorLiteral,
   type CandidateStatus,
@@ -154,6 +155,44 @@ export async function getCandidateById(
     [id],
   );
   return row ? mapRow(row) : null;
+}
+
+// ── Get embedding (write-only column; S4 promote reuse) ──────────
+
+/**
+ * The stored embedding of a candidate, or null if the candidate does not exist.
+ *
+ * The `embedding` column is WRITE-ONLY in the normal read path: `mapRow` ignores
+ * it and `CANDIDATE_COLUMNS` deliberately omits it (siblings do the same — recall
+ * runs its own vector SELECT). The S4 deterministic stage (D5/D6/D7 similarity)
+ * and `promote()` need the raw vector — promote REUSES it (with `embeddingModel`
+ * / `embeddingDim`) so the long-term entry is byte-identical to the candidate
+ * (the embedding was computed AFTER redaction in S2; the redacted text is stable,
+ * so re-embedding would be wasteful AND risk drift). The vector literal `[a,b,…]`
+ * is parsed back into a `number[]`.
+ */
+export async function getCandidateEmbedding(
+  id: string,
+  client?: PoolClient,
+): Promise<{ embedding: number[]; embeddingModel: string; embeddingDim: number } | null> {
+  if (!id) return null;
+  const exec: Executor = client ?? getPool();
+  const row = await queryOneWith<{
+    embedding: string;
+    embedding_model: string;
+    embedding_dim: number;
+  }>(
+    exec,
+    `SELECT embedding::text AS embedding, embedding_model, embedding_dim
+       FROM memory_candidates WHERE id = $1`,
+    [id],
+  );
+  if (!row) return null;
+  return {
+    embedding: parseVectorLiteral(row.embedding),
+    embeddingModel: row.embedding_model,
+    embeddingDim: row.embedding_dim,
+  };
 }
 
 // ── Find latest by content hash (loop-prevention beyond pending) ─
@@ -318,13 +357,16 @@ export interface CandidateRecallFilters {
 
 /**
  * Top-K cosine recall over fresh `memory_candidates` for the dual-trace read
- * path (S3, §2-step-4). Predicate: `status='pending'` AND
+ * path (S3, §2-step-4). Predicate: `status IN ('pending','retained')` AND
  * `retrieval_visibility='not_consolidated'` AND non-expired
  * (`retrieval_until IS NULL OR retrieval_until > now()`) AND a matching
- * `embedding_model` / `embedding_dim`. Suppressed, expired, and terminal
- * (promoted/rejected/superseded/merged/expired/retained) candidates are
- * EXCLUDED. Ordered by cosine `<=>`; fetches `k * 2` raw rows (same headroom as
- * the knowledge recall) so the caller can rerank + cap. No migration — uses
+ * `embedding_model` / `embedding_dim`. `retained` is a S4 dual-trace state — a
+ * generalization the judge held back at recurrence n<2 (D-REC): it stays
+ * RECALLABLE (a "premature holding pen" that is not lost) while a single-anchor
+ * fact never promotes as a generalization. Suppressed, expired, and the OTHER
+ * terminal states (promoted/rejected/superseded/merged/expired) are EXCLUDED.
+ * Ordered by cosine `<=>`; fetches `k * 2` raw rows (same headroom as the
+ * knowledge recall) so the caller can rerank + cap. No migration — uses
  * `idx_mc_embedding_match`.
  */
 export async function recallCandidatesTopK(
@@ -348,7 +390,7 @@ export async function recallCandidatesTopK(
        retrieval_until,
        (embedding <=> $1::vector) AS cosine_distance
      FROM memory_candidates
-     WHERE status = 'pending'
+     WHERE status IN ('pending', 'retained')
        AND retrieval_visibility = 'not_consolidated'
        AND (retrieval_until IS NULL OR retrieval_until > now())
        AND embedding_model = $2

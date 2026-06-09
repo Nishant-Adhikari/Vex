@@ -225,6 +225,23 @@ export async function getSession(id: string): Promise<Session | null> {
   return row ? mapRow(row) : null;
 }
 
+/**
+ * Whether a session is soft-deleted (OD-3 = BLOCK as evidence source). `mapRow`
+ * / `getSession` deliberately do not surface `deleted_at`, so the S4 evidence
+ * deref needs this dedicated check: a candidate whose evidence anchor traces to
+ * a soft-deleted session must be rejected (`insufficient_evidence`). A row that
+ * does not exist returns `false` (existence is a SEPARATE check the caller makes
+ * via the execution anchor); this answers ONLY "is it soft-deleted".
+ */
+export async function isSessionSoftDeleted(id: string): Promise<boolean> {
+  if (!id) return false;
+  const row = await queryOne<{ deleted_at: string | null }>(
+    "SELECT deleted_at FROM sessions WHERE id = $1",
+    [id],
+  );
+  return row !== null && row.deleted_at !== null;
+}
+
 export async function setScope(id: string, scope: string): Promise<void> {
   await executeWith(getPool(), "UPDATE sessions SET scope = $1 WHERE id = $2", [scope, id]);
 }

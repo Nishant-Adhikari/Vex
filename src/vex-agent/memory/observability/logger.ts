@@ -145,6 +145,22 @@ export type MemoryLogMeta = {
   /** memory_edges.relation (S1d — bounded enum). */
   readonly relation?: string | number;
   readonly decision?: string | number;
+  /** memory_decisions.decision_type (S4 — bounded enum verdict). */
+  readonly decisionType?: string | number;
+  /** memory_decisions.decision_version (S4 — re-decision counter; 0 in S4). */
+  readonly decisionVersion?: string | number;
+  /** memory_decisions.id (S4 — append-only audit row, BIGINT → string). */
+  readonly decisionId?: string | number;
+  /** knowledge_entries.id superseded by a supersede decision (S4). */
+  readonly supersedesKnowledgeId?: string | number;
+  /** Candidate evidence-strength ceiling derived by the deref (S4 — bounded enum). */
+  readonly evidenceStrength?: string | number;
+  /** Distinct-execution recurrence count behind a generalization (S4 — D-REC). */
+  readonly recurrenceCount?: string | number;
+  /** LLM calls made deciding a candidate / batch (S4 — judge cost telemetry). */
+  readonly llmCalls?: string | number;
+  /** Accumulated USD cost of a decision's inference (S4). */
+  readonly costUsd?: string | number;
   readonly status?: string | number;
   readonly statusFrom?: string | number;
   readonly statusTo?: string | number;
@@ -186,6 +202,14 @@ const META_KEY_CATEGORY: Record<keyof MemoryLogMeta, MetaCategory> = {
   entityType: "enum",
   relation: "enum",
   decision: "enum",
+  decisionType: "enum",
+  decisionVersion: "num",
+  decisionId: "id",
+  supersedesKnowledgeId: "id",
+  evidenceStrength: "enum",
+  recurrenceCount: "num",
+  llmCalls: "num",
+  costUsd: "num",
   status: "enum",
   statusFrom: "enum",
   statusTo: "enum",

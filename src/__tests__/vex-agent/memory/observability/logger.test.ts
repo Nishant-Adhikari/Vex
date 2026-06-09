@@ -328,6 +328,43 @@ describe("memory observability logger — structural guard", () => {
     });
   });
 
+  // ── S4 decision-curation keys (§11 allowlist extension) ────────
+
+  describe("filterMemoryLogMeta — S4 manager keys", () => {
+    it("keeps the S4 enum / num / id decision keys with valid values", () => {
+      const out = filterMemoryLogMeta({
+        decisionType: "promote",
+        evidenceStrength: "moderate",
+        decisionVersion: 0,
+        recurrenceCount: 2,
+        llmCalls: 1,
+        costUsd: 0.0034,
+        decisionId: "12345",
+        supersedesKnowledgeId: 42,
+        promotedKnowledgeId: 77,
+      });
+      expect(out).toEqual({
+        decisionType: "promote",
+        evidenceStrength: "moderate",
+        decisionVersion: 0,
+        recurrenceCount: 2,
+        llmCalls: 1,
+        costUsd: 0.0034,
+        decisionId: "12345",
+        supersedesKnowledgeId: 42,
+        promotedKnowledgeId: 77,
+      });
+    });
+
+    it("drops a free-text decisionType (enum shape gate)", () => {
+      expect(filterMemoryLogMeta({ decisionType: "promote then reject" })).toEqual({});
+    });
+
+    it("drops a non-number recurrenceCount / costUsd (num category)", () => {
+      expect(filterMemoryLogMeta({ recurrenceCount: "two", costUsd: "free" })).toEqual({});
+    });
+  });
+
   // ── memLog: public API integrates the guard ────────────────────
 
   describe("memLog", () => {
