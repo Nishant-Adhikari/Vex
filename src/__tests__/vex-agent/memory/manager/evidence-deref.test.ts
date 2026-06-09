@@ -11,6 +11,22 @@ import {
   deriveEvidenceStrengthCeiling,
 } from "@vex-agent/memory/manager/evidence-deref.js";
 import type { EvidenceRefs } from "@vex-agent/memory/schema/memory-candidate.js";
+import type { MemoryOutcomeSummary } from "@vex-agent/memory/schema/memory-outcome.js";
+
+function closedStrongOutcome(over: Partial<MemoryOutcomeSummary> = {}): MemoryOutcomeSummary {
+  return {
+    status: "closed",
+    productType: "spot",
+    lessonSignal: "positive",
+    evidenceQuality: "strong",
+    pointInTimeChecked: true,
+    outcomeComputedBy: "memory_manager",
+    outcomeVersion: 0,
+    needsReconciliation: false,
+    pnlSource: "pnl_matches",
+    ...over,
+  };
+}
 
 describe("derefAnchorExistence", () => {
   it("reports anchor existence and counts distinct executions", async () => {
@@ -69,8 +85,65 @@ describe("deriveEvidenceStrengthCeiling", () => {
     expect(deriveEvidenceStrengthCeiling({ anchorExists: true, recurrenceCount: 1 })).toBe("weak");
   });
 
-  it("is moderate at recurrence >= 2 and NEVER strong in S4", () => {
+  it("is moderate at recurrence >= 2 and NEVER strong without an outcome (S4 behavior)", () => {
     expect(deriveEvidenceStrengthCeiling({ anchorExists: true, recurrenceCount: 2 })).toBe("moderate");
     expect(deriveEvidenceStrengthCeiling({ anchorExists: true, recurrenceCount: 99 })).toBe("moderate");
+  });
+});
+
+describe("deriveEvidenceStrengthCeiling — S5 outcome-aware 'strong'", () => {
+  it("is strong for a trade-family closed realized outcome that is point-in-time checked", () => {
+    expect(
+      deriveEvidenceStrengthCeiling({
+        anchorExists: true,
+        recurrenceCount: 1,
+        isTradeKind: true,
+        outcome: closedStrongOutcome(),
+      }),
+    ).toBe("strong");
+  });
+
+  it("does NOT reach strong for a non-trade kind even with a closed strong outcome", () => {
+    expect(
+      deriveEvidenceStrengthCeiling({
+        anchorExists: true,
+        recurrenceCount: 1,
+        isTradeKind: false,
+        outcome: closedStrongOutcome(),
+      }),
+    ).toBe("weak");
+  });
+
+  it("caps at moderate for an OPEN/unrealized outcome (never strong)", () => {
+    expect(
+      deriveEvidenceStrengthCeiling({
+        anchorExists: true,
+        recurrenceCount: 2,
+        isTradeKind: true,
+        outcome: closedStrongOutcome({ status: "open", evidenceQuality: "weak", lessonSignal: "neutral" }),
+      }),
+    ).toBe("moderate");
+  });
+
+  it("does NOT reach strong when point-in-time is unchecked (degrades to the S4 ceiling)", () => {
+    expect(
+      deriveEvidenceStrengthCeiling({
+        anchorExists: true,
+        recurrenceCount: 1,
+        isTradeKind: true,
+        outcome: closedStrongOutcome({ pointInTimeChecked: false }),
+      }),
+    ).toBe("weak");
+  });
+
+  it("does NOT reach strong when the outcome evidenceQuality is only medium (closed thin venue)", () => {
+    expect(
+      deriveEvidenceStrengthCeiling({
+        anchorExists: true,
+        recurrenceCount: 2,
+        isTradeKind: true,
+        outcome: closedStrongOutcome({ evidenceQuality: "medium" }),
+      }),
+    ).toBe("moderate");
   });
 });

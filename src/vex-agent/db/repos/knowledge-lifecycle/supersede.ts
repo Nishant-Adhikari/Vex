@@ -138,7 +138,7 @@ export async function runSupersedeStatements(
        )
        VALUES (
          $1, $2, $3, $4, $5, $6::jsonb,
-         $7, 'active', $8, NOW(), $9,
+         $7, 'active', $8, COALESCE($29::timestamptz, NOW()), $9,
          $10, $11, $12, $13::vector,
          COALESCE($14::text, 'vex_agent'), $15,
          $16, NULL, $17, $18,
@@ -181,6 +181,9 @@ export async function runSupersedeStatements(
         input.lastReinforcedAt ? input.lastReinforcedAt.toISOString() : null,
         input.nextReviewAt ? input.nextReviewAt.toISOString() : null,
         input.outcomeVersion ?? 0,
+        // S5 bi-temporal: world-time the successor fact became valid; omitted →
+        // NOW() ingestion time (byte-for-byte behaviour-neutral pre-S5).
+        input.validFrom ? input.validFrom.toISOString() : null,
       ],
     );
     const successorRow = successorRes.rows[0];

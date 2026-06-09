@@ -365,6 +365,35 @@ describe("memory observability logger — structural guard", () => {
     });
   });
 
+  // ── S5 outcome-resolution keys (§12 allowlist extension) ───────
+
+  describe("filterMemoryLogMeta — S5 outcome keys", () => {
+    it("keeps the S5 outcome enum / num keys with valid values (never raw PnL)", () => {
+      const out = filterMemoryLogMeta({
+        outcomeStatus: "closed",
+        lessonSignal: "positive",
+        evidenceQuality: "strong",
+        pointInTimeChecked: "true",
+        productType: "spot",
+        outcomeVersion: 0,
+      });
+      expect(out).toEqual({
+        outcomeStatus: "closed",
+        lessonSignal: "positive",
+        evidenceQuality: "strong",
+        pointInTimeChecked: "true",
+        productType: "spot",
+        outcomeVersion: 0,
+      });
+    });
+
+    it("drops a raw realizedPnlUsd-style key (never allowlisted)", () => {
+      expect(filterMemoryLogMeta({ realizedPnlUsd: 12.34, lessonSignal: "negative" })).toEqual({
+        lessonSignal: "negative",
+      });
+    });
+  });
+
   // ── memLog: public API integrates the guard ────────────────────
 
   describe("memLog", () => {

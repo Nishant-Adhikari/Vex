@@ -294,6 +294,10 @@ async function processItem(
       plan: decision.plan,
       jobId: job.id,
       workerId,
+      // S5: ledger-grounded outcome + as-of boundary persisted in the SAME tx as
+      // the decision (null for non-trade kinds / no surviving anchor).
+      outcome: decision.outcome,
+      availableAtDecisionTime: decision.availableAtDecisionTime,
     });
 
     if (decision.llmCalls > 0) {

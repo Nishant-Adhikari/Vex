@@ -30,15 +30,24 @@ import {
 } from "@vex-agent/db/repos/memory-candidates/index.js";
 import { recordDecision } from "@vex-agent/db/repos/memory-decisions/index.js";
 import { recallLongMemoryTopK } from "@vex-agent/db/repos/knowledge/recall.js";
-import { recallCandidatesTopK } from "@vex-agent/db/repos/memory-candidates/index.js";
+import {
+  recallCandidatesTopK,
+  updateCandidateOutcome,
+} from "@vex-agent/db/repos/memory-candidates/index.js";
 import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
 import * as executionsRepo from "@vex-agent/db/repos/executions.js";
+import * as activityRepo from "@vex-agent/db/repos/activity.js";
+import * as pnlMatchesRepo from "@vex-agent/db/repos/pnl-matches.js";
+import * as pnlLotsRepo from "@vex-agent/db/repos/pnl-lots.js";
+import * as openPositionsRepo from "@vex-agent/db/repos/open-positions.js";
+import * as lpEventsRepo from "@vex-agent/db/repos/lp-events.js";
 import { isSessionSoftDeleted } from "@vex-agent/db/repos/sessions.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
 import type { EvidenceRefs } from "@vex-agent/memory/schema/memory-candidate.js";
 import type { CandidateEvidenceStrength } from "@vex-agent/memory/schema/memory-candidate-enums.js";
+import type { MemoryOutcomeSummary } from "@vex-agent/memory/schema/memory-outcome.js";
 import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 import {
   LIVE_STATE_RESCAN_REJECT_FRACTION,
@@ -56,6 +65,13 @@ import {
   countRecurrence,
   deriveEvidenceStrengthCeiling,
 } from "./evidence-deref.js";
+import { resolveOutcome, type OutcomeResolverDeps } from "./outcome-resolver.js";
+import {
+  deriveDecisionBoundary,
+  checkNoLookahead,
+  type ExecTimeDeref,
+} from "./point-in-time.js";
+import { isTradeKind } from "./kind-families.js";
 import { buildJudgeContext } from "./context-builder.js";
 import { callJudge, type JudgeProvider } from "./judge.js";
 import type { JudgeVerdict } from "./judge-schema.js";
@@ -89,6 +105,18 @@ export interface ConsolidateDeps {
     candidate: MemoryCandidate,
     signals: EscalationSignals,
   ) => Promise<{ verdict: JudgeVerdict; llmCalls: number; costUsd: number | null }>;
+  /**
+   * S5 — resolve the ledger-grounded outcome for a trade-family candidate. The
+   * resolver derefs the immutable `executionId` anchor and reads the local
+   * ledger (D-OUTCOME-SRC); `pointInTimeChecked` is computed here and passed in.
+   * Injected so the decision pipeline is testable without the ledger repos.
+   */
+  resolveOutcome: (
+    candidate: MemoryCandidate,
+    pointInTimeChecked: boolean,
+  ) => Promise<MemoryOutcomeSummary | null>;
+  /** S5 — an anchor execution's created_at (drives the as-of decision boundary). */
+  getExecutionTime: ExecTimeDeref;
   /** Inference identity recorded on a decision. */
   inferenceProvider: string | null;
   inferenceModel: string | null;
@@ -141,10 +169,26 @@ export function defaultConsolidateDeps(
       const ctx = await buildJudgeContext(candidate, signals);
       return callJudge(ctx, makeProvider);
     },
+    resolveOutcome: (candidate, pointInTimeChecked) =>
+      resolveOutcome(candidate, pointInTimeChecked, LEDGER_OUTCOME_DEPS),
+    getExecutionTime: async (executionId) => {
+      const exec = await executionsRepo.getById(executionId);
+      return exec ? { createdAt: exec.createdAt } : null;
+    },
     inferenceProvider: "openrouter",
     inferenceModel: process.env.AGENT_MODEL ?? null,
   };
 }
+
+/** Production ledger reads for the S5 outcome resolver (read-only). */
+const LEDGER_OUTCOME_DEPS: OutcomeResolverDeps = {
+  getExecutionById: (executionId) => executionsRepo.getById(executionId),
+  getActivitiesByExecution: (executionId) => activityRepo.getByExecution(executionId),
+  getMatchesBySell: (sellActivityId) => pnlMatchesRepo.getMatchesBySell(sellActivityId),
+  getOpenLots: (instrumentKey, walletAddress) => pnlLotsRepo.getOpenLots(instrumentKey, walletAddress),
+  getPositionByKey: (positionKey) => openPositionsRepo.getByPositionKeyAnyStatus(positionKey),
+  getLpEventsByPosition: (positionKey) => lpEventsRepo.getLpEventsByPosition(positionKey),
+};
 
 // ── Verdict → plan mapping ──────────────────────────────────────────
 
@@ -261,6 +305,15 @@ export interface CandidateDecision {
   plan: DecisionPlan;
   llmCalls: number;
   costUsd: number | null;
+  /**
+   * S5 — the ledger-grounded outcome for a trade-family candidate (null for
+   * non-trade kinds or when no anchor survives). Carried to the atomic apply so
+   * `updateCandidateOutcome` writes it in the SAME tx as the decision (D-ORDER /
+   * §8). Non-trade kinds leave this null and S5 does not touch them.
+   */
+  outcome: MemoryOutcomeSummary | null;
+  /** S5 — the as-of decision boundary stamped on `available_at_decision_time`. */
+  availableAtDecisionTime: Date | null;
 }
 
 /**
@@ -298,9 +351,39 @@ export async function consolidateCandidate(
     CLUSTER_K,
   );
   const recurrenceCount = countRecurrence(candidate.evidenceRefs, clusterAnchors);
+
+  // ── S5: outcome resolution BEFORE the deterministic stage / judge (D-ORDER) ──
+  // For trade-family candidates ONLY, deref the immutable anchor → ledger facts
+  // and the no-lookahead boundary, so `deriveEvidenceStrengthCeiling` is
+  // outcome-aware (can reach 'strong') before `clampSourceTier` runs. Non-trade
+  // kinds skip the resolver entirely (S5 leaves them at the S4 ceiling).
+  const tradeFamily = isTradeKind(candidate.kind);
+  let outcome: MemoryOutcomeSummary | null = null;
+  let availableAtDecisionTime: Date | null = null;
+  if (tradeFamily) {
+    availableAtDecisionTime = await deriveDecisionBoundary(candidate, {
+      getExecutionTime: deps.getExecutionTime,
+    });
+    const pointInTimeChecked = checkNoLookahead(availableAtDecisionTime);
+    outcome = await deps.resolveOutcome(candidate, pointInTimeChecked);
+    if (outcome) {
+      memLog("manager", "outcome_resolved", {
+        candidateId: candidate.id,
+        outcomeStatus: outcome.status,
+        lessonSignal: outcome.lessonSignal,
+        evidenceQuality: outcome.evidenceQuality,
+        pointInTimeChecked: outcome.pointInTimeChecked ? "true" : "false",
+      });
+    } else {
+      memLog("manager", "outcome_no_anchor", { candidateId: candidate.id });
+    }
+  }
+
   const evidenceStrengthCeiling = deriveEvidenceStrengthCeiling({
     anchorExists: anchorRes.anchorExists,
     recurrenceCount,
+    outcome,
+    isTradeKind: tradeFamily,
   });
 
   // Near-dup / conflict / exact-dup signals (D4/D5/D6).
@@ -331,7 +414,13 @@ export async function consolidateCandidate(
   });
 
   if (verdict.kind !== "escalate") {
-    return { plan: planFromDeterministic(verdict), llmCalls: 0, costUsd: null };
+    return {
+      plan: planFromDeterministic(verdict),
+      llmCalls: 0,
+      costUsd: null,
+      outcome,
+      availableAtDecisionTime,
+    };
   }
 
   // Escalate → the judge owns the promotion decision.
@@ -346,7 +435,13 @@ export async function consolidateCandidate(
       costUsd: judged.costUsd,
     },
   );
-  return { plan, llmCalls: judged.llmCalls, costUsd: judged.costUsd };
+  return {
+    plan,
+    llmCalls: judged.llmCalls,
+    costUsd: judged.costUsd,
+    outcome,
+    availableAtDecisionTime,
+  };
 }
 
 // ── applyDecisionAtomically (owner-check + apply + record, one tx) ──
@@ -357,10 +452,14 @@ export interface AtomicApplyResult {
 }
 
 /**
- * Owner-check (R1#2) + applyDecision + recordDecision in ONE transaction
- * (FIX-4 §8). The owner-check `SELECT … FOR UPDATE OF i,j` proves this worker
- * still holds the item BEFORE any knowledge write; a lost claim THROWS before any
- * mutation. recordDecision re-locks the same rows in the SAME tx (no deadlock).
+ * Owner-check (R1#2) + S5 outcome write + applyDecision + recordDecision in ONE
+ * transaction (FIX-4 §8 / S5 §8). The owner-check `SELECT … FOR UPDATE OF i,j`
+ * proves this worker still holds the item BEFORE any write; a lost claim THROWS
+ * before any mutation. When the candidate is trade-family with a resolved
+ * outcome, `updateCandidateOutcome` persists the ledger facts + as-of boundary
+ * BEFORE promote (so the lesson is grounded), and the boundary becomes the
+ * promoted entry's `valid_from` with an explicit `outcome_version=0` (S5 init;
+ * S7 bumps). recordDecision re-locks the same rows in the SAME tx (no deadlock).
  * The item is closed (markItemDone) by the caller AFTER commit.
  */
 export async function applyDecisionAtomically(args: {
@@ -368,8 +467,15 @@ export async function applyDecisionAtomically(args: {
   plan: DecisionPlan;
   jobId: number;
   workerId: string;
+  /** S5 — ledger-grounded outcome (null for non-trade kinds / no surviving anchor). */
+  outcome?: MemoryOutcomeSummary | null;
+  /** S5 — as-of decision boundary → candidate.available_at_decision_time + valid_from. */
+  availableAtDecisionTime?: Date | null;
   client?: PoolClient;
 }): Promise<AtomicApplyResult> {
+  const outcome = args.outcome ?? null;
+  const boundary = args.availableAtDecisionTime ?? null;
+
   const run = async (tx: PoolClient): Promise<AtomicApplyResult> => {
     // Owner-check: the item must still be `processing`, the job `running` and
     // locked by THIS worker. Lock both rows so recoverStaleRunning cannot release
@@ -389,7 +495,23 @@ export async function applyDecisionAtomically(args: {
       throw new ClaimLostError(args.candidate.id, args.jobId);
     }
 
-    const applied = await applyDecision(args.candidate, args.plan, args.jobId, tx);
+    // S5: persist the ledger-grounded outcome + as-of boundary on the candidate
+    // BEFORE promote, in the SAME tx (owner-check already locked item+job).
+    if (outcome) {
+      const upd = await updateCandidateOutcome(args.candidate.id, outcome, boundary, tx);
+      if (!upd.ok) {
+        throw new Error(
+          `applyDecisionAtomically: updateCandidateOutcome failed (${upd.reason}) for candidate ${args.candidate.id}`,
+        );
+      }
+    }
+
+    const applied = await applyDecision(args.candidate, args.plan, args.jobId, tx, {
+      // Trade-family promotions carry the world-time validity boundary + the S5
+      // outcome_version init. Non-trade paths pass nothing (byte-neutral).
+      validFrom: outcome ? boundary : null,
+      outcomeVersion: outcome ? 0 : undefined,
+    });
     const recorded = await recordDecision(applied.decisionInput, tx);
     if (!recorded.ok) {
       throw new Error(

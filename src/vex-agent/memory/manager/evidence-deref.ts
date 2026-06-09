@@ -23,6 +23,7 @@
 
 import type { EvidenceRefs } from "@vex-agent/memory/schema/memory-candidate.js";
 import type { CandidateEvidenceStrength } from "@vex-agent/memory/schema/memory-candidate-enums.js";
+import type { MemoryOutcomeSummary } from "@vex-agent/memory/schema/memory-outcome.js";
 import { RECURRENCE_PROMOTE_MIN } from "@vex-agent/engine/memory-manager/policy.js";
 
 // ── Anchor existence (D2/D3) ────────────────────────────────────────
@@ -102,17 +103,37 @@ export function countRecurrence(
 // ── Evidence-strength ceiling (D3) ──────────────────────────────────
 
 /**
- * The S4 ceiling on `evidence_strength` (none | weak | moderate). NEVER `strong`
- * (that requires the S5 outcome resolver). Mapping:
+ * The ceiling on `evidence_strength`. S4 derives none | weak | moderate; S5 adds
+ * `strong` ONLY for a trade-family candidate whose ledger-resolved outcome is a
+ * CLOSED realized result with `evidenceQuality:'strong'` AND `pointInTimeChecked`
+ * (D-STRONG). Mapping:
+ *   - trade-family + outcome closed/settled + outcome quality 'strong'
+ *     + pointInTimeChecked                        → 'strong'   [S5 ONLY]
  *   - no existing anchor                          → 'none'
  *   - ≥1 existing anchor, recurrence < 2          → 'weak'
- *   - ≥1 existing anchor, recurrence ≥ 2          → 'moderate' [CEILING]
- * `softDeleted` is handled upstream (a reject), so it is not re-checked here.
+ *   - ≥1 existing anchor, recurrence ≥ 2          → 'moderate'
+ * An OPEN / unrealized / thin outcome NEVER raises the ceiling above the S4
+ * recurrence-based result (max 'moderate'). `outcome`/`isTradeKind` omitted →
+ * exact S4 behavior (non-trade kinds are untouched). `softDeleted` is handled
+ * upstream (a reject), so it is not re-checked here.
  */
 export function deriveEvidenceStrengthCeiling(args: {
   anchorExists: boolean;
   recurrenceCount: number;
+  /** S5 — the ledger-resolved outcome (omitted in S4 / non-trade paths). */
+  outcome?: MemoryOutcomeSummary | null;
+  /** S5 — whether the candidate kind is trade-family (`strong` is trade-only). */
+  isTradeKind?: boolean;
 }): CandidateEvidenceStrength {
+  if (
+    args.isTradeKind === true &&
+    args.outcome != null &&
+    (args.outcome.status === "closed" || args.outcome.status === "settled") &&
+    args.outcome.evidenceQuality === "strong" &&
+    args.outcome.pointInTimeChecked === true
+  ) {
+    return "strong";
+  }
   if (!args.anchorExists) return "none";
   if (args.recurrenceCount >= RECURRENCE_PROMOTE_MIN) return "moderate";
   return "weak";

@@ -75,6 +75,20 @@ export interface ApplyDecisionResult {
   decisionInput: RecordDecisionInput;
 }
 
+/**
+ * S5 bi-temporal + outcome-init options for a PROMOTE/SUPERSEDE (D-BITEMPORAL /
+ * §8 / §11). `validFrom` = world-time the fact became valid (event_time / as-of
+ * decision boundary); null → the DB default (NOW() ingestion time) applies, i.e.
+ * exact S4 behavior. `outcomeVersion` = explicit 0 init for a trade-family
+ * lesson so S7's ledger-wake has a concrete target (the DB default is also 0,
+ * but S5 sets it EXPLICITLY); omitted → S4-equivalent (DB default). Raw PnL is
+ * NEVER carried here — the lesson text already describes it (genesis §667-671).
+ */
+export interface PromotionOptions {
+  validFrom?: Date | null;
+  outcomeVersion?: number;
+}
+
 /** Anomaly thrown by `promote` when defense-in-depth redaction is NOT a no-op. */
 export class PromoteRedactionAnomalyError extends Error {
   constructor(public readonly candidateId: string) {
@@ -111,6 +125,7 @@ async function buildPromotionInsert(
   candidate: MemoryCandidate,
   plan: { sourceTier: KnowledgeSource; regimeTags: string[] },
   tx: PoolClient,
+  options: PromotionOptions = {},
 ): Promise<PromotionInsert> {
   // Defense-in-depth: the candidate text was redacted in S2; a fresh secret /
   // live-state hit means an anomaly upstream — refuse to promote.
@@ -164,6 +179,10 @@ async function buildPromotionInsert(
     decayPolicy: decayPolicyFor(candidate.kind),
     regimeTags: plan.regimeTags,
     firstPromotedAt: new Date(),
+    // ── Memory v2 bi-temporal + outcome init (S5; omitted → S4 DB defaults). ──
+    // valid_from = world-time the fact became valid; null → NOW() ingestion.
+    ...(options.validFrom ? { validFrom: options.validFrom } : {}),
+    ...(options.outcomeVersion !== undefined ? { outcomeVersion: options.outcomeVersion } : {}),
   };
 
   return { input };
@@ -183,11 +202,13 @@ export async function promote(
   plan: Extract<DecisionPlan, { type: "promote" }>,
   jobId: number,
   tx: PoolClient,
+  options: PromotionOptions = {},
 ): Promise<ApplyDecisionResult> {
   const { input } = await buildPromotionInsert(
     candidate,
     { sourceTier: plan.sourceTier, regimeTags: plan.regimeTags },
     tx,
+    options,
   );
   const { entry } = await insertEntry(input, tx);
 
@@ -231,11 +252,13 @@ export async function supersedeFromCandidate(
   plan: Extract<DecisionPlan, { type: "supersede" }>,
   jobId: number,
   tx: PoolClient,
+  options: PromotionOptions = {},
 ): Promise<ApplyDecisionResult> {
   const { input } = await buildPromotionInsert(
     candidate,
     { sourceTier: plan.sourceTier, regimeTags: plan.regimeTags },
     tx,
+    options,
   );
 
   const result = await supersedeEntry(
@@ -262,6 +285,9 @@ export async function supersedeFromCandidate(
       decayPolicy: input.decayPolicy,
       regimeTags: input.regimeTags,
       firstPromotedAt: input.firstPromotedAt,
+      // S5 bi-temporal + outcome init carried onto the successor (omitted → defaults).
+      ...(input.validFrom ? { validFrom: input.validFrom } : {}),
+      ...(input.outcomeVersion !== undefined ? { outcomeVersion: input.outcomeVersion } : {}),
     },
     tx,
   );
@@ -357,11 +383,12 @@ export async function applyDecision(
   plan: DecisionPlan,
   jobId: number,
   tx: PoolClient,
+  options: PromotionOptions = {},
 ): Promise<ApplyDecisionResult> {
   switch (plan.type) {
     case "promote":
       try {
-        return await promote(candidate, plan, jobId, tx);
+        return await promote(candidate, plan, jobId, tx, options);
       } catch (err) {
         if (err instanceof PromoteRedactionAnomalyError) {
           memLog.warn("promote", "redaction_anomaly", { candidateId: candidate.id });
@@ -375,7 +402,7 @@ export async function applyDecision(
         throw err;
       }
     case "supersede":
-      return supersedeFromCandidate(candidate, plan, jobId, tx);
+      return supersedeFromCandidate(candidate, plan, jobId, tx, options);
     case "retain":
     case "reject":
     case "expire":

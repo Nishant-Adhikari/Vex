@@ -122,6 +122,20 @@ export async function getByPositionKey(positionKey: string): Promise<Position | 
   return row ? mapRow(row) : null;
 }
 
+/**
+ * Get a position by position_key REGARDLESS of status (open OR closed). The S5
+ * outcome resolver needs the CLOSED state too (a closed position is the resolved
+ * outcome of a perps/prediction/order anchor), which `getByPositionKey`
+ * deliberately hides. Returns the most-recently-opened matching row, or null.
+ */
+export async function getByPositionKeyAnyStatus(positionKey: string): Promise<Position | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    "SELECT * FROM proj_open_positions WHERE position_key = $1 ORDER BY opened_at DESC NULLS LAST, id DESC LIMIT 1",
+    [positionKey],
+  );
+  return row ? mapRow(row) : null;
+}
+
 function mapRow(r: Record<string, unknown>): Position {
   return {
     id: r.id as number,

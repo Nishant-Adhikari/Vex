@@ -44,6 +44,18 @@ export {
   type AnchorDerefDeps,
 } from "./evidence-deref.js";
 
+export {
+  resolveOutcome,
+  type OutcomeResolverDeps,
+} from "./outcome-resolver.js";
+
+export {
+  deriveDecisionBoundary,
+  checkNoLookahead,
+  type ExecTimeRef,
+  type ExecTimeDeref,
+} from "./point-in-time.js";
+
 export { buildJudgeContext, type JudgeContext } from "./context-builder.js";
 export { callJudge, type JudgeProvider, type JudgeCallResult } from "./judge.js";
 export {

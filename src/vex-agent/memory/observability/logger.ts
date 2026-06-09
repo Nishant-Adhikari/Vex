@@ -155,6 +155,18 @@ export type MemoryLogMeta = {
   readonly supersedesKnowledgeId?: string | number;
   /** Candidate evidence-strength ceiling derived by the deref (S4 — bounded enum). */
   readonly evidenceStrength?: string | number;
+  /** Resolved outcome lifecycle status (S5 — bounded enum: open|closed|settled|failed|invalidated). */
+  readonly outcomeStatus?: string | number;
+  /** Outcome lesson direction (S5 — bounded enum: positive|negative|mixed|neutral). */
+  readonly lessonSignal?: string | number;
+  /** How well the outcome is grounded in ledger facts (S5 — bounded enum: weak|medium|strong). */
+  readonly evidenceQuality?: string | number;
+  /** No-lookahead gate result (S5 — bool serialized to "true"/"false" by the caller). */
+  readonly pointInTimeChecked?: string | number;
+  /** Anchored execution product family (S5 — bounded enum: spot|perps|prediction|…). */
+  readonly productType?: string | number;
+  /** Outcome reconciliation counter (S5 init 0; S7 bumps). */
+  readonly outcomeVersion?: string | number;
   /** Distinct-execution recurrence count behind a generalization (S4 — D-REC). */
   readonly recurrenceCount?: string | number;
   /** LLM calls made deciding a candidate / batch (S4 — judge cost telemetry). */
@@ -207,6 +219,12 @@ const META_KEY_CATEGORY: Record<keyof MemoryLogMeta, MetaCategory> = {
   decisionId: "id",
   supersedesKnowledgeId: "id",
   evidenceStrength: "enum",
+  outcomeStatus: "enum",
+  lessonSignal: "enum",
+  evidenceQuality: "enum",
+  pointInTimeChecked: "enum",
+  productType: "enum",
+  outcomeVersion: "num",
   recurrenceCount: "num",
   llmCalls: "num",
   costUsd: "num",

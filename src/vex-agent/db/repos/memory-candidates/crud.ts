@@ -22,6 +22,7 @@ import type { PoolClient } from "pg";
 import { getPool, queryOneWith, queryWith, type Executor } from "../../client.js";
 import { jsonb } from "../../params.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
+import type { MemoryOutcomeSummary } from "@vex-agent/memory/schema/memory-outcome.js";
 import {
   CANDIDATE_COLUMNS,
   mapRecallRow,
@@ -301,6 +302,78 @@ export async function updateCandidateStatus(
   }
 
   // Zero rows updated — disambiguate not_found vs precondition_failed.
+  const current = await queryOneWith<{ status: string }>(
+    exec,
+    "SELECT status FROM memory_candidates WHERE id = $1",
+    [id],
+  );
+  if (!current) return { ok: false, reason: "not_found" };
+  return {
+    ok: false,
+    reason: "precondition_failed",
+    currentStatus: current.status as CandidateStatus,
+  };
+}
+
+// ── Outcome write (S5 — ledger-grounded outcome + as-of boundary) ─
+
+/**
+ * Result of `updateCandidateOutcome`. Mirrors `updateCandidateStatus`: the
+ * write only applies while the candidate is still `pending` (the optimistic
+ * precondition), so it can never overwrite a candidate another worker already
+ * terminalized. `ok` on the write; `precondition_failed` when the row is no
+ * longer pending; `not_found` when the row is gone.
+ */
+export type UpdateCandidateOutcomeResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "precondition_failed"; currentStatus: CandidateStatus };
+
+/**
+ * Persist the S5 ledger-resolved outcome + the as-of decision boundary on a
+ * candidate (S5 §8 step 1). Runs inside S4's `applyDecisionAtomically` tx BEFORE
+ * promote — the owner-check there already locks the item+job `FOR UPDATE OF i,j`,
+ * so this write is consistent with the decision. Guarded on `status='pending'`
+ * (same precondition as `updateCandidateStatus`): a candidate that raced to a
+ * terminal state is NOT mutated. The outcome is a Zod-validated
+ * `MemoryOutcomeSummary` (validated by the caller); `availableAtDecisionTime`
+ * may be null when the boundary is undeterminable (point-in-time degrades, never
+ * rejects).
+ */
+export async function updateCandidateOutcome(
+  id: string,
+  outcome: MemoryOutcomeSummary,
+  availableAtDecisionTime: Date | null,
+  client?: PoolClient,
+): Promise<UpdateCandidateOutcomeResult> {
+  if (!id) return { ok: false, reason: "not_found" };
+
+  const exec: Executor = client ?? getPool();
+  const updated = await queryOneWith<{ id: string }>(
+    exec,
+    `UPDATE memory_candidates
+       SET outcome = $2::jsonb,
+           available_at_decision_time = $3::timestamptz,
+           updated_at = NOW()
+     WHERE id = $1 AND status = 'pending'
+     RETURNING id`,
+    [id, jsonb(outcome), toIsoOrNull(availableAtDecisionTime)],
+  );
+
+  if (updated) {
+    memLog("candidate", "outcome_resolved", {
+      candidateId: id,
+      outcomeStatus: outcome.status,
+      lessonSignal: outcome.lessonSignal,
+      evidenceQuality: outcome.evidenceQuality,
+      pointInTimeChecked: outcome.pointInTimeChecked ? "true" : "false",
+      ...(outcome.productType ? { productType: outcome.productType } : {}),
+      outcomeVersion: outcome.outcomeVersion,
+    });
+    return { ok: true };
+  }
+
+  // Zero rows — disambiguate not_found vs precondition_failed (mirrors status setter).
   const current = await queryOneWith<{ status: string }>(
     exec,
     "SELECT status FROM memory_candidates WHERE id = $1",

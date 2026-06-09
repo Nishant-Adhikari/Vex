@@ -36,6 +36,10 @@ function deps(overrides: Partial<ConsolidateDeps> = {}): ConsolidateDeps {
       llmCalls: 1,
       costUsd: 0.001,
     }),
+    // S5: default to no resolvable outcome (S4-equivalent ceiling). Tests that
+    // exercise the outcome-aware 'strong' path override this.
+    resolveOutcome: async () => null,
+    getExecutionTime: async () => ({ createdAt: new Date().toISOString() }),
     inferenceProvider: "openrouter",
     inferenceModel: "test/model",
     ...overrides,

@@ -20,9 +20,11 @@ export {
   getCandidateEmbedding,
   findLatestCandidateByContentHash,
   updateCandidateStatus,
+  updateCandidateOutcome,
   listCandidatesByStatus,
   recallCandidatesTopK,
   type CandidateRecallFilters,
   type UpdateCandidateStatusPatch,
   type UpdateCandidateStatusResult,
+  type UpdateCandidateOutcomeResult,
 } from "./crud.js";
