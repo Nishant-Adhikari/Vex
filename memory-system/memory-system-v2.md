@@ -244,12 +244,8 @@ Strategia: EDIT-IN-PLACE istniejących migracji (sekcja 1) — knowledge_entries
 - Tests: probationary nie jest twardą regułą; maturity/activation wpływa na rerank; decay obniża influence bez kasowania.
 - Done-when: świeża lekcja startuje probationary; awans wymaga 2. potwierdzenia.
 
-### S7 — Outcome reconciliation + ledger wakes `[ ] TODO`
-- Goal: rekonsolidacja po zmianie outcome; event-driven kadencja.
-- Creates: reconciliation idempotentna po `(entry_id, outcomeVersion)`; `enqueueLedgerWake(...)` w miejscach zapisu projekcji (activity-populator, position-projector, PnL/LP writers, wallet-intent transitions) — JEDEN cienki szew.
-- Contracts: świadome sprzężenie ledger→memory (tylko przez enqueueLedgerWake).
-- Tests: wake po proj_pnl_matches / position status / lp_events / wallet_intents; reconcile idempotentny po replay (dzięki FIX-1).
-- Done-when: zmiana outcome budzi rekonsolidację powiązanej lekcji.
+### S7 — Outcome reconciliation + ledger wakes `[x] DONE` (2026-06-10, w working tree do commitu; sesja harness-memory-s7: plan-gate GREEN R1 + Phase-6 GREEN; spec: `memory-system/s7-plan.md`)
+> **DONE:** **JEDEN szew `enqueueLedgerWake`** na końcu `populateCaptureItems` (pokrywa trady agenta + settlement sync przez `recordSyntheticCapture`; replay przez `replayActivityFromCapture` omija strukturalnie — zero burzy wake'ów bez flag; best-effort try/catch — błąd wake nigdy nie wywraca sync) + **mapowanie kotwicami FIX-1** (`findPromotedWakeTargets`: GIN `idx_mc_evidence_refs`, OR @> po executionId/positionKey/instrumentKey → aktywne wpisy) + **idempotencja D-REARM z `wake_pending`** (job keyed `(entry, outcome_version)`; completed→re-arm, running→flaga konsumowana przy markCompleted w dodatkowy przebieg, stale→re-enqueue na currentVersion — sygnał nigdy nie ginie; recovery zachowuje flagę) + **`processReconcileJob`** (re-resolve S5 → `outcomeDelta` z anty-pętlą → mapa F1 reguł UPORZĄDKOWANYCH: flip→LLM-sąd {invalidate|quench|retain}+tier; reinforce zysk; quench strata 0.15 z bump kotwicy S6b; default bookkeep → atomowa tx FOR UPDATE entry first → maturity event `outcome_change` → candidate v+1 → guarded bump → decyzja `reconcile`) + **F2 awans tieru po faktach** (ceiling strong + tier hypothesis/inferred → sąd, clampSourceTier, tylko w górę) + **F3 wallet_intents poza zakresem** (świadome, udokumentowane). `needsReconciliation` z S5 domknięte. Bramki: plan-gate GREEN (1 zastrzeżenie wcielone: recovery×flaga), Phase-6 GREEN 0 defektów. Weryfikacja parenta: tsc clean, non-DB 709/709, **integracja realny pgvector 57/57 za pierwszym razem**, grepy OD-1/F3/FIX-3 czyste. Wallet_intents-deviation = jedyne odstępstwo od litery tej sekcji (uzasadnione: resolver czyta tylko proj_*).
 
 ### S8 — Graph v1 `[ ] TODO`
 - Goal: relacje jako pomoc w retrieval (nie źródło prawdy).
