@@ -293,7 +293,14 @@ function scanSource(source: string, fileName = "synthetic.ts"): RunToolHit[] {
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 describe("runTool reachability guard (B-010)", () => {
-  it("no file under vex-app/src imports runTool (named, barrel, or namespace)", () => {
+  // Explicit budget: this test walks the whole vex-app/src tree and
+  // AST-parses every .ts/.tsx file — I/O-bound, and the default 5s is
+  // not enough on slow filesystems (WSL drvfs mounts). A longer timeout
+  // does not weaken the guard; the assertion stays byte-identical.
+  it(
+    "no file under vex-app/src imports runTool (named, barrel, or namespace)",
+    { timeout: 60_000 },
+    () => {
     const files = listSourceFiles(VEX_APP_SRC);
     // Sanity: the walker actually found the vex-app source tree.
     expect(files.length).toBeGreaterThan(0);
