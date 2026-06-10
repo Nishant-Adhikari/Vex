@@ -1,10 +1,9 @@
 /**
  * Database migrations orchestrator — 5th onboarding surface in the
  * Vex flow (intro → systemCheck → dockerBootstrap → composeBootstrap →
- * **migrations** → wizard). Visual system inherits the shared glass
- * aesthetic established by the four preceding screens
- * (`data-vex-onboarding="true"`, right-side iOS Liquid Glass panel,
- * full-bleed `setup.png` background, `--vex-onboarding-accent`).
+ * **migrations** → wizard). Visual system: Countersign/NOTARY document
+ * page shared with the preceding screens (NotaryPage scaffold,
+ * `data-vex-onboarding="true"`, `--vex-onboarding-accent`).
  *
  * Flow:
  *   1. Subscribe to the progress bus BEFORE invoking `migrate()`. The

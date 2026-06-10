@@ -2,13 +2,12 @@
  * UnlockScreen — master-password re-prompt shown when the vault is
  * configured but locked (typical cause: app restart after onboarding).
  *
- * PR9 redesign: brings the screen up to the onboarding-flow visual
- * identity used by intro / systemCheck / dockerBootstrap /
- * composeBootstrap / migrations / wizard. Same glass-chrome recipe:
- * full-bleed `/onboarding2.png` backdrop, gradient overlay, top-left
- * logo + "VEX UNLOCK" chip, top-right version chip, central glass
- * panel with header (accent icon + title + description) + body
- * (form with master password input + error/throttle + submit).
+ * Countersign/NOTARY visual identity, shared with the rest of the
+ * onboarding flow: near-black `--vex-onboarding-bg` canvas, top-left
+ * hallmark + "VEX UNLOCK" chip, shared bottom corner chrome (tetrad +
+ * version), central hairline document panel with header (lock icon +
+ * mono title + description) + body (form with master password input +
+ * error/throttle + submit).
  *
  * Why inline (not extracted): every polished screen currently inlines
  * its own copy of `ShellBackdrop` + `TopChrome` + glass-panel chrome

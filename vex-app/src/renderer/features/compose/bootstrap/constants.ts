@@ -1,7 +1,7 @@
 /**
  * Constants for the compose bootstrap surface — step counter formula
- * shared with SystemCheck / DockerBootstrap, bounded log buffer size,
- * completion-shimmer duration.
+ * shared with SystemCheck / DockerBootstrap and the bounded log buffer
+ * size.
  */
 
 import { WIZARD_STEP_IDS } from "@shared/schemas/wizard.js";
@@ -19,10 +19,3 @@ export const COMPOSE_BOOTSTRAP_STEP = 3;
  * service) plus retry attempts.
  */
 export const COMPOSE_LOG_BUFFER_MAX = 50;
-
-/**
- * One-shot celebration animation duration when phase flips from
- * `running` → `ready`. Skipped entirely under `prefers-reduced-motion:
- * reduce` (codex plan v2 SHOULD-FIX #5).
- */
-export const COMPLETION_SHIMMER_MS = 800;

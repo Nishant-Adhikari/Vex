@@ -84,7 +84,7 @@ export function ComposeBootstrap(): JSX.Element {
         switch (data.kind) {
           case "running":
           case "reused":
-            // `celebrate` flag carries the one-shot completion shimmer
+            // `celebrate` flag carries the one-shot completion glint
             // signal explicitly through state (codex post-impl SHOULD-FIX
             // #4 — render-mutation of a prev-phase ref was non-pure).
             setPhase({ kind: "ready", result: data, celebrate: true });
