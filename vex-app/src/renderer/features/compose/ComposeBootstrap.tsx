@@ -5,12 +5,12 @@
  * the IPC result kind, and (on success) lets the user continue to the
  * migrations screen.
  *
- * Visual system inherits the onboarding glass aesthetic
- * (data-vex-onboarding wrapper, full-bleed `setup.png` background,
- * right-side iOS Liquid Glass panel, electric-blue
- * `--vex-onboarding-accent`). Per-branch render delegates to the body
- * components in `bootstrap/branches/`; shared primitives come from
- * `components/onboarding/`.
+ * Visual system: Countersign/NOTARY document page (NotaryPage scaffold —
+ * near-black canvas, hallmark, plinth, mono title line). Service startup
+ * renders as a ledger; the armed CONTINUE key appears in the shared
+ * 208×44 slot only when the phase flips to ready. Per-branch render
+ * delegates to the body components in `bootstrap/branches/`; shared
+ * primitives come from `components/onboarding/`.
  *
  * Cancellation contract (PR3 — `vex:cancel` IPC) is preserved verbatim:
  * the Cancel button calls the `cancel` handle returned by
@@ -28,13 +28,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion, useReducedMotion } from "motion/react";
-import { Docker } from "@thesvg/react";
 import type { ComposeLog } from "@shared/schemas/docker.js";
 
 import { useUiStore } from "../../stores/uiStore.js";
-import { cn } from "../../lib/utils.js";
-import { ContinueButton } from "../../components/onboarding/FooterButtons.js";
+import { NotaryPage } from "../../components/onboarding/NotaryPage.js";
+import { KeyButton } from "../../components/onboarding/KeyButton.js";
 import {
   COMPOSE_BOOTSTRAP_STEP,
   COMPOSE_LOG_BUFFER_MAX,
@@ -55,7 +53,6 @@ import { CancelledBody } from "./bootstrap/branches/CancelledBody.js";
 
 export function ComposeBootstrap(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
-  const reducedMotion = useReducedMotion();
   const [logs, setLogs] = useState<ReadonlyArray<ComposeLog>>([]);
   const [phase, setPhase] = useState<Phase>({ kind: "running" });
   const [retryToken, setRetryToken] = useState(0);
@@ -165,106 +162,50 @@ export function ComposeBootstrap(): JSX.Element {
   );
 
   return (
-    <div
-      data-vex-onboarding="true"
-      data-vex-screen="composeBootstrap"
-      className="relative h-screen w-screen overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]"
+    <NotaryPage
+      screen="composeBootstrap"
+      headingId="composebootstrap-heading"
+      title="Starting Services"
+      subline="Postgres + embeddings are coming up locally through Docker."
+      stepNumber={COMPOSE_BOOTSTRAP_STEP}
+      totalSteps={TOTAL_ONBOARDING_STEPS}
     >
-      <img
-        src="/setup.png"
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="absolute inset-0 h-full w-full object-cover object-center"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[rgba(5,8,22,0.6)]"
-      />
-
-      <div className="pointer-events-none absolute right-8 top-6">
-        <img
-          src="/logo_clean.png"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="h-10 w-10 object-contain drop-shadow-[0_2px_8px_rgba(50,117,248,0.35)]"
-        />
+      {/* CASE FILE — the active phase body. */}
+      <div className="mt-6 max-h-[48vh] overflow-y-auto pr-1">
+        {phase.kind === "running" || phase.kind === "cancelling" ? (
+          <RunningBody
+            services={services}
+            onCancel={handleCancel}
+            cancelling={phase.kind === "cancelling"}
+          />
+        ) : phase.kind === "ready" ? (
+          <ReadyBody result={phase.result} celebrate={phase.celebrate} />
+        ) : phase.kind === "error.port_collision" ? (
+          <PortCollisionBody message={phase.message} onRetry={handleRetry} />
+        ) : phase.kind === "error.unhealthy" ? (
+          <UnhealthyBody message={phase.message} onRetry={handleRetry} />
+        ) : phase.kind === "error.failed" ? (
+          <FailedBody
+            message={phase.message}
+            recentLogs={recentLogLines}
+            onRetry={handleRetry}
+          />
+        ) : phase.kind === "error.cancelled" ? (
+          <CancelledBody onRetry={handleRetry} />
+        ) : null}
       </div>
 
-      <section
-        aria-labelledby="composebootstrap-heading"
-        className="relative ml-auto flex h-full w-[44%] min-w-[420px] max-w-[560px] flex-col items-center justify-center px-8"
-      >
-        <motion.div
-          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: reducedMotion ? 0 : 0.45, ease: "easeOut" }}
-          className={cn(
-            "flex w-full max-h-[88vh] flex-col overflow-hidden rounded-3xl border border-white/[0.12] bg-white/[0.05] backdrop-blur-2xl",
-            "shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.45)]",
-          )}
-        >
-          <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
-            <span
-              aria-hidden
-              className="flex h-10 w-10 shrink-0 items-center justify-center text-[var(--vex-onboarding-accent)]"
-            >
-              <Docker width={24} height={24} aria-hidden />
-            </span>
-            <div className="flex flex-col gap-1">
-              <h1
-                id="composebootstrap-heading"
-                className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]"
-              >
-                Starting Vex services
-              </h1>
-              <p className="text-xs text-[var(--color-text-secondary)]">
-                Postgres + embeddings are coming up locally through Docker.
-              </p>
-            </div>
-          </header>
-
-          <div className="flex-1 overflow-y-auto px-5 py-5">
-            {phase.kind === "running" || phase.kind === "cancelling" ? (
-              <RunningBody
-                services={services}
-                onCancel={handleCancel}
-                cancelling={phase.kind === "cancelling"}
-              />
-            ) : phase.kind === "ready" ? (
-              <ReadyBody
-                result={phase.result}
-                celebrate={phase.celebrate}
-              />
-            ) : phase.kind === "error.port_collision" ? (
-              <PortCollisionBody
-                message={phase.message}
-                onRetry={handleRetry}
-              />
-            ) : phase.kind === "error.unhealthy" ? (
-              <UnhealthyBody message={phase.message} onRetry={handleRetry} />
-            ) : phase.kind === "error.failed" ? (
-              <FailedBody
-                message={phase.message}
-                recentLogs={recentLogLines}
-                onRetry={handleRetry}
-              />
-            ) : phase.kind === "error.cancelled" ? (
-              <CancelledBody onRetry={handleRetry} />
-            ) : null}
-          </div>
-
-          <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-6 py-4">
-            <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
-              Step {COMPOSE_BOOTSTRAP_STEP} of {TOTAL_ONBOARDING_STEPS}
-            </span>
-            {phase.kind === "ready" ? (
-              <ContinueButton onClick={handleContinue} />
-            ) : null}
-          </div>
-        </motion.div>
-      </section>
-    </div>
+      {/* KEY PLINTH — the armed CONTINUE key appears only when the
+       * stack is ready (body CTAs carry the action everywhere else). */}
+      {phase.kind === "ready" ? (
+        <div className="mt-9">
+          <KeyButton
+            armed
+            onClick={handleContinue}
+            ariaLabel="Continue to database migrations"
+          />
+        </div>
+      ) : null}
+    </NotaryPage>
   );
 }

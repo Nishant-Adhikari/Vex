@@ -1,12 +1,13 @@
 /**
- * Status tile primitive — the dominant visual element in each
- * BootstrapPanel branch body. Carries a tone token (success / warning /
- * info / danger / muted) that colors the border + background + leading
- * icon. Title is the accessible-name; detail is a secondary description.
+ * Status tile primitive — the dominant status element in onboarding
+ * branch bodies (docker / compose / migrations), restyled to the NOTARY
+ * document language: a 1px color-mix hairline box (stamp chrome, square
+ * 3px radius) with the tone token as icon/border color. No glass, no
+ * blur, no inset highlight — escalation works through ink weight: only
+ * `danger` gets a 10% tint fill, everything else stays transparent.
  *
- * Kept in `bootstrap/` because it's specific to the BootstrapPanel
- * surface; promote to renderer-level `components/ui/` when a second
- * feature needs the same primitive.
+ * Tone tokens (success / warning / info / danger / muted) are the
+ * single source of truth for status colors across the onboarding flow.
  */
 
 import { type ReactNode } from "react";
@@ -23,14 +24,13 @@ interface StatusTileProps {
 
 const toneChrome: Record<StatusTone, string> = {
   success:
-    "border-[color-mix(in_oklab,var(--color-success)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-success)_10%,transparent)] text-[var(--color-success)]",
+    "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-[var(--color-success)]",
   warning:
-    "border-[color-mix(in_oklab,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] text-[var(--color-warning)]",
-  info: "border-[color-mix(in_oklab,var(--vex-onboarding-accent)_35%,transparent)] bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_10%,transparent)] text-[var(--vex-onboarding-accent)]",
+    "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-[var(--color-warning)]",
+  info: "border-[color-mix(in_oklab,var(--vex-onboarding-accent)_40%,transparent)] text-[var(--vex-onboarding-accent)]",
   danger:
-    "border-[color-mix(in_oklab,var(--color-danger)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]",
-  muted:
-    "border-white/[0.1] bg-white/[0.04] text-[var(--color-text-secondary)]",
+    "border-[color-mix(in_oklab,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]",
+  muted: "border-white/[0.10] text-[var(--color-text-secondary)]",
 };
 
 export function StatusTile({
@@ -42,7 +42,7 @@ export function StatusTile({
   return (
     <div
       className={cn(
-        "flex items-start gap-3 rounded-2xl border px-4 py-3 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
+        "flex items-start gap-3 rounded-[3px] border px-4 py-3",
         toneChrome[tone],
       )}
     >

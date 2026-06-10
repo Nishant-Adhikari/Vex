@@ -1,0 +1,15 @@
+Vex bundled fonts — license notice
+==================================
+
+The font files in this directory tree are redistributed under the
+SIL Open Font License, Version 1.1 (see OFL-*.txt alongside this file).
+
+Shipped (subset, latin + selected punctuation, WOFF2):
+  /fonts/GoogleSans-latin.woff2  — "Google Sans" variable (axes: opsz, wght, GRAD)
+  /fonts/Poppins-500.woff2       — Poppins Medium
+  /fonts/Poppins-600.woff2       — Poppins SemiBold
+  /fonts/Poppins-700.woff2       — Poppins Bold
+
+These are subsetted/converted copies of the upstream OFL fonts. The
+unmodified upstream files (variable + static TTFs, README, OFL) are kept
+in the repository under vex-app/assets/fonts/ for provenance.

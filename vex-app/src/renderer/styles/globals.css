@@ -1,5 +1,52 @@
 @import "tailwindcss";
 
+/* Self-hosted brand fonts (CSP font-src 'self'). Files live in
+ * public/fonts/ so publicDir copies them verbatim into dist/renderer/fonts/
+ * (license text ships alongside under fonts/licenses/, OFL 1.1). Subset to
+ * latin + the punctuation the UI actually renders (·, …, →) — see
+ * scripts/-free conversion provenance in vex-app/assets/fonts/.
+ *
+ * Google Sans is a single variable file (axes: opsz, wght, GRAD); the
+ * `font-weight: 100 900` range lets the browser map any CSS weight onto the
+ * wght axis. Poppins ships as three static display weights. `font-display:
+ * swap` avoids invisible text on first paint (matches the splash budget). */
+@font-face {
+  font-family: "Google Sans";
+  src: url("/fonts/GoogleSans-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2013-2014, U+2018-2019, U+201C-201D, U+2022,
+    U+2026, U+2192, U+2212;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2013-2014, U+2018-2019, U+201C-201D, U+2022,
+    U+2026, U+2212;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2013-2014, U+2018-2019, U+201C-201D, U+2022,
+    U+2026, U+2212;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2013-2014, U+2018-2019, U+201C-201D, U+2022,
+    U+2026, U+2212;
+}
+
 @theme {
   /* Vex semantic palette — verified against /mnt/x/Vex/uiux.png */
   --color-bg-primary: #0a0e27;
@@ -47,14 +94,18 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
 
-  /* Typography — Geist variable WOFF2 via @fontsource-variable/* (self-hosted, CSP-clean). */
+  /* Typography — self-hosted WOFF2 (CSP-clean). Body/UI = Google Sans
+   * (variable, @font-face above); display/headings = Poppins; numerals/code
+   * = Geist Mono variable via @fontsource-variable (kept). */
   --font-sans:
-    "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-mono:
     "Geist Mono Variable", "JetBrains Mono", "SF Mono", Consolas,
     "Liberation Mono", monospace;
-  --font-display: var(--font-sans);
+  --font-display:
+    "Poppins", "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 /* Shared onboarding accent: electric blue (#3275f8) matching the
@@ -72,14 +123,66 @@
  * commit can drop them after grep confirms no remaining usages. */
 [data-vex-onboarding="true"] {
   --vex-onboarding-accent: #3275f8;
+  /* Countersign canvas — one luminance step below --color-bg-primary so
+   * the signature reads as an object in a dark room. Shared by the
+   * rebranded screens (intro, systemCheck) so the cut between them is
+   * invisible; photo-based screens still set their own background. */
+  --vex-onboarding-bg: #04060f;
 }
 
 [data-vex-screen="intro"] {
   --intro-accent: var(--vex-onboarding-accent);
+  --intro-bg: var(--vex-onboarding-bg);
+}
+
+/* Countersign glint — single one-shot flare on the star the mark already
+ * carries, fired at 100%. Stylesheet @keyframes (CSP-safe under
+ * `style-src 'self'`); the element mounts only when ready, plays once and
+ * ends transparent (`forwards`), so the resting frame is perfectly still.
+ * Under prefers-reduced-motion the global 0.01ms rule collapses it to its
+ * final (invisible) frame. */
+@keyframes vex-intro-glint {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+.vex-intro-glint {
+  animation: vex-intro-glint 350ms ease-out forwards;
 }
 
 [data-vex-screen="systemCheck"] {
   --systemcheck-accent: var(--vex-onboarding-accent);
+  --systemcheck-bg: var(--vex-onboarding-bg);
+}
+
+/* NOTARY stamp press — one-shot print of a resolved probe stamp on the
+ * SystemCheck ledger (opacity + a slight settle from 1.15: a press, not
+ * a bounce). Stylesheet @keyframes (CSP-safe); plays once per resolve,
+ * rests still. Reduced motion collapses it to the final frame via the
+ * global rule below. */
+@keyframes vex-stamp-press {
+  from {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.vex-stamp-press {
+  animation: vex-stamp-press 180ms ease-out both;
 }
 
 [data-vex-screen="dockerBootstrap"] {
@@ -145,23 +248,6 @@ body,
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Vex splash bobble — CSS @keyframes, build-time emission so CSP-safe.
- * Reduced-motion media query below disables animation-duration → animation
- * effectively pauses without code branching. */
-@keyframes vex-bobble {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-.animate-vex-bobble {
-  animation: vex-bobble 3.6s ease-in-out infinite;
 }
 
 /* System Check cascade reveal — JS-driven row insertion triggers fade+slide.

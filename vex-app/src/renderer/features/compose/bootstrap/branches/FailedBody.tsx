@@ -35,7 +35,7 @@ export function FailedBody({
 
       {recentLogs.length > 0 ? (
         expanded ? (
-          <pre className="max-h-40 overflow-auto rounded-xl border border-white/[0.08] bg-black/30 p-3 font-mono text-[10px] leading-relaxed text-[var(--color-text-primary)] backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <pre className="max-h-40 overflow-auto rounded-[3px] border border-white/[0.08] bg-black/40 p-3 font-mono text-[10px] leading-relaxed text-[var(--color-text-primary)]">
             <code>{recentLogs.join("\n")}</code>
           </pre>
         ) : (

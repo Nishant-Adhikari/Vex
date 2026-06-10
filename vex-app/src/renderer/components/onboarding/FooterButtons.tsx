@@ -8,6 +8,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon, Refresh01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "../../lib/utils.js";
+import { ONBOARDING_KEY_SLOT_CLASS } from "./geometry.js";
 
 interface ContinueButtonProps {
   readonly onClick: () => void;
@@ -38,6 +39,12 @@ interface RecheckButtonProps {
   readonly disabled: boolean;
 }
 
+/**
+ * NOTARY key form: occupies the shared 208×44 slot (same geometry as the
+ * Continue key) in quiet white-hairline chrome — one CTA per state, one
+ * place for the hand to rest. Background matches the canvas so the slot
+ * plinth rule disappears behind it.
+ */
 export function RecheckButton({
   onClick,
   disabled,
@@ -48,14 +55,16 @@ export function RecheckButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.05] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)] backdrop-blur-md",
-        "hover:border-white/[0.2] hover:bg-white/[0.1] hover:text-[var(--color-text-primary)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
-        "disabled:cursor-not-allowed disabled:opacity-60",
+        "relative inline-flex items-center justify-center gap-2 rounded-xl border",
+        ONBOARDING_KEY_SLOT_CLASS,
+        "border-white/[0.10] bg-[var(--vex-onboarding-bg)] font-sans text-[13px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
+        "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
+        "disabled:cursor-not-allowed disabled:opacity-50",
         "transition-colors duration-150",
       )}
     >
-      <HugeiconsIcon icon={Refresh01Icon} size={12} aria-hidden />
+      <HugeiconsIcon icon={Refresh01Icon} size={14} aria-hidden />
       Recheck
     </button>
   );

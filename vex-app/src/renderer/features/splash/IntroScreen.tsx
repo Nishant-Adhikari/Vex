@@ -1,38 +1,52 @@
 /**
- * IntroScreen — first user-facing surface on cold start.
+ * IntroScreen — "Countersign" boot ritual, first user-facing surface.
  *
- * Single-layer layout: `intro_back.png` (16:9 anime portrait, character on
- * the left, dark space with subtle blue particles on the right) covers the
- * full viewport as background. The brand block (centered: large logo,
- * tagline) and loader + Begin button form a vertically-centered stack
- * floating over the dark right portion of the image.
+ * Concept: the Vex mark IS a signature, and the product's core contract is
+ * "the agent acts autonomously, execution waits for the human". The boot
+ * stages that contract: during init the signature writes itself left→right
+ * (a clip-wipe over the lit mark layer, with a travelling nib light riding
+ * the wipe edge); the plinth hairline beneath it is the progressbar. At
+ * 100% a single one-shot glint fires on the star the mark already carries,
+ * the SIGNING readout crossfades into the Begin key inside the same fixed
+ * slot (zero layout shift) — the agent has signed; Begin is the user's
+ * countersignature. After boot: absolute stillness, nothing loops.
  *
- * A decorative loader animates 0→100%; once it reaches 100% the Begin
- * button fades in and receives focus. Begin click is the only dismiss —
- * no auto-fallback (confirmed UX decision).
+ * Chosen over two runner-up variants ("The Touch" bid/ask convergence and
+ * "First Light" showroom light pass) in the June 2026 design review.
  *
- * A11y: progressbar exposes aria-valuenow; the content region is a
- * labelled landmark (`<section aria-labelledby="intro-heading">`) with
- * an sr-only `<h1>`. The visual wordmark IS the logo PNG (white outline
- * VEX letterforms in `logo_clean.png`) — no separate text wordmark.
+ * Chrome discipline ("the room exists before the ink"): overline, ghost
+ * mark, plinth track, microcopy and version render at final opacity from
+ * the first frame. Only the ink wipe, nib, readout digits, glint and the
+ * Begin reveal animate.
  *
- * Reduced motion: `useLoaderProgress` jumps to 100 immediately; Begin
- * renders right away (still requires click).
+ * A11y: the plinth carries role="progressbar" (persists after ready so
+ * aria-valuenow=100 stays queryable); the readout is aria-hidden (it
+ * duplicates the same value). Begin receives focus on reveal — click is
+ * the only dismiss, no auto-fallback (confirmed UX decision).
  *
- * CSP: all assets self-hosted. `motion/react` is used only for one-shot
- * Begin reveal + inline `width` on the progress fill — single-property
- * style assignments allowed under `style-src 'self'`. If prod blocks a
- * path, refactor to CSS @keyframes — do NOT add `'unsafe-inline'`
+ * Reduced motion: `useLoaderProgress` jumps to 100 — full signature, no
+ * nib, Begin immediately (still requires click).
+ *
+ * CSP: progress-bound visuals are single-property inline styles driven by
+ * ONE clock (clip-path wipe, nib `left`, plinth width and readout digits
+ * all derive from the same `progress` value, so they cannot drift); the
+ * one-shot glint is a stylesheet @keyframes. Do NOT add `'unsafe-inline'`
  * (scripts/check-build-artifacts rejects it).
+ *
+ * Asset note: the left→right wipe is the documented PNG fallback of the
+ * SVG stroke-draw ("ink follows the letterforms"). When logo_clean.png is
+ * traced to SVG stroke paths, swap the lit layer for a stroke-dashoffset
+ * draw and keep everything else unchanged.
  */
 
 import { useCallback, useEffect, useRef } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 
-import { DotmSquare3 } from "../../components/ui/dotm-square-3.js";
 import { cn } from "../../lib/utils.js";
+import {
+  ONBOARDING_COLUMN_CLASS,
+  ONBOARDING_KEY_SLOT_CLASS,
+} from "../../components/onboarding/geometry.js";
 import { useLoaderProgress } from "./useLoaderProgress.js";
 
 export interface IntroScreenProps {
@@ -78,135 +92,136 @@ export function IntroScreen({
     <div
       data-vex-onboarding="true"
       data-vex-screen="intro"
-      className="relative h-screen w-screen overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]"
+      className="relative h-screen w-screen overflow-hidden bg-[var(--intro-bg)] text-[var(--color-text-primary)]"
     >
-      {/* BACKGROUND — full-bleed 16:9 portrait, character left, dark right */}
-      <img
-        src="/intro_back.png"
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="absolute inset-0 h-full w-full object-cover object-center"
-      />
-      {/* Right-side gradient — gently deepens the dark area for content legibility */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[rgba(5,8,22,0.55)]"
-      />
-      {/* Ambient accent glow echoing the portrait's eye-light, top-right corner */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-40 top-1/4 h-96 w-96 rounded-full bg-[var(--intro-accent)] opacity-[0.05] blur-3xl"
-      />
-
-      {/* CONTENT — right-aligned column, vertically centered block over dark area */}
       <section
         aria-labelledby="intro-heading"
-        className="relative ml-auto flex h-full w-[40%] flex-col items-center justify-center px-10 py-9"
+        className="relative flex h-full w-full flex-col items-center justify-center"
       >
-        <div className="flex w-full max-w-md flex-col items-center gap-14">
-          <header className="flex flex-col items-center gap-4">
-            <h1 id="intro-heading" className="sr-only">
-              Vex
-            </h1>
-            <img
-              src="/logo_clean.png"
-              alt=""
-              aria-hidden
-              draggable={false}
-              className="h-40 w-40 object-contain drop-shadow-[0_4px_24px_rgba(50,117,248,0.3)]"
-            />
-            <span className="font-mono text-xs uppercase tracking-[0.35em] text-[var(--color-text-secondary)]">
-              AI-Powered Clarity Engine
-            </span>
-          </header>
+        <h1 id="intro-heading" className="sr-only">
+          Vex
+        </h1>
 
-          <div className="flex w-full flex-col gap-3">
-            <div className="flex items-baseline justify-between">
-              <span className="font-mono text-xs uppercase tracking-[0.25em] text-[var(--color-text-secondary)]">
-                Initializing Vex
-              </span>
-              <span className="font-mono text-xs tabular-nums text-[var(--color-text-primary)]">
-                {progressRounded}%
-              </span>
-            </div>
+        {/* OVERLINE — static from frame one (chrome never animates). */}
+        <span className="font-sans text-[11px] uppercase tracking-[0.32em] text-[var(--color-text-muted)] opacity-70">
+          AI-Powered Clarity Engine
+        </span>
+
+        {/* SIGNATURE — ghost layer always present (the mark exists in the
+         * dark before the ink reaches it); lit layer revealed left→right by
+         * the clip wipe; nib light rides the wipe edge while signing. */}
+        <div className="relative mt-8 h-[clamp(240px,38vh,420px)] w-[clamp(240px,38vh,420px)]">
+          <img
+            src="/logo_clean.png"
+            alt=""
+            aria-hidden
+            draggable={false}
+            className="absolute inset-0 h-full w-full object-contain opacity-[0.12]"
+          />
+          <img
+            src="/logo_clean.png"
+            alt=""
+            aria-hidden
+            draggable={false}
+            className="absolute inset-0 h-full w-full object-contain drop-shadow-[0_4px_24px_color-mix(in_oklab,var(--intro-accent)_18%,transparent)]"
+            style={{ clipPath: `inset(0 ${100 - progress}% 0 0)` }}
+          />
+          {!ready ? (
             <div
-              role="progressbar"
-              aria-valuenow={progressRounded}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Initializing Vex"
-              className="h-1.5 overflow-hidden rounded-full bg-white/[0.07] ring-1 ring-inset ring-white/[0.06]"
-            >
-              <div
-                className="h-full bg-[var(--intro-accent)] transition-[width] duration-150 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <DotmSquare3
-                size={22}
-                dotSize={3}
-                className="text-[var(--intro-accent)] opacity-60"
-                ariaLabel="Loading"
-              />
-              <span className="font-sans text-xs text-[var(--color-text-secondary)]">
-                Loading core systems…
-              </span>
-            </div>
-          </div>
+              aria-hidden
+              className="pointer-events-none absolute inset-y-[8%] w-[2px] -translate-x-1/2 rounded-full bg-gradient-to-b from-transparent via-[rgba(238,240,255,0.9)] to-transparent shadow-[0_0_14px_2px_color-mix(in_oklab,var(--intro-accent)_35%,transparent)]"
+              style={{ left: `${progress}%` }}
+            />
+          ) : null}
+          {/* One glint, once, on the star the mark already has — position
+           * matches the sparkle in logo_clean.png (tune visually on DPI QA). */}
+          {ready ? (
+            <span
+              aria-hidden
+              className="vex-intro-glint pointer-events-none absolute left-[74%] top-[22%] h-1.5 w-1.5 rounded-full bg-white opacity-0 shadow-[0_0_18px_6px_rgba(238,240,255,0.6)]"
+            />
+          ) : null}
+        </div>
 
-          {/* iOS-glass Begin button — centered under the loader.
-           * Press feedback: `active:scale-[0.97]` + brighter bg/border give
-           * the tactile click effect the user requested. The motion fade-in
-           * only runs once on reveal; the press transform is pure CSS. */}
+        {/* PLINTH — the line the signature stands on IS the progressbar.
+         * It persists after ready (resting underline of the mark), keeping
+         * aria-valuenow=100 queryable. Negative margin pulls it into the
+         * PNG's transparent bottom padding, close under the visual mark. */}
+        <div
+          role="progressbar"
+          aria-valuenow={progressRounded}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Initializing Vex"
+          className={cn(
+            "relative -mt-6 h-px overflow-hidden bg-white/[0.08]",
+            ONBOARDING_COLUMN_CLASS
+          )}
+        >
+          <div
+            className="h-full bg-[var(--intro-accent)]"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+
+        {/* SLOT 208×44 — SIGNING readout becomes the Begin key in place.
+         * Fixed geometry: zero layout shift; focus arrives where the eye
+         * already rests. The readout is aria-hidden (decorative duplicate
+         * of the plinth's aria-valuenow). */}
+        <div
+          className={cn(
+            "relative mt-9 flex items-center justify-center",
+            ONBOARDING_KEY_SLOT_CLASS
+          )}
+        >
           {ready ? (
             <motion.button
               ref={beginRef}
               type="button"
               onClick={handleBegin}
               aria-label="Begin Vex"
-              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: reducedMotion ? 0 : 0.4,
-                ease: "easeOut",
-              }}
+              initial={reducedMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: reducedMotion ? 0 : 0.24, ease: "easeOut" }}
               className={cn(
-                "group relative inline-flex items-center gap-3",
-                "rounded-full border border-white/[0.16] bg-white/[0.07] backdrop-blur-2xl",
-                "px-8 py-3.5",
-                "shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-1px_0_rgba(0,0,0,0.2),0_10px_40px_rgba(50,117,248,0.15)]",
-                "transition-all duration-300 ease-out",
-                "hover:border-white/[0.22] hover:bg-white/[0.11] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-1px_0_rgba(0,0,0,0.2),0_14px_50px_rgba(50,117,248,0.28)]",
-                "active:scale-[0.97] active:border-white/[0.28] active:bg-white/[0.14] active:duration-100",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--intro-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
+                "inline-flex h-full w-full items-center justify-center rounded-xl",
+                "border border-[color-mix(in_oklab,var(--intro-accent)_55%,transparent)] bg-white/[0.03]",
+                "font-sans text-[13px] font-medium uppercase tracking-[0.18em] text-[var(--intro-accent)]",
+                "transition-colors duration-200 ease-out",
+                "hover:border-[color-mix(in_oklab,var(--intro-accent)_85%,transparent)] hover:bg-[color-mix(in_oklab,var(--intro-accent)_8%,transparent)]",
+                "active:scale-[0.98]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--intro-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--intro-bg)]"
               )}
             >
-              <span className="font-mono text-sm uppercase tracking-[0.25em] text-[var(--color-text-primary)]">
-                Begin
-              </span>
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                size={16}
-                className="text-[var(--color-text-primary)] transition-transform duration-300 group-hover:translate-x-0.5"
-              />
+              Begin
             </motion.button>
-          ) : null}
+          ) : (
+            <span
+              aria-hidden
+              className="font-mono text-[11px] uppercase tracking-[0.14em]"
+            >
+              <span className="text-[var(--color-text-muted)] opacity-60">
+                Signing
+              </span>{" "}
+              <span className="tabular-nums text-[var(--color-text-secondary)]">
+                {String(progressRounded).padStart(3, "0")}
+              </span>
+            </span>
+          )}
         </div>
-
-        {/* Version pinned to the section's bottom-right corner. */}
-        <footer className="absolute bottom-9 right-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
-          <span>v{__VEX_APP_VERSION__}</span>
-        </footer>
       </section>
 
-      {/* HORIZONTAL TAGLINE — anchored to the bottom-left over the character */}
+      {/* MICROCOPY — brand tetrad from the vex-theme boards, bottom-left. */}
       <div className="pointer-events-none absolute bottom-7 left-10">
-        <span className="font-mono text-[11px] uppercase tracking-[0.5em] text-[var(--color-text-muted)] [text-shadow:0_1px_3px_rgba(0,0,0,0.7)]">
-          Focus · Understand · Evolve
+        <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-60">
+          Clarity · Focus · Understand · Evolve
         </span>
       </div>
+
+      {/* VERSION — bottom-right, quiet. */}
+      <footer className="absolute bottom-7 right-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)] opacity-60">
+        <span>v{__VEX_APP_VERSION__}</span>
+      </footer>
     </div>
   );
 }

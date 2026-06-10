@@ -52,7 +52,7 @@ export function DaemonStoppedBody({
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-secondary)]">
             Run this in a terminal:
           </p>
-          <pre className="overflow-auto rounded-xl border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-primary)] backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <pre className="overflow-auto rounded-[3px] border border-white/[0.08] bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-primary)]">
             <code>sudo systemctl start docker</code>
           </pre>
           <p className="text-xs text-[var(--color-text-secondary)]">

@@ -1,12 +1,12 @@
 /**
  * Branch: loading — Docker probe hasn't returned data yet, OR engine is
- * missing and the platform health probe is still resolving. Either way
- * we render a gray spinner-style status tile and disable the footer
- * Recheck button (handled by the orchestrator).
+ * missing and the platform health probe is still resolving. The waiting
+ * indicator is the brand's DotMatrix (same machine language as the
+ * SystemCheck CHECKING… stamps); the orchestrator disables the footer
+ * Recheck key while this branch is active.
  */
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { HourglassIcon } from "@hugeicons/core-free-icons";
+import { DotmSquare3 } from "../../../../components/ui/dotm-square-3.js";
 import { StatusTile } from "../../../../components/onboarding/StatusTile.js";
 
 export function LoadingBody(): JSX.Element {
@@ -14,11 +14,11 @@ export function LoadingBody(): JSX.Element {
     <StatusTile
       tone="muted"
       icon={
-        <HugeiconsIcon
-          icon={HourglassIcon}
-          size={20}
-          className="animate-pulse"
-          aria-hidden
+        <DotmSquare3
+          size={16}
+          dotSize={2}
+          className="text-[var(--vex-onboarding-accent)]"
+          ariaLabel="Checking"
         />
       }
       title="Detecting Docker…"

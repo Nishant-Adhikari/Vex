@@ -13,3 +13,5 @@ export { StatusTile, type StatusTone } from "./StatusTile.js";
 export { PrimaryButton } from "./PrimaryButton.js";
 export { DocsLink } from "./DocsLink.js";
 export { ContinueButton, RecheckButton } from "./FooterButtons.js";
+export { NotaryPage } from "./NotaryPage.js";
+export { KeyButton } from "./KeyButton.js";

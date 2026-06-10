@@ -28,7 +28,7 @@ const SOURCES = [
     expect: { width: 500, height: 500, format: "png", maxBytes: 40_000 },
   },
   {
-    src: path.join(REPO_ROOT, "vex.jpg"),
+    src: path.join(REPO_ROOT, "src", "vex-agent", "public", "vex.jpg"),
     dest: path.join(PUBLIC_DIR, "vex.jpg"),
     expect: { width: 1254, height: 1254, format: "jpeg", maxBytes: 130_000 },
   },

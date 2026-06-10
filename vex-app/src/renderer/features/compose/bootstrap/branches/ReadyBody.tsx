@@ -1,18 +1,18 @@
 /**
  * Branch: ready — Compose came back with kind="running" or "reused".
- * Pairs a success StatusTile with a one-shot `dotm-hex-3` shimmer that
- * plays on the `running → ready` transition (skipped entirely under
- * reduced-motion). Continue button lives in the orchestrator footer.
+ * A success StatusTile with the flow's single celebration: one
+ * `vex-intro-glint` star on the tile's corner (the same one-shot flare
+ * that closes the intro signing and arms the Continue keys — one light
+ * doctrine across the whole onboarding). The glint keyframes end
+ * transparent and the global reduced-motion rule collapses them to the
+ * final (invisible) frame, so no JS gating or teardown timer is needed.
+ * The armed Continue key lives in the orchestrator.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { motion } from "motion/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CheckmarkCircle01Icon } from "@hugeicons/core-free-icons";
 import type { ComposeUpResult } from "@shared/schemas/docker.js";
 import { StatusTile } from "../../../../components/onboarding/StatusTile.js";
-import { DotmHex3 } from "../../../../components/ui/dotm-hex-3.js";
-import { COMPLETION_SHIMMER_MS } from "../constants.js";
 
 interface ReadyBodyProps {
   readonly result: ComposeUpResult;
@@ -20,57 +20,20 @@ interface ReadyBodyProps {
   readonly celebrate: boolean;
 }
 
-/**
- * Read `prefers-reduced-motion: reduce` synchronously on first paint.
- * The shared `usePrefersReducedMotion` hook initializes to `false` and
- * resolves the real value in `useEffect`, which leaves a one-frame
- * window where a reduce-motion user could still see the shimmer
- * (codex post-impl SHOULD-FIX #3). Reading matchMedia in a lazy
- * useState initializer closes that window.
- */
-function reducedMotionAtMount(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return false;
-  }
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 export function ReadyBody({ result, celebrate }: ReadyBodyProps): JSX.Element {
-  const [showShimmer, setShowShimmer] = useState(
-    () => celebrate && !reducedMotionAtMount(),
-  );
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!showShimmer) return;
-    timerRef.current = window.setTimeout(
-      () => setShowShimmer(false),
-      COMPLETION_SHIMMER_MS,
-    );
-    return () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current);
-    };
-  }, [showShimmer]);
-
   const detail =
     result.kind === "reused"
       ? "Existing stack reused — services already healthy."
       : (result.message ?? "All services started and answered health checks.");
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      {showShimmer ? (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
+    <div className="relative">
+      {celebrate ? (
+        <span
           aria-hidden
-        >
-          <DotmHex3 size={56} color="var(--vex-onboarding-accent)" />
-        </motion.div>
+          className="vex-intro-glint pointer-events-none absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-white opacity-0 shadow-[0_0_14px_5px_rgba(238,240,255,0.5)]"
+        />
       ) : null}
-
       <StatusTile
         tone="success"
         icon={

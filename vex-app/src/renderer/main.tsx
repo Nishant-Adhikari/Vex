@@ -1,4 +1,5 @@
-import "@fontsource-variable/geist";
+// Body/UI + display fonts (Google Sans, Poppins) are self-hosted via
+// @font-face in globals.css. Geist Mono is kept for numerals/code.
 import "@fontsource-variable/geist-mono";
 import "./styles/globals.css";
 

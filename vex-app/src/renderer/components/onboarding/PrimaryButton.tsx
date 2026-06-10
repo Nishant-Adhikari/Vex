@@ -1,14 +1,17 @@
 /**
  * Primary CTA button used by branch bodies (Start Docker, Download
- * installer, Try Start Docker Desktop). Two variants:
- *   - "primary"  — full-width, solid accent blue, the recommended path
- *   - "ghost"    — subordinate, frosted glass, smaller weight
+ * installer, Try Start Docker Desktop), restyled to the NOTARY key
+ * language. Two variants:
+ *   - "primary"  — full-width key: 1px accent-mix hairline border,
+ *                  accent text, transparent fill (the recommended path —
+ *                  same voice as the armed Continue key)
+ *   - "ghost"    — subordinate quiet key: white hairline, secondary text
  *
- * Continue + Recheck buttons live in BootstrapPanel.tsx itself (single
- * use, footer-only); this primitive is only for body-level actions.
+ * Continue + Recheck footer keys live in KeyButton / FooterButtons; this
+ * primitive is only for body-level actions.
  */
 
-import type { ComponentProps, ElementType } from "react";
+import type { ComponentProps } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "../../lib/utils.js";
 
@@ -36,10 +39,10 @@ export function PrimaryButton({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          "inline-flex items-center justify-center gap-2 self-start rounded-xl border border-white/[0.12] bg-white/[0.05] px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-text-primary)] backdrop-blur-md",
-          "hover:border-white/[0.2] hover:bg-white/[0.1]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
-          "active:scale-[0.98] transition-all duration-150",
+          "inline-flex items-center justify-center gap-2 self-start rounded-xl border border-white/[0.10] bg-transparent px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-text-secondary)]",
+          "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
+          "active:scale-[0.98] transition-colors duration-150",
           "disabled:cursor-not-allowed disabled:opacity-60",
         )}
       >
@@ -54,13 +57,13 @@ export function PrimaryButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.16] bg-[var(--vex-onboarding-accent)]/85 px-4 py-3 font-mono text-sm uppercase tracking-[0.22em] text-white backdrop-blur-md",
-        "shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_40px_rgba(50,117,248,0.28)]",
-        "hover:bg-[var(--vex-onboarding-accent)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.26),0_14px_50px_rgba(50,117,248,0.42)]",
-        "active:scale-[0.98] active:duration-100",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
+        "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-transparent font-mono text-xs uppercase tracking-[0.22em]",
+        "border-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,transparent)] text-[var(--vex-onboarding-accent)]",
+        "hover:border-[color-mix(in_oklab,var(--vex-onboarding-accent)_85%,transparent)] hover:bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_8%,transparent)]",
+        "active:scale-[0.98]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
         "disabled:cursor-not-allowed disabled:opacity-60",
-        "transition-all duration-300 ease-out",
+        "transition-colors duration-200 ease-out",
       )}
     >
       <HugeiconsIcon icon={icon} size={16} aria-hidden />

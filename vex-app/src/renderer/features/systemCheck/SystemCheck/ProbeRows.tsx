@@ -51,9 +51,12 @@ export function ProbeRows({
   env,
 }: ProbeRowsProps): JSX.Element {
   return (
-    <ol className="flex flex-col gap-2 px-5 py-5">
+    // Closing rule: rows carry 6% hairlines; the list's own 10% bottom
+    // border under row 04 is the ledger's heavier closing rule.
+    <ol className="flex w-full flex-col border-b border-white/[0.10]">
       {revealCount >= 1 ? (
         <StepRow
+          index={1}
           label="Operating system"
           status={osStatus}
           icon={<OperatingSystemIcon platform={platform} />}
@@ -66,9 +69,10 @@ export function ProbeRows({
       ) : null}
       {revealCount >= 2 ? (
         <StepRow
+          index={2}
           label="Network connectivity"
           status={networkStatus}
-          icon={<HugeiconsIcon icon={Wifi02Icon} size={22} aria-hidden />}
+          icon={<HugeiconsIcon icon={Wifi02Icon} size={20} aria-hidden />}
           detail={
             health.data?.ok
               ? health.data.data.network.online
@@ -80,9 +84,10 @@ export function ProbeRows({
       ) : null}
       {revealCount >= 3 ? (
         <StepRow
+          index={3}
           label="Docker Engine"
           status={dockerStatus}
-          icon={<Docker width={22} height={22} aria-hidden />}
+          icon={<Docker width={20} height={20} aria-hidden />}
           // "READY" reads more accurately than "OK" for an engine
           // that's installed + daemon running + container available.
           // Other states fall back to StepRow defaults (CHECKING…/WARN/FAIL).
@@ -96,10 +101,11 @@ export function ProbeRows({
       ) : null}
       {revealCount >= 4 ? (
         <StepRow
+          index={4}
           label="Vex configuration"
           status={envStatus}
           icon={
-            <HugeiconsIcon icon={Settings02Icon} size={22} aria-hidden />
+            <HugeiconsIcon icon={Settings02Icon} size={20} aria-hidden />
           }
           // First-run nudge: "SETUP" beats "WARN" for a warn state that
           // means "guided setup required" — the only warn cause for

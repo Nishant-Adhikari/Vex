@@ -1,11 +1,20 @@
 /**
- * System Check screen — second user-facing surface in the onboarding flow.
+ * System Check screen — second user-facing surface in the onboarding
+ * flow, redesigned in the Countersign language ("NOTARY — page two of
+ * the signed document").
  *
- * Visual system mirrors IntroScreen.tsx: a full-bleed anime portrait
- * (`onboarding.png`) covers the viewport, the dark right portion of the
- * image hosts a frosted-glass card with the probe stack, and the Begin-
- * style accent (#3275f8 via `--systemcheck-accent`) carries the same
- * onboarding identity as the intro.
+ * Visual system: the user just watched the Vex signature being written
+ * and countersigned it with BEGIN; this screen is the same instrument
+ * page getting notarized. Same near-black canvas as the intro
+ * (--systemcheck-bg = --vex-onboarding-bg), the signature settled to a
+ * 48px letterhead hallmark (no glow — the glow belonged to the act of
+ * signing), a plinth hairline with a 24px accent tick, and four numbered
+ * ledger rows that stamp themselves as probes resolve. The CONTINUE key
+ * is dormant from frame one in the same 208×44 slot BEGIN occupied
+ * (shared geometry module) and arms in place when the gate opens. No
+ * photo, no glass, no card — hairlines and mono microtype carry the
+ * material. Entrance is a hard cut: chrome stands on frame one, only
+ * the ledger rows cascade.
  *
  * Data flow is unchanged: three TanStack Query hooks (`useSystemHealth`,
  * `useDockerStatus`, `useEnvState`) feed four probe rows, each row
@@ -21,19 +30,18 @@
  * CSP: brand icons come from `@thesvg/react` (typed React components,
  * no `dangerouslySetInnerHTML` — `scripts/check-build-artifacts.mjs`
  * rejects that pattern). Generic UI glyphs come from `@hugeicons/react`,
- * already in the bundle.
+ * already in the bundle. All multi-step animation is stylesheet
+ * @keyframes.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { motion, useReducedMotion } from "motion/react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Radar02Icon } from "@hugeicons/core-free-icons";
+import { useReducedMotion } from "motion/react";
 
 import { useDockerStatus } from "../../lib/api/docker.js";
 import { useEnvState } from "../../lib/api/onboarding.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { useUiStore } from "../../stores/uiStore.js";
-import { cn } from "../../lib/utils.js";
+import { NotaryPage } from "../../components/onboarding/NotaryPage.js";
 import { WIZARD_STEP_IDS } from "@shared/schemas/wizard.js";
 import { type StepStatus } from "./StepRow.js";
 import { platformOf, type Platform } from "./SystemCheck/OperatingSystemIcon.js";
@@ -54,6 +62,7 @@ const SETUP_VIEWS_BEFORE_WIZARD = 4;
 const TOTAL_ONBOARDING_STEPS =
   SETUP_VIEWS_BEFORE_WIZARD + (WIZARD_STEP_IDS.length - 1);
 const SYSTEM_CHECK_STEP = 1;
+const TOTAL_PROBES = 4;
 
 export function SystemCheck(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
@@ -122,95 +131,40 @@ export function SystemCheck(): JSX.Element {
         : "warn";
 
   const anyLoading = health.isPending || docker.isPending || env.isPending;
+  const resolvedCount = [osStatus, networkStatus, dockerStatus, envStatus]
+    .filter((s) => s !== "loading")
+    .length;
 
   return (
-    <div
-      data-vex-onboarding="true"
-      data-vex-screen="systemCheck"
-      className="relative h-screen w-screen overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]"
+    <NotaryPage
+      screen="systemCheck"
+      headingId="systemcheck-heading"
+      title="System Check"
+      subline="Four probes countersign this machine before bootstrap."
+      stepNumber={SYSTEM_CHECK_STEP}
+      totalSteps={TOTAL_ONBOARDING_STEPS}
     >
-      {/* BACKGROUND — full-bleed 16:9 portrait, character left, dark right */}
-      <img
-        src="/onboarding.png"
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="absolute inset-0 h-full w-full object-cover object-center"
-      />
-      {/* Right-side gradient — deepens the dark area for content legibility */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[rgba(5,8,22,0.6)]"
-      />
-
-      {/* TOP-RIGHT LOGO — matches the brand mark in IntroScreen */}
-      <div className="pointer-events-none absolute right-8 top-6">
-        <img
-          src="/logo_clean.png"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="h-10 w-10 object-contain drop-shadow-[0_2px_8px_rgba(50,117,248,0.35)]"
+      {/* LEDGER — four numbered rows, cascade-revealed. */}
+      <div className="mt-6">
+        <ProbeRows
+          revealCount={revealCount}
+          platform={platform}
+          osStatus={osStatus}
+          networkStatus={networkStatus}
+          dockerStatus={dockerStatus}
+          envStatus={envStatus}
+          health={health}
+          docker={docker}
+          env={env}
         />
       </div>
 
-      {/* CONTENT — right-aligned glass card, vertically centered */}
-      <section
-        aria-labelledby="systemcheck-heading"
-        className="relative ml-auto flex h-full w-[44%] min-w-[420px] max-w-[560px] flex-col items-center justify-center px-8"
-      >
-        <motion.div
-          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: reducedMotion ? 0 : 0.45, ease: "easeOut" }}
-          className={cn(
-            "w-full overflow-hidden rounded-3xl border border-white/[0.12] bg-white/[0.05] backdrop-blur-2xl",
-            "shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.45)]",
-          )}
-        >
-          {/* HEADER */}
-          <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
-            <span
-              aria-hidden
-              className="flex h-10 w-10 shrink-0 items-center justify-center text-[var(--systemcheck-accent)]"
-            >
-              <HugeiconsIcon icon={Radar02Icon} size={22} aria-hidden />
-            </span>
-            <div className="flex flex-col gap-1">
-              <h1
-                id="systemcheck-heading"
-                className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]"
-              >
-                System Check
-              </h1>
-              <p className="text-xs text-[var(--color-text-secondary)]">
-                Verifying your environment before bootstrap.
-              </p>
-            </div>
-          </header>
-
-          {/* ROWS */}
-          <ProbeRows
-            revealCount={revealCount}
-            platform={platform}
-            osStatus={osStatus}
-            networkStatus={networkStatus}
-            dockerStatus={dockerStatus}
-            envStatus={envStatus}
-            health={health}
-            docker={docker}
-            env={env}
-          />
-
-          <Footer
-            stepNumber={SYSTEM_CHECK_STEP}
-            totalSteps={TOTAL_ONBOARDING_STEPS}
-            disabled={anyLoading}
-            onContinue={() => setCurrentView("dockerBootstrap")}
-          />
-        </motion.div>
-      </section>
-
-    </div>
+      <Footer
+        resolvedCount={resolvedCount}
+        totalProbes={TOTAL_PROBES}
+        disabled={anyLoading}
+        onContinue={() => setCurrentView("dockerBootstrap")}
+      />
+    </NotaryPage>
   );
 }

@@ -58,9 +58,9 @@ export function LinuxInstallBody({
             type="button"
             onClick={onRetryFetch}
             className={cn(
-              "self-start rounded-md border border-white/[0.12] bg-white/[0.05] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)] backdrop-blur-md",
-              "hover:border-white/[0.2] hover:bg-white/[0.1] hover:text-[var(--color-text-primary)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
+              "self-start rounded-[3px] border border-white/[0.12] bg-transparent px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
+              "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
               "transition-colors duration-150",
             )}
           >
@@ -71,7 +71,7 @@ export function LinuxInstallBody({
         <LinuxManualInstructions instructions={state.instructions} />
       ) : null}
 
-      <div className="rounded-lg border border-[color-mix(in_oklab,var(--color-warning)_30%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)] px-3 py-2 text-xs leading-relaxed">
+      <div className="rounded-[3px] border border-[color-mix(in_oklab,var(--color-warning)_30%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)] px-3 py-2 text-xs leading-relaxed">
         <strong className="font-semibold text-[var(--color-warning)]">
           Heads up:
         </strong>{" "}
