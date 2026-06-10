@@ -1,9 +1,8 @@
 /**
  * Branch: running — `database.migrate()` is in flight. Hero dotmatrix
- * loader anchors the body; below it a big "Applying X of Y" counter
- * derived from the current progress event (index is zero-based in the
- * IPC schema — display `index + 1` for 1-based counting). A single
- * current-migration pill names the file/version being applied.
+ * loader anchors the body; below it the progress readout ("Applying X
+ * of Y" — index is zero-based in the IPC schema, displayed 1-based) and
+ * a NOTARY ledger row naming the file/version currently being applied.
  *
  * No cancel button — the IPC surface intentionally does NOT expose a
  * cancel handle (mid-SQL aborts aren't safe).
@@ -30,12 +29,12 @@ function progressLabel(progress: MigrateProgress | null): string {
 }
 
 export function RunningBody({ current }: RunningBodyProps): JSX.Element {
-  const showCurrentPill =
-    current !== null && current.phase !== "planned";
+  const showCurrentRow = current !== null && current.phase !== "planned";
 
   return (
-    <div className="flex flex-col items-center gap-6">
-      <div className="relative mt-2 flex h-[72px] w-[72px] items-center justify-center sm:h-[64px] sm:w-[64px] xl:h-[80px] xl:w-[80px]">
+    <div className="flex flex-col gap-6">
+      {/* HERO — the machine at work, centered above the readout. */}
+      <div className="flex justify-center pt-2">
         <DotmCircular8
           size={64}
           color="var(--vex-onboarding-accent)"
@@ -43,31 +42,31 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
         />
       </div>
 
-      <p className="text-center text-xs uppercase tracking-[0.3em] text-[var(--color-text-secondary)]">
+      <p className="text-center font-mono text-[11px] uppercase tracking-[0.3em] text-[var(--color-text-secondary)]">
         {progressLabel(current)}
       </p>
 
-      {showCurrentPill && current !== null ? (
+      {showCurrentRow && current !== null ? (
         <div
-          className="flex w-full items-center gap-3 rounded-xl border border-[color-mix(in_oklab,var(--vex-onboarding-accent)_35%,transparent)] bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_8%,transparent)] px-3 py-2.5 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+          className="flex w-full items-center gap-3 border-b border-t border-white/[0.06] py-4"
           data-migration-version={current.version}
         >
           <DotmSquare3
-            size={22}
-            dotSize={3}
+            size={16}
+            dotSize={2}
             animated
             color="var(--vex-onboarding-accent)"
             ariaLabel={`Migration ${current.version} in progress`}
           />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
+            <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
               Migration v{current.version}
             </span>
-            <span className="truncate font-mono text-[11px] text-[var(--color-text-secondary)]">
+            <span className="truncate font-mono text-[11px] text-[var(--color-text-muted)]">
               {current.file}
             </span>
           </div>
-          <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--vex-onboarding-accent)] opacity-80">
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--vex-onboarding-accent)]">
             {current.phase}
           </span>
         </div>

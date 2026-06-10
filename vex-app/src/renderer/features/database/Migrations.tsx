@@ -30,15 +30,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion, useReducedMotion } from "motion/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { DatabaseSync01Icon } from "@hugeicons/core-free-icons";
 
 import { useUiStore } from "../../stores/uiStore.js";
 import { onboardingKeys } from "../../lib/api/queryKeys.js";
-import { cn } from "../../lib/utils.js";
-import { ContinueButton } from "../../components/onboarding/FooterButtons.js";
+import { NotaryPage } from "../../components/onboarding/NotaryPage.js";
+import { KeyButton } from "../../components/onboarding/KeyButton.js";
 import {
   APPLIED_HISTORY_MAX,
   MIGRATIONS_STEP,
@@ -55,7 +52,6 @@ import { ErrorBody } from "./migrations/branches/ErrorBody.js";
 export function Migrations(): JSX.Element {
   const openWizard = useUiStore((s) => s.openWizard);
   const queryClient = useQueryClient();
-  const reducedMotion = useReducedMotion();
   const [phase, setPhase] = useState<Phase>({ kind: "running", current: null });
   const [retryToken, setRetryToken] = useState(0);
   // History of `applied`-phase files, snapshot into ErrorBody on
@@ -154,93 +150,44 @@ export function Migrations(): JSX.Element {
   }, [openWizard]);
 
   return (
-    <div
-      data-vex-onboarding="true"
-      data-vex-screen="migrations"
-      className="relative h-screen w-screen overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]"
+    <NotaryPage
+      screen="migrations"
+      headingId="migrations-heading"
+      title="Database Migrations"
+      subline="Bringing your local schema up to date."
+      stepNumber={MIGRATIONS_STEP}
+      totalSteps={TOTAL_ONBOARDING_STEPS}
     >
-      <img
-        src="/setup.png"
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="absolute inset-0 h-full w-full object-cover object-center"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[rgba(5,8,22,0.6)]"
-      />
-
-      <div className="pointer-events-none absolute right-8 top-6">
-        <img
-          src="/logo_clean.png"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="h-10 w-10 object-contain drop-shadow-[0_2px_8px_rgba(50,117,248,0.35)]"
-        />
+      {/* CASE FILE — the active phase body. */}
+      <div className="mt-6 max-h-[48vh] overflow-y-auto pr-1">
+        {phase.kind === "running" ? (
+          <RunningBody current={phase.current} />
+        ) : phase.kind === "noop" ? (
+          <NoopBody />
+        ) : phase.kind === "ready" ? (
+          <ReadyBody appliedCount={phase.appliedCount} celebrate={true} />
+        ) : phase.kind === "error" ? (
+          <ErrorBody
+            message={phase.message}
+            failedAt={phase.failedAt}
+            appliedBeforeFailure={phase.appliedBeforeFailure}
+            onRetry={handleRetry}
+          />
+        ) : null}
       </div>
 
-      <section
-        aria-labelledby="migrations-heading"
-        className="relative ml-auto flex h-full w-[44%] min-w-[420px] max-w-[560px] flex-col items-center justify-center px-8"
-      >
-        <motion.div
-          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: reducedMotion ? 0 : 0.45, ease: "easeOut" }}
-          className={cn(
-            "flex w-full max-h-[88vh] flex-col overflow-hidden rounded-3xl border border-white/[0.12] bg-white/[0.05] backdrop-blur-2xl",
-            "shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.45)]",
-          )}
-        >
-          <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
-            <span
-              aria-hidden
-              className="flex h-10 w-10 shrink-0 items-center justify-center text-[var(--vex-onboarding-accent)]"
-            >
-              <HugeiconsIcon icon={DatabaseSync01Icon} size={22} aria-hidden />
-            </span>
-            <div className="flex flex-col gap-1">
-              <h1
-                id="migrations-heading"
-                className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]"
-              >
-                Database migrations
-              </h1>
-              <p className="text-xs text-[var(--color-text-secondary)]">
-                Bringing your local schema up to date.
-              </p>
-            </div>
-          </header>
-
-          <div className="flex-1 overflow-y-auto px-5 py-5">
-            {phase.kind === "running" ? (
-              <RunningBody current={phase.current} />
-            ) : phase.kind === "noop" ? (
-              <NoopBody />
-            ) : phase.kind === "ready" ? (
-              <ReadyBody appliedCount={phase.appliedCount} celebrate={true} />
-            ) : phase.kind === "error" ? (
-              <ErrorBody
-                message={phase.message}
-                failedAt={phase.failedAt}
-                appliedBeforeFailure={phase.appliedBeforeFailure}
-                onRetry={handleRetry}
-              />
-            ) : null}
-          </div>
-
-          <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-6 py-4">
-            <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
-              Step {MIGRATIONS_STEP} of {TOTAL_ONBOARDING_STEPS}
-            </span>
-            {phase.kind === "ready" ? (
-              <ContinueButton onClick={handleContinue} />
-            ) : null}
-          </div>
-        </motion.div>
-      </section>
-    </div>
+      {/* KEY PLINTH — the armed CONTINUE key appears only when the
+       * schema is up to date (error offers Retry in the body; noop
+       * auto-advances). */}
+      {phase.kind === "ready" ? (
+        <div className="mt-9">
+          <KeyButton
+            armed
+            onClick={handleContinue}
+            ariaLabel="Continue to setup wizard"
+          />
+        </div>
+      ) : null}
+    </NotaryPage>
   );
 }
