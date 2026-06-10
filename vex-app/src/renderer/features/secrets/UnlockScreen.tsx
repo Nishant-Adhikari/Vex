@@ -153,33 +153,19 @@ export function UnlockScreen(): JSX.Element {
     <main
       data-vex-onboarding="true"
       data-vex-screen="unlock"
-      className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-[var(--color-bg-primary)] px-6 py-24 text-[var(--color-text-primary)]"
+      className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-[var(--vex-onboarding-bg)] px-6 py-24 text-[var(--color-text-primary)]"
     >
-      {/* BACKDROP — full-bleed onboarding portrait + gradient overlay.
-        Mirrors WizardShell's ShellBackdrop; deepens the right/center
-        area so glass panel content stays legible over the artwork. */}
-      <img
-        src="/onboarding2.png"
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[rgba(5,8,22,0.6)]"
-      />
-
-      {/* TOP CHROME — logo + VEX wordmark + "UNLOCK" tag (left),
-        version (right). Pointer-events-none so the glass panel keeps
-        the focus surface to itself. */}
+      {/* TOP CHROME — hallmark + VEX wordmark + "UNLOCK" tag (left);
+        shared corner chrome (tetrad + version) at the bottom, matching
+        every other Countersign/NOTARY page. Pointer-events-none so the
+        panel keeps the focus surface to itself. */}
       <div className="pointer-events-none absolute left-6 top-6 z-10 flex items-center gap-3">
         <img
           src="/logo_clean.png"
           alt=""
           aria-hidden
           draggable={false}
-          className="h-9 w-9 object-contain drop-shadow-[0_2px_8px_rgba(50,117,248,0.35)]"
+          className="h-9 w-9 object-contain opacity-90"
         />
         <div className="flex flex-col leading-tight">
           <span className="font-mono text-sm font-semibold tracking-[0.3em] text-[var(--color-text-primary)]">
@@ -190,19 +176,20 @@ export function UnlockScreen(): JSX.Element {
           </span>
         </div>
       </div>
-      <span className="pointer-events-none absolute right-6 top-6 z-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
+      <div className="pointer-events-none absolute bottom-7 left-10 z-10">
+        <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-60">
+          Clarity · Focus · Understand · Evolve
+        </span>
+      </div>
+      <span className="pointer-events-none absolute bottom-7 right-10 z-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)] opacity-60">
         v{__VEX_APP_VERSION__}
       </span>
 
-      {/*
-        GLASS PANEL — inline copy of the wizard / system-check / docker
-        / compose / migrations recipe. When this becomes the 8th call
-        site, extract to <GlassPanel> in components/onboarding/. For
-        now the duplication is bounded and reversible.
-      */}
+      {/* DOCUMENT PANEL — NOTARY material: hairline-bounded sheet one
+        tonal step above the canvas. No glass, no photo. */}
       <section
         aria-labelledby="vex-unlock-title"
-        className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-white/[0.12] bg-white/[0.05] backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.45)]"
+        className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]"
       >
         <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
           <span
@@ -211,10 +198,10 @@ export function UnlockScreen(): JSX.Element {
           >
             <LockIcon />
           </span>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <h1
               id="vex-unlock-title"
-              className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+              className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-[var(--color-text-primary)]"
             >
               Unlock Vex
             </h1>

@@ -82,7 +82,9 @@ export function StepperNode({
             aria-hidden
           />
         ) : (
-          <span className="font-mono text-[11px] font-medium">{index + 1}</span>
+          <span className="font-mono text-[11px] font-medium tabular-nums">
+            {String(index + 1).padStart(2, "0")}
+          </span>
         )}
       </span>
       <span

@@ -90,16 +90,18 @@ describe("UnlockScreen", () => {
     expect(getByRole("button", { name: /Unlock/i })).toBeTruthy();
   });
 
-  it("wears the onboarding chrome (PR9 — backdrop + data-vex-onboarding)", () => {
+  it("wears the onboarding chrome (PR9 — hallmark + data-vex-onboarding)", () => {
     // Regression guard: lock screen must stay visually consistent with
-    // the rest of the onboarding flow. Without this assertion, a future
-    // edit that strips the chrome would slip past the suite because the
+    // the rest of the onboarding flow (Countersign/NOTARY rebrand: the
+    // photo backdrop is gone; the hallmark mark + shared accent scope
+    // are the chrome). Without this assertion, a future edit that
+    // strips the chrome would slip past the suite because the
     // form-level tests don't care about the wrapper.
     const view = renderUnlockScreen();
     const root = view.container.querySelector('[data-vex-screen="unlock"]');
     expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
     expect(
-      view.container.querySelector('img[src="/onboarding2.png"]'),
+      view.container.querySelector('img[src="/logo_clean.png"]'),
     ).not.toBeNull();
   });
 

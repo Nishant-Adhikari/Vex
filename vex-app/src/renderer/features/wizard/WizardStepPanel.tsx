@@ -101,10 +101,11 @@ function stepIndexFor(kind: PanelKind): number {
  * 13rem of fixed chrome around the panel. Keeps the body scrollable
  * inside the 1024×720 BrowserWindow floor (codex final review V2 P1).
  */
+/* NOTARY document panel — a hairline-bounded sheet one tonal step above
+ * the canvas (forms need containment, not glass). No blur, no shadows. */
 const PANEL_CHROME = cn(
-  "flex w-full max-h-[calc(100vh-13rem)] flex-col overflow-hidden rounded-3xl",
-  "border border-white/[0.12] bg-white/[0.05] backdrop-blur-2xl",
-  "shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.45)]",
+  "flex w-full max-h-[calc(100vh-13rem)] flex-col overflow-hidden rounded-xl",
+  "border border-white/[0.08] bg-white/[0.02]",
 );
 
 const HEADER_CHROME = cn(
@@ -139,7 +140,7 @@ function FooterMeta({ kind }: { kind: PanelKind }): JSX.Element {
         className={cn(
           "inline-flex items-center gap-1 text-[var(--color-text-secondary)] transition-colors",
           "hover:text-[var(--vex-onboarding-accent)]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
         )}
       >
         Your data stays yours
@@ -169,8 +170,8 @@ export function WizardStepPanel({
       <span aria-hidden className={ICON_TILE_CHROME}>
         <HugeiconsIcon icon={icon} size={22} aria-hidden />
       </span>
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+      <div className="flex flex-col gap-1.5">
+        <h1 className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-[var(--color-text-primary)]">
           {title}
         </h1>
         <p className="text-xs text-[var(--color-text-secondary)]">

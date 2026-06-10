@@ -3,12 +3,12 @@
  * redesign — onboarding glass; V2 redesign — sidebar removed, full-
  * bleed background, horizontal stepper above the glass panel).
  *
- * Layout:
- *   - `onboarding2.png` covers the whole viewport (no sidebar split).
- *   - A right-side gradient overlay deepens the dark area for content
- *     legibility, matching the four sibling onboarding screens.
- *   - Top-left chip: brand mark + "VEX" wordmark + "SETUP" tag.
- *     Top-right chip: app version. Both float over the background.
+ * Layout (Countersign/NOTARY rebrand — photo background and glass
+ * removed; the wizard is a working page of the same signed document):
+ *   - Near-black `--vex-onboarding-bg` canvas, no backdrop image.
+ *   - Top-left chip: hallmark + "VEX" wordmark + "SETUP" tag. Bottom
+ *     corners carry the shared chrome (brand tetrad + app version),
+ *     matching every other onboarding page.
  *   - Centered column hosts `HorizontalStepper` above `WizardStepPanel`.
  *     Each step's unique DotMatrix loader lives inside the active
  *     stepper node (`stepper/stepper-loader-variants.ts`).
@@ -89,33 +89,15 @@ function renderStep(
 
 const SHELL_CHROME = cn(
   "relative flex h-screen w-screen overflow-hidden",
-  "bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]",
+  "bg-[var(--vex-onboarding-bg)] text-[var(--color-text-primary)]",
 );
 
 const ERROR_PANEL_CHROME = cn(
-  "w-full max-w-md overflow-hidden rounded-3xl",
-  "border border-white/[0.12] bg-white/[0.05] backdrop-blur-2xl",
-  "shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.45)]",
+  "w-full max-w-md overflow-hidden rounded-xl",
+  "border border-white/[0.08] bg-white/[0.02]",
 );
 
-function ShellBackdrop(): JSX.Element {
-  return (
-    <>
-      <img
-        src="/onboarding2.png"
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[rgba(5,8,22,0.6)]"
-      />
-    </>
-  );
-}
-
+/** Hallmark chip top-left + the shared corner chrome (tetrad, version). */
 function TopChrome(): JSX.Element {
   return (
     <>
@@ -125,7 +107,7 @@ function TopChrome(): JSX.Element {
           alt=""
           aria-hidden
           draggable={false}
-          className="h-9 w-9 object-contain drop-shadow-[0_2px_8px_rgba(50,117,248,0.35)]"
+          className="h-9 w-9 object-contain opacity-90"
         />
         <div className="flex flex-col leading-tight">
           <span className="font-mono text-sm font-semibold tracking-[0.3em] text-[var(--color-text-primary)]">
@@ -136,7 +118,12 @@ function TopChrome(): JSX.Element {
           </span>
         </div>
       </div>
-      <span className="pointer-events-none absolute right-6 top-6 z-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
+      <div className="pointer-events-none absolute bottom-7 left-10 z-10">
+        <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-60">
+          Clarity · Focus · Understand · Evolve
+        </span>
+      </div>
+      <span className="pointer-events-none absolute bottom-7 right-10 z-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)] opacity-60">
         v{__VEX_APP_VERSION__}
       </span>
     </>
@@ -226,7 +213,6 @@ export function WizardShell(): JSX.Element {
         data-vex-screen="wizard"
         className={cn(SHELL_CHROME, "items-center justify-center p-8")}
       >
-        <ShellBackdrop />
         <TopChrome />
         <div
           className={cn(ERROR_PANEL_CHROME, "relative z-10 flex flex-col gap-4 p-6")}
@@ -265,7 +251,6 @@ export function WizardShell(): JSX.Element {
         data-vex-screen="wizard"
         className={cn(SHELL_CHROME, "items-center justify-center p-8")}
       >
-        <ShellBackdrop />
         <TopChrome />
         <div
           role="status"
@@ -290,7 +275,6 @@ export function WizardShell(): JSX.Element {
       data-vex-screen="wizard"
       className={cn(SHELL_CHROME, "flex-col items-center px-6 pt-24 pb-8")}
     >
-      <ShellBackdrop />
       <TopChrome />
 
       {/*
@@ -300,7 +284,7 @@ export function WizardShell(): JSX.Element {
         pb-8) let the glass panel shrink and scroll on the 1024×720
         minimum BrowserWindow size (codex final review V2 P1).
       */}
-      <div className="relative z-10 m-auto flex min-h-0 w-full max-w-[760px] flex-col items-center gap-6 translate-x-12 lg:translate-x-16">
+      <div className="relative z-10 m-auto flex min-h-0 w-full max-w-[760px] flex-col items-center gap-6">
         <HorizontalStepper
           currentStepId={currentStepId}
           completedSteps={persisted?.completedSteps ?? []}

@@ -128,6 +128,12 @@
    * rebranded screens (intro, systemCheck) so the cut between them is
    * invisible; photo-based screens still set their own background. */
   --vex-onboarding-bg: #04060f;
+  /* Project the onboarding accent through the shadcn aliases so stock
+   * Button/Input/focus-ring inside wizard forms and the unlock screen
+   * speak the same electric blue as the keys — scoped here, the app
+   * shell keeps its global indigo. */
+  --color-primary: var(--vex-onboarding-accent);
+  --color-ring: var(--vex-onboarding-accent);
 }
 
 [data-vex-screen="intro"] {
