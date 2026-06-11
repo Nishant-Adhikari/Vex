@@ -20,9 +20,17 @@
  * and classify transient 429/5xx for auto-retry. The status lives on a plain
  * own-property (NOT `.cause`) precisely so no serializer can walk it back into
  * the raw body/headers/PII the SDK error held.
+ *
+ * Error-diagnostics phase (D-RUNTIME): the errno-shaped cause code extracted
+ * from the ORIGINAL caught error's `.cause` chain rides along the same way —
+ * a lean `causeCode` own-property (a closed-dictionary string, never message
+ * text). The normalized error still NEVER gets a `.cause`: linking the raw
+ * SDK error (or any object) back onto it would re-open the exact re-leak
+ * path this normalizer exists to close.
  */
 
 import { OpenRouterError } from "../../../lib/openrouter-client.js";
+import { extractCauseCode } from "../../../lib/error-cause.js";
 import { redact } from "../../../lib/diagnostics/text-redaction.js";
 
 /** Max characters of a scrubbed provider message kept in the normalized error. */
@@ -117,10 +125,31 @@ export function attachStatus(target: Error, status: number | null | undefined): 
 }
 
 /**
+ * Attach an errno-shaped cause code (output of `extractCauseCode`) as a LEAN,
+ * NON-ENUMERABLE own-property (`causeCode`) — same idiom as `attachStatus`.
+ * A plain string only — explicitly NOT `.cause` (a serializer following
+ * `.cause` could re-leak the raw SDK error's body/headers/PII), and never a
+ * reference to any original error object. No-op for `null`. Returns the same
+ * Error for chaining.
+ */
+export function attachCauseCode(target: Error, causeCode: string | null): Error {
+  if (causeCode === null) return target;
+  Object.defineProperty(target, "causeCode", {
+    value: causeCode,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
  * Normalize an unknown thrown value into a lean, redacted Error that preserves
  * the HTTP status as own-properties (`statusCode`/`status`) for the mission
- * auto-retry classifier. Never serializes the raw error, its body, headers,
- * metadata, `openrouterMetadata`, or `userId`.
+ * auto-retry classifier, plus the errno-shaped `causeCode` own-property
+ * (extracted from the ORIGINAL caught error including its `.cause` chain) for
+ * environment diagnostics. Never serializes the raw error, its body, headers,
+ * metadata, `openrouterMetadata`, or `userId` — and never attaches `.cause`.
  */
 export function normalizeOpenRouterError(err: unknown, operation: string): Error {
   const fallbackMessage = err instanceof Error ? err.message : String(err);
@@ -147,7 +176,8 @@ export function normalizeOpenRouterError(err: unknown, operation: string): Error
 
   const normalized = new Error(`OpenRouter ${operation} failed: ${details.join(" | ")}`);
 
-  // Attach the status as lean own-properties so the mission classifier reads it
-  // directly (status-based, not message-regex).
-  return attachStatus(normalized, status);
+  // Attach the status + errno cause code as lean own-properties so the mission
+  // classifier (status) and diagnostics call-sites (causeCode) read them
+  // directly (own-property based, not message-regex) — never via `.cause`.
+  return attachCauseCode(attachStatus(normalized, status), extractCauseCode(err));
 }

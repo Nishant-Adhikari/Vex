@@ -2,6 +2,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mocks ───────────────────────────────────────────────────────
 
+// Mocked so the cause-code diagnostics tests below can assert log meta.
+const loggerMock = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+  child: vi.fn(),
+}));
+vi.mock("@utils/logger.js", () => ({
+  default: loggerMock,
+  logger: loggerMock,
+  createChildLogger: () => loggerMock,
+}));
+
 const mockClaimAllPending = vi.fn().mockResolvedValue([]);
 const mockClaimPendingRun = vi.fn().mockResolvedValue(null);
 const mockGetJob = vi.fn().mockResolvedValue(null);
@@ -112,6 +126,28 @@ describe("sync worker", () => {
 
       expect(result.errors).toBe(1);
       expect(mockFailRun).toHaveBeenCalledTimes(1);
+      // No errno in the chain → message persisted unchanged.
+      expect(mockFailRun).toHaveBeenCalledWith(1, "Khalani down");
+    });
+
+    // ── cause-code diagnostics (error-diagnostics phase) ─────────
+    it("suffixes the persisted failure with the errno cause code and logs causeCode meta", async () => {
+      mockClaimAllPending.mockResolvedValueOnce([
+        { id: 1, syncJobId: 10, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+      ]);
+      mockGetJob.mockResolvedValue({ id: 10, syncType: "balances", namespace: "solana", strategy: "post_mutation" });
+      const inner = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+      mockSelectiveSync.mockRejectedValueOnce(new Error("Khalani down", { cause: inner }));
+
+      const result = await drainPendingRuns();
+
+      expect(result.errors).toBe(1);
+      expect(mockFailRun).toHaveBeenCalledWith(1, "Khalani down (ECONNRESET)");
+      const call = loggerMock.error.mock.calls.find((c) => c[0] === "sync.worker.failed");
+      expect(call).toBeDefined();
+      const meta = call![1] as Record<string, unknown>;
+      expect(meta.causeCode).toBe("ECONNRESET");
+      expect(meta.error).toBe("Khalani down");
     });
 
     // ── B-005: stale `running` recovery ─────────────────────────
@@ -191,6 +227,19 @@ describe("sync worker", () => {
       await processNextRun();
 
       expect(mockSelectiveSync).toHaveBeenCalledWith("eip155");
+    });
+
+    it("suffixes the persisted failure with the errno cause code", async () => {
+      mockClaimPendingRun.mockResolvedValueOnce({
+        id: 7, syncJobId: 10, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0,
+      });
+      mockGetJob.mockResolvedValueOnce({ id: 10, syncType: "balances", namespace: "khalani", strategy: "post_mutation" });
+      const inner = Object.assign(new Error("getaddrinfo"), { code: "ENOTFOUND" });
+      mockSelectiveSync.mockRejectedValueOnce(new Error("rpc unreachable", { cause: inner }));
+
+      await processNextRun();
+
+      expect(mockFailRun).toHaveBeenCalledWith(7, "rpc unreachable (ENOTFOUND)");
     });
   });
 });

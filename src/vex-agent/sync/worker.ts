@@ -10,6 +10,7 @@ import * as executionsRepo from "@vex-agent/db/repos/executions.js";
 import { selectiveBalanceSync } from "./balance-sync.js";
 import { resolveChainHint } from "./chains.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
+import { extractCauseCode } from "../../lib/error-cause.js";
 import logger from "@utils/logger.js";
 
 export interface DrainResult {
@@ -118,10 +119,19 @@ export async function drainPendingRuns(): Promise<DrainResult> {
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.error("sync.worker.failed", { syncType, runCount: runs.length, error: msg });
+      // Errno-shaped cause code (error-diagnostics phase) — the actionable
+      // environment fact (TLS/DNS/connect) is often buried in `.cause`.
+      const causeCode = extractCauseCode(err);
+      logger.error("sync.worker.failed", {
+        syncType,
+        runCount: runs.length,
+        error: msg,
+        ...(causeCode !== null ? { causeCode } : {}),
+      });
 
+      const persistedMsg = causeCode !== null ? `${msg} (${causeCode})` : msg;
       for (const run of runs) {
-        await syncRepo.failRun(run.id, msg);
+        await syncRepo.failRun(run.id, persistedMsg);
       }
       errors += runs.length;
     }
@@ -137,8 +147,10 @@ export async function drainPendingRuns(): Promise<DrainResult> {
       const { refreshPredictionMtm } = await import("./mtm.js");
       await refreshPredictionMtm();
     } catch (err) {
+      const causeCode = extractCauseCode(err);
       logger.warn("sync.worker.mtm_failed", {
         error: err instanceof Error ? err.message : String(err),
+        ...(causeCode !== null ? { causeCode } : {}),
       });
     }
   }
@@ -173,7 +185,11 @@ export async function processNextRun(): Promise<boolean> {
       await syncRepo.completeRun(run.id, { skipped: true, reason: `Unknown: ${job.syncType}` }, 0);
     }
   } catch (err) {
-    await syncRepo.failRun(run.id, err instanceof Error ? err.message : String(err));
+    const msg = err instanceof Error ? err.message : String(err);
+    // Suffix the errno-shaped cause code so the persisted failure reason
+    // carries the environment fact (no schema change; no new log event).
+    const causeCode = extractCauseCode(err);
+    await syncRepo.failRun(run.id, causeCode !== null ? `${msg} (${causeCode})` : msg);
   }
 
   return true;

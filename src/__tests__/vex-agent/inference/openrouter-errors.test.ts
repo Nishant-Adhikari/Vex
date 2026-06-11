@@ -15,6 +15,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeOpenRouterError,
   attachStatus,
+  attachCauseCode,
 } from "../../../vex-agent/inference/openrouter/errors.js";
 import { OpenRouterError } from "../../../lib/openrouter-client.js";
 
@@ -186,5 +187,62 @@ describe("attachStatus", () => {
       attachStatus(e, bad as number | null | undefined);
       expect(field(e, "statusCode")).toBeUndefined();
     }
+  });
+});
+
+// ── causeCode own-property (error-diagnostics D-RUNTIME / §3.3) ─────────────
+
+describe("normalizeOpenRouterError — causeCode own-property (anti-releak invariant)", () => {
+  it("attaches causeCode from a nested cause chain; never attaches .cause", () => {
+    const inner = new Error(
+      "self signed certificate in certificate chain RAW_CAUSE_LEAK",
+    );
+    Object.assign(inner, { code: "SELF_SIGNED_CERT_IN_CHAIN" });
+    const sdkErr = new Error("fetch failed");
+    Object.assign(sdkErr, { cause: new Error("transport", { cause: inner }) });
+
+    const normalized = normalizeOpenRouterError(sdkErr, "chat completion");
+
+    expect(field(normalized, "causeCode")).toBe("SELF_SIGNED_CERT_IN_CHAIN");
+    // The anti-releak invariant: the normalized error carries NO `.cause`
+    // a serializer could walk back into the raw SDK error.
+    expect("cause" in normalized).toBe(false);
+    expect(normalized.cause).toBeUndefined();
+    // Lean own-property: non-enumerable, so JSON.stringify/Object.keys skip it.
+    expect(Object.keys(normalized)).not.toContain("causeCode");
+    // The cause's message text never reaches the normalized message.
+    expect(normalized.message).not.toContain("RAW_CAUSE_LEAK");
+  });
+
+  it("does not attach causeCode when no errno exists in the chain", () => {
+    const normalized = normalizeOpenRouterError(
+      new Error("plain failure"),
+      "chat completion",
+    );
+    expect(field(normalized, "causeCode")).toBeUndefined();
+  });
+
+  it("ignores numeric cause codes (provider dictionary, not errno)", () => {
+    const sdkErr = new Error("fetch failed");
+    Object.assign(sdkErr, { cause: { code: 502 } });
+    const normalized = normalizeOpenRouterError(sdkErr, "chat completion");
+    expect(field(normalized, "causeCode")).toBeUndefined();
+  });
+});
+
+describe("attachCauseCode", () => {
+  it("attaches a non-enumerable causeCode string and returns the same error", () => {
+    const e = new Error("x");
+    const out = attachCauseCode(e, "ENOTFOUND");
+    expect(out).toBe(e);
+    expect(field(e, "causeCode")).toBe("ENOTFOUND");
+    expect(Object.keys(e)).not.toContain("causeCode");
+    expect("cause" in e).toBe(false);
+  });
+
+  it("is a no-op for null", () => {
+    const e = new Error("x");
+    attachCauseCode(e, null);
+    expect(field(e, "causeCode")).toBeUndefined();
   });
 });

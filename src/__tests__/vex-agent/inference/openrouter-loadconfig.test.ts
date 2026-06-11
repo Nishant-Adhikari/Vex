@@ -25,6 +25,21 @@ vi.mock("@openrouter/sdk", () => ({
   },
 }));
 
+// Mocked so the api_unreachable diagnostics suite below can assert the log
+// meta (causeCode + dynamic hint). Existing caching tests never inspect logs.
+const loggerMock = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+  child: vi.fn(),
+}));
+vi.mock("@utils/logger.js", () => ({
+  default: loggerMock,
+  logger: loggerMock,
+  createChildLogger: () => loggerMock,
+}));
+
 const { OpenRouterProvider } = await import("../../../vex-agent/inference/openrouter.js");
 const { MODEL_CONFIG_CACHE_TTL_MS, MODEL_CONFIG_STALE_RETRY_MS } = await import(
   "../../../vex-agent/inference/config.js"
@@ -203,5 +218,64 @@ describe("OpenRouterProvider.loadConfig caching (F4)", () => {
     expect(listMock).toHaveBeenCalledTimes(1);
     expect(second?.inputPricePerM).toBeCloseTo(1, 9);
     expect(second?.model).toBe(MODEL_ID);
+  });
+
+  // ── api_unreachable diagnostics (error-diagnostics D-RUNTIME) ────────────
+
+  describe("api_unreachable causeCode + dynamic hint", () => {
+    function apiUnreachableMeta(): Record<string, unknown> {
+      const call = loggerMock.error.mock.calls.find(
+        (c) => c[0] === "inference.openrouter.api_unreachable",
+      );
+      expect(call).toBeDefined();
+      return call![1] as Record<string, unknown>;
+    }
+
+    beforeEach(() => {
+      loggerMock.error.mockClear();
+    });
+
+    it("TLS errno in the cause chain → causeCode logged + antivirus/proxy hint", async () => {
+      const inner = Object.assign(new Error("unable to verify"), {
+        code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      });
+      listMock.mockRejectedValue(new Error("fetch failed", { cause: inner }));
+      const provider = new OpenRouterProvider();
+
+      expect(await provider.loadConfig()).toBeNull();
+
+      const meta = apiUnreachableMeta();
+      expect(meta.causeCode).toBe("UNABLE_TO_VERIFY_LEAF_SIGNATURE");
+      expect(String(meta.hint)).toContain(
+        "antivirus or proxy HTTPS inspection",
+      );
+    });
+
+    it("DNS errno → DNS hint", async () => {
+      const inner = Object.assign(new Error("getaddrinfo"), {
+        code: "ENOTFOUND",
+      });
+      listMock.mockRejectedValue(new Error("fetch failed", { cause: inner }));
+      const provider = new OpenRouterProvider();
+
+      await provider.loadConfig();
+
+      const meta = apiUnreachableMeta();
+      expect(meta.causeCode).toBe("ENOTFOUND");
+      expect(String(meta.hint)).toContain("DNS lookup failed");
+    });
+
+    it("no errno → today's default hint, no causeCode meta key", async () => {
+      listMock.mockRejectedValue(new Error("network down"));
+      const provider = new OpenRouterProvider();
+
+      await provider.loadConfig();
+
+      const meta = apiUnreachableMeta();
+      expect(meta.hint).toBe(
+        "Check OPENROUTER_API_KEY and network connectivity",
+      );
+      expect("causeCode" in meta).toBe(false);
+    });
   });
 });

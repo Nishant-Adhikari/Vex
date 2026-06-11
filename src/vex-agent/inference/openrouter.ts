@@ -45,6 +45,7 @@ import {
 } from "./config.js";
 
 import logger from "@utils/logger.js";
+import { extractCauseCode } from "../../lib/error-cause.js";
 import { normalizeOpenRouterError } from "./openrouter/errors.js";
 import { extractUsage, parseNonStreamingResponse } from "./openrouter/mappers.js";
 import { buildOpenRouterParams } from "./openrouter/params.js";
@@ -63,6 +64,33 @@ function parsePricePerM(raw: unknown): number | null {
   if (!Number.isFinite(perToken)) return null;
   const perM = perToken * 1_000_000;
   return Number.isFinite(perM) ? perM : null;
+}
+
+// ── api_unreachable hint selection (error-diagnostics D-RUNTIME) ─
+//
+// The generic "Check OPENROUTER_API_KEY" hint is actively misleading when the
+// real failure is TLS interception (antivirus/proxy) or DNS. Pick the hint
+// from the errno-shaped cause code; the code itself is logged alongside.
+const TLS_CAUSE_CODES: ReadonlySet<string> = new Set([
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "CERT_HAS_EXPIRED",
+]);
+const DNS_CAUSE_CODES: ReadonlySet<string> = new Set(["ENOTFOUND", "EAI_AGAIN"]);
+
+function apiUnreachableHint(causeCode: string | null): string {
+  if (causeCode !== null && TLS_CAUSE_CODES.has(causeCode)) {
+    return (
+      "TLS certificate verification failed — antivirus or proxy HTTPS " +
+      "inspection may be intercepting connections"
+    );
+  }
+  if (causeCode !== null && DNS_CAUSE_CODES.has(causeCode)) {
+    return "DNS lookup failed — check your network connection or DNS settings";
+  }
+  return "Check OPENROUTER_API_KEY and network connectivity";
 }
 
 // ── Provider ─────────────────────────────────────────────────────
@@ -215,10 +243,12 @@ export class OpenRouterProvider implements InferenceProvider {
     try {
       models = await this.client.models.list({});
     } catch (err) {
+      const causeCode = extractCauseCode(err);
       logger.error("inference.openrouter.api_unreachable", {
         model: this.model,
         error: err instanceof Error ? err.message : String(err),
-        hint: "Check OPENROUTER_API_KEY and network connectivity",
+        ...(causeCode !== null ? { causeCode } : {}),
+        hint: apiUnreachableHint(causeCode),
       });
       return { kind: "metadata_unavailable" };
     }
