@@ -253,11 +253,8 @@ Strategia: EDIT-IN-PLACE istniejących migracji (sekcja 1) — knowledge_entries
 ### STRUCTURE+CACHE — reorg promptu + prompt-cache + savings UI `[x] DONE` (2026-06-11, w working tree do commitu; sesja harness-memory-structure: plan-gate R1 misframe-odrzucony→R2 GREEN + Phase-6 GREEN 0 defektów; spec: `memory-system/structure-cache-plan.md`)
 > **DONE (pozycje DEFER z S3 + nowy zakres właściciela):** **D-LAYOUT 4-segmentowy request** ([system STATYCZNY PREFIKS | summary | historia | trailing TURN-STATE], markery `cacheHint` ustawiane przez engine, `history_tail` PO repair; Loaded Content z środka base na koniec prefiksu; 2+1 odsyłaczy pozycyjnych przeredagowanych; iteracja misji do turn-state — snapshot per-slice) + **fasada `memory.getTurnContext()`** (branch-nullable: fail≠empty; jedno źródło hasSessionMemory↔sekcja; prefetch z executeTurn USUNIĘTY; resume-packet SQL→repo `listUnresolvedOutstandingItems`) + **jedna sekcja `# Memory`** (4 bloki verbatim, omission per-branch, szerokości kinds 5/30; stare 4 moduły prompts USUNIĘTE) + **kind-catalog** (2 opisy long_memory_*) + **wiring `cacheControl`** (gating: lista `anthropic/`,`qwen/` + `cachePricePerM≠null`; breakpoint A na static, B na history_tail; turn-state/summary nigdy; fallback-merge za flagą `false`; auto-providerzy zero markupu) + **D-SAVINGS netto per-term** (read gated na cachePrice, write na cacheWritePrice; ujemne zapisywane; migracja **032** ADD COLUMN IF NOT EXISTS — NIE edycja 001, bo runner `version>MAX`; lustro auto przez copy-migrations) + **UI oszczędności** (SUM-y w usage-db, DTO bez `.min(0)` na savings, UsageChip `saved ~$X` / `cache overhead $X`, fmtSignedCost). **D-LIVETEST ALL PASS:** Anthropic cached **94%** (8569/9128, 0.1×; OpenRouter HOISTUJE trailing system → trailing≡merged, flaga zostaje false; historia re-write przy churnie turn-state — follow-up: mniejszy churn), OpenAI auto cached **99.3%** (8448/8509) — system+historia IN-PLACE z trailing turn-state. Bramki: krytyka 4×SOUND_WITH_FIXES (16 wcielonych — m.in. P1 livetest-dyskryminacja, fail≠empty, per-term gating, migracja 032); plan-gate R2 GREEN; Phase-6 GREEN. Weryfikacja parenta: tsc ×2, 326+61+59 agent + 55 vex-app, integracja realny pgvector 7/7, grep-gates. Audyt pricingu: mechanizm zdrowy; znaleziska w D-AUDIT. DeepResearch: poprawiona hierarchia (TOOLS→SYSTEM→RAG→historia→query). ZERO zmian semantyki widoczności tooli; OD-1 nietknięte.
 
-### S9 — CUTOVER (usunięcie starego, 1:1, zero dead code) `[ ] TODO`
-- Goal: usunąć/zastąpić CAŁĄ starą powierzchnię wg `audit/memory-cutover-manifest.md`.
-- Deletes/Edits: stare `knowledge_*`/`memory_*` tools, handlery, dispatcher/internal-loaders, tool-map, registry, prompty, IPC/preload/renderer, testy — wg manifestu. Bez aliasów.
-- Tests: registry↔Tool Map consistency; „knowledge_write nie agent-visible"; renderer marker po rename; brak referencji do starych nazw (grep gate).
-- Done-when: `rg` nie znajduje starych nazw poza historią; wszystkie testy zielone; typecheck czysty.
+### S9 — CUTOVER (usunięcie starego, 1:1, zero dead code) `[x] DONE` (2026-06-11; plan-gate Fable 5 adversarial R1 BLOCKED→R2 GREEN; Phase-6 Codex 1×P3→fix→GREEN; spec: `memory-system/s9-plan.md`)
+> **DONE:** Legacy powierzchnia `knowledge_*`/`memory_*` usunięta w całości (~5k LOC): 8 ToolDefs + 7 handlerów + barrel, recall-cache (repo + tabela: 001-edit + migracja **033** DROP IF EXISTS), recall-seed, recall-payload, rerank/recallTopK/listHistory/updateStatus z repo, partycja `knowledge/policy.ts` (TOOL_OUTPUT_* → `engine/core/tool-output-policy.ts`; 12 martwych eksportów out). RENAME: `memory_recall`→`session_memory_search`, `mark_outstanding_resolved`→`session_memory_resolve_item` (handlery + event-namespaces; triple-point lookup+loaders+tool-map atomowo). Prompty v2 (suggest-only, lifecycle=manager; `# Active Knowledge`→`# Active Memory`; persisted-copy→session_memory_search). vex-app: łańcuch knowledge skasowany (w tym renderer-mutacja updateStatus bez zamiennika); NOWY read-only `vex:longMemory:list` + `MemoryPanel`/`MemoryButton`/`LongMemorySection`; marker 3-lockstep → {session_memory_search, long_memory_*} (historyczne wiersze degradują do tool_call — zaakceptowane). Gate 35 trybów (word-boundary/prefix/string-literal + allowlist doktryny OD-1) = ZERO; negative-assertions ze stringów-z-części. Weryfikacja parenta: tsc×2, 250+45 testów niezależnie, integracja realny pgvector 3/3 (033 fresh+old-path idempotentnie, repo smoke). Lekcja: martwy import params.ts przeżył 3 bramki (sprawdzano istnienie importu, nie użycie) — złapał Phase-6.
 
 ### S10 — Inspector + export/import `[ ] TODO`
 - Goal: sanitized wgląd; provenance round-trip.
@@ -292,3 +289,150 @@ pnpm --dir vex-app run lint        # = tsc --noEmit -p tsconfig.json && check:bo
 # cutover grep gate (S9): pełna lista wzorców w audit/memory-cutover-manifest.md
 rg -n "knowledge_write|knowledge_recall|memory_recall|knowledge_supersede|KNOWLEDGE_TOOLS|MEMORY_TOOLS" src vex-app   # ma być pusto
 ```
+
+---
+
+## 10. DOPIECIA DO OBECNEGO SCHEMATU SYSTEMU MEMORY (decyzje 2026-06-11)
+
+Status: DO DODANIA do aktualnego schematu memory v2. Repo jest w development/pre-release, wiec zmiany schematu robimy przez edycje biezacych migracji, jesli da sie utrzymac czysty finalny DDL. Nie dokladamy nowych migracji tylko po to, zeby zasymulowac produkcyjny rollout.
+
+### 10.1. Migration posture: edit-in-place
+
+- Dla zmian tabel memory/long-memory edytujemy istniejace migracje, przede wszystkim `src/vex-agent/db/migrations/001_initial.sql` i odpowiadajace lustro w `vex-app/resources/migrations/`.
+- Nie tworzymy nowej migracji dla tych zmian, dopoki repo jest pre-release i dev DB reset jest akceptowalny.
+- Po edycji migracji utrzymujemy finalny schemat jako docelowy, bez historycznych adapterow i bez tymczasowych kolumn.
+
+### 10.2. Nazewnictwo long-memory
+
+Obecna fizyczna nazwa `knowledge_entries` jest legacy mismatch wzgledem agent-facing API `long_memory_*`.
+
+Decyzja kierunkowa:
+
+- Preferowana nazwa docelowa: `long_memory_entries`.
+- Nie uzywac `memory_entries`, bo jest zbyt ogolne i koliduje mentalnie z `session_memories`, `memory_candidates`, `memory_jobs`, `memory_decisions`, `memory_entities`, `memory_edges`.
+- Rename tabeli/repo/typow traktowac jako osobny slice, bo blast radius jest duzy: migracje, repozytoria, lifecycle, export/import, renderer/IPC panel read-only, testy i dokumentacja.
+
+Akceptowalny etap posredni:
+
+- Fizyczna tabela moze tymczasowo zostac `knowledge_entries`, ale publiczne nazwy, komentarze i dokumentacja powinny mowic `long-memory` / `long_memory_entries` tam, gdzie opisujemy finalny model.
+
+### 10.3. `embedding_text` - NIE dodajemy teraz
+
+Po analizie EmbeddingGemma/SentenceTransformers najwazniejsze jest poprawne promptowanie query/document, a obecny klient juz robi wlasciwy ksztalt dla EmbeddingGemma:
+
+- query: `task: search result | query: <query>`
+- document: `title: <title> | text: <summary>`
+
+Decyzja:
+
+- Na tym etapie NIE dodajemy parametru `embedding_text` do `long_memory_suggest`.
+- `summary` pozostaje tekstem semantycznym do retrieval i musi byc pisany jak przyszle zdanie wyszukiwalne.
+- `title + summary` wystarcza jako embedding input, pod warunkiem ze summary jest po angielsku, stabilne semantycznie i nie zawiera live-state.
+- Do `embedding_text` wracamy dopiero, jesli realne testy recall pokaza slaby retrieval albo bedziemy chcieli rozdzielic human summary od retrieval representation.
+
+Wymagana korekta tool description:
+
+- W `long_memory_suggest.summary` doprecyzowac, ze summary jest rowniez retrieval-quality semantic text.
+- Instrukcja: pisz po angielsku, uzywaj stabilnych nazw protokolow/synonimow, nie dodawaj live sald/cen/kwot ani chwilowych quote'ow.
+
+### 10.4. English-by-contract dla persisted/embedded memory text
+
+Poniewaz lokalny model EmbeddingGemma ma najlepszy retrieval przy angielskim tekscie, system memory ma miec kontrakt:
+
+> Wszystkie teksty, ktore beda persistowane jako memory albo embedowane, musza byc po angielsku. Jesli user rozmawia w innym jezyku, agent/model tlumaczy trwala lekcje na angielski przed zapisem.
+
+Zakres:
+
+- `long_memory_suggest.title`
+- `long_memory_suggest.summary`
+- `long_memory_suggest.content_md`
+- `compact_now.conversation_summary`
+- `compact_now.preserve_md`
+- `compact_now.thread_themes_hints`
+- Track 2 chunker output: `theme`, `happened_md`, `did_md`, `tried_md`, `outstanding_items`, `entities`, `protocols`, `error_classes`, `chains`, `tasks`
+- Judge-generated replacement/merge text, jesli dodamy merge/supersede payload w pozniejszym etapie
+
+Walidacja:
+
+- Na boundary `long_memory_suggest` dodac prosty language check dla pol tekstowych, ktore trafiaja do DB/embeddingu.
+- Jesli tekst nie wyglada na angielski, zwracac steering error do agenta: przepisz trwala lekcje po angielsku.
+- Nie walidowac agresywnie tickerow/protocol ids jako pelnych zdan; `entities`/`tags` moga zawierac symbole, ale nie powinny zawierac opisowego nie-angielskiego tekstu.
+- Track 2 ma juz instrukcje English-by-contract; docelowo dodac walidacje outputu i retry/fail job zamiast cichego zapisu nie-angielskiego chunku.
+
+### 10.5. EmbeddingGemma config cleanup
+
+Obecny faktyczny default runtime:
+
+- model alias: `ai/embeddinggemma:300M-Q8_0`
+- GGUF file: `embeddinggemma-300M-Q8_0.gguf`
+- runtime: `llama.cpp:server` w Compose
+- endpoint: `http://127.0.0.1:27134/v1/embeddings`
+- dim: `768`
+- provider: `local`
+
+Do poprawienia:
+
+- `src/vex-agent/embeddings/config.ts` ma stale komentarze/error examples o Docker Model Runner i `localhost:12434/engines/llama.cpp/v1`.
+- Zaktualizowac je do aktualnego Compose runtime: `127.0.0.1:27134/v1` i standalone `llama.cpp:server`.
+- Utrzymac rozroznienie `providerModel` z odpowiedzi jako audit truth dla `embedding_model`.
+
+### 10.6. Judge context v2 zamiast judge tooli
+
+Nie dajemy judge LLM pelnego Tool Map ani raw tooli. Judge pozostaje strict-JSON klasyfikatorem bez mozliwosci samodzielnych akcji.
+
+Powod:
+
+- judge jest czescia granicy bezpieczenstwa;
+- pelne toole zrobilyby z niego drugiego agenta z wieksza powierzchnia memory poisoning;
+- DB writes, merge, supersede i promote musza zostac w workerze jako walidowane, audytowane transakcje.
+
+Zamiast tooli worker ma zbudowac bogatszy, bounded context pack dla judge:
+
+- `knownKinds` z long-memory, z countami i limitem;
+- candidate metadata: `kind`, `title`, `summary`, `content_md`, `recorded_at`, `event_time`, `observed_at`, `available_at_decision_time` jesli dostepne;
+- top similar long-memory entries z excerptami: `id`, `kind`, `title`, `summary`, krotki `content_md` excerpt, `sourceTier`, `maturityState`, `activationStrength`, `similarity`, lineage/head status;
+- similar pending/retained candidates jako soft context;
+- source transcript window jak dzis, nadal redacted i bounded;
+- deterministic signals jak dzis: evidence ceiling, recurrence, conflict flag, anchor existence, user affirmation, generalization flag.
+
+Judge nadal zwraca strict JSON. Worker nadal:
+
+- waliduje Zod;
+- clampuje `sourceTier`;
+- redaguje i skanuje live-state przed promote/supersede;
+- wykonuje DB writes atomowo;
+- zapisuje `memory_decisions`.
+
+### 10.7. Merge/supersede jako przyszly structured plan
+
+Obecnie judge prompt zabrania `merge`. To jest bezpieczne, ale ogranicza jakosc konsolidacji.
+
+Kierunek pozniejszy:
+
+- Dodac nowy verdict/plan tylko po wdrozeniu Judge Context v2.
+- Judge moze proponowac structured merge/supersede payload, ale nie edytuje DB sam.
+- Worker waliduje, redaguje, sprawdza live-state, tworzy successor entry, superseduje stare wpisy i zapisuje audyt.
+
+Przykladowy kierunek kontraktu:
+
+```json
+{
+  "verdict": "merge",
+  "mergeTargetIds": [123, 456],
+  "merged": {
+    "kind": "strategy_lesson",
+    "title": "...",
+    "summary": "...",
+    "content_md": "..."
+  }
+}
+```
+
+### 10.8. Kolejnosc prac
+
+1. Poprawic stale komentarze/default examples EmbeddingGemma config.
+2. Wzmocnic English-by-contract w opisach tooli i promptach.
+3. Dodac boundary language check dla `long_memory_suggest` persisted text.
+4. Dodac Judge Context v2: known kinds + similar memories excerpts + temporal metadata.
+5. Dopiero potem rozwazyc rename `knowledge_entries` -> `long_memory_entries` jako osobny duzy slice.
+6. Dopiero po Context v2 rozwazyc merge/supersede structured payload.
