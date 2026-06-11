@@ -1,6 +1,6 @@
 /**
  * Drift test — guards that what tool descriptions and policy decisions claim
- * about Active Knowledge and the Memory Layers actually appears in the final
+ * about Active Memory and the Memory Layers actually appears in the final
  * provider messages sent to the inference provider.
  *
  * STRUCTURE+CACHE rewrite: the Active-Knowledge prefetch moved from
@@ -136,24 +136,24 @@ function getStaticPrompt(provider: ReturnType<typeof makeProvider>): string {
   return providerMessages[0].content as string;
 }
 
-describe("turn — Active Knowledge drift guard (façade + memory-section seam)", () => {
+describe("turn — Active Memory drift guard (façade + memory-section seam)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListActive.mockResolvedValue([]);
     mockListKinds.mockResolvedValue([]);
   });
 
-  // ── Active Knowledge block injection ─────────────────────────
+  // ── Active Memory block injection ────────────────────────────
 
-  it("turn state does NOT include '# Active Knowledge' when both repo lists are empty", async () => {
+  it("turn state does NOT include '# Active Memory' when both repo lists are empty", async () => {
     const provider = makeProvider();
     const turnState = await runTurnAndGetTurnState(provider);
-    expect(turnState).not.toContain("# Active Knowledge");
+    expect(turnState).not.toContain("# Active Memory");
     // …and the section still anchors the routing rule.
     expect(turnState).toContain("# Memory Routing");
   });
 
-  it("turn state includes '# Active Knowledge' when repo returns hot-context entries", async () => {
+  it("turn state includes '# Active Memory' when repo returns hot-context entries", async () => {
     mockListActive.mockResolvedValue([
       {
         id: 42,
@@ -167,7 +167,7 @@ describe("turn — Active Knowledge drift guard (façade + memory-section seam)"
     ]);
     const provider = makeProvider();
     const turnState = await runTurnAndGetTurnState(provider);
-    expect(turnState).toContain("# Active Knowledge");
+    expect(turnState).toContain("# Active Memory");
     expect(turnState).toContain("pumpfun_entry_pattern");
     expect(turnState).toContain("low-holder pump entry");
   });
@@ -203,15 +203,15 @@ describe("turn — Active Knowledge drift guard (façade + memory-section seam)"
     expect(memSection).toMatch(/ENGLISH-ONLY|English-only|english/i);
   });
 
-  it("reuse-existing-kinds rule survived the reorg (decision #7 — on knowledge_write ToolDef.description)", async () => {
+  it("reuse-existing-kinds rule survived the cutover (decision #7 — on long_memory_suggest's kind param)", async () => {
     const provider = makeProvider();
     await runTurnAndGetTurnState(provider);
     const { getToolDef } = await import(
       "../../../../vex-agent/tools/registry.js"
     );
-    const knowledgeWriteDef = getToolDef("knowledge_write");
-    expect(knowledgeWriteDef?.description.toLowerCase()).toContain("reuse");
-    expect(knowledgeWriteDef?.description).toMatch(/Known kinds|known kinds/i);
+    const suggestDef = getToolDef("long_memory_suggest");
+    const kindDescription = suggestDef?.parameters.properties?.kind?.description ?? "";
+    expect(kindDescription.toLowerCase()).toContain("reuse an existing kind");
   });
 
   // ── Fetch limits (pinned through the façade) ─────────────────
@@ -232,8 +232,8 @@ describe("turn — Active Knowledge drift guard (façade + memory-section seam)"
     // Turn proceeded; the failed branch's lines are OMITTED (no fake
     // empty-state guidance), routing remains.
     expect(provider.chatCompletion).toHaveBeenCalled();
-    expect(turnState).not.toContain("[Knowledge:");
-    expect(turnState).not.toContain("Skip knowledge_recall");
+    expect(turnState).not.toContain("[Long-term memory:");
+    expect(turnState).not.toContain("Skip long_memory_search");
     expect(turnState).toContain("# Memory Routing");
   });
 });

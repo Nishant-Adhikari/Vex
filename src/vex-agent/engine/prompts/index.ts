@@ -84,7 +84,7 @@ export interface PromptStackOptions {
   /**
    * Pre-rendered `# Memory` section from `buildMemorySection` — the single
    * consolidated memory layer (session-memory state + long-memory state +
-   * Active Knowledge + Memory Routing). Built once per turn in
+   * Active Memory + Memory Routing). Built once per turn in
    * `buildTurnPromptStack` from `memory.getTurnContext` — the SAME read that
    * drives the `hasSessionMemory` tool-visibility signal.
    * Empty/undefined omits the section.
@@ -153,7 +153,7 @@ export function buildPromptStack(
   }
 
   // Loaded Content sits at the END of the static prefix so a new
-  // `knowledge_get`-style load busts the cache only from this point.
+  // `long_memory_get`-style load busts the cache only from this point.
   const loadedContent = buildLoadedContentLayer(context);
   if (loadedContent.length > 0) {
     staticLayers.push(loadedContent);
@@ -213,8 +213,8 @@ export function buildPromptStack(
 }
 
 /**
- * Content injected into the prompt by tools this turn (e.g. knowledge_get
- * under a "knowledge:{id}" key). Neutral header — not documents-only.
+ * Content injected into the prompt by tools this turn (e.g. long_memory_get
+ * under a "long_memory:{id}" key). Neutral header — not documents-only.
  * Rendered as the FINAL static-prefix layer (moved out of base.ts).
  */
 function buildLoadedContentLayer(context: EngineContext): string {

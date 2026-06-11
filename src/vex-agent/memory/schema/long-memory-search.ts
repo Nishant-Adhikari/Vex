@@ -16,7 +16,7 @@
  * snake_case, NOT an enum — matching `knowledge_entries.kind`.
  *
  * `k` is clamped to [1, LONG_MEMORY_MAX_K] here so the repo always receives a
- * bounded value (mirrors `clampRecallK` for `knowledge_recall`).
+ * bounded value — the agent can never push an unbounded k to the repo.
  *
  * Pure module: Zod schema + derived type. No DB, no embeddings, no I/O.
  */

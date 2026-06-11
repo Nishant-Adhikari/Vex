@@ -310,7 +310,7 @@ describe("turn", () => {
     expect(mockLogUsage).toHaveBeenCalled();
   });
 
-  // STRUCTURE+CACHE: executeTurn no longer pre-fetches Active Knowledge or
+  // STRUCTURE+CACHE: executeTurn no longer pre-fetches Active Memory or
   // memory stats — `promptOptions` arrive FULLY BUILT from buildTurnPromptStack
   // (memory façade seam covered by `turn-active-knowledge.test.ts` +
   // `memory/turn-context.test.ts` + `prompts/memory-section.test.ts`).

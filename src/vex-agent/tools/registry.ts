@@ -14,7 +14,7 @@
  * the re-export façade that preserves the public surface consumers depend on.
  *
  * No trade_log — runtime captures automatically.
- * No memory_manage / memory_update — replaced by knowledge_* (canonical agent memory layer).
+ * No legacy memory-management tools — long-term memory is manager-owned; the agent only suggests (`long_memory_suggest`).
  */
 
 export {

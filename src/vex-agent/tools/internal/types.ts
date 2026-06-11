@@ -21,7 +21,7 @@ export type InternalToolResult = ToolResult;
 export interface InternalToolContext {
   /** Session ID — for DB operations */
   sessionId: string;
-  /** Loaded content injected into the system prompt (e.g. knowledge_get → key `knowledge:{id}`). */
+  /** Loaded content injected into the system prompt (e.g. long_memory_get → key `long_memory:{id}`). */
   loadedDocuments: Map<string, string>;
   /**
    * Session permission, hydrated once at engine entry from `sessions.permission`.

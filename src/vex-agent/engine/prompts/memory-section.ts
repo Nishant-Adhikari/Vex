@@ -5,18 +5,17 @@
  *   (1) session-memory state   ← 1:1 buildMemoryStateBanner (memory-state.ts)
  *   (2) long-memory state      ← 1:1 buildKnowledgeStateBanner (knowledge-state.ts)
  *       (top kinds = knownKinds.slice(0, KNOWLEDGE_BANNER_TOP_KINDS_LIMIT))
- *   (3) Active Knowledge       ← 1:1 formatActiveKnowledgeBlock (knowledge.ts)
+ *   (3) Active Memory          ← 1:1 formatActiveKnowledgeBlock (knowledge.ts)
  *       (FULL knownKinds list; caps 12/3000/200/500 via policy constants)
  *   (4) Memory Routing         ← 1:1 buildMemoryRoutingRule (memory-routing.ts)
  *       — static, ALWAYS rendered (the section's order anchor before the
  *       Tool Map).
  *
- * All inner texts are carried VERBATIM from the deleted source modules —
- * including empty-state guidance, which renders ONLY on a successful fetch
- * with true zero counts. Omission semantics per MemoryTurnContext branch:
+ * Empty-state guidance renders ONLY on a successful fetch with true zero
+ * counts. Omission semantics per MemoryTurnContext branch:
  * `sessionStats === null` (fetch FAILED) omits (1); `knowledge === null`
  * omits (2) + (3). Fail ≠ empty — a DB hiccup must never tell the model
- * "Skip knowledge_recall — nothing to find."
+ * "Skip long_memory_search — nothing to find."
  */
 
 import type { MemoryTurnContext } from "@vex-agent/memory/turn-context.js";
@@ -67,7 +66,7 @@ function buildMemoryStateBanner(stats: SessionMemoryStats): string {
   if (stats.activeCount === 0) {
     return [
       `[Session memories: 0 chunks, ${stats.compactCount} compact(s) done.`,
-      `Skip memory_recall — nothing to find.`,
+      `Skip session_memory_search — nothing to find.`,
       `Chunks become available after the first compact at ~88% context, produced asynchronously by Track 2.]`,
     ].join(" ");
   }
@@ -81,7 +80,7 @@ function buildMemoryStateBanner(stats: SessionMemoryStats): string {
       : "";
   return [
     `[Session memories: ${stats.activeCount} chunk(s) across ${stats.compactCount} compact(s).${outstandingLine}${themesLine}`,
-    `Tool: memory_recall(semantic_intent, k≤5).]`,
+    `Tool: session_memory_search(semantic_intent, k≤5).]`,
   ].join(" ");
 }
 
@@ -95,9 +94,9 @@ interface KnowledgeStateInput {
 function buildKnowledgeStateBanner(input: KnowledgeStateInput): string {
   if (input.activeCount === 0) {
     return [
-      `[Knowledge: empty.`,
-      `Curated cross-session memory has no entries yet. Use knowledge_write to save: persona, observed strategies, lessons from failures, observed user preferences.`,
-      `Skip knowledge_recall — nothing to find.]`,
+      `[Long-term memory: empty.`,
+      `Durable cross-session memory has no entries yet. Use long_memory_suggest to propose durable lessons: persona, observed strategies, lessons from failures, observed user preferences.`,
+      `Skip long_memory_search — nothing to find.]`,
     ].join(" ");
   }
   const kindsLine =
@@ -105,12 +104,12 @@ function buildKnowledgeStateBanner(input: KnowledgeStateInput): string {
       ? ""
       : ` Top kinds: ${input.topKinds.map((k) => `${k.kind} (${k.count})`).join(", ")}.`;
   return [
-    `[Knowledge: ${input.activeCount} entries.${kindsLine}`,
-    `Tool: knowledge_recall(semantic_intent, k≤8).]`,
+    `[Long-term memory: ${input.activeCount} entries.${kindsLine}`,
+    `Tool: long_memory_search(semantic_intent, k≤15).]`,
   ].join(" ");
 }
 
-// ── (3) Active Knowledge block — verbatim from knowledge.ts ─────────────
+// ── (3) Active Memory block — verbatim from knowledge.ts ────────────────
 //
 // Empty state handling has 3 cases:
 //   - both empty             → ""             (omitted from the section)
@@ -131,7 +130,7 @@ function formatActiveKnowledgeBlock(
   }
 
   const lines: string[] = [];
-  lines.push("# Active Knowledge");
+  lines.push("# Active Memory");
   lines.push("");
 
   const cappedEntries = entries.slice(0, ACTIVE_KNOWLEDGE_ENTRY_LIMIT);
@@ -173,9 +172,8 @@ function formatActiveKnowledgeBlock(
   }
 
   lines.push(
-    "Use `knowledge_recall <query>` for active semantic recall, `knowledge_get <id>` for full text of one entry, " +
-      "`knowledge_lineage <id>` to trace the version chain (root → head, with headId/headStatus), " +
-      "`knowledge_history` to browse historical entries (defaults to non-active).",
+    "Use `long_memory_search <query>` for active semantic recall, `long_memory_get <id>` for full text of one entry, " +
+      "`long_memory_history <id>` to trace the version chain (root → head, with headId/headStatus).",
   );
 
   return lines.join("\n");
@@ -217,7 +215,7 @@ function humanizeRemaining(validUntilIso: string): string {
 
 // ── (4) Memory Routing — verbatim from memory-routing.ts ────────────────
 //
-// Four-line decision hierarchy telling the model which substrate to consult
+// Three-line decision hierarchy telling the model which substrate to consult
 // for which kind of question. Static content — always rendered, the
 // section's order anchor before the Tool Map.
 
@@ -226,8 +224,7 @@ function buildMemoryRoutingRule(): string {
     "# Memory Routing",
     "",
     "- Current state (balances, prices, gas, positions, quotes) → live tools (`wallet_balances`, `khalani_tokens_balances`, `portfolio`).",
-    "- Something earlier in THIS conversation/mission → `memory_recall` (per-session narrative).",
-    "- Durable cross-session lessons / strategies / observed preferences → `knowledge_recall` (curated, cross-session).",
-    "- Cross-session long-term memory (lessons from earlier sessions, incl. fresh un-consolidated signals) → `long_memory_search`.",
+    "- Something earlier in THIS conversation/mission → `session_memory_search` (per-session narrative).",
+    "- Cross-session long-term memory (durable lessons / strategies / observed preferences from earlier sessions, incl. fresh un-consolidated signals) → `long_memory_search`.",
   ].join("\n");
 }

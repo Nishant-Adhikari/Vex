@@ -105,7 +105,7 @@ export function stubJudge(verdict: JudgeVerdict): ConsolidateDeps["judge"] {
 
 /**
  * Build consolidate deps with the REAL recall/deref against pgvector but a STUB
- * judge (no OpenRouter). The cluster recall + knowledge recall + evidence deref
+ * judge (no OpenRouter). The cluster recall + long-memory recall + evidence deref
  * all hit the DB so the full integration path is exercised.
  *
  * S8: `buildGraphPlan` is stubbed to null (extraction fail-open) so these

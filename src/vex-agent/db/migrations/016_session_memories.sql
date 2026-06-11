@@ -1,6 +1,6 @@
 -- Session memories — per-session narrative chunks produced by Track 2 of the
 -- compact pipeline. Sole per-session memory tier after PR4 sunset; agent
--- retrieves them via the `memory_recall` tool (no auto-injection at prompt
+-- retrieves them via the `session_memory_search` tool (no auto-injection at prompt
 -- build time).
 --
 -- Embedding contract mirrors `knowledge_entries`: vector column has NO typmod,
@@ -12,7 +12,7 @@
 -- IMMUTABLE narrative core only:
 --   sha256(theme + happened_md + did_md + tried_md), length-prefixed.
 -- Outstanding items and the materialized body_md are intentionally EXCLUDED
--- from the hash because they mutate via `mark_outstanding_resolved` — if
+-- from the hash because they mutate via `session_memory_resolve_item` — if
 -- they were hashed, resolving any outstanding item would break the partial
 -- unique invariant. Implication: two chunks with identical narrative core
 -- but different outstanding lists collide on dedup; this is by design (the
@@ -24,7 +24,7 @@
 -- items list (template versioned via `body_md_schema_version`). A future
 -- template change re-renders + re-embeds without losing structured data.
 -- Outstanding items are stored as structured JSONB array (each item
--- independently resolvable via `mark_outstanding_resolved`), NOT as
+-- independently resolvable via `session_memory_resolve_item`), NOT as
 -- free-form markdown in the column, because row-level resolution would
 -- falsely close unrelated open loops.
 
@@ -137,4 +137,4 @@ CREATE INDEX IF NOT EXISTS idx_sm_entities
   ON session_memories USING GIN (entities);
 
 COMMENT ON TABLE session_memories IS
-  'Per-session narrative chunks from compact Track 2. Replaces auto-injected episode recall with agent-driven memory_recall. Body_md is deterministically rendered from 4 narrative columns + outstanding_items JSONB for individual resolution.';
+  'Per-session narrative chunks from compact Track 2. Replaces auto-injected episode recall with agent-driven session_memory_search. Body_md is deterministically rendered from 4 narrative columns + outstanding_items JSONB for individual resolution.';

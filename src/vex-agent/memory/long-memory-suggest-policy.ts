@@ -33,7 +33,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * Source-tier FLOOR for every accepted candidate (D-B). The manager (S4) owns
  * the authoritative tier and re-derives it from the transcript; a `hypothesis`
  * floor can never poison hot context (§949 — `inferred` / `hypothesis` never
- * enter Active Knowledge), so deriving anything stronger here would be fake
+ * enter Active Memory), so deriving anything stronger here would be fake
  * authority. Always `'hypothesis'`.
  */
 export function deriveCandidateSource(): KnowledgeSource {

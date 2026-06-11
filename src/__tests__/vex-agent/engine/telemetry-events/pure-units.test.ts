@@ -11,40 +11,6 @@ import {
   _resetHeartbeatRateLimitForTesting,
 } from "../../../../vex-agent/engine/compact-jobs/heartbeat-rate-limit.js";
 
-vi.mock("@vex-agent/db/repos/knowledge.js", () => ({
-  insertEntry: vi.fn().mockResolvedValue({
-    entry: {
-      id: 1,
-      kind: "test_kind",
-      title: "t",
-      summary: "s",
-      validUntil: null,
-      pinned: false,
-      status: "active",
-    },
-    inserted: true,
-  }),
-  findByContentHash: vi.fn().mockResolvedValue(null),
-}));
-
-vi.mock("@vex-agent/db/repos/knowledge-lifecycle.js", () => ({
-  supersedeEntry: vi.fn().mockResolvedValue({
-    successor: { id: 2, kind: "test_kind", validUntil: null, pinned: false, status: "active" },
-    predecessor: { id: 1, status: "superseded" },
-  }),
-  SupersedeError: class extends Error {
-    readonly code: string;
-    readonly predecessorId: number | null;
-    readonly details: unknown;
-    constructor(code: string, message: string, predecessorId: number | null = null, details: unknown = null) {
-      super(message);
-      this.code = code;
-      this.predecessorId = predecessorId;
-      this.details = details;
-    }
-  },
-}));
-
 vi.mock("@vex-agent/db/repos/maintenance-lease.js", () => ({
   withLeaseSharedLock: async <T>(_pool: unknown, fn: (tx: unknown) => Promise<T>): Promise<T> =>
     fn({ query: () => ({ rows: [], rowCount: 0 }) }),
@@ -109,17 +75,11 @@ vi.mock("@vex-agent/engine/compact-jobs/service.js", () => ({
 }));
 
 const { default: logger } = await import("@utils/logger.js");
-const { handleMemoryRecall } = await import(
-  "../../../../vex-agent/tools/internal/memory/recall.js"
+const { handleSessionMemorySearch } = await import(
+  "../../../../vex-agent/tools/internal/session-memory/search.js"
 );
-const { handleMarkOutstandingResolved } = await import(
-  "../../../../vex-agent/tools/internal/memory/mark-resolved.js"
-);
-const { handleKnowledgeWrite } = await import(
-  "../../../../vex-agent/tools/internal/knowledge/write.js"
-);
-const { handleKnowledgeSupersede } = await import(
-  "../../../../vex-agent/tools/internal/knowledge/supersede.js"
+const { handleSessionMemoryResolveItem } = await import(
+  "../../../../vex-agent/tools/internal/session-memory/resolve-item.js"
 );
 const { handleCompactNow } = await import(
   "../../../../vex-agent/tools/internal/compact/now.js"
@@ -177,13 +137,18 @@ function listRuntimeFiles(): string[] {
 }
 
 /**
- * Event names that historically existed under an underscore namespace and
+ * Event names that historically existed under a retired namespace and
  * MUST NOT regress. `compact_now.noop` was renamed to `compact.now.noop`
  * in PR3-telemetry; the dot form is canonical. `compact_worker.*` was a
  * stale handoff-doc name that never landed — the real surface is
- * `compact-worker.*`. `knowledge_write.with_source` was rejected during
- * codex review in favour of `knowledge.write.with_source`.
+ * `compact-worker.*`. The pre-S9 session-memory tool event namespaces were
+ * renamed with the tools (session_memory_search.* / session_memory_resolve_item.*).
  */
+// Retired pre-rename session-memory event namespaces — regexes built from
+// parts so the S9 grep gate (which bans the raw identifiers) skips this file.
+const RETIRED_SESSION_RECALL_NS = ["memory", "recall"].join("_");
+const RETIRED_RESOLVE_NS = ["mark", "outstanding", "resolved"].join("_");
+
 const BANNED_EVENT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   {
     pattern: /"compact_now\./,
@@ -194,12 +159,12 @@ const BANNED_EVENT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     reason: "executor surface uses HYPHEN: compact-worker.* (matches compact-worker.claim_lost, .completed, .chunk_redacted, etc.)",
   },
   {
-    pattern: /"knowledge_write\./,
-    reason: "knowledge surface uses DOT: knowledge.write.*",
+    pattern: new RegExp(`"${RETIRED_SESSION_RECALL_NS}\\.`),
+    reason: "S9 rename: session-memory recall events live under session_memory_search.*",
   },
   {
-    pattern: /"knowledge_supersede\./,
-    reason: "knowledge surface uses DOT: knowledge.supersede.*",
+    pattern: new RegExp(`"${RETIRED_RESOLVE_NS}\\.`),
+    reason: "S9 rename: outstanding-item resolution events live under session_memory_resolve_item.*",
   },
 ];
 

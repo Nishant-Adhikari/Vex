@@ -210,18 +210,11 @@ CREATE INDEX idx_rs_time ON regime_snapshots(created_at DESC);
 --  create these tables; existing dev DBs keep orphan unused tables until a
 --  recreate. See branch feat/agent-tool-resolution-safety.)
 
--- Recall overflow cache — dedicated system store for knowledge_recall overflow.
--- Replaces the former documents(space='cache') hack. Pure system surface — agents
--- never see these rows through any tool, only via knowledge_recall_overflow lookup
--- by cache_key. Lifetime is controlled by expires_at; lazy cleanup runs at the
--- start of every knowledge_recall call (no cron, no scheduler).
-CREATE TABLE recall_cache_entries (
-  cache_key   TEXT PRIMARY KEY,
-  payload     JSONB NOT NULL,
-  expires_at  TIMESTAMPTZ NOT NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX idx_recall_cache_expires ON recall_cache_entries(expires_at);
+-- (Removed: the `recall_cache_entries` recall-overflow cache table. It backed
+--  the retired legacy recall tool surface; the v2 long-memory read path caps
+--  inline payloads instead of spilling to a cache table. Pre-production edit —
+--  fresh DBs never create it; initialized dev DBs are cleaned up by migration
+--  033_drop_recall_cache.sql. See memory-system S9 cutover.)
 
 -- ══════════════════════════════════════════════════════════════════
 -- B. Runtime & Sessions

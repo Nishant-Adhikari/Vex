@@ -1,7 +1,7 @@
 -- Knowledge entry source classification — distinguishes verified facts from
 -- agent-generated hypotheses. Only `observed` and `user_confirmed` entries
--- surface in Active Knowledge hot context; `inferred` and `hypothesis` are
--- recall-only (queryable via `knowledge_recall`) so the agent can revisit
+-- surface in Active Memory hot context; `inferred` and `hypothesis` are
+-- recall-only (queryable via `long_memory_search`) so the agent can revisit
 -- them deliberately but they do not pollute the always-on system prompt.
 --
 -- This guards against the "agent saves its own hypothesis as a durable
@@ -12,7 +12,7 @@
 -- Backfill: existing rows default to `observed` because they were written
 -- before this distinction existed. Writers can override per call.
 --
--- Active Knowledge hot context (`listActiveForHotContext`) must filter
+-- Active Memory hot context (`listActiveForHotContext`) must filter
 -- `source IN ('observed', 'user_confirmed')` after this migration lands —
 -- the index `idx_ke_active_hot_source` supports that filter.
 
@@ -29,4 +29,4 @@ CREATE INDEX IF NOT EXISTS idx_ke_active_hot_source
   WHERE status = 'active' AND source IN ('observed', 'user_confirmed');
 
 COMMENT ON COLUMN knowledge_entries.source IS
-  'Provenance classification. observed = directly seen tool result or user statement; user_confirmed = user explicitly affirmed; inferred = agent-derived from pattern; hypothesis = agent guess. Only observed + user_confirmed surface in Active Knowledge hot context.';
+  'Provenance classification. observed = directly seen tool result or user statement; user_confirmed = user explicitly affirmed; inferred = agent-derived from pattern; hypothesis = agent guess. Only observed + user_confirmed surface in Active Memory hot context.';

@@ -11,11 +11,11 @@
  * Classification rationale (memory-system/s2-plan.md §3):
  * - `mutating: false` — a LOCAL candidate write, NOT an approval-gated external
  *   mutation. `mutating: true` would wrongly trigger approval in restricted
- *   sessions (the dispatcher's internal mutating-approval gate); knowledge
+ *   sessions (the dispatcher's internal mutating-approval gate); session-memory
  *   local-writes use `mutating: false` for the same reason.
  * - `pressureSafety: "mutating"` — still blocked at barrier/critical so the
- *   agent does not suggest while compaction is urgent (mirrors knowledge.ts).
- * - `actionKind: "local_write"` — mirrors knowledge_write.
+ *   agent does not suggest while compaction is urgent.
+ * - `actionKind: "local_write"` — a Vex-local DB write (candidate staging).
  * - `visibility: {}` — always visible to parent AND subagent
  *   (`memory_candidates.proposed_by` supports both roles).
  *

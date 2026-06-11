@@ -5,7 +5,7 @@ import type { ToolOutputShapeKind } from "@vex-agent/db/repos/tool-output-blobs.
 import {
   TOOL_OUTPUT_OVERFLOW_BYTES,
   TOOL_OUTPUT_TTL_MIN,
-} from "@vex-agent/knowledge/policy.js";
+} from "@vex-agent/engine/core/tool-output-policy.js";
 import logger from "@utils/logger.js";
 
 const TOOL_OUTPUT_TEXT_PREVIEW_CHARS = 160;

@@ -80,7 +80,7 @@ function vector(): number[] {
   return Array.from({ length: TEST_DIM }, (_, i) => i / TEST_DIM);
 }
 
-/** A knowledge recall candidate (shape of recallLongMemoryTopK rows). */
+/** A long-memory recall candidate (shape of recallLongMemoryTopK rows). */
 function knowledgeRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,

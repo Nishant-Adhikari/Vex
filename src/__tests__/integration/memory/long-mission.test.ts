@@ -10,11 +10,11 @@
  *
  * Scenarios in this file:
  *
- *   - cross-session leak guard — session B's `memory_recall` must NEVER
+ *   - cross-session leak guard — session B's `session_memory_search` must NEVER
  *     surface session A's chunks even with identical themes and matching
  *     embedding model/dim.
  *
- *   - knowledge source filter — Active Knowledge hot-context surface
+ *   - knowledge source filter — Active Memory hot-context surface
  *     returns only `observed` + `user_confirmed`; recall returns all four
  *     tiers when queried explicitly.
  *
@@ -23,7 +23,7 @@
  *     `false` and must not retry.
  *
  *   - single-compact session — `executeCompactNow` + Track 2 worker land
- *     a chunk that becomes recallable via `memory_recall` against the same
+ *     a chunk that becomes recallable via `session_memory_search` against the same
  *     session. End-to-end proof of the new memory tier.
  *
  *   - outstanding-item resolution survives compact — a chunk with multiple
@@ -227,7 +227,7 @@ describe("PR4 eval — cross-session leak guard", () => {
     await resetDb();
   });
 
-  it("session B's memory_recall returns zero hits from session A even with identical themes", async () => {
+  it("session B's session_memory_search recall returns zero hits from session A even with identical themes", async () => {
     const sessionA = await makeSession();
     const sessionB = await makeSession();
 
@@ -267,7 +267,7 @@ describe("PR4 eval — cross-session leak guard", () => {
 
 // ── Scenario 2: knowledge source filter ──────────────────────────
 
-describe("PR4 eval — knowledge source filter (Active Knowledge hot-context)", () => {
+describe("PR4 eval — knowledge source filter (Active Memory hot-context)", () => {
   beforeEach(async () => {
     await resetDb();
   });
@@ -316,9 +316,9 @@ describe("PR4 eval — knowledge source filter (Active Knowledge hot-context)", 
     expect(hotSources.has("hypothesis")).toBe(false);
 
     // Recall — returns all tiers when queried explicitly (no source filter on
-    // recallTopK; the filter only gates the hot-context auto-injection).
+    // recallLongMemoryTopK; the filter only gates the hot-context auto-injection).
     const queryEmbed = await embedText("Kyber quote timeout patterns");
-    const recallHits = await knowledgeRepo.recallTopK(
+    const recallHits = await knowledgeRepo.recallLongMemoryTopK(
       queryEmbed.embedding,
       {
         embeddingModel: queryEmbed.providerModel,
@@ -326,7 +326,7 @@ describe("PR4 eval — knowledge source filter (Active Knowledge hot-context)", 
       },
       10,
     );
-    const recallSources = new Set(recallHits.map((h) => h.entry.source));
+    const recallSources = new Set(recallHits.map((h) => h.source));
     expect(recallSources.has("observed")).toBe(true);
     expect(recallSources.has("user_confirmed")).toBe(true);
     expect(recallSources.has("inferred")).toBe(true);
@@ -407,7 +407,7 @@ describe("PR4 eval — single-compact session lands a recallable chunk", () => {
     else process.env.AGENT_MODEL = savedAgentModel;
   });
 
-  it("compact_now → worker → memory_recall surfaces the chunk", async () => {
+  it("compact_now → worker → session_memory_search recall surfaces the chunk", async () => {
     const sid = await makeSession();
     await seedConversation(sid, 14);
 

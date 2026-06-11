@@ -81,7 +81,7 @@ describe("prompt-stack", () => {
     const FULL_OPTIONS: PromptStackOptions = {
       contextPressureBanner: "[Context pressure: elevated — 72% used]",
       resumePacket: "[Resume packet — generation 3, just compacted]",
-      memorySection: "# Memory\n\n[Session memories: 2 chunk(s) across 1 compact(s). Tool: memory_recall(semantic_intent, k≤5).]\n\n# Memory Routing\n\n- routing line",
+      memorySection: "# Memory\n\n[Session memories: 2 chunk(s) across 1 compact(s). Tool: session_memory_search(semantic_intent, k≤5).]\n\n# Memory Routing\n\n- routing line",
       activePlanBlock: "# Active Plan\n\n1. do the thing",
       toolCatalogPrompt: "# Available Tool Map\n\n- wallet_balances",
       personaSetupHint: "# Personalize me (optional)\n\noffer text",
@@ -158,14 +158,14 @@ describe("prompt-stack", () => {
 
     it("base prompt no longer carries Loaded Content; it renders as the LAST static layer", () => {
       const { staticLayers } = buildPromptStack(makeContext({
-        loadedDocuments: new Map([["knowledge:42", "# Strategy\nBuy low sell high"]]),
+        loadedDocuments: new Map([["long_memory:42", "# Strategy\nBuy low sell high"]]),
       }));
       // Not inside base (first layer)…
       expect(staticLayers[0]).not.toContain("# Loaded Content");
       // …but as the final static layer (END of the cache prefix).
       const last = staticLayers[staticLayers.length - 1];
       expect(last).toContain("# Loaded Content");
-      expect(last).toContain("knowledge:42");
+      expect(last).toContain("long_memory:42");
       expect(last).toContain("Buy low sell high");
     });
 
@@ -486,12 +486,12 @@ describe("prompt-stack", () => {
       expect(stack.staticLayers.join("\n")).not.toContain("# Runtime Clock");
     });
 
-    it("includes loaded content blocks (e.g. knowledge_get injections)", () => {
+    it("includes loaded content blocks (e.g. long_memory_get injections)", () => {
       const joined = joinedStack(makeContext({
-        loadedDocuments: new Map([["knowledge:42", "# Strategy\nBuy low sell high"]]),
+        loadedDocuments: new Map([["long_memory:42", "# Strategy\nBuy low sell high"]]),
       }));
       expect(joined).toContain("# Loaded Content");
-      expect(joined).toContain("knowledge:42");
+      expect(joined).toContain("long_memory:42");
       expect(joined).toContain("Buy low sell high");
     });
   });

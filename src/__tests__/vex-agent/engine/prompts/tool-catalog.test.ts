@@ -39,10 +39,9 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).toContain("**Protocol discovery/execution:** discover_tools, execute_tool");
       expect(out).toContain("**Live state reads:** wallet_balances, chain_read, portfolio");
 
-      // Memory + knowledge visible (read tools at normal band)
-      expect(out).toContain("**Session memory — this conversation/mission only:** memory_recall, mark_outstanding_resolved");
-      expect(out).toContain("**Knowledge recall/history — curated across sessions:** knowledge_recall,");
-      expect(out).toContain("**Knowledge write/lifecycle:** knowledge_write, knowledge_supersede, knowledge_update_status");
+      // Memory visible (read tools at normal band)
+      expect(out).toContain("**Session memory — this conversation/mission only:** session_memory_search, session_memory_resolve_item");
+      expect(out).toContain("**Long-term memory recall — durable cross-session lessons (search/get/history):** long_memory_search, long_memory_get, long_memory_history");
 
       // Wallet transfers visible at normal band
       expect(out).toContain("**Wallet transfers:** wallet_send_prepare, wallet_send_confirm");
@@ -68,14 +67,15 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       // compact_only emerges at barrier
       expect(out).toContain("**Context compaction — pressure only:** compact_now");
 
-      // Mutating categories disappear
+      // Mutating categories disappear (long_memory_suggest is pressureSafety
+      // "mutating", so its category drops at barrier too)
       expect(out).not.toContain("Wallet transfers");
-      expect(out).not.toContain("Knowledge write/lifecycle");
+      expect(out).not.toContain("suggest a durable cross-session lesson");
       expect(out).not.toContain("Setup/onboarding");
 
       // Reads remain
       expect(out).toContain("Live state reads");
-      expect(out).toContain("Knowledge recall/history");
+      expect(out).toContain("Long-term memory recall");
       expect(out).toContain("Session memory");
     });
   });
@@ -142,7 +142,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).not.toContain("Setup/onboarding");
     });
 
-    it("retains memory + knowledge + reads", () => {
+    it("retains memory + reads", () => {
       const out = buildToolCatalogPrompt(makeCtx({
         role: "subagent",
         sessionKind: "mission",
@@ -150,7 +150,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       }));
 
       expect(out).toContain("Session memory");
-      expect(out).toContain("Knowledge recall/history");
+      expect(out).toContain("Long-term memory recall");
       expect(out).toContain("Live state reads");
     });
   });
@@ -191,17 +191,25 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
     it("hides the Session memory category when the session has no narrative chunks", () => {
       const out = buildToolCatalogPrompt(makeCtx({ hasSessionMemory: false }));
       expect(out).not.toContain("Session memory");
-      expect(out).not.toContain("memory_recall");
-      expect(out).not.toContain("mark_outstanding_resolved");
-      // Only the memory tools are gated — other read categories remain.
-      expect(out).toContain("Knowledge recall/history");
+      // Renamed tool names built from parts — the S9 grep gate bans the raw
+      // pre-rename literals repo-wide.
+      expect(out).not.toContain(["session", "memory", "search"].join("_"));
+      expect(out).not.toContain(["session", "memory", "resolve", "item"].join("_"));
+      // Only the session-memory tools are gated — other read categories remain.
+      expect(out).toContain("Long-term memory recall");
     });
 
     it("shows the Session memory category once the session has narrative chunks", () => {
       const out = buildToolCatalogPrompt(makeCtx({ hasSessionMemory: true }));
       expect(out).toContain(
-        "**Session memory — this conversation/mission only:** memory_recall, mark_outstanding_resolved",
+        "**Session memory — this conversation/mission only:** session_memory_search, session_memory_resolve_item",
       );
+    });
+
+    it("never renders the retired pre-rename session-memory tool names (S9 — names from parts)", () => {
+      const out = buildToolCatalogPrompt(makeCtx({ hasSessionMemory: true }));
+      expect(out).not.toContain(["memory", "recall"].join("_"));
+      expect(out).not.toContain(["mark", "outstanding", "resolved"].join("_"));
     });
   });
 });

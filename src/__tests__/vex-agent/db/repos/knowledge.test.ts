@@ -44,9 +44,8 @@ const {
   insertEntry,
   getById,
   findByContentHash,
-  updateStatus,
   updateEmbedding,
-  recallTopK,
+  recallLongMemoryTopK,
   listActiveForHotContext,
   listKnownKinds,
   streamAllForExport,
@@ -54,7 +53,6 @@ const {
   findRowsWithDimNotMatching,
   isRuntimeActive,
   getLineageChain,
-  listHistory,
 } = await import("@vex-agent/db/repos/knowledge.js");
 
 const SAMPLE_HASH = "0".repeat(64);
@@ -118,9 +116,8 @@ describe("knowledge repo", () => {
     insertEntry,
     getById,
     findByContentHash,
-    updateStatus,
     updateEmbedding,
-    recallTopK,
+    recallLongMemoryTopK,
     listActiveForHotContext,
     listKnownKinds,
     streamAllForExport,
@@ -128,7 +125,6 @@ describe("knowledge repo", () => {
     findRowsWithDimNotMatching,
     isRuntimeActive,
     getLineageChain,
-    listHistory,
     mockExecute,
     mockQueryOne,
     mockQuery,

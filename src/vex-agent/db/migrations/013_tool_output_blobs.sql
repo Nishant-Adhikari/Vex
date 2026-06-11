@@ -2,7 +2,7 @@
 -- storage for oversized tool outputs.
 --
 -- Turn-loop writes the full payload here whenever a tool returns more than
--- `TOOL_OUTPUT_OVERFLOW_BYTES` (16 KiB today, see knowledge/policy.ts) and
+-- `TOOL_OUTPUT_OVERFLOW_BYTES` (16 KiB today, see engine/core/tool-output-policy.ts) and
 -- persists a short stub in `messages.content` plus `metadata.payload.blob_key`
 -- so archive-aware checkpoint + recall keep the pointer alive after
 -- compaction. `tool_output_read(blob_key)` is the retrieval tool.

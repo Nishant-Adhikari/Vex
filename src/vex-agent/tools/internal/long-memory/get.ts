@@ -3,7 +3,7 @@
  *
  * Explicit fetch ⇒ returns the full entry (detailed by default). Injects
  * content_md into the engine's loadedDocuments under `long_memory:{id}` so it
- * surfaces in the system prompt's loaded-content section (mirrors knowledge_get).
+ * surfaces in the system prompt's loaded-content section.
  *
  * Steering on miss: not-found → re-search hint; a non-active entry steers the
  * agent toward the live successor (`supersededBy`) when one exists, otherwise

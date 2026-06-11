@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import type { SuiteCtx } from "./context.js";
 
 export function recallSuite(ctx: SuiteCtx): void {
-  const { recallTopK, mockQuery, SAMPLE_ROW, makeEmbedding } = ctx;
+  const { recallLongMemoryTopK, mockQuery, SAMPLE_ROW, makeEmbedding } = ctx;
 
-  describe("recallTopK", () => {
+  describe("recallLongMemoryTopK", () => {
     it("filters by embedding_model AND embedding_dim (mandatory mixed-dim crash protection)", async () => {
       mockQuery.mockResolvedValueOnce([{ ...SAMPLE_ROW, cosine_distance: 0.1 }]);
-      await recallTopK(
+      await recallLongMemoryTopK(
         makeEmbedding(768),
         { embeddingModel: "ai/embeddinggemma:300M-Q8_0", embeddingDim: 768 },
         8,
@@ -23,19 +23,36 @@ export function recallSuite(ctx: SuiteCtx): void {
       expect(params[params.length - 1]).toBe(16);
     });
 
-    it("similarity = 1 - cosine_distance, clamped to [0,1]", async () => {
+    it("selects provenance + influence columns (source, maturity_state, activation_strength)", async () => {
+      mockQuery.mockResolvedValueOnce([]);
+      await recallLongMemoryTopK(
+        makeEmbedding(768),
+        { embeddingModel: "m", embeddingDim: 768 },
+        8,
+      );
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).toContain("source, maturity_state");
+      expect(sql).toContain("activation_strength");
+    });
+
+    it("similarity = 1 - cosine_distance, clamped to [0,1]; defaults provenance fields", async () => {
       mockQuery.mockResolvedValueOnce([{ ...SAMPLE_ROW, cosine_distance: 0.1 }]);
-      const result = await recallTopK(
+      const result = await recallLongMemoryTopK(
         makeEmbedding(768),
         { embeddingModel: "m", embeddingDim: 768 },
         8,
       );
       expect(result[0]?.similarity).toBeCloseTo(0.9, 5);
+      // SAMPLE_ROW omits source/maturity_state/activation_strength — the
+      // mapper applies the documented defaults for narrower SELECT shapes.
+      expect(result[0]?.source).toBe("observed");
+      expect(result[0]?.maturityState).toBe("established");
+      expect(result[0]?.activationStrength).toBe(1.0);
     });
 
     it("adds kind filter as $4 when supplied", async () => {
       mockQuery.mockResolvedValueOnce([]);
-      await recallTopK(
+      await recallLongMemoryTopK(
         makeEmbedding(768),
         { embeddingModel: "m", embeddingDim: 768, kind: "strategy_rule" },
         5,
@@ -47,7 +64,7 @@ export function recallSuite(ctx: SuiteCtx): void {
 
     it("excludes expired when include_expired=false", async () => {
       mockQuery.mockResolvedValueOnce([]);
-      await recallTopK(
+      await recallLongMemoryTopK(
         makeEmbedding(768),
         { embeddingModel: "m", embeddingDim: 768, includeExpired: false },
         5,
@@ -58,13 +75,13 @@ export function recallSuite(ctx: SuiteCtx): void {
 
     it("includes expired by default", async () => {
       mockQuery.mockResolvedValueOnce([]);
-      await recallTopK(makeEmbedding(768), { embeddingModel: "m", embeddingDim: 768 }, 5);
+      await recallLongMemoryTopK(makeEmbedding(768), { embeddingModel: "m", embeddingDim: 768 }, 5);
       const [sql] = mockQuery.mock.calls[0];
       expect(sql).not.toContain("valid_until > now()");
     });
 
     it("returns [] when k <= 0 without DB call", async () => {
-      const result = await recallTopK(
+      const result = await recallLongMemoryTopK(
         makeEmbedding(768),
         { embeddingModel: "m", embeddingDim: 768 },
         0,
@@ -75,7 +92,7 @@ export function recallSuite(ctx: SuiteCtx): void {
 
     it("throws when query embedding length does not match filter dim", async () => {
       await expect(
-        recallTopK(makeEmbedding(512), { embeddingModel: "m", embeddingDim: 768 }, 5),
+        recallLongMemoryTopK(makeEmbedding(512), { embeddingModel: "m", embeddingDim: 768 }, 5),
       ).rejects.toThrow(/query embedding length 512 does not match filter dim 768/);
       expect(mockQuery).not.toHaveBeenCalled();
     });

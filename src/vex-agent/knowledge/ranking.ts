@@ -1,16 +1,16 @@
 /**
- * Knowledge recall reranker — pure TS, no DB, no embeddings.
+ * Long-memory recall scoring — pure TS, no DB, no embeddings.
  *
- * Re-orders SQL candidates by combined score:
+ * Scores SQL candidates by combined signal:
  *   score = similarity + recencyBoost + confidenceBoost + pinnedBoost
  *
- * Notable absence: NO `kindWeight`. The agent defines its own kinds organically
- * and the code does not pretend to know which kinds matter more. Ranking is
- * purely based on signal we actually own (vector distance, freshness, agent's
- * own confidence rating, pinned flag).
+ * Notable absence: NO `kindWeight`. Kinds grow organically (via
+ * `long_memory_suggest`) and the code does not pretend to know which kinds
+ * matter more. Scoring is purely based on signal we actually own (vector
+ * distance, freshness, recorded confidence rating, pinned flag).
  */
 
-import { clampRecallK, isKnowledgeStatus, type KnowledgeStatus } from "./policy.js";
+import type { KnowledgeStatus } from "./policy.js";
 
 export interface RecallCandidate {
   id: number;
@@ -31,15 +31,6 @@ export interface RecallCandidate {
   tags: string[];
 }
 
-export interface RerankOptions {
-  /** Now reference for recency boost (defaults to `new Date()`). */
-  now?: Date;
-  /** Final cap on returned results (clamped to RECALL_MAX_K). */
-  k?: number;
-  /** If false, drop candidates with status != active. Default true (active only). */
-  activeOnly?: boolean;
-}
-
 // ── Tunable boost weights ────────────────────────────────────────
 // These are constants in source, not env-config. They are signal weights, not knobs.
 
@@ -57,51 +48,11 @@ const PINNED_BOOST = 0.20;
 
 // ── Public API ───────────────────────────────────────────────────
 
-export interface RankedRecallResult extends RecallCandidate {
-  /** Final combined score used for ordering. */
-  score: number;
-}
-
-/**
- * Rerank candidates by combined score, filter by status, head k.
- *
- * Stable sort: candidates with equal score keep input order. This is important
- * for determinism in tests — SQL `ORDER BY embedding <=> $1 LIMIT k*2` is the
- * deterministic source.
- */
-export function rerank(
-  candidates: readonly RecallCandidate[],
-  opts: RerankOptions = {},
-): RankedRecallResult[] {
-  const now = opts.now ?? new Date();
-  const activeOnly = opts.activeOnly !== false;
-  const k = clampRecallK(opts.k);
-
-  const filtered = activeOnly
-    ? candidates.filter((c) => c.status === "active")
-    : candidates.filter((c) => isKnowledgeStatus(c.status));
-
-  const scored: RankedRecallResult[] = filtered.map((c) => ({
-    ...c,
-    score: computeScore(c, now),
-  }));
-
-  // Stable sort by score DESC, ties keep input order
-  scored.sort((a, b) => {
-    if (b.score === a.score) return 0;
-    return b.score - a.score;
-  });
-
-  return scored.slice(0, k);
-}
-
 /**
  * Compute the BASE recall score for a SINGLE candidate (`similarity + recency +
- * confidence + pinned`), without filtering or slicing. Exported so the S3
- * long-memory blend can reuse the EXACT knowledge ranking formula for its
- * knowledge sub-list base score, then apply its own source-tier de-weight on
- * top — without pushing candidates through `rerank` (which drops non-active
- * rows and caps to RECALL_MAX_K). `now` defaults to `new Date()`.
+ * confidence + pinned`), without filtering or slicing. The S3 long-memory
+ * blend uses this as its knowledge sub-list base score, then applies its own
+ * source-tier de-weight on top. `now` defaults to `new Date()`.
  */
 export function scoreRecallCandidate(c: RecallCandidate, now: Date = new Date()): number {
   return computeScore(c, now);

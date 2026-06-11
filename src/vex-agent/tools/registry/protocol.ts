@@ -20,7 +20,7 @@ const EXECUTE_TOOL_PARAMS: JsonSchema = {
 const EXECUTE_TOOL_DESCRIPTION = [
   "Execute a discovered protocol tool.",
   "Contract:",
-  "- `toolId` must come from `discover_tools` (same session). Knowledge recall may hint at which namespace or approach to try, but the authoritative toolId still comes from discover.",
+  "- `toolId` must come from `discover_tools` (same session). Long-memory recall may hint at which namespace or approach to try, but the authoritative toolId still comes from discover.",
   "- `params` must match the tool's manifest schema — types, required fields, and value formats as returned by discover (not exampleParams).",
   "- Mutating tools (check the `mutating` flag from discover) require approval in `restricted`/`off` loop modes; preview / dryRun variants bypass approval and are safe for iterative planning.",
   "- On error, diagnose and adapt — do not retry the same call in a tight loop. Present the error and next step to the user or the mission loop.",

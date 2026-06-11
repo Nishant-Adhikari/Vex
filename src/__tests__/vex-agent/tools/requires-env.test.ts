@@ -55,30 +55,27 @@ describe("requiresEnv filtering", () => {
     it("non-ENV tools always present regardless of ENV state", async () => {
       const tools = getOpenAITools(defaultVisibilityContext());
       const hasDiscover = tools.some(t => t.function.name === "discover_tools");
-      const hasKnowledgeRecall = tools.some(t => t.function.name === "knowledge_recall");
+      const hasLongMemorySearch = tools.some(t => t.function.name === "long_memory_search");
       expect(hasDiscover).toBe(true);
-      expect(hasKnowledgeRecall).toBe(true);
+      expect(hasLongMemorySearch).toBe(true);
     });
 
-    it("all knowledge_* tools are visible without EMBEDDING_BASE_URL (decision #10: no requiresEnv)", async () => {
+    it("all long_memory_* tools are visible without EMBEDDING_BASE_URL (decision #10: no requiresEnv)", async () => {
       delete process.env.EMBEDDING_BASE_URL;
       const tools = getOpenAITools(defaultVisibilityContext());
       const names = tools.map(t => t.function.name);
-      expect(names).toContain("knowledge_write");
-      expect(names).toContain("knowledge_recall");
-      expect(names).toContain("knowledge_recall_overflow");
-      expect(names).toContain("knowledge_get");
-      expect(names).toContain("knowledge_update_status");
-      expect(names).toContain("knowledge_supersede");
+      expect(names).toContain("long_memory_suggest");
+      expect(names).toContain("long_memory_search");
+      expect(names).toContain("long_memory_get");
+      expect(names).toContain("long_memory_history");
     });
 
-    it("knowledge_* tools have NO requiresEnv field (visible always, fail loud at runtime)", async () => {
+    it("long_memory_* tools have NO requiresEnv field (visible always, fail loud at runtime)", async () => {
       const all = getAllTools();
-      const knowledgeTools = all.filter(t => t.name.startsWith("knowledge_"));
-      // 6 lifecycle/recall tools (write / recall / recall_overflow / get /
-      // update_status / supersede) + 2 read-only browse (lineage / history).
-      expect(knowledgeTools.length).toBe(8);
-      for (const tool of knowledgeTools) {
+      const longMemoryTools = all.filter(t => t.name.startsWith("long_memory_"));
+      // suggest (staged write-door) + 3 read tools (search / get / history).
+      expect(longMemoryTools.length).toBe(4);
+      for (const tool of longMemoryTools) {
         expect(tool.requiresEnv).toBeUndefined();
       }
     });

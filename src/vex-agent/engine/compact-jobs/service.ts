@@ -172,7 +172,7 @@ async function executeCompactNowInner(input: CompactCommitArgs): Promise<Compact
       // giant_tool plan: fork the single bloated row to archive, leave a
       // placeholder stub in live messages pointing at the compact_job (Track
       // 2 will produce the narrative chunk asynchronously). Placeholder text
-      // mentions memory_recall as the recovery path per codex guardrail.
+      // mentions session_memory_search as the recovery path per codex guardrail.
       const placeholder = buildGiantToolPlaceholder(plan.bloatedMessageId, enq.job.id);
       await forkToolMessageToArchive(input.sessionId, plan.bloatedMessageId, placeholder, tx);
       archivedMessages = 1;

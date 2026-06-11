@@ -19,7 +19,10 @@ export interface WalletInventoryEntry {
   address: string;
   label: string;
   createdAt: string;
-  legacy?: boolean;
+  // `| undefined` keeps this assignable from Zod `.optional()` outputs
+  // under vex-app's exactOptionalPropertyTypes profile (root tsc treats
+  // both spellings identically).
+  legacy?: boolean | undefined;
 }
 
 const WALLET_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -85,17 +88,19 @@ export interface VexConfig {
     commitment: string;
     jupiterApiKey: string;
   };
+  // Optional members carry `| undefined` so parsed-config spreads remain
+  // assignable under vex-app's exactOptionalPropertyTypes profile.
   polymarket?: {
-    clobBaseUrl?: string;
-    gammaBaseUrl?: string;
-    dataApiBaseUrl?: string;
-  };
+    clobBaseUrl?: string | undefined;
+    gammaBaseUrl?: string | undefined;
+    dataApiBaseUrl?: string | undefined;
+  } | undefined;
   claude?: {
     provider: string;
     model: string;
     providerEndpoint: string;
     proxyPort: number;
-  };
+  } | undefined;
 }
 
 export function getDefaultConfig(): VexConfig {

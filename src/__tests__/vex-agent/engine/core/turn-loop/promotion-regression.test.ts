@@ -290,9 +290,9 @@ describe("turn-loop", () => {
 
   // PR-2: promotion hook was removed — lint against regression that
   // would silently reintroduce session-memory → knowledge_entries
-  // auto-promotion on compact. Memory contract:
-  // `knowledge_*` is manual-write-only via `knowledge_write` /
-  // `knowledge_supersede`. Session memory is recall-only.
+  // auto-promotion on compact. Memory contract: long-term memory is
+  // written only by the memory manager (promotion of staged
+  // `long_memory_suggest` candidates). Session memory is recall-only.
   it("does not call runPromotionForSession or import the removed promotion module", () => {
     const src = readFileSync(
       resolve(process.cwd(), "src/vex-agent/engine/core/turn-loop.ts"),

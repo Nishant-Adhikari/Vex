@@ -1,10 +1,10 @@
 /**
- * `memory_recall` tool handler — semantic recall over THIS session's narrative
- * memory chunks (`session_memories` table).
+ * `session_memory_search` tool handler — semantic recall over THIS session's
+ * narrative memory chunks (`session_memories` table).
  *
  * Returns top-K narrative chunks (4-section markdown bodies) scoped to the
  * caller's session_id. Embedding goes through the same local EmbeddingGemma
- * service as knowledge_recall (no remote calls, no OpenRouter).
+ * service as `long_memory_search` (no remote calls, no OpenRouter).
  *
  * Empty-store short-circuit: if the session has zero active chunks, returns
  * success with an empty hits array and a hint — no DB load, no embedding
@@ -29,7 +29,7 @@ import {
 } from "@vex-agent/memory/session-memory-policy.js";
 import logger from "@utils/logger.js";
 
-const MemoryRecallSchema = z.object({
+const SessionMemorySearchSchema = z.object({
   query: z
     .string()
     .min(1)
@@ -42,21 +42,21 @@ const MemoryRecallSchema = z.object({
   ),
 });
 
-export async function handleMemoryRecall(
+export async function handleSessionMemorySearch(
   args: unknown,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  const parsed = MemoryRecallSchema.safeParse(args);
+  const parsed = SessionMemorySearchSchema.safeParse(args);
   if (!parsed.success) {
     return {
       success: false,
-      output: `memory_recall: invalid arguments: ${parsed.error.message}`,
+      output: `session_memory_search: invalid arguments: ${parsed.error.message}`,
     };
   }
   const { query, k } = parsed.data;
   const topK = clampMemoryRecallK(k);
 
-  logger.info("memory_recall.called", {
+  logger.info("session_memory_search.called", {
     sessionId: context.sessionId,
     queryLen: query.length,
     k: topK,
@@ -69,13 +69,13 @@ export async function handleMemoryRecall(
     MEMORY_BANNER_RECENT_THEMES_LIMIT,
   );
   if (stats.activeCount === 0) {
-    logger.info("memory_recall.empty_store", {
+    logger.info("session_memory_search.empty_store", {
       sessionId: context.sessionId,
     });
     return {
       success: true,
       output:
-        "memory_recall: no memories yet — the session has not been compacted. " +
+        "session_memory_search: no memories yet — the session has not been compacted. " +
         "Continue working; memories become available after the first compact (≥ 88% context).",
       data: { hits: [], reason: "empty_store" },
     };
@@ -91,7 +91,7 @@ export async function handleMemoryRecall(
     minSimilarity: MEMORY_RECALL_MIN_SIMILARITY,
   });
 
-  logger.info("memory_recall.completed", {
+  logger.info("session_memory_search.completed", {
     sessionId: context.sessionId,
     queryLen: query.length,
     hits: hits.length,
@@ -102,7 +102,7 @@ export async function handleMemoryRecall(
     return {
       success: true,
       output:
-        `memory_recall: no chunks above similarity threshold ${MEMORY_RECALL_MIN_SIMILARITY}. ` +
+        `session_memory_search: no chunks above similarity threshold ${MEMORY_RECALL_MIN_SIMILARITY}. ` +
         `Session has ${stats.activeCount} chunk(s) across ${stats.compactCount} compact(s); try a different framing.`,
       data: { hits: [], reason: "below_threshold", active_count: stats.activeCount },
     };

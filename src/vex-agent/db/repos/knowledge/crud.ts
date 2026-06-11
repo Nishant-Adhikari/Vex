@@ -1,5 +1,5 @@
 /**
- * Knowledge repo — CRUD core (insert, fetch, status update).
+ * Knowledge repo — CRUD core (insert, fetch, reconcile status writes).
  *
  * Portability contract (also enforced in recall.ts):
  * - The vector column has NO typmod, so the type accepts any dim. Per-row
@@ -21,7 +21,6 @@
 
 import type { PoolClient } from "pg";
 import {
-  execute,
   executeWith,
   getPool,
   queryOne,
@@ -30,7 +29,7 @@ import {
   type Executor,
 } from "../../client.js";
 import { jsonb } from "../../params.js";
-import type { UpdatableKnowledgeStatus, KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
+import type { KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
 import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 import type { DecayPolicy, MaturityState } from "@vex-agent/memory/schema/long-memory-enums.js";
 import {
@@ -40,7 +39,6 @@ import {
   type KnowledgeEntryWithLineage,
   type KnowledgeRow,
   type KnowledgeRowWithInsertFlag,
-  type UpdateStatusResult,
   mapRow,
   toIsoOrNull,
   vectorLiteral,
@@ -59,7 +57,7 @@ import {
  *   that want to change tags/pinned/etc. must use a separate update tool.
  *
  * Optional audit fields (`status`, `validFrom`, `createdAt`, `updatedAt`) let
- * the import script preserve roundtrip exactness. knowledge_write does not
+ * the import script preserve roundtrip exactness. The promotion path does not
  * pass them, so defaults (`'active'`, `NOW()`) apply.
  *
  * Implementation note: a CTE (rather than the xmax trick) is used to detect
@@ -490,9 +488,9 @@ export async function lockEntryForReconcile(
 
 /**
  * Invalidate an entry on a reconcile flip verdict (S7 §4.5). DIRECT update —
- * `updateStatus` deliberately does NOT set `valid_until`, but a reconcile
- * invalidation is a BI-TEMPORAL fact ("the world stopped supporting this lesson
- * NOW"), so `valid_until=NOW()` is stamped here. `status_reason` records the
+ * a reconcile invalidation is a BI-TEMPORAL fact ("the world stopped supporting
+ * this lesson NOW"), so `valid_until=NOW()` is stamped here (plain status flips
+ * elsewhere do not touch valid-time). `status_reason` records the
  * judge's bounded rationale (≤ RECONCILE_RATIONALE_MAX — schema-enforced
  * upstream; never logged). Guarded on `status='active'`; recall already filters
  * to active, so the row disappears from retrieval atomically with the tx.
@@ -560,45 +558,3 @@ export async function bumpOutcomeVersion(
   return count === 1;
 }
 
-// ── Update status ────────────────────────────────────────────────
-
-/**
- * Update an entry's status to `invalidated` or `archived` and optionally persist
- * a human-readable `reason` to `status_reason`. Guarded on `status = 'active'`
- * so that superseded / invalidated / archived rows cannot be re-stamped.
- *
- * Passing `reason = undefined` (the default) leaves the existing `status_reason`
- * untouched — callers that omit reason do NOT wipe a previously-stored reason.
- * Pass an explicit `null` to clear it.
- *
- * On zero-rows-affected, performs a single follow-up SELECT to distinguish
- * "entry does not exist" from "entry exists but is no longer active". Callers
- * (the tool handler) map this to user-facing failure messages.
- */
-export async function updateStatus(
-  id: number,
-  status: UpdatableKnowledgeStatus,
-  reason?: string | null,
-): Promise<UpdateStatusResult> {
-  if (!Number.isFinite(id) || id <= 0) return { ok: false, reason: "not_found" };
-
-  const rowCount = reason === undefined
-    ? await execute(
-        "UPDATE knowledge_entries SET status = $1, updated_at = NOW() WHERE id = $2 AND status = 'active'",
-        [status, id],
-      )
-    : await execute(
-        "UPDATE knowledge_entries SET status = $1, status_reason = $2, updated_at = NOW() WHERE id = $3 AND status = 'active'",
-        [status, reason, id],
-      );
-  if (rowCount === 1) return { ok: true };
-
-  // Disambiguate: either the row doesn't exist, or it exists with a non-active
-  // status. One extra indexed lookup by primary key.
-  const row = await queryOne<{ status: string }>(
-    "SELECT status FROM knowledge_entries WHERE id = $1",
-    [id],
-  );
-  if (!row) return { ok: false, reason: "not_found" };
-  return { ok: false, reason: "not_active", currentStatus: row.status as KnowledgeStatus };
-}

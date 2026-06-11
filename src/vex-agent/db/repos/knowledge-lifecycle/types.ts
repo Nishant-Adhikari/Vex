@@ -16,7 +16,7 @@ import type {
 } from "@vex-agent/memory/schema/long-memory-enums.js";
 
 /**
- * Input shape mirrors `knowledge_write` params + lineage fields. We accept the
+ * Input shape mirrors the promotion insert params + lineage fields. We accept the
  * full `InsertEntryInput` for the successor (minus lifecycle fields, which the
  * supersede path controls) and separate lineage/audit fields.
  */

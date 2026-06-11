@@ -11,7 +11,7 @@
 
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import * as toolOutputBlobsRepo from "@vex-agent/db/repos/tool-output-blobs.js";
-import { TOOL_OUTPUT_TTL_MIN } from "@vex-agent/knowledge/policy.js";
+import { TOOL_OUTPUT_TTL_MIN } from "@vex-agent/engine/core/tool-output-policy.js";
 import logger from "@utils/logger.js";
 
 const RECENT_WINDOW = 50;

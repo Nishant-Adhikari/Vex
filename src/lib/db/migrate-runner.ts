@@ -36,7 +36,9 @@ const DEFAULT_LOCK_TIMEOUT_MS = 30_000;
 export class MigrationError extends Error {
   public readonly version: number;
   public readonly file: string;
-  public readonly cause: unknown;
+  // `override`: Error.cause exists in lib ES2022+; vex-app's typecheck
+  // profile (noImplicitOverride) requires the modifier to be explicit.
+  public override readonly cause: unknown;
 
   constructor(version: number, file: string, cause: unknown) {
     const causeMsg = cause instanceof Error ? cause.message : String(cause);

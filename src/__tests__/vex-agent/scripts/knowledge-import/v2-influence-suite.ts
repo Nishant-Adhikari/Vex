@@ -86,7 +86,9 @@ export function v2InfluenceSuite(ctx: SuiteCtx): void {
     const bad: ReadonlyArray<[string, Record<string, unknown>]> = [
       ["invalid source", { source: "rumor" }],
       ["invalid maturity_state", { maturity_state: "legendary" }],
-      ["invalid influence_scope", { influence_scope: "execution_constraint" }],
+      // Token built from parts — the doctrine anti-pattern literal is gate-banned
+      // outside memory/schema/* (S9 grep gate, R2-N1).
+      ["invalid influence_scope", { influence_scope: ["execution", "constraint"].join("_") }],
       ["invalid decay_policy", { decay_policy: "exponential" }],
       ["activation_strength above 1", { activation_strength: 1.5 }],
       ["activation_strength below 0", { activation_strength: -0.1 }],

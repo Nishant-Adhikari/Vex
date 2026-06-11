@@ -102,17 +102,41 @@ describe("dispatcher — subagent, wallet, unknown, no-stubs", () => {
     expect(result.output).toContain("Unknown tool");
   });
 
+  it("rejects the retired memory-manage name as unknown tool (name built from parts for the S9 grep gate)", async () => {
+    const result = await dispatchTool(
+      { name: ["memory", "manage"].join("_"), args: { action: "list" }, toolCallId: "call_15b" },
+      baseContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Unknown tool");
+  });
+
+  it("rejects the retired legacy knowledge/memory tool names as unknown (S9 cutover, names from parts)", async () => {
+    const retired = [
+      ["knowledge", "write"].join("_"),
+      ["knowledge", "recall"].join("_"),
+      ["memory", "recall"].join("_"),
+      ["mark", "outstanding", "resolved"].join("_"),
+    ];
+    for (const name of retired) {
+      const result = await dispatchTool(
+        { name, args: {}, toolCallId: `retired_${name}` },
+        baseContext,
+      );
+      expect(result.success, name).toBe(false);
+      expect(result.output, name).toContain("Unknown tool");
+    }
+  });
+
   // ── No stubs remaining ──────────────────────────────────────────
 
   it("no internal tool returns [STUB]", async () => {
     const internalTools = [
       { name: "web_research", args: { query: "test" } },
       { name: "web_research", args: { url: "https://example.com" } },
-      { name: "knowledge_write", args: { kind: "memo", title: "t", summary: "s" } },
-      { name: "knowledge_recall", args: { query: "test" } },
-      { name: "knowledge_recall_overflow", args: { cacheKey: "rcl-test" } },
-      { name: "knowledge_get", args: { id: 1 } },
-      { name: "knowledge_update_status", args: { id: 1, status: "archived" } },
+      { name: "long_memory_get", args: { id: 1 } },
+      { name: "long_memory_history", args: { id: 1 } },
       // TODO(subagent-disabled): re-enable razem z SUBAGENT_TOOLS.
       // { name: "subagent_spawn", args: { name: "VexX", task: "t" } },
       // { name: "subagent_status", args: {} },

@@ -1,30 +1,20 @@
 /**
- * Knowledge repo — lineage / history browse (read-only).
+ * Knowledge repo — lineage browse (read-only).
  *
- * Two read paths over the existing supersede lifecycle:
+ * getLineageChain(id): walk the version chain in BOTH directions from any
+ * id (down via supersedes_id to root, up via reverse self-join to head)
+ * and return ordered metadata plus head info. One round-trip via two
+ * recursive CTEs combined into a single ordered result set.
  *
- *   - getLineageChain(id): walk the version chain in BOTH directions from any
- *     id (down via supersedes_id to root, up via reverse self-join to head)
- *     and return ordered metadata plus head info. One round-trip via two
- *     recursive CTEs combined into a single ordered result set.
- *
- *   - listHistory(filters): browse historical entries by kind / status /
- *     limit. Defaults to non-active (superseded ∪ invalidated ∪ archived) so
- *     the tool's purpose stays clear vs `recallTopK` (active semantic search).
- *
- * Neither method returns content_md, embedding, or content_hash — payload is
- * deliberately compact so chains and history lists stay cheap. Callers that
- * need the full body fall back to `getById` (which is what `knowledge_get`
- * exposes).
+ * Does not return content_md, embedding, or content_hash — payload is
+ * deliberately compact so chains stay cheap. Callers that need the full
+ * body fall back to `getById` (which is what `long_memory_get` exposes).
  */
 
 import { query } from "../../client.js";
 import type {
-  HistoryStatus,
-  KnowledgeHistoryListItem,
   KnowledgeLineageItem,
   KnowledgeLineageResult,
-  ListHistoryFilters,
 } from "./types.js";
 import type { KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
 
@@ -33,9 +23,6 @@ import type { KnowledgeStatus } from "@vex-agent/knowledge/policy.js";
 // FK with the partial unique index — but defense in depth) cannot blow up
 // with an unbounded recursion.
 const MAX_LINEAGE_HOPS = 100;
-
-const HISTORY_DEFAULT_LIMIT = 20;
-const HISTORY_MAX_LIMIT = 100;
 
 interface LineageRow {
   id: number;
@@ -119,47 +106,6 @@ export async function getLineageChain(id: number): Promise<KnowledgeLineageResul
   };
 }
 
-/**
- * Browse historical knowledge entries. By default returns ONLY non-active rows
- * (superseded ∪ invalidated ∪ archived) — the typical "what did this used to
- * be" use case. Pass `status` explicitly to query a single status (including
- * `active` as opt-in).
- *
- * No content_md / embedding / content_hash in the payload — keep history lists
- * cheap. Use `getById` (or the `knowledge_get` tool) when you need full text.
- */
-export async function listHistory(
-  filters: ListHistoryFilters,
-): Promise<KnowledgeHistoryListItem[]> {
-  const limit = clampHistoryLimit(filters.limit);
-  const status = filters.status ?? null;
-  const kind = filters.kind ?? null;
-
-  const rows = await query<Omit<LineageRow, "pos">>(
-    `SELECT id, kind, title, status, supersedes_id, status_reason,
-            change_summary, what_failed, valid_from, valid_until, updated_at
-     FROM knowledge_entries
-     WHERE
-       ($1::text IS NULL OR status = $1::text)
-       AND (
-         $1::text IS NOT NULL
-         OR status IN ('superseded', 'invalidated', 'archived')
-       )
-       AND ($2::text IS NULL OR kind = $2::text)
-     ORDER BY updated_at DESC, id DESC
-     LIMIT $3`,
-    [status, kind, limit],
-  );
-
-  return rows.map(toLineageItem);
-}
-
-export function clampHistoryLimit(limit: number | undefined): number {
-  if (limit === undefined || !Number.isFinite(limit) || limit <= 0) return HISTORY_DEFAULT_LIMIT;
-  if (limit > HISTORY_MAX_LIMIT) return HISTORY_MAX_LIMIT;
-  return Math.floor(limit);
-}
-
 function toLineageItem(r: Omit<LineageRow, "pos">): KnowledgeLineageItem {
   return {
     id: r.id,
@@ -176,6 +122,6 @@ function toLineageItem(r: Omit<LineageRow, "pos">): KnowledgeLineageItem {
   };
 }
 
-// Re-export the constants used by handler / tests that need to reason about
-// the same caps without duplicating them.
-export { HISTORY_DEFAULT_LIMIT, HISTORY_MAX_LIMIT, MAX_LINEAGE_HOPS };
+// Re-export the constant used by tests that need to reason about the same
+// cap without duplicating it.
+export { MAX_LINEAGE_HOPS };

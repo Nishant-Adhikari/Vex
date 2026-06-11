@@ -1,7 +1,7 @@
 /**
  * Error taxonomy for the knowledge supersede transaction.
  *
- * Discriminated `code` lets callers (the `knowledge_supersede` handler)
+ * Discriminated `code` lets callers (the manager's supersede path)
  * map to good LLM-facing messages without string-matching pg error text.
  */
 

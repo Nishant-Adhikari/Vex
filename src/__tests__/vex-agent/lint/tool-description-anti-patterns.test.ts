@@ -94,28 +94,24 @@ describe("orthogonal classification lint: `mutating: false` tools must not promi
   });
 });
 
-describe("knowledge_write `source` schema field", () => {
-  it("knowledge_write exposes `source` enum with 4 PR1 values", () => {
-    const def = getToolDef("knowledge_write");
+describe("long_memory_suggest provenance contract (S9 — manager-derived `source`)", () => {
+  it("does NOT expose a `source` param — provenance is derived by the memory manager", () => {
+    const def = getToolDef("long_memory_suggest");
     expect(def).toBeDefined();
     const sourceProp = (def?.parameters.properties as Record<string, unknown> | undefined)?.source;
-    expect(sourceProp).toBeDefined();
-    const sourceObj = sourceProp as { enum?: string[] };
-    expect(sourceObj.enum).toEqual(["observed", "user_confirmed", "inferred", "hypothesis"]);
+    expect(sourceProp).toBeUndefined();
   });
 
-  it("knowledge_supersede exposes `source` enum (same 4 values)", () => {
-    const def = getToolDef("knowledge_supersede");
-    expect(def).toBeDefined();
-    const sourceProp = (def?.parameters.properties as Record<string, unknown> | undefined)?.source;
-    expect(sourceProp).toBeDefined();
-    const sourceObj = sourceProp as { enum?: string[] };
-    expect(sourceObj.enum).toEqual(["observed", "user_confirmed", "inferred", "hypothesis"]);
+  it("description explains the staged write-door (manager reviews, never a direct write)", () => {
+    const def = getToolDef("long_memory_suggest");
+    expect(def?.description).toMatch(/STAGES a candidate/);
+    expect(def?.description).toMatch(/async manager/i);
+    expect(def?.description.toLowerCase()).toContain("does not write memory directly");
   });
 
-  it("knowledge_write.description explains the hot-context filter", () => {
-    const def = getToolDef("knowledge_write");
-    expect(def?.description.toLowerCase()).toMatch(/observed.*user_confirmed/i);
-    expect(def?.description).toMatch(/Active Knowledge/);
+  it("description advertises the secret / live-state reject policy", () => {
+    const def = getToolDef("long_memory_suggest");
+    expect(def?.description).toMatch(/Never include secrets/i);
+    expect(def?.description).toMatch(/live values/i);
   });
 });

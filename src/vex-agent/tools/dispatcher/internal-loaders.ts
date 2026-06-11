@@ -28,16 +28,6 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Twitter/X account research
   twitter_account: async () => (await import("../internal/twitter-account.js")).handleTwitterAccount,
 
-  // Knowledge — canonical agent memory layer
-  knowledge_write: async () => (await import("../internal/knowledge.js")).handleKnowledgeWrite,
-  knowledge_recall: async () => (await import("../internal/knowledge.js")).handleKnowledgeRecall,
-  knowledge_recall_overflow: async () => (await import("../internal/knowledge.js")).handleKnowledgeRecallOverflow,
-  knowledge_get: async () => (await import("../internal/knowledge.js")).handleKnowledgeGet,
-  knowledge_update_status: async () => (await import("../internal/knowledge.js")).handleKnowledgeUpdateStatus,
-  knowledge_supersede: async () => (await import("../internal/knowledge.js")).handleKnowledgeSupersede,
-  knowledge_lineage: async () => (await import("../internal/knowledge.js")).handleKnowledgeLineage,
-  knowledge_history: async () => (await import("../internal/knowledge.js")).handleKnowledgeHistory,
-
   // Portfolio
   portfolio: async () => (await import("../internal/portfolio-inspect.js")).handlePortfolio,
 
@@ -65,9 +55,10 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   tool_output_read: async () => (await import("../internal/tool-output-read.js")).handleToolOutputRead,
 
   // Per-session memory layer — agent-driven recall + outstanding-item closing
-  memory_recall: async () => (await import("../internal/memory/recall.js")).handleMemoryRecall,
-  mark_outstanding_resolved: async () =>
-    (await import("../internal/memory/mark-resolved.js")).handleMarkOutstandingResolved,
+  session_memory_search: async () =>
+    (await import("../internal/session-memory/search.js")).handleSessionMemorySearch,
+  session_memory_resolve_item: async () =>
+    (await import("../internal/session-memory/resolve-item.js")).handleSessionMemoryResolveItem,
 
   // Long-term memory (v2) — agent-facing candidate write-door (stages, not writes)
   long_memory_suggest: async () =>

@@ -20,7 +20,9 @@ export class LocalSecretVaultError extends Error {
   constructor(
     message: string,
     readonly code: "missing" | "invalid_password" | "corrupt" | "io",
-    readonly cause?: unknown,
+    // `override`: shadows Error.cause (lib ES2022+); explicit for
+    // vex-app's noImplicitOverride typecheck profile.
+    override readonly cause?: unknown,
   ) {
     super(message);
     this.name = "LocalSecretVaultError";

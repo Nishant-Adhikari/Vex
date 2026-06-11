@@ -208,7 +208,7 @@ function parseArgs(argv: readonly string[]): ReembedArgs {
           "  --dry-run   count what would be re-embedded; do not call provider or DB\n\n" +
           "WRITE GATE: this script acquires the authoritative lease on\n" +
           "maintenance_leases for the full duration of the reembed loop. Every\n" +
-          "normal writer (knowledge_write, supersede, promotion inserts, import)\n" +
+          "normal writer (promotion inserts, supersede, import)\n" +
           "runs under withLeaseSharedLock and fails fast with MaintenanceActiveError\n" +
           "while the lease is held — operators no longer need to stop the writer\n" +
           "stack by hand. If a prior reembed crashed and left the lease active,\n" +

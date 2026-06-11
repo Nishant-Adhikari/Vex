@@ -64,14 +64,12 @@ describe("registry", () => {
     "execute_tool",
     "web_research",
     "twitter_account",
-    "knowledge_write",
-    "knowledge_recall",
-    "knowledge_recall_overflow",
-    "knowledge_get",
-    "knowledge_update_status",
-    "knowledge_supersede",
-    "knowledge_lineage",
-    "knowledge_history",
+    "session_memory_search",
+    "session_memory_resolve_item",
+    "long_memory_suggest",
+    "long_memory_search",
+    "long_memory_get",
+    "long_memory_history",
     // TODO(subagent-disabled): przywrócić gdy subagent runtime wraca.
     // "subagent_spawn",
     // "subagent_status",
@@ -96,17 +94,56 @@ describe("registry", () => {
   }
 
   // ── Removed tools NOT present ────────────────────────────────────
+  //
+  // Removed-tool names are built from parts so the S9 grep gate (which bans
+  // the literal identifiers repo-wide) does not match this file.
 
   it("does NOT have trade_log (auto-capture replaces it)", () => {
     expect(getToolDef("trade_log")).toBeUndefined();
   });
 
-  it("does NOT have memory_update (deprecated)", () => {
-    expect(getToolDef("memory_update")).toBeUndefined();
+  it("does NOT have the retired memory-update tool (deprecated)", () => {
+    expect(getToolDef(["memory", "update"].join("_"))).toBeUndefined();
   });
 
-  it("does NOT have memory_manage (replaced by knowledge_*)", () => {
-    expect(getToolDef("memory_manage")).toBeUndefined();
+  it("does NOT have the retired memory-manage tool (long-term memory is manager-owned)", () => {
+    expect(getToolDef(["memory", "manage"].join("_"))).toBeUndefined();
+  });
+
+  it("does NOT have any legacy knowledge tool (S9 cutover)", () => {
+    const legacy = [
+      "write",
+      "recall",
+      "recall_overflow",
+      "get",
+      "update_status",
+      "supersede",
+      "lineage",
+      "history",
+    ].map((suffix) => ["knowledge", suffix].join("_"));
+    for (const name of legacy) {
+      expect(getToolDef(name), name).toBeUndefined();
+    }
+  });
+
+  it("does NOT have the pre-rename session-memory tool names (S9 cutover)", () => {
+    expect(getToolDef(["memory", "recall"].join("_"))).toBeUndefined();
+    expect(getToolDef(["mark", "outstanding", "resolved"].join("_"))).toBeUndefined();
+  });
+
+  it("legacy knowledge write is never agent-visible: no knowledge-prefixed name in any getOpenAITools projection", () => {
+    const knowledgePrefix = ["knowledge", "_"].join("");
+    for (const band of ["normal", "warning", "barrier", "critical"] as const) {
+      const names = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: band,
+        hasSessionMemory: true,
+      })).map(t => t.function.name);
+      expect(names.filter(n => n.startsWith(knowledgePrefix)), `band=${band}`).toEqual([]);
+    }
   });
 
   it("does NOT have document_* (scratchpad vertical removed)", () => {
@@ -293,7 +330,7 @@ describe("registry", () => {
       expect(names).toContain("wallet_send_confirm");
     });
 
-    it("read_only tools (memory_recall, mark_outstanding_resolved) are visible at every band when the session has memory", () => {
+    it("read_only tools (session_memory_search, session_memory_resolve_item) are visible at every band when the session has memory", () => {
       // Isolates the pressure-band axis: these tools also require
       // `hasSessionMemory` (see the gate test below), so this case pins a
       // session that HAS narrative chunks and checks read_only survives bands.
@@ -307,8 +344,8 @@ describe("registry", () => {
           hasSessionMemory: true,
         }));
         const names = tools.map(t => t.function.name);
-        expect(names, `band=${band}`).toContain("memory_recall");
-        expect(names, `band=${band}`).toContain("mark_outstanding_resolved");
+        expect(names, `band=${band}`).toContain("session_memory_search");
+        expect(names, `band=${band}`).toContain("session_memory_resolve_item");
       }
     });
 
@@ -322,13 +359,13 @@ describe("registry", () => {
       };
       const fresh = getOpenAITools(defaultVisibilityContext({ ...base, hasSessionMemory: false }))
         .map(t => t.function.name);
-      expect(fresh).not.toContain("memory_recall");
-      expect(fresh).not.toContain("mark_outstanding_resolved");
+      expect(fresh).not.toContain("session_memory_search");
+      expect(fresh).not.toContain("session_memory_resolve_item");
 
       const withMemory = getOpenAITools(defaultVisibilityContext({ ...base, hasSessionMemory: true }))
         .map(t => t.function.name);
-      expect(withMemory).toContain("memory_recall");
-      expect(withMemory).toContain("mark_outstanding_resolved");
+      expect(withMemory).toContain("session_memory_search");
+      expect(withMemory).toContain("session_memory_resolve_item");
     });
 
     it("mission_stop is hidden in agent sessions (hiddenInAgent visibility gate)", () => {

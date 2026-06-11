@@ -1,5 +1,5 @@
 /**
- * Integration: knowledge_entries.source field gates Active Knowledge.
+ * Integration: knowledge_entries.source field gates Active Memory.
  *
  * Proofs:
  *   - `listActiveForHotContext` returns only rows with source ∈

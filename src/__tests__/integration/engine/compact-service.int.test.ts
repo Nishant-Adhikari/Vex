@@ -243,7 +243,7 @@ describe("executeCompactNow giant_tool plan (integration)", () => {
   // Replaces the deleted `giant-tool-chain.int.test.ts` coverage: when a
   // single bloated tool message exceeds GIANT_TOOL_THRESHOLD, the compact
   // path forks that one row to messages_archive and leaves a placeholder
-  // (referencing the compact_job_id + memory_recall) in the live transcript.
+  // (referencing the compact_job_id + session_memory_search) in the live transcript.
   // This is the codex-required regression test for the PR4 sunset.
 
   beforeEach(async () => {
@@ -287,14 +287,14 @@ describe("executeCompactNow giant_tool plan (integration)", () => {
     expect(archivedRow!.content.length).toBeGreaterThan(GIANT_TOOL_THRESHOLD);
     expect(archivedRow!.content.startsWith("xxxx")).toBe(true);
 
-    // Live row replaced by placeholder mentioning compact_job_id + memory_recall.
+    // Live row replaced by placeholder mentioning compact_job_id + session_memory_search.
     const liveRow = await queryOne<{ content: string }>(
       `SELECT content FROM messages WHERE id = $1`,
       [bloatedId],
     );
     expect(liveRow).not.toBeNull();
     expect(liveRow!.content).toContain(String(result.jobId));
-    expect(liveRow!.content.toLowerCase()).toContain("memory_recall");
+    expect(liveRow!.content.toLowerCase()).toContain("session_memory_search");
     // Placeholder is bounded — much smaller than the original payload.
     expect(liveRow!.content.length).toBeLessThan(GIANT_TOOL_THRESHOLD);
 
@@ -311,7 +311,7 @@ describe("executeCompactNow giant_tool plan (integration)", () => {
 
     // getAllMessages returns canonical archived payload once, NOT the placeholder.
     // This is the consumer-side proof that the fork is visible-as-archived to
-    // any code reading through getAllMessages (recall-seed, history viewers).
+    // any code reading through getAllMessages (resume paths, history viewers).
     const allMessages = await getAllMessages(sid);
     const matchingRows = allMessages.filter((m) => m.id === bloatedId);
     expect(matchingRows).toHaveLength(1);

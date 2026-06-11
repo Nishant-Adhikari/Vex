@@ -17,7 +17,7 @@
  *  - `read`                     — no side effect outside the read path
  *                                 (DB selects, RPC reads, external GETs).
  *  - `local_write`              — mutates Vex-local DB / file / memory state
- *                                 (knowledge, mission draft, compact).
+ *                                 (memory suggestions, mission draft, compact).
  *  - `schedule`                 — defers / wakes engine execution
  *                                 (loop_defer); separate from local_write
  *                                 because policy gates may treat scheduling

@@ -18,7 +18,7 @@
  * the same source of truth, otherwise audit drift breaks recall silently.
  *
  * Failure is loud: missing config throws at load time, sidecar errors propagate
- * after retry exhaustion. The caller (knowledge_write/knowledge_recall handlers)
+ * after retry exhaustion. The caller (long-memory suggest/search handlers)
  * surfaces these as `embedding service unavailable` tool results.
  */
 

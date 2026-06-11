@@ -46,8 +46,8 @@ export interface ToolVisibilityContext {
   contextUsageBand: ContextUsageBand;
   /**
    * True iff the session has at least one active narrative memory chunk
-   * (Track-2 compaction output). Gates `memory_recall` /
-   * `mark_outstanding_resolved` via `ToolVisibility.requiresSessionMemory` so a
+   * (Track-2 compaction output). Gates `session_memory_search` /
+   * `session_memory_resolve_item` via `ToolVisibility.requiresSessionMemory` so a
    * fresh session is never shown no-op memory tools. Recomputed per turn —
    * chunks first appear after a compact, possibly mid-session.
    */

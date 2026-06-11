@@ -22,8 +22,7 @@
  * Scope: runtime files under `src/vex-agent/` (mirrors the no-any-policy
  * scope). Tests / e2e / scripts are excluded — they may legitimately
  * reference the deprecated strings in comments describing what was
- * removed (and the new `recall-seed.ts` legitimately uses
- * `findLastUserInput` as its chat-mode fallback).
+ * removed.
  *
  * When you intentionally re-introduce one of these identifiers (extremely
  * unlikely — they are dead by design), bump this test's allowlist with a
@@ -31,7 +30,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
 
@@ -74,11 +73,16 @@ function listRuntimeFiles(): string[] {
     .filter(Boolean)
     .filter((p) => !p.includes("/__tests__/"))
     .filter((p) => !EXCLUDED_SUBPATHS.some((ex) => p.includes(ex)))
-    .map((p) => resolve(process.cwd(), p));
+    .map((p) => resolve(process.cwd(), p))
+    // Tracked-but-deleted files (a pending deletion in the working tree)
+    // still show up in `git ls-files`; skip them instead of crashing.
+    .filter((p) => existsSync(p));
 }
 
 describe("no-deprecated-symbols policy — runtime code in src/vex-agent/", () => {
-  it("never mentions any removed scheduler / promotion / paused_checkpoint identifier", () => {
+  // Generous timeout: this is a repo-wide fs scan, which can take >10s on
+  // slow mounts (WSL drvfs); it is a lint sweep, not a perf test.
+  it("never mentions any removed scheduler / promotion / paused_checkpoint identifier", { timeout: 60_000 }, () => {
     const files = listRuntimeFiles();
     expect(files.length, "no runtime files discovered — git ls-files failing?").toBeGreaterThan(0);
 
@@ -115,7 +119,7 @@ describe("no-deprecated-symbols policy — runtime code in src/vex-agent/", () =
     expect(offenders).toEqual([]);
   });
 
-  it("`findLastUserInput` has no CODE references outside recall-seed.ts", () => {
+  it("`findLastUserInput` has no CODE references (its last home, the recall-seed module, was deleted in S9)", { timeout: 60_000 }, () => {
     const files = listRuntimeFiles();
     const hits: Array<{ path: string; line: number }> = [];
     for (const file of files) {
@@ -133,13 +137,12 @@ describe("no-deprecated-symbols policy — runtime code in src/vex-agent/", () =
       }
     }
 
-    const disallowed = hits.filter((h) => !h.path.endsWith("/engine/core/recall-seed.ts"));
-    if (disallowed.length > 0) {
-      const detail = disallowed.map((h) => `  ${h.path}:${h.line}`).join("\n");
+    if (hits.length > 0) {
+      const detail = hits.map((h) => `  ${h.path}:${h.line}`).join("\n");
       throw new Error(
-        `findLastUserInput must only live in recall-seed.ts as the chat fallback:\n${detail}`,
+        `findLastUserInput was deleted with the legacy recall seed (S9) and must not return:\n${detail}`,
       );
     }
-    expect(disallowed).toEqual([]);
+    expect(hits).toEqual([]);
   });
 });

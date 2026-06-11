@@ -80,22 +80,20 @@ describe("ActionKind — pinned critical classifications", () => {
     // Read-only DB / RPC / external API surfaces
     ["chain_read", "read"],
     ["portfolio", "read"],
-    ["memory_recall", "read"],
+    ["session_memory_search", "read"],
     ["tool_output_read", "read"],
-    ["knowledge_recall", "read"],
-    ["knowledge_get", "read"],
+    ["long_memory_search", "read"],
+    ["long_memory_get", "read"],
 
     // External API calls — read-only per Codex bindings:
     // network egress / privacy is a separate dimension, not `external_post`.
     ["web_research", "read"],
     ["twitter_account", "read"],
 
-    // Local writes — knowledge, mission draft, compaction
-    ["knowledge_write", "local_write"],
-    ["knowledge_supersede", "local_write"],
-    ["knowledge_update_status", "local_write"],
+    // Local writes — memory suggestions, mission draft, compaction
+    ["long_memory_suggest", "local_write"],
     ["mission_draft_update", "local_write"],
-    ["mark_outstanding_resolved", "local_write"],
+    ["session_memory_resolve_item", "local_write"],
     ["compact_now", "local_write"],
     ["polymarket_setup", "local_write"],
 

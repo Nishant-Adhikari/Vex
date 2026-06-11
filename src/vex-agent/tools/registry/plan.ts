@@ -9,7 +9,7 @@
  * task; they do not author the top-level plan).
  *
  * `mutating: false` (co-authoring the plan must not deadlock on per-call
- * approval — mirrors `knowledge_write`/`mission_draft_update`). The real safety
+ * approval — mirrors `mission_draft_update`). The real safety
  * gate is the dispatcher's execution gate: while plan-mode is on and the plan
  * is unaccepted, side-effecting tools are blocked until the user accepts.
  */

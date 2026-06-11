@@ -107,91 +107,22 @@ vi.mock("@vex-agent/db/repos/search.js", () => ({
   cacheFetchResult: vi.fn().mockResolvedValue(undefined),
 }));
 
-export const mockKnowledgeInsert = vi.fn().mockResolvedValue({
-  entry: {
-    id: 42, kind: "memo", title: "test", summary: "test", contentMd: "test",
-    tags: [], sourceRefs: {}, confidence: null, status: "active", pinned: false,
-    validFrom: "2026-04-06T12:00:00Z", validUntil: "2026-04-13T12:00:00Z",
-    contentHash: "f".repeat(64),
-    embeddingModel: "ai/embeddinggemma:300M-Q8_0", embeddingDim: 768,
-    sourceSurface: "vex_agent", sourceSession: null,
-    supersedesId: null, statusReason: null, changeSummary: null, whatFailed: null,
-    createdAt: "2026-04-06T12:00:00Z", updatedAt: "2026-04-06T12:00:00Z",
-  },
-  inserted: true,
-});
 // Default: short-circuit lookup misses (no duplicate). Tests that need
 // the duplicate path override this.
 export const mockKnowledgeFindByContentHash = vi.fn().mockResolvedValue(null);
 export const mockKnowledgeGetById = vi.fn().mockResolvedValue(null);
-export const mockKnowledgeUpdateStatus = vi.fn().mockResolvedValue({ ok: true });
-export const mockKnowledgeRecallTopK = vi.fn().mockResolvedValue([]);
+export const mockKnowledgeRecallLongMemoryTopK = vi.fn().mockResolvedValue([]);
 export const mockKnowledgeListActive = vi.fn().mockResolvedValue([]);
 export const mockKnowledgeListKinds = vi.fn().mockResolvedValue([]);
 export const mockKnowledgeGetLineageChain = vi.fn().mockResolvedValue(null);
-export const mockKnowledgeListHistory = vi.fn().mockResolvedValue([]);
 
 vi.mock("@vex-agent/db/repos/knowledge.js", () => ({
-  insertEntry: (...args: unknown[]) => mockKnowledgeInsert(...args),
   findByContentHash: (...args: unknown[]) => mockKnowledgeFindByContentHash(...args),
   getById: (...args: unknown[]) => mockKnowledgeGetById(...args),
-  updateStatus: (...args: unknown[]) => mockKnowledgeUpdateStatus(...args),
-  recallTopK: (...args: unknown[]) => mockKnowledgeRecallTopK(...args),
+  recallLongMemoryTopK: (...args: unknown[]) => mockKnowledgeRecallLongMemoryTopK(...args),
   listActiveForHotContext: (...args: unknown[]) => mockKnowledgeListActive(...args),
   listKnownKinds: (...args: unknown[]) => mockKnowledgeListKinds(...args),
   getLineageChain: (...args: unknown[]) => mockKnowledgeGetLineageChain(...args),
-  listHistory: (...args: unknown[]) => mockKnowledgeListHistory(...args),
-}));
-
-// knowledge_supersede repo — lazy-imported by the handler. Tests override
-// mockKnowledgeSupersede's resolved value to assert routing / param passing.
-export const mockKnowledgeSupersede = vi.fn().mockResolvedValue({
-  successor: {
-    id: 43, kind: "memo", title: "new", summary: "new", contentMd: "new",
-    tags: [], sourceRefs: {}, confidence: null, status: "active", pinned: false,
-    validFrom: "2026-04-06T12:00:00Z", validUntil: "2026-04-13T12:00:00Z",
-    contentHash: "b".repeat(64),
-    embeddingModel: "ai/embeddinggemma:300M-Q8_0", embeddingDim: 768,
-    sourceSurface: "vex_agent", sourceSession: null,
-    supersedesId: 42, statusReason: null,
-    changeSummary: null, whatFailed: null,
-    createdAt: "2026-04-06T12:00:00Z", updatedAt: "2026-04-06T12:00:00Z",
-  },
-  predecessor: {
-    id: 42, kind: "memo", title: "old", summary: "old", contentMd: "old",
-    tags: [], sourceRefs: {}, confidence: null, status: "superseded", pinned: false,
-    validFrom: "2026-04-01T00:00:00Z", validUntil: null,
-    contentHash: "a".repeat(64),
-    embeddingModel: "ai/embeddinggemma:300M-Q8_0", embeddingDim: 768,
-    sourceSurface: "vex_agent", sourceSession: null,
-    supersedesId: null, statusReason: "reason",
-    changeSummary: null, whatFailed: null,
-    createdAt: "2026-04-01T00:00:00Z", updatedAt: "2026-04-06T12:00:00Z",
-  },
-});
-
-vi.mock("@vex-agent/db/repos/knowledge-lifecycle.js", async () => {
-  // Keep SupersedeError as the real class so handler `instanceof` checks still work.
-  const actual = await vi.importActual<typeof import("@vex-agent/db/repos/knowledge-lifecycle.js")>(
-    "@vex-agent/db/repos/knowledge-lifecycle.js",
-  );
-  return {
-    ...actual,
-    supersedeEntry: (...args: unknown[]) => mockKnowledgeSupersede(...args),
-  };
-});
-
-export const mockCacheWrite = vi.fn().mockResolvedValue({ cacheKey: "rcl-test", expiresAt: "2026-04-06T12:15:00Z" });
-export const mockCacheRead = vi.fn().mockResolvedValue(null);
-export const mockCacheCleanup = vi.fn().mockResolvedValue(0);
-
-export const mockGenerateCacheKey = vi.fn((..._args: unknown[]) => "rcl-test");
-
-vi.mock("@vex-agent/db/repos/recall-cache.js", () => ({
-  writeCache: (...args: unknown[]) => mockCacheWrite(...args),
-  readCache: (...args: unknown[]) => mockCacheRead(...args),
-  cleanupExpired: (...args: unknown[]) => mockCacheCleanup(...args),
-  generateCacheKey: (...args: unknown[]) => mockGenerateCacheKey(...args),
 }));
 
 export const TEST_EMBEDDING = Array.from({ length: 768 }, () => 0.1);
@@ -223,9 +154,9 @@ vi.mock("@vex-agent/embeddings/config.js", () => ({
   MAX_EMBEDDING_DIM: 8192,
 }));
 
-// knowledge_write / knowledge_supersede now run under the maintenance lease
-// gate. Dispatcher routing tests only care about handler wiring, so keep the
-// lease layer as a pass-through and avoid touching a real pool.
+// Promotion-path inserts run under the maintenance lease gate. Dispatcher
+// routing tests only care about handler wiring, so keep the lease layer as
+// a pass-through and avoid touching a real pool.
 vi.mock("@vex-agent/db/repos/maintenance-lease.js", () => ({
   withLeaseSharedLock: async <T>(
     _pool: unknown,

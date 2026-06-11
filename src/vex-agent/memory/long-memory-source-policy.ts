@@ -1,7 +1,7 @@
 /**
  * Long-memory source provenance policy — pure TS constants, types, and helpers
  * describing knowledge-entry provenance tiers (`knowledge_entries.source`) and
- * which tiers are eligible for Active Knowledge hot-context injection.
+ * which tiers are eligible for Active Memory hot-context injection.
  *
  * No DB, no embeddings, no I/O. Tested as plain unit tests.
  */
@@ -10,7 +10,7 @@ import { z } from "zod";
 
 // ── Banner / state surface ──────────────────────────────────────
 
-/** Maximum number of `kind` values shown in the Active Knowledge banner top-kinds line. */
+/** Maximum number of `kind` values shown in the Active Memory banner top-kinds line. */
 export const KNOWLEDGE_BANNER_TOP_KINDS_LIMIT = 5;
 
 // ── Knowledge source provenance ─────────────────────────────────
@@ -37,8 +37,8 @@ export type KnowledgeSource = (typeof KNOWLEDGE_SOURCES)[number];
 export const knowledgeSourceSchema = z.enum(KNOWLEDGE_SOURCES);
 
 /**
- * Sources eligible for Active Knowledge hot-context injection. Inferred and
- * hypothesis entries are still recallable via `knowledge_recall` but never
+ * Sources eligible for Active Memory hot-context injection. Inferred and
+ * hypothesis entries are still recallable via `long_memory_search` but never
  * auto-injected — they require deliberate retrieval by the agent.
  */
 export const HOT_CONTEXT_SOURCES: readonly KnowledgeSource[] = [

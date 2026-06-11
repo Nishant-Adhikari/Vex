@@ -507,7 +507,7 @@ describe("turn-loop", () => {
           toolCalls: [
             { id: "tc-1", name: "wallet_balances", arguments: {} },
             { id: "tc-2", name: "compact_now", arguments: { conversation_summary: "..." } },
-            { id: "tc-3", name: "knowledge_write", arguments: {} },
+            { id: "tc-3", name: "long_memory_suggest", arguments: {} },
           ],
         },
         { content: "post-compact reply" },

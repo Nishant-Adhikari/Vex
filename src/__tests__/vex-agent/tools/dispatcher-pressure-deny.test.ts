@@ -111,8 +111,8 @@ describe("checkPressureDeny — runtime hard-deny (dispatcher)", () => {
   it("ALLOWS read_only tools at every band", () => {
     const bands: ContextUsageBand[] = ["normal", "warning", "barrier", "critical"];
     for (const band of bands) {
-      expect(checkPressureDeny("memory_recall", band), `memory_recall @ ${band}`).toBeNull();
-      expect(checkPressureDeny("knowledge_recall", band), `knowledge_recall @ ${band}`).toBeNull();
+      expect(checkPressureDeny("session_memory_search", band), `session_memory_search @ ${band}`).toBeNull();
+      expect(checkPressureDeny("long_memory_search", band), `long_memory_search @ ${band}`).toBeNull();
       expect(checkPressureDeny("wallet_balances", band), `wallet_balances @ ${band}`).toBeNull();
     }
   });

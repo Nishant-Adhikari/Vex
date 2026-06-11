@@ -90,7 +90,7 @@ export interface KnowledgeEntry {
   embeddingDim: number;
   sourceSurface: "vex_agent" | "mcp_local";
   sourceSession: string | null;
-  /** FK to predecessor row this entry replaces (set by knowledge_supersede), or null. */
+  /** FK to predecessor row this entry replaces (set by the manager's supersede transaction), or null. */
   supersedesId: number | null;
   /** Short "why" for any non-active status transition (superseded / invalidated / archived). */
   statusReason: string | null;
@@ -98,7 +98,7 @@ export interface KnowledgeEntry {
   changeSummary: string | null;
   /** Supersede-only: evidence that invalidated the predecessor. NULL on predecessors and plain entries. */
   whatFailed: string | null;
-  /** Provenance classification — only `observed` + `user_confirmed` surface in Active Knowledge hot context. */
+  /** Provenance classification — only `observed` + `user_confirmed` surface in Active Memory hot context. */
   source: KnowledgeSource;
   createdAt: string;
   updatedAt: string;
@@ -169,14 +169,14 @@ export interface InsertEntryInput {
   sourceSurface?: "vex_agent" | "mcp_local";
   sourceSession?: string;
   // ── Optional audit fields (used by knowledge-import to preserve roundtrip).
-  // knowledge_write does NOT pass these — defaults `'active'` / NOW() apply.
+  // The promotion path does NOT pass these — defaults `'active'` / NOW() apply.
   status?: KnowledgeStatus;
   validFrom?: Date;
   createdAt?: Date;
   updatedAt?: Date;
-  // ── Optional lifecycle fields. knowledge_write leaves all null; knowledge_supersede
-  // populates supersedesId + changeSummary + whatFailed on the new row; import v2
-  // may set any of them when restoring historical state.
+  // ── Optional lifecycle fields. Plain promotion leaves all null; the manager's
+  // supersede transaction populates supersedesId + changeSummary + whatFailed on
+  // the new row; import v2 may set any of them when restoring historical state.
   supersedesId?: number | null;
   statusReason?: string | null;
   changeSummary?: string | null;
@@ -184,7 +184,7 @@ export interface InsertEntryInput {
   /**
    * Provenance classification. Defaults to `'observed'` when omitted (backward-
    * compatible with import scripts and tools that haven't been updated yet).
-   * Only `observed` + `user_confirmed` show up in Active Knowledge hot context;
+   * Only `observed` + `user_confirmed` show up in Active Memory hot context;
    * `inferred` + `hypothesis` are recall-only.
    */
   source?: KnowledgeSource;
@@ -247,19 +247,6 @@ export interface ReembedRow {
   contentMd: string;
 }
 
-/**
- * Discriminated outcome of `updateStatus`.
- *
- * The previous boolean return could not distinguish "row didn't exist" from
- * "row exists but wasn't active" — after introducing the superseded lifecycle,
- * that distinction matters: blindly overwriting a row's status violates the
- * invariant that each row transitions from active at most once.
- */
-export type UpdateStatusResult =
-  | { ok: true }
-  | { ok: false; reason: "not_found" }
-  | { ok: false; reason: "not_active"; currentStatus: KnowledgeStatus };
-
 // ── Mappers + helpers ───────────────────────────────────────────
 
 export function mapRow(r: KnowledgeRow): KnowledgeEntry {
@@ -306,8 +293,7 @@ export function mapRow(r: KnowledgeRow): KnowledgeEntry {
  * Long-memory recall candidate (S3) — a `RecallCandidate` PLUS the provenance
  * `source` tier and `maturityState`, so `long_memory_search` can apply
  * source-tier ranking (de-weight inferred/hypothesis) WITHOUT excluding them
- * (genesis §951). Additive: `RecallCandidate` and `knowledge_recall` are
- * untouched; only the dedicated `recallLongMemoryTopK` returns this shape.
+ * (genesis §951). Only the dedicated `recallLongMemoryTopK` returns this shape.
  */
 export interface LongMemoryRecallCandidate extends RecallCandidate {
   /** Provenance tier — drives the S3 source-tier de-weight. */
@@ -379,12 +365,12 @@ export function toIsoOrNull(d: Date | undefined): string | null {
   return d ? d.toISOString() : null;
 }
 
-// ── Lineage / history (read-only browse) ─────────────────────────
+// ── Lineage (read-only browse) ───────────────────────────────────
 
 /**
  * Compact lineage node — one entry in a version chain. Excludes embedding,
  * content_md, content_hash and source_refs because lineage browse must stay
- * cheap even for long chains. Use `getById` (or `knowledge_get`) when you
+ * cheap even for long chains. Use `getById` (or `long_memory_get`) when you
  * need the full entry.
  */
 export interface KnowledgeLineageItem {
@@ -424,25 +410,3 @@ export interface KnowledgeLineageResult {
   chain: KnowledgeLineageItem[];
 }
 
-/** Status filter set accepted by `listHistory`. Keep in sync with the tool's enum. */
-export type HistoryStatus = KnowledgeStatus;
-
-export interface ListHistoryFilters {
-  /**
-   * Optional status filter. When omitted, the repo returns only NON-ACTIVE
-   * rows (superseded ∪ invalidated ∪ archived) — `active` browsing is opt-in
-   * via this parameter. Tool description carries the same wording.
-   */
-  status?: HistoryStatus;
-  /** Optional free-form snake_case kind filter. */
-  kind?: string;
-  /** Required — caller-clamped limit (handler clamps to [1,100]). */
-  limit: number;
-}
-
-/**
- * One row in `listHistory` output. Same compact shape as a lineage node so
- * downstream UIs / agent reasoning can treat them uniformly. No content_md
- * — list browse is metadata-only.
- */
-export type KnowledgeHistoryListItem = KnowledgeLineageItem;

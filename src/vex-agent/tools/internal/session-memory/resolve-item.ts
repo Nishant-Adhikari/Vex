@@ -1,5 +1,5 @@
 /**
- * `mark_outstanding_resolved` tool handler — closes a single outstanding
+ * `session_memory_resolve_item` tool handler — closes a single outstanding
  * item on a session memory chunk. Updates the JSONB element + re-renders
  * `body_md` + re-embeds via the same local EmbeddingGemma service.
  *
@@ -29,21 +29,21 @@ import { OUTSTANDING_ITEM_TEXT_MAX } from "@vex-agent/memory/session-memory-poli
 import { redact } from "@vex-agent/memory/redaction.js";
 import logger from "@utils/logger.js";
 
-const MarkResolvedSchema = z.object({
+const ResolveItemSchema = z.object({
   memory_id: z.number().int().positive(),
   outstanding_item_id: z.string().uuid(),
   resolution_note: z.string().min(1).max(OUTSTANDING_ITEM_TEXT_MAX),
 });
 
-export async function handleMarkOutstandingResolved(
+export async function handleSessionMemoryResolveItem(
   args: unknown,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  const parsed = MarkResolvedSchema.safeParse(args);
+  const parsed = ResolveItemSchema.safeParse(args);
   if (!parsed.success) {
     return {
       success: false,
-      output: `mark_outstanding_resolved: invalid arguments: ${parsed.error.message}`,
+      output: `session_memory_resolve_item: invalid arguments: ${parsed.error.message}`,
     };
   }
   const { memory_id, outstanding_item_id, resolution_note } = parsed.data;
@@ -55,7 +55,7 @@ export async function handleMarkOutstandingResolved(
   // resolution path that the cross-PR audit flagged as a leak surface.
   const redactedNote = redact(resolution_note);
 
-  logger.info("mark_outstanding_resolved.called", {
+  logger.info("session_memory_resolve_item.called", {
     sessionId: context.sessionId,
     memoryId: memory_id,
     redactionHardCount: redactedNote.hardRedactCount,
@@ -83,7 +83,7 @@ export async function handleMarkOutstandingResolved(
   if (!result.ok) {
     return {
       success: false,
-      output: `mark_outstanding_resolved: ${result.reason}`,
+      output: `session_memory_resolve_item: ${result.reason}`,
     };
   }
 
@@ -104,7 +104,7 @@ export async function handleMarkOutstandingResolved(
       result.memory.bodyMdHash,
     );
     if (!updated) {
-      logger.info("mark_outstanding_resolved.embed_stale", {
+      logger.info("session_memory_resolve_item.embed_stale", {
         memoryId: memory_id,
         sessionId: context.sessionId,
       });
@@ -119,7 +119,7 @@ export async function handleMarkOutstandingResolved(
       };
     }
   } catch (err) {
-    logger.warn("mark_outstanding_resolved.embed_failed", {
+    logger.warn("session_memory_resolve_item.embed_failed", {
       memoryId: memory_id,
       sessionId: context.sessionId,
       error: err instanceof Error ? err.message : String(err),

@@ -557,7 +557,7 @@ export async function listCandidatesByStatus(
  * Filters for `recallCandidatesTopK`. The model/dim pair is MANDATORY — the
  * vector column has no typmod, so running `<=>` across a different-dim model
  * crashes pgvector, and comparing similarities across model spaces is
- * meaningless (mirrors the knowledge recall contract).
+ * meaningless (mirrors the long-memory recall contract).
  */
 export interface CandidateRecallFilters {
   /** Required — current embedding model identifier. Recall ONLY returns rows produced by this model. */
@@ -577,7 +577,7 @@ export interface CandidateRecallFilters {
  * fact never promotes as a generalization. Suppressed, expired, and the OTHER
  * terminal states (promoted/rejected/superseded/merged/expired) are EXCLUDED.
  * Ordered by cosine `<=>`; fetches `k * 2` raw rows (same headroom as the
- * knowledge recall) so the caller can rerank + cap. No migration — uses
+ * long-memory recall) so the caller can rerank + cap. No migration — uses
  * `idx_mc_embedding_match`.
  */
 export async function recallCandidatesTopK(

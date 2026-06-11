@@ -36,7 +36,7 @@ import {
 /** Default `k` for `long_memory_search` when the caller omits it. */
 export const LONG_MEMORY_DEFAULT_K = 8;
 
-/** Hard upper bound on `k` — reuses the knowledge recall ceiling (one source of truth). */
+/** Hard upper bound on `k` — reuses the long-memory recall ceiling (one source of truth). */
 export const LONG_MEMORY_MAX_K = RECALL_MAX_K;
 
 /** Maximum number of entries returned inline in a search response. */

@@ -52,7 +52,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },
   {
     label: "Session memory — this conversation/mission only",
-    toolNames: ["memory_recall", "mark_outstanding_resolved"],
+    toolNames: ["session_memory_search", "session_memory_resolve_item"],
   },
   {
     label: "Long-term memory recall — durable cross-session lessons (search/get/history)",
@@ -63,20 +63,6 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     toolNames: ["long_memory_suggest"],
   },
   { label: "Context compaction — pressure only", toolNames: ["compact_now"] },
-  {
-    label: "Knowledge recall/history — curated across sessions",
-    toolNames: [
-      "knowledge_recall",
-      "knowledge_recall_overflow",
-      "knowledge_get",
-      "knowledge_lineage",
-      "knowledge_history",
-    ],
-  },
-  {
-    label: "Knowledge write/lifecycle",
-    toolNames: ["knowledge_write", "knowledge_supersede", "knowledge_update_status"],
-  },
   { label: "Wallet transfers", toolNames: ["wallet_send_prepare", "wallet_send_confirm"] },
   { label: "Mission setup draft", toolNames: ["mission_draft_update"] },
   { label: "Mission run stop", toolNames: ["mission_stop"] },

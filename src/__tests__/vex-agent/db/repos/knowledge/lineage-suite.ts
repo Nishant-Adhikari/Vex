@@ -33,30 +33,8 @@ function lineageRow(overrides: {
   };
 }
 
-function historyRow(overrides: {
-  id: number;
-  kind: string;
-  status: string;
-  supersedesId?: number | null;
-  updatedAt?: string;
-}) {
-  return {
-    id: overrides.id,
-    kind: overrides.kind,
-    title: `entry ${overrides.id}`,
-    status: overrides.status,
-    supersedes_id: overrides.supersedesId ?? null,
-    status_reason: null,
-    change_summary: null,
-    what_failed: null,
-    valid_from: "2026-04-01T00:00:00Z",
-    valid_until: null,
-    updated_at: overrides.updatedAt ?? "2026-04-10T00:00:00Z",
-  };
-}
-
 export function lineageSuite(ctx: SuiteCtx): void {
-  const { getLineageChain, listHistory, mockQuery } = ctx;
+  const { getLineageChain, mockQuery } = ctx;
 
   describe("getLineageChain", () => {
     it("returns null on invalid id without hitting DB", async () => {
@@ -154,55 +132,4 @@ export function lineageSuite(ctx: SuiteCtx): void {
     });
   });
 
-  describe("listHistory", () => {
-    it("default (no status filter) → SQL filters to non-active set, default limit", async () => {
-      mockQuery.mockResolvedValueOnce([]);
-      await listHistory({ limit: 0 }); // 0 → repo clamp to default 20
-      const [sql, params] = mockQuery.mock.calls[0];
-      expect(sql).toContain("FROM knowledge_entries");
-      expect(sql).toContain("status IN ('superseded', 'invalidated', 'archived')");
-      expect(sql).toContain("ORDER BY updated_at DESC");
-      expect(sql).toContain("LIMIT $3");
-      expect(params).toEqual([null, null, 20]);
-    });
-
-    it("explicit status filter overrides the non-active default", async () => {
-      mockQuery.mockResolvedValueOnce([]);
-      await listHistory({ status: "active", kind: "risk_rule", limit: 5 });
-      const [, params] = mockQuery.mock.calls[0];
-      expect(params).toEqual(["active", "risk_rule", 5]);
-    });
-
-    it("clamps limit to MAX (100) when caller asks for more", async () => {
-      mockQuery.mockResolvedValueOnce([]);
-      await listHistory({ limit: 9999 });
-      const [, params] = mockQuery.mock.calls[0];
-      expect(params[2]).toBe(100);
-    });
-
-    it("clamps non-positive / non-finite limit to default 20", async () => {
-      mockQuery.mockResolvedValueOnce([]);
-      await listHistory({ limit: -3 });
-      expect(mockQuery.mock.calls[0]![1]![2]).toBe(20);
-
-      mockQuery.mockResolvedValueOnce([]);
-      await listHistory({ limit: NaN });
-      expect(mockQuery.mock.calls[1]![1]![2]).toBe(20);
-    });
-
-    it("maps DB rows to compact history items (no contentMd / contentHash)", async () => {
-      mockQuery.mockResolvedValueOnce([
-        historyRow({ id: 1, kind: "risk_rule", status: "superseded", supersedesId: null }),
-        historyRow({ id: 2, kind: "risk_rule", status: "active", supersedesId: 1 }),
-      ]);
-      const items = await listHistory({ limit: 10 });
-      expect(items).toHaveLength(2);
-      expect(items[0]!.id).toBe(1);
-      expect(items[0]!.status).toBe("superseded");
-      expect(items[1]!.supersedesId).toBe(1);
-      // Ensure compact shape — no content_md leakage.
-      expect(items[0]).not.toHaveProperty("contentMd");
-      expect(items[0]).not.toHaveProperty("contentHash");
-    });
-  });
 }

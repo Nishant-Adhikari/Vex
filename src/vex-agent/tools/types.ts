@@ -47,7 +47,7 @@ export interface ToolVisibility {
   /**
    * True → hide unless the session has active narrative memory chunks
    * (`ToolVisibilityContext.hasSessionMemory === true`). Used by
-   * `memory_recall` / `mark_outstanding_resolved` so they never appear in a
+   * `session_memory_search` / `session_memory_resolve_item` so they never appear in a
    * fresh session with nothing to recall (chunks are produced by Track-2
    * compaction). The handler still short-circuits as defense-in-depth — this
    * gate only controls what the LLM sees, not what it can be made to attempt.

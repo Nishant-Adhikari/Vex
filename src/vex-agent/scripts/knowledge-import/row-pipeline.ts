@@ -6,7 +6,7 @@
  * embed → insertEntry (under maintenance-lease SHARE lock).
  *
  * The INSERT runs under `withLeaseSharedLock` so the importer honours the
- * same authoritative write-gate as `knowledge_write` and promotion. A
+ * same authoritative write-gate as promotion. A
  * concurrent reembed flips `maintenance_leases.active = TRUE`, which makes
  * this call fail fast with `MaintenanceActiveError` — the orchestrator
  * distinguishes that case in its log for operator clarity. Lookup/lineage

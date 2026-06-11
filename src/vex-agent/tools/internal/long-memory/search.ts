@@ -7,7 +7,7 @@
  *      expand_graph. NO `scope` (R1-#5): S3 always returns active + non-expired.
  *   2. embedQuery → { embedding, providerModel }. providerModel + embedding.length
  *      are the recall filter for BOTH stores (write/read consistency).
- *   3. knowledge recall WITH `source` (recallLongMemoryTopK, includeExpired:false).
+ *   3. long-memory recall WITH `source` (recallLongMemoryTopK, includeExpired:false).
  *   4. dual-trace candidate recall (recallCandidatesTopK) when include_candidates.
  *   5. blendAndRank — knowledge scored by rerank-base × source-tier weight,
  *      candidates by similarity × 0.6 (no boosts); gated + capped; merged.

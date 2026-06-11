@@ -7,7 +7,7 @@
  * audit policy uses to decide HOW urgent / impactful a pending action is;
  * action kind is WHAT KIND of side effect it produces. The two are
  * separate axes — adding a new chain mutation tool (`user_wallet_broadcast`)
- * is `high` risk; a knowledge write (`local_write`) is `low`; a
+ * is `high` risk; a local memory write (`local_write`) is `low`; a
  * future hard-delete (`destructive`) is `critical`.
  *
  * The mapping below is the puzzle 5 phase 2 Codex GREEN LIGHT (2026-05-23):

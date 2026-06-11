@@ -18,7 +18,6 @@ import { KHALANI_INTERNAL_TOOLS } from "./khalani.js";
 import { ACTION_ALIAS_TOOLS } from "./action-aliases.js";
 import { WEB_TOOLS } from "./web.js";
 import { TWITTER_ACCOUNT_TOOLS } from "./twitter-account.js";
-import { KNOWLEDGE_TOOLS } from "./knowledge.js";
 import { PORTFOLIO_TOOLS } from "./portfolio.js";
 import { SETUP_TOOLS } from "./setup.js";
 import { MISSION_TOOLS } from "./mission.js";
@@ -27,7 +26,7 @@ import { SUBAGENT_TOOLS } from "./subagents.js";
 import { EVM_TOOLS } from "./evm.js";
 import { WALLET_TOOLS } from "./wallet.js";
 import { COMPACT_TOOLS } from "./compact.js";
-import { MEMORY_TOOLS } from "./memory.js";
+import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
 
@@ -40,7 +39,6 @@ export const TOOLS: readonly ToolDef[] = [
   ...ACTION_ALIAS_TOOLS,
   ...WEB_TOOLS,
   ...TWITTER_ACCOUNT_TOOLS,
-  ...KNOWLEDGE_TOOLS,
   ...PORTFOLIO_TOOLS,
   ...SETUP_TOOLS,
   ...MISSION_TOOLS,
@@ -49,7 +47,7 @@ export const TOOLS: readonly ToolDef[] = [
   ...EVM_TOOLS,
   ...WALLET_TOOLS,
   ...COMPACT_TOOLS,
-  ...MEMORY_TOOLS,
+  ...SESSION_MEMORY_TOOLS,
   ...LONG_MEMORY_TOOLS,
   ...PLAN_TOOLS,
 ];

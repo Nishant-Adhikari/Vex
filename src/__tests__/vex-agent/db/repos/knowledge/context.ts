@@ -35,9 +35,8 @@ export interface SuiteCtx {
   insertEntry: typeof KnowledgeRepo.insertEntry;
   getById: typeof KnowledgeRepo.getById;
   findByContentHash: typeof KnowledgeRepo.findByContentHash;
-  updateStatus: typeof KnowledgeRepo.updateStatus;
   updateEmbedding: typeof KnowledgeRepo.updateEmbedding;
-  recallTopK: typeof KnowledgeRepo.recallTopK;
+  recallLongMemoryTopK: typeof KnowledgeRepo.recallLongMemoryTopK;
   listActiveForHotContext: typeof KnowledgeRepo.listActiveForHotContext;
   listKnownKinds: typeof KnowledgeRepo.listKnownKinds;
   streamAllForExport: typeof KnowledgeRepo.streamAllForExport;
@@ -45,7 +44,6 @@ export interface SuiteCtx {
   findRowsWithDimNotMatching: typeof KnowledgeRepo.findRowsWithDimNotMatching;
   isRuntimeActive: typeof KnowledgeRepo.isRuntimeActive;
   getLineageChain: typeof KnowledgeRepo.getLineageChain;
-  listHistory: typeof KnowledgeRepo.listHistory;
   // Mocks — `@vex-agent/db/client.js`
   mockExecute: Mock;
   mockQueryOne: Mock;

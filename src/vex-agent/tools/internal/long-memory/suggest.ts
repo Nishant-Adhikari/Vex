@@ -53,7 +53,6 @@ import {
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { str, num, enumField, ok, fail } from "../types.js";
-import { readStringArray, readObject } from "../knowledge/params.js";
 
 // ── Response format (tool-only — NOT a candidate field) ──────────
 
@@ -230,8 +229,8 @@ export async function handleLongMemorySuggest(
     contentMd: redacted.contentMd,
   });
 
-  // 5. Loop-prevention across BOTH stores (genesis §123; knowledge_write lives
-  // until S9, so the lesson may already be promoted).
+  // 5. Loop-prevention across BOTH stores (genesis §123; the lesson may already
+  // be promoted by the manager).
   try {
     const promoted = await knowledgeRepo.findByContentHash(contentHash);
     if (promoted) {

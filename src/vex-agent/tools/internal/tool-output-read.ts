@@ -23,7 +23,7 @@ import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import * as toolOutputBlobsRepo from "@vex-agent/db/repos/tool-output-blobs.js";
-import { TOOL_OUTPUT_OVERFLOW_BYTES } from "@vex-agent/knowledge/policy.js";
+import { TOOL_OUTPUT_OVERFLOW_BYTES } from "@vex-agent/engine/core/tool-output-policy.js";
 import logger from "@utils/logger.js";
 
 const DEFAULT_READ_BYTES = 8 * 1024;

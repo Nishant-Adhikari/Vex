@@ -7,17 +7,17 @@
 --
 -- Columns:
 --   supersedes_id   — FK to the predecessor row this entry replaces. Populated
---                     only via knowledge_supersede (atomic transaction): new row
+--                     only via the manager's supersede transaction: new row
 --                     INSERTed with supersedes_id set AND predecessor flipped to
 --                     status='superseded' in the same COMMIT. NULL = not a
 --                     successor (either active original or terminal non-active).
 --   status_reason   — Short "why" for any non-active status transition. Written
---                     by knowledge_supersede (on predecessor: why replaced) and
---                     by knowledge_update_status (on invalidated | archived).
+--                     by the supersede transaction (on predecessor: why replaced)
+--                     and on invalidation / archival (manager-owned lifecycle).
 --   change_summary  — Supersede-only: what's different about the new version.
 --                     Written on the successor row (NULL elsewhere).
 --   what_failed     — Supersede-only: evidence that invalidated the predecessor.
---                     Written on the successor row so knowledge_get(newId) can
+--                     Written on the successor row so long_memory_get(newId) can
 --                     show the agent why the old rule was wrong.
 --
 -- Index:
