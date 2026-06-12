@@ -33,12 +33,12 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
       "Semantic recall over THIS SESSION's narrative memory chunks. Each chunk is a 4-section markdown body (what happened / what I did / what I tried / outstanding items) produced when the conversation was compacted by `compact_now`.",
       "Per-session only — does NOT reach earlier sessions. For durable cross-session lessons use `long_memory_search`.",
       "Use when you forgot what you tried earlier in this mission, want to avoid repeating a failed approach, or need to check past tool outcomes that no longer fit in the live transcript.",
-      "Write SEMANTIC INTENT, not keywords.",
+      "Write SEMANTIC INTENT in English, not keywords (translate the user's intent first — embedding retrieval is significantly stronger on English).",
       "✓ \"previous attempts to debug Kyber quote timeout and what we learned\"",
       "✗ \"kyber\"",
       "✓ \"wallet balance checks earlier in the mission and their outcomes\"",
       "✗ \"balance\"",
-      "Returns top-K chunks above the similarity threshold. Multilingual via EmbeddingGemma, but translating intent to English first usually improves retrieval.",
+      "Returns top-K chunks above the similarity threshold.",
     ].join(" "),
     parameters: {
       type: "object",
@@ -46,7 +46,7 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
         query: {
           type: "string",
           description:
-            "Semantic intent phrase (NOT keywords). Write the way you would ask another expert who knows the mission.",
+            "Semantic intent phrase in English (NOT keywords; translate the user's intent first). Write the way you would ask another expert who knows the mission.",
         },
         k: {
           type: "number",
@@ -83,7 +83,8 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
         },
         resolution_note: {
           type: "string",
-          description: "Short note (≤500 chars) explaining how the item was resolved.",
+          description:
+            "Short note (≤500 chars) explaining how the item was resolved. Write it in English — the note is persisted and re-embedded into the chunk body for future recall.",
         },
       },
       required: ["memory_id", "outstanding_item_id", "resolution_note"],

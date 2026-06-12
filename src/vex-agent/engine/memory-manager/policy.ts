@@ -89,6 +89,37 @@ export const LIVE_STATE_RESCAN_REJECT_FRACTION = 0.3;
  */
 export const RECURRENCE_PROMOTE_MIN = 2;
 
+// ── Judge Context v2 (§10.6 — bounded context pack) ─────────────────
+
+/**
+ * Max `kind=count` census lines fetched/rendered for the judge's KNOWN KINDS
+ * section. Keeps the taxonomy visible (so the judge converges on existing
+ * kinds) without ever letting a kind explosion bloat the prompt.
+ */
+export const JUDGE_KNOWN_KINDS_LIMIT = 30;
+
+/** Max near-duplicate ACTIVE entries rendered with metadata + excerpt. */
+export const JUDGE_SIMILAR_ENTRIES_MAX = 5;
+
+/** Max similar pending/retained candidates rendered as soft context. */
+export const JUDGE_SIMILAR_CANDIDATES_MAX = 5;
+
+/** Char cap for a near-dup entry's content_md excerpt (redact-then-truncate). */
+export const JUDGE_ENTRY_EXCERPT_CHARS = 240;
+
+/** Char cap for a similar candidate's summary excerpt (redact-then-truncate). */
+export const JUDGE_CANDIDATE_EXCERPT_CHARS = 200;
+
+/**
+ * Total char cap applied to the RENDERED judge transcript. The 40-message
+ * window can balloon when source messages carry large tool outputs; 8000 chars
+ * (≈ 2k tokens) keeps the whole judge call bounded and cheap while preserving
+ * far more context than the candidate text alone. `detectUserAffirmation`
+ * runs on the FULL message window BEFORE this cap — capping never hides an
+ * affirmation from the tier hint.
+ */
+export const JUDGE_TRANSCRIPT_CHARS_CAP = 8000;
+
 // ── Promotion influence ─────────────────────────────────────────────
 
 /**

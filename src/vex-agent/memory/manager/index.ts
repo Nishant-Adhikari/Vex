@@ -142,7 +142,13 @@ export {
   type ReconcileJudgeResult,
 } from "./reconcile-judge.js";
 
-export { buildJudgeContext, type JudgeContext } from "./context-builder.js";
+export {
+  buildJudgeContext,
+  truncateChars,
+  type JudgeContext,
+  type JudgeContextExtras,
+  type JudgeSimilarCandidate,
+} from "./context-builder.js";
 export { callJudge, type JudgeProvider, type JudgeCallResult } from "./judge.js";
 export {
   judgeVerdictSchema,

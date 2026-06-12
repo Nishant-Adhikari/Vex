@@ -26,12 +26,14 @@ lint-all:
 
 check: lint test
 
-# -- E2E test stack (pgvector + Docker Model Runner) -------------------------
+# -- E2E test stack (pgvector; embeddings runtime separate) -------------------
 #
-# Postgres on host port 5777 (test-only; production uses 55432 via vex-app
+# Postgres on host port 5777 (test-only; production uses 27432 via vex-app
 # render template). Embedding model + dim are config-driven via
 # EMBEDDING_MODEL / EMBEDDING_DIM env vars sourced from your CONFIG_DIR/.env.
-# Requires Docker Engine >=4.40, Compose >=2.38.1, Docker Model Runner active.
+# Requires Docker Engine >=4.40, Compose >=2.38.1. The embeddings endpoint is
+# the llama.cpp:server provisioned by the vex-app Compose stack (default
+# http://127.0.0.1:27134/v1) and must be running separately.
 #
 # The canonical e2e compose lives in vex-app/resources/compose/.
 

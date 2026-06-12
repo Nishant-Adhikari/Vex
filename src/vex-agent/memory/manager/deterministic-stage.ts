@@ -17,6 +17,8 @@
 import type { MemoryCandidate } from "@vex-agent/db/repos/memory-candidates/index.js";
 import type { MemoryDecisionRejectReason } from "@vex-agent/memory/schema/memory-decision-enums.js";
 import type { CandidateEvidenceStrength } from "@vex-agent/memory/schema/memory-candidate-enums.js";
+import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
+import type { MaturityState } from "@vex-agent/memory/schema/long-memory-enums.js";
 import {
   CONFLICT_COSINE,
   LOW_CONFIDENCE_FLOOR,
@@ -34,8 +36,21 @@ export interface KnowledgeMatch {
   kind: string;
   /** Cosine similarity in [0,1]. */
   similarity: number;
-  /** The matched entry's title + summary, for the Graphiti number/date guardrail. */
+  /**
+   * The matched entry's title + summary — EXACTLY that, nothing more: the
+   * Graphiti number/date guardrail (`differsOnNumberOrDate`) keys off it.
+   */
   text: string;
+  // ── Judge Context v2 metadata (§10.6) — OPTIONAL, populated by the recall
+  // mapping for the judge prompt only; the deterministic rules ignore them. ──
+  /** Provenance tier of the matched entry. */
+  source?: KnowledgeSource;
+  /** Lesson-confidence FSM tier of the matched entry. */
+  maturityState?: MaturityState;
+  /** 0..1 rerank influence weight of the matched entry. */
+  activationStrength?: number;
+  /** Redacted-then-truncated content_md excerpt (JUDGE_ENTRY_EXCERPT_CHARS). */
+  contentExcerpt?: string;
 }
 
 // ── Verdict ─────────────────────────────────────────────────────────

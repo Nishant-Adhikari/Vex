@@ -252,6 +252,38 @@ describe("long_memory_suggest — live-state rejection", () => {
   });
 });
 
+describe("long_memory_suggest — non-English rejection (§10.4)", () => {
+  it("rejects a Polish lesson with English steering text BEFORE any lookup/embed/insert", async () => {
+    const res = await handleLongMemorySuggest(
+      validArgs({
+        title: "Preferencja slippage uzytkownika",
+        summary:
+          "User zadeklarował preferencję dla swapów z niskim slippage, tolerując maksymalnie pół procenta na wszystkich trasach DEX.",
+      }),
+      ctx(),
+    );
+
+    expect(res.success).toBe(false);
+    expect(res.output).toMatch(/english/i);
+    // Ordering: the English reject fires before loop-prevention, embedding,
+    // and the atomic insert+enqueue — nothing downstream may run.
+    expect(mockFindByContentHash).not.toHaveBeenCalled();
+    expect(mockEmbedDocument).not.toHaveBeenCalled();
+    expect(mockInsertCandidate).not.toHaveBeenCalled();
+    expect(mockEnqueueConsolidateJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-English entity descriptor while the prose is English", async () => {
+    const res = await handleLongMemorySuggest(
+      validArgs({ entities: ["SOL", "preferencja użytkownika"] }),
+      ctx(),
+    );
+    expect(res.success).toBe(false);
+    expect(res.output).toMatch(/english/i);
+    expect(mockInsertCandidate).not.toHaveBeenCalled();
+  });
+});
+
 describe("long_memory_suggest — masked address sensitivity", () => {
   it("stores a wallet address masked and marks the candidate sensitive", async () => {
     await handleLongMemorySuggest(

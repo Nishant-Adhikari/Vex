@@ -46,7 +46,7 @@ describe("long-memory suggest policy", () => {
     expect(recordedAt.getTime()).toBe(before);
   });
 
-  it("exposes a single bounded reject reason for the security boundary", () => {
-    expect(SUGGEST_REJECT_REASONS).toEqual(["secret_or_live_state"]);
+  it("exposes the bounded reject reasons for the suggest boundary", () => {
+    expect(SUGGEST_REJECT_REASONS).toEqual(["secret_or_live_state", "non_english"]);
   });
 });

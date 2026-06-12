@@ -45,7 +45,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
       // HOW IT WORKS
       "This does NOT write memory directly. It STAGES a candidate; an async manager later reviews it, dedupes it, and decides whether to promote it into long-term memory. You get back a candidateId and status, not a stored memory.",
       // DO NOT (steering — reject policy advertised so you rarely trip it)
-      "Never include secrets (keys, seeds, API tokens) — a candidate carrying one is REJECTED and nothing is stored. Do NOT record live values (current balances, prices, gas, amounts, open quotes) — memory is for the durable LESSON, not the snapshot, and a candidate that reads as live state is REJECTED. Wallet and transaction addresses are auto-masked, so the lesson survives without the raw value.",
+      "Never include secrets (keys, seeds, API tokens) — a candidate carrying one is REJECTED and nothing is stored. Do NOT record live values (current balances, prices, gas, amounts, open quotes) — memory is for the durable LESSON, not the snapshot, and a candidate that reads as live state is REJECTED. Persisted memory text is English-only: a candidate whose title/summary/content does not read as English is REJECTED — translate the durable lesson into English and re-suggest. Wallet and transaction addresses are auto-masked, so the lesson survives without the raw value.",
       // EVIDENCE
       "Attach evidence_refs (protocol execution / capture ids, with optional instrumentKey / positionKey) when the lesson came from a real trade — it makes the lesson far stronger downstream. source_refs is pointer-only (messageIds / toolCallIds) provenance from this session.",
       // response_format
@@ -66,7 +66,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
         summary: {
           type: "string",
           description:
-            "1-3 sentences in English stating the durable lesson. This is the embedding input together with title — write for retrieval, not as a snapshot of live state.",
+            "1-3 sentences in English stating the durable lesson. This is ALSO the retrieval representation — title + summary are the embedding input, so write retrieval-quality semantic text using stable protocol/ticker names (and their common synonyms), never live balances, prices, amounts, or transient quotes.",
         },
         content_md: {
           type: "string",

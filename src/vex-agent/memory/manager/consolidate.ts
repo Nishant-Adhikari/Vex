@@ -27,6 +27,7 @@ import {
   getCandidateById,
   getCandidateEmbedding,
   type MemoryCandidate,
+  type MemoryCandidateRecall,
 } from "@vex-agent/db/repos/memory-candidates/index.js";
 import { recordDecision } from "@vex-agent/db/repos/memory-decisions/index.js";
 import { recallLongMemoryTopK } from "@vex-agent/db/repos/knowledge/recall.js";
@@ -34,6 +35,7 @@ import {
   recallCandidatesTopK,
   updateCandidateOutcome,
 } from "@vex-agent/db/repos/memory-candidates/index.js";
+import type { KnownKind } from "@vex-agent/db/repos/knowledge.js";
 import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
 import * as executionsRepo from "@vex-agent/db/repos/executions.js";
 import * as activityRepo from "@vex-agent/db/repos/activity.js";
@@ -44,12 +46,16 @@ import * as lpEventsRepo from "@vex-agent/db/repos/lp-events.js";
 import { isSessionSoftDeleted } from "@vex-agent/db/repos/sessions.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
+import { redact } from "@vex-agent/memory/redaction.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
-import type { EvidenceRefs } from "@vex-agent/memory/schema/memory-candidate.js";
 import type { CandidateEvidenceStrength } from "@vex-agent/memory/schema/memory-candidate-enums.js";
 import type { MemoryOutcomeSummary } from "@vex-agent/memory/schema/memory-outcome.js";
 import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 import {
+  JUDGE_CANDIDATE_EXCERPT_CHARS,
+  JUDGE_ENTRY_EXCERPT_CHARS,
+  JUDGE_KNOWN_KINDS_LIMIT,
+  JUDGE_SIMILAR_CANDIDATES_MAX,
   LIVE_STATE_RESCAN_REJECT_FRACTION,
   RECURRENCE_CLUSTER_COSINE,
 } from "@vex-agent/engine/memory-manager/policy.js";
@@ -72,7 +78,12 @@ import {
   type ExecTimeDeref,
 } from "./point-in-time.js";
 import { isTradeKind } from "./kind-families.js";
-import { buildJudgeContext } from "./context-builder.js";
+import {
+  buildJudgeContext,
+  truncateChars,
+  type JudgeContextExtras,
+  type JudgeSimilarCandidate,
+} from "./context-builder.js";
 import { callJudge, type JudgeProvider } from "./judge.js";
 import type { JudgeVerdict } from "./judge-schema.js";
 import { applyDecision, type DecisionPlan } from "./promote.js";
@@ -96,23 +107,31 @@ export interface ConsolidateDeps {
     dim: number,
     k: number,
   ) => Promise<KnowledgeMatch[]>;
-  /** Cluster anchors: evidence refs of similar pending/retained candidates. */
-  recallClusterAnchors: (
+  /**
+   * Similar pending/retained candidates by vector. ONE recall feeds BOTH the
+   * D7 recurrence cluster (evidence refs of rows at cosine ≥
+   * RECURRENCE_CLUSTER_COSINE — unchanged semantics) and the judge's
+   * soft-context list (Judge Context v2).
+   */
+  recallSimilarCandidates: (
     embedding: readonly number[],
     model: string,
     dim: number,
     k: number,
-  ) => Promise<EvidenceRefs[]>;
+  ) => Promise<MemoryCandidateRecall[]>;
+  /** Active-kind census for the judge prompt (Judge Context v2, §10.6). */
+  listActiveKindCounts: () => Promise<KnownKind[]>;
   /** Exact content-hash duplicate present in knowledge_entries. */
   exactDuplicateExists: (contentHash: string) => Promise<boolean>;
   /** Execution anchor → its session (or null if the execution no longer exists). */
   getExecutionSession: (executionId: number) => Promise<{ sessionId: string | null } | null>;
   /** OD-3 — session soft-deleted. */
   isSessionSoftDeleted: (sessionId: string) => Promise<boolean>;
-  /** The LLM judge (stubbed in tests). */
+  /** The LLM judge (stubbed in tests). `extras` is the Judge Context v2 pack. */
   judge: (
     candidate: MemoryCandidate,
     signals: EscalationSignals,
+    extras: JudgeContextExtras,
   ) => Promise<{ verdict: JudgeVerdict; llmCalls: number; costUsd: number | null }>;
   /**
    * S5 — resolve the ledger-grounded outcome for a trade-family candidate. The
@@ -163,19 +182,21 @@ export function defaultConsolidateDeps(
           knowledgeId: r.id,
           kind: r.kind,
           similarity: r.similarity,
+          // `text` stays EXACTLY title+summary — the Graphiti number/date
+          // guardrail (differsOnNumberOrDate) keys off it.
           text: `${r.title}\n${r.summary}`,
+          // Judge Context v2 metadata (optional; deterministic rules ignore it).
+          source: r.source,
+          maturityState: r.maturityState,
+          activationStrength: r.activationStrength,
+          // Redact BEFORE truncating — stored text is already redacted, but the
+          // excerpt must never widen exposure (defense-in-depth).
+          contentExcerpt: truncateChars(redact(r.contentMd).text, JUDGE_ENTRY_EXCERPT_CHARS),
         }));
     },
-    recallClusterAnchors: async (embedding, model, dim, k) => {
-      const rows = await recallCandidatesTopK(
-        embedding,
-        { embeddingModel: model, embeddingDim: dim },
-        k,
-      );
-      return rows
-        .filter((r) => r.similarity >= RECURRENCE_CLUSTER_COSINE)
-        .map((r) => r.evidenceRefs);
-    },
+    recallSimilarCandidates: (embedding, model, dim, k) =>
+      recallCandidatesTopK(embedding, { embeddingModel: model, embeddingDim: dim }, k),
+    listActiveKindCounts: () => knowledgeRepo.listActiveKindCounts(JUDGE_KNOWN_KINDS_LIMIT),
     exactDuplicateExists: async (contentHash) => {
       const existing = await knowledgeRepo.findByContentHash(contentHash);
       return existing !== null;
@@ -185,8 +206,8 @@ export function defaultConsolidateDeps(
       return exec ? { sessionId: exec.sessionId } : null;
     },
     isSessionSoftDeleted,
-    judge: async (candidate, signals) => {
-      const ctx = await buildJudgeContext(candidate, signals);
+    judge: async (candidate, signals, extras) => {
+      const ctx = await buildJudgeContext(candidate, signals, extras);
       return callJudge(ctx, makeProvider);
     },
     resolveOutcome: (candidate, pointInTimeChecked) =>
@@ -396,12 +417,17 @@ export async function consolidateCandidate(
     isSessionSoftDeleted: deps.isSessionSoftDeleted,
   });
 
-  const clusterAnchors = await deps.recallClusterAnchors(
+  // ONE candidate recall feeds BOTH the D7 recurrence cluster (cosine filter
+  // unchanged) and the judge's soft-context list (built lazily on escalate).
+  const similarRecalls = await deps.recallSimilarCandidates(
     embedding.embedding,
     embedding.embeddingModel,
     embedding.embeddingDim,
     CLUSTER_K,
   );
+  const clusterAnchors = similarRecalls
+    .filter((r) => r.similarity >= RECURRENCE_CLUSTER_COSINE)
+    .map((r) => r.evidenceRefs);
   const recurrenceCount = countRecurrence(candidate.evidenceRefs, clusterAnchors);
 
   // ── S5: outcome resolution BEFORE the deterministic stage / judge (D-ORDER) ──
@@ -483,8 +509,24 @@ export async function consolidateCandidate(
     };
   }
 
-  // Escalate → the judge owns the promotion decision.
-  const judged = await deps.judge(candidate, verdict.signals);
+  // Escalate → the judge owns the promotion decision. The Judge Context v2
+  // extras (kind census + soft context) are fetched/built ONLY here so
+  // deterministic terminals stay zero-extra-cost.
+  const knownKinds = await deps.listActiveKindCounts();
+  const similarCandidates: JudgeSimilarCandidate[] = similarRecalls
+    .filter((r) => r.id !== candidate.id)
+    .slice(0, JUDGE_SIMILAR_CANDIDATES_MAX)
+    .map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      // Redact BEFORE truncating (defense-in-depth, same as contentExcerpt).
+      titleExcerpt: truncateChars(redact(r.title).text, JUDGE_CANDIDATE_EXCERPT_CHARS),
+      summaryExcerpt: truncateChars(redact(r.summary).text, JUDGE_CANDIDATE_EXCERPT_CHARS),
+      similarity: r.similarity,
+      source: r.source,
+    }));
+  const extras: JudgeContextExtras = { knownKinds, similarCandidates };
+  const judged = await deps.judge(candidate, verdict.signals, extras);
   const plan = planFromVerdict(
     judged.verdict,
     verdict.signals.conflictKnowledgeId,

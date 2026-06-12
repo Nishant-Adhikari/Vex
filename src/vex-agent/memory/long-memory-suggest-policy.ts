@@ -61,11 +61,14 @@ export function computeRetrievalUntil(recordedAt: Date): Date {
 
 /**
  * Bounded reject-reason vocabulary advertised to `memLog`'s `rejectReason`
- * (enum) key. S2 has exactly ONE reject reason: a Tier-1 secret OR a live-state
- * aggregate over threshold both collapse to `secret_or_live_state` — the
- * security boundary tripped, no row written (D-A). Kept as a bounded `as const`
- * tuple so the value can never drift into free-text.
+ * (enum) key. Two reasons:
+ *   - `secret_or_live_state` — a Tier-1 secret OR a live-state aggregate over
+ *     threshold (both collapse to one reason: the security boundary tripped,
+ *     no row written — D-A).
+ *   - `non_english` — the English-by-contract check (§10.4) rejected the
+ *     persisted text; the agent is steered to rewrite the lesson in English.
+ * Kept as a bounded `as const` tuple so values can never drift into free-text.
  */
-export const SUGGEST_REJECT_REASONS = ["secret_or_live_state"] as const;
+export const SUGGEST_REJECT_REASONS = ["secret_or_live_state", "non_english"] as const;
 
 export type SuggestRejectReason = (typeof SUGGEST_REJECT_REASONS)[number];

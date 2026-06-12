@@ -18,6 +18,10 @@ function ctx(): JudgeContext {
       contentMd: "",
       importance: 7,
       confidence: 0.7,
+      eventTime: null,
+      observedAt: null,
+      recordedAt: "2026-06-10T12:00:00.000Z",
+      availableAtDecisionTime: null,
     },
     transcript: "[user] I prefer to scale in slowly.",
     signals: {
@@ -31,6 +35,8 @@ function ctx(): JudgeContext {
       isGeneralization: true,
     },
     userAffirmationDetected: false,
+    knownKinds: [],
+    similarCandidates: [],
   };
 }
 

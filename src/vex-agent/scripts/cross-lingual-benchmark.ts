@@ -22,7 +22,7 @@
  *   pnpm exec tsx src/vex-agent/scripts/cross-lingual-benchmark.ts
  *
  * Required env (same contract as production embeddings — see config.ts):
- *   EMBEDDING_BASE_URL   e.g. http://localhost:12434/engines/llama.cpp/v1
+ *   EMBEDDING_BASE_URL   e.g. http://127.0.0.1:27134/v1
  *   EMBEDDING_MODEL      e.g. ai/embeddinggemma:300M-Q8_0
  *   EMBEDDING_DIM        e.g. 768
  *   EMBEDDING_PROVIDER   e.g. local

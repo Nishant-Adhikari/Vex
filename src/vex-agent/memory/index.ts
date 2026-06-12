@@ -15,6 +15,7 @@
 
 export * from "./redaction.js";
 export * from "./exclusion-rules.js";
+export * from "./english-check.js";
 export * from "./theme-validation.js";
 export * from "./session-memory-policy.js";
 export * from "./long-memory-source-policy.js";

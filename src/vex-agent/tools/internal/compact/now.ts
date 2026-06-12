@@ -35,21 +35,21 @@ const CompactNowSchema = z.object({
     .min(1)
     .max(4000)
     .describe(
-      "Your understanding of what happened in this conversation: mission goal, decisions made, current state, recent tool outcomes. Replaces the rolling summary wholesale — write it for your post-compact self.",
+      "Your understanding of what happened in this conversation: mission goal, decisions made, current state, recent tool outcomes. Replaces the rolling summary wholesale — write it for your post-compact self. Write it in English (persisted-memory contract; translate first when the conversation happened in another language).",
     ),
   preserve_md: z
     .string()
     .max(CHUNK_SECTION_MAX_CHARS)
     .optional()
     .describe(
-      "Hard-priority facts that MUST survive (open loops, pending decisions, key entities). Surfaced in the resume packet immediately after compact.",
+      "Hard-priority facts that MUST survive (open loops, pending decisions, key entities). Surfaced in the resume packet immediately after compact. Write it in English (persisted-memory contract).",
     ),
   thread_themes_hints: z
     .array(z.string().min(1).max(OUTSTANDING_ITEM_TEXT_MAX))
     .max(MAX_THEME_HINTS)
     .optional()
     .describe(
-      "Optional 1-3 thematic labels suggesting how to slice the archived prefix into narrative chunks. The chunker validates and may override generic hints.",
+      "Optional 1-3 thematic labels suggesting how to slice the archived prefix into narrative chunks. The chunker validates and may override generic hints. Write them as English snake_case slugs (persisted-memory contract).",
     ),
 });
 

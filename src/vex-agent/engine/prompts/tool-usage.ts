@@ -86,6 +86,7 @@ Two substrates — see the Memory Routing block in the turn state for the decisi
 - **Live state** stays in tool calls, never persisted to memory.
 - **\`session_memory_*\`** is per-session narrative — chunks produced automatically when \`compact_now\` runs. You do not write session memory directly; you write summaries via \`compact_now\` and the Track 2 worker shapes them into chunks. Recall is agent-driven via \`session_memory_search\`.
 - **\`long_memory_*\`** is durable cross-session memory — distilled rules, lessons, observed preferences. ENGLISH-ONLY for embeddings. Use \`long_memory_suggest\` to propose a durable lesson; a background memory manager reviews every suggestion and owns promotion, supersede, invalidation, and expiry — you never manage that lifecycle. Recall via \`long_memory_search\` / \`long_memory_get\` / \`long_memory_history\`. Never put secrets or live values in memory.
+- **English-by-contract** for ALL persisted memory text: non-English \`long_memory_suggest\` text is REJECTED, and compact summaries, preserve notes, and resolution notes follow the same rule — translate the durable content into English before persisting.
 
 ## 6. Research
 

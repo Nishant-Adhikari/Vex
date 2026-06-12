@@ -104,6 +104,7 @@ const RULES = [
   "- The canonical name must NOT start with '$'. Put the '$XXX' ticker form into aliases instead.",
   '- NEVER extract private persons. "person" is only for clearly public figures the lesson is about.',
   "- Edge source/target must repeat the EXACT name of a declared entity. No self-loops.",
+  '- Write entity names, aliases, summaries, and edge facts in ENGLISH — they are persisted and embedded for retrieval; ticker/protocol surface forms (like "$WIF") stay verbatim in aliases.',
 ].join("\n");
 
 const UNTRUSTED_DATA_RULE = [

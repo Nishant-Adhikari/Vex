@@ -1,5 +1,6 @@
 /**
- * Embeddings client — OpenAI-compatible HTTP POST to a local Docker Model Runner.
+ * Embeddings client — OpenAI-compatible HTTP POST to the local llama.cpp
+ * embeddings server (Compose stack).
  *
  * Two functions reflect the EmbeddingGemma model card recommendation to use
  * different prompts for documents (write path) and queries (recall path):

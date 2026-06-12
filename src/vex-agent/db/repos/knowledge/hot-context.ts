@@ -7,7 +7,9 @@
  * embeddings or ranking — those live in recall.ts.
  */
 
-import { query } from "../../client.js";
+import type { PoolClient } from "pg";
+
+import { getPool, query, queryWith, type Executor } from "../../client.js";
 import type {
   ActiveKnowledgeListItem,
   KnownKind,
@@ -79,6 +81,32 @@ export async function listKnownKinds(opts: ListKnownKindsOptions): Promise<Known
     [opts.limit],
   );
   return rows.map((r) => ({ kind: r.kind, count: parseInt(r.n, 10) }));
+}
+
+/**
+ * Judge Context v2 (§10.6): the FULL active-kind census for the judge prompt.
+ * Deliberately NOT filtered by `HOT_CONTEXT_SOURCE_SQL` — the judge needs to
+ * see every kind in use (including probationary / hypothesis-tier lessons) to
+ * keep the kind taxonomy converging instead of forking near-synonyms.
+ * Separate from `listKnownKinds`, whose hot-context consumer must stay
+ * source/maturity-filtered. Ties broken alphabetically for stable rendering.
+ */
+export async function listActiveKindCounts(
+  limit: number,
+  client?: PoolClient,
+): Promise<KnownKind[]> {
+  const exec: Executor = client ?? getPool();
+  const rows = await queryWith<{ kind: string; n: number }>(
+    exec,
+    `SELECT kind, count(*)::int AS n
+     FROM knowledge_entries
+     WHERE status = 'active'
+     GROUP BY kind
+     ORDER BY n DESC, kind ASC
+     LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({ kind: r.kind, count: r.n }));
 }
 
 /** Active count for system prompt banner. Excludes non-hot sources. */

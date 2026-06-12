@@ -4,7 +4,8 @@
  * codex-002: this gates the SHAPE of the embeddings response at the HTTP
  * boundary before the raw `as OpenAIEmbeddingsResponse` cast, replacing a
  * blind trust in `res.json()`. It is intentionally PERMISSIVE — embeddings
- * here come from a local OpenAI-compatible Docker Model Runner, and different
+ * here come from a local OpenAI-compatible llama.cpp embeddings server
+ * (Compose stack), and different
  * providers (llama.cpp, vLLM, Ollama's OpenAI shim, etc.) decorate the body
  * with extra fields (`object`, `usage`, `index`, ...). We `.passthrough()`
  * unknown keys so a provider variation never turns a valid embedding into a

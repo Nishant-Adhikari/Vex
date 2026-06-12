@@ -10,7 +10,8 @@
  *      tags); a Tier-1 secret ANYWHERE → reject (no row). hard-SCAN-reject the
  *      pointer/key strings (sourceRefs.toolCallIds, evidenceRefs.instrumentKey/
  *      positionKey) without masking them (FIX-1 anchors must stay intact).
- *   3. live-state reject on the redacted free-text aggregate.
+ *   3. live-state reject on the redacted free-text aggregate, then the
+ *      English-by-contract check (§10.4) on the redacted persisted text.
  *   4. content_hash from the REDACTED text.
  *   5. loop-prevention across BOTH stores (knowledge_entries + terminal candidates).
  *   6. embed AFTER redaction (fail-loud, no non-embedded fallback).
@@ -39,6 +40,7 @@ import { loadEmbeddingConfig } from "@vex-agent/embeddings/config.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { redact } from "@vex-agent/memory/redaction.js";
 import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
+import { checkLongMemorySuggestEnglish } from "@vex-agent/memory/english-check.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
 import {
   candidateSuggestInputSchema,
@@ -65,6 +67,8 @@ const SECRET_REJECT_MESSAGE =
   "A secret (key/seed/token) was detected and memory never stores secrets. Remove it and re-suggest the durable lesson only.";
 const LIVE_STATE_REJECT_MESSAGE =
   "This reads as live state (balances/prices/amounts), which goes stale. Record the durable LESSON, not the live values.";
+const ENGLISH_REJECT_MESSAGE =
+  "This doesn't read as English, and persisted memory is English-only (embedding retrieval). Rewrite the durable lesson in English and re-suggest — entities/tags may keep tickers and protocol ids.";
 
 // ── Redaction of free-text fields ────────────────────────────────
 
@@ -221,6 +225,26 @@ export async function handleLongMemorySuggest(
     return fail(LIVE_STATE_REJECT_MESSAGE);
   }
 
+  // 3b. English-by-contract (§10.4) on the REDACTED persisted text — embedding
+  // retrieval is English-only, so a non-English lesson is steered back to the
+  // agent for translation before anything is hashed, embedded, or stored.
+  if (
+    checkLongMemorySuggestEnglish({
+      title: redacted.title,
+      summary: redacted.summary,
+      contentMd: redacted.contentMd,
+      entities: redacted.entities,
+      tags: redacted.tags,
+    }).rejected
+  ) {
+    memLog("suggest", "rejected", {
+      rejectReason: "non_english",
+      sessionId: context.sessionId,
+      kind: input.kind,
+    });
+    return fail(ENGLISH_REJECT_MESSAGE);
+  }
+
   // 4. content_hash from the REDACTED text (a clean candidate's stable identity).
   const contentHash = computeContentHash({
     kind: input.kind,
@@ -317,7 +341,7 @@ export async function handleLongMemorySuggest(
           retainUntil: null,
           embedding,
           // Honest provenance — stamp the model the provider reported + the real
-          // vector length (mirror knowledge/write.ts:154-155).
+          // vector length (mirror insertEntry in db/repos/knowledge/crud.ts).
           embeddingModel: providerModel,
           embeddingDim: embedding.length,
           contentHash,

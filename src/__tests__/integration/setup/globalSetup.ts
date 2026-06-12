@@ -3,9 +3,11 @@
  *
  * Spins up an ephemeral Postgres (pgvector) container via testcontainers,
  * wires `VEX_DB_URL`, and runs the full migration chain. The Gemma
- * embeddings endpoint is NOT managed here — it's a Docker Desktop Model
- * Runner feature that must be running independently. A reachability probe
- * fails fast with an actionable message so tests don't hang on first embed.
+ * embeddings endpoint is NOT managed here — it's the standalone
+ * `llama.cpp:server` provisioned by the vex-app Compose stack (default
+ * http://127.0.0.1:27134/v1) and must be running independently. A
+ * reachability probe fails fast with an actionable message so tests don't
+ * hang on first embed.
  *
  * Dynamic imports are deliberate: the db client pool singleton reads
  * `VEX_DB_URL` on first `getPool()` call, so we MUST set the env var
@@ -59,7 +61,8 @@ async function assertEmbeddingsReachable(): Promise<void> {
   if (!baseUrl) {
     throw new Error(
       "EMBEDDING_BASE_URL is not set. Integration suite needs a live embeddings endpoint. " +
-        "Start Gemma + proxy with: `pnpm vex docker dev` (requires Docker Model Runner).",
+        "Launch the Vex desktop app once so its Compose stack's llama.cpp embeddings runtime is up " +
+        "(default http://127.0.0.1:27134/v1), or point EMBEDDING_BASE_URL at any OpenAI-compatible /v1 endpoint.",
     );
   }
   const model = process.env.EMBEDDING_MODEL ?? FALLBACK_EMBED_MODEL;
@@ -76,7 +79,7 @@ async function assertEmbeddingsReachable(): Promise<void> {
   } catch (err) {
     throw new Error(
       `Embeddings endpoint unreachable at ${baseUrl} (model=${model}). ` +
-        `Start it with: \`pnpm vex docker dev\`. ` +
+        `Start the vex-app Compose stack's llama.cpp embeddings runtime (or whatever serves this URL). ` +
         `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
     );
   }

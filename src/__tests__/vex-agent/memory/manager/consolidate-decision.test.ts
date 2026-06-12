@@ -15,14 +15,37 @@ import {
   type ConsolidateDeps,
 } from "@vex-agent/memory/manager/consolidate.js";
 import type { JudgeVerdict } from "@vex-agent/memory/manager/judge-schema.js";
+import type { JudgeContextExtras } from "@vex-agent/memory/manager/context-builder.js";
+import type { MemoryCandidateRecall } from "@vex-agent/db/repos/memory-candidates/index.js";
+import {
+  JUDGE_CANDIDATE_EXCERPT_CHARS,
+  JUDGE_SIMILAR_CANDIDATES_MAX,
+} from "@vex-agent/engine/memory-manager/policy.js";
 import { makeCandidate } from "./_fixtures.js";
 
 const EMB = { embedding: [0, 0, 0, 0, 0, 0, 0, 1], embeddingModel: "test-model", embeddingDim: 8 };
 
+/** Similar-candidate recall row above the recurrence cosine (cluster member). */
+function similarRecall(id: string, executionId: number): MemoryCandidateRecall {
+  return {
+    id,
+    kind: "strategy_lesson",
+    title: `similar lesson ${id}`,
+    summary: "a similar durable lesson",
+    contentMd: "",
+    tags: [],
+    evidenceRefs: [{ executionId }],
+    source: "hypothesis",
+    retrievalUntil: null,
+    similarity: 0.95,
+  };
+}
+
 function deps(overrides: Partial<ConsolidateDeps> = {}): ConsolidateDeps {
   return {
     recallKnowledge: async () => [],
-    recallClusterAnchors: async () => [],
+    recallSimilarCandidates: async () => [],
+    listActiveKindCounts: async () => [],
     exactDuplicateExists: async () => false,
     getExecutionSession: async () => ({ sessionId: "sess-1" }),
     isSessionSoftDeleted: async () => false,
@@ -49,8 +72,8 @@ function deps(overrides: Partial<ConsolidateDeps> = {}): ConsolidateDeps {
 }
 
 /** Make the cluster carry 2 distinct executions so a generalization can promote. */
-function twoExecCluster(): ConsolidateDeps["recallClusterAnchors"] {
-  return async () => [[{ executionId: 5 }], [{ executionId: 6 }]];
+function twoExecCluster(): ConsolidateDeps["recallSimilarCandidates"] {
+  return async () => [similarRecall("sim-1", 5), similarRecall("sim-2", 6)];
 }
 
 describe("consolidateCandidate decision pipeline", () => {
@@ -80,7 +103,7 @@ describe("consolidateCandidate decision pipeline", () => {
     const out = await consolidateCandidate(
       makeCandidate(),
       EMB,
-      deps({ recallClusterAnchors: twoExecCluster() }),
+      deps({ recallSimilarCandidates: twoExecCluster() }),
     );
     expect(out.plan.type).toBe("promote");
     if (out.plan.type === "promote") {
@@ -95,7 +118,7 @@ describe("consolidateCandidate decision pipeline", () => {
       makeCandidate(),
       EMB,
       deps({
-        recallClusterAnchors: twoExecCluster(),
+        recallSimilarCandidates: twoExecCluster(),
         judge: async () => ({
           verdict: {
             verdict: "promote",
@@ -126,7 +149,7 @@ describe("consolidateCandidate decision pipeline", () => {
       makeCandidate(),
       EMB,
       deps({
-        recallClusterAnchors: twoExecCluster(),
+        recallSimilarCandidates: twoExecCluster(),
         judge: async () => ({ verdict, llmCalls: 1, costUsd: null }),
       }),
     );
@@ -147,7 +170,7 @@ describe("consolidateCandidate decision pipeline", () => {
       makeCandidate(),
       EMB,
       deps({
-        recallClusterAnchors: twoExecCluster(),
+        recallSimilarCandidates: twoExecCluster(),
         judge: async () => ({
           verdict: { ...verdict, previousKnowledgeId: undefined } as JudgeVerdict,
           llmCalls: 1,
@@ -170,7 +193,7 @@ describe("consolidateCandidate decision pipeline", () => {
       makeCandidate(),
       EMB,
       deps({
-        recallClusterAnchors: twoExecCluster(),
+        recallSimilarCandidates: twoExecCluster(),
         judge: async () => ({ verdict, llmCalls: 1, costUsd: null }),
       }),
     );
@@ -190,6 +213,83 @@ describe("consolidateCandidate decision pipeline", () => {
   });
 });
 
+// ── Judge Context v2 extras plumbing (§10.6) ────────────────────────
+
+describe("consolidateCandidate — Judge Context v2 extras", () => {
+  it("hands the judge the kind census and a soft-context list that excludes the current candidate, capped and excerpted", async () => {
+    const candidate = makeCandidate();
+    const evmAddress = "0x52908400098527886E0F7030069857D2E4169EE7";
+    const recalls: MemoryCandidateRecall[] = [
+      // The candidate itself comes back from vector recall — must be excluded.
+      similarRecall(candidate.id, 5),
+      // A maskable token in the stored title must never reach the judge raw.
+      {
+        ...similarRecall("other-addr", 5_000),
+        title: `wallet ${evmAddress} drained by approval`,
+      },
+      ...Array.from({ length: JUDGE_SIMILAR_CANDIDATES_MAX + 2 }, (_, i) => ({
+        ...similarRecall(`other-${i}`, 6 + i),
+        title: "t".repeat(JUDGE_CANDIDATE_EXCERPT_CHARS * 2),
+        summary: "z".repeat(JUDGE_CANDIDATE_EXCERPT_CHARS * 2),
+      })),
+    ];
+    const captured: { extras: JudgeContextExtras | null } = { extras: null };
+    const out = await consolidateCandidate(
+      candidate,
+      EMB,
+      deps({
+        recallSimilarCandidates: async () => recalls,
+        listActiveKindCounts: async () => [{ kind: "strategy_lesson", count: 4 }],
+        judge: async (_candidate, _signals, extras) => {
+          captured.extras = extras;
+          return {
+            verdict: {
+              verdict: "retain",
+              rubric: { grounding: 3, durability: 3, novelty: 3, generalizability: 2, processNotOutcome: 3 },
+              sourceTier: "hypothesis",
+              regimeTags: [],
+            },
+            llmCalls: 1,
+            costUsd: null,
+          };
+        },
+      }),
+    );
+
+    expect(out.plan.type).toBe("retain");
+    expect(captured.extras).not.toBeNull();
+    expect(captured.extras?.knownKinds).toEqual([{ kind: "strategy_lesson", count: 4 }]);
+    const ids = captured.extras?.similarCandidates.map((c) => c.id) ?? [];
+    expect(ids).not.toContain(candidate.id);
+    expect(ids.length).toBe(JUDGE_SIMILAR_CANDIDATES_MAX);
+    for (const similar of captured.extras?.similarCandidates ?? []) {
+      expect(similar.titleExcerpt.length).toBeLessThanOrEqual(JUDGE_CANDIDATE_EXCERPT_CHARS);
+      expect(similar.summaryExcerpt.length).toBeLessThanOrEqual(JUDGE_CANDIDATE_EXCERPT_CHARS);
+    }
+    // Redact-before-truncate: the stored title's raw address is masked.
+    const withAddress = captured.extras?.similarCandidates.find((c) => c.id === "other-addr");
+    expect(withAddress).toBeDefined();
+    expect(withAddress?.titleExcerpt).not.toContain(evmAddress);
+  });
+
+  it("never fetches the kind census on a deterministic terminal (zero extra cost)", async () => {
+    let censusFetched = false;
+    const out = await consolidateCandidate(
+      makeCandidate(),
+      EMB,
+      deps({
+        // No cluster → recurrence 1 → D-REC retain terminal, judge never runs.
+        listActiveKindCounts: async () => {
+          censusFetched = true;
+          return [];
+        },
+      }),
+    );
+    expect(out.plan.type).toBe("retain");
+    expect(censusFetched).toBe(false);
+  });
+});
+
 // ── S8 graph-extraction seam (F1: second LLM call ONLY on promote/supersede) ──
 
 describe("consolidateCandidate — S8 graph-extraction seam", () => {
@@ -202,7 +302,7 @@ describe("consolidateCandidate — S8 graph-extraction seam", () => {
       candidate,
       EMB,
       deps({
-        recallClusterAnchors: twoExecCluster(),
+        recallSimilarCandidates: twoExecCluster(),
         buildGraphPlan: async (c, plan) => {
           calls.push({ candidateId: c.id, regimeTags: plan.regimeTags });
           return STUB_PLAN;
@@ -237,7 +337,7 @@ describe("consolidateCandidate — S8 graph-extraction seam", () => {
       makeCandidate(),
       EMB,
       deps({
-        recallClusterAnchors: twoExecCluster(),
+        recallSimilarCandidates: twoExecCluster(),
         judge: async () => ({
           verdict: {
             verdict: "reject",
@@ -265,7 +365,7 @@ describe("consolidateCandidate — S8 graph-extraction seam", () => {
       makeCandidate(),
       EMB,
       deps({
-        recallClusterAnchors: twoExecCluster(),
+        recallSimilarCandidates: twoExecCluster(),
         // buildGraphPlan's CONTRACT is fail-open: any internal error → null.
         buildGraphPlan: async () => null,
       }),

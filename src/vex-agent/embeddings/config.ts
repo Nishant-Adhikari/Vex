@@ -3,8 +3,9 @@
  *
  * Loads `EMBEDDING_*` env vars and validates them. Fail-fast on missing/invalid.
  *
- * Default runtime: Docker Model Runner with `ai/embeddinggemma:300M-Q8_0`,
- * exposed on http://localhost:12434/engines/llama.cpp/v1.
+ * Default runtime: standalone `llama.cpp:server` (provisioned by the vex-app
+ * Compose stack) serving `ai/embeddinggemma:300M-Q8_0`, exposed on
+ * http://127.0.0.1:27134/v1.
  *
  * EMBEDDING_DIM is config-driven. The schema's `vector` column has no typmod,
  * so any positive integer in [MIN_EMBEDDING_DIM, MAX_EMBEDDING_DIM] is accepted.
@@ -42,7 +43,7 @@ export function loadEmbeddingConfig(): EmbeddingConfig {
 
   const baseUrl = (process.env.EMBEDDING_BASE_URL ?? "").trim();
   if (!baseUrl) {
-    errors.push("EMBEDDING_BASE_URL is required (e.g. http://localhost:12434/engines/llama.cpp/v1)");
+    errors.push("EMBEDDING_BASE_URL is required (e.g. http://127.0.0.1:27134/v1)");
   } else if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
     errors.push(`EMBEDDING_BASE_URL="${baseUrl}" must start with http:// or https://`);
   }
