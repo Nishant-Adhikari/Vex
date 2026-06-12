@@ -1,0 +1,408 @@
+/**
+ * Eval report-card collector (Phase 0).
+ *
+ * DISK-BACKED accumulator. The eval config runs single-file-at-a-time on the
+ * threads pool, which does NOT share module singletons across files — each test
+ * file gets its own module instance. So the collector persists its state to a
+ * FIXED JSON sidecar in `os.tmpdir()` (the eval globalSetup deletes it once at
+ * run start for a clean slate; env-propagated per-run ids do not reliably reach
+ * worker threads in Vitest 4, so a fixed path is the robust choice): every
+ * record* call loads the prior files' state, merges its own, and persists back.
+ * `zz-report.int.test.ts` (sorts last) loads the fully-merged state and writes
+ * the markdown to `memory-system/eval-report-latest.md`, then clears the sidecar.
+ *
+ * Sequential-file execution (`fileParallelism:false`, `maxWorkers:1`) makes the
+ * load→merge→persist cycle race-free: only one worker touches the sidecar at a
+ * time.
+ *
+ * PRIVACY: this collector stores ONLY counts, enums, ids, and metrics. It NEVER
+ * stores raw candidate text, titles, summaries, or secrets. Helpers below accept
+ * only primitive metrics; suites must not pass free text.
+ */
+
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+
+const ROOT = resolve(__dirname, "..", "..", "..", "..");
+const REPORT_PATH = resolve(ROOT, "memory-system/eval-report-latest.md");
+
+/**
+ * FIXED sidecar path — the cross-file accumulator (the threads pool isolates
+ * module singletons per file). Deliberately NOT keyed by an env-propagated run
+ * id: env mutations in the globalSetup main process do NOT reliably reach every
+ * worker thread in Vitest 4, so a per-run id would split the accumulator across
+ * sidecars. Instead the path is constant and the eval globalSetup DELETES it
+ * once at the start of each run (clean slate), so stale data never leaks in and
+ * every file shares the one accumulator.
+ */
+export const REPORT_SIDECAR_PATH = resolve(tmpdir(), "vex-eval-report-card.json");
+function sidecarPath(): string {
+  return REPORT_SIDECAR_PATH;
+}
+
+export interface CheckRow {
+  /** Short stable label (no free text from candidates). */
+  readonly label: string;
+  readonly pass: boolean;
+  /** Optional metric note — enums/counts only. */
+  readonly note?: string;
+}
+
+export interface JudgeSample {
+  /** Which suite/scenario produced this judge call. */
+  readonly scenario: string;
+  readonly llmCalls: number;
+  readonly costUsd: number | null;
+  readonly latencyMs: number;
+  /** Resolved decision type or verdict enum (e.g. "promote", "flip→invalidate"). */
+  readonly verdict: string;
+}
+
+export interface PrecisionSample {
+  readonly k: number;
+  readonly precisionAtK: number;
+  readonly queries: number;
+  readonly relevantHits: number;
+}
+
+/**
+ * F31 headline metric — one row per judge ESCALATION (the consolidate/reconcile
+ * candidate reached the judge). `valid` means the model returned a verdict that
+ * passed `judgeVerdictSchema`. `invalidReason` is the bounded failure category
+ * when the judge was reached but produced no valid verdict (schema_invalid /
+ * judge_timeout / judge_malformed). NEVER carries raw model text.
+ */
+export type JudgeInvalidReason =
+  | "schema_invalid"
+  | "judge_timeout"
+  | "judge_malformed"
+  | "provider_config"
+  | "judge_unknown";
+
+export interface JudgeAttemptSample {
+  /** Which suite/scenario produced this escalation. */
+  readonly scenario: string;
+  /** True iff the candidate escalated and a judge call was attempted. */
+  readonly reached: boolean;
+  /** True iff a verdict validated against judgeVerdictSchema. */
+  readonly valid: boolean;
+  /** Failure category when reached but not valid; null on a valid verdict. */
+  readonly invalidReason: JudgeInvalidReason | null;
+}
+
+export interface FindingRow {
+  /** Funnel code, e.g. "F1", "F2", "F3", "F5". */
+  readonly code: string;
+  /** One-line, metrics-only characterization. */
+  readonly summary: string;
+  /** Whether the baseline empirically demonstrated the bug. */
+  readonly manifested: boolean;
+}
+
+interface Section {
+  readonly suite: string;
+  readonly checks: CheckRow[];
+}
+
+/** The serializable shape persisted to the per-run sidecar. */
+interface ReportState {
+  sections: Section[];
+  judge: JudgeSample[];
+  judgeAttempts: JudgeAttemptSample[];
+  precision: PrecisionSample[];
+  findings: FindingRow[];
+  providerModel: string | null;
+  embeddingModel: string | null;
+  embeddingDim: number | null;
+}
+
+class ReportCard {
+  private sections = new Map<string, Section>();
+  private judge: JudgeSample[] = [];
+  private judgeAttempts: JudgeAttemptSample[] = [];
+  private precision: PrecisionSample[] = [];
+  private findings: FindingRow[] = [];
+  private providerModel: string | null = null;
+  private embeddingModel: string | null = null;
+  private embeddingDim: number | null = null;
+
+  /** Load the cross-file accumulated state from the sidecar (best-effort). */
+  private load(): void {
+    const path = sidecarPath();
+    if (!existsSync(path)) return;
+    try {
+      const raw = readFileSync(path, "utf8");
+      const state = JSON.parse(raw) as ReportState;
+      this.sections = new Map(state.sections.map((s) => [s.suite, s]));
+      this.judge = state.judge;
+      this.judgeAttempts = state.judgeAttempts;
+      this.precision = state.precision;
+      this.findings = state.findings;
+      this.providerModel = state.providerModel;
+      this.embeddingModel = state.embeddingModel;
+      this.embeddingDim = state.embeddingDim;
+    } catch {
+      // Corrupt/partial sidecar — start fresh rather than crash the run.
+    }
+  }
+
+  /** Persist the merged state back to the sidecar for the next file to inherit. */
+  private persist(): void {
+    const state: ReportState = {
+      sections: [...this.sections.values()],
+      judge: this.judge,
+      judgeAttempts: this.judgeAttempts,
+      precision: this.precision,
+      findings: this.findings,
+      providerModel: this.providerModel,
+      embeddingModel: this.embeddingModel,
+      embeddingDim: this.embeddingDim,
+    };
+    writeFileSync(sidecarPath(), JSON.stringify(state), "utf8");
+  }
+
+  setProvenance(p: {
+    providerModel: string;
+    embeddingModel: string;
+    embeddingDim: number;
+  }): void {
+    this.load();
+    this.providerModel = p.providerModel;
+    this.embeddingModel = p.embeddingModel;
+    this.embeddingDim = p.embeddingDim;
+    this.persist();
+  }
+
+  recordCheck(suite: string, row: CheckRow): void {
+    this.load();
+    const existing = this.sections.get(suite);
+    if (existing) {
+      existing.checks.push(row);
+    } else {
+      this.sections.set(suite, { suite, checks: [row] });
+    }
+    this.persist();
+  }
+
+  recordJudge(sample: JudgeSample): void {
+    this.load();
+    this.judge.push(sample);
+    this.persist();
+  }
+
+  /** F31 headline — record ONE judge escalation (reached + valid/invalid). */
+  recordJudgeAttempt(sample: JudgeAttemptSample): void {
+    this.load();
+    this.judgeAttempts.push(sample);
+    this.persist();
+  }
+
+  /** Aggregate F31 counters for cross-suite assertions (judge reached anywhere). */
+  judgeAttemptTotals(): {
+    attempted: number;
+    schemaValid: number;
+    schemaInvalid: number;
+    byReason: Record<string, number>;
+  } {
+    this.load();
+    const attempted = this.judgeAttempts.filter((a) => a.reached).length;
+    const schemaValid = this.judgeAttempts.filter((a) => a.reached && a.valid).length;
+    const schemaInvalid = this.judgeAttempts.filter((a) => a.reached && !a.valid).length;
+    const byReason: Record<string, number> = {};
+    for (const a of this.judgeAttempts) {
+      if (a.reached && !a.valid && a.invalidReason !== null) {
+        byReason[a.invalidReason] = (byReason[a.invalidReason] ?? 0) + 1;
+      }
+    }
+    return { attempted, schemaValid, schemaInvalid, byReason };
+  }
+
+  recordPrecision(sample: PrecisionSample): void {
+    this.load();
+    this.precision.push(sample);
+    this.persist();
+  }
+
+  recordFinding(row: FindingRow): void {
+    this.load();
+    this.findings.push(row);
+    this.persist();
+  }
+
+  /**
+   * Render the dated run section, write it to the report path, and CLEAR the
+   * sidecar (the run is done — the next run's globalSetup also clears it).
+   */
+  flush(timestampMs: number): string {
+    this.load();
+    const md = this.render(timestampMs);
+    writeFileSync(REPORT_PATH, md, "utf8");
+    try {
+      rmSync(sidecarPath(), { force: true });
+    } catch {
+      // Best-effort cleanup — a leftover tmp sidecar is harmless.
+    }
+    return md;
+  }
+
+  /** Render without writing (for assertions / debugging). */
+  render(timestampMs: number): string {
+    this.load();
+    const ts = new Date(timestampMs).toISOString();
+    const lines: string[] = [];
+    lines.push("# Memory System — Live Eval Report (latest)");
+    lines.push("");
+    lines.push(`## Run ${ts}`);
+    lines.push("");
+    lines.push("### Provenance");
+    lines.push("");
+    lines.push(`- judge provider model: \`${process.env.AGENT_MODEL ?? "unknown"}\``);
+    lines.push(`- embedding provider model (returned): \`${this.providerModel ?? "unknown"}\``);
+    lines.push(`- embedding model (configured): \`${this.embeddingModel ?? "unknown"}\``);
+    lines.push(`- embedding dim: \`${this.embeddingDim ?? "unknown"}\``);
+    lines.push("");
+
+    // F31 HEADLINE — judge output-valid rate.
+    lines.push("### F31 headline — judge output-valid rate");
+    lines.push("");
+    const t = this.judgeAttemptTotals();
+    const model = process.env.AGENT_MODEL ?? "unknown";
+    if (t.attempted === 0) {
+      lines.push(
+        `_no judge escalations recorded — the judge was never reached (this is itself a finding; see funnel F32)._`,
+      );
+    } else {
+      const ratePct = Math.round((t.schemaValid / t.attempted) * 100);
+      const reasonStr =
+        Object.keys(t.byReason).length === 0
+          ? "n/a"
+          : Object.entries(t.byReason)
+              .sort((a, b) => b[1] - a[1])
+              .map(([r, n]) => `${r}=${n}`)
+              .join(", ");
+      lines.push(
+        `**F31 manifests: judge output-valid rate = ${ratePct}% ` +
+          `(${t.schemaValid}/${t.attempted} valid) with model=\`${model}\`.**`,
+      );
+      lines.push("");
+      lines.push("| metric | count |");
+      lines.push("| --- | ---: |");
+      lines.push(`| judgeCallsAttempted (escalations reaching the judge) | ${t.attempted} |`);
+      lines.push(`| judgeCallsSchemaValid | ${t.schemaValid} |`);
+      lines.push(`| judgeCallsSchemaInvalid | ${t.schemaInvalid} |`);
+      lines.push(`| invalid reasons | ${reasonStr} |`);
+      lines.push("");
+      lines.push("Per-escalation:");
+      lines.push("");
+      lines.push("| scenario | reached | valid | invalidReason |");
+      lines.push("| --- | --- | --- | --- |");
+      for (const a of this.judgeAttempts) {
+        lines.push(
+          `| ${a.scenario} | ${a.reached ? "yes" : "no"} | ${a.valid ? "yes" : "no"} | ${a.invalidReason ?? "—"} |`,
+        );
+      }
+    }
+    lines.push("");
+
+    // Per-dimension pass-rate table.
+    lines.push("### Per-dimension pass-rate");
+    lines.push("");
+    lines.push("| suite | checks | passed | pass-rate |");
+    lines.push("| --- | ---: | ---: | ---: |");
+    for (const section of this.sortedSections()) {
+      const total = section.checks.length;
+      const passed = section.checks.filter((c) => c.pass).length;
+      const rate = total === 0 ? "n/a" : `${Math.round((passed / total) * 100)}%`;
+      lines.push(`| ${section.suite} | ${total} | ${passed} | ${rate} |`);
+    }
+    lines.push("");
+
+    // Per-check detail.
+    for (const section of this.sortedSections()) {
+      lines.push(`#### ${section.suite}`);
+      lines.push("");
+      for (const c of section.checks) {
+        const mark = c.pass ? "PASS" : "FAIL";
+        const note = c.note ? ` — ${c.note}` : "";
+        lines.push(`- [${mark}] ${c.label}${note}`);
+      }
+      lines.push("");
+    }
+
+    // Judge metrics.
+    lines.push("### Judge (live DeepSeek via OpenRouter)");
+    lines.push("");
+    if (this.judge.length === 0) {
+      lines.push("_no judge calls recorded_");
+    } else {
+      lines.push("| scenario | llmCalls | costUsd | latencyMs | verdict |");
+      lines.push("| --- | ---: | ---: | ---: | --- |");
+      for (const j of this.judge) {
+        const cost = j.costUsd === null ? "null" : j.costUsd.toFixed(6);
+        lines.push(
+          `| ${j.scenario} | ${j.llmCalls} | ${cost} | ${j.latencyMs} | ${j.verdict} |`,
+        );
+      }
+      const totalCalls = this.judge.reduce((a, j) => a + j.llmCalls, 0);
+      const costs = this.judge
+        .map((j) => j.costUsd)
+        .filter((c): c is number => c !== null);
+      const totalCost = costs.reduce((a, c) => a + c, 0);
+      const latencies = this.judge.map((j) => j.latencyMs);
+      const avgLatency =
+        latencies.length === 0
+          ? 0
+          : Math.round(latencies.reduce((a, l) => a + l, 0) / latencies.length);
+      lines.push("");
+      lines.push(
+        `- total llmCalls: ${totalCalls}; cost samples: ${costs.length}/${this.judge.length}; ` +
+          `total cost (where reported): ${totalCost.toFixed(6)}; avg latency: ${avgLatency}ms`,
+      );
+    }
+    lines.push("");
+
+    // Precision@k.
+    lines.push("### Retrieval precision@k (real Gemma corpus)");
+    lines.push("");
+    if (this.precision.length === 0) {
+      lines.push("_no precision samples recorded_");
+    } else {
+      lines.push("| k | queries | relevantHits | precision@k |");
+      lines.push("| ---: | ---: | ---: | ---: |");
+      for (const p of this.precision) {
+        lines.push(
+          `| ${p.k} | ${p.queries} | ${p.relevantHits} | ${p.precisionAtK.toFixed(3)} |`,
+        );
+      }
+    }
+    lines.push("");
+
+    // Funnel findings.
+    lines.push("### Funnel findings (baseline characterization)");
+    lines.push("");
+    if (this.findings.length === 0) {
+      lines.push("_no findings recorded_");
+    } else {
+      lines.push("| code | manifested | summary |");
+      lines.push("| --- | --- | --- |");
+      for (const f of this.findings) {
+        lines.push(`| ${f.code} | ${f.manifested ? "YES" : "no"} | ${f.summary} |`);
+      }
+    }
+    lines.push("");
+
+    return lines.join("\n");
+  }
+
+  private sortedSections(): Section[] {
+    return [...this.sections.values()].sort((a, b) =>
+      a.suite.localeCompare(b.suite),
+    );
+  }
+}
+
+/** Process-singleton — shared across every suite in a serialized eval run. */
+export const reportCard = new ReportCard();
+
+export { REPORT_PATH };
