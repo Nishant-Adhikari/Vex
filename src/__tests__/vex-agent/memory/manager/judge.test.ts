@@ -6,7 +6,10 @@
 import { describe, it, expect } from "vitest";
 
 import { callJudge, type JudgeProvider } from "@vex-agent/memory/manager/judge.js";
-import { judgeVerdictSchema } from "@vex-agent/memory/manager/judge-schema.js";
+import {
+  judgeVerdictJsonSchema,
+  judgeVerdictSchema,
+} from "@vex-agent/memory/manager/judge-schema.js";
 import type { JudgeContext } from "@vex-agent/memory/manager/context-builder.js";
 
 function ctx(): JudgeContext {
@@ -136,5 +139,76 @@ describe("judge verdict schema", () => {
     expect(judgeVerdictSchema.safeParse(all).success).toBe(true);
     const overLong = { ...JSON.parse(PROMOTE_JSON), regimeTags: ["bull", "bull", "bull", "bull", "bull", "bull"] };
     expect(judgeVerdictSchema.safeParse(overLong).success).toBe(false);
+  });
+
+  // ── F31 Layer A: null-tolerant optional fields ─────────────────────────────
+  // Smaller models (deepseek-v4-flash) emit a placeholder `null` for inapplicable
+  // optional fields. A bare `.optional()` rejected `null` BEFORE the cross-field
+  // refines ran (fail-closed → nothing promoted). `.nullish()` tolerates it while
+  // the conditional requireds STILL fire on a `null` placeholder.
+  const promoteBase = () => ({
+    verdict: "promote",
+    rubric: { grounding: 3, durability: 3, novelty: 3, generalizability: 4, processNotOutcome: 4 },
+    sourceTier: "observed",
+  });
+
+  it("F31: a promote verdict with previousKnowledgeId:null AND rejectReason:null now PARSES", () => {
+    const r = judgeVerdictSchema.safeParse({
+      ...promoteBase(),
+      previousKnowledgeId: null,
+      rejectReason: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("F31: regimeTags:null normalizes to [] (the transform keeps it a non-null array)", () => {
+    const r = judgeVerdictSchema.safeParse({ ...promoteBase(), regimeTags: null });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.regimeTags).toEqual([]);
+  });
+
+  it("F31: supersede with null/absent previousKnowledgeId is STILL rejected", () => {
+    const supBase = { ...promoteBase(), verdict: "supersede" };
+    expect(judgeVerdictSchema.safeParse(supBase).success).toBe(false); // absent
+    expect(judgeVerdictSchema.safeParse({ ...supBase, previousKnowledgeId: null }).success).toBe(false); // null
+    expect(judgeVerdictSchema.safeParse({ ...supBase, previousKnowledgeId: 7 }).success).toBe(true); // value
+  });
+
+  it("F31: reject/expire with null/absent rejectReason is STILL rejected", () => {
+    for (const verdict of ["reject", "expire"] as const) {
+      const base = { ...promoteBase(), verdict };
+      expect(judgeVerdictSchema.safeParse(base).success).toBe(false); // absent
+      expect(judgeVerdictSchema.safeParse({ ...base, rejectReason: null }).success).toBe(false); // null
+      expect(
+        judgeVerdictSchema.safeParse({ ...base, rejectReason: "insufficient_evidence" }).success,
+      ).toBe(true); // value
+    }
+  });
+
+  it("F31: an out-of-enum rejectReason is STILL rejected", () => {
+    const r = judgeVerdictSchema.safeParse({
+      ...promoteBase(),
+      verdict: "reject",
+      rejectReason: "made_up_reason",
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("judgeVerdictJsonSchema export (F31 Layer B)", () => {
+  it("closes the object (additionalProperties:false)", () => {
+    expect(judgeVerdictJsonSchema.additionalProperties).toBe(false);
+  });
+
+  it("requires ONLY the non-optional fields (excludes the .nullish() ones)", () => {
+    const required = new Set(judgeVerdictJsonSchema.required ?? []);
+    expect(required.has("verdict")).toBe(true);
+    expect(required.has("rubric")).toBe(true);
+    expect(required.has("sourceTier")).toBe(true);
+    // The three null-tolerant optionals must NOT be in `required` — that is the
+    // SEND shape smaller models are held to.
+    expect(required.has("previousKnowledgeId")).toBe(false);
+    expect(required.has("rejectReason")).toBe(false);
+    expect(required.has("regimeTags")).toBe(false);
   });
 });

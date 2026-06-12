@@ -60,6 +60,7 @@ export function buildOpenRouterParams(
   tools: ToolDefinition[],
   config: InferenceConfig,
   stream: boolean,
+  responseFormat?: ChatRequest["responseFormat"],
 ): ChatRequest {
   // Breakpoints ONLY for explicit-cache model families AND when the catalog
   // reports cache-read pricing ("model supports cache" detection). Everything
@@ -83,6 +84,9 @@ export function buildOpenRouterParams(
     ...(config.reasoningPricePerM !== null && {
       reasoning: { effort: config.reasoningEffort ?? DEFAULT_REASONING_EFFORT },
     }),
+    // API-level output-format enforcement (F31 Layer B). Omitted by default so
+    // every caller that passes nothing keeps a byte-identical wire request.
+    ...(responseFormat !== undefined && { responseFormat }),
   };
 
   if (tools.length > 0) {

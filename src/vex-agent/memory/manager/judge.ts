@@ -17,9 +17,19 @@ import { z } from "zod";
 
 import { JUDGE_TIMEOUT_MS } from "@vex-agent/engine/memory-manager/policy.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
+import { buildJudgeResponseFormat } from "@vex-agent/inference/openrouter/judge-format.js";
 import { buildJudgeSystemPrompt, buildJudgeUserPrompt } from "./judge-prompt.js";
-import { judgeVerdictSchema, type JudgeVerdict } from "./judge-schema.js";
+import { judgeVerdictJsonSchema, judgeVerdictSchema, type JudgeVerdict } from "./judge-schema.js";
 import type { JudgeContext } from "./context-builder.js";
+
+/**
+ * API-level output-format enforcement (F31, Layer B), built ONCE. Threaded into
+ * `chatCompletionSimple` so OpenRouter constrains the judge to the verdict shape
+ * AND (via `provider.requireParameters`) routes only to honoring endpoints. The
+ * authoritative semantic gate is still the Zod `judgeVerdictSchema` parse below
+ * (Layer A) — `.refine()` cross-field rules do not survive `toJSONSchema`.
+ */
+const judgeResponseFormat = buildJudgeResponseFormat(judgeVerdictJsonSchema);
 
 /**
  * The provider surface the judge needs — a structural supertype of
@@ -32,6 +42,12 @@ export interface JudgeProvider {
   chatCompletionSimple(
     messages: ReadonlyArray<{ role: string; content: string }>,
     config: unknown,
+    // Optional API-level response format (F31 Layer B). Typed `unknown` to keep
+    // this structural interface provider-agnostic — the judge passes a concrete
+    // OpenRouter format object; test stubs ignore it. The concrete
+    // `OpenRouterProvider.chatCompletionSimple` accepts a typed optional 3rd arg
+    // and remains assignable.
+    responseFormat?: unknown,
   ): Promise<{ content: string; usage?: { cost?: number | null } }>;
 }
 
@@ -81,6 +97,7 @@ export async function callJudge(
         { role: "user", content: userPrompt },
       ],
       config,
+      judgeResponseFormat,
     ),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("memory_judge_timeout")), JUDGE_TIMEOUT_MS),

@@ -78,18 +78,40 @@ export const judgeVerdictSchema = z
     verdict: judgeVerdictTypeSchema,
     rubric: judgeRubricSchema,
     sourceTier: knowledgeSourceSchema,
-    regimeTags: z.array(regimeTagSchema).max(REGIME_TAGS.length).optional().default([]),
-    previousKnowledgeId: z.number().int().positive().optional(),
-    rejectReason: memoryDecisionRejectReasonSchema.optional(),
+    // F31: `.nullish()` (= nullable + optional) tolerates the placeholder `null`
+    // that smaller models (e.g. deepseek-v4-flash) emit for inapplicable optional
+    // fields — a bare `.optional()` rejected `null` BEFORE the cross-field refines
+    // ran, failing the whole verdict closed. The transform keeps `regimeTags` a
+    // non-null array downstream (`planFromVerdict` dedupes it with `new Set`).
+    regimeTags: z.array(regimeTagSchema).max(REGIME_TAGS.length).nullish().transform((v) => v ?? []),
+    previousKnowledgeId: z.number().int().positive().nullish(),
+    rejectReason: memoryDecisionRejectReasonSchema.nullish(),
   })
   .strict()
+  // The cross-field requireds still fire: a `null` placeholder counts as ABSENT,
+  // so supersede⇒previousKnowledgeId and reject/expire⇒rejectReason are NOT
+  // satisfied by `null`. Only `=== undefined` was widened to include `null`.
   .refine(
-    (v) => v.verdict !== "supersede" || v.previousKnowledgeId !== undefined,
+    (v) => v.verdict !== "supersede" || (v.previousKnowledgeId !== undefined && v.previousKnowledgeId !== null),
     { message: "supersede requires previousKnowledgeId", path: ["previousKnowledgeId"] },
   )
   .refine(
-    (v) => (v.verdict !== "reject" && v.verdict !== "expire") || v.rejectReason !== undefined,
+    (v) =>
+      (v.verdict !== "reject" && v.verdict !== "expire") ||
+      (v.rejectReason !== undefined && v.rejectReason !== null),
     { message: "reject/expire requires rejectReason", path: ["rejectReason"] },
   );
 
 export type JudgeVerdict = z.infer<typeof judgeVerdictSchema>;
+
+/**
+ * JSON Schema for the judge verdict, computed ONCE at module load (`toJSONSchema`
+ * is not free). `io:"input"` emits the SEND shape — `additionalProperties:false`
+ * and `required` listing ONLY the non-optional/non-defaulted fields
+ * (`verdict`/`rubric`/`sourceTier`); the three `.nullish()` fields are omitted
+ * from `required`. This powers the API-level format enforcement (Layer B,
+ * `judge.ts` → OpenRouter `responseFormat`). NOTE: the `.refine()` cross-field
+ * rules do NOT survive `toJSONSchema`, so the Zod schema above stays the
+ * authoritative semantic gate (Layer A).
+ */
+export const judgeVerdictJsonSchema = z.toJSONSchema(judgeVerdictSchema, { io: "input" });

@@ -18,6 +18,7 @@
  */
 
 import { OpenRouter } from "@openrouter/sdk";
+import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";
 import type { ChatResult } from "@openrouter/sdk/models/chatresult.js";
 import type { ChatStreamChunk } from "@openrouter/sdk/models/chatstreamchunk.js";
 import type { EventStream } from "@openrouter/sdk/lib/event-streams.js";
@@ -328,14 +329,24 @@ export class OpenRouterProvider implements InferenceProvider {
   async chatCompletionSimple(
     messages: ProviderMessage[],
     config: InferenceConfig,
+    responseFormat?: ChatRequest["responseFormat"],
   ): Promise<{ content: string; usage: InferenceUsage }> {
-    const params = buildOpenRouterParams(messages, [], config, false);
+    const params = buildOpenRouterParams(messages, [], config, false, responseFormat);
+
+    // When a structured `responseFormat` is requested (F31 judge, Layer B),
+    // pin `provider.requireParameters: true` so the request routes ONLY to
+    // endpoints that honor the format and FAILS LOUD (job retries) instead of
+    // silently returning prose. `allowFallbacks` stays default true, so a
+    // provider OUTAGE still falls back — but only among honoring endpoints.
+    // Callers that pass no `responseFormat` send a byte-identical wire request.
+    const provider: ChatRequest["provider"] =
+      responseFormat !== undefined ? { requireParameters: true } : undefined;
 
     let response: ChatResult;
     try {
       // `stream: false` selects the non-streaming `ChatResult` overload — no cast.
       response = await this.client.chat.send({
-        chatRequest: { ...params, stream: false },
+        chatRequest: { ...params, stream: false, ...(provider && { provider }) },
       });
     } catch (err) {
       throw normalizeOpenRouterError(err, "simple chat completion");
