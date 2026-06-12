@@ -430,9 +430,11 @@ Przykladowy kierunek kontraktu:
 
 ### 10.8. Kolejnosc prac
 
-1. Poprawic stale komentarze/default examples EmbeddingGemma config.
-2. Wzmocnic English-by-contract w opisach tooli i promptach.
-3. Dodac boundary language check dla `long_memory_suggest` persisted text.
-4. Dodac Judge Context v2: known kinds + similar memories excerpts + temporal metadata.
+1. Poprawic stale komentarze/default examples EmbeddingGemma config. `[x] DONE`
+2. Wzmocnic English-by-contract w opisach tooli i promptach. `[x] DONE`
+3. Dodac boundary language check dla `long_memory_suggest` persisted text. `[x] DONE`
+4. Dodac Judge Context v2: known kinds + similar memories excerpts + temporal metadata. `[x] DONE`
 5. Dopiero potem rozwazyc rename `knowledge_entries` -> `long_memory_entries` jako osobny duzy slice.
 6. Dopiero po Context v2 rozwazyc merge/supersede structured payload.
+
+> **Pkt 1–4 DONE** (2026-06-12; sesja harness-memory-dopiecia: plan-gate R1 BLOCKED→R2 GREEN; final-gate R1 BLOCKED (titleExcerpt)→R2 GREEN, Codex niezależnie 28/28). Zakres: (1) config/client/schemas+benchmark+globalSetup+Makefile prose → Compose `llama.cpp:server` @127.0.0.1:27134/v1 (001:31 świadomie NIE — applied migration, do rename-slice; fixtury 12434 inertne zostają); (2) English-by-contract: compact_now (ToolDef+Zod spójnie), summary=retrieval-quality (§10.3), session_memory_search/resolve_item, entity-extraction prompt, tool-usage bullet; (3) `memory/english-check.ts` zero-dep (metric A non-ASCII-letter fraction 0.05 — NIE Unicode-script, diakrytyki łapane; metric B unambiguous-stopword fraction 0.04 przy ≥8 słowach, set bez kolizji pl: to/i/a/on/by/no/ma/do/my/me; contentMd po stripie code/URL; entities/tags per-string count=0 z udokumentowanym limitem ASCII-deskryptorów) wpięty po live-state reject, przed hash/embed; `SUGGEST_REJECT_REASONS += non_english`; reject zaadvertyzowany w ToolDef; (4) Judge Context v2: `listActiveKindCounts` (unfiltered census, listKnownKinds nietknięte), temporal metadata w Pick (render only-when-available), KnowledgeMatch + opcjonalne tier/maturity/activation/contentExcerpt (text=title+summary nietknięte — Graphiti guardrail), JEDEN recallCandidatesTopK → recurrence + soft context (self-excluded, cap 5, titleExcerpt/summaryExcerpt redact-before-truncate), transcript char-cap 8000 PO detectUserAffirmation na pełnym oknie 40, UNTRUSTED DATA RULE w prompcie sędziego, capy w engine/memory-manager/policy.ts; verdicts/schema/clamp/promote()/audyt NIETKNIĘTE. Weryfikacja (niezależna parent): tsc clean; 31 plików/557+ unit (po fixie 281 affected re-run); **integracja realny pgvector + żywy llama.cpp: memory 15/15 + recall 8/8 + consolidate re-run 8/8**; grep-gates OD-1/staleness/schema czyste. NIE commitowane.
