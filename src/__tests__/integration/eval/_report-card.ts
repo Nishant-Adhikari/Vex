@@ -100,6 +100,42 @@ export interface FindingRow {
   readonly manifested: boolean;
 }
 
+/**
+ * Oracle dimension — which memory behavior the e2e correctness suite (S4/S5)
+ * scored this item against the pre-registered independent oracle. Bounded set so
+ * the per-dimension table groups cleanly; NEVER carries raw candidate text.
+ */
+export type OracleDimension =
+  | "promotion"
+  | "supersession"
+  | "graph"
+  | "decay"
+  | "reconcile"
+  | "retrieval"
+  | "junk_rejection"
+  | "steered_judge";
+
+/**
+ * One scored item from the e2e correctness eval: the oracle's `expected`
+ * (enum/code/count string) vs the pipeline's `actual`, and whether they agree.
+ * Pure metrics — `itemId` is the corpus item id (a stable code, never free
+ * text); `expected`/`actual` are short enums/codes; `note` is optional
+ * metrics-only context. NEVER stores candidate titles/summaries/secrets.
+ */
+export interface OracleScoreSample {
+  /** Stable corpus item id (e.g. "A-03", "K-01") — never free text. */
+  readonly itemId: string;
+  readonly dimension: OracleDimension;
+  /** Oracle's pre-registered expectation (enum/code/count string). */
+  readonly expected: string;
+  /** Pipeline's observed result (enum/code/count string). */
+  readonly actual: string;
+  /** True iff actual satisfies expected (the scorer decides; pure record here). */
+  readonly pass: boolean;
+  /** Optional metrics-only note — enums/counts only, no candidate text. */
+  readonly note?: string;
+}
+
 interface Section {
   readonly suite: string;
   readonly checks: CheckRow[];
@@ -112,6 +148,7 @@ interface ReportState {
   judgeAttempts: JudgeAttemptSample[];
   precision: PrecisionSample[];
   findings: FindingRow[];
+  oracleScores: OracleScoreSample[];
   providerModel: string | null;
   embeddingModel: string | null;
   embeddingDim: number | null;
@@ -123,6 +160,7 @@ class ReportCard {
   private judgeAttempts: JudgeAttemptSample[] = [];
   private precision: PrecisionSample[] = [];
   private findings: FindingRow[] = [];
+  private oracleScores: OracleScoreSample[] = [];
   private providerModel: string | null = null;
   private embeddingModel: string | null = null;
   private embeddingDim: number | null = null;
@@ -139,6 +177,9 @@ class ReportCard {
       this.judgeAttempts = state.judgeAttempts;
       this.precision = state.precision;
       this.findings = state.findings;
+      // Backward-compatible: a sidecar written before this field existed has no
+      // oracleScores key — default to empty rather than undefined.
+      this.oracleScores = state.oracleScores ?? [];
       this.providerModel = state.providerModel;
       this.embeddingModel = state.embeddingModel;
       this.embeddingDim = state.embeddingDim;
@@ -155,6 +196,7 @@ class ReportCard {
       judgeAttempts: this.judgeAttempts,
       precision: this.precision,
       findings: this.findings,
+      oracleScores: this.oracleScores,
       providerModel: this.providerModel,
       embeddingModel: this.embeddingModel,
       embeddingDim: this.embeddingDim,
@@ -227,6 +269,19 @@ class ReportCard {
   recordFinding(row: FindingRow): void {
     this.load();
     this.findings.push(row);
+    this.persist();
+  }
+
+  /**
+   * Record ONE oracle-vs-pipeline score from the e2e correctness eval (S4/S5).
+   * Pure push+persist — NO expect/throw (the scoring lane must never red the
+   * suite; the hard structural gates are expect()-ed by the suite itself, this
+   * collector only accumulates the scored metrics). Stores only the item id +
+   * dimension + short expected/actual codes + pass bit; never candidate text.
+   */
+  recordOracleScore(entry: OracleScoreSample): void {
+    this.load();
+    this.oracleScores.push(entry);
     this.persist();
   }
 
@@ -389,6 +444,39 @@ class ReportCard {
       for (const f of this.findings) {
         lines.push(`| ${f.code} | ${f.manifested ? "YES" : "no"} | ${f.summary} |`);
       }
+    }
+    lines.push("");
+
+    // Oracle scoring (e2e correctness — pipeline vs pre-registered oracle).
+    lines.push("### Oracle scoring (e2e correctness vs pre-registered oracle)");
+    lines.push("");
+    if (this.oracleScores.length === 0) {
+      lines.push("_no oracle scores recorded_");
+    } else {
+      // Per-dimension pass/total counts (stable dimension order).
+      const byDimension = new Map<string, { passed: number; total: number }>();
+      for (const s of this.oracleScores) {
+        const agg = byDimension.get(s.dimension) ?? { passed: 0, total: 0 };
+        agg.total += 1;
+        if (s.pass) agg.passed += 1;
+        byDimension.set(s.dimension, agg);
+      }
+      lines.push("| dimension | scored | passed | pass-rate |");
+      lines.push("| --- | ---: | ---: | ---: |");
+      for (const [dimension, agg] of [...byDimension.entries()].sort((a, b) =>
+        a[0].localeCompare(b[0]),
+      )) {
+        const rate =
+          agg.total === 0 ? "n/a" : `${Math.round((agg.passed / agg.total) * 100)}%`;
+        lines.push(`| ${dimension} | ${agg.total} | ${agg.passed} | ${rate} |`);
+      }
+      const totalScored = this.oracleScores.length;
+      const totalPassed = this.oracleScores.filter((s) => s.pass).length;
+      lines.push("");
+      lines.push(
+        `- total scored: ${totalScored}; passed: ${totalPassed}; ` +
+          `overall: ${Math.round((totalPassed / totalScored) * 100)}%`,
+      );
     }
     lines.push("");
 
