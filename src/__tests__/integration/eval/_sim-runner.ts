@@ -160,6 +160,18 @@ export interface RunCapture {
   regimeSnapshotIds: Map<string, number>;
   /** Corpus item ids that were processed this run (subset-aware). */
   processedItemIds: string[];
+  /**
+   * Corpus item id → the knowledge_entries.id it produced (seeded directly OR
+   * promoted by the judge). Door-rejected / retained / rejected items have no
+   * entry and are absent. The S5 snapshot reads each row via knowledgeRepo.getById.
+   */
+  entryIdByItem: Map<string, number>;
+  /**
+   * The last sim-day the stream advanced to (the max simDay across all processed
+   * events). The S5 decay gate scores the achieved age against this, not a fixed
+   * 89 — a subset that stops earlier still decays to its own final day.
+   */
+  finalSimDay: number;
   finalSnapshot: null;
 }
 
@@ -550,6 +562,7 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
       wallNow,
     );
     state.activeEntries.set(seeded.id, { promotedSimDay: item.simDay });
+    state.capture.entryIdByItem.set(item.id, seeded.id);
     state.capture.perItem.set(item.id, {
       kind: "seed",
       via: "seedPromotedLessonDirect",
@@ -656,9 +669,11 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
     latencyMs: captured.latencyMs,
   });
 
-  // If the judge promoted a NEW active entry, track it for decay re-projection.
+  // If the judge promoted a NEW active entry, track it for decay re-projection
+  // AND map the item → its entry id so the S5 snapshot can read the row.
   if (drive?.promotedKnowledgeId != null) {
     state.activeEntries.set(drive.promotedKnowledgeId, { promotedSimDay: item.simDay });
+    state.capture.entryIdByItem.set(item.id, drive.promotedKnowledgeId);
   }
 }
 
@@ -870,6 +885,8 @@ export async function runStream(args: RunStreamArgs): Promise<RunCapture> {
     tradeAnchors: new Map(),
     regimeSnapshotIds: new Map(),
     processedItemIds: [],
+    entryIdByItem: new Map(),
+    finalSimDay: 0,
     finalSnapshot: null,
   };
   const state: RunnerState = {
@@ -905,6 +922,7 @@ export async function runStream(args: RunStreamArgs): Promise<RunCapture> {
         throw new Error(`runStream: unhandled event ${JSON.stringify(_exhaustive)}`);
       }
     }
+    if (event.simDay > capture.finalSimDay) capture.finalSimDay = event.simDay;
   }
 
   return capture;

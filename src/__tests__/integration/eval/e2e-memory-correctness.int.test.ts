@@ -21,17 +21,37 @@
  *      items have a door capture). NO oracle comparison.
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
+import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { resetDb, makeSession } from "../setup/fixtures.js";
-import { reportCard } from "./_report-card.js";
-import { ORACLE } from "./_oracle.js"; // S4: confirm the oracle imports (not scored yet).
+import { reportCard, REPORT_PATH } from "./_report-card.js";
+import { ORACLE } from "./_oracle.js";
+import { GEMMA_DIM } from "./_eval-fixtures.js";
 import {
   runStream,
   resolveSubset,
   SUBSET_IDS,
   type ItemResult,
+  type RunCapture,
 } from "./_sim-runner.js";
+import {
+  captureFinalSnapshot,
+  scoreDoorRejects,
+  scoreSecrets,
+  scoreRetrievalMustNotAppear,
+  scoreSupersededStatus,
+  scoreRejectNoRow,
+  scoreDecay,
+  scoreReconcile,
+  scoreClampCeiling,
+  scorePromotionCorrectness,
+  scoreSupersession,
+  scoreGraph,
+  scoreSteeredJudge,
+  scoreRetrievalPrecision,
+  type HardGate,
+} from "./_sim-scorer.js";
 
 const SUITE = "e2e-memory-correctness";
 const hasKey = !!process.env.OPENROUTER_API_KEY;
@@ -47,13 +67,37 @@ function selectSubsetIds(): readonly string[] {
   return SUBSET_IDS;
 }
 
-describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 runner)", () => {
+describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 runner + S5 scorer)", () => {
   beforeAll(async () => {
     await resetDb();
   });
 
+  // ── S5 report flush. This e2e suite is its OWN report owner under the
+  // dedicated `test:eval:e2e` invocation (zz-report.int.test.ts does not run
+  // when only this file is targeted). Set provenance + flush the graded section
+  // here so the report is always produced for an e2e run. ──
+  afterAll(async () => {
+    let providerModel = process.env.EMBEDDING_MODEL ?? "unknown";
+    let dim = GEMMA_DIM;
+    try {
+      const probe = await embedDocument("report", "provenance probe");
+      providerModel = probe.providerModel;
+      dim = probe.embedding.length;
+    } catch {
+      // Best-effort — fall back to configured values.
+    }
+    reportCard.setProvenance({
+      providerModel,
+      embeddingModel: process.env.EMBEDDING_MODEL ?? "unknown",
+      embeddingDim: dim,
+    });
+    const md = reportCard.flush(Date.now());
+    // eslint-disable-next-line no-console
+    console.log(`[e2e-s5] graded report written to ${REPORT_PATH} (${md.length} chars).`);
+  });
+
   it(
-    "runs the 10-item subset end-to-end through the real pipeline and populates the capture",
+    "scores the 10-item subset against the pre-registered oracle (hard gates + soft metrics + report)",
     async () => {
       // S4 sanity: the oracle module imports and is internally consistent (its
       // module-load coverage assert ran on import). Not scored against here.
@@ -143,10 +187,71 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
           `processed=${capture.processedItemIds.length} judgeReached=${judgeReached} ` +
           `judgeValid=${judgeValid} doorRejects=${doorRejects} seeds=${seeds} reconciles=${reconciles}`,
       });
+
+      // ════════════════════════════════════════════════════════════════════
+      //  S5 — SNAPSHOT + SCORING
+      // ════════════════════════════════════════════════════════════════════
+      await runScoringPhase(capture);
     },
     600_000,
   );
 });
+
+/**
+ * The S5 snapshot + scoring phase. Reads the REAL final state, then scores it
+ * against the pre-registered oracle under the HARD-vs-SOFT firewall:
+ *   - SOFT dimensions + precision are recorded via the scorer (recordOracleScore /
+ *     recordPrecision / recordFinding) — never assert.
+ *   - HARD spec-structural gates are collected as `HardGate[]` and expect()-ed
+ *     here, EXCEPT known-gap gates (F5 leakers) which are recorded-not-failed.
+ */
+async function runScoringPhase(capture: RunCapture): Promise<void> {
+  const snapshot = await captureFinalSnapshot(capture);
+
+  // ── SOFT metrics + findings (recorded; never red the suite). ──
+  scorePromotionCorrectness(capture);
+  scoreSupersession(capture);
+  scoreGraph(capture, snapshot);
+  scoreSteeredJudge(capture, snapshot);
+  scoreRetrievalPrecision(capture, snapshot);
+
+  // ── HARD gates (+ their internal soft/finding rows). ──
+  const hardGates: HardGate[] = [
+    ...scoreDoorRejects(capture),
+    ...(await scoreSecrets(capture, snapshot)),
+    ...(await scoreRetrievalMustNotAppear(capture, snapshot)),
+    ...scoreSupersededStatus(capture, snapshot),
+    ...scoreRejectNoRow(capture),
+    ...scoreDecay(capture, snapshot),
+    ...scoreReconcile(capture, snapshot),
+    ...scoreClampCeiling(capture, snapshot),
+  ];
+
+  // Partition: known-gap gates are FINDINGS (recorded by the scorer), never red.
+  const enforced = hardGates.filter((g) => !g.knownGap);
+  const knownGaps = hardGates.filter((g) => g.knownGap);
+  const enforcedFailures = enforced.filter((g) => !g.pass);
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[e2e-s5] hard gates: ${enforced.length} enforced (${enforcedFailures.length} failing), ` +
+      `${knownGaps.length} known-gap (recorded-not-failed).\n` +
+      `[e2e-s5] enforced failures: ${enforcedFailures.map((g) => `${g.id}{${g.detail}}`).join("  ") || "none"}\n` +
+      `[e2e-s5] known gaps: ${knownGaps.map((g) => `${g.id}{${g.detail}}`).join("  ") || "none"}`,
+  );
+
+  reportCard.recordCheck(SUITE, {
+    label: "S5 scorer: hard gates evaluated; soft metrics + findings recorded",
+    pass: enforcedFailures.length === 0,
+    note: `enforced=${enforced.length} failing=${enforcedFailures.length} knownGap=${knownGaps.length}`,
+  });
+
+  // HARD assertion: every ENFORCED spec-structural gate passes. A failure here is
+  // a REAL correctness bug (the firewall — known gaps are excluded above).
+  for (const gate of enforced) {
+    expect(gate.pass, `hard gate ${gate.id} failed: ${gate.detail}`).toBe(true);
+  }
+}
 
 /** Record one per-item capture as a metrics-only check row (no candidate text). */
 function recordItemCapture(id: string, result: ItemResult): void {
