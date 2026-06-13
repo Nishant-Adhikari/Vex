@@ -191,18 +191,18 @@ export async function backdateRegimeSnapshot(
  * per-table maps above (never from caller input), so this builds no injectable
  * SQL — values are always bound parameters.
  */
-async function backdateRow<A extends Record<string, number | undefined>>(
+async function backdateRow<K extends string>(
   table: string,
   id: number | string,
-  anchors: A,
-  columnMap: Record<keyof A & string, string>,
+  anchors: Partial<Record<K, number>>,
+  columnMap: Record<K, string>,
   simNowDay: number,
   wallNow: Date,
   idCast = "",
 ): Promise<void> {
   const setClauses: string[] = [];
   const values: unknown[] = [];
-  for (const key of Object.keys(anchors) as (keyof A & string)[]) {
+  for (const key of Object.keys(anchors) as K[]) {
     const simTs = anchors[key];
     if (simTs === undefined) continue;
     const column = columnMap[key];
