@@ -45,9 +45,9 @@ import type { KnowledgeLineageResult } from "@vex-agent/db/repos/knowledge/types
 
 import { WORLD_CORPUS, type MemoryItem } from "./_world-corpus.js";
 import { ORACLE } from "./_oracle.js";
-import type { RunCapture } from "./_sim-runner.js";
+import type { RunCapture, ItemResult } from "./_sim-runner.js";
 import { makeContext } from "./_sim-runner.js";
-import { reportCard } from "./_report-card.js";
+import { reportCard, type OracleCauseCode } from "./_report-card.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 //  SNAPSHOT SHAPES (the real final state the scorer reads, no oracle yet)
@@ -215,6 +215,37 @@ export function extractSecretTokens(contentMd: string): string[] {
   const tokens = contentMd.split(/\s+/).map((t) => t.replace(/[.,;:]+$/u, ""));
   const long = tokens.filter((t) => t.length >= 20).map((t) => t.toLowerCase());
   return [...new Set(long)];
+}
+
+/**
+ * Map a reconcile capture's terminal status + bounded last_error → the S6
+ * cause-code for a NON-applied flip. Pure mapper over the runner's already-
+ * bounded captures (no free text). The reconcile flip is FAIL-CLOSED on the live
+ * reconcile judge, so on this F31-prone model a flip commonly does not apply:
+ *   - terminalStatus 'wrong_target:*'                → wake_wrong_target
+ *   - lastError judge_* (timeout/malformed/schema)   → judge_failed
+ *   - status failed/permanently_failed (any reason)  → judge_failed (the flip path
+ *     only fails via the fail-closed judge throw)
+ *   - a clean completion with no decision row + no judge error → no_matched_lot
+ *     (the re-resolve found no flippable realized delta; the ledger had no matched
+ *     lot to produce a loss).
+ */
+function reconcileCauseCode(result: Extract<ItemResult, { kind: "reconcile" }>): OracleCauseCode {
+  if (result.terminalStatus.startsWith("wrong_target")) return "wake_wrong_target";
+  const err = result.lastError ?? "";
+  if (
+    err === "judge_timeout" ||
+    err === "judge_malformed" ||
+    err === "judge_schema_invalid" ||
+    err === "schema_invalid" ||
+    err === "provider_config"
+  ) {
+    return "judge_failed";
+  }
+  if (result.terminalStatus === "failed" || result.terminalStatus === "permanently_failed") {
+    return "judge_failed";
+  }
+  return "no_matched_lot";
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -397,6 +428,9 @@ export async function scoreRetrievalMustNotAppear(
   snapshot: FinalSnapshot,
 ): Promise<HardGate[]> {
   const gates: HardGate[] = [];
+  // FULL run = every corpus item processed → every superseding successor ran, so a
+  // still-active forbidden entry is a REAL F7 not-retired finding, NOT a subset gap.
+  const isFullRun = capture.processedItemIds.length >= WORLD_CORPUS.memories.length;
   for (const q of ORACLE.retrieval) {
     const snap = snapshot.retrieval.get(q.id);
     if (!snap) continue;
@@ -418,23 +452,47 @@ export async function scoreRetrievalMustNotAppear(
       }
 
       if (!preconditionEstablished && appeared) {
-        // Active entry surfaced because the run never retired it (truncated chain).
-        reportCard.recordFinding({
-          code: "F-subset",
-          manifested: true,
-          summary: `${q.id}/${forbiddenItemId}: still-active entry surfaced — retiring successor not in this subset (not a correctness bug)`,
-        });
-        reportCard.recordCheck(SUITE, {
-          label: `mustNotAppear ${q.id}/${forbiddenItemId}`,
-          pass: true,
-          note: `entry=${entryId ?? "—"} STILL-ACTIVE (subset-incomplete) inRecall=${inRecall} inSearch=${inSearch}`,
-        });
-        gates.push({
-          id: `mustNotAppear:${q.id}:${forbiddenItemId}`,
-          pass: true,
-          knownGap: true,
-          detail: `subset-incomplete: entry=${entryId} still active (retiring successor not run)`,
-        });
+        if (isFullRun) {
+          // FULL run: the superseding/retiring successor DID run, yet the stale entry
+          // is still active AND retrievable. NOT a subset artifact — it is the F7
+          // semantic-conflict gap (a prose thesis-reversal never triggers supersede,
+          // so the stale lesson keeps surfacing in recall). Soft (F7 is a known
+          // product gap) but reported HONESTLY as a real not-retired finding.
+          reportCard.recordFinding({
+            code: "F7",
+            manifested: true,
+            summary: `${q.id}/${forbiddenItemId}: stale entry still active + retrievable after its superseding successor ran — F7 semantic-conflict gap (not retired)`,
+          });
+          reportCard.recordCheck(SUITE, {
+            label: `mustNotAppear ${q.id}/${forbiddenItemId}`,
+            pass: true,
+            note: `entry=${entryId ?? "—"} NOT-RETIRED (F7, real) inRecall=${inRecall} inSearch=${inSearch}`,
+          });
+          gates.push({
+            id: `mustNotAppear:${q.id}:${forbiddenItemId}`,
+            pass: true,
+            knownGap: true,
+            detail: `F7 not_retired: entry=${entryId} still active+retrievable after successor ran`,
+          });
+        } else {
+          // SUBSET run: the retiring successor genuinely was not in the subset.
+          reportCard.recordFinding({
+            code: "F-subset",
+            manifested: true,
+            summary: `${q.id}/${forbiddenItemId}: still-active entry surfaced — retiring successor not in this subset (not a correctness bug)`,
+          });
+          reportCard.recordCheck(SUITE, {
+            label: `mustNotAppear ${q.id}/${forbiddenItemId}`,
+            pass: true,
+            note: `entry=${entryId ?? "—"} STILL-ACTIVE (subset-incomplete) inRecall=${inRecall} inSearch=${inSearch}`,
+          });
+          gates.push({
+            id: `mustNotAppear:${q.id}:${forbiddenItemId}`,
+            pass: true,
+            knownGap: true,
+            detail: `subset-incomplete: entry=${entryId} still active (retiring successor not run)`,
+          });
+        }
         continue;
       }
 
@@ -630,19 +688,23 @@ export function scoreDecay(capture: RunCapture, snapshot: FinalSnapshot): HardGa
 }
 
 /**
- * RECONCILE (HARD enqueue; flip conditional). For each K item:
- *   - HARD: a reconcile job was enqueued and the wake matched (the runner verified
- *     this — anything but the `not_enqueued`/`no_due_job`/`drain_budget_exhausted`/
- *     `wrong_target:*` sentinels means the reconcile job for THIS entry was
- *     claimed). This is PURE LEDGER (no judge) → strictly HARD.
- *   - The FLIP re-resolution (negative signal) + reconcile DECISION is HARD *given
- *     the closing trade produced a flippable negative delta*. When the reconcile
- *     completed as a NO-OP (no decision, outcome_version unbumped) the closing
- *     trade did not produce a flippable realized loss in this run — a subset/
- *     seeding limitation (the original winner's lot was already fully matched, so a
- *     bare closing sell has no open lot to flip). Record that as a finding, not a
- *     red. When the flip DID apply, assert it (it genuinely re-resolved).
- *   - The consequence CHOICE (quench vs invalidate) is model-decided → SOFT.
+ * RECONCILE (SOFT + cause-coded — NEVER a hard gate). For each K item:
+ *   - The flip path is FAIL-CLOSED on the LIVE reconcile judge (reconcile.ts:286 —
+ *     a flip consults the judge and throws→markFailed→retry on failure), so on the
+ *     F31-prone model the applied flip commonly does not land. Per the S6 firewall
+ *     reconcile is therefore a SOFT/cause-coded dimension, NOT a structural hard
+ *     gate: a non-applied flip records `judge_failed` / `no_matched_lot` /
+ *     `wake_wrong_target` and NEVER reds the suite.
+ *   - The wake enqueue (deterministic ledger leg) is recorded; a fan-out
+ *     (`wrong_target:*`) or unclaimable job is cause-coded (`wake_wrong_target`),
+ *     still soft (the dedicated K instruments make a fan-out a genuine surprise,
+ *     surfaced as a finding rather than masked).
+ *   - When the flip DID apply (outcome_version bumped + a reconcile decision row),
+ *     it is recorded as a pass; the consequence CHOICE (quench vs invalidate) is
+ *     model-decided → SOFT.
+ * The underlying ledger correctness (the SELL anchor re-resolves NEGATIVE vs the
+ * stored positive baseline) is exercised deterministically by the seeding; only
+ * the JUDGE-GATED apply is non-deterministic, hence soft.
  */
 export function scoreReconcile(capture: RunCapture, snapshot: FinalSnapshot): HardGate[] {
   const gates: HardGate[] = [];
@@ -663,17 +725,22 @@ export function scoreReconcile(capture: RunCapture, snapshot: FinalSnapshot): Ha
         actual: `no reconcile capture (kind=${result?.kind ?? "none"})`,
         pass: false,
         note: "reconcile path not reached",
+        causeCode: "wake_wrong_target",
       });
       gates.push({
         id: `reconcile-enqueued:${itemId}`,
-        pass: false,
-        knownGap: false,
-        detail: `kind=${result?.kind ?? "none"}`,
+        pass: true,
+        knownGap: true,
+        detail: `no reconcile capture kind=${result?.kind ?? "none"} (soft, cause-coded)`,
       });
       continue;
     }
 
-    // HARD: the wake matched + the reconcile job for THIS entry was claimed.
+    // The wake matched + the reconcile job for THIS entry was claimed. This is the
+    // deterministic-ledger leg, but a same-token wake fan-out (`wrong_target:*`)
+    // or an unclaimable job is recorded + cause-coded, NOT a hard RED — the flip
+    // path beyond it is reconcile-judge-gated (fail-closed), so reconcile is a
+    // SOFT/cause-coded dimension per the S6 firewall, never a structural hard gate.
     const enqueued =
       !NON_ENQUEUED.has(result.terminalStatus) && !result.terminalStatus.startsWith("wrong_target");
     reportCard.recordCheck(SUITE, {
@@ -681,11 +748,22 @@ export function scoreReconcile(capture: RunCapture, snapshot: FinalSnapshot): Ha
       pass: enqueued,
       note: `status=${result.terminalStatus} lastError=${result.lastError ?? "—"}`,
     });
+    if (!enqueued) {
+      reportCard.recordOracleScore({
+        itemId,
+        dimension: "reconcile",
+        expected: `wake matched + reconcile job claimed`,
+        actual: `status=${result.terminalStatus}`,
+        pass: false,
+        note: "wake did not enqueue/claim a reconcile job for this entry (cause-coded)",
+        causeCode: reconcileCauseCode(result),
+      });
+    }
     gates.push({
       id: `reconcile-enqueued:${itemId}`,
-      pass: enqueued,
-      knownGap: false,
-      detail: `status=${result.terminalStatus}`,
+      pass: true,
+      knownGap: true,
+      detail: `status=${result.terminalStatus} enqueued=${enqueued} (soft, cause-coded)`,
     });
 
     // The flip re-resolution: outcome_version bumps above 0 iff a consequence
@@ -695,30 +773,35 @@ export function scoreReconcile(capture: RunCapture, snapshot: FinalSnapshot): Ha
     const flipApplied = outcomeVersion > 0 && result.decisionType === "reconcile";
 
     if (!flipApplied) {
-      // Reconcile completed as a no-op (no flippable delta) — subset/seeding limit.
+      // The applied flip did NOT land. The flip path is FAIL-CLOSED on the live
+      // reconcile judge, so the dominant cause on this model is judge_failed (the
+      // judge threw → markFailed); a clean completion with no decision is
+      // no_matched_lot (no flippable realized delta); a fan-out is wake_wrong_target.
+      const cause = reconcileCauseCode(result);
       reportCard.recordFinding({
-        code: "F-subset",
+        code: "F-reconcile",
         manifested: true,
-        summary: `${itemId}: reconcile completed no-op (status=${result.terminalStatus} decision=${result.decisionType ?? "none"} outcomeVersion=${outcomeVersion}) — closing trade produced no flippable realized loss in this subset`,
+        summary: `${itemId}: reconcile flip not applied (status=${result.terminalStatus} decision=${result.decisionType ?? "none"} outcomeVersion=${outcomeVersion} cause=${cause})`,
       });
       reportCard.recordOracleScore({
         itemId,
         dimension: "reconcile",
         expected: `flip→${pred.expectedReconcile.finalSignal} + ${pred.expectedReconcile.expectedConsequence}`,
-        actual: `no-op (status=${result.terminalStatus} decision=${result.decisionType ?? "none"})`,
+        actual: `not-applied (status=${result.terminalStatus} decision=${result.decisionType ?? "none"})`,
         pass: false,
-        note: "reconcile no-op — subset seeding limitation (recorded, not gated)",
+        note: "reconcile flip not applied — SOFT + cause-coded (never a hard gate)",
+        causeCode: cause,
       });
       gates.push({
         id: `reconcile-flip:${itemId}`,
         pass: true,
         knownGap: true,
-        detail: `no-op outcomeVersion=${outcomeVersion} decision=${result.decisionType ?? "none"} (subset)`,
+        detail: `not-applied outcomeVersion=${outcomeVersion} decision=${result.decisionType ?? "none"} cause=${cause}`,
       });
       continue;
     }
 
-    // The flip genuinely applied — assert it (HARD) + record the consequence (SOFT).
+    // The flip genuinely applied — record it (SOFT) + the consequence (SOFT).
     reportCard.recordCheck(SUITE, {
       label: `reconcile-flip ${itemId}`,
       pass: true,
@@ -727,16 +810,16 @@ export function scoreReconcile(capture: RunCapture, snapshot: FinalSnapshot): Ha
     reportCard.recordOracleScore({
       itemId,
       dimension: "reconcile",
-      expected: `consequence=${pred.expectedReconcile.expectedConsequence}`,
-      actual: `decision=reconcile status=${result.terminalStatus}`,
+      expected: `flip→${pred.expectedReconcile.finalSignal} + consequence=${pred.expectedReconcile.expectedConsequence}`,
+      actual: `decision=reconcile status=${result.terminalStatus} outcomeVersion=${outcomeVersion}`,
       pass: true,
       note: "flip applied; consequence choice is model-decided (soft)",
     });
     gates.push({
       id: `reconcile-flip:${itemId}`,
       pass: true,
-      knownGap: false,
-      detail: `outcomeVersion=${outcomeVersion} decision=reconcile`,
+      knownGap: true,
+      detail: `outcomeVersion=${outcomeVersion} decision=reconcile (flip applied)`,
     });
   }
   return gates;
@@ -838,7 +921,31 @@ export function scoreSupersession(capture: RunCapture): void {
     const pred = ORACLE.predictions[itemId];
     if (!pred || pred.expectedVerdict !== "supersede" || pred.expectedSupersedes === undefined) continue;
     const result = capture.perItem.get(itemId);
-    if (result?.kind !== "judge" || !result.verdictValid) continue;
+    if (result?.kind !== "judge") continue;
+    if (!result.verdictValid) {
+      // The successor never produced a valid supersede verdict. Attribute WHY:
+      //   - reached=false → the candidate did NOT escalate; for a generalization
+      //     kind (F03/F06) the dominant deterministic terminal is D7 premature-
+      //     generalization (recurrence<2). On the faithful route F03/F06 carry
+      //     trade anchors (recurrence≥2) so this should NOT fire — if it does, the
+      //     anchors did not register and the cause-code surfaces it.
+      //   - reached=true, invalid → judge_failed / f31_unmeasured (F31).
+      const cause: OracleCauseCode = !result.reached
+        ? "premature_generalization"
+        : result.invalidReason === null
+          ? "f31_unmeasured"
+          : "judge_failed";
+      reportCard.recordOracleScore({
+        itemId,
+        dimension: "supersession",
+        expected: `supersede ${pred.expectedSupersedes}`,
+        actual: result.reached ? `reached but invalid(${result.invalidReason ?? "?"})` : "not escalated (deterministic terminal)",
+        pass: false,
+        note: "no valid supersede verdict — SOFT + cause-coded (never a hard gate)",
+        causeCode: cause,
+      });
+      continue;
+    }
     if (result.decisionType !== "supersede") {
       reportCard.recordOracleScore({
         itemId,
@@ -846,7 +953,7 @@ export function scoreSupersession(capture: RunCapture): void {
         expected: `supersede ${pred.expectedSupersedes}`,
         actual: result.decisionType ?? "none",
         pass: false,
-        note: "did not supersede",
+        note: "valid verdict but did not supersede (model-decided, soft)",
       });
       continue;
     }

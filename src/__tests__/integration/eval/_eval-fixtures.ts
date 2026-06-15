@@ -41,7 +41,15 @@ import {
   consolidateCandidate,
   applyDecisionAtomically,
   defaultConsolidateDeps,
+  type ConsolidateDeps,
 } from "@vex-agent/memory/manager/index.js";
+import type {
+  JudgeVerdict,
+  JudgeRubric,
+  JudgeVerdictType,
+} from "@vex-agent/memory/manager/judge-schema.js";
+import type { CandidateEvidenceStrength } from "@vex-agent/memory/schema/memory-candidate-enums.js";
+import type { MemoryDecisionRejectReason } from "@vex-agent/memory/schema/memory-decision-enums.js";
 import type { DecisionPlan } from "@vex-agent/memory/manager/promote.js";
 import type { GraphPlan } from "@vex-agent/memory/manager/entity-extraction.js";
 import type { MemoryOutcomeSummary } from "@vex-agent/memory/schema/memory-outcome.js";
@@ -54,6 +62,7 @@ import { getLatestDecision } from "@vex-agent/db/repos/memory-decisions/index.js
 import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { insertEntry } from "@vex-agent/db/repos/knowledge.js";
+import { supersedeEntry } from "@vex-agent/db/repos/knowledge-lifecycle.js";
 import type { EvidenceRefs } from "@vex-agent/memory/schema/memory-candidate.js";
 import type { KnowledgeSource } from "@vex-agent/memory/long-memory-source-policy.js";
 import type {
@@ -554,6 +563,80 @@ export async function seedPromotedLessonDirect(
   return { id: entry.id, providerModel, contentHash };
 }
 
+// ── Faithful supersede seeder (repo-native supersedeEntry — flips predecessor) ──
+
+export interface SeedSupersedingLessonDirectOpts {
+  /** The active predecessor entry id this successor REPLACES (→ superseded). */
+  previousId: number;
+  kind?: string;
+  title: string;
+  summary: string;
+  contentMd?: string;
+  source?: KnowledgeSource;
+  maturityState?: MaturityState;
+  activationStrength?: number;
+  influenceScope?: InfluenceScope;
+  decayPolicy?: DecayPolicy;
+  validUntil?: Date | null;
+  validFrom?: Date;
+  pinned?: boolean;
+  outcomeVersion?: number;
+  regimeTags?: string[];
+}
+
+/**
+ * Insert a PROMOTED successor entry through the REAL `supersedeEntry` repo
+ * transaction (atomic predecessor-lock → INSERT successor → UPDATE predecessor
+ * to `superseded`), with a REAL Gemma embedding — deterministically reproducing
+ * the supersede end-state the judge would otherwise produce, WITHOUT the
+ * (F31-broken) live judge. Faithful: it uses the production supersede path +
+ * real embeddings; only the judge verdict is short-circuited. The predecessor
+ * goes active→superseded exactly like the real pipeline (NOT a manual status
+ * UPDATE). Used to make seeded F/G predecessor CHAINS faithful so the chain's
+ * structural invariants (superseded-row-inactive) hold.
+ *
+ * Returns the inserted successor id + the predecessor id (now superseded).
+ */
+export async function seedSupersedingLessonDirect(
+  opts: SeedSupersedingLessonDirectOpts,
+): Promise<{ id: number; previousId: number; providerModel: string }> {
+  const kind = opts.kind ?? "trade_lesson";
+  const contentMd = opts.contentMd ?? "";
+  const { embedding, providerModel } = await embedDocument(opts.title, opts.summary);
+  const contentHash = computeContentHash({
+    kind,
+    title: opts.title,
+    summary: opts.summary,
+    contentMd,
+  });
+  const result = await supersedeEntry({
+    previousId: opts.previousId,
+    reason: "superseded_by_successor_version",
+    kind,
+    title: opts.title,
+    summary: opts.summary,
+    contentMd,
+    tags: [],
+    sourceRefs: {},
+    confidence: null,
+    pinned: opts.pinned ?? false,
+    validUntil: opts.validUntil ?? null,
+    ...(opts.validFrom ? { validFrom: opts.validFrom } : {}),
+    contentHash,
+    embeddingModel: providerModel,
+    embeddingDim: embedding.length,
+    embedding,
+    source: opts.source ?? "observed",
+    maturityState: opts.maturityState ?? "established",
+    activationStrength: opts.activationStrength ?? 1.0,
+    influenceScope: opts.influenceScope ?? "advisory",
+    decayPolicy: opts.decayPolicy ?? "none",
+    regimeTags: opts.regimeTags ?? [],
+    outcomeVersion: opts.outcomeVersion ?? 0,
+  });
+  return { id: result.successor.id, previousId: result.predecessor.id, providerModel };
+}
+
 // ── The pipeline driver (synchronous decideOneItem with the REAL judge) ──
 
 export interface DriveResult {
@@ -758,6 +841,217 @@ export async function driveConsolidateCapturingJudge(
       latencyMs: Date.now() - startedAt,
     };
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  JUDGE-BENCHMARK REASONING SEAM (TEST-ONLY — zero production change)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// The judge-decision benchmark (`judge-benchmark.int.test.ts`) needs the judge's
+// RAW reasoning per item: the 5-axis `rubric`, the judge-RAW `sourceTier`, and
+// `rejectReason`. In production those are collapsed by `planFromVerdict`
+// (consolidate.ts) into a `DecisionPlan` BEFORE any capture seam — the raw
+// verdict is dropped. Rather than plumb `verdict: JudgeVerdict|null` through
+// `CandidateDecision → DriveResult` (a production edit), we WRAP the INJECTED
+// `judge` dep here, in TEST CODE: `consolidateCandidate(candidate, embedding,
+// deps)` already takes `deps.judge` as a function, so a test can record the raw
+// verdict at the dep boundary with ZERO production change. The deterministic
+// `signals.evidenceStrengthCeiling` rides in on the `signals` arg the manager
+// passes to `deps.judge`, and the CLAMPED `plan.sourceTier` is read off the
+// resolved plan afterward — so both tiers are captured SEPARATELY (scoring the
+// clamped tier as "judge calibration" would read ~100% by construction).
+
+/** The judge's raw reasoning for ONE escalated item — what `planFromVerdict` drops. */
+export interface BenchJudgeReasoning {
+  /** The judge's 5-axis rubric (grounding/durability/novelty/generalizability/processNotOutcome). */
+  readonly rubric: JudgeRubric;
+  /** The judge-RAW provenance tier (BEFORE the deterministic clamp). SOFT-scored vs oracle band. */
+  readonly judgeSourceTier: KnowledgeSource;
+  /** The judge's reject/expire reason (null on promote/supersede/retain). */
+  readonly judgeRejectReason: MemoryDecisionRejectReason | null;
+  /** The judge-raw verdict label (promote|supersede|retain|reject|expire). */
+  readonly judgeVerdict: JudgeVerdictType;
+  /** The judge's claimed supersede target (null unless supersede). */
+  readonly judgePreviousKnowledgeId: number | null;
+  /** The deterministic grounding ceiling fed to the judge (the clamp input). */
+  readonly evidenceStrengthCeiling: CandidateEvidenceStrength;
+  /**
+   * The CLAMPED provenance tier the plan actually carried (clampSourceTier applied;
+   * clamped ≤ ceiling is the HARD invariant). Kept SEPARATE from judgeSourceTier so
+   * the benchmark never scores the clamp as "judge calibration" (false-green). Null
+   * on a non-promote/supersede plan (retain/reject/expire carry no sourceTier).
+   */
+  readonly clampedSourceTier: KnowledgeSource | null;
+}
+
+/**
+ * One judge-benchmark drive: the F31-aware `CapturedJudgeDrive` PLUS the raw
+ * judge reasoning recorded at the dep boundary. `reasoning` is non-null ONLY when
+ * the candidate escalated AND the judge returned a valid verdict (the same
+ * denominator as `verdictValid`). On every deterministic-terminal /
+ * non-escalate / thrown-judge path it is null — the F31 denominator is unchanged.
+ */
+export interface BenchJudgeDrive extends CapturedJudgeDrive {
+  /** The raw judge reasoning, or null on any non-escalate / invalid-verdict path. */
+  readonly reasoning: BenchJudgeReasoning | null;
+}
+
+/**
+ * Drive ONE candidate through the REAL door+judge pipeline EXACTLY like
+ * `driveConsolidateWithRealJudge`, but with the injected `judge` dep WRAPPED to
+ * record the raw `JudgeVerdict` + `signals.evidenceStrengthCeiling` at the dep
+ * boundary (BEFORE `planFromVerdict` collapses them). F31-aware: a thrown
+ * `memory_judge_*` is caught and reported as `{ reached:true, verdictValid:false,
+ * reasoning:null }`, never propagated (identical contract to
+ * `driveConsolidateCapturingJudge`). The CLAMPED `plan.sourceTier` is read off
+ * the resolved plan and stored SEPARATELY from the judge-raw tier.
+ *
+ * This is the Wave-0 reasoning seam: 100% test-only (this file has zero
+ * production importers and is excluded from the app tsconfig). No production
+ * module is edited; the manager's behavior is byte-identical because the wrapped
+ * dep returns the SAME `{ verdict, llmCalls, costUsd }` the default dep returns.
+ */
+export async function driveConsolidateForBench(
+  candidateId: string,
+  workerId: string,
+): Promise<BenchJudgeDrive> {
+  const startedAt = Date.now();
+
+  // The raw verdict + the deterministic ceiling, captured at the dep boundary.
+  let captured: {
+    verdict: JudgeVerdict;
+    ceiling: CandidateEvidenceStrength;
+  } | null = null;
+
+  // Build the production deps, then OVERRIDE only `judge` with a recording
+  // wrapper that delegates to the real judge dep and snapshots the raw verdict.
+  const baseDeps = defaultConsolidateDeps();
+  const deps: ConsolidateDeps = {
+    ...baseDeps,
+    judge: async (candidate, signals, extras) => {
+      const result = await baseDeps.judge(candidate, signals, extras);
+      // Snapshot BEFORE planFromVerdict runs. The signals carry the deterministic
+      // evidenceStrengthCeiling the manager will feed to clampSourceTier.
+      captured = { verdict: result.verdict, ceiling: signals.evidenceStrengthCeiling };
+      return result;
+    },
+  };
+
+  try {
+    const drive = await driveOneWithDeps(candidateId, workerId, deps);
+    const reached = drive.llmCalls > 0;
+    const reasoning = buildBenchReasoning(captured, drive.plan);
+    return {
+      reached,
+      verdictValid: reached,
+      invalidReason: null,
+      drive,
+      latencyMs: drive.latencyMs,
+      reasoning,
+    };
+  } catch (err: unknown) {
+    const { isJudge, reason } = classifyJudgeError(err);
+    if (!isJudge) throw err; // a non-judge error is a real bug — fail loudly.
+    return {
+      reached: true,
+      verdictValid: false,
+      invalidReason: reason,
+      drive: null,
+      latencyMs: Date.now() - startedAt,
+      reasoning: null,
+    };
+  }
+}
+
+/**
+ * Assemble the bench reasoning from the captured raw verdict + the resolved plan.
+ * `clampedSourceTier` is read off the plan ONLY for promote/supersede (the
+ * other plan types carry no tier). Returns null when the judge was never reached
+ * (no captured verdict).
+ */
+function buildBenchReasoning(
+  captured: { verdict: JudgeVerdict; ceiling: CandidateEvidenceStrength } | null,
+  plan: DecisionPlan,
+): BenchJudgeReasoning | null {
+  if (captured === null) return null;
+  const v = captured.verdict;
+  const clampedSourceTier =
+    plan.type === "promote" || plan.type === "supersede" ? plan.sourceTier : null;
+  return {
+    rubric: v.rubric,
+    judgeSourceTier: v.sourceTier,
+    judgeRejectReason: v.rejectReason ?? null,
+    judgeVerdict: v.verdict,
+    judgePreviousKnowledgeId: v.previousKnowledgeId ?? null,
+    evidenceStrengthCeiling: captured.ceiling,
+    clampedSourceTier,
+  };
+}
+
+/**
+ * The exact `driveConsolidateWithRealJudge` body but with INJECTABLE `deps` — so
+ * the bench driver can pass a judge-wrapping deps object. Production behavior is
+ * unchanged: `driveConsolidateWithRealJudge` still calls `defaultConsolidateDeps()`
+ * directly. Kept private (the bench driver is the only caller).
+ */
+async function driveOneWithDeps(
+  candidateId: string,
+  workerId: string,
+  deps: ConsolidateDeps,
+): Promise<DriveResult> {
+  await enqueueConsolidateJob();
+  const job = await claimNextDueJob(workerId);
+  if (!job) throw new Error("driveConsolidateForBench: no consolidate job");
+  await reserveCandidatesForJob(job.id, workerId, 16);
+
+  const items = await listItemsByJob(job.id, "reserved");
+  const item = items.find((i) => i.candidateId === candidateId);
+  if (!item) throw new Error("driveConsolidateForBench: candidate not reserved");
+  const ok = await markItemProcessing(item.id, job.id, workerId);
+  if (!ok) throw new Error("driveConsolidateForBench: markItemProcessing failed");
+
+  const candidate = await getCandidateById(candidateId);
+  if (!candidate) throw new Error("driveConsolidateForBench: candidate missing");
+  const embedding = await getCandidateEmbedding(candidateId);
+  if (!embedding) throw new Error("driveConsolidateForBench: embedding missing");
+
+  const startedAt = Date.now();
+  const decision = await consolidateCandidate(candidate, embedding, deps);
+  const latencyMs = Date.now() - startedAt;
+
+  const applied = await applyDecisionAtomically({
+    candidate,
+    plan: decision.plan,
+    jobId: job.id,
+    workerId,
+    outcome: decision.outcome,
+    availableAtDecisionTime: decision.availableAtDecisionTime,
+    reinforce: decision.reinforce,
+    graphPlan: decision.graphPlan,
+  });
+
+  if (decision.llmCalls > 0 || decision.costUsd !== null) {
+    await bumpJobInference(job.id, {
+      llmCalls: decision.llmCalls,
+      ...(decision.costUsd !== null ? { costUsd: decision.costUsd } : {}),
+    });
+  }
+
+  await markItemDone(item.id, job.id, workerId, applied.decisionId);
+
+  const after = await getCandidateById(candidateId);
+  return {
+    decisionType: applied.decisionType,
+    decisionId: applied.decisionId,
+    promotedKnowledgeId: after?.promotedKnowledgeId ?? null,
+    llmCalls: decision.llmCalls,
+    costUsd: decision.costUsd,
+    latencyMs,
+    jobId: job.id,
+    plan: decision.plan,
+    outcome: decision.outcome,
+    graphPlan: decision.graphPlan,
+  };
 }
 
 /**

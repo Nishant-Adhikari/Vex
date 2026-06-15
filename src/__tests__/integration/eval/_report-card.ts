@@ -116,6 +116,29 @@ export type OracleDimension =
   | "steered_judge";
 
 /**
+ * Bounded per-subsystem failure-attribution code (S6 debuggability). Threaded
+ * from the runner's terminal captures so a divergence is tagged with the
+ * responsible gate instead of a bare "decision=null". STRICTLY enumerated —
+ * NEVER free text, never secrets, never candidate content:
+ *   - premature_generalization — D7 retained a generalized lesson at recurrence<2.
+ *   - no_matched_lot           — reconcile re-resolve found no matched FIFO lot
+ *                                (shortfall sell; no realized loss to flip).
+ *   - wake_wrong_target        — a same-token wake fan-out claimed a reconcile
+ *                                job for a DIFFERENT entry.
+ *   - judge_failed             — the live judge (consolidate OR reconcile flip)
+ *                                failed F31 (schema_invalid/timeout/malformed),
+ *                                so a flip/supersede could not be applied.
+ *   - f31_unmeasured           — the item dropped from a soft denominator under
+ *                                F31 (judge reached but produced no valid verdict).
+ */
+export type OracleCauseCode =
+  | "premature_generalization"
+  | "no_matched_lot"
+  | "wake_wrong_target"
+  | "judge_failed"
+  | "f31_unmeasured";
+
+/**
  * One scored item from the e2e correctness eval: the oracle's `expected`
  * (enum/code/count string) vs the pipeline's `actual`, and whether they agree.
  * Pure metrics — `itemId` is the corpus item id (a stable code, never free
@@ -134,6 +157,41 @@ export interface OracleScoreSample {
   readonly pass: boolean;
   /** Optional metrics-only note — enums/counts only, no candidate text. */
   readonly note?: string;
+  /**
+   * Optional bounded failure-attribution code (S6). Tags WHY this dimension did
+   * not pass so the report can triage per-subsystem. Absent on a clean pass.
+   */
+  readonly causeCode?: OracleCauseCode;
+}
+
+/**
+ * The entry-path distribution for a run — which ROUTE each processed item took
+ * INTO the pipeline, so a green run's meaning is explicit. These are ENTRY ROUTES,
+ * NOT judge-reach claims: a routed item may still terminate deterministically
+ * (near-dup / recurrence-first / mundane) before the LLM. The report prints the
+ * ACTUAL live-judge reach (from judgeAttempts) beside this split. Bounded buckets
+ * (field names are legacy route labels):
+ *   - `fullDoorJudge`   — ROUTE door→consolidation: entered the REAL door
+ *                         (handleLongMemorySuggest) and proceeded into consolidation.
+ *   - `judgeViaCandidate` — ROUTE seeded-candidate→consolidation: a directly-seeded
+ *                         Gemma candidate entered consolidation (door bypassed by
+ *                         design for recurrence siblings).
+ *   - `doorOnlyAdversarial` — an N/O/P/Q/R adversarial item whose terminal IS the
+ *                         door (redaction/live-state/English/garbage). Never
+ *                         proceeds to consolidation by design.
+ *   - `directSeedScaffold` — a residual `seedPromotedLessonDirect` row the judge
+ *                         CANNOT bootstrap (a pre-existing aged/superseded/reconcile
+ *                         baseline predecessor or graph-cluster owner). Each carries
+ *                         a printed scaffold reason.
+ */
+export interface PathSplitSample {
+  readonly suite: string;
+  readonly fullDoorJudge: number;
+  readonly judgeViaCandidate: number;
+  readonly doorOnlyAdversarial: number;
+  readonly directSeedScaffold: number;
+  /** Item-id → short reason for each residual direct-seed scaffold (honesty). */
+  readonly scaffoldReasons: Readonly<Record<string, string>>;
 }
 
 interface Section {
@@ -149,6 +207,7 @@ interface ReportState {
   precision: PrecisionSample[];
   findings: FindingRow[];
   oracleScores: OracleScoreSample[];
+  pathSplits: PathSplitSample[];
   providerModel: string | null;
   embeddingModel: string | null;
   embeddingDim: number | null;
@@ -161,6 +220,7 @@ class ReportCard {
   private precision: PrecisionSample[] = [];
   private findings: FindingRow[] = [];
   private oracleScores: OracleScoreSample[] = [];
+  private pathSplits: PathSplitSample[] = [];
   private providerModel: string | null = null;
   private embeddingModel: string | null = null;
   private embeddingDim: number | null = null;
@@ -180,6 +240,7 @@ class ReportCard {
       // Backward-compatible: a sidecar written before this field existed has no
       // oracleScores key — default to empty rather than undefined.
       this.oracleScores = state.oracleScores ?? [];
+      this.pathSplits = state.pathSplits ?? [];
       this.providerModel = state.providerModel;
       this.embeddingModel = state.embeddingModel;
       this.embeddingDim = state.embeddingDim;
@@ -197,6 +258,7 @@ class ReportCard {
       precision: this.precision,
       findings: this.findings,
       oracleScores: this.oracleScores,
+      pathSplits: this.pathSplits,
       providerModel: this.providerModel,
       embeddingModel: this.embeddingModel,
       embeddingDim: this.embeddingDim,
@@ -286,6 +348,18 @@ class ReportCard {
   }
 
   /**
+   * Record the entry-path distribution for a run (honest path-split). One sample
+   * per suite; the render prints how many items reached the pipeline via each
+   * bounded path so a green run's MEANING is explicit (how much went through the
+   * real door+judge vs. residual scaffold). Pure metrics — item ids + counts.
+   */
+  recordPathSplit(sample: PathSplitSample): void {
+    this.load();
+    this.pathSplits.push(sample);
+    this.persist();
+  }
+
+  /**
    * Render the dated run section, write it to the report path, and CLEAR the
    * sidecar (the run is done — the next run's globalSetup also clears it).
    */
@@ -356,6 +430,49 @@ class ReportCard {
         lines.push(
           `| ${a.scenario} | ${a.reached ? "yes" : "no"} | ${a.valid ? "yes" : "no"} | ${a.invalidReason ?? "—"} |`,
         );
+      }
+    }
+    lines.push("");
+
+    // ── Entry-path distribution (honest path-split). What a green run MEANS. ──
+    lines.push("### Entry-path distribution (how each item reached the pipeline)");
+    lines.push("");
+    if (this.pathSplits.length === 0) {
+      lines.push("_no path-split recorded_");
+    } else {
+      lines.push(
+        "| suite | door→consolidation | seeded-candidate→consolidation | door-only adversarial | residual direct-seed scaffold |",
+      );
+      lines.push("| --- | ---: | ---: | ---: | ---: |");
+      for (const p of this.pathSplits) {
+        lines.push(
+          `| ${p.suite} | ${p.fullDoorJudge} | ${p.judgeViaCandidate} | ${p.doorOnlyAdversarial} | ${p.directSeedScaffold} |`,
+        );
+      }
+      // ROUTE buckets, NOT judge-reach. A `door→consolidation` / `seeded-candidate→
+      // consolidation` item enters the real consolidation pipeline but MAY
+      // deterministically terminate (near-dup / recurrence-first / mundane) before the
+      // LLM. Print the ACTUAL live-judge reach so the split is never mis-read.
+      const judgeReachedN = this.judgeAttempts.filter((a) => a.reached).length;
+      const judgeValidN = this.judgeAttempts.filter((a) => a.valid).length;
+      lines.push("");
+      lines.push(
+        `Routes are entry-points, NOT judge reach. Of the consolidation-routed items, ` +
+          `**${judgeReachedN} actually reached the live judge** (${judgeValidN} returned a valid verdict); ` +
+          `the rest terminated deterministically before the LLM.`,
+      );
+      // Residual direct-seed scaffold reasons (each a scaffold precondition the live
+      // judge genuinely cannot bootstrap — surfaced loudly, never silent).
+      const reasonRows = this.pathSplits.flatMap((p) =>
+        Object.entries(p.scaffoldReasons).map(([id, reason]) => ({ id, reason })),
+      );
+      if (reasonRows.length > 0) {
+        lines.push("");
+        lines.push("Residual direct-seed scaffold (scaffold reason):");
+        lines.push("");
+        lines.push("| item | reason (why the judge cannot bootstrap this precondition) |");
+        lines.push("| --- | --- |");
+        for (const r of reasonRows) lines.push(`| ${r.id} | ${r.reason} |`);
       }
     }
     lines.push("");
@@ -476,6 +593,48 @@ class ReportCard {
       lines.push(
         `- total scored: ${totalScored}; passed: ${totalPassed}; ` +
           `overall: ${Math.round((totalPassed / totalScored) * 100)}%`,
+      );
+
+      // ── Per-subsystem failure attribution (S6 cause-codes). ──
+      const byCause = new Map<string, number>();
+      for (const s of this.oracleScores) {
+        if (s.causeCode !== undefined) {
+          byCause.set(s.causeCode, (byCause.get(s.causeCode) ?? 0) + 1);
+        }
+      }
+      lines.push("");
+      lines.push("#### Per-subsystem failure attribution (cause-codes)");
+      lines.push("");
+      if (byCause.size === 0) {
+        lines.push("_no cause-coded divergences recorded_");
+      } else {
+        lines.push("| causeCode | count | items |");
+        lines.push("| --- | ---: | --- |");
+        for (const [cause, count] of [...byCause.entries()].sort((a, b) => b[1] - a[1])) {
+          const items = this.oracleScores
+            .filter((s) => s.causeCode === cause)
+            .map((s) => s.itemId)
+            .join(", ");
+          lines.push(`| ${cause} | ${count} | ${items} |`);
+        }
+      }
+
+      // ── F31 unmeasured headline. Count the ROOT cause: judge calls that reached
+      // the LLM but returned an INVALID verdict. Those items' soft dimensions
+      // (promotion/graph/junk/supersession) are dropped from — or cause-coded in —
+      // their denominators, so they are genuinely UNMEASURED. (Counting only
+      // `f31_unmeasured` oracle rows under-reports: several dimensions silently skip
+      // an invalid verdict instead of recording a row.)
+      const f31Invalid = this.judgeAttempts.filter((a) => a.reached && !a.valid).length;
+      const f31UnmeasuredRows = this.oracleScores.filter(
+        (s) => s.causeCode === "f31_unmeasured",
+      ).length;
+      lines.push("");
+      lines.push(
+        `- F31 unmeasured: **${f31Invalid}** judge call(s) reached the LLM but returned an INVALID ` +
+          `verdict → those items' soft dimensions were dropped from / cause-coded in their ` +
+          `denominators (${f31UnmeasuredRows} explicitly recorded as \`f31_unmeasured\`; ` +
+          `${totalScored} dimensions scored total).`,
       );
     }
     lines.push("");

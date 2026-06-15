@@ -72,6 +72,7 @@ import {
   seedFaithfulClosingTradeForWake,
   seedGemmaCandidate,
   seedPromotedLessonDirect,
+  seedSupersedingLessonDirect,
   driveConsolidateCapturingJudge,
   type FaithfulSpotResult,
 } from "./_eval-fixtures.js";
@@ -80,6 +81,7 @@ import {
   backdateKnowledgeEntry,
   backdateRegimeSnapshot,
   simRegimeDeps,
+  MS_PER_DAY,
 } from "./_sim-clock.js";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -120,15 +122,20 @@ export interface JudgeCapture {
   readonly latencyMs: number;
 }
 
-/** Deterministic seed capture (predecessors / reconcile targets / graph owners). */
+/**
+ * Deterministic seed capture (predecessors / reconcile targets / graph owners /
+ * decay owners — the residual `seedPromotedLessonDirect` scaffold ONLY). The
+ * `seedGemmaCandidate` recurrence siblings no longer produce a seed capture — they
+ * are driven through the live judge and produce a `JudgeCapture` instead.
+ */
 export interface SeedCapture {
   readonly kind: "seed";
-  /** Which seeder produced the row. */
-  readonly via: "seedPromotedLessonDirect" | "seedGemmaCandidate";
-  /** The knowledge entry id (direct-promote) or null (gemma candidate). */
-  readonly knowledgeId: number | null;
-  /** The candidate id (gemma candidate) or null (direct-promote). */
-  readonly candidateId: string | null;
+  /** Which seeder produced the row (only the direct-promote scaffold remains). */
+  readonly via: "seedPromotedLessonDirect";
+  /** The knowledge entry id (direct-promote). */
+  readonly knowledgeId: number;
+  /** Always null for the direct-promote scaffold (no candidate row). */
+  readonly candidateId: null;
 }
 
 /** Reconcile capture (K flips: a closing trade re-resolves a promoted lesson). */
@@ -249,6 +256,15 @@ export const SUBSET_IDS: readonly string[] = [
   "M01",
   "B02",
 ] as const;
+
+/**
+ * The FULL 100-item corpus id list (S6 full-corpus path). Derived from the
+ * corpus itself so it stays in lock-step with `_world-corpus.ts` — no second
+ * hand-maintained list to drift. The test's `selectSubsetIds()` returns this
+ * for `VEX_E2E_SUBSET=full|100`; `resolveSubset(ALL_CORPUS_IDS)` then pulls in
+ * every trade + regime the items reference.
+ */
+export const ALL_CORPUS_IDS: readonly string[] = WORLD_CORPUS.memories.map((m) => m.id);
 
 /**
  * Resolve the full closure of items + trades + regimes required to drive a chosen
@@ -377,6 +393,24 @@ export function makeContext(sessionId: string): InternalToolContext {
 /** Per-entry sim anchors so a checkpoint advance can re-project them consistently. */
 interface ActiveEntryAnchor {
   readonly promotedSimDay: number;
+  /**
+   * The LAST sim-day on which a decay step was actually APPLIED to this entry (a
+   * write to `last_decayed_at`). Initialized to `promotedSimDay`. The checkpoint
+   * advance re-projects `last_decayed_at` to THIS day (not blindly to the prior
+   * checkpoint day) so the incremental decay anchor in `decayEntry` sees the full
+   * accumulated quantum since the last APPLIED decay.
+   *
+   * WHY (the M-decay under-accumulation fix): `decayEntry` erodes only the quantum
+   * since `max(last_reinforced_at, last_decayed_at)`, and its anti-audit-spam
+   * `below_delta` no-op (maturity.ts:305) skips a step whose Δactivation < 0.01
+   * WITHOUT writing `last_decayed_at`. The corpus packs events onto many close
+   * sim-days, so each tiny checkpoint interval no-ops. If the next advance re-pinned
+   * `last_decayed_at` forward to the new prior day, those un-decayed intervals would
+   * be permanently lost (only large single jumps would ever decay). Pinning to the
+   * last-APPLIED-decay day instead preserves the accumulation, so the persisted
+   * total matches the closed-form `0.5^(age/halfLife)`.
+   */
+  lastDecaySimDay: number;
 }
 
 interface RunnerState {
@@ -407,33 +441,82 @@ async function listAllDecayableIds(): Promise<number[]> {
   return ids;
 }
 
+/** Read one entry's raw `last_decayed_at` wall timestamp (null when never decayed). */
+async function readLastDecayedAt(id: number): Promise<string | null> {
+  const rows = await query<{ last_decayed_at: string | null }>(
+    `SELECT last_decayed_at FROM knowledge_entries WHERE id = $1`,
+    [id],
+  );
+  return rows[0]?.last_decayed_at ?? null;
+}
+
 /**
  * Advance the simulated clock from `priorDay` to `newDay`. Captures ONE `wallNow`,
  * re-projects every active decayable entry's anchors onto it (keeping
- * first_promoted_at / last_reinforced_at at their ORIGINAL sim-days and pinning
- * last_decayed_at to the PRIOR sim instant — the compounding fix), then runs the
- * real decay sweep with that SAME `wallNow`.
+ * first_promoted_at / last_reinforced_at at their ORIGINAL sim-days, and pinning
+ * last_decayed_at to the entry's LAST-APPLIED-DECAY sim-day — not the prior
+ * checkpoint day), then runs the real decay sweep with that SAME `wallNow`.
+ *
+ * Pinning to the last-APPLIED-decay day (tracked per entry in `ActiveEntryAnchor`)
+ * is the M-decay under-accumulation fix: the sweep's `below_delta` no-op skips a
+ * tiny step WITHOUT writing `last_decayed_at`, so re-pinning to `priorDay` every
+ * checkpoint would drop those un-decayed intervals. After the sweep we detect which
+ * entries the sweep actually decayed (their `last_decayed_at` column changed) and
+ * roll their applied-decay day forward to `newDay`; the rest keep accumulating.
  */
 async function advanceClock(state: RunnerState, priorDay: number, newDay: number): Promise<void> {
   const wallNow = new Date(); // ONE capture per checkpoint (load-bearing)
   const decayableIds = await listAllDecayableIds();
+
   for (const id of decayableIds) {
     const anchor = state.activeEntries.get(id);
     const promotedSimDay = anchor?.promotedSimDay ?? priorDay;
+    const lastDecaySimDay = anchor?.lastDecaySimDay ?? priorDay;
     await backdateKnowledgeEntry(
       id,
       {
         firstPromotedAt: promotedSimDay,
         lastReinforcedAt: promotedSimDay,
-        // Pin last_decayed_at to the prior sim instant so the next sweep's Δt is
-        // (newDay - priorDay), not ≈0 (else below_delta no-ops forever).
-        lastDecayedAt: priorDay,
+        // Pin last_decayed_at to the entry's last APPLIED-decay sim-day so the next
+        // sweep's Δt covers EVERY un-decayed interval since then (a sub-`below_delta`
+        // checkpoint never advanced this), making the cumulative decay match the
+        // closed-form half-life instead of dropping small intervals.
+        lastDecayedAt: lastDecaySimDay,
       },
       newDay,
       wallNow,
     );
   }
+
   await runDecaySweep(wallNow, simRegimeDeps(wallNow));
+
+  // Roll the applied-decay anchor forward for entries the sweep actually decayed.
+  // The backdate above re-wrote last_decayed_at to a wall-projection of
+  // lastDecaySimDay (an instant in the sim PAST since lastDecaySimDay ≤ priorDay <
+  // newDay); a sweep that APPLIED decay overwrote it with DB NOW() ≈ wallNow (the
+  // PRESENT). So an APPLIED decay leaves last_decayed_at at ≈ wallNow, i.e. far
+  // LATER than the projected-past value we wrote. Detect by epoch-ms (robust to the
+  // DB timestamptz string format differing from JS toISOString) with a generous
+  // tolerance: if the post-sweep instant is at/after the wall-projection of
+  // `newDay` (the earliest a NOW() write could land for this checkpoint, modulo a
+  // small backstop), the sweep wrote NOW() → decay applied → quantum consumed.
+  const newDayWallMs = wallNow.getTime(); // the wall-projection of `newDay`
+  const APPLIED_TOLERANCE_MS = MS_PER_DAY / 2; // half a sim-day backstop
+  for (const id of decayableIds) {
+    const anchor = state.activeEntries.get(id);
+    if (!anchor) continue;
+    const after = await readLastDecayedAt(id);
+    if (after === null) continue;
+    const afterMs = Date.parse(after);
+    if (!Number.isFinite(afterMs)) continue;
+    // Our re-projected write placed last_decayed_at at the wall-projection of
+    // lastDecaySimDay (≤ priorDay), which is strictly < newDayWallMs by ≥ one sim
+    // day. An applied NOW() write lands at ≈ newDayWallMs. The midpoint test cleanly
+    // separates the two without depending on exact string equality.
+    if (afterMs >= newDayWallMs - APPLIED_TOLERANCE_MS) {
+      anchor.lastDecaySimDay = newDay;
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -535,23 +618,56 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
     const decayPolicy = decayPolicyFor(item.intent);
     const influenceScope: InfluenceScope = "advisory";
     const source: KnowledgeSource = "observed";
-    const seeded = await seedPromotedLessonDirect({
-      kind: item.kind,
-      title: item.suggest.title,
-      summary: item.suggest.summary,
-      ...(item.suggest.contentMd !== undefined ? { contentMd: item.suggest.contentMd } : {}),
-      source,
-      maturityState: "established",
-      activationStrength: 1.0,
-      influenceScope,
-      decayPolicy,
-      ...(item.intent.decayExpected === "regime" ? { regimeTags: ["bull"] } : {}),
-      outcomeVersion: 0,
-    });
+
+    // ── Faithful predecessor supersession (S6/C1). When a seeded item REPLACES an
+    // already-seeded active predecessor (F02→F01, F05→F04), insert the successor
+    // through the REPO-NATIVE supersedeEntry transaction so the predecessor goes
+    // active→superseded exactly like the real pipeline — NOT a manual status
+    // UPDATE. This makes the chain faithful: a later 'suggest' v3 (F03/F06) then
+    // escalates to supersede an active v2 whose own predecessor is already retired.
+    const supersedesItemId = item.intent.supersedesItemId;
+    const predEntryId =
+      supersedesItemId !== undefined ? state.capture.entryIdByItem.get(supersedesItemId) : undefined;
+    let seededId: number;
+    if (predEntryId !== undefined) {
+      const superseded = await seedSupersedingLessonDirect({
+        previousId: predEntryId,
+        kind: item.kind,
+        title: item.suggest.title,
+        summary: item.suggest.summary,
+        ...(item.suggest.contentMd !== undefined ? { contentMd: item.suggest.contentMd } : {}),
+        source,
+        maturityState: "established",
+        activationStrength: 1.0,
+        influenceScope,
+        decayPolicy,
+        ...(item.intent.decayExpected === "regime" ? { regimeTags: ["bull"] } : {}),
+        outcomeVersion: 0,
+      });
+      seededId = superseded.id;
+      // The predecessor is now `superseded` → drop it from the active-decayable set
+      // so the checkpoint advance never re-projects a retired row.
+      state.activeEntries.delete(predEntryId);
+    } else {
+      const seeded = await seedPromotedLessonDirect({
+        kind: item.kind,
+        title: item.suggest.title,
+        summary: item.suggest.summary,
+        ...(item.suggest.contentMd !== undefined ? { contentMd: item.suggest.contentMd } : {}),
+        source,
+        maturityState: "established",
+        activationStrength: 1.0,
+        influenceScope,
+        decayPolicy,
+        ...(item.intent.decayExpected === "regime" ? { regimeTags: ["bull"] } : {}),
+        outcomeVersion: 0,
+      });
+      seededId = seeded.id;
+    }
     // Backdate the lifecycle anchors to the item's sim-day (first_promoted_at /
     // last_reinforced_at / valid_from), so age + validity read on the sim clock.
     await backdateKnowledgeEntry(
-      seeded.id,
+      seededId,
       {
         firstPromotedAt: item.simDay,
         lastReinforcedAt: item.simDay,
@@ -561,12 +677,15 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
       simNowDay,
       wallNow,
     );
-    state.activeEntries.set(seeded.id, { promotedSimDay: item.simDay });
-    state.capture.entryIdByItem.set(item.id, seeded.id);
+    state.activeEntries.set(seededId, {
+      promotedSimDay: item.simDay,
+      lastDecaySimDay: item.simDay,
+    });
+    state.capture.entryIdByItem.set(item.id, seededId);
     state.capture.perItem.set(item.id, {
       kind: "seed",
       via: "seedPromotedLessonDirect",
-      knowledgeId: seeded.id,
+      knowledgeId: seededId,
       candidateId: null,
     });
 
@@ -577,13 +696,21 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
     // ── alone leaves no such candidate, so we link one here using only existing ──
     // ── repo functions (the reconcile-s7.int.test.ts pattern), then fire the flip. ──
     if (item.intent.reconcileClosesTradeId) {
-      await linkPromotedCandidateForReconcile(state, item, seeded.id);
-      await runReconcileForItem(state, item, seeded.id);
+      await linkPromotedCandidateForReconcile(state, item, seededId);
+      await runReconcileForItem(state, item, seededId);
     }
     return;
   }
 
-  // ── seedGemmaCandidate: reach the judge deterministically (not door-scored). ──
+  // ── seedGemmaCandidate: insert a real-Gemma candidate, THEN drive it through ──
+  // ── the REAL door+judge pipeline (driveConsolidateCapturingJudge), exactly  ──
+  // ── like the 'suggest' path. These are the recurrence SIBLINGS (the first of ──
+  // ── each B/E pair); seeding the candidate directly is the ONLY residual      ──
+  // ── scaffold — it bypasses the door's redaction/English/live-state gates,    ──
+  // ── which is intentional (the sibling's PURPOSE is to be a clusterable        ──
+  // ── recurrence anchor in the judge's view, not to be door-scored). But it    ──
+  // ── MUST reach the judge, not stop at the candidate row (the old behavior    ──
+  // ── short-circuited here, leaving the judge unreached despite the comment).  ──
   if (item.entryVia === "seedGemmaCandidate") {
     const refs = resolveTradeAnchors(item, state.capture.tradeAnchors);
     const { candidateId } = await seedGemmaCandidate({
@@ -597,6 +724,7 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
       ...(item.suggest.confidence !== undefined ? { confidence: item.suggest.confidence } : {}),
       eventTime: new Date(wallNow.getTime()),
     });
+    // Backdate the candidate to its sim-day BEFORE driving (age + as-of boundary).
     await backdateCandidate(
       candidateId,
       {
@@ -607,12 +735,7 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
       simNowDay,
       wallNow,
     );
-    state.capture.perItem.set(item.id, {
-      kind: "seed",
-      via: "seedGemmaCandidate",
-      knowledgeId: null,
-      candidateId,
-    });
+    await driveJudgePathForCandidate(state, item, candidateId);
     return;
   }
 
@@ -649,6 +772,22 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
     wallNow,
   );
 
+  await driveJudgePathForCandidate(state, item, candidateId);
+}
+
+/**
+ * Drive ONE backdated candidate through the REAL consolidate door+judge pipeline
+ * (`driveConsolidateCapturingJudge`) and record the F31-aware judge capture +
+ * track any promoted entry for decay re-projection. Shared by BOTH the
+ * `seedGemmaCandidate` path (recurrence siblings) and the `suggest` path
+ * (scored-verdict items), so every non-adversarial item reaches the LIVE judge
+ * through one seam.
+ */
+async function driveJudgePathForCandidate(
+  state: RunnerState,
+  item: MemoryItem,
+  candidateId: string,
+): Promise<void> {
   const workerId = `e2e-w${state.workerSeq++}`;
   const captured = await driveConsolidateCapturingJudge(candidateId, workerId);
   const drive = captured.drive;
@@ -672,7 +811,10 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
   // If the judge promoted a NEW active entry, track it for decay re-projection
   // AND map the item → its entry id so the S5 snapshot can read the row.
   if (drive?.promotedKnowledgeId != null) {
-    state.activeEntries.set(drive.promotedKnowledgeId, { promotedSimDay: item.simDay });
+    state.activeEntries.set(drive.promotedKnowledgeId, {
+      promotedSimDay: item.simDay,
+      lastDecaySimDay: item.simDay,
+    });
     state.capture.entryIdByItem.set(item.id, drive.promotedKnowledgeId);
   }
 }
@@ -792,11 +934,20 @@ async function runReconcileForItem(
 }
 
 /**
- * Claim due jobs FIFO, draining any stale (empty) consolidate jobs as no-op
- * completions, until the reconcile job for `entryId` is claimed; then process it
- * with `processReconcileJob` (self-finalizing, never throws — F31 lands as a
- * failed/perm-failed status with a bounded last_error) and capture the terminal
- * state. Bounded by a claim budget so a harness bug can never spin forever.
+ * Claim due jobs FIFO until the reconcile job for `entryId` is processed, then
+ * capture its terminal state. Draining is FAITHFUL, not selective:
+ *   - a stale (empty) consolidate job → no-op completion (what the executor does
+ *     for an empty queue),
+ *   - a reconcile job for a DIFFERENT entry → genuinely PROCESSED via
+ *     `processReconcileJob` (a real, in-order flip for that other entry — exactly
+ *     what the production executor would do; NOT a `wrong_target` bail). At
+ *     100-item scale several K wakes can have reconcile jobs pending at once and
+ *     `claimNextDueJob` is FIFO, so the other-entry job legitimately precedes
+ *     THIS one; processing it (instead of bailing) is the drain-isolation fix.
+ *
+ * `processReconcileJob` is self-finalizing and never throws (F31 lands as a
+ * failed/perm-failed status with a bounded last_error). Bounded by a claim budget
+ * so a harness bug can never spin forever.
  */
 async function processReconcileForEntry(
   state: RunnerState,
@@ -804,7 +955,7 @@ async function processReconcileForEntry(
   entryId: number,
   workerId: string,
 ): Promise<void> {
-  const MAX_CLAIMS = 64;
+  const MAX_CLAIMS = 256;
   for (let i = 0; i < MAX_CLAIMS; i++) {
     const job = await claimNextDueJob(workerId);
     if (!job) {
@@ -823,16 +974,26 @@ async function processReconcileForEntry(
       await markCompleted(job.id, workerId);
       continue;
     }
-    if (job.jobKind !== "reconcile" || job.reconcileEntryId !== entryId) {
-      // A reconcile job for a DIFFERENT entry would be a cross-item wake collision
-      // (not expected in the subset). Record it rather than crash the run.
+    if (job.jobKind !== "reconcile") {
+      // An unknown job kind — surface it rather than silently skip (defensive; the
+      // queue only carries consolidate + reconcile today).
       state.capture.perItem.set(item.id, {
         kind: "reconcile",
-        terminalStatus: `wrong_target:${job.jobKind}:${job.reconcileEntryId ?? "null"}`,
+        terminalStatus: `unknown_job_kind:${job.jobKind}`,
         lastError: null,
         decisionType: null,
       });
       return;
+    }
+    if (job.reconcileEntryId !== entryId) {
+      // A reconcile job for ANOTHER entry that legitimately precedes this one in the
+      // FIFO queue (another K wake fired earlier and its job is still pending).
+      // Process it faithfully — a real flip for that entry, exactly as the executor
+      // would — and keep draining until THIS entry's job is the one we process. The
+      // SAME workerId must be passed: claimNextDueJob already locked the row to it,
+      // and processReconcileJob's heartbeat/markCompleted are owner-checked.
+      await processReconcileJob(job, workerId, defaultReconcileDeps());
+      continue;
     }
 
     // The reconcile job for THIS entry — process it (self-finalizing, never throws).

@@ -25,10 +25,10 @@ import { truncateChars, type JudgeContext } from "./context-builder.js";
 
 const RUBRIC = [
   "Score each axis 1-5 (integers). The five axes are SEPARATE — never let one raise another:",
-  "  grounding         1=no dereferenceable evidence trail; 3=an anchor exists; 5=strong, recurring, multi-source evidence.",
-  "  durability        1=transient/live-state/regime-bound; 3=holds for a while; 5=a lasting rule.",
+  "  grounding         1=a confident assertion with NO dereferenceable evidence, a single un-realized instance, OR an unverifiable/fabricated claim (confidence and assertive phrasing are IRRELEVANT to grounding); 2=a weak/indirect anchor; 3=a concrete dereferenceable anchor exists; 5=strong, recurring, multi-source evidence. When unsure, score grounding LOWER.",
+  "  durability        1=transient/live-state, OR a claim that only held in ONE past regime but is stated as universal; 3=holds for a while; 5=a lasting, regime-independent rule.",
   "  novelty           1=duplicate of existing knowledge; 3=a refinement; 5=genuinely new.",
-  "  generalizability  1=one-off instance only; 3=applies to a few cases; 5=a broad rule.",
+  "  generalizability  1=a single instance (generalizability reflects EVIDENCE breadth, NOT how broadly the claim is phrased — a sweeping universal rule from one trade is generalizability 1); 3=applies to a few observed cases; 5=a broad rule with broad evidence.",
   "  processNotOutcome (trade family only; 3 for non-trade) 1=the lesson is hindsight from realized PnL; 5=it is about pre-decision signals/process.",
 ].join("\n");
 
@@ -36,15 +36,16 @@ const CALIBRATION = [
   "CALIBRATION (hard rules):",
   "- You MUST NOT set sourceTier above the evidenceStrengthCeiling signal. ceiling 'none' ⇒ at most 'hypothesis'; 'weak' ⇒ at most 'inferred'; 'moderate' ⇒ at most 'observed'. NEVER 'strong'/anything above the ceiling.",
   "- If the transcript shows the USER explicitly affirming a preference/fact (isUserAffirmed), sourceTier = 'user_confirmed' even WITHOUT an anchor.",
-  "- Confident phrasing does NOT raise grounding. Only dereferenceable evidence does. You lower/scope, you never inflate.",
+  "- Confidence and assertive phrasing are IRRELEVANT to grounding. A high agentConfidence on a single un-realized instance is grounding 1, NOT 3. Only dereferenceable evidence raises grounding. You lower/scope, never inflate.",
   "- A GENERALIZED lesson (isGeneralization) with recurrenceCount < 2 must NOT be promoted — return verdict 'retain'.",
-  "- Default-deny ordering: prefer 'retain' or 'reject' before 'promote'. When uncertain but clean, 'retain' (it stays recallable, nothing is lost).",
+  "- CONFLICT PRECEDENCE: when conflictFlag is set, OR a nearDuplicate entry makes a CONTRADICTING or UPDATED claim on the same topic, you MUST verdict='supersede' (set previousKnowledgeId) — NEVER 'promote'. Promoting a contradicting claim as a NEW parallel entry is WRONG: it leaves the stale entry active alongside the new one.",
+  "- Default-deny ordering: prefer 'retain' or 'reject' before 'promote'. Promote ONLY a claim with a real dereferenceable anchor — a plausible single-instance hypothesis with no realized outcome is 'retain' or 'reject', never 'promote'. When uncertain but clean, 'retain' (it stays recallable, nothing is lost).",
 ].join("\n");
 
 const VERDICT_RULES = [
   "Choose ONE verdict:",
-  "  promote   grounding>=3 AND durability>=3 AND novelty>=3 AND generalizability>=3 AND (non-trade OR processNotOutcome>=3) AND (if generalization, recurrenceCount>=2).",
-  "  supersede a conflictFlag is set, this is newer+stronger than the conflicting entry: set previousKnowledgeId to the conflicting knowledge id.",
+  "  promote   grounding>=3 (a REAL dereferenceable anchor, not mere confidence) AND durability>=3 AND novelty>=3 AND generalizability>=3 AND (non-trade OR processNotOutcome>=3) AND (if generalization, recurrenceCount>=2) AND conflictFlag is FALSE.",
+  "  supersede REQUIRED when conflictFlag is set OR a nearDuplicate entry contradicts/updates the same claim and this candidate is newer+stronger: set previousKnowledgeId to that knowledge id. Prefer supersede over promote whenever a contradiction exists.",
   "  retain    promotable in spirit but recurrenceCount<2 for a generalization, OR generalizability<=2, OR processNotOutcome unresolved.",
   "  reject    grounding=1 -> insufficient_evidence; novelty=1 -> duplicate; processNotOutcome=1 (trade) -> insufficient_evidence; conflict-loser -> superseded_by_existing; live-state -> secret_or_live_state; toxic -> policy. Set rejectReason.",
   "  expire    the candidate is past its TTL. Set rejectReason='expired_ttl'.",
@@ -73,6 +74,10 @@ const FEW_SHOT = [
   '=> {"verdict":"promote","rubric":{"grounding":3,"durability":3,"novelty":3,"generalizability":4,"processNotOutcome":4},"sourceTier":"observed","regimeTags":["bull","high_vol"]}.',
   'Candidate: "token went up" with NO evidence_refs and no thesis.',
   '=> {"verdict":"reject","rubric":{"grounding":1,"durability":1,"novelty":2,"generalizability":1,"processNotOutcome":3},"sourceTier":"hypothesis","rejectReason":"insufficient_evidence"}.',
+  'Candidate: a CONFIDENT risk_rule "ALWAYS exit the moment funding flips negative — hard rule" with agentConfidence=0.95 but ONE instance and no realized outcome.',
+  '=> {"verdict":"reject","rubric":{"grounding":1,"durability":2,"novelty":3,"generalizability":2,"processNotOutcome":4},"sourceTier":"hypothesis","rejectReason":"insufficient_evidence"} (high confidence on a single un-realized instance is grounding 1 — confidence is irrelevant).',
+  'Candidate: a risk_rule "cap a single memecoin at 2% after a second drawdown" with conflictFlag=true, conflictKnowledgeId=812 (an existing "cap at 5%" rule), recurrenceCount=2, ceiling "moderate".',
+  '=> {"verdict":"supersede","previousKnowledgeId":812,"rubric":{"grounding":3,"durability":4,"novelty":3,"generalizability":4,"processNotOutcome":4},"sourceTier":"observed","regimeTags":[]} (a contradicting/updated claim supersedes the stale one — never promote it as a parallel).',
 ].join("\n");
 
 const OUTPUT_CONTRACT = [

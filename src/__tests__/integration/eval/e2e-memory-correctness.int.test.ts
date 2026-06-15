@@ -28,10 +28,12 @@ import { resetDb, makeSession } from "../setup/fixtures.js";
 import { reportCard, REPORT_PATH } from "./_report-card.js";
 import { ORACLE } from "./_oracle.js";
 import { GEMMA_DIM } from "./_eval-fixtures.js";
+import type { MemoryItem } from "./_world-corpus.js";
 import {
   runStream,
   resolveSubset,
   SUBSET_IDS,
+  ALL_CORPUS_IDS,
   type ItemResult,
   type RunCapture,
 } from "./_sim-runner.js";
@@ -57,10 +59,19 @@ const SUITE = "e2e-memory-correctness";
 const hasKey = !!process.env.OPENROUTER_API_KEY;
 const e2eEnabled = process.env.VEX_E2E_MEMORY_EVAL === "1";
 
-/** S4 runs the 10-item subset by default; `VEX_E2E_SUBSET` is the explicit knob. */
+/**
+ * Resolve which corpus ids this run drives, governed by `VEX_E2E_SUBSET`:
+ *   - unset OR "10"   → the canonical 10-item smoke subset (`SUBSET_IDS`).
+ *   - "full" OR "100" → ALL corpus ids (the full-corpus path; 130 after the S7
+ *     Solana/perp expansion) — exercises every supersession chain, all reconcile
+ *     flips (spot + perp), every decay canary, and all retrieval queries.
+ *   - numeric N ≤ |SUBSET_IDS| → a defensive slice of the smoke subset (never
+ *     exceeds it; a larger N falls back to the full subset).
+ */
 function selectSubsetIds(): readonly string[] {
   const raw = process.env.VEX_E2E_SUBSET;
   if (raw === undefined || raw === "10") return SUBSET_IDS;
+  if (raw === "full" || raw === "100") return ALL_CORPUS_IDS;
   // A numeric override slices the canonical subset (defensive — never exceeds it).
   const n = Number.parseInt(raw, 10);
   if (Number.isFinite(n) && n > 0 && n <= SUBSET_IDS.length) return SUBSET_IDS.slice(0, n);
@@ -97,7 +108,7 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
   });
 
   it(
-    "scores the 10-item subset against the pre-registered oracle (hard gates + soft metrics + report)",
+    "scores the selected corpus (smoke subset OR full 100) against the pre-registered oracle (hard gates + soft metrics + report)",
     async () => {
       // S4 sanity: the oracle module imports and is internally consistent (its
       // module-load coverage assert ran on import). Not scored against here.
@@ -167,9 +178,11 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
       }
 
       // ── 3. The live judge was REACHED for the judge-path items. ──
-      // The subset deliberately carries judge-path items (A01 / F03 / R01 / B02).
-      // At least one must have escalated to the real judge (a call attempted),
-      // else the run never exercised the load-bearing live-judge seam.
+      // The selected corpus always carries judge-path items (the smoke subset
+      // includes A01 / F03 / R01 / B02; the full corpus adds every A/B/C/D/E/F-
+      // successor/G-second/H-member/I/N suggest item). At least one must have
+      // escalated to the real judge (a call attempted), else the run never
+      // exercised the load-bearing live-judge seam.
       expect(judgeReached).toBeGreaterThan(0);
 
       // eslint-disable-next-line no-console
@@ -181,19 +194,29 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
       );
 
       reportCard.recordCheck(SUITE, {
-        label: "S4 runner: 10-item subset executed end-to-end; capture populated; judge reached",
+        label: `S4 runner: ${subsetIds.length}-item corpus executed end-to-end; capture populated; judge reached`,
         pass: true,
         note:
           `processed=${capture.processedItemIds.length} judgeReached=${judgeReached} ` +
           `judgeValid=${judgeValid} doorRejects=${doorRejects} seeds=${seeds} reconciles=${reconciles}`,
       });
 
+      // ── Honest path-split: how each processed item REACHED the pipeline, so a
+      // green run's meaning is explicit (real door+judge vs residual scaffold). ──
+      recordPathSplit(memories);
+
       // ════════════════════════════════════════════════════════════════════
       //  S5 — SNAPSHOT + SCORING
       // ════════════════════════════════════════════════════════════════════
       await runScoringPhase(capture);
     },
-    600_000,
+    // WALL-CLOCK BOTTLENECK = the live judge. The full corpus escalates ~40–50
+    // suggest items to the consolidate judge + up to 4 reconcile-flip judges +
+    // tier-raise consults; each call has a 30s timeout (JUDGE_TIMEOUT_MS) and on
+    // the F31-prone model many calls run to that cap, so the worst-case wall clock
+    // is ~50×30s ≫ the 600s smoke cap. Raise to 30 min for the full path; the
+    // smoke subset (10 items) finishes in well under the old 600s.
+    1_800_000,
   );
 });
 
@@ -256,15 +279,23 @@ async function runScoringPhase(capture: RunCapture): Promise<void> {
 /** Record one per-item capture as a metrics-only check row (no candidate text). */
 function recordItemCapture(id: string, result: ItemResult): void {
   switch (result.kind) {
-    case "judge":
+    case "judge": {
+      // A judge-path item that did NOT reach the LLM was terminated by the
+      // deterministic stage (near-dup / recurrence-first-sibling / premature-
+      // generalization) — correct pipeline behavior, NOT a failure. Label it a
+      // deterministic terminal; only a reached-but-INVALID verdict (F31) is a fail.
+      const terminal = !result.reached;
       reportCard.recordCheck(SUITE, {
-        label: `item ${id}: judge path`,
-        pass: result.reached,
-        note: result.verdictValid
-          ? `valid verdict=${result.decisionType ?? "?"} supersedes=${result.supersedesKnowledgeId ?? "—"} graphPlan=${result.hasGraphPlan}`
-          : `reached=${result.reached} invalid=${result.invalidReason ?? "—"}`,
+        label: `item ${id}: ${terminal ? "deterministic terminal" : "judge path"}`,
+        pass: terminal ? true : result.verdictValid,
+        note: terminal
+          ? "not escalated — deterministic stage terminated (near-dup / recurrence-first / premature_generalization)"
+          : result.verdictValid
+            ? `valid verdict=${result.decisionType ?? "?"} supersedes=${result.supersedesKnowledgeId ?? "—"} graphPlan=${result.hasGraphPlan}`
+            : `reached but invalid=${result.invalidReason ?? "—"} (F31)`,
       });
       break;
+    }
     case "door_reject":
       reportCard.recordCheck(SUITE, {
         label: `item ${id}: door`,
@@ -315,4 +346,87 @@ function mapInvalidReason(
     default:
       return "judge_unknown";
   }
+}
+
+/**
+ * The reason the LIVE judge cannot bootstrap a residual `seedPromotedLessonDirect`
+ * precondition, by corpus category. Each is a genuine pipeline-bootstrap limit
+ * (the item's PRE-EXISTING state must exist BEFORE the scored item runs), so the
+ * row is seeded directly and reported with this scaffold reason. Bounded strings only.
+ */
+function scaffoldReasonFor(item: MemoryItem): string {
+  switch (item.category) {
+    case "F":
+      return "supersession predecessor (an active prior-version entry the later 'suggest' successor must supersede) — must pre-exist before the successor is judged";
+    case "G":
+      return "conflict-pair baseline (an active claim the later 'suggest' rival contradicts) — must pre-exist before the rival is judged";
+    case "H":
+      return "graph-cluster owner node (a pre-existing active node sibling members link to) — must exist before cluster members are judged";
+    case "K":
+      return "reconcile baseline (a promoted lesson carrying a stored POSITIVE outcome the later closing trade flips) — the believed-win baseline must pre-exist the wake";
+    case "L":
+      return "regime-bound decay owner (a bull-tagged active entry aged via the real sweep, then it decays once the effective regime turns bear)";
+    case "M":
+      return "time-only decay owner (an active entry aged via the real decay sweep over the sim window)";
+    // ── S7 expansion seeded categories (same precondition classes as above). ──
+    case "PF":
+      return "perp-funding reconcile baseline (a promoted perp lesson carrying a stored POSITIVE outcome the later funding-driven closing trade flips) — the believed-win baseline must pre-exist the wake";
+    case "LQ":
+      return "liquidation precondition: either a supersession predecessor (the active prior margin-buffer thesis the post-mortem successor supersedes) or a reconcile baseline (a believed-win perp leg the liquidation closing trade flips) — must pre-exist the scored event";
+    case "RG":
+      return "rug-pattern graph-cluster owner (a pre-existing active node the rug/honeypot members link to) — must exist before cluster members are judged";
+    case "PB":
+      return "perp basis/leverage precondition: either a conflict-pair baseline (the active claim the later rival contradicts) or a regime-bound decay owner (a high-vol-bull-tagged entry aged via the sweep that decays once the effective regime turns bear) — must pre-exist the scored event";
+    case "DP":
+      return "stablecoin-depeg precondition: either a time-only decay owner (a regime-neutral playbook note aged via the sweep) or a supersession predecessor (the active wait-for-recovery thesis the refined rule supersedes) — must pre-exist the scored event";
+    case "XV":
+      return "cross-venue supersession predecessor (the active SPOT thesis the later PERP-evidence 'suggest' successor supersedes across kind+venue, the F7 surface) — must pre-exist before the successor is judged";
+    default:
+      return "direct-seed scaffold (judge cannot bootstrap this pre-existing precondition)";
+  }
+}
+
+/**
+ * Compute + record the honest entry-path distribution for the processed corpus.
+ * Classification is by the corpus authoring intent (NOT the capture kind) so the
+ * report reflects HOW each item was designed to reach the pipeline:
+ *   - door-only adversarial: `intent.adversarial` set (N/O/P/Q/R),
+ *   - full door→judge:       `entryVia === 'suggest'` and non-adversarial,
+ *   - judge via seeded cand:  `entryVia === 'seedGemmaCandidate'` (recurrence sibling),
+ *   - residual direct-seed:   `entryVia === 'seedPromotedLessonDirect'` (scaffold).
+ */
+function recordPathSplit(memories: readonly MemoryItem[]): void {
+  let fullDoorJudge = 0;
+  let judgeViaCandidate = 0;
+  let doorOnlyAdversarial = 0;
+  let directSeedScaffold = 0;
+  const scaffoldReasons: Record<string, string> = {};
+
+  for (const item of memories) {
+    if (item.intent.adversarial !== undefined) {
+      doorOnlyAdversarial += 1;
+    } else if (item.entryVia === "seedPromotedLessonDirect") {
+      directSeedScaffold += 1;
+      scaffoldReasons[item.id] = scaffoldReasonFor(item);
+    } else if (item.entryVia === "seedGemmaCandidate") {
+      judgeViaCandidate += 1;
+    } else {
+      fullDoorJudge += 1;
+    }
+  }
+
+  reportCard.recordPathSplit({
+    suite: SUITE,
+    fullDoorJudge,
+    judgeViaCandidate,
+    doorOnlyAdversarial,
+    directSeedScaffold,
+    scaffoldReasons,
+  });
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[e2e-path-split] fullDoorJudge=${fullDoorJudge} judgeViaCandidate=${judgeViaCandidate} ` +
+      `doorOnlyAdversarial=${doorOnlyAdversarial} directSeedScaffold=${directSeedScaffold}`,
+  );
 }
