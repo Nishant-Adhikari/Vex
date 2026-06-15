@@ -169,6 +169,58 @@ const SOURCE_RANK: Readonly<Record<string, number>> = Object.freeze({
   user_confirmed: 3,
 });
 
+/**
+ * UNCOLLAPSED provenance rank for the RUNTIME-clamp invariant — an exact re-typing
+ * of `consolidate.ts:EVIDENCE_SOURCE_RANK` (NO production import; anti-circularity).
+ * Unlike `SOURCE_RANK` above (which collapses hypothesis=inferred=1 for the SOFT
+ * calibration band), this distinguishes hypothesis(0) < inferred(1) < observed(2)
+ * so the HARD clamp gate can catch a clamp that returns 'inferred' where the
+ * runtime ceiling only permits 'hypothesis'. `user_confirmed` is EXEMPT (handled in
+ * `clampWithinRuntimeCeiling`), so it carries no rank here.
+ */
+const RUNTIME_CLAMP_RANK: Readonly<Record<string, number>> = Object.freeze({
+  hypothesis: 0,
+  inferred: 1,
+  observed: 2,
+});
+
+/**
+ * The max source tier a given runtime ceiling permits — an exact re-typing of
+ * `consolidate.ts:maxTierForCeiling` (none→'hypothesis', weak→'inferred',
+ * moderate|strong→'observed'). Returns the source-tier string the clamp would cap
+ * to. Re-typed locally, NO production import (anti-circularity). EXPORTED so the
+ * pure unit test can hit the mapping directly.
+ */
+export function maxSourceForCeiling(ceiling: string): string {
+  switch (ceiling) {
+    case "none":
+      return "hypothesis";
+    case "weak":
+      return "inferred";
+    case "moderate":
+    case "strong":
+      return "observed";
+    default:
+      // Unknown ceiling string (defensive): treat as the most permissive cap so a
+      // mislabeled oracle row never spuriously REDS the HARD gate.
+      return "observed";
+  }
+}
+
+/**
+ * The HARD runtime-clamp invariant as a pure predicate: the CLAMPED source tier is
+ * within what the RUNTIME `evidenceStrengthCeiling` permits. Mirrors
+ * `consolidate.ts:clampSourceTier` — `user_confirmed` is EXEMPT (the human is the
+ * verifier, no evidence ceiling applies); every other tier must rank ≤ the cap for
+ * the ceiling on the UNCOLLAPSED scale. EXPORTED for the pure unit test.
+ */
+export function clampWithinRuntimeCeiling(clamped: string, ceiling: string): boolean {
+  if (clamped === "user_confirmed") return true; // D-GROUND exemption.
+  const clampedRank = RUNTIME_CLAMP_RANK[clamped] ?? RUNTIME_CLAMP_RANK.observed;
+  const capRank = RUNTIME_CLAMP_RANK[maxSourceForCeiling(ceiling)] ?? RUNTIME_CLAMP_RANK.observed;
+  return clampedRank <= capRank;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  INPUT SHAPES — what the test shell hands the scorer per item.
 // ════════════════════════════════════════════════════════════════════════════
@@ -387,10 +439,15 @@ export function scoreConfidenceClaimOverride(aggs: readonly ScoredRunAggregate[]
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  HARD GATE 3 — CLAMP-APPLIED.
-//  For every promote/supersede, the stored CLAMPED source tier must be ≤ the
-//  oracle expectedTierCeiling. This tests the DETERMINISTIC clamp, kept SEPARATE
-//  from judge calibration. HARD.
+//  HARD GATE 3 — CLAMP-APPLIED (RUNTIME invariant) + SOFT oracle-merit signal.
+//  HARD: for every promote/supersede, the stored CLAMPED source tier must be
+//  within what the RUNTIME `evidenceStrengthCeiling` permits — a regression guard
+//  on the DETERMINISTIC clamp (`consolidate.ts:clampSourceTier`), kept SEPARATE
+//  from judge calibration. Green unless the production clamp is bypassed/broken.
+//  SOFT: the SAME clamped tier vs the ORACLE expectedTierCeiling — a provenance-
+//  vs-merit signal that NEVER gates (the oracle ceiling is a MERIT band, not the
+//  runtime invariant; comparing the runtime-clamped tier to it structurally fails
+//  a correctly-clamped promote on an oracle-'none' item).
 // ════════════════════════════════════════════════════════════════════════════
 
 export function scoreClampApplied(aggs: readonly ScoredRunAggregate[]): JudgeHardGate[] {
@@ -402,10 +459,11 @@ export function scoreClampApplied(aggs: readonly ScoredRunAggregate[]): JudgeHar
     const r = agg.reasoning;
     // The clamped tier rides on the resolved plan (promote/supersede only) and is
     // the authoritative clamp output this gate tests. When the modal-representative
-    // run captured no clamped tier (null), the tier is un-clampable for this run —
-    // record it honestly and skip, rather than guessing from the stored row.
+    // run captured no reasoning OR no clamped tier (null), the tier is un-clampable
+    // for this run — record it honestly and skip, rather than guessing from the
+    // stored row. Guarding on `r` here also narrows it non-null for the ceiling read.
     const clamped = r?.clampedSourceTier ?? null;
-    if (clamped === null) {
+    if (r === null || clamped === null) {
       reportCard.recordOracleScore({
         itemId: agg.itemId,
         dimension: "promotion",
@@ -416,19 +474,30 @@ export function scoreClampApplied(aggs: readonly ScoredRunAggregate[]): JudgeHar
       });
       continue;
     }
-    const storedRank = SOURCE_RANK[clamped] ?? 2;
-    const ceiling = CEILING_RANK[p.expectedTierCeiling] ?? 3;
-    const ok = storedRank <= ceiling;
+    // `r` is non-null here (guarded above), so the RUNTIME ceiling is available.
+    const runtimeCeiling = r.evidenceStrengthCeiling;
+    const permittedCap = maxSourceForCeiling(runtimeCeiling);
+    // ── HARD: runtime-clamp invariant (regression guard on the production clamp). ──
+    const ok = clampWithinRuntimeCeiling(clamped, runtimeCeiling);
     reportCard.recordCheck(SUITE, {
       label: `clamp-applied ${agg.itemId}`,
       pass: ok,
-      note: `clampedTier=${clamped}(rank ${storedRank}) ceiling=${p.expectedTierCeiling}(rank ${ceiling})`,
+      note: `clamped=${clamped} runtimeCeiling=${runtimeCeiling} (permits<=${permittedCap})`,
     });
     gates.push({
       id: `clamp-applied:${agg.itemId}`,
       pass: ok,
       knownGap: false,
-      detail: `clampedTier=${clamped} ceiling=${p.expectedTierCeiling}`,
+      detail: `clamped=${clamped} runtimeCeiling=${runtimeCeiling} permits<=${permittedCap}`,
+    });
+    // ── SOFT: provenance-vs-merit (oracle ceiling). Recorded, NEVER gates. ──
+    reportCard.recordOracleScore({
+      itemId: agg.itemId,
+      dimension: "promotion",
+      expected: `clamped<=merit(${p.expectedTierCeiling}→${maxSourceForCeiling(p.expectedTierCeiling)})`,
+      actual: `clamped=${clamped}`,
+      pass: clampWithinRuntimeCeiling(clamped, p.expectedTierCeiling),
+      note: "provenance-vs-merit (soft; oracle ceiling, never gates)",
     });
   }
   return gates;

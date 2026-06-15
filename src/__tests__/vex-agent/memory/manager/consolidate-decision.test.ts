@@ -389,11 +389,16 @@ describe("clampSourceTier — hard source-tier ceiling (§6 / D-GROUND)", () => 
     expect(clampSourceTier("observed", "moderate")).toBe("observed");
     expect(clampSourceTier("inferred", "moderate")).toBe("inferred"); // never raises
     expect(clampSourceTier("hypothesis", "moderate")).toBe("hypothesis");
+    // ceiling 'strong' → max observed (same cap as moderate; nothing above observed)
+    expect(clampSourceTier("observed", "strong")).toBe("observed");
+    expect(clampSourceTier("inferred", "strong")).toBe("inferred"); // never raises
+    expect(clampSourceTier("hypothesis", "strong")).toBe("hypothesis");
   });
 
   it("exempts user_confirmed from the evidence ceiling (the human is the verifier)", () => {
     expect(clampSourceTier("user_confirmed", "none")).toBe("user_confirmed");
     expect(clampSourceTier("user_confirmed", "weak")).toBe("user_confirmed");
     expect(clampSourceTier("user_confirmed", "moderate")).toBe("user_confirmed");
+    expect(clampSourceTier("user_confirmed", "strong")).toBe("user_confirmed");
   });
 });
