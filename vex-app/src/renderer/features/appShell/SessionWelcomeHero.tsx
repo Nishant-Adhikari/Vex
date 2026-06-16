@@ -20,7 +20,7 @@ export function SessionWelcomeHero(): JSX.Element {
         src="/logo_clean.png"
         alt=""
         draggable={false}
-        className="mx-auto h-7 w-auto opacity-90"
+        className="mx-auto h-14 w-auto opacity-90"
       />
 
       {/* OVERLINE — static register status. The hex matrix is aria-hidden
@@ -41,17 +41,18 @@ export function SessionWelcomeHero(): JSX.Element {
       </div>
 
       {/* PLINTH RULE — onboarding's plinth carried forward: full hairline
-       * with a 24px accent tick at the left edge. */}
+       * with a 24px accent tick centered under the idle mark. */}
       <div aria-hidden className="relative mt-4 h-px w-full bg-[var(--vex-line)]">
-        <span className="absolute -top-px left-0 h-px w-6 bg-[var(--vex-accent)]" />
+        <span className="absolute -top-px left-1/2 h-px w-6 -translate-x-1/2 bg-[var(--vex-accent)]" />
       </div>
 
-      {/* Left-aligned: this is a document head, not a poster. */}
-      <h1 className="mt-7 text-[26px] font-medium leading-[1.25] text-foreground">
+      {/* Centered idle landing — the register head sits in the middle of the
+       * screen (the left-anchored tape only applies once a session is live). */}
+      <h1 className="mt-7 text-center text-[26px] font-medium leading-[1.25] text-foreground">
         What should I execute?
       </h1>
 
-      <p className="mt-3 max-w-[52ch] text-sm leading-relaxed text-foreground">
+      <p className="mx-auto mt-3 max-w-[52ch] text-center text-sm leading-relaxed text-foreground">
         Type below. Everything runs locally — on-chain actions always wait for
         your signature.
       </p>
