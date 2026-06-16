@@ -7,11 +7,11 @@
  * resting glow: depth comes from the three solid luminance steps defined
  * by the [data-vex-shell] scope in globals.css, separated by hairlines.
  *
- * Layout: sidebar rail (SessionsList) | content column under the DESK
- * RULE — an h-12 header datum whose bottom hairline carries the onboarding
- * plinth language (24px accent tick at the content column's left edge).
- * Runtime status now lives in the sidebar registry footer (RuntimeLedger,
- * S1); the rule carries only the version stamp on its right side.
+ * Layout: sidebar rail (SessionsList) | content column under the DESK RULE
+ * | optional on-demand BOOK panel (right <aside>, gated on bookOpen). The
+ * DESK RULE (h-12 header) carries the live tape-state word (left) plus the
+ * BOOK toggle + version stamp (right); its bottom-hairline accent tick sits
+ * over the left-anchored transcript spine.
  *
  * `data-vex-shell="true"` scopes the Protocol Desk tokens (sibling of
  * data-vex-onboarding); `data-vex-screen="appShell"` stays the e2e/test
@@ -22,6 +22,8 @@
 
 import type { JSX } from "react";
 import { useUiStore } from "../../stores/uiStore.js";
+import { cn } from "../../lib/utils.js";
+import { BookPanel } from "./BookPanel.js";
 import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
 import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
@@ -31,6 +33,9 @@ import { MemoryPanel } from "./MemoryPanel.js";
 
 export function AppShell(): JSX.Element {
   const appShellView = useUiStore((s) => s.appShellView);
+  const activeSessionId = useUiStore((s) => s.activeSessionId);
+  const bookOpen = useUiStore((s) => s.bookOpen);
+  const toggleBook = useUiStore((s) => s.toggleBook);
   const createSessionOpen = useUiStore((s) => s.createSessionOpen);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const closeCreateSession = useUiStore((s) => s.closeCreateSession);
@@ -54,9 +59,27 @@ export function AppShell(): JSX.Element {
             className="absolute -bottom-px left-6 h-px w-6 bg-[var(--vex-accent)]"
           />
           <DeskRuleTapeState />
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
-            v{__VEX_APP_VERSION__}
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            {appShellView === "session" ? (
+              <button
+                type="button"
+                onClick={toggleBook}
+                aria-pressed={bookOpen}
+                aria-label={bookOpen ? "Hide the BOOK panel" : "Show the BOOK panel"}
+                className={cn(
+                  "rounded-md border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.28em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+                  bookOpen
+                    ? "border-[var(--vex-accent-border)] bg-[var(--vex-accent-fill-8)] text-[var(--vex-accent-text)]"
+                    : "border-[var(--vex-line-strong)] text-[var(--vex-text-3)] hover:text-[var(--vex-text-2)]",
+                )}
+              >
+                Book
+              </button>
+            ) : null}
+            <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
+              v{__VEX_APP_VERSION__}
+            </span>
+          </div>
         </header>
 
         <div className="min-h-0 flex-1">
@@ -69,6 +92,10 @@ export function AppShell(): JSX.Element {
           )}
         </div>
       </section>
+
+      {bookOpen && appShellView === "session" ? (
+        <BookPanel activeSessionId={activeSessionId} />
+      ) : null}
 
       <SessionCreator
         open={createSessionOpen}

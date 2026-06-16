@@ -47,10 +47,17 @@ import { ModelBrandIcon } from "../wizard/steps/provider/ModelBrandIcon.js";
 
 export interface SessionRuntimeBarProps {
   readonly sessionId: string;
+  /**
+   * `inline` (default) = the horizontal flex-wrap bar under the session header.
+   * `stack` = a vertical column for the BOOK panel's RUNTIME block. Additive:
+   * every existing call site keeps the inline bar unchanged.
+   */
+  readonly layout?: "inline" | "stack";
 }
 
 export function SessionRuntimeBar({
   sessionId,
+  layout = "inline",
 }: SessionRuntimeBarProps): JSX.Element {
   useCompactionLiveSync(sessionId);
 
@@ -71,9 +78,14 @@ export function SessionRuntimeBar({
   return (
     <div
       data-vex-area="runtime-status"
+      data-vex-layout={layout}
       role="group"
       aria-label="Session runtime status"
-      className="flex w-full flex-wrap items-center gap-2 text-[11px] text-[var(--vex-text-3)]"
+      className={
+        layout === "stack"
+          ? "flex w-full flex-col items-start gap-1.5 text-[11px] text-[var(--vex-text-3)]"
+          : "flex w-full flex-wrap items-center gap-2 text-[11px] text-[var(--vex-text-3)]"
+      }
     >
       <ModelIndicator model={model} />
       <UsageChip lastTurn={lastTurn} totals={totals} />
