@@ -64,6 +64,12 @@ export interface PendingFirstMessage {
 
 interface UiState {
   readonly sidebarOpen: boolean;
+  /**
+   * The on-demand right-side BOOK panel (per-session instrument: MOVES /
+   * RUNTIME / SESSION / POSITION). Defaults CLOSED — unlike sidebarOpen — and is
+   * persisted so the user's choice survives relaunch.
+   */
+  readonly bookOpen: boolean;
   readonly currentView: View;
   readonly wizardEntryMode: WizardEntryMode;
   readonly unlockReturnView: UnlockReturnView;
@@ -99,6 +105,8 @@ interface UiState {
    */
   readonly reasoningEffortBySession: Readonly<Record<string, ReasoningEffort>>;
   readonly setSidebarOpen: (value: boolean) => void;
+  readonly setBookOpen: (value: boolean) => void;
+  readonly toggleBook: () => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
   readonly openWizard: (mode: WizardEntryMode) => void;
@@ -124,6 +132,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       sidebarOpen: true,
+      bookOpen: false,
       currentView: "splash",
       wizardEntryMode: "setup",
       unlockReturnView: "appShell",
@@ -137,6 +146,8 @@ export const useUiStore = create<UiState>()(
       signingState: "idle",
       reasoningEffortBySession: {},
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      setBookOpen: (bookOpen) => set({ bookOpen }),
+      toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
       openWizard: (wizardEntryMode) =>
@@ -178,6 +189,7 @@ export const useUiStore = create<UiState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
+        bookOpen: state.bookOpen,
       }),
     }
   )
