@@ -50,6 +50,13 @@ export function SessionPlanCard({
   const acceptBusy = acceptPlan.isPending;
   const resumeBusy = requestResume.isPending;
 
+  // The card only earns space at the transcript head when there's a REAL action
+  // plan to read / accept / resume. Plan-mode ON/OFF is communicated by the
+  // composer PLAN switch + its mode line, so the empty "recommended" card no
+  // longer blocks the conversation. (Absorbing the plan into an inline PLAN
+  // BRIEF tape entry is the planned next step; this removes the dead space now.)
+  if (!hasPlan) return null;
+
   return (
     <section className="mb-3 rounded-lg border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-4 py-3 text-sm">
       <header className="flex items-center gap-2">
