@@ -129,7 +129,10 @@ export function getMissionActivity(row: SessionListItem): MissionActivity | null
     return {
       label: "Active",
       tone: "active",
-      dotClass: "bg-success",
+      // Active = the LIVE signal → the blue accent. Signal Tape rations blue to
+      // live state; bg-success read as "healthy" not "running" and clashed with
+      // the open rail's accent indicator. Now one tone→colour source for both.
+      dotClass: "bg-[var(--vex-accent)]",
     };
   }
   if (PAUSED_MISSION_STATUSES.has(row.missionStatus)) {
@@ -143,7 +146,7 @@ export function getMissionActivity(row: SessionListItem): MissionActivity | null
     return {
       label: "Stopped",
       tone: "stopped",
-      dotClass: "bg-[var(--color-text-muted)]",
+      dotClass: "bg-[var(--vex-text-3)]",
     };
   }
   return {

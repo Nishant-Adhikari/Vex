@@ -16,7 +16,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { AiChat01Icon, Target02Icon } from "@hugeicons/core-free-icons";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { cn } from "../../../lib/utils.js";
-import { DotmSquare3 } from "../../../components/ui/dotm-square-3.js";
 import {
   formatSessionTime,
   getMissionActivity,
@@ -126,12 +125,17 @@ export function SessionRow({
                   {title}
                 </span>
                 {activity?.tone === "active" ? (
-                  <DotmSquare3
-                    size={12}
-                    dotSize={2}
-                    color="var(--vex-accent)"
-                    animated
-                    ariaLabel="Session active"
+                  // Unified SIGNAL DOT (open rail): a quiet accent dot for the
+                  // live signal — same tone→colour language as the collapsed
+                  // badge, no ambient matrix animation. The "live" stamp on the
+                  // line below carries the word.
+                  <span
+                    role="img"
+                    aria-label="Session active"
+                    className={cn(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      activity?.dotClass,
+                    )}
                   />
                 ) : (
                   <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--vex-text-2)]">
