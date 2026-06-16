@@ -989,3 +989,96 @@ _Generic traps to avoid:_
 
 
 ---
+
+## Section 12 — BOOK panel (per-session instrument, incl. POSITION) — PLAN
+
+> Planned via multi-agent workflow (5 recon readers → design → adversarial
+> security + feasibility review). **Both verdicts `ok=true`**; the hardening
+> fixes below are folded in. ⚠️ **Stage 3 (POSITION IPC) is a hard-stop** — a new
+> public IPC exposing wallet balances/holdings/USD/PnL across the trust boundary;
+> it ships only on explicit user approval.
+
+**Panel.** A new `<aside>` sibling appended after the middle `<section>` inside
+`AppShell <main>` (NOT related to the `<SessionCreator>` modal portal). ~320px,
+`--vex-surface-1`, `border-l --vex-line`, on-demand, gated on
+`bookOpen && activeSessionId !== null`. Toggle in the DESK RULE header (right,
+near the version). State in `uiStore`: add `bookOpen: boolean` (default **false**),
+`setBookOpen`, and a net-new `toggleBook` (sidebar has only a setter); persist
+`bookOpen` in `partialize`.
+
+**Four blocks (3 buildable on existing IPC, 1 new):**
+
+1. **MOVES** (per session, existing IPC) — `useApprovalHistory(sessionId, 20)`
+   (`approvals.getHistory`, ORDER BY created_at DESC). Each `ApprovalSummaryDto`
+   already carries label (`preview.toolName ?? toolName`, resolves
+   `execute_tool` wrappers), `actionKind`, `riskLevel`, time (`resolvedAt ??
+   createdAt`), `reasoningPreview`. Status is a **pure client-side mapper** over
+   (`status`, `executionStatus`, `decision`) → pending / done / failed. ⚠️
+   `execution_result_hash` is a result digest, **not** a tx hash — never relabel
+   it. Richer moves (real tx hash/USD via `proj_activity`) is OUT — `proj_activity`
+   has no `session_id` (a separate STOP-AND-VERIFY).
+2. **RUNTIME & COST** (existing IPC) — promote `SessionRuntimeBar` into the panel.
+   Add an additive `layout?: 'inline' | 'stack'` prop (default `'inline'` to
+   preserve today's behavior; `'stack'` for the vertical panel). Model / context
+   bar / `usage.getSessionTotals` / `getLastTurn` / `compaction.getStatus`.
+3. **SESSION** (existing IPC) — `sessions.get` + `wallets.listSessionWallets`
+   (`SessionWalletScopeDto`, family **keys** `evm`/`solana`): mode, permission,
+   mission status, wallet scope, created.
+4. **POSITION** (NEW IPC) — per-wallet snapshots: family, address, totalUsd,
+   PnL, per-token holdings (symbol/amount/USD). family **enum** `eip155`/`solana`
+   (note the vocabulary split vs the SESSION block's `evm`/`solana` keys).
+
+### POSITION IPC contract (Stage 3 — hard-stop)
+
+- **Data source (mirror-DB, no `@vex-agent` import):** new
+  `src/main/database/portfolio-db.ts` copying `usage-db.ts` scaffolding
+  (`buildPoolConfig`, 2s/5s timeouts, `dbUnavailable`/`dbError`, NUMERIC→number).
+  Read path: `getSessionWalletScope(sessionId)` → `addrs =
+  [evm?.address, solana?.address].filter(Boolean)`; **empty `addrs` → `ok({wallets:[],
+  totalUsd:0,…})` (normal, never an error, never global)**; else per-wallet latest
+  from `proj_portfolio_snapshots` + per-token from `proj_balances` (typed columns
+  only — **never** the untyped `positions` JSONB).
+- **Channel/handler:** `CH.portfolio.getSessionPositions` (`vex:portfolio:…`), new
+  domain `'portfolio'` (add to `VexDomain` union + `VEX_DOMAINS` array), handler in
+  `src/main/ipc/portfolio.ts` via `registerHandler` (trusted-sender + input/output
+  Zod + Result<T>), registered in `register-all.ts`.
+- **Preload/schema/renderer:** `src/preload/agent/portfolio.ts` +
+  `PortfolioBridge`; `src/shared/schemas/portfolio.ts` (all `.strict()`, input =
+  `{ sessionId: uuid }` only — addresses resolved main-side, never trust the
+  renderer); `renderer/lib/api/portfolio.ts` `useSessionPositions` (staleTime ~15s,
+  poll 30–60s since snapshots are background-written with no event).
+
+### Security policy (from the adversarial review — all `ok`, hardened)
+
+- **Hard session-scoping invariant** (not a convention): the engine repos have a
+  global/legacy fallback, so `portfolio-db` must resolve scope first and
+  short-circuit empty → empty. Add a **cross-session isolation negative test**
+  (session A never returns wallet B's tokens).
+- **Logging:** handler + db log `sessionId + wallet COUNT + token COUNT +
+  correlationId` ONLY — never raw balances/addresses/USD (`SENSITIVE_KEY_RE` does
+  **not** auto-redact `balanceUsd`/`totalUsd`/`pnl`, so don't rely on it).
+- **Exposed** (user's own public data): family, full address (consistent with
+  `listSessionWallets`; UI truncates), label, per-token symbol/name/chainId/
+  balanceRaw/decimals/balanceUsd/priceUsd, per-wallet & session totalUsd + PnL,
+  snapshotGroupId, timestamps. **Withheld:** row id, source col, raw `positions`
+  JSONB, raw DB errors (→ `internal.unexpected`), any key/seed/signing material
+  (source tables are structurally key-free — confirmed). **Read-only**: no
+  mutation/sign path on the portfolio domain.
+
+### Staged build plan
+
+| Stage | Scope | Risk | Gate |
+| --- | --- | --- | --- |
+| **1** | `uiStore` `bookOpen` + `setBookOpen`/`toggleBook` + persist | low | build go |
+| **2** | BOOK shell + header toggle (`<aside>`) + MOVES + RUNTIME (+ `SessionRuntimeBar layout` prop) + SESSION blocks — **renderer-only, no new IPC** | low | build go |
+| **3** | POSITION IPC end-to-end (main + preload + shared schema + tests), no renderer block yet | med | **⚠️ explicit approval (wallet-data exposure)** |
+| **4** | POSITION renderer block + `useSessionPositions`; migrate `SessionRuntimeBar` out of `SessionContext` (expand test list: `SessionContext.test` + 6 `AppShell/*` tests assume that mount) | low–med | build go |
+
+**Prereq helper:** create a shared `truncateAddress(addr)` (`0xabcd…1234`) — the
+plan’s `maskHex` is **not** an existing primitive; extract one and migrate the
+few existing truncation sites.
+
+**Open questions:** (1) POSITION scope — **session-scoped** (recommended; matches
+`getSessionWalletScope` + the engine "never global" contract) vs a global
+all-wallets portfolio; (2) refresh via poll (30–60s) vs a sync event subscription;
+(3) confirm `SessionContext` loses the runtime bar in Stage 4.
