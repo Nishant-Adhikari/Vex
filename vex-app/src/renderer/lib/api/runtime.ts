@@ -33,7 +33,7 @@ import type {
 } from "@shared/schemas/runtime.js";
 import { approvalsKeys, runtimeKeys } from "./queryKeys.js";
 
-const STALE_MS = 3_000;
+const STALE_MS = 2_000;
 
 function stateOptions(sessionId: string) {
   return queryOptions({
@@ -57,7 +57,7 @@ export function useRuntimeState(
  * tests. Pending approvals keep their own faster poll in
  * `ApprovalsRegion`, so this net only needs to cover composer gating.
  */
-export const RUNTIME_STATE_FALLBACK_POLL_MS = 30_000;
+export const RUNTIME_STATE_FALLBACK_POLL_MS = 8_000;
 
 /**
  * Subscribe the active session to the engine control-state spine (F5).

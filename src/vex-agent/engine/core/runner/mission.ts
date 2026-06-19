@@ -90,6 +90,10 @@ export async function startMission(missionId: string): Promise<TurnResult> {
       throw new Error(
         `Mission ${missionId} contract changed since acceptance — re-accept the current contract before starting.`,
       );
+    case "plan_not_accepted":
+      throw new Error(
+        `Mission ${missionId} action plan is not accepted — review and accept the plan before starting.`,
+      );
     case "not_ready":
       throw new Error(
         `Mission ${missionId} is not ready — missing required fields: ${outcome.missingFields.join(", ")}`,

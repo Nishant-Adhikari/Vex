@@ -28,9 +28,23 @@ import type { WalletPolicy } from "@vex-agent/engine/types.js";
 
 import type { ToolResult } from "../../types.js";
 
-function assertWalletPolicy(policy: WalletPolicy, family: ChainFamily, address: string): void {
+function assertWalletPolicy(
+  policy: WalletPolicy,
+  family: ChainFamily,
+  address: string,
+  allowSetupRead = false,
+): void {
   if (policy.kind === "none") return;
   if (policy.kind === "invalid") {
+    // Least-privilege setup exception (read-only callers only): during a
+    // mission's SETUP phase — a mission exists but has NO active run, so the
+    // policy is invalid with reason "mission_without_active_run" — read-only
+    // resolvers opt in to let the session read its OWN selected wallet so setup
+    // can be a research+planning phase. ALL other invalid reasons (active-run
+    // contract drift: missing_or_malformed_snapshot / empty_allowed_wallets)
+    // STILL fail closed even for reads. Signing/credential/intent paths never
+    // pass allowSetupRead, so they stay fully fail-closed in setup.
+    if (allowSetupRead && policy.reason === "mission_without_active_run") return;
     throw new VexError(
       ErrorCodes.WALLET_SCOPE_MISMATCH,
       "Mission wallet policy is invalid (contract drift — no accepted allowed wallets).",
@@ -58,6 +72,25 @@ export function resolveSelectedAddress(
 ): string {
   const { entry } = resolveSelectedEntry(family, resolution);
   assertWalletPolicy(policy, family, entry.address);
+  return entry.address;
+}
+
+/**
+ * Read-only variant of `resolveSelectedAddress` that opts in to the mission
+ * SETUP exception. Identical to `resolveSelectedAddress` EXCEPT it allows an
+ * invalid policy with reason "mission_without_active_run" (mission exists, no
+ * active run yet) so the session can READ its own selected wallet during setup.
+ * Every other invalid reason still fails closed. Use ONLY for genuine reads
+ * (balances, portfolio, prompt wallet banner); signing/credential/intent paths
+ * must keep using `resolveSelectedAddress` (default fail-closed).
+ */
+export function resolveSelectedAddressForRead(
+  resolution: WalletResolution,
+  policy: WalletPolicy,
+  family: ChainFamily,
+): string {
+  const { entry } = resolveSelectedEntry(family, resolution);
+  assertWalletPolicy(policy, family, entry.address, true);
   return entry.address;
 }
 
@@ -110,6 +143,57 @@ function tryResolveSelectedAddress(
 ): string | null {
   try {
     return resolveSelectedAddress(resolution, policy, family);
+  } catch (err) {
+    if (
+      err instanceof VexError &&
+      (err.code === ErrorCodes.WALLET_NOT_SELECTED ||
+        err.code === ErrorCodes.WALLET_NOT_CONFIGURED)
+    ) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Read-only variant of `resolveSelectedAddressSet` for the mission SETUP phase.
+ * Identical to `resolveSelectedAddressSet` EXCEPT:
+ *  - the top-level invalid guard allows reason "mission_without_active_run"
+ *    (setup) to fall through to per-family resolution; genuine active-run drift
+ *    (missing_or_malformed_snapshot / empty_allowed_wallets) STILL fails closed;
+ *  - each family resolves via the read variant (setup exception opted in).
+ * Use ONLY for genuine reads (portfolio scoping, prompt wallet banner). Signing
+ * /credential/intent paths must keep using `resolveSelectedAddressSet`.
+ */
+export function resolveSelectedAddressSetForRead(
+  resolution: WalletResolution,
+  policy: WalletPolicy,
+): SelectedWalletAddresses {
+  if (policy.kind === "invalid" && policy.reason !== "mission_without_active_run") {
+    throw new VexError(
+      ErrorCodes.WALLET_SCOPE_MISMATCH,
+      "Mission wallet policy is invalid (contract drift — no accepted allowed wallets).",
+      "Re-accept the mission contract and start a fresh run.",
+    );
+  }
+  const evm = tryResolveSelectedAddressForRead(resolution, policy, "eip155");
+  const solana = tryResolveSelectedAddressForRead(resolution, policy, "solana");
+  const all = [evm, solana].filter((a): a is string => a !== null);
+  return { evm, solana, all };
+}
+
+/**
+ * Read variant of `tryResolveSelectedAddress` — maps "validly absent" to null
+ * and re-throws drift, resolving through `resolveSelectedAddressForRead` so the
+ * setup exception applies. Mirrors `tryResolveSelectedAddress` exactly.
+ */
+function tryResolveSelectedAddressForRead(
+  resolution: WalletResolution,
+  policy: WalletPolicy,
+  family: ChainFamily,
+): string | null {
+  try {
+    return resolveSelectedAddressForRead(resolution, policy, family);
   } catch (err) {
     if (
       err instanceof VexError &&

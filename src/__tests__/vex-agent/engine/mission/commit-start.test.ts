@@ -13,6 +13,7 @@ const mockSetStatus = vi.fn();
 const mockSetApprovedAt = vi.fn();
 const mockGetActiveRun = vi.fn();
 const mockCreateRun = vi.fn();
+const mockGetActivePlan = vi.fn();
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   getMissionForUpdate: (...a: unknown[]) => mockGetMissionForUpdate(...a),
@@ -23,6 +24,14 @@ vi.mock("@vex-agent/db/repos/missions.js", () => ({
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getActiveRun: (...a: unknown[]) => mockGetActiveRun(...a),
   createRun: (...a: unknown[]) => mockCreateRun(...a),
+}));
+
+// Plan-acceptance start-gate (Stage 6) reads `session-plans`. Mocking the repo
+// at its boundary — same style as missions / mission-runs — gives precise
+// control. Default (no plan row → null) keeps the contract-only start path
+// unchanged.
+vi.mock("@vex-agent/db/repos/session-plans.js", () => ({
+  getActivePlan: (...a: unknown[]) => mockGetActivePlan(...a),
 }));
 
 const fakeClientQuery = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
@@ -102,10 +111,27 @@ function makeAcceptedMission(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makePlan(overrides: Record<string, unknown> = {}) {
+  return {
+    sessionId: "session-1",
+    enabled: true,
+    planMd: "# Action plan",
+    acceptedAt: null as string | null,
+    accepted: false,
+    offNoticePending: false,
+    createdAt: "2026-05-22T09:00:00.000Z",
+    updatedAt: "2026-05-22T09:30:00.000Z",
+    ...overrides,
+  };
+}
+
 describe("commitMissionStart", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fakeClientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
+    // Default: no plan row → the plan start-gate is skipped (plan-mode off /
+    // no enabled plan), so the contract-only start path is unchanged.
+    mockGetActivePlan.mockResolvedValue(null);
   });
 
   it("returns mission_not_found when the row is missing", async () => {
@@ -253,5 +279,97 @@ describe("commitMissionStart", () => {
     expect(mockCreateRun).not.toHaveBeenCalled();
     const sqlCalls = fakeClientQuery.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(sqlCalls).toContain("ROLLBACK");
+  });
+
+  // ── Stage 6: plan-acceptance start-gate (fail closed) ──────────────────
+
+  // Plan-mode ON + plan enabled but UNACCEPTED → fail closed with
+  // plan_not_accepted (a plan_write / setEnabled re-armed the gate between the
+  // unified Accept step and Start). The run must NOT start (no flip, no
+  // createRun) — otherwise it would start and immediately pause on the runtime
+  // gate, the exact failure this gate removes.
+  it("returns plan_not_accepted when plan-mode on + plan enabled+unaccepted", async () => {
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeAcceptedMission());
+    mockGetActivePlan.mockResolvedValue(makePlan({ enabled: true, accepted: false }));
+
+    const outcome = await commitMissionStart({
+      missionId: "mission-1",
+      runId: "run-1",
+    });
+
+    expect(outcome.outcome).toBe("plan_not_accepted");
+    if (outcome.outcome === "plan_not_accepted") {
+      expect(outcome.missionId).toBe("mission-1");
+    }
+    // Gate is fail-closed BEFORE the status flip / run create.
+    expect(mockSetStatus).not.toHaveBeenCalled();
+    expect(mockCreateRun).not.toHaveBeenCalled();
+    // The gate reads the plan via the mission's root session id.
+    expect(mockGetActivePlan).toHaveBeenCalledWith("session-1", expect.anything());
+  });
+
+  // An enabled-but-EMPTY plan is also "not ready" (no planMd.length condition —
+  // matches the runtime gate). Still plan_not_accepted.
+  it("returns plan_not_accepted when plan enabled+unaccepted with empty body", async () => {
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeAcceptedMission());
+    mockGetActivePlan.mockResolvedValue(makePlan({ enabled: true, accepted: false, planMd: "" }));
+
+    const outcome = await commitMissionStart({
+      missionId: "mission-1",
+      runId: "run-1",
+    });
+
+    expect(outcome.outcome).toBe("plan_not_accepted");
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  // Plan-mode ON + plan ACCEPTED → the gate is satisfied; start commits
+  // normally (status flip + createRun on the happy path).
+  it("commits when plan-mode on + plan accepted", async () => {
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeAcceptedMission());
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    mockGetActivePlan.mockResolvedValue(
+      makePlan({ enabled: true, accepted: true, acceptedAt: "2026-05-22T11:00:00.000Z" }),
+    );
+
+    const outcome = await commitMissionStart({
+      missionId: "mission-1",
+      runId: "run-1",
+    });
+
+    expect(outcome.outcome).toBe("committed");
+    expect(mockSetStatus).toHaveBeenCalledWith("mission-1", "running", expect.anything());
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+  });
+
+  // Plan-mode OFF (plan row exists but disabled) → gate skipped; commits.
+  it("commits when a plan row exists but is disabled (plan-mode off)", async () => {
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeAcceptedMission());
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    mockGetActivePlan.mockResolvedValue(makePlan({ enabled: false, accepted: false }));
+
+    const outcome = await commitMissionStart({
+      missionId: "mission-1",
+      runId: "run-1",
+    });
+
+    expect(outcome.outcome).toBe("committed");
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+  });
+
+  // No plan row at all (default) → gate skipped; commits. Pins the byte-for-byte
+  // unchanged contract-only start path.
+  it("commits when there is no plan row (no plan-mode)", async () => {
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeAcceptedMission());
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    mockGetActivePlan.mockResolvedValue(null);
+
+    const outcome = await commitMissionStart({
+      missionId: "mission-1",
+      runId: "run-1",
+    });
+
+    expect(outcome.outcome).toBe("committed");
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
   });
 });

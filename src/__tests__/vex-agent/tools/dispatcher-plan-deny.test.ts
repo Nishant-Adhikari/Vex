@@ -3,9 +3,10 @@
  *
  * When plan-mode is ON and the active plan is NOT user-accepted, side-effecting
  * tools are blocked until acceptance; reads, discovery, and the safe-control
- * allowlist (plan_write / mission_stop / compact_now) pass. The gate reads LIVE
- * plan state per call and resolves the EFFECTIVE action kind for execute_tool
- * (its own actionKind is "read"; the TARGET manifest decides).
+ * allowlist (plan_write / mission_stop / compact_now / mission_draft_update)
+ * pass. The gate reads LIVE plan state per call and resolves the EFFECTIVE
+ * action kind for execute_tool (its own actionKind is "read"; the TARGET
+ * manifest decides).
  *
  * The gate is inactive (returns null) when there is no plan, plan-mode is off,
  * or the plan is already accepted.
@@ -91,6 +92,27 @@ describe("checkPlanAcceptanceDeny — gate active (enabled, unaccepted)", () => 
     expect(await checkPlanAcceptanceDeny(call("plan_write"), ctx)).toBeNull();
     expect(await checkPlanAcceptanceDeny(call("mission_stop"), ctx)).toBeNull();
     expect(await checkPlanAcceptanceDeny(call("compact_now"), ctx)).toBeNull();
+  });
+
+  // Stage 3 deadlock fix (B3): during mission setup with plan-mode ON, once an
+  // enabled+unaccepted plan exists the gate is active. `mission_draft_update`
+  // is `local_write` (NOT read-kind) and would otherwise be blocked, stranding
+  // setup mid-co-authoring (you could write the plan but not edit the contract).
+  // Safe-listing it lets setup co-author contract + plan together; a mutating
+  // protocol tool in the SAME context is still blocked, proving the safe-list
+  // is narrow and the gate still defends execution.
+  it("ALLOWS mission_draft_update (co-authoring the contract during setup) but still BLOCKS a mutating protocol tool", async () => {
+    expect(await checkPlanAcceptanceDeny(call("mission_draft_update"), ctx)).toBeNull();
+    expect(await checkPlanAcceptanceDeny(call("plan_write"), ctx)).toBeNull();
+
+    mockGetManifest.mockReturnValue({ mutating: true });
+    const denied = await checkPlanAcceptanceDeny(
+      call("execute_tool", { toolId: "kyberswap.swap.sell" }),
+      ctx,
+    );
+    expect(denied).not.toBeNull();
+    expect(denied!.success).toBe(false);
+    expect(denied!.output).toContain("not yet accepted");
   });
 
   it("ALLOWS read-kind tools (research/discovery)", async () => {

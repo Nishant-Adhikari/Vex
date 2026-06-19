@@ -3,15 +3,21 @@
  *
  * Two layouts, branched on whether a session is active:
  *   - no active session → centered welcome hero + composer (onboarding feel);
- *   - active session → full-height chat shell: header (`SessionContext`) +
- *     optional mission contract card + live transcript (`SessionTranscript`,
- *     stage 8-1) + bottom composer. The hero is hidden so a selected session's
- *     loading/error/empty states never sit under onboarding copy.
+ *   - active session → full-height chat shell: header (`SessionContext`) + live
+ *     transcript (`SessionTranscript`, stage 8-1) + mission controls + bottom
+ *     composer. The hero is hidden so a selected session's loading/error/empty
+ *     states never sit under onboarding copy.
+ *
+ * The mission contract + action plan are NOT in this column any more — they
+ * moved to the MISSION RAIL (`MissionRail`) as clickable badges that open
+ * `MissionContractModal` / `PlanDisplayModal`. The two tall cards used to push
+ * `MissionControls` + the Accept footer below the fold; pulling them out lets
+ * the transcript own the full column height and keeps the controls reachable.
  *
  * Sub-components keep this file small:
  *   - hero (register head; trust line lives in the composer) → `SessionWelcomeHero`
  *   - context strip/header → `SessionContext` (runtime bar now lives in BOOK)
- *   - mission card        → `MissionContractCard` (mission sessions only)
+ *   - mission controls     → `MissionControls` (mission sessions only)
  *   - transcript          → `SessionTranscript`
  *   - composer + slash    → `SessionComposer`
  */
@@ -32,9 +38,7 @@ import { cn } from "../../lib/utils.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { ApprovalsRegion } from "./ApprovalsRegion.js";
-import { MissionContractCard } from "./MissionContractCard.js";
 import { MissionControls } from "./MissionControls.js";
-import { SessionPlanCard } from "./SessionPlanCard.js";
 import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
 import { SessionTranscript } from "./SessionTranscript.js";
@@ -128,16 +132,20 @@ export function SessionPanel(): JSX.Element {
       <div
         className={cn(
           "flex h-full min-h-0 w-full flex-col",
-          isIdleSession ? "max-w-[680px]" : "max-w-[860px] px-6 py-4",
+          isIdleSession
+            ? "max-w-[680px] justify-center"
+            : "max-w-[860px] px-6 py-4",
         )}
       >
         {/* Content above the composer — swaps the centered idle landing for the
             left-anchored tape. ONE wrapper element so the composer below keeps a
-            stable index (no remount, no lost first send). */}
+            stable index (no remount, no lost first send). When idle it shrinks to
+            the hero (no flex-1) so the column's justify-center centres the
+            hero+composer as one group, matching the welcome screen. */}
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col",
-            isIdleSession && "items-center justify-center",
+            "flex min-h-0 flex-col",
+            isIdleSession ? "items-center" : "flex-1",
           )}
         >
           {isIdleSession ? (
@@ -150,18 +158,12 @@ export function SessionPanel(): JSX.Element {
                 loading={detailQuery.isLoading}
                 error={detailError}
               />
-              {showMissionCard && activeSession !== null ? (
-                <MissionContractCard
-                  sessionId={activeSession.id}
-                  permission={activeSession.permission}
-                />
-              ) : null}
-              {activeSession !== null ? (
-                <SessionPlanCard
-                  sessionId={activeSession.id}
-                  missionStatus={activeSession.missionStatus}
-                />
-              ) : null}
+              {/* The mission contract + action plan no longer render inline:
+                  the two tall cards used to push MissionControls + the Accept
+                  footer below the fold. They now live in the MISSION RAIL's
+                  PremiumBadge → top-layer dialog (`MissionContractModal` /
+                  `PlanDisplayModal`), which keeps the Accept action pinned and
+                  reachable. The transcript now owns the full column height. */}
               {activeSession !== null ? (
                 <SessionTranscript sessionId={activeSession.id} />
               ) : null}

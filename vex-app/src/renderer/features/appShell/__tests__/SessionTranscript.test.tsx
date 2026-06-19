@@ -154,8 +154,11 @@ describe("SessionTranscript", () => {
     expect(screen.getByText("context compacted")).not.toBeNull();
     expect(screen.getByText(/onerror="alert\(1\)"/)).not.toBeNull();
     expect(container.querySelector("img[onerror]")).toBeNull();
-    // S3 ledger anatomy: the shell is photo-free — no avatar img, ever.
-    expect(container.querySelector("img")).toBeNull();
+    // Assistant turns now carry the decorative Vex avatar on the tape spine —
+    // it is the only image and is aria-hidden (the "Vex" caption names the turn).
+    const avatar = container.querySelector('img[src="/vex.jpg"]');
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute("aria-hidden")).toBe("true");
     expect(listMock).toHaveBeenCalledWith({
       sessionId: SESSION,
       cursor: null,

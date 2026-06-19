@@ -14,8 +14,12 @@ import { describe, it, expect } from "vitest";
 
 import {
   TOOL_MAP_CATEGORIES,
+  defaultVisibilityContext,
   getAllTools,
   getToolDef,
+  getVisibleToolDefs,
+  getVisibleToolsByCategory,
+  type ToolVisibilityContext,
 } from "../../../vex-agent/tools/registry.js";
 
 const AGENT_SURFACE_TOOL_NAMES = getAllTools()
@@ -71,5 +75,84 @@ describe("TOOL_MAP_CATEGORIES integrity", () => {
 
     const protocolMeta = TOOL_MAP_CATEGORIES.find(c => c.label === "Protocol discovery/execution");
     expect(protocolMeta?.toolNames).toEqual(["discover_tools", "execute_tool"]);
+  });
+});
+
+describe("plan_write visibility (requiresPlanMode + hiddenInMissionSetup:false)", () => {
+  // Stage 0/3 decision: `plan_write` reuses the existing `requiresPlanMode`
+  // gate and flips `hiddenInMissionSetup` to false, so it becomes visible in
+  // mission SETUP exactly when plan-mode is on (co-authoring the plan alongside
+  // the contract), stays hidden when plan-mode is off, and is excluded from
+  // subagents (they execute a parent task; they do not author the top plan).
+  const isVisible = (ctx: ToolVisibilityContext): boolean =>
+    getVisibleToolDefs(ctx).some(t => t.name === "plan_write");
+
+  it("is HIDDEN in mission setup when plan-mode is OFF", () => {
+    const ctx = defaultVisibilityContext({
+      sessionKind: "mission",
+      missionRunActive: false,
+      planMode: false,
+    });
+    expect(isVisible(ctx)).toBe(false);
+  });
+
+  it("is VISIBLE in mission setup when plan-mode is ON", () => {
+    const ctx = defaultVisibilityContext({
+      sessionKind: "mission",
+      missionRunActive: false,
+      planMode: true,
+    });
+    expect(isVisible(ctx)).toBe(true);
+  });
+
+  it("is HIDDEN for subagents even when plan-mode is ON", () => {
+    const ctx = defaultVisibilityContext({
+      sessionKind: "mission",
+      missionRunActive: false,
+      planMode: true,
+      role: "subagent",
+    });
+    expect(isVisible(ctx)).toBe(false);
+  });
+});
+
+describe("Research category visibility in MISSION SETUP", () => {
+  // The mission-setup prompt points the agent at the Research category
+  // (`web_research`, `twitter_account`) as part of Capability Orientation.
+  // That pointer is only honest if those tools actually project into the
+  // mission-setup Tool Map when their env keys are configured. Both tools are
+  // env-gated (TAVILY_API_KEY / RETTIWT_API_KEY) and carry no mission/band
+  // visibility restriction, so with the keys set they must appear in a
+  // mission-setup (missionRunActive=false) context.
+  const ENV_KEYS = ["TAVILY_API_KEY", "RETTIWT_API_KEY"] as const;
+
+  it("surfaces the Research category when TAVILY_API_KEY + RETTIWT_API_KEY are set", () => {
+    const saved: Record<string, string | undefined> = {};
+    for (const key of ENV_KEYS) saved[key] = process.env[key];
+    try {
+      process.env.TAVILY_API_KEY = "test-tavily-key";
+      process.env.RETTIWT_API_KEY = "test-rettiwt-key";
+
+      const ctx: ToolVisibilityContext = {
+        permission: "restricted",
+        role: "parent",
+        sessionKind: "mission",
+        missionRunActive: false,
+        planMode: false,
+        contextUsageBand: "normal",
+        hasSessionMemory: false,
+      };
+
+      const categories = getVisibleToolsByCategory(ctx);
+      const research = categories.find(c => c.label === "Research");
+      expect(research, "Research category missing from mission-setup Tool Map").toBeDefined();
+      expect(research?.toolNames).toContain("web_research");
+      expect(research?.toolNames).toContain("twitter_account");
+    } finally {
+      for (const key of ENV_KEYS) {
+        if (saved[key] === undefined) delete process.env[key];
+        else process.env[key] = saved[key];
+      }
+    }
   });
 });

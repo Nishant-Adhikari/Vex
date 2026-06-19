@@ -115,6 +115,8 @@ function mapRejection(
         currentHash: outcome.currentHash,
         acceptedHash: outcome.acceptedHash,
       };
+    case "plan_not_accepted":
+      return { outcome: "plan_not_accepted", missionId: outcome.missionId };
     case "not_ready":
       return {
         outcome: "not_ready",

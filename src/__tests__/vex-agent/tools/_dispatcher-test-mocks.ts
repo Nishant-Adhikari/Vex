@@ -33,6 +33,19 @@ vi.mock("../../../vex-agent/tools/internal/wallet/resolve.js", () => ({
     family === "solana"
       ? "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
       : "0x1234567890abcdef1234567890abcdef12345678",
+  // Mission-setup read variant — wallet_balances routes through this now.
+  resolveSelectedAddressForRead: (_r: unknown, _p: unknown, family: string) =>
+    family === "solana"
+      ? "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+      : "0x1234567890abcdef1234567890abcdef12345678",
+  resolveSelectedAddressSetForRead: () => ({
+    evm: "0x1234567890abcdef1234567890abcdef12345678",
+    solana: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+    all: [
+      "0x1234567890abcdef1234567890abcdef12345678",
+      "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+    ],
+  }),
   resolveSigningWallet: (_r: unknown, _p: unknown, family: string) =>
     family === "solana"
       ? { family: "solana", address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", secretKey: new Uint8Array(64) }

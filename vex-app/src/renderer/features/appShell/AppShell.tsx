@@ -21,14 +21,21 @@
  */
 
 import type { JSX } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  PanelRightCloseIcon,
+  PanelRightOpenIcon,
+} from "@hugeicons/core-free-icons";
 import { useUiStore } from "../../stores/uiStore.js";
-import { cn } from "../../lib/utils.js";
 import { BookPanel } from "./BookPanel.js";
 import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
+import { MissionRail } from "./MissionRail.js";
+import { useAutoCollapseBook } from "./useAutoCollapseBook.js";
 import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsLibrary } from "./SessionsLibrary.js";
 import { SessionsList } from "./SessionsList.js";
+import { SidebarIconButton } from "./SessionRows.js";
 import { MemoryPanel } from "./MemoryPanel.js";
 
 export function AppShell(): JSX.Element {
@@ -39,6 +46,12 @@ export function AppShell(): JSX.Element {
   const createSessionOpen = useUiStore((s) => s.createSessionOpen);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const closeCreateSession = useUiStore((s) => s.closeCreateSession);
+
+  // Stage F responsive: below ~1360px the four columns (sidebar + chat + rail +
+  // BOOK) no longer fit, so auto-collapse BOOK on the narrowing edge. One-way on
+  // the transition (not continuously enforced) so a user can still re-open BOOK
+  // inside a narrow window — we don't fight a manual toggle.
+  useAutoCollapseBook();
 
   return (
     <main
@@ -61,24 +74,24 @@ export function AppShell(): JSX.Element {
           <DeskRuleTapeState />
           <div className="ml-auto flex items-center gap-3">
             {appShellView === "session" ? (
-              <button
-                type="button"
+              // Collapse/expand chevron — same affordance as the sidebar's
+              // PanelLeft toggle, mirrored to the right panel (PanelRight). The
+              // version stamp now lives in the BookPanel collapse header; the
+              // BookPanel itself carries a matching chevron, so both call the
+              // same toggleBook.
+              <SidebarIconButton
+                label={
+                  bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"
+                }
                 onClick={toggleBook}
-                aria-pressed={bookOpen}
-                aria-label={bookOpen ? "Hide the BOOK panel" : "Show the BOOK panel"}
-                className={cn(
-                  "rounded-md border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.28em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-                  bookOpen
-                    ? "border-[var(--vex-accent-border)] bg-[var(--vex-accent-fill-8)] text-[var(--vex-accent-text)]"
-                    : "border-[var(--vex-line-strong)] text-[var(--vex-text-3)] hover:text-[var(--vex-text-2)]",
-                )}
               >
-                Book
-              </button>
+                <HugeiconsIcon
+                  icon={bookOpen ? PanelRightCloseIcon : PanelRightOpenIcon}
+                  size={17}
+                  aria-hidden
+                />
+              </SidebarIconButton>
             ) : null}
-            <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
-              v{__VEX_APP_VERSION__}
-            </span>
           </div>
         </header>
 
@@ -93,8 +106,19 @@ export function AppShell(): JSX.Element {
         </div>
       </section>
 
-      {bookOpen && appShellView === "session" ? (
-        <BookPanel activeSessionId={activeSessionId} />
+      {appShellView === "session" ? (
+        <MissionRail activeSessionId={activeSessionId} />
+      ) : null}
+
+      {appShellView === "session" ? (
+        // Always mounted in session view — the panel owns its collapsed state
+        // (a thin spine + version stamp) so toggling never remounts it or
+        // replays the slide-in keyframe.
+        <BookPanel
+          activeSessionId={activeSessionId}
+          bookOpen={bookOpen}
+          onToggle={toggleBook}
+        />
       ) : null}
 
       <SessionCreator

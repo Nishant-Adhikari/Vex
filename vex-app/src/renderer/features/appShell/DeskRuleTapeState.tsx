@@ -6,15 +6,19 @@
  *
  * State precedence mirrors the streaming strip's circuit-break: a pending
  * approval FREEZES the run, so AWAITING wins over LIVE; otherwise LIVE while the
- * engine streams; IDLE at rest. Blue is rationed to the two non-idle states.
+ * engine streams; then a non-streaming mission run reads PAUSED (paused_*) or
+ * RUNNING (so a started, quiet run no longer looks idle); IDLE at rest. Blue is
+ * rationed to the non-idle states.
  *
- * Renders nothing off the session view / with no active session. Both data
- * hooks accept a null id and self-gate (no IPC when idle); the pending query
- * shares ApprovalsRegion's key, so this adds no polling load.
+ * Renders nothing off the session view / with no active session. All data
+ * hooks accept a null id and self-gate (no IPC when idle); the pending +
+ * runtime queries share ApprovalsRegion's / MissionControls' keys, so this adds
+ * no extra polling load.
  */
 
 import type { JSX } from "react";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
+import { useRuntimeState } from "../../lib/api/runtime.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { cn } from "../../lib/utils.js";
@@ -24,6 +28,7 @@ export function DeskRuleTapeState(): JSX.Element | null {
   const appShellView = useUiStore((s) => s.appShellView);
   const preview = useStreamPreview(activeSessionId);
   const pending = usePendingApprovals(activeSessionId);
+  const runtime = useRuntimeState(activeSessionId);
 
   if (appShellView !== "session" || activeSessionId === null) return null;
 
@@ -31,10 +36,29 @@ export function DeskRuleTapeState(): JSX.Element | null {
   const hasPending =
     pendingData !== undefined && pendingData.ok && pendingData.data.length > 0;
   const streaming = preview !== null && preview.phase === "streaming";
+  const run = runtime.data !== undefined && runtime.data.ok ? runtime.data.data : null;
+  const hasActiveRun = run?.hasActiveRun === true;
+  const paused = hasActiveRun && (run?.status?.startsWith("paused") ?? false);
 
-  const state = hasPending ? "awaiting" : streaming ? "live" : "idle";
+  const state = hasPending
+    ? "awaiting"
+    : streaming
+      ? "live"
+      : paused
+        ? "paused"
+        : hasActiveRun
+          ? "running"
+          : "idle";
   const label =
-    state === "awaiting" ? "Awaiting" : state === "live" ? "Live" : "Idle";
+    state === "awaiting"
+      ? "Awaiting"
+      : state === "live"
+        ? "Live"
+        : state === "paused"
+          ? "Paused"
+          : state === "running"
+            ? "Running"
+            : "Idle";
   const lit = state !== "idle";
 
   return (

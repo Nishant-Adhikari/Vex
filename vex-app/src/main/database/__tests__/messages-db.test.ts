@@ -326,6 +326,33 @@ describe("messages-db mapper", () => {
     expect(result.data.items[0]).not.toHaveProperty("metadata");
   });
 
+  it("maps a user mission-setup row to text kind (a user turn, not a notice)", async () => {
+    // A user's mission-setup input is their own message — it must render as a
+    // normal user bubble, not the centered-uppercase runtime-notice styling.
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 8,
+          session_id: SESSION,
+          role: "user",
+          content: "Hunt Solana meme tokens with $9",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+          source: "user",
+          message_type: "mission_setup",
+          metadata: null,
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("text");
+    expect(result.data.items[0]!.role).toBe("user");
+  });
+
   it("maps a compaction_committed marker row to the compaction kind (8-4)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [

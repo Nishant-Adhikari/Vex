@@ -51,6 +51,15 @@ export const missionStartResultSchema = z.discriminatedUnion("outcome", [
       acceptedHash: z.string(),
     })
     .strict(),
+  /**
+   * Plan-mode is on for this mission session but the action plan is not
+   * accepted (a `plan_write` / `setEnabled` re-armed acceptance between the
+   * unified Accept step and Start). The engine fails closed so the run never
+   * starts and immediately pauses on the runtime plan-acceptance gate.
+   */
+  z
+    .object({ outcome: z.literal("plan_not_accepted"), missionId: z.string() })
+    .strict(),
   z
     .object({
       outcome: z.literal("not_ready"),

@@ -45,7 +45,8 @@ describe("SessionContext header (slice C)", () => {
     expect(header?.getAttribute("aria-label")).toBe("Session: Research session");
     expect(screen.getByText("Research session")).not.toBeNull();
     // S3 exception stamps: the default agent mode earns silence; only the
-    // deviating `restricted` permission is stamped.
+    // deviating `restricted` permission is stamped. (The `mission` mode stamp
+    // was removed — mission identity now reads from the MISSION RAIL badge.)
     expect(screen.queryByText("agent")).toBeNull();
     expect(screen.getByText("restricted")).not.toBeNull();
     // Stage 4: the runtime bar moved to the BOOK panel — the header must NOT
@@ -55,14 +56,16 @@ describe("SessionContext header (slice C)", () => {
     ).toBeNull();
   });
 
-  it("stamps mission mode but stays silent for full permission", () => {
+  it("renders no mission stamp and stays silent for full permission", () => {
     const { container } = renderCtx({
       activeSession: { ...SESSION, mode: "mission", permission: "full" },
     });
     expect(
       container.querySelector('[data-vex-area="session-header"]'),
     ).not.toBeNull();
-    expect(screen.getByText("mission")).not.toBeNull();
+    // Mission identity moved to the MISSION RAIL badge — the header no longer
+    // carries a "mission" stamp, and full permission earns no chrome.
+    expect(screen.queryByText("mission")).toBeNull();
     expect(screen.queryByText("restricted")).toBeNull();
   });
 

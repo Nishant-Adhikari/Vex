@@ -1,9 +1,12 @@
 /**
  * Mission setup prompt — variable layer, for mission draft phase.
  *
- * Guided conversation to fill out the mission contract.
- * Draft-first, read-only tools only for narrow setup validation, no trading
- * mutations.
+ * Guided conversation to fill out the mission contract. Setup is Capability
+ * Orientation: identify which tools/venues fit the mission and read live
+ * wallet/chain state to ground the draft, then propose/refine the contract.
+ * Operational Research (live market scans, quotes, execute_tool on market data)
+ * belongs to the run, not setup. Read-only tools only — no trading mutations
+ * during setup.
  */
 
 import type { EngineContext, MissionDraft } from "../types.js";
@@ -14,7 +17,7 @@ export interface MissionSetupContext {
 }
 
 export function buildMissionSetupPrompt(
-  _engineContext: EngineContext,
+  engineContext: EngineContext,
   setupContext?: MissionSetupContext,
 ): string {
   const lines: string[] = [];
@@ -22,15 +25,16 @@ export function buildMissionSetupPrompt(
   lines.push("# Mission Setup");
   lines.push("");
   lines.push("You are helping the user define a mission contract. Guide them through the required fields.");
-  lines.push("This is draft-planning mode, not mission execution. Draft-first: save or clarify the mission contract before doing market research.");
+  lines.push("This is Capability Orientation, not mission execution. Identify which tools/venues fit the mission and read live wallet/chain state to ground the contract in reality, then propose and refine the draft. Orientation is scoped to grounding the draft, not open-ended market operation — Operational Research belongs to the run.");
   lines.push("Be conversational but efficient — ask about what's missing, suggest sensible defaults only when the user has invited defaults.");
   lines.push("");
 
   lines.push("## Rules");
-  lines.push("- Do not do broad market research during setup; research belongs after mission start unless the user explicitly asks for preflight research");
-  lines.push("- Use read-only tools only when they directly help fill, verify, or explain a draft field, or when a quick tool-orientation check is needed");
+  lines.push("- Use setup for Capability Orientation: read your Available Tool Map (including the Research category — `web_research`, `twitter_account` — when present) and `discover_tools` metadata to identify which tools/venues fit the mission, and read live state with `wallet_balances` and `portfolio` so capital/chains match what the session holds. This is orientation, not market operation — do NOT run market scans, quotes, or `execute_tool` on market data during setup; that is the run's job");
+  lines.push("- Record the trading venues/protocols the mission will use in `allowedProtocols` (venue/protocol names only). Do NOT put exact toolIds or research tool names in `allowedProtocols` — the exact tool-selection (including web/X research tools) belongs in the action plan's tool-selection section under plan mode, not in the mission contract");
+  lines.push("- Keep orientation grounded in the draft — read what you need to fill, verify, or explain a field; do not spiral into open-ended market analysis before the draft is ready");
   lines.push("- If the user gives a concrete mission idea such as \"hunt Solana meme tokens with $6\", treat it as draft input: save explicit fields, then ask for missing required fields or ask the user to confirm/refine the proposed stop-condition list");
-  lines.push("- Do not turn a partial mission idea into a token/market research session before the draft is ready");
+  lines.push("- A partial mission idea is draft input first: capture it, then do the focused tool/state research needed to fill the remaining fields — do not defer the draft into an open-ended token/market hunt");
   lines.push("- Do NOT execute any mutating tools (swaps, bridges, transfers) during setup");
   lines.push("- When the user provides mission information, call `mission_draft_update` to save it into the mission draft");
   lines.push("- If a read-only tool gives new facts that change any draft field, call `mission_draft_update` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");
@@ -66,6 +70,17 @@ export function buildMissionSetupPrompt(
   lines.push("- no_viable_opportunity means the mission may stop without reaching the goal because the agreed opportunity criteria are absent; explain this risk in chat so the user understands what they're committing to when they accept the contract");
   lines.push("- emergency_stop is runtime-only and must not be added to stopConditions");
   lines.push("");
+
+  // Plan-mode subsection — rendered ONLY when plan-mode is on for this session.
+  // Plan-mode OFF (the default) leaves the prompt byte-identical to before.
+  if (engineContext.planMode === true) {
+    lines.push("## Action Plan (plan mode is ON)");
+    lines.push("Plan mode is on for this session, so you co-author the action plan (the HOW) alongside the mission contract (the WHAT). The single host Accept step accepts BOTH the contract and the plan together — there is no separate plan acceptance.");
+    lines.push("- After the contract draft is taking shape, call `plan_write` to author the full action plan in markdown. Plan authoring is Capability Orientation, not market operation: orient on WHICH tools/venues you will use, then write the plan. Do NOT run live market scans or route-price quotes now — defer that Operational Research until AFTER the user accepts.");
+    lines.push("- Write the plan using the 9-section template: 1) Objective & boundaries, 2) Effort tier (simple|comparison|complex + tool-call budget), 3) Research findings, 4) Approach & tool selection (exact protocol toolIds you will reuse, the research/social tools you will use when relevant, and which tools you will NOT use), 5) Cadence/aggressiveness, 6) Sub-tasks (one at a time, checkboxes), 7) Stop conditions, 8) Success criteria & self-verify, 9) Re-plan log.");
+    lines.push("- Any content change to the plan (a new `plan_write`) re-arms acceptance, so finalize the plan before asking the user to accept. The contract and the plan are accepted together by the single host Accept step (mission.acceptContract); do not claim either is accepted on the user's behalf.");
+    lines.push("");
+  }
 
   if (setupContext) {
     if (Object.keys(setupContext.currentDraft).length > 0) {

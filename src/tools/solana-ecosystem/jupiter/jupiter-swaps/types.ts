@@ -35,7 +35,8 @@ export interface JupiterSwapRoutePlanStep {
 }
 
 export interface JupiterSwapPlatformFee {
-  amount: string;
+  /** Absent at quote time on `/swap/v2/order`; present only on fee-bearing routes. */
+  amount?: string;
   feeBps: number;
   feeMint: string;
 }

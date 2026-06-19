@@ -41,6 +41,24 @@ describe("jupiterSwapOrderResponseSchema", () => {
     if (r.success) expect(r.data.requestId).toBe("req-123");
   });
 
+  it("accepts platformFee without `amount` (live /order omits it) and coerces numeric amount", () => {
+    // Live api.jup.ag/swap/v2/order returns platformFee = { feeBps, feeMint } with NO amount.
+    const noAmount = jupiterSwapOrderResponseSchema.safeParse({
+      ...validOrder(),
+      platformFee: { feeBps: 2, feeMint: PUBKEY },
+    });
+    expect(noAmount.success).toBe(true);
+    if (noAmount.success) expect(noAmount.data.platformFee?.amount).toBeUndefined();
+
+    // On routes that do carry it, a numeric amount must coerce to string.
+    const numeric = jupiterSwapOrderResponseSchema.safeParse({
+      ...validOrder(),
+      platformFee: { amount: 3000, feeBps: 2, feeMint: PUBKEY },
+    });
+    expect(numeric.success).toBe(true);
+    if (numeric.success) expect(numeric.data.platformFee?.amount).toBe("3000");
+  });
+
   it("accepts transaction:null (RFQ path, no tx yet)", () => {
     expect(
       jupiterSwapOrderResponseSchema.safeParse({ ...validOrder(), transaction: null })

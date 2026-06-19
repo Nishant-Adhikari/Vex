@@ -1,114 +1,31 @@
 /**
- * Presentational pieces + pure formatters for `MissionContractCard`
- * (puzzle 04 phase 7 extract).
+ * Presentational pieces + pure formatters for the mission contract surface.
  *
- * Pulled out so the card module stays under the 350-LOC budget.
- * Every component here is purely presentational — no hooks, no
- * fetches, no event handlers other than the typed `onClick`s the
- * card threads through.
+ * Originally extracted from the inline `MissionContractCard`; that card was
+ * retired when the contract moved into `MissionContractModal` (the MISSION RAIL
+ * redesign). What survives here is exactly what the modal still reuses — the
+ * read-only `CardBody` (goal / constraints / restrictions / criteria) and the
+ * presentational `AutoRetrySection` toggle. The card's `CardHeader` / `CardFooter`
+ * went with the card: the modal renders the title + status badge in its
+ * `DialogHeader` and reproduces the Accept action in its pinned `DialogFooter`.
+ *
+ * Every component here stays purely presentational — no hooks, no fetches, no
+ * event handlers other than the typed `onToggle` the modal threads through.
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import {
-  CheckmarkCircle02Icon,
-  InformationCircleIcon,
-  Target02Icon,
-} from "@hugeicons/core-free-icons";
 import type { MissionDraftDto } from "@shared/schemas/mission.js";
-import { Button } from "../../components/ui/button.js";
 import { cn } from "../../lib/utils.js";
 
+/**
+ * Contract state machine kinds shared by the modal. Kept here (rather than in
+ * the modal) so the badge/derivation code can import a single canonical union.
+ */
 export type CardStateKind =
   | "setup-needed"
   | "awaiting-acceptance"
   | "accepted"
   | "dirty-acceptance";
-
-export interface CardHeaderProps {
-  readonly kind: CardStateKind;
-  readonly title: string;
-}
-
-export function CardHeader({ kind, title }: CardHeaderProps): JSX.Element {
-  const meta = headerMeta(kind);
-  return (
-    <header className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] px-4 py-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <HugeiconsIcon
-          icon={meta.icon}
-          size={16}
-          aria-hidden
-          className={meta.iconClass}
-        />
-        <h2
-          id="mission-contract-card-title"
-          className="truncate text-sm font-semibold text-foreground"
-        >
-          {title}
-        </h2>
-      </div>
-      {/* Status stamp — NOTARY grammar: hairline tone border, text in tone. */}
-      <span
-        className={cn(
-          "shrink-0 rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em]",
-          meta.badgeClass,
-        )}
-        data-vex-state={meta.dataState}
-      >
-        {meta.badge}
-      </span>
-    </header>
-  );
-}
-
-interface HeaderMeta {
-  readonly icon: IconSvgElement;
-  readonly iconClass: string;
-  readonly badge: string;
-  readonly badgeClass: string;
-  readonly dataState: string;
-}
-
-function headerMeta(kind: CardStateKind): HeaderMeta {
-  switch (kind) {
-    case "setup-needed":
-      return {
-        icon: Target02Icon,
-        iconClass: "text-[var(--vex-accent-text)]",
-        badge: "Setup needed",
-        badgeClass: "border-[var(--vex-line-strong)] text-[var(--vex-text-3)]",
-        dataState: "setup-needed",
-      };
-    case "awaiting-acceptance":
-      return {
-        icon: InformationCircleIcon,
-        iconClass: "text-[var(--vex-accent-text)]",
-        badge: "Awaiting acceptance",
-        badgeClass:
-          "border-[color-mix(in_oklab,var(--vex-accent)_40%,transparent)] text-[var(--vex-accent-text)]",
-        dataState: "awaiting-acceptance",
-      };
-    case "accepted":
-      return {
-        icon: CheckmarkCircle02Icon,
-        iconClass: "text-success",
-        badge: "Accepted",
-        badgeClass:
-          "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success",
-        dataState: "accepted",
-      };
-    case "dirty-acceptance":
-      return {
-        icon: InformationCircleIcon,
-        iconClass: "text-warning",
-        badge: "Contract changed",
-        badgeClass:
-          "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning",
-        dataState: "dirty-acceptance",
-      };
-  }
-}
 
 export interface CardBodyProps {
   readonly draft: MissionDraftDto;
@@ -189,7 +106,7 @@ function ChipList({ items }: { readonly items: readonly string[] }): JSX.Element
       {items.map((item) => (
         <span
           key={item}
-          className="rounded-[3px] border border-[var(--vex-line-strong)] px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+          className="max-w-full break-all rounded-[3px] border border-[var(--vex-line-strong)] px-1.5 py-0.5 font-mono text-[11px] text-foreground"
         >
           {item}
         </span>
@@ -245,9 +162,9 @@ export interface AutoRetrySectionProps {
 }
 
 /**
- * Auto-retry opt-in toggle (phase 4d-5). Rendered by the card only for
+ * Auto-retry opt-in toggle (phase 4d-5). Rendered by the modal only for
  * autonomous-full sessions. CSP-safe (Tailwind classes only, no inline
- * styles); accessible `role="switch"` + `aria-checked`. The card owns
+ * styles); accessible `role="switch"` + `aria-checked`. The modal owns
  * the mutation; this stays presentational.
  */
 export function AutoRetrySection({
@@ -292,55 +209,5 @@ export function AutoRetrySection({
         </button>
       </div>
     </div>
-  );
-}
-
-export interface CardFooterProps {
-  readonly kind: CardStateKind;
-  readonly currentHash: string | null;
-  readonly pending: boolean;
-  readonly onAccept: (hash: string) => void;
-}
-
-export function CardFooter({
-  kind,
-  currentHash,
-  pending,
-  onAccept,
-}: CardFooterProps): JSX.Element | null {
-  if (kind === "setup-needed") {
-    return (
-      <footer className="border-t border-[var(--vex-line)] px-4 py-3 text-xs text-[var(--vex-text-3)]">
-        Add a goal, constraints, and stop conditions to enable Accept.
-      </footer>
-    );
-  }
-  if (kind === "accepted") {
-    return (
-      <footer className="border-t border-[var(--vex-line)] px-4 py-3 text-xs text-[var(--vex-text-3)]">
-        Use the <span className="text-[var(--vex-accent-text)]">Start mission</span> button below to dispatch.
-      </footer>
-    );
-  }
-  if (currentHash === null) return null;
-  const isDirty = kind === "dirty-acceptance";
-  return (
-    <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--vex-line)] px-4 py-3">
-      <span className="text-xs text-[var(--vex-text-3)]">
-        {isDirty
-          ? "Re-accept to bring the runtime back in sync with the draft."
-          : "Accepting locks the contract for this mission run."}
-      </span>
-      {/* Accent-hairline key — the signing action stays quiet until hovered. */}
-      <Button
-        type="button"
-        onClick={() => onAccept(currentHash)}
-        disabled={pending}
-        data-vex-action="accept-contract"
-        className="h-8 border border-[var(--vex-accent-border)] bg-transparent px-3 text-xs text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]"
-      >
-        {pending ? "Accepting…" : isDirty ? "Accept new contract" : "Accept contract"}
-      </Button>
-    </footer>
   );
 }

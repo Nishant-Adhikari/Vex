@@ -57,16 +57,22 @@ function TapeClock({ createdAt }: { readonly createdAt: string }): JSX.Element |
 }
 
 /**
- * A settled entry's node on the Signal Tape spine (the monotonic time axis the
- * transcript hangs off, drawn once in SessionTranscript). Quiet at rest — accent
- * is rationed to the live/pending node — and centered on the spine x (left-[9px])
- * with a canvas-colored ring so the spine reads as passing cleanly around it.
+ * Vex's identity mark on the Signal Tape spine (the monotonic time axis the
+ * transcript hangs off, drawn once in SessionTranscript). The avatar sits where
+ * the settled node used to — an 18px disc centered on the spine x (left-0 → the
+ * 9px gutter centre) with a canvas-colored ring so the spine reads as passing
+ * cleanly behind it. Each Vex turn is thus signed by its face. Decorative: the
+ * "Vex" caption carries the name, so the image is aria-hidden. CSP-safe — a
+ * same-origin /vex.jpg under the existing `img-src 'self'` directive.
  */
-function TapeNode(): JSX.Element {
+function AssistantAvatar(): JSX.Element {
   return (
-    <span
+    <img
+      src="/vex.jpg"
+      alt=""
       aria-hidden
-      className="absolute left-[6px] top-[5px] h-1.5 w-1.5 rounded-[1.5px] bg-[var(--vex-text-3)] ring-2 ring-[var(--vex-surface-0)]"
+      draggable={false}
+      className="absolute left-0 top-[2px] h-[18px] w-[18px] rounded-full object-cover ring-2 ring-[var(--vex-surface-0)]"
     />
   );
 }
@@ -125,7 +131,7 @@ export function TranscriptMessage({
     case "assistant":
       return (
         <div data-vex-message-role="assistant" className="relative pl-7">
-          <TapeNode />
+          <AssistantAvatar />
           <AssistantCaption createdAt={row.createdAt} />
           <AssistantBody content={row.content} />
         </div>
@@ -137,7 +143,7 @@ export function TranscriptMessage({
           data-vex-stopped=""
           className="relative pl-7"
         >
-          <TapeNode />
+          <AssistantAvatar />
           <AssistantCaption createdAt={row.createdAt} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
@@ -151,15 +157,15 @@ export function TranscriptMessage({
       // keep the standalone disclosure; call rows register one ToolActRow per
       // executed call. The assistant prose keeps the S3 document anatomy.
       if (row.toolKind === "result") {
+        // Acts hang in the same 28px gutter as the assistant rows so their box
+        // sits right of the tape spine instead of overlapping it.
         return (
-          <div data-vex-message-role="tool" className="flex justify-start">
-            <div className="flex w-full max-w-[80%] flex-col gap-1.5">
-              <ToolDisclosure
-                label={row.label ?? "tool_output"}
-                body={row.content}
-                emptyHint="(no output)"
-              />
-            </div>
+          <div data-vex-message-role="tool" className="pl-7">
+            <ToolDisclosure
+              label={row.label ?? "tool_output"}
+              body={row.content}
+              emptyHint="(no output)"
+            />
           </div>
         );
       }
@@ -168,23 +174,33 @@ export function TranscriptMessage({
           {/* Assistant prose accompanying the tool call (often empty). */}
           {row.content.length > 0 ? (
             <div className="relative pl-7">
-              <TapeNode />
+              <AssistantAvatar />
               <AssistantCaption createdAt={row.createdAt} />
               <AssistantBody content={row.content} />
             </div>
           ) : null}
-          {/* One registered act per executed call — collapsed by default. */}
+          {/* One registered act per executed call — collapsed by default. Each
+              hangs in the 28px gutter so it aligns right of the tape spine. */}
           {resolveActs(row).map((act) => (
-            <ToolActRow
-              key={act.toolCallId}
-              act={act}
-              pendingApprovalId={pendingApprovals?.get(act.toolCallId) ?? null}
-            />
+            <div key={act.toolCallId} className="pl-7">
+              <ToolActRow
+                act={act}
+                pendingApprovalId={
+                  pendingApprovals?.get(act.toolCallId) ?? null
+                }
+              />
+            </div>
           ))}
         </div>
       );
     case "tool_group":
-      return <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />;
+      // Wrap in the 28px gutter so the collapsed "{N} tool calls" box clears the
+      // tape spine (left-[9px]) instead of colliding with it.
+      return (
+        <div className="pl-7">
+          <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+        </div>
+      );
     case "notice":
       return (
         <div data-vex-message-role="system" className="flex justify-center">

@@ -1,18 +1,19 @@
 /**
  * Session wallet-state banner (puzzle 5 follow-up — agent address awareness).
  *
- * The banner reuses the exact tool resolution (resolveSelectedAddressSet), so we
- * mock that boundary and assert the banner's own contract: full addresses, a
- * clear "none selected" per unselected family, fail-soft on an invalid mission
- * policy (never crashes the turn), no wallet ids/labels leaked, and a re-throw
- * for genuinely unexpected errors.
+ * The banner reuses the exact read-side tool resolution
+ * (resolveSelectedAddressSetForRead — mission setup is allowed to READ its own
+ * wallet), so we mock that boundary and assert the banner's own contract: full
+ * addresses, a clear "none selected" per unselected family, fail-soft on
+ * active-run contract drift (never crashes the turn), no wallet ids/labels
+ * leaked, and a re-throw for genuinely unexpected errors.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { EngineContext } from "@vex-agent/engine/types.js";
 
 const mockResolveSelectedAddressSet = vi.fn();
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
-  resolveSelectedAddressSet: (...a: unknown[]) => mockResolveSelectedAddressSet(...a),
+  resolveSelectedAddressSetForRead: (...a: unknown[]) => mockResolveSelectedAddressSet(...a),
 }));
 
 const { buildWalletStateBanner } = await import("@vex-agent/engine/prompts/wallet-state.js");

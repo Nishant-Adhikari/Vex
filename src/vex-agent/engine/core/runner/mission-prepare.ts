@@ -102,6 +102,10 @@ export type PrepareMissionStartOutcome =
     readonly acceptedHash: string;
   }
   | {
+    readonly outcome: "plan_not_accepted";
+    readonly missionId: string;
+  }
+  | {
     readonly outcome: "not_ready";
     readonly missingFields: ReadonlyArray<string>;
   }
@@ -265,6 +269,8 @@ function mapCommitOutcomeToPrepareOutcome(
         currentHash: commit.currentHash,
         acceptedHash: commit.acceptedHash,
       };
+    case "plan_not_accepted":
+      return { outcome: "plan_not_accepted", missionId: commit.missionId };
     case "not_ready":
       return {
         outcome: "not_ready",

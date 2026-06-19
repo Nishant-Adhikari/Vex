@@ -98,12 +98,13 @@ export async function processMissionSetupTurn(
     sessionKind: "mission" as const,
     missionId,
     missionRunId: null,
-    // Mission setup defines the WHAT (mission_draft_update). The plan-mode
-    // execution gate must NOT fire here — plan authoring/acceptance belongs to
-    // the active run (plan_write is hidden in setup). Force the dispatch-path
-    // snapshot off so an enabled-but-unaccepted session plan can't block
-    // mission_draft_update (a local_write) during setup.
-    planMode: false,
+    // Mission setup co-authors the WHAT (mission_draft_update) and, when
+    // plan-mode is on, the HOW (plan_write); the single host Accept step
+    // accepts both. Carry the LIVE plan-mode (= `session_plans.enabled`) so
+    // the dispatch-path plan-acceptance gate is active in setup once the agent
+    // writes an unaccepted plan. `mission_draft_update` is safe-listed in
+    // `PLAN_GATE_SAFE_CONTROL`, so the gate never deadlocks contract editing.
+    planMode: hydrated.context.planMode ?? false,
   };
 
   const baseVisibility: ToolVisibilityBase = {
@@ -111,9 +112,10 @@ export async function processMissionSetupTurn(
     role: "parent",
     sessionKind: "mission",
     missionRunActive: false, // setup — no run yet
-    // plan_write is hidden in setup via hiddenInMissionSetup regardless; plan
-    // authoring happens in the active run, so setup carries plan-mode off.
-    planMode: false,
+    // plan_write is visible in setup when plan-mode is on (`requiresPlanMode`;
+    // `hiddenInMissionSetup` is now false). Carry the live plan-mode so the
+    // seed tool set matches the dispatch-path snapshot above.
+    planMode: hydrated.context.planMode ?? false,
   };
   // Seed tools — overridden per turn by buildTurnPromptStack with the live band
   // + `hasSessionMemory`.

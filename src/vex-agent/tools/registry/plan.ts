@@ -3,10 +3,11 @@
  * better tools"; no read tool because the active plan is auto-injected into the
  * prompt every turn, so a read would only re-surface in-context content).
  *
- * Visible only when session-scoped plan-mode is ON (`requiresPlanMode`) and not
- * during mission setup (`hiddenInMissionSetup`) — i.e. agent sessions and
- * active mission runs. Excluded from subagents (they execute a parent-assigned
- * task; they do not author the top-level plan).
+ * Visible whenever session-scoped plan-mode is ON (`requiresPlanMode`) — i.e.
+ * agent sessions, mission setup (so the plan is co-authored alongside the
+ * contract and accepted together), and active mission runs. Excluded from
+ * subagents (they execute a parent-assigned task; they do not author the
+ * top-level plan).
  *
  * `mutating: false` (co-authoring the plan must not deadlock on per-call
  * approval — mirrors `mission_draft_update`). The real safety
@@ -20,12 +21,14 @@ export const PLAN_TOOLS: readonly ToolDef[] = [
   {
     name: "plan_write", kind: "internal", mutating: false, pressureSafety: "safe_at_barrier", actionKind: "local_write",
     excludeRoles: ["subagent"],
-    visibility: { requiresPlanMode: true, hiddenInMissionSetup: true },
+    visibility: { requiresPlanMode: true, hiddenInMissionSetup: false },
     description:
       "Create or replace your current action plan (idempotent — overwrites the prior plan). "
-      + "Research FIRST, then write the FULL plan in markdown using these sections: "
+      + "Plan authoring is Capability Orientation, not market operation: orient on capabilities FIRST (WHICH tools/venues you will use), "
+      + "then write the FULL plan. Do NOT run live market scans or route-price quotes now — defer that Operational Research until AFTER the user accepts the plan. "
+      + "Write the plan in markdown using these sections: "
       + "1) Objective & boundaries, 2) Effort tier (simple|comparison|complex + tool-call budget), "
-      + "3) Research findings, 4) Approach & tool selection (list the exact protocol toolIds you will reuse, and which tools you will NOT use), "
+      + "3) Research findings, 4) Approach & tool selection (list the exact protocol toolIds you will reuse, the research/social tools you will use when relevant — e.g. `web_research`, `twitter_account` — and which tools you will NOT use), "
       + "5) Cadence/aggressiveness, 6) Sub-tasks (one at a time, checkboxes), "
       + "7) Stop conditions, 8) Success criteria & self-verify, 9) Re-plan log. "
       + "Rewrite the plan whenever research or new market/on-chain info changes the approach (any content change requires re-acceptance). "

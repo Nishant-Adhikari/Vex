@@ -16,6 +16,16 @@ export const missionAcceptContractInputSchema = z
     missionId: missionIdField,
     /** Hash the renderer computed + showed to the user (sha-256 hex). */
     contractHash: z.string().regex(/^[a-f0-9]{64}$/),
+    /**
+     * Optimistic-concurrency guard for the reviewed action plan (plan-mode
+     * only). The renderer echoes the plan row's `updatedAt` from the same
+     * `plan.get` read that rendered the plan for review — NOT plan content
+     * (trust boundary: the engine accepts the locked row's own `planMd`).
+     * Optional so plan-mode-OFF payloads (the default) and old builds still
+     * validate; the engine requires it only when an enabled, non-empty,
+     * unaccepted plan exists (else `plan_stale`).
+     */
+    planUpdatedAt: z.string().datetime({ offset: true }).optional(),
   })
   .strict();
 export type MissionAcceptContractInput = z.infer<
@@ -33,9 +43,31 @@ export const missionAcceptContractResultSchema = z.discriminatedUnion(
         acceptedAt: z.string().datetime({ offset: true }),
         acceptedBy: z.string(),
         contractHashVersion: z.number().int().min(1),
+        /**
+         * ISO acceptance timestamp of the co-accepted action plan, present
+         * only when plan-mode was on and a plan was accepted in the same TX.
+         * Absent when no plan branch ran (plan-mode off / no enabled-unaccepted
+         * plan) — optional/nullable so the default path is unchanged.
+         */
+        planAcceptedAt: z
+          .string()
+          .datetime({ offset: true })
+          .nullable()
+          .optional(),
       })
       .strict(),
     z.object({ outcome: z.literal("mission_not_found") }).strict(),
+    /**
+     * Plan-mode is on but the enabled plan body is empty — nothing was
+     * authored to accept. The host must author a plan (`plan_write`) first.
+     */
+    z.object({ outcome: z.literal("plan_missing") }).strict(),
+    /**
+     * The reviewed plan changed (or `planUpdatedAt` was absent/mismatched)
+     * between review and accept. The whole TX rolled back — neither contract
+     * nor plan was accepted; the host must re-review the current plan.
+     */
+    z.object({ outcome: z.literal("plan_stale") }).strict(),
     z
       .object({
         outcome: z.literal("session_mismatch"),

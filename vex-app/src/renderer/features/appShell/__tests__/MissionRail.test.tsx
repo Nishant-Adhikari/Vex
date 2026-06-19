@@ -1,0 +1,268 @@
+/**
+ * MissionRail — the contextual status column between chat and BOOK.
+ *
+ * Pins the three behaviours the rail owns:
+ *   1. Render gate — renders only for an active session that is mission-mode OR
+ *      plan-enabled; a plain agent session with plan-mode off renders NOTHING
+ *      (not a broken empty frame).
+ *   2. Badge state derivation — the Mission badge mirrors the contract diff
+ *      state machine with the "ready requires plan ready" cross-cut; the Plan
+ *      badge mirrors the plan state.
+ *   3. Single-modal mutual exclusion — opening one badge's dialog closes the
+ *      other (two dialogs never stack).
+ *
+ * The API hooks are mocked (no IPC) and the heavy review modals are stubbed to
+ * a marker that echoes its `open` prop, so the rail's own logic is exercised in
+ * isolation. @hugeicons/react is mocked (ESM-heavy; the badge glyph is
+ * irrelevant to behaviour).
+ */
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { Result } from "@shared/ipc/result.js";
+import type {
+  MissionDraftDto,
+  MissionGetDiffResult,
+} from "@shared/schemas/mission.js";
+import type { PlanGetResult } from "@shared/schemas/session-plan.js";
+import type { SessionListItem } from "@shared/schemas/sessions.js";
+
+vi.mock("@hugeicons/react", () => ({
+  HugeiconsIcon: () => null,
+}));
+
+const mockUseSession = vi.fn();
+const mockUseMissionDraft = vi.fn();
+const mockUseMissionDiff = vi.fn();
+const mockUseSessionPlan = vi.fn();
+
+vi.mock("../../../lib/api/sessions.js", () => ({
+  useSession: (...a: unknown[]) => mockUseSession(...a),
+  useSessionPlan: (...a: unknown[]) => mockUseSessionPlan(...a),
+}));
+vi.mock("../../../lib/api/mission.js", () => ({
+  useMissionDraft: (...a: unknown[]) => mockUseMissionDraft(...a),
+  useMissionDiff: (...a: unknown[]) => mockUseMissionDiff(...a),
+}));
+
+// Stub the modals to a marker that reports whether it's open + which one it is,
+// so the mutual-exclusion test can assert exactly one open at a time.
+vi.mock("../MissionContractModal.js", () => ({
+  MissionContractModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="mission-modal-open" /> : null,
+}));
+vi.mock("../PlanDisplayModal.js", () => ({
+  PlanDisplayModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="plan-modal-open" /> : null,
+}));
+
+const { MissionRail } = await import("../MissionRail.js");
+
+const SESSION = "00000000-0000-4000-8000-00000000dd01";
+const MISSION = "mission-1";
+const HASH = "a".repeat(64);
+
+function ok<T>(data: T): Result<T> {
+  return { ok: true, data };
+}
+
+function sessionRow(over: Partial<SessionListItem> = {}): SessionListItem {
+  return {
+    id: SESSION,
+    mode: "agent",
+    permission: "restricted",
+    title: "Rail session",
+    initialGoal: null,
+    startedAt: "2026-05-26T10:00:00.000Z",
+    endedAt: null,
+    missionStatus: null,
+    pinnedAt: null,
+    ...over,
+  };
+}
+
+const READY_DRAFT: MissionDraftDto = {
+  missionId: MISSION,
+  sessionId: SESSION,
+  status: "ready",
+  title: "Rebalance LP",
+  goal: "Move USDC.",
+  constraints: {},
+  successCriteria: [],
+  stopConditions: [],
+  riskProfile: "balanced",
+  allowedChains: [],
+  allowedProtocols: [],
+  allowedWallets: [],
+  createdAt: "2026-05-22T08:00:00.000Z",
+  updatedAt: "2026-05-22T09:00:00.000Z",
+  approvedAt: null,
+  acceptance: null,
+  renewedFromMissionId: null,
+} as unknown as MissionDraftDto;
+
+function diff(over: Partial<Extract<MissionGetDiffResult, { outcome: "ready" }>> = {}) {
+  return {
+    outcome: "ready" as const,
+    missionId: MISSION,
+    sessionId: SESSION,
+    currentHash: HASH,
+    contractHashVersion: 1,
+    acceptedHash: null,
+    acceptedAt: null,
+    acceptedBy: null,
+    acceptedContractHashVersion: null,
+    isAccepted: false,
+    isDirty: false,
+    ...over,
+  };
+}
+
+function plan(over: Partial<PlanGetResult> = {}): PlanGetResult {
+  return {
+    enabled: false,
+    planMd: "",
+    accepted: false,
+    acceptedAt: null,
+    updatedAt: "2026-05-22T09:15:00.000Z",
+    ...over,
+  } as PlanGetResult;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Sensible defaults: no draft/diff/plan; tests override per case.
+  mockUseSession.mockReturnValue({ data: ok(sessionRow()) });
+  mockUseMissionDraft.mockReturnValue({ data: ok(null) });
+  mockUseMissionDiff.mockReturnValue({ data: undefined });
+  mockUseSessionPlan.mockReturnValue({ data: ok(plan()) });
+});
+
+function rail(activeSessionId: string | null = SESSION) {
+  return render(<MissionRail activeSessionId={activeSessionId} />);
+}
+
+describe("MissionRail render gate", () => {
+  it("renders nothing when no session is active", () => {
+    mockUseSession.mockReturnValue({ data: undefined });
+    const { container } = rail(null);
+    expect(container.querySelector('[data-vex-area="mission-rail"]')).toBeNull();
+  });
+
+  it("renders nothing for a plain agent session with plan-mode off", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "agent" })) });
+    mockUseSessionPlan.mockReturnValue({ data: ok(plan({ enabled: false })) });
+    const { container } = rail();
+    expect(container.querySelector('[data-vex-area="mission-rail"]')).toBeNull();
+  });
+
+  it("renders for a mission session", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
+    const { container } = rail();
+    expect(
+      container.querySelector('[data-vex-area="mission-rail"]'),
+    ).not.toBeNull();
+    // Mission badge present.
+    expect(screen.getByText("Mission")).not.toBeNull();
+    // No plan badge when plan-mode is off.
+    expect(screen.queryByText("Plan")).toBeNull();
+  });
+
+  it("renders for an agent session with plan-mode on (Plan badge only)", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "agent" })) });
+    mockUseSessionPlan.mockReturnValue({
+      data: ok(plan({ enabled: true, planMd: "# Plan" })),
+    });
+    rail();
+    expect(screen.getByText("Plan")).not.toBeNull();
+    expect(screen.queryByText("Mission")).toBeNull();
+  });
+});
+
+describe("MissionRail badge derivation", () => {
+  it("Mission badge is Preparing while the draft is not ready", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
+    mockUseMissionDraft.mockReturnValue({
+      data: ok({ ...READY_DRAFT, status: "draft" }),
+    });
+    rail();
+    expect(screen.getByText("Preparing")).not.toBeNull();
+  });
+
+  it("Mission badge is Ready (shimmer) when awaiting acceptance and no plan blocks it", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
+    mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });
+    mockUseMissionDiff.mockReturnValue({ data: ok(diff()) });
+    rail();
+    expect(screen.getByText("Ready")).not.toBeNull();
+    const btn = screen.getByRole("button", { name: /Mission ready/i });
+    expect(btn.classList.contains("vex-badge--shimmer")).toBe(true);
+  });
+
+  it("Mission badge stays Preparing when plan-mode on but plan is missing", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
+    mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });
+    mockUseMissionDiff.mockReturnValue({ data: ok(diff()) });
+    mockUseSessionPlan.mockReturnValue({
+      data: ok(plan({ enabled: true, planMd: "" })),
+    });
+    rail();
+    // Two badges; the Mission one must not be Ready.
+    const missionBtn = screen.getByRole("button", { name: /Mission/i });
+    expect(missionBtn.getAttribute("data-vex-state")).toBe("preparing");
+  });
+
+  it("Mission badge is Accepted when the contract is accepted and clean", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
+    mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });
+    mockUseMissionDiff.mockReturnValue({
+      data: ok(diff({ isAccepted: true, isDirty: false })),
+    });
+    rail();
+    expect(
+      screen.getByRole("button", { name: /Mission/i }).getAttribute("data-vex-state"),
+    ).toBe("accepted");
+  });
+
+  it("Plan badge is Ready (shimmer) when a plan is pending acceptance", () => {
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "agent" })) });
+    mockUseSessionPlan.mockReturnValue({
+      data: ok(plan({ enabled: true, planMd: "# Plan", accepted: false })),
+    });
+    rail();
+    const btn = screen.getByRole("button", { name: /Plan ready/i });
+    expect(btn.getAttribute("data-vex-state")).toBe("ready");
+    expect(btn.classList.contains("vex-badge--shimmer")).toBe(true);
+  });
+});
+
+describe("MissionRail single-modal mutual exclusion", () => {
+  it("opening the Plan badge closes the Mission dialog (and vice versa)", () => {
+    // Mission + plan both enabled so both badges + both modals mount.
+    mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
+    mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });
+    mockUseMissionDiff.mockReturnValue({ data: ok(diff()) });
+    mockUseSessionPlan.mockReturnValue({
+      data: ok(plan({ enabled: true, planMd: "# Plan", accepted: false })),
+    });
+    rail();
+
+    // Nothing open initially.
+    expect(screen.queryByTestId("mission-modal-open")).toBeNull();
+    expect(screen.queryByTestId("plan-modal-open")).toBeNull();
+
+    // Open Mission.
+    fireEvent.click(screen.getByRole("button", { name: /Mission/i }));
+    expect(screen.getByTestId("mission-modal-open")).not.toBeNull();
+    expect(screen.queryByTestId("plan-modal-open")).toBeNull();
+
+    // Open Plan → Mission closes.
+    fireEvent.click(screen.getByRole("button", { name: /Plan/i }));
+    expect(screen.queryByTestId("mission-modal-open")).toBeNull();
+    expect(screen.getByTestId("plan-modal-open")).not.toBeNull();
+
+    // Clicking Plan again toggles it closed.
+    fireEvent.click(screen.getByRole("button", { name: /Plan/i }));
+    expect(screen.queryByTestId("plan-modal-open")).toBeNull();
+  });
+});

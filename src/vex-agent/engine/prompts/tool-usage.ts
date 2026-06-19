@@ -12,6 +12,8 @@
  * selection point, not just in the system prompt.
  */
 
+import { PLANNING_DISCIPLINE } from "./planning-discipline.js";
+
 export function buildToolUsagePrompt(): string {
   return `# Tool Usage
 
@@ -44,8 +46,8 @@ If a fact is queryable live, querying is cheaper than remembering — and the me
 
 Rules:
 
-- **Discover first.** Never guess a toolId. Never execute a toolId from memory, from an old example, or from a previous transcript — discover or re-discover in the current turn.
-- **Reuse your plan's tools.** When an \`# Active Plan\` is in effect (provided in the turn state), reuse the exact toolIds listed in its tool-selection section instead of re-running \`discover_tools\` for the same need every turn. Re-discover only when a required tool is absent from the plan, looks stale, or a prior call failed.
+- **Discover first.** Never guess a toolId. Never execute a toolId from memory, from an old example, or from a previous transcript — discover or re-discover in the current turn. During mission RUN / agent execution, discovery is a means to execution: \`execute_tool\` follows. During planning (Capability Orientation), discovery is orientation only — see §6.
+- **Reuse your plan's tools.** During mission RUN / agent execution, when an \`# Active Plan\` is in effect (provided in the turn state), reuse the exact toolIds listed in its tool-selection section instead of re-running \`discover_tools\` for the same need every turn. Re-discover only when a required tool is absent from the plan, looks stale, or a prior call failed.
 - **Quote / preview before mutation.** Every mutating DeFi tool that supports \`dryRun\` / preview must be previewed first. Proceed to execution only after confirming the route.
 - **2-step transfer rule.** Step 1: quote / preview (non-mutating). Step 2: execute with explicit confirmation (mutating). Never skip step 1.
 - **Mutating protocol calls are blocked at pressure barrier.** Same gate as internal mutating tools — preview / dryRun passes through; the actual mutation does not. Compact first.
@@ -99,9 +101,11 @@ Two substrates — see the Memory Routing block in the turn state for the decisi
 
 Pass \`searchDepth: "advanced"\` only when \`basic\` recall is insufficient (costs more Tavily credits).
 
-Research workflow varies by mode. Mission SETUP: do not do broad market research unless the user explicitly asks; use read-only tools to fill / verify / explain draft fields. Mission RUN: research must end in an actionable decision (execute / shortlist / defer / stop). Chat: answer the current request, then stop.
+Research workflow varies by mode. Mission SETUP: this is Capability Orientation — identify which tools/venues fit the mission and ground the draft (read \`wallet_balances\`, \`portfolio\`), not market operation; do NOT call \`execute_tool\` on market data or pull quotes while planning (see the rule below). Mission RUN: research must end in an actionable decision (execute / shortlist / defer / stop). Chat: answer the current request, then stop.
 
-When researching markets or tokens, discovery is a means to execution. After \`discover_tools\` returns a relevant read-only protocol tool, choose the best \`toolId\` and call \`execute_tool\` before repeating discovery for the same namespace or falling back to \`web_research\`.
+${PLANNING_DISCIPLINE}
+
+During mission RUN / agent execution (Operational Research), when researching markets or tokens, discovery is a means to execution. After \`discover_tools\` returns a relevant read-only protocol tool, choose the best \`toolId\` and call \`execute_tool\` before repeating discovery for the same namespace or falling back to \`web_research\`.
 
 ## 7. Learning Protocol
 

@@ -44,6 +44,7 @@ import {
   type Mission,
 } from "../../db/repos/missions.js";
 import * as missionRunsRepo from "../../db/repos/mission-runs.js";
+import * as sessionPlansRepo from "../../db/repos/session-plans.js";
 
 import {
   CONTRACT_HASH_VERSION,
@@ -79,6 +80,16 @@ export type CommitMissionStartOutcome =
     readonly outcome: "stale_acceptance";
     readonly currentHash: string;
     readonly acceptedHash: string;
+  }
+  | {
+    /**
+     * Plan-mode is on for this mission session but the action plan is not
+     * accepted (a `plan_write` / `setEnabled` re-armed acceptance between the
+     * unified Accept step and Start). Fail closed — starting would
+     * immediately pause on the runtime plan-acceptance gate.
+     */
+    readonly outcome: "plan_not_accepted";
+    readonly missionId: string;
   }
   | {
     readonly outcome: "not_ready";
@@ -122,6 +133,18 @@ export async function commitMissionStart(
         currentHash,
         acceptedHash: mission.acceptedContractHash,
       };
+    }
+
+    // 3b. plan-acceptance start-gate (MANDATORY). The unified accept step
+    //     guarantees plan acceptance at accept-time, but a `plan_write` /
+    //     `setEnabled` between Accept and Start re-arms the gate. Fail closed
+    //     here so the run never starts and immediately pauses on the runtime
+    //     plan-acceptance gate. Same `enabled && !accepted` condition as that
+    //     gate (no `planMd.length` — an enabled-but-empty plan is also "not
+    //     ready"). Plan-mode off / no plan row → branch skipped (unchanged).
+    const plan = await sessionPlansRepo.getActivePlan(mission.rootSessionId, client);
+    if (plan?.enabled && !plan.accepted) {
+      return { outcome: "plan_not_accepted", missionId: mission.id };
     }
 
     // 4. readiness against the locked row (missing fields after

@@ -17,8 +17,13 @@ import type { Result } from "@shared/ipc/result.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 
 // Stub live-sync hooks so SessionPanel doesn't try to wire real subscriptions.
+// SessionPanel also reads the transcript query to tell an idle session apart;
+// returning `data: undefined` keeps isIdleSession=false so the active tape
+// branch (transcript + approvals) renders, which is what this test asserts.
 vi.mock("../../../lib/api/messages.js", () => ({
   useTranscriptLiveSync: () => undefined,
+  useTranscriptInfinite: () => ({ data: undefined, isLoading: false }),
+  flattenTranscriptPages: () => [],
 }));
 vi.mock("../../../lib/api/usage.js", () => ({
   useUsageLiveSync: () => undefined,
@@ -26,9 +31,10 @@ vi.mock("../../../lib/api/usage.js", () => ({
 vi.mock("../../../lib/api/streams.js", () => ({
   useStreamPreviewSync: () => undefined,
 }));
-// Stub only the live-sync subscription; keep real query/mutation hooks intact
-// (SessionPanel now mounts SessionPlanCard, which uses useRequestResume). Using
-// importActual keeps the mock robust against children adding more runtime hooks.
+// Stub only the live-sync subscription; keep real query/mutation hooks intact.
+// Using importActual keeps the mock robust against children adding more runtime
+// hooks (the plan/contract review moved to the MISSION RAIL modals, but the
+// approvals path here still exercises the real runtime API surface).
 vi.mock("../../../lib/api/runtime.js", async (importActual) => {
   const actual = await importActual<
     typeof import("../../../lib/api/runtime.js")
@@ -68,9 +74,6 @@ vi.mock("../SessionTranscript.js", () => ({
 }));
 vi.mock("../SessionComposer.js", () => ({
   SessionComposer: () => <div data-testid="composer-stub" />,
-}));
-vi.mock("../MissionContractCard.js", () => ({
-  MissionContractCard: () => null,
 }));
 vi.mock("../SessionWelcomeHero.js", () => ({
   SessionWelcomeHero: () => null,

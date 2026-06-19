@@ -173,7 +173,7 @@ describe("toTranscriptRows — tool call/result correlation (batch 3)", () => {
     expect(toTranscriptRows([orphan])[0]!.label).toBe("tool_output");
   });
 
-  it("preserves assistant prose and exposes every call's disclosure on a multi-tool row", () => {
+  it("splits assistant prose off a multi-tool row: standalone prose row + the disclosures", () => {
     const call = dto({
       id: 5,
       role: "assistant",
@@ -192,13 +192,21 @@ describe("toTranscriptRows — tool call/result correlation (batch 3)", () => {
       toolCallId: "b",
     });
     const rows = toTranscriptRows([call, result]);
-    const callRow = rows.find((r) => r.id === 5)!;
+    // The step's prose splits into a standalone assistant row (visible + in order)…
+    const proseRow = rows.find((r) => r.id === 5 && r.variant === "assistant")!;
+    expect(proseRow.content).toBe("Checking two things.");
+    // …and the tool row keeps every disclosure but no prose.
+    const callRow = rows.find((r) => r.id === 5 && r.variant === "tool")!;
     expect(callRow.toolKind).toBe("call");
-    expect(callRow.content).toBe("Checking two things."); // prose preserved
+    expect(callRow.content).toBe("");
     expect(callRow.toolCalls?.map((c) => c.toolName)).toEqual([
       "wallet:read",
       "dexscreener:search",
     ]);
+    // Prose row renders BEFORE its tool row (chronological order).
+    expect(
+      rows.findIndex((r) => r.variant === "assistant" && r.id === 5),
+    ).toBeLessThan(rows.findIndex((r) => r.variant === "tool" && r.id === 5));
     // The second tool's result correlates to the second tool's name.
     expect(rows.find((r) => r.id === 6)!.label).toBe("dexscreener:search_output");
   });
@@ -330,7 +338,7 @@ describe("groupTranscriptRows (S5 act ledger)", () => {
     expect(late.toolKind).toBe("result");
   });
 
-  it("assistant prose on grouped call rows survives as document-only rows above the group", () => {
+  it("splits per-step prose into standalone rows interleaved with each step's tools", () => {
     const entries = groupTranscriptRows(
       toTranscriptRows([
         callDto(1, ["a"], "Let me check three things."),
@@ -338,16 +346,37 @@ describe("groupTranscriptRows (S5 act ledger)", () => {
         callDto(3, ["c"], "And one more."),
       ]),
     );
-    // prose(1) → group(1) → prose(3)
-    expect(entries).toHaveLength(3);
-    const [prose1, g, prose3] = entries;
-    if (prose1!.variant === "tool_group" || prose3!.variant === "tool_group") {
-      throw new Error("prose rows must not be groups");
-    }
-    expect(prose1!.content).toBe("Let me check three things.");
-    expect(prose1!.toolActs).toEqual([]); // acts folded into the group
-    expect(g!.variant).toBe("tool_group");
-    expect(prose3!.content).toBe("And one more.");
+    // The split prose rows break the run, so the turn stays chronological and the
+    // (now sub-threshold) tools do NOT collapse into one cross-step group:
+    // prose1 → tool a → tool b → prose3 → tool c.
+    expect(group(entries)).toBeUndefined();
+    expect(entries.map((e) => e.variant)).toEqual([
+      "assistant",
+      "tool",
+      "tool",
+      "assistant",
+      "tool",
+    ]);
+    const [prose1, , , prose3] = entries;
+    expect(prose1!.variant === "tool_group" ? null : prose1!.content).toBe(
+      "Let me check three things.",
+    );
+    expect(prose3!.variant === "tool_group" ? null : prose3!.content).toBe(
+      "And one more.",
+    );
+  });
+
+  it("a prose-bearing batch with ≥3 parallel calls splits the prose off and still groups the calls", () => {
+    const entries = groupTranscriptRows(
+      toTranscriptRows([callDto(1, ["a", "b", "c"], "Doing three at once.")]),
+    );
+    // prose row + ONE group (within-batch parallel calls still aggregate).
+    expect(entries).toHaveLength(2);
+    const prose = entries[0]!;
+    expect(prose.variant === "tool_group" ? null : prose.content).toBe(
+      "Doing three at once.",
+    );
+    expect(group(entries)?.calls).toHaveLength(3);
   });
 
   it("deduplicates distinctToolNames in first-appearance order", () => {

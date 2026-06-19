@@ -136,6 +136,24 @@ describe("mission.start", () => {
     expect(mockRunPreparedMissionStart).not.toHaveBeenCalled();
   });
 
+  it("forwards `plan_not_accepted` (Stage 6 start-gate) WITHOUT dispatching the run", async () => {
+    mockPrepareMissionStart.mockResolvedValueOnce({
+      outcome: "plan_not_accepted",
+      missionId: MISSION,
+    });
+    const result = await call(CH.mission.start, {
+      sessionId: SESSION,
+      missionId: MISSION,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.data).toEqual({
+      outcome: "plan_not_accepted",
+      missionId: MISSION,
+    });
+    // Fail closed: the run continuation must NOT fire when the plan gate trips.
+    expect(mockRunPreparedMissionStart).not.toHaveBeenCalled();
+  });
+
   it("returns `dispatched` with missionRunId after prepared", async () => {
     mockPrepareMissionStart.mockResolvedValueOnce({
       outcome: "prepared",

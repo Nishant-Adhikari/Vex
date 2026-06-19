@@ -34,6 +34,7 @@ import {
   type Mission,
 } from "../../db/repos/missions.js";
 import * as missionRunsRepo from "../../db/repos/mission-runs.js";
+import * as sessionPlansRepo from "../../db/repos/session-plans.js";
 
 import {
   CONTRACT_HASH_VERSION,
@@ -49,6 +50,21 @@ const ACCEPTABLE_MISSION_STATUSES = new Set<string>(["draft", "ready"]);
  * `accepted_contract_by === "host"` without any runtime branching.
  */
 const ACCEPTANCE_ACTOR = "host" as const;
+
+/**
+ * Private rollback sentinels for the unified accept-contract-and-plan path
+ * (Approach A). When plan-mode is on and the session has an enabled,
+ * unaccepted plan, the contract and the plan must be accepted both-or-neither
+ * inside the single `withTransaction`.
+ *
+ * `withTransaction` COMMITs on a normal return and only ROLLs BACK on a throw
+ * (`db/client.ts`), so the rollback paths MUST throw — a `return { outcome }`
+ * from inside the TX would commit the contract acceptance while leaving the
+ * plan unaccepted. These are caught immediately OUTSIDE the TX and mapped to
+ * the `plan_missing` / `plan_stale` outcomes.
+ */
+class PlanStaleError extends Error {}
+class PlanMissingError extends Error {}
 
 // ── Acceptance gate (used by startMission) ───────────────────────
 
@@ -130,6 +146,16 @@ export interface AcceptContractInput {
   readonly missionId: string;
   /** Hash that the renderer computed + showed to the user. */
   readonly contractHash: string;
+  /**
+   * Optimistic-concurrency guard for the reviewed action plan (plan-mode
+   * only). The host obtains this from the same `plan.get` read that rendered
+   * the plan for review; it is the plan row's `updatedAt` (ISO string), NOT
+   * plan content — the engine accepts the locked row's own `planMd`. Required
+   * when the session has an enabled, non-empty, unaccepted plan; mismatching
+   * or absent values yield `plan_stale` so an unreviewed plan is never
+   * accepted. Omitted entirely when plan-mode is off (default).
+   */
+  readonly planUpdatedAt?: string;
 }
 
 export type AcceptContractOutcome =
@@ -140,8 +166,30 @@ export type AcceptContractOutcome =
     readonly acceptedAt: string;
     readonly acceptedBy: string;
     readonly contractHashVersion: number;
+    /**
+     * ISO acceptance timestamp of the co-accepted action plan, when plan-mode
+     * was on and a plan was accepted in the same TX. Undefined when no plan
+     * branch ran (plan-mode off / no enabled-unaccepted plan).
+     */
+    readonly planAcceptedAt?: string;
   }
   | { readonly outcome: "mission_not_found" }
+  | {
+    /**
+     * Plan-mode is on but the session has an enabled plan with empty body —
+     * nothing was authored, so there is nothing to accept. The host must
+     * author a plan (via `plan_write`) before accepting.
+     */
+    readonly outcome: "plan_missing";
+  }
+  | {
+    /**
+     * The reviewed plan changed (or `planUpdatedAt` was absent/mismatched)
+     * between review and accept. The whole TX rolled back — neither contract
+     * nor plan was accepted. The host must re-review the current plan.
+     */
+    readonly outcome: "plan_stale";
+  }
   | {
     readonly outcome: "session_mismatch";
     /** Mission's `root_session_id`, surfaced for diagnostics only. */
@@ -166,7 +214,8 @@ export type AcceptContractOutcome =
 export async function acceptContract(
   input: AcceptContractInput,
 ): Promise<AcceptContractOutcome> {
-  return withTransaction(async (client) => {
+  try {
+    return await withTransaction(async (client): Promise<AcceptContractOutcome> => {
     // 1. Row-locked read.
     const mission: Mission | null = await getMissionForUpdate(client, input.missionId);
     if (!mission) {
@@ -217,7 +266,40 @@ export async function acceptContract(
       } as const;
     }
 
-    // 6. Commit the acceptance four-tuple atomically.
+    // 6. Co-accept the session action plan (Approach A, plan-mode only).
+    //    The plan branch runs ONLY for an enabled, unaccepted plan — the
+    //    same `enabled && !accepted` condition the runtime dispatcher gate
+    //    uses (no `planMd.length` condition), so an enabled-but-empty plan
+    //    fails accept (PlanMissingError) instead of slipping through to a
+    //    mid-run pause. Plan-mode off / no plan row → branch skipped, behaves
+    //    byte-for-byte as before. A throw here rolls back the WHOLE TX,
+    //    including the contract acceptance below (both-or-neither).
+    let planAcceptedAt: string | undefined;
+    const plan = await sessionPlansRepo.getActivePlan(input.sessionId, client);
+    if (plan?.enabled && !plan.accepted) {
+      if (plan.planMd.length === 0) {
+        throw new PlanMissingError();
+      }
+      // Reviewed-plan guard: the host must echo the exact `updatedAt` it
+      // reviewed. `updatedAt` is already an ISO string on the mapped row.
+      if (!input.planUpdatedAt || plan.updatedAt !== input.planUpdatedAt) {
+        throw new PlanStaleError();
+      }
+      // Accept the locked row's OWN `planMd` (engine-derived, never
+      // renderer-supplied). A concurrent content-changing `plan_write`
+      // makes `setAccepted` miss its WHERE → null → stale → rollback.
+      const acceptedPlan = await sessionPlansRepo.setAccepted(
+        input.sessionId,
+        plan.planMd,
+        client,
+      );
+      if (!acceptedPlan) {
+        throw new PlanStaleError();
+      }
+      planAcceptedAt = acceptedPlan.acceptedAt ?? undefined;
+    }
+
+    // 7. Commit the acceptance four-tuple atomically.
     await updateAcceptance(
       client,
       input.missionId,
@@ -226,7 +308,7 @@ export async function acceptContract(
       CONTRACT_HASH_VERSION,
     );
 
-    // 7. Re-read so the returned timestamp matches the row we wrote.
+    // 8. Re-read so the returned timestamp matches the row we wrote.
     const updated = await getMissionForUpdate(client, input.missionId);
     if (!updated || updated.acceptedContractHash === null || updated.acceptedContractAt === null) {
       throw new Error(
@@ -241,6 +323,19 @@ export async function acceptContract(
       acceptedAt: updated.acceptedContractAt,
       acceptedBy: updated.acceptedContractBy ?? ACCEPTANCE_ACTOR,
       contractHashVersion: updated.contractHashVersion ?? CONTRACT_HASH_VERSION,
+      ...(planAcceptedAt !== undefined ? { planAcceptedAt } : {}),
     } as const;
-  });
+    });
+  } catch (err) {
+    // Rollback sentinels caught OUTSIDE the TX → the TX already rolled back
+    // (neither contract nor plan accepted). Map to the structured outcomes;
+    // rethrow anything else (real errors must surface).
+    if (err instanceof PlanMissingError) {
+      return { outcome: "plan_missing" } as const;
+    }
+    if (err instanceof PlanStaleError) {
+      return { outcome: "plan_stale" } as const;
+    }
+    throw err;
+  }
 }

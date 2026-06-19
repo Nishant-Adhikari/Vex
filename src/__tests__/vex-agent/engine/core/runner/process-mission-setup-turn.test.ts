@@ -351,14 +351,38 @@ describe("runner", () => {
       expect(mockUpdateDraft).not.toHaveBeenCalled();
     });
 
-    it("forces plan-mode OFF in the dispatch context during setup (gate must not block mission_draft_update)", async () => {
-      // Session has plan-mode enabled, but setup is the WHAT phase — the plan
-      // execution gate must be inactive so mission_draft_update (local_write)
-      // is not blocked. Regression for the Codex holistic-review blocker.
+    it("carries LIVE plan-mode into the dispatch context during setup (Approach A: plan co-authored with the contract; mission_draft_update stays unblocked via the PLAN_GATE_SAFE_CONTROL safe-list)", async () => {
+      // Approach A: when the session has plan-mode enabled, setup co-authors the
+      // action plan (HOW) alongside the mission contract (WHAT), so the dispatch
+      // context carries the LIVE plan-mode (no longer forced off). The plan
+      // execution gate does NOT deadlock contract editing because
+      // mission_draft_update is in PLAN_GATE_SAFE_CONTROL (see
+      // dispatcher-plan-deny.test.ts for the gate-level proof).
       mockHydrate.mockResolvedValueOnce(makeHydratedSession({
         sessionKind: "mission",
         missionId: "mission-1",
         planMode: true,
+      }));
+      mockGetMission
+        .mockResolvedValueOnce(makeMission({ title: "SOL" }))
+        .mockResolvedValueOnce(makeMission({ title: "SOL" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "ok", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await processMissionSetupTurn("session-1", "hi");
+
+      const passedContext = mockRunTurnLoop.mock.calls[0][0] as { planMode?: boolean };
+      expect(passedContext.planMode).toBe(true);
+    });
+
+    it("carries plan-mode OFF (default) into the dispatch context — backward-compat", async () => {
+      // Plan-mode off (the default) → setup behaves exactly as before: the
+      // dispatch context carries planMode:false and the plan gate fast-returns.
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+        planMode: false,
       }));
       mockGetMission
         .mockResolvedValueOnce(makeMission({ title: "SOL" }))

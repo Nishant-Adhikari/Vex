@@ -120,6 +120,16 @@ function resolveVariant(
  * `<toolName>_output` even though the result row itself carries no tool name
  * (the engine writes only `toolCallId` on result rows). Falls back to "tool"
  * when a result can't be correlated (e.g. its call scrolled out of the page).
+ *
+ * A `tool_call` DTO that carries assistant prose (`content`) is SPLIT into two
+ * rows — the standalone prose row first, then the prose-less tool row (see
+ * `splitToolCallProse`). The backend persists each agentic step as one
+ * assistant message holding BOTH that step's prose AND its tool calls; left
+ * unsplit, the prose-bearing tool row never breaks a run, so every step's tools
+ * collapse into one group and the per-step tool↔text order is lost. Emitting the
+ * prose as its own non-tool row restores the chronological interleaving (the
+ * prose row breaks the run in `groupTranscriptRows`, scoping grouping to each
+ * step's own tools).
  */
 export function toTranscriptRows(
   dtos: readonly SessionMessageDto[],
@@ -131,7 +141,33 @@ export function toTranscriptRows(
       nameByCallId.set(call.toolCallId, call.toolName);
     }
   }
-  return dtos.map((dto) => toTranscriptRow(dto, nameByCallId));
+  return dtos.flatMap((dto) => splitToolCallProse(dto, nameByCallId));
+}
+
+/**
+ * One DTO → one or two rows. A `tool_call` row carrying non-empty prose splits
+ * into a standalone assistant-text row (the prose) followed by the prose-less
+ * tool row, so the text and tools render in chronological order. Every other
+ * DTO — including a `tool_call` with empty/whitespace-only content — maps to a
+ * single row exactly as before.
+ */
+function splitToolCallProse(
+  dto: SessionMessageDto,
+  nameByCallId: ReadonlyMap<string, string>,
+): TranscriptRowModel[] {
+  if (dto.kind === "tool_call" && dto.content.trim().length > 0) {
+    return [
+      {
+        id: dto.id,
+        variant: resolveTextVariant(dto.role),
+        label: null,
+        content: dto.content,
+        createdAt: dto.createdAt,
+      },
+      toTranscriptRow({ ...dto, content: "" }, nameByCallId),
+    ];
+  }
+  return [toTranscriptRow(dto, nameByCallId)];
 }
 
 export function toTranscriptRow(

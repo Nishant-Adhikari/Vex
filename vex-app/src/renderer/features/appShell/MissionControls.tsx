@@ -86,6 +86,8 @@ function noticeFor(r: Result<{ readonly outcome: string }>): string | null {
     case "not_accepted":
     case "stale_acceptance":
       return "Accept the contract before starting.";
+    case "plan_not_accepted":
+      return "Plan not accepted — review and accept the plan before starting.";
     case "not_ready":
       return "Outline the mission before starting.";
     case "blocked_approval":

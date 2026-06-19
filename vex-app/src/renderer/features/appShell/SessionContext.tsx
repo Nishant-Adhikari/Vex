@@ -1,9 +1,10 @@
 /**
  * Selected-session register line (S3 — the desk rule).
  *
- * One slim hairline-ruled line above the transcript: session title plus
- * EXCEPTION stamps only (silence-by-default — `restricted` permission and
- * `mission` mode deviate from the defaults; agent/full earn no chrome).
+ * One slim hairline-ruled line above the transcript: session title plus the
+ * EXCEPTION stamp only (silence-by-default — `restricted` permission deviates
+ * from the defaults; agent/full earn no chrome). Mission identity moved to the
+ * MISSION RAIL's Mission badge, so the old `mission` mode stamp was removed.
  * Loading/error/not-found states are boxless lines on the same rule height.
  *
  * Stage 4: the runtime bar (model/usage/context/compaction) moved OUT of this
@@ -75,9 +76,9 @@ export function SessionContext({
         {activeSession.permission !== "full" ? (
           <Stamp tone="warn">restricted</Stamp>
         ) : null}
-        {activeSession.mode === "mission" ? (
-          <Stamp tone="accent">mission</Stamp>
-        ) : null}
+        {/* Mission identity now reads from the MISSION RAIL's Mission badge —
+            the small header "mission" stamp was removed to avoid double-
+            signalling. The `restricted` exception stamp stays. */}
       </div>
     );
   }

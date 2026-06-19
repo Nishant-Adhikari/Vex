@@ -16,14 +16,19 @@ import { dispatchTargetIsMutating } from "./mutating-targets.js";
 /**
  * Tools always allowed while a plan is pending acceptance — the safe-control
  * set: author/refine the plan (`plan_write`), stop the mission (`mission_stop`),
- * relieve context pressure (`compact_now`). These are `local_write` but must
- * NOT be trapped behind the gate (mission_stop is the escape hatch; compact_now
- * is the only pressure relief at barrier/critical).
+ * relieve context pressure (`compact_now`), and edit the mission draft during
+ * setup (`mission_draft_update`). These are `local_write` but must NOT be
+ * trapped behind the gate (mission_stop is the escape hatch; compact_now is the
+ * only pressure relief at barrier/critical; `mission_draft_update` is a local
+ * DB write with no fund-moving side effect — safe-listing it lets setup
+ * co-author the contract and plan together without deadlocking once an
+ * unaccepted plan exists, mirroring why `plan_write` is here).
  */
 const PLAN_GATE_SAFE_CONTROL: ReadonlySet<string> = new Set([
   "plan_write",
   "mission_stop",
   "compact_now",
+  "mission_draft_update",
 ]);
 
 /**

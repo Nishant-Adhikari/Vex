@@ -49,7 +49,11 @@ const routePlanStepSchema = z
 
 const platformFeeSchema = z
   .object({
-    amount: z.string(),
+    // `/swap/v2/order` omits `amount` at quote time (the fee amount is only
+    // materialized at execute); on fee-bearing routes it has been observed as
+    // both string and number. Accept all three shapes and normalize to string.
+    // Verified against the live api.jup.ag/swap/v2/order response.
+    amount: z.union([z.string(), z.number()]).transform(String).optional(),
     feeBps: z.number(),
     feeMint: z.string(),
   })

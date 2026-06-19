@@ -13,7 +13,7 @@
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { str, num, fail } from "./types.js";
-import { resolveSelectedAddressSet, walletScopeErrorToResult } from "./wallet/resolve.js";
+import { resolveSelectedAddressSetForRead, walletScopeErrorToResult } from "./wallet/resolve.js";
 
 // Trading views
 import { inspectLots, inspectProfits, inspectUnrealized } from "./inspect-views/trading.js";
@@ -58,12 +58,13 @@ export async function handlePortfolio(
   const limit = num(params, "limit") ?? 20;
 
   if (WALLET_SCOPED_VIEWS.has(view)) {
-    // Resolve the session's selected wallet set. Fails closed on invalid
-    // mission policy / address drift / removed wallet; a valid session with a
-    // family unselected yields a smaller set; an empty set → zero/empty rows.
+    // Resolve the session's selected wallet set (read scope). Fails closed on
+    // active-run contract drift / address drift / removed wallet; mission SETUP
+    // (no active run) is allowed to read its own selected wallet. A valid
+    // session with a family unselected yields a smaller set; empty → empty rows.
     let addresses: string[];
     try {
-      addresses = resolveSelectedAddressSet(context.walletResolution, context.walletPolicy).all;
+      addresses = resolveSelectedAddressSetForRead(context.walletResolution, context.walletPolicy).all;
     } catch (err) {
       return walletScopeErrorToResult(err);
     }

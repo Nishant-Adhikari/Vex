@@ -35,6 +35,12 @@ export function registerMissionAcceptContractHandler(): () => void {
           sessionId: input.sessionId,
           missionId: input.missionId,
           contractHash: input.contractHash,
+          // Forwarded only when present (plan-mode). The engine's reviewed-plan
+          // guard requires it when an enabled, non-empty, unaccepted plan
+          // exists; omitted entirely for the plan-mode-OFF default.
+          ...(input.planUpdatedAt !== undefined
+            ? { planUpdatedAt: input.planUpdatedAt }
+            : {}),
         });
         log.info(
           `[ipc:vex:mission:acceptContract] outcome=${outcome.outcome} ` +

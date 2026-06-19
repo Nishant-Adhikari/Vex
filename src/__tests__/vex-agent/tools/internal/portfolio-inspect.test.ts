@@ -23,13 +23,15 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getAggregateSnapshots: (...a: unknown[]) => mockGetAggregateSnapshots(...a),
 }));
 
-// Mock ONLY resolveSelectedAddressSet so the handler test controls the wallet
-// set; keep the REAL walletScopeErrorToResult so fail-closed behaviour is real.
+// Mock ONLY resolveSelectedAddressSetForRead (the read-side resolver the
+// portfolio handler uses — mission setup may READ its own wallet) so the handler
+// test controls the wallet set; keep the REAL walletScopeErrorToResult so
+// fail-closed behaviour is real.
 vi.mock("../../../../vex-agent/tools/internal/wallet/resolve.js", async () => {
   const actual = await vi.importActual<typeof import("../../../../vex-agent/tools/internal/wallet/resolve.js")>(
     "../../../../vex-agent/tools/internal/wallet/resolve.js",
   );
-  return { ...actual, resolveSelectedAddressSet: (...a: unknown[]) => mockResolveSet(...a) };
+  return { ...actual, resolveSelectedAddressSetForRead: (...a: unknown[]) => mockResolveSet(...a) };
 });
 
 const mockGetTotalRealizedPnl = vi.fn().mockResolvedValue(null);

@@ -149,6 +149,10 @@ function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
   if (row.role === "assistant" && row.message_type === CHAT_STOPPED_MESSAGE_TYPE) {
     return "assistant_stopped";
   }
+  // A user's own mission-setup input is their message, not a system marker —
+  // surface it as normal text so it renders as a user/assistant turn instead
+  // of the centered-uppercase notice styling.
+  if (row.message_type === "mission_setup") return "text";
   if (row.message_type !== null && row.message_type !== "chat") {
     // Other engine markers (wake banners, overflow stubs, runtime
     // notices) surface as the catch-all "runtime_notice" kind.

@@ -110,8 +110,8 @@ function resolveAspect(ctx: EngineContext): string {
       `You are in MISSION SETUP — ${name} as planner. Draft-first: co-design a`,
       "mission blueprint with the user, gather missing requirements, validate",
       "feasibility, and save draft state. Use read-only tools only for narrow",
-      "draft validation or tool orientation; broad research belongs after the",
-      "mission is started unless the user explicitly asks for preflight research.",
+      "draft validation or capability orientation; Operational Research belongs",
+      "to the run unless the user explicitly asks for preflight research.",
     ].join("\n");
   }
   if (ctx.missionRunId) {

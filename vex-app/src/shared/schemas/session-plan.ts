@@ -20,7 +20,11 @@ export const planStateSchema = z
     planMd: z.string(),
     accepted: z.boolean(),
     acceptedAt: z.string().nullable(),
-    updatedAt: z.string(),
+    // Datetime (ISO, offset) so the value the renderer reads via `plan.get`
+    // and echoes back as `planUpdatedAt` to `mission.acceptContract` validates
+    // identically on both schemas — a non-datetime string can't pass `plan.get`
+    // here yet fail the accept-contract input there.
+    updatedAt: z.string().datetime({ offset: true }),
   })
   .strict();
 export type PlanState = z.infer<typeof planStateSchema>;

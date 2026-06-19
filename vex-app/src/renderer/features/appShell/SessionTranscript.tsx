@@ -46,12 +46,16 @@ const LOAD_OLDER_THRESHOLD_PX = 64;
 const PENDING_APPROVALS_REFETCH_MS = 5_000;
 
 /**
- * React key for a transcript entry. A `tool_group` reuses its first call
- * row's message id, and that same row may ALSO pass through as a prose-only
- * row — prefixing the group key keeps the two distinct.
+ * React key for a transcript entry. One source DTO id can now appear on up to
+ * three entries: a `tool_call` row with prose splits into a standalone
+ * assistant-text row PLUS the (prose-less) tool row, and a grouped tool run
+ * reuses its first call row's id for the `tool_group` entry. Prefixing the
+ * tool / tool_group variants keeps all three keys distinct under one id.
  */
 function entryKey(entry: TranscriptEntry): string {
-  return entry.variant === "tool_group" ? `tg-${entry.id}` : String(entry.id);
+  if (entry.variant === "tool_group") return `tg-${entry.id}`;
+  if (entry.variant === "tool") return `t-${entry.id}`;
+  return String(entry.id);
 }
 
 /**
