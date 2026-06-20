@@ -22,10 +22,23 @@ import {
 } from "@vex-lib/polymarket.js";
 import { getPrimaryEvmAddress } from "@vex-lib/wallet.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
+import {
+  setKeystorePasswordProvider,
+  clearKeystorePasswordProvider,
+} from "@utils/env.js";
 import { ENV_FILE, SECRETS_VAULT_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
 
 let unlockedMasterPassword: string | null = null;
+
+/**
+ * Stable provider handed to the root keystore-password chokepoint (`@utils/env`).
+ * Reads `unlockedMasterPassword` LIVE at decrypt time, so in-process signing
+ * (chat / mission / approval / protocol handlers) can decrypt the wallet key
+ * without the master password ever being written to `process.env`. Returns `null`
+ * when locked → `requireKeystorePassword()` throws → signing fails closed.
+ */
+const keystorePasswordProvider = (): string | null => unlockedMasterPassword;
 
 export interface SecretSessionStatus {
   readonly vaultConfigured: boolean;
@@ -75,6 +88,10 @@ function toPublicError(cause: unknown): Result<never> {
 function applyUnlockedRuntime(password: string): void {
   applySecretVaultToProcessEnv(password, { filePath: SECRETS_VAULT_FILE });
   delete process.env[MASTER_PASSWORD_ENV_KEY];
+  // Hand the live in-memory password to the root keystore chokepoint so signing
+  // resolves it WITHOUT re-introducing it to env. Idempotent (re-register on
+  // every unlock/init/adopt/write); scrubUnlockedRuntime revokes it on lock.
+  setKeystorePasswordProvider(keystorePasswordProvider);
 }
 
 export function getSecretSessionStatus(): SecretSessionStatus {
@@ -128,6 +145,10 @@ function scrubUnlockedRuntime(): void {
   for (const key of MANAGED_SECRET_ENV_KEYS) {
     delete process.env[key];
   }
+  // Revoke the signing capability atomically with the env scrub: after this the
+  // chokepoint falls back to env-only, which is also scrubbed → signing fails
+  // closed until the next unlock re-registers the provider.
+  clearKeystorePasswordProvider();
 }
 
 /**
