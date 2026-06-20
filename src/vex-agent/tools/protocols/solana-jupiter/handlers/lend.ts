@@ -31,7 +31,7 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
     const earningsResult = posAddresses.length > 0
       ? await getJupiterLendEarnEarnings(addr, posAddresses)
       : null;
-    return ok({ positions, earnings: earningsResult?.earnings ?? [], earningsRaw: earningsResult?.raw });
+    return ok({ positions, earnings: earningsResult?.earnings ?? [] });
   },
   "solana.lend.deposit": async (p, ctx) => {
     const asset = str(p, "asset"), amount = str(p, "amount");

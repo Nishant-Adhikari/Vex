@@ -104,9 +104,7 @@ function summarizeOrder(
     platformFee: raw.platformFee,
     gasless: raw.gasless,
     requestId: raw.requestId,
-    transaction: raw.transaction,
     lastValidBlockHeight: raw.lastValidBlockHeight,
-    raw,
   };
 }
 

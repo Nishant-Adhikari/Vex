@@ -224,9 +224,7 @@ export interface JupiterSwapQuoteSummary {
   platformFee?: JupiterSwapPlatformFee;
   gasless?: boolean;
   requestId: string;
-  transaction: string | null;
   lastValidBlockHeight?: string;
-  raw: JupiterSwapOrderResponse;
 }
 
 export interface JupiterSwapBuildSummary {
