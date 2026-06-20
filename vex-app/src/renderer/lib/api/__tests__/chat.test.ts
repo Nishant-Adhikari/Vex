@@ -65,6 +65,9 @@ describe("useSubmitChat onSuccess invalidation", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: sessionKeys.detail(SESSION),
     });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: sessionKeys.plan(SESSION),
+    });
 
     const predicateCall = invalidateSpy.mock.calls.find(
       (c) => typeof (c[0] as { predicate?: unknown }).predicate === "function",

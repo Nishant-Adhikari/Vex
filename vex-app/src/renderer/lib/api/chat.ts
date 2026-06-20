@@ -56,6 +56,12 @@ export function useSubmitChat(): UseSubmitChatResult {
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.detail(variables.sessionId),
       });
+      // A completed setup/chat turn may author or accept the session plan, so
+      // refresh the plan query to keep the Plan badge deterministic — today it
+      // only refreshes incidentally (e.g. when the plan modal is reopened).
+      void queryClient.invalidateQueries({
+        queryKey: sessionKeys.plan(variables.sessionId),
+      });
       // A completed turn advances usage rows + the session token_count, so
       // refresh the runtime bar immediately (usage totals, last-turn, and
       // context window). The transcript-append live-sync is the backstop
