@@ -185,4 +185,10 @@ export const portfolioKeys = {
   all: ["portfolio"] as const,
   read: (scope: "global" | "session", activeSessionId: string | null) =>
     ["portfolio", scope, activeSessionId] as const,
+  /**
+   * MOVES (move 0.3) — the session's executed-trade activity. Keyed by
+   * `sessionId` so each session's feed is a distinct cache entry. A
+   * `null`/global view has no MOVES (it is session-scoped).
+   */
+  moves: (sessionId: string) => ["portfolio", "moves", sessionId] as const,
 };

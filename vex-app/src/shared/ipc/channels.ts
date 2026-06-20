@@ -233,14 +233,17 @@ export const CH = {
     getStats: "vex:memory:getStats",
   },
 
-  // Portfolio — read-only dual-scope POSITION portfolio (stage 3). `read`
+  // Portfolio — read-only wallet-scoped reads (stage 3 + move 0.3). `read`
   // resolves a server-side wallet address allow-list (global inventory or a
   // session's wallet scope) and aggregates `proj_balances` /
-  // `proj_portfolio_snapshots` into a renderer-safe DTO. Renderer sends only
-  // `scope` (+ `sessionId` for the session scope); addresses are resolved in
-  // main and never crosses the boundary.
+  // `proj_portfolio_snapshots` into a renderer-safe DTO. `listMoves` reads the
+  // session's executed-trade activity from `proj_activity` (real swaps — the
+  // MOVES feed; present even for `full`-permission missions that produce no
+  // approval rows). Renderer sends only `scope`/`sessionId`; addresses are
+  // resolved in main and never cross the boundary.
   portfolio: {
     read: "vex:portfolio:read",
+    listMoves: "vex:portfolio:listMoves",
   },
 
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)

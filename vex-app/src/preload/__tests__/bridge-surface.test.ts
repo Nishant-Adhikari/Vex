@@ -153,6 +153,8 @@ describe("preload bridge surface", () => {
       "CH.memory.getStats",
       // Stage 3 — read-only dual-scope POSITION portfolio.
       "CH.portfolio.read",
+      // Move 0.3 — read-only per-session executed-trade activity (MOVES).
+      "CH.portfolio.listMoves",
       "CH.sessions.getModel",
       // Error-diagnostics phase (D-FOLDER) — "Open logs folder".
       "CH.support.openLogsFolder",

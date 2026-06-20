@@ -18,7 +18,13 @@ import {
   portfolioReadInputSchema,
   type PortfolioDto,
 } from "@shared/schemas/portfolio.js";
+import {
+  movesDtoSchema,
+  movesReadInputSchema,
+  type MovesDto,
+} from "@shared/schemas/portfolio-moves.js";
 import { getPortfolio } from "../database/portfolio-db.js";
+import { getMovesForSession } from "../database/moves-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 
@@ -50,6 +56,38 @@ function registerPortfolioReadHandler(): () => void {
   });
 }
 
+/**
+ * MOVES read — the session's executed-trade activity (move 0.3). Backed by
+ * `moves-db.ts`, scoped to the session's selected wallets. Reads the
+ * `proj_activity` projection (success-only by construction), which carries
+ * real swaps even for `full`-permission missions that produce no approval
+ * rows. Logging records `sessionId`, the resolved row COUNT, and the
+ * `correlationId` ONLY — never addresses, USD, token symbols, or tx hashes.
+ */
+function registerPortfolioMovesReadHandler(): () => void {
+  return registerHandler({
+    channel: CH.portfolio.listMoves,
+    domain: "portfolio",
+    inputSchema: movesReadInputSchema,
+    outputSchema: movesDtoSchema,
+    handle: async (input, ctx): Promise<Result<MovesDto>> => {
+      const outcome = await getMovesForSession(input.sessionId);
+      if (outcome.ok) {
+        log.info(
+          `[ipc:vex:portfolio:listMoves] ok sessionId=${input.sessionId} ` +
+            `moves=${outcome.data.length} correlationId=${ctx.requestId}`,
+        );
+        return outcome;
+      }
+      log.info(
+        `[ipc:vex:portfolio:listMoves] errCode=${outcome.error.code} ` +
+          `sessionId=${input.sessionId} correlationId=${ctx.requestId}`,
+      );
+      return outcome;
+    },
+  });
+}
+
 export function registerPortfolioHandlers(): ReadonlyArray<() => void> {
-  return [registerPortfolioReadHandler()];
+  return [registerPortfolioReadHandler(), registerPortfolioMovesReadHandler()];
 }

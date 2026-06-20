@@ -1,60 +1,80 @@
 /**
- * MOVES — the per-session feed of what the agent DID: privileged actions from
- * the approval history (swaps / transfers / signs / posts), newest first.
+ * MOVES — the per-session feed of what the agent DID on-chain: executed trades
+ * (swaps / fills) from the `proj_activity` projection, newest first.
  *
- * Built entirely on existing IPC (`approvals.getHistory` via useApprovalHistory)
- * — no new main-process work. Status is a PURE client-side derivation over
- * (status, executionStatus, decision); blue is rationed to the live `pending`
- * state, semantic colours for done/failed, muted for rejected/approved.
+ * Reads the agent's REAL executed activity via `useMoves` (→ `portfolio.listMoves`),
+ * NOT the approval history. Approval rows only exist for `restricted`-permission
+ * sessions, so a `full`-permission mission that executed swaps has zero approval
+ * rows but real `proj_activity` rows — this block now surfaces those.
  *
- * NB: `execution_result_hash` (not in this DTO) is a result digest, never a tx
- * hash — a richer moves feed with real tx links is deliberately out of scope.
+ * Rows are activity rows / fills (NOT executions): a batch capture legitimately
+ * produces multiple fills per execution, so they are shown individually.
+ *
+ * Dot colour is a PURE client-side derivation over the tolerant `captureStatus`
+ * string (executed/filled/closed/claimed → done; open/pending → pending;
+ * cancelled/rejected → muted; failed → destructive; null/unknown → neutral).
+ * Unknown statuses fall back gracefully — the derivation never throws.
  */
 
 import type { JSX } from "react";
-import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
-import { useApprovalHistory } from "../../../lib/api/approvals.js";
+import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
+import { useMoves } from "../../../lib/api/portfolio.js";
 import { formatClock } from "../../../lib/format.js";
 import { cn } from "../../../lib/utils.js";
 import { BookBlock } from "./BookBlock.js";
 
 const MOVES_LIMIT = 20;
 
-type MoveState = "pending" | "done" | "failed" | "rejected" | "approved";
+type MoveState = "pending" | "done" | "failed" | "cancelled" | "neutral";
 
-/** Pure derivation — see the (status, executionStatus, decision) contract. */
-function moveState(m: ApprovalSummaryDto): MoveState {
-  if (
-    m.status === "rejected" ||
-    m.decision === "rejected" ||
-    m.decision === "rejected_stop"
-  ) {
-    return "rejected";
+/**
+ * Pure derivation over the tolerant `captureStatus`. The engine emits values
+ * like `executed`, `open`, `closed`, `cancelled`, `claimed`, `pending`,
+ * `filled`. Unrecognised or `null` statuses fall back to `neutral` — never
+ * throw.
+ */
+function moveState(captureStatus: string | null): MoveState {
+  switch (captureStatus?.toLowerCase()) {
+    case "executed":
+    case "filled":
+    case "closed":
+    case "claimed":
+      return "done";
+    case "open":
+    case "pending":
+      return "pending";
+    case "cancelled":
+    case "canceled":
+    case "rejected":
+      return "cancelled";
+    case "failed":
+      return "failed";
+    default:
+      return "neutral";
   }
-  if (m.executionStatus === "failed") return "failed";
-  if (m.executionStatus === "succeeded") return "done";
-  if (
-    m.status === "pending" ||
-    m.executionStatus === "not_started" ||
-    m.executionStatus === "dispatching"
-  ) {
-    return "pending";
-  }
-  return "approved";
 }
 
 const DOT: Record<MoveState, string> = {
   pending: "bg-[var(--vex-accent)]",
   done: "bg-[var(--color-success)]",
   failed: "bg-[var(--color-destructive)]",
-  rejected: "bg-[var(--vex-text-3)]",
-  approved: "bg-[var(--vex-text-2)]",
+  cancelled: "bg-[var(--vex-text-3)]",
+  neutral: "bg-[var(--vex-text-2)]",
 };
 
+/** Trade descriptor: `${side} ${in}→${out}`, tolerating null legs. */
+function moveLabel(m: MoveItem): string {
+  const side = m.tradeSide ?? "trade";
+  const input = m.inputToken ?? "?";
+  const output = m.outputToken ?? "?";
+  return `${side} ${input}→${output}`;
+}
+
 export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
-  const query = useApprovalHistory(sessionId, MOVES_LIMIT);
+  const query = useMoves(sessionId);
   const result = query.data;
-  const moves = result?.ok ? result.data : [];
+  const allMoves = result?.ok ? result.data : [];
+  const moves = allMoves.slice(0, MOVES_LIMIT);
 
   let body: JSX.Element;
   if (query.isLoading) {
@@ -72,16 +92,16 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
   } else if (moves.length === 0) {
     body = (
       <p className="text-[11px] text-[var(--vex-text-3)]">
-        No moves yet — the agent&apos;s actions appear here.
+        No moves yet — the agent&apos;s trades appear here.
       </p>
     );
   } else {
     body = (
       <ul className="flex flex-col gap-1">
         {moves.map((m) => {
-          const state = moveState(m);
-          const label = m.toolName ?? m.actionKind ?? "action";
-          const time = formatClock(m.resolvedAt ?? m.createdAt);
+          const state = moveState(m.captureStatus);
+          const label = moveLabel(m);
+          const time = formatClock(m.createdAt);
           return (
             <li key={m.id} className="flex items-center gap-2">
               <span
@@ -90,7 +110,7 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
               />
               <span
                 className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text)]"
-                title={m.reasoningPreview.length > 0 ? m.reasoningPreview : undefined}
+                title={m.instrumentKey ?? undefined}
               >
                 {label}
               </span>
