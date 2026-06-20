@@ -12,6 +12,8 @@ const TOOL_OUTPUT_TEXT_PREVIEW_CHARS = 160;
 const TOOL_OUTPUT_STRUCTURED_PREVIEW_BYTES = 6 * 1024;
 const TOOL_OUTPUT_STRUCTURED_PREVIEW_ITEMS = 5;
 const TOOL_OUTPUT_SCALAR_STRING_CHARS = 500;
+/** Cap on `fieldHints` length so the stub/header stay compact (P0-6). */
+const TOOL_OUTPUT_FIELD_HINTS_MAX = 24;
 
 const STRUCTURED_PREVIEW_LIST_KEYS = new Set([
   "items",
@@ -38,6 +40,22 @@ const STRUCTURED_PREVIEW_LIST_KEYS = new Set([
 interface PersistedToolResult {
   content: string;
   metadata: MessageMetadata;
+}
+
+/**
+ * Best-effort navigation hints derived from an overflowing tool output (P0-6).
+ * Both fields are omitted when nothing useful could be derived so the
+ * stub/header/blob payload only carry them when present.
+ */
+export interface PreviewHints {
+  /**
+   * A pointer into the structured output the agent should read first.
+   * `"$"` means the root value is the list; a bare key (e.g. `"items"`) means
+   * the main list lives under that top-level key.
+   */
+  primaryPath?: string;
+  /** Field names of the first element of the primary list, capped for brevity. */
+  fieldHints?: string[];
 }
 
 /**
@@ -72,9 +90,11 @@ export async function persistToolResultWithOverflow(
   const shapeKind = classifyShape(output);
   const blobKey = toolOutputBlobsRepo.generateBlobKey(sessionId, toolName, toolCallId);
   const preview = buildOverflowPreview(output, shapeKind);
+  const hints = derivePreviewHints(output, shapeKind);
   const stub =
-    `[tool_output_overflow blob_key=${blobKey} bytes=${bytes} shape=${shapeKind} ` +
-    `preview=${JSON.stringify(preview)}]. ` +
+    `[tool_output_overflow blob_key=${blobKey} bytes=${bytes} shape=${shapeKind}` +
+    formatHintsSuffix(hints) +
+    ` preview=${JSON.stringify(preview)}]. ` +
     `Call \`tool_output_read(blob_key="${blobKey}")\` to read bounded slices.`;
 
   let blobWritten = false;
@@ -82,7 +102,13 @@ export async function persistToolResultWithOverflow(
     await toolOutputBlobsRepo.writeBlob(
       blobKey,
       sessionId,
-      { fullOutput: output, shapeKind, sizeBytes: bytes },
+      {
+        fullOutput: output,
+        shapeKind,
+        sizeBytes: bytes,
+        ...(hints.primaryPath !== undefined ? { primaryPath: hints.primaryPath } : {}),
+        ...(hints.fieldHints !== undefined ? { fieldHints: hints.fieldHints } : {}),
+      },
       TOOL_OUTPUT_TTL_MIN * 60_000,
     );
     blobWritten = true;
@@ -154,6 +180,86 @@ export function buildOverflowPreview(output: string, shapeKind: ToolOutputShapeK
   } catch {
     return output.slice(0, TOOL_OUTPUT_TEXT_PREVIEW_CHARS);
   }
+}
+
+/**
+ * Derive best-effort navigation hints from an overflowing tool output (P0-6).
+ *
+ * Mirrors the structure `toStructuredPreview` walks so the hints describe the
+ * same list the preview samples. Treats `output` as untrusted: any parse
+ * failure or non-structured shape yields no hints (`{}`).
+ *
+ * Rule:
+ *   - `text` shape → no hints.
+ *   - top-level array → `primaryPath = "$"`; `fieldHints` = keys of the first
+ *     element when it is a record.
+ *   - top-level record → `primaryPath` = the first allowlisted top-level key
+ *     whose value is a non-empty array; `fieldHints` = keys of that list's
+ *     first element when it is a record. When no allowlisted non-empty array
+ *     exists, `primaryPath` is omitted and `fieldHints` falls back to the
+ *     record's own top-level keys (so the agent still learns the shape).
+ *
+ * A second `JSON.parse` on this cold overflow path is intentional: it keeps
+ * `buildOverflowPreview`'s exported signature/behavior (which tests pin)
+ * untouched.
+ */
+export function derivePreviewHints(
+  output: string,
+  shapeKind: ToolOutputShapeKind,
+): PreviewHints {
+  if (shapeKind === "text") return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return {};
+  }
+
+  if (Array.isArray(parsed)) {
+    const first = parsed[0];
+    return {
+      primaryPath: "$",
+      ...(isRecord(first) ? { fieldHints: capFieldHints(Object.keys(first)) } : {}),
+    };
+  }
+
+  if (!isRecord(parsed)) return {};
+
+  for (const key of STRUCTURED_PREVIEW_LIST_KEYS) {
+    const fieldValue = parsed[key];
+    if (Array.isArray(fieldValue) && fieldValue.length > 0) {
+      const first = fieldValue[0];
+      return {
+        primaryPath: key,
+        ...(isRecord(first) ? { fieldHints: capFieldHints(Object.keys(first)) } : {}),
+      };
+    }
+  }
+
+  // No allowlisted non-empty list — surface the record's own shape instead.
+  const topLevelKeys = capFieldHints(Object.keys(parsed));
+  return topLevelKeys.length > 0 ? { fieldHints: topLevelKeys } : {};
+}
+
+function capFieldHints(keys: readonly string[]): string[] {
+  return keys.slice(0, TOOL_OUTPUT_FIELD_HINTS_MAX);
+}
+
+/**
+ * Render `primaryPath`/`fieldHints` for the overflow stub and the
+ * `tool_output_read` header. Returns a leading-space-prefixed fragment so it
+ * slots into the existing bracketed field list; empty when nothing is present.
+ */
+export function formatHintsSuffix(hints: PreviewHints): string {
+  let suffix = "";
+  if (hints.primaryPath !== undefined) {
+    suffix += ` primary_path=${hints.primaryPath}`;
+  }
+  if (hints.fieldHints !== undefined && hints.fieldHints.length > 0) {
+    suffix += ` field_hints=[${hints.fieldHints.join(",")}]`;
+  }
+  return suffix;
 }
 
 function toStructuredPreview(value: unknown): unknown {

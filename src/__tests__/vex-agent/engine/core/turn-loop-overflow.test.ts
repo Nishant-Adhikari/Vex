@@ -299,6 +299,100 @@ describe("turn-loop tool output overflow", () => {
     expect(persistedMessage.content).toContain("tweet 0");
     expect(persistedMessage.content).toContain("tweet 4");
     expect(persistedMessage.content).not.toContain("tweet 5");
+
+    // P0-6: hints derived from the allowlisted `items` list are echoed into the
+    // stub AND written to the blob payload.
+    expect(persistedMessage.content).toContain("primary_path=items");
+    expect(persistedMessage.content).toContain("field_hints=[id,text]");
+    const blobPayload = mockWriteBlob.mock.calls[0]![2] as {
+      primaryPath?: string;
+      fieldHints?: string[];
+    };
+    expect(blobPayload.primaryPath).toBe("items");
+    expect(blobPayload.fieldHints).toEqual(["id", "text"]);
+  });
+
+  it("writes hints from a record with NO allowlisted list (top-level keys)", async () => {
+    const bigOutput = JSON.stringify({
+      summary: "ok",
+      total: 3,
+      markets: Array.from({ length: 3 }, (_, i) => ({ i })),
+      padding: "x".repeat(20_000),
+    });
+    mockExecuteTurn.mockResolvedValueOnce({
+      content: null,
+      toolCalls: [{ id: "tc-1", name: "web_research", arguments: { query: "x" } }],
+      promptTokens: 100,
+    });
+    mockDispatchTool.mockResolvedValueOnce({ success: true, output: bigOutput });
+
+    await turnLoopModule.runTurnLoop(
+      makeContext(), [], null, 0, provider, config, [], loopConfig,
+    );
+
+    const toolSave = mockAddMessage.mock.calls.find(
+      ([, msg]) => (msg as { role?: string }).role === "tool",
+    );
+    const persistedMessage = toolSave![1] as { content: string };
+    // No allowlisted list ⇒ no primary_path, but the record's shape is surfaced.
+    expect(persistedMessage.content).not.toContain("primary_path=");
+    expect(persistedMessage.content).toContain("field_hints=[summary,total,markets,padding]");
+    const blobPayload = mockWriteBlob.mock.calls[0]![2] as {
+      primaryPath?: string;
+      fieldHints?: string[];
+    };
+    expect(blobPayload.primaryPath).toBeUndefined();
+    expect(blobPayload.fieldHints).toEqual(["summary", "total", "markets", "padding"]);
+  });
+
+  it("writes primary_path=$ for a root-array overflow output", async () => {
+    const bigOutput = JSON.stringify(
+      Array.from({ length: 30 }, (_, i) => ({ id: i, label: `row ${i}`, pad: "x".repeat(800) })),
+    );
+    mockExecuteTurn.mockResolvedValueOnce({
+      content: null,
+      toolCalls: [{ id: "tc-1", name: "web_research", arguments: { query: "x" } }],
+      promptTokens: 100,
+    });
+    mockDispatchTool.mockResolvedValueOnce({ success: true, output: bigOutput });
+
+    await turnLoopModule.runTurnLoop(
+      makeContext(), [], null, 0, provider, config, [], loopConfig,
+    );
+
+    const toolSave = mockAddMessage.mock.calls.find(
+      ([, msg]) => (msg as { role?: string }).role === "tool",
+    );
+    const persistedMessage = toolSave![1] as { content: string };
+    expect(persistedMessage.content).toContain("primary_path=$");
+    expect(persistedMessage.content).toContain("field_hints=[id,label,pad]");
+  });
+
+  it("emits NO hints for a non-JSON (text) overflow output", async () => {
+    const bigOutput = "x".repeat(20_000); // text shape, no structure
+    mockExecuteTurn.mockResolvedValueOnce({
+      content: null,
+      toolCalls: [{ id: "tc-1", name: "web_research", arguments: { query: "x" } }],
+      promptTokens: 100,
+    });
+    mockDispatchTool.mockResolvedValueOnce({ success: true, output: bigOutput });
+
+    await turnLoopModule.runTurnLoop(
+      makeContext(), [], null, 0, provider, config, [], loopConfig,
+    );
+
+    const toolSave = mockAddMessage.mock.calls.find(
+      ([, msg]) => (msg as { role?: string }).role === "tool",
+    );
+    const persistedMessage = toolSave![1] as { content: string };
+    expect(persistedMessage.content).not.toContain("primary_path=");
+    expect(persistedMessage.content).not.toContain("field_hints=");
+    const blobPayload = mockWriteBlob.mock.calls[0]![2] as {
+      primaryPath?: string;
+      fieldHints?: string[];
+    };
+    expect(blobPayload.primaryPath).toBeUndefined();
+    expect(blobPayload.fieldHints).toBeUndefined();
   });
 
   it("falls back to inline persistence when blob write fails", async () => {

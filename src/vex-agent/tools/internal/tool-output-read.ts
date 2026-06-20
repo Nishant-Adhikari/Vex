@@ -24,6 +24,7 @@ import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import * as toolOutputBlobsRepo from "@vex-agent/db/repos/tool-output-blobs.js";
 import { TOOL_OUTPUT_OVERFLOW_BYTES } from "@vex-agent/engine/core/tool-output-policy.js";
+import { formatHintsSuffix } from "@vex-agent/engine/core/tool-output-overflow.js";
 import logger from "@utils/logger.js";
 
 const DEFAULT_READ_BYTES = 8 * 1024;
@@ -104,11 +105,15 @@ export async function handleToolOutputRead(
   const continuation = truncated
     ? ` Continue with tool_output_read(blob_key="${blob.blobKey}", offset=${nextOffset}).`
     : "";
+  const hintsSuffix = formatHintsSuffix({
+    ...(blob.payload.primaryPath !== undefined ? { primaryPath: blob.payload.primaryPath } : {}),
+    ...(blob.payload.fieldHints !== undefined ? { fieldHints: blob.payload.fieldHints } : {}),
+  });
   const output =
     `[tool_output_read blob_key=${blob.blobKey} offset=${offset} ` +
     `bytes_returned=${bytesReturned} total_bytes=${totalBytes} ` +
     `shape=${blob.payload.shapeKind} truncated=${truncated} ` +
-    `next_offset=${nextOffset ?? "null"}].${continuation}\n` +
+    `next_offset=${nextOffset ?? "null"}${hintsSuffix}].${continuation}\n` +
     content;
 
   return {

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildOverflowPreview,
   classifyShape,
+  derivePreviewHints,
+  formatHintsSuffix,
 } from "@vex-agent/engine/core/tool-output-overflow.js";
 
 /**
@@ -62,5 +64,105 @@ describe("overflow preview — Polymarket-data list keys (P0-5)", () => {
     expect(parsed.count).toBe(30);
     const meta = parsed._preview as Record<string, unknown>;
     expect(meta.tradesTotalCount).toBe(30);
+  });
+});
+
+/**
+ * P0-6: `derivePreviewHints` populates the previously-dead primaryPath/fieldHints
+ * channel from the same parsed JSON the preview samples.
+ */
+describe("derivePreviewHints (P0-6)", () => {
+  function hintsFor(output: string): ReturnType<typeof derivePreviewHints> {
+    return derivePreviewHints(output, classifyShape(output));
+  }
+
+  it("points primaryPath at an allowlisted list key + lists item keys", () => {
+    const output = JSON.stringify({
+      count: 2,
+      positions: [
+        { market: "X", size: 10, side: "buy" },
+        { market: "Y", size: 5, side: "sell" },
+      ],
+    });
+    const hints = hintsFor(output);
+    expect(hints.primaryPath).toBe("positions");
+    expect(hints.fieldHints).toEqual(["market", "size", "side"]);
+  });
+
+  it("uses the FIRST allowlisted non-empty list when several are present", () => {
+    // `items` precedes `trades` in STRUCTURED_PREVIEW_LIST_KEYS insertion order.
+    const output = JSON.stringify({
+      items: [{ a: 1 }],
+      trades: [{ b: 2 }],
+    });
+    const hints = hintsFor(output);
+    expect(hints.primaryPath).toBe("items");
+    expect(hints.fieldHints).toEqual(["a"]);
+  });
+
+  it("skips empty allowlisted lists and falls through to the next non-empty one", () => {
+    const output = JSON.stringify({ items: [], positions: [{ p: 1 }] });
+    const hints = hintsFor(output);
+    expect(hints.primaryPath).toBe("positions");
+    expect(hints.fieldHints).toEqual(["p"]);
+  });
+
+  it("omits primaryPath and uses top-level keys when no allowlisted list exists", () => {
+    const output = JSON.stringify({ summary: "ok", total: 42, markets: [{ m: 1 }] });
+    const hints = hintsFor(output);
+    expect(hints.primaryPath).toBeUndefined();
+    // `markets` is NOT allowlisted, so we describe the record's own shape.
+    expect(hints.fieldHints).toEqual(["summary", "total", "markets"]);
+  });
+
+  it("uses primaryPath=$ for a root array and lists the first element's keys", () => {
+    const output = JSON.stringify([{ id: 1, name: "a" }, { id: 2, name: "b" }]);
+    const hints = hintsFor(output);
+    expect(hints.primaryPath).toBe("$");
+    expect(hints.fieldHints).toEqual(["id", "name"]);
+  });
+
+  it("omits fieldHints for a root array of non-records", () => {
+    const output = JSON.stringify([1, 2, 3]);
+    const hints = hintsFor(output);
+    expect(hints.primaryPath).toBe("$");
+    expect(hints.fieldHints).toBeUndefined();
+  });
+
+  it("returns no hints for text shape", () => {
+    expect(derivePreviewHints("just some text", "text")).toEqual({});
+  });
+
+  it("returns no hints when the structured output fails to parse", () => {
+    expect(derivePreviewHints("{not valid json", "json")).toEqual({});
+  });
+
+  it("caps fieldHints to 24 keys", () => {
+    const wide: Record<string, number> = {};
+    for (let i = 0; i < 40; i += 1) wide[`k${i}`] = i;
+    const output = JSON.stringify(wide);
+    const hints = hintsFor(output);
+    expect(hints.primaryPath).toBeUndefined();
+    expect(hints.fieldHints).toHaveLength(24);
+  });
+});
+
+describe("formatHintsSuffix (P0-6)", () => {
+  it("renders both fields with a leading space", () => {
+    expect(formatHintsSuffix({ primaryPath: "items", fieldHints: ["a", "b"] }))
+      .toBe(" primary_path=items field_hints=[a,b]");
+  });
+
+  it("renders primary_path alone (root array, non-record items)", () => {
+    expect(formatHintsSuffix({ primaryPath: "$" })).toBe(" primary_path=$");
+  });
+
+  it("renders field_hints alone when primaryPath is absent", () => {
+    expect(formatHintsSuffix({ fieldHints: ["x", "y"] })).toBe(" field_hints=[x,y]");
+  });
+
+  it("renders nothing when no hints are present", () => {
+    expect(formatHintsSuffix({})).toBe("");
+    expect(formatHintsSuffix({ fieldHints: [] })).toBe("");
   });
 });

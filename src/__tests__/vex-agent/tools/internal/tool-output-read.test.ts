@@ -67,6 +67,10 @@ describe("tool_output_read handler", () => {
     expect(result.output).toContain("next_offset=8192");
     expect(result.output).toContain("truncated=true");
     expect(result.output).toContain("a".repeat(100));
+    // P0-6: hints from the blob payload are echoed into the header string,
+    // since the structured `data` is dropped before the model.
+    expect(result.output).toContain("primary_path=$.data");
+    expect(result.output).toContain("field_hints=[tx_hash,balance]");
     expect(result.data).toEqual(expect.objectContaining({
       blob_key: validKey,
       shape_kind: "json",
@@ -100,6 +104,9 @@ describe("tool_output_read handler", () => {
     expect(result.output).toContain("bytes_returned=4");
     expect(result.output).toContain("next_offset=7");
     expect(result.output).toMatch(/\n3456$/);
+    // P0-6: no hints on the payload ⇒ header carries none.
+    expect(result.output).not.toContain("primary_path=");
+    expect(result.output).not.toContain("field_hints=");
     expect(result.data).toEqual(expect.objectContaining({
       offset: 3,
       bytes_returned: 4,
