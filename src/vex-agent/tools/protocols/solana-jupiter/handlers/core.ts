@@ -27,6 +27,7 @@ import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult 
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
+import { projectJupiterTokens } from "../projectors.js";
 
 // ── Shared helpers (exported for predict + lend handlers) ───────
 
@@ -84,7 +85,9 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.tokens.search": async (p) => {
     const q = str(p, "query");
     if (!q) return fail("Missing required parameter: query");
-    return ok(await searchJupiterTokens(q));
+    // Project the raw ~40-field JupiterMintInformation to the concise signal
+    // set before emitting (P0-3c) — read tool, no _tradeCapture, safe to trim.
+    return ok(projectJupiterTokens(await searchJupiterTokens(q)));
   },
 
   // Core — token trending (routes to category, recent, or tag)
@@ -93,14 +96,16 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const interval = (str(p, "interval") || "1h") as JupiterTokenInterval;
     const limit = num(p, "limit") ?? 20;
 
+    // Every return path maps the raw token array through the concise projector
+    // (P0-3c) so default-limit trending stays under the overflow threshold.
     if (category === "recent") {
-      return ok(await getJupiterRecentTokens());
+      return ok(projectJupiterTokens(await getJupiterRecentTokens()));
     }
     if (category in TAG_MAP) {
-      return ok(await getJupiterTokensByTag(TAG_MAP[category]));
+      return ok(projectJupiterTokens(await getJupiterTokensByTag(TAG_MAP[category])));
     }
     const jupiterCategory = CATEGORY_MAP[category] ?? "toptrending";
-    return ok(await getJupiterTokensByCategory({ category: jupiterCategory, interval, limit }));
+    return ok(projectJupiterTokens(await getJupiterTokensByCategory({ category: jupiterCategory, interval, limit })));
   },
 
   // Swap
