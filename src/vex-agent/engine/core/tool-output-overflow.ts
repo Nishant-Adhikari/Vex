@@ -23,6 +23,16 @@ const STRUCTURED_PREVIEW_LIST_KEYS = new Set([
   "orders",
   "ads",
   "takeovers",
+  // Polymarket-data top-level ok() list keys (P0-5): item-preview on overflow
+  // instead of collapsing to a bare count in otherArrayCounts.
+  "positions",
+  "activity",
+  "trades",
+  "openInterest",
+  "leaderboard",
+  "builders",
+  "volume",
+  "holders",
 ]);
 
 interface PersistedToolResult {
@@ -123,7 +133,7 @@ export async function persistToolResultWithOverflow(
   return { content: stub, metadata };
 }
 
-function classifyShape(output: string): ToolOutputShapeKind {
+export function classifyShape(output: string): ToolOutputShapeKind {
   const trimmed = output.trim();
   if (trimmed.length === 0) return "text";
   const first = trimmed[0];
@@ -132,7 +142,7 @@ function classifyShape(output: string): ToolOutputShapeKind {
   return "text";
 }
 
-function buildOverflowPreview(output: string, shapeKind: ToolOutputShapeKind): string {
+export function buildOverflowPreview(output: string, shapeKind: ToolOutputShapeKind): string {
   if (shapeKind === "text") {
     return output.slice(0, TOOL_OUTPUT_TEXT_PREVIEW_CHARS);
   }
