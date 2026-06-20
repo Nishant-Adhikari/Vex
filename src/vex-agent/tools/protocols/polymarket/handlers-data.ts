@@ -6,6 +6,14 @@
 import { getPolyDataClient } from "@tools/polymarket/data/client.js";
 import type { ProtocolHandler } from "../types.js";
 import { str, num, bool, ok, fail, enumField } from "../handler-helpers.js";
+import {
+  projectTrade,
+  projectHolderGroup,
+  projectMarketPositionGroup,
+  projectLeaderboardEntry,
+  projectBuilderEntry,
+  projectBuilderVolumeEntry,
+} from "./projectors.js";
 
 // ── SDK enum mirrors ──────────────────────────────────────────────
 // Kept here (not derived from manifests) because the SDK type is the
@@ -87,7 +95,7 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       limit: num(p, "limit"),
       offset: num(p, "offset"),
     });
-    return ok({ count: trades.length, trades });
+    return ok({ count: trades.length, trades: trades.map(projectTrade) });
   },
 
   "polymarket.data.value": async (p) => {
@@ -113,7 +121,7 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       limit: num(p, "limit"),
       minBalance: num(p, "minBalance"),
     });
-    return ok({ count: holders.length, holders });
+    return ok({ count: holders.length, holders: holders.map(projectHolderGroup) });
   },
 
   "polymarket.data.openInterest": async (p) => {
@@ -139,7 +147,7 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       limit: num(p, "limit"),
       offset: num(p, "offset"),
     });
-    return ok({ count: positions.length, positions });
+    return ok({ count: positions.length, positions: positions.map(projectMarketPositionGroup) });
   },
 
   // ── Leaderboard ───────────────────────────────────────────────
@@ -154,7 +162,7 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       user: str(p, "user") || undefined,
       userName: str(p, "userName") || undefined,
     });
-    return ok({ count: entries.length, leaderboard: entries });
+    return ok({ count: entries.length, leaderboard: entries.map(projectLeaderboardEntry) });
   },
 
   "polymarket.data.builderLeaderboard": async (p) => {
@@ -163,14 +171,14 @@ export const DATA_HANDLERS: Record<string, ProtocolHandler> = {
       limit: num(p, "limit"),
       offset: num(p, "offset"),
     });
-    return ok({ count: entries.length, builders: entries });
+    return ok({ count: entries.length, builders: entries.map(projectBuilderEntry) });
   },
 
   "polymarket.data.builderVolume": async (p) => {
     const entries = await getPolyDataClient().getBuilderVolume({
       timePeriod: str(p, "timePeriod") || undefined,
     });
-    return ok({ count: entries.length, volume: entries });
+    return ok({ count: entries.length, volume: entries.map(projectBuilderVolumeEntry) });
   },
 
   // ── Accounting ────────────────────────────────────────────────
