@@ -34,11 +34,11 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "solana.tokens.trending",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get trending Solana tokens — top traded, top organic, recent, LST, verified.",
+    description: "Discover Solana tokens — freshly launched/new (recent), trending, top-traded, top-organic, or verified. Solana's primary token-discovery feed: richer signal (organic score, verification, holder data) than generic feeds for finding new/fresh tokens.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "category", type: "string", description: "Category: toptrending, toptraded, toporganicscore, recent, lst, verified." },
+      { key: "category", type: "string", description: "Category: recent (freshly launched / newly listed tokens by first pool creation — use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking)." },
       { key: "interval", type: "string", description: "Time interval: 5m, 1h, 6h, 24h." },
       { key: "limit", type: "number", description: "Max results (default 20)." },
     ],

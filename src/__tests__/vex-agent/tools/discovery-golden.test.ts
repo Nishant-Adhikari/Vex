@@ -26,6 +26,7 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "honeypot token check", expectedAny: ["kyberswap.tokens"] },
   { intent: "swap on solana", expectedAny: ["solana.swap"] },
   { intent: "solana token search", expectedAny: ["solana.tokens"] },
+  { intent: "fresh solana tokens", expectedAny: ["solana.tokens.trending"] },
   { intent: "jupiter price lookup", expectedAny: ["solana.prices"] },
   { intent: "polymarket orderbook", expectedAny: ["polymarket.clob.orderbook", "polymarket.clob.orderbooks"] },
   { intent: "polymarket positions", expectedAny: ["polymarket.data.positions", "polymarket.data.closedPositions"] },
