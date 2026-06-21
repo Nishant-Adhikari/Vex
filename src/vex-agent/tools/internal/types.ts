@@ -124,7 +124,7 @@ export function enumField<T extends string>(
 
 /** Success result with JSON-serialized data. */
 export function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
+  return { success: true, output: JSON.stringify(data), data: data as Record<string, unknown> };
 }
 
 /** Failure result with message. */

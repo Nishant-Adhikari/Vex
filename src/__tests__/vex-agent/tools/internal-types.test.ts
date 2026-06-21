@@ -63,7 +63,7 @@ describe("internal types helpers", () => {
     it("returns success result with JSON output", () => {
       const result = ok({ count: 3, items: ["a", "b", "c"] });
       expect(result.success).toBe(true);
-      expect(result.output).toBe(JSON.stringify({ count: 3, items: ["a", "b", "c"] }, null, 2));
+      expect(result.output).toBe(JSON.stringify({ count: 3, items: ["a", "b", "c"] }));
       expect(result.data).toEqual({ count: 3, items: ["a", "b", "c"] });
     });
 
