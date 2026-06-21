@@ -12,6 +12,8 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       { key: "category", type: "string", description: "Category filter." },
       { key: "filter", type: "string", description: "Filter: trending, live, new." },
+      { key: "limit", type: "number", description: "Max results (default 10)." },
+      { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
     exampleParams: { category: "crypto", filter: "trending" },
     requiresEnv: "JUPITER_API_KEY",
@@ -54,6 +56,8 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "read",
     params: [
       { key: "address", type: "string", required: true, description: "Wallet address." },
+      { key: "limit", type: "number", description: "Max results (default 10)." },
+      { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
     exampleParams: { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
     requiresEnv: "JUPITER_API_KEY",
