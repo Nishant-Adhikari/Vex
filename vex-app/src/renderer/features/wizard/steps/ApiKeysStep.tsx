@@ -14,10 +14,18 @@
  * still accepts `polymarket` for potential programmatic callers — that
  * surface lives at the boundary, not in the UI.
  *
+ * Optional-connections model: API keys are OPTIONAL. Jupiter is needed
+ * to swap tokens on Solana, but the operator may defer it (and the rest)
+ * to in-app Settings. Nothing on this step BLOCKS advancement anymore —
+ * we warn and let the user continue.
+ *
  * Skip-card semantics (codex turn 1 D3 + feature #7 Q5):
- *   - Step 3 is "configured" iff JUPITER_API_KEY is set AND the
- *     Polymarket status is NOT "partial". Partial blocks the skip and
- *     surfaces a warning callout above the Polymarket card.
+ *   - The skip-card ("API keys already configured") is only the right
+ *     copy when JUPITER_API_KEY is already set; otherwise the form shows
+ *     with a non-blocking warning alert and the user advances via "Skip
+ *     optional" / "Save and continue". A partial Polymarket no longer
+ *     blocks the skip — it surfaces a warning callout above the
+ *     Polymarket card but the user can continue.
  *   - Skip-card is ONLY shown in `first-pass` flow mode. In `back-edit`
  *     mode (user clicked Edit from Review) we always render the full
  *     form so they can change anything.
@@ -69,8 +77,8 @@ export interface ApiKeysStepProps {
   readonly flowMode: WizardFlowMode;
 }
 
-const POLYMARKET_PARTIAL_MESSAGE =
-  "Polymarket has only some credentials saved. Use auto-configure to repair before continuing.";
+const JUPITER_MISSING_WARNING =
+  "Jupiter is required to swap tokens on Solana — without it Solana swaps are unavailable; you can add it later in Settings.";
 
 export function ApiKeysStep({
   completedSteps,
@@ -110,7 +118,12 @@ export function ApiKeysStep({
   const vaultUnlocked = envState?.secrets.unlocked ?? false;
   // Feature #7 Q5: back-edit ALWAYS renders the full form. In setup
   // mode the skip-card stays available unless the operator clicked the
-  // "Configure Polymarket now" CTA (skipExpanded === true).
+  // "Configure Polymarket now" CTA (skipExpanded === true). The skip-card
+  // copy assumes Jupiter is already configured, so it only shows when
+  // `jupiterConfigured`. A partial Polymarket keeps the user on the FORM
+  // so the partial warning callout stays visible — but, per the
+  // optional-connections model, it no longer BLOCKS advancing (the
+  // submit/skip handlers warn-but-advance regardless).
   const canSkip =
     flowMode === "first-pass"
     && jupiterConfigured
@@ -134,18 +147,13 @@ export function ApiKeysStep({
       e.preventDefault();
       setFormError(null);
       const payload = buildPayload(refs);
-      // Same required-state guards as the Skip button (codex DRIFT
-      // turn 9): empty Save when Jupiter is not yet configured must
-      // not advance; partial Polymarket in env requires auto-setup
-      // repair before continuing (manual repair path is gone).
-      if (!jupiterConfigured && payload.jupiterApiKey === undefined) {
-        setFormError(
-          "Jupiter API key is required for Solana trading. Enter it before continuing.",
-        );
-        return;
-      }
-      if (polymarketPartial) {
-        setFormError(POLYMARKET_PARTIAL_MESSAGE);
+      // Optional-connections model: API keys never block advancement.
+      // An empty Save with Jupiter unconfigured still advances (the
+      // missing-Jupiter warning alert is always visible). A partial
+      // Polymarket likewise warns (callout above its card) but does not
+      // block — if nothing was entered, skip the IPC and just advance.
+      if (Object.keys(payload).length === 0) {
+        await advanceToEmbedding();
         return;
       }
       // Snapshot the payload, clear the inputs SYNCHRONOUSLY before
@@ -165,29 +173,15 @@ export function ApiKeysStep({
         setSubmitting(false);
       }
     },
-    [
-      advanceToEmbedding,
-      invalidateEnvState,
-      refs,
-      jupiterConfigured,
-      polymarketPartial,
-    ],
+    [advanceToEmbedding, invalidateEnvState, refs],
   );
 
   const onSkipContinue = useCallback(async () => {
+    // Optional-connections model: skipping never blocks — Jupiter and
+    // Polymarket warnings are surfaced visually but the user advances.
     setFormError(null);
-    if (!jupiterConfigured && !submittedOnce) {
-      setFormError(
-        "Jupiter API key is required for Solana trading. Enter it before skipping the optional ones.",
-      );
-      return;
-    }
-    if (polymarketPartial) {
-      setFormError(POLYMARKET_PARTIAL_MESSAGE);
-      return;
-    }
     await advanceToEmbedding();
-  }, [advanceToEmbedding, jupiterConfigured, polymarketPartial, submittedOnce]);
+  }, [advanceToEmbedding]);
 
   const meta = WIZARD_STEP_META.apiKeys;
 
@@ -214,7 +208,7 @@ export function ApiKeysStep({
       panelDataAttr={{ kind: "apikeys", value: "form" }}
       icon={meta.icon}
       title="Connect your API keys"
-      description="Jupiter is required for Solana trading. The optional keys (Tavily, Rettiwt, Polymarket) unlock specific tools later. Keys are stored on this machine in your local config and sent only to the matching provider when you invoke a tool that needs them."
+      description="All API keys are optional — you can add them later in Settings. Jupiter powers Solana swaps; the others (Tavily, Rettiwt, Polymarket) unlock specific tools later. Keys are stored on this machine in your local config and sent only to the matching provider when you invoke a tool that needs them."
       formProps={{
         onSubmit: (e) => {
           void onSubmit(e);
@@ -233,6 +227,15 @@ export function ApiKeysStep({
       }
     >
       <div className="flex flex-col gap-4">
+        {!jupiterConfigured ? (
+          <p
+            role="status"
+            data-vex-apikeys-warning="jupiter-missing"
+            className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-warning)]"
+          >
+            {JUPITER_MISSING_WARNING}
+          </p>
+        ) : null}
         <JupiterCard
           status={statusFor(jupiterConfigured)}
           configured={jupiterConfigured}

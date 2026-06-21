@@ -176,6 +176,43 @@ describe("ProviderStep", () => {
     ).toBeNull();
   });
 
+  it("first-pass: 'Continue without a provider' advances without persisting + shows the strong alert (optional model)", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 2,
+        currentStepId: "review",
+        completedSteps: [
+          "keystore",
+          "wallets",
+          "apiKeys",
+          "embedding",
+          "agentCore",
+          "provider",
+        ],
+        completed: false,
+      },
+    } as Result<WizardState>);
+    const { container, getByText } = renderWithQuery(
+      <ProviderStep
+        completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
+        onAdvance={mockOnAdvance}
+        flowMode="first-pass"
+      />,
+    );
+    // Strongest consequence alert is shown.
+    expect(
+      container.querySelector("[data-vex-provider-configure-later-alert]"),
+    ).not.toBeNull();
+    fireEvent.click(getByText("Continue without a provider"));
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("review");
+    });
+    // Deferring never verifies/persists a provider.
+    expect(mockPersistProvider).not.toHaveBeenCalled();
+  });
+
   it("BLOCKS submit when apiKey is empty (no IPC call)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container, findByText } = renderWithQuery(

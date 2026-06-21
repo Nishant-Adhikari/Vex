@@ -255,12 +255,23 @@ export function WalletsStep({
     );
   }
 
+  // First-pass with at least one wallet still missing: wallets are
+  // OPTIONAL (configure later in Settings), so the operator may continue.
+  // We surface a consequence alert (no wallet → no trading / on-chain
+  // activity; Polymarket auto-setup needs an EVM wallet) and a
+  // "Continue without …" action alongside the management UI. Copy adapts
+  // to whether one chain is already present or neither is.
+  const showConfigureLater = flowMode === "first-pass" && !bothReady;
+  const continueLaterLabel = anyWallet
+    ? "Continue without the other wallet"
+    : "Continue without a wallet";
+
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "wallets", value: "setup" }}
       icon={meta.icon}
       title={flowMode === "back-edit" ? "Manage wallets" : "Set up wallets"}
-      description="Vex needs both an EVM wallet (Ethereum + L2s) and a Solana wallet. Generate fresh keys, import existing ones, or restore from a backup keystore file. Each chain is encrypted with the master password from Step 1."
+      description="Wallets are optional — you can add them later in Settings. Vex supports an EVM wallet (Ethereum + L2s) and a Solana wallet. Generate fresh keys, import existing ones, or restore from a backup keystore file. Each chain is encrypted with the master password from Step 1."
       footer={
         flowMode === "back-edit" ? (
           <Button
@@ -271,9 +282,33 @@ export function WalletsStep({
           >
             {stepAdvance.isPending ? "Returning…" : "Return to review"}
           </Button>
+        ) : showConfigureLater ? (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              void advanceToApiKeys();
+            }}
+            disabled={stepAdvance.isPending}
+            data-vex-wallets-configure-later
+          >
+            {stepAdvance.isPending ? "Continuing…" : continueLaterLabel}
+          </Button>
         ) : null
       }
     >
+      {showConfigureLater ? (
+        <p
+          role="status"
+          data-vex-wallets-configure-later-alert
+          className="mb-4 rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-warning)]"
+        >
+          {anyWallet
+            ? "With only one chain, Vex can only trade or act on that chain. "
+            : "Without a wallet, Vex can't trade or take any on-chain action. "}
+          Polymarket auto-setup needs an EVM key in particular. You can add or
+          import wallets later from Settings.
+        </p>
+      ) : null}
       <Tabs defaultValue="evm">
         <TabsList>
           <TabsTrigger value="evm" className="flex items-center gap-2">

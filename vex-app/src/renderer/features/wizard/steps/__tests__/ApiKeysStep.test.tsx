@@ -7,7 +7,10 @@
  *  - Skip-card surfaces "Configure Polymarket now" CTA in setup mode
  *    when polymarketStatus !== "configured" (feature #7).
  *  - back-edit flow ALWAYS renders the form (feature #7 Codex Q5).
- *  - "Repair Polymarket" warning rendered when polymarketStatus === "partial".
+ *  - "Repair Polymarket" warning rendered when polymarketStatus === "partial"
+ *    (warn-but-advance — no longer blocks; optional-connections model).
+ *  - Non-blocking "Jupiter missing" warning when Jupiter is unconfigured;
+ *    "Skip optional" / "Save and continue" ADVANCE regardless.
  *  - Successful submit clears all input refs synchronously and advances.
  *  - "Skip optional" advances without calling setApiKeys.
  *  - Legacy API-key fields are not rendered.
@@ -206,27 +209,66 @@ describe("ApiKeysStep", () => {
     });
   });
 
-  it("'Skip optional' blocks when Jupiter is not configured", async () => {
+  // Optional-connections model: API keys never block advancement. The
+  // form shows a non-blocking "Jupiter missing" warning and the user can
+  // proceed via "Skip optional" / "Save and continue".
+
+  it("first-pass: surfaces a non-blocking Jupiter-missing warning when Jupiter is unconfigured", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    const { getByText, findByText } = renderWithQuery(
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    expect(
+      container.querySelector('[data-vex-apikeys-warning="jupiter-missing"]'),
+    ).not.toBeNull();
+  });
+
+  it("'Skip optional' ADVANCES even when Jupiter is not configured (optional model)", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        currentStepId: "embedding",
+        completedSteps: ["keystore", "wallets", "apiKeys"],
+        completed: false,
+      },
+    } as Result<WizardState>);
+    const { getByText } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     fireEvent.click(getByText("Skip optional"));
-    await findByText(/Jupiter API key is required/i);
-    expect(mockOnAdvance).not.toHaveBeenCalled();
-    expect(mockSetWizardMutate).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
+    });
+    expect(mockSetApiKeys).not.toHaveBeenCalled();
   });
 
-  it("'Skip optional' blocks when Polymarket configuration is partial", async () => {
+  it("'Skip optional' ADVANCES even when Polymarket configuration is partial (warn-but-advance)", async () => {
     mockUseEnvState.mockReturnValue(
       makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
     );
-    const { getByText, findByText } = renderWithQuery(
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        currentStepId: "embedding",
+        completedSteps: ["keystore", "wallets", "apiKeys"],
+        completed: false,
+      },
+    } as Result<WizardState>);
+    const { getByText, container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
+    // Partial Polymarket still shows the form (jupiter set) with the
+    // partial warning callout, but no longer blocks the skip.
+    expect(
+      container.querySelector('[data-vex-apikeys-warning="polymarket-partial"]'),
+    ).not.toBeNull();
     fireEvent.click(getByText("Skip optional"));
-    await findByText(/Polymarket has only some credentials saved/i);
-    expect(mockOnAdvance).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
+    });
   });
 
   it("'Skip optional' advances when Jupiter configured + polymarket not partial", async () => {
@@ -254,28 +296,50 @@ describe("ApiKeysStep", () => {
     expect(mockSetApiKeys).not.toHaveBeenCalled();
   });
 
-  it("'Save and continue' empty submit blocks when Jupiter is not configured", async () => {
+  it("'Save and continue' empty submit ADVANCES without calling setApiKeys (optional model)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    const { container, findByText } = renderWithQuery(
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        currentStepId: "embedding",
+        completedSteps: ["keystore", "wallets", "apiKeys"],
+        completed: false,
+      },
+    } as Result<WizardState>);
+    const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
     fireEvent.submit(form);
-    await findByText(/Jupiter API key is required/i);
+    // Empty payload → no IPC write, but the user advances.
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
+    });
     expect(mockSetApiKeys).not.toHaveBeenCalled();
-    expect(mockOnAdvance).not.toHaveBeenCalled();
   });
 
-  it("'Save and continue' BLOCKS when Polymarket partial + trio not supplied", async () => {
+  it("'Save and continue' ADVANCES when Polymarket partial + nothing entered (warn-but-advance)", async () => {
     mockUseEnvState.mockReturnValue(
       makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
     );
-    const { container, findByText } = renderWithQuery(
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        currentStepId: "embedding",
+        completedSteps: ["keystore", "wallets", "apiKeys"],
+        completed: false,
+      },
+    } as Result<WizardState>);
+    const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
     fireEvent.submit(form);
-    await findByText(/Polymarket has only some credentials saved/i);
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
+    });
     expect(mockSetApiKeys).not.toHaveBeenCalled();
   });
 
@@ -399,18 +463,6 @@ describe("ApiKeysStep", () => {
     expect(
       container.querySelector("[data-vex-polymarket-auto-helper]")?.textContent,
     ).toMatch(/Unlock Vex first/);
-  });
-
-  it("'Save and continue' empty submit does not auto-advance when Jupiter is missing", async () => {
-    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    const { container, findByText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
-    fireEvent.submit(form);
-    await findByText(/Jupiter API key is required/i);
-    expect(mockOnAdvance).not.toHaveBeenCalled();
-    expect(mockSetWizardMutate).not.toHaveBeenCalled();
   });
 
   // ── PR8 redesign — per-provider cards ────────────────────────────────

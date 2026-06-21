@@ -14,9 +14,13 @@ export function ApiKeysCard({
   editDisabled,
 }: ApiKeysCardProps): JSX.Element {
   const k = envState.apiKeys;
-  const status = k.jupiterConfigured ? "ok" : "missing";
+  // Optional-connections model: API keys never block finalize. Jupiter
+  // unconfigured is a warning (Solana swaps unavailable), not a hard miss.
+  const status = k.jupiterConfigured ? "ok" : "warning";
   const items: string[] = [];
-  items.push(`Jupiter: ${k.jupiterConfigured ? "set" : "missing (required)"}`);
+  items.push(
+    `Jupiter: ${k.jupiterConfigured ? "set" : "not set — Solana swaps unavailable"}`,
+  );
   items.push(`Tavily: ${k.tavilyConfigured ? "set" : "—"}`);
   items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "—"}`);
   const poly =
@@ -30,7 +34,7 @@ export function ApiKeysCard({
     <SummaryCard
       title="API keys"
       status={status}
-      statusLabel={status === "ok" ? "Required keys set" : "Jupiter missing"}
+      statusLabel={status === "ok" ? "Configured" : "Jupiter optional"}
       onEdit={onEdit}
       editDisabled={editDisabled}
       testId="apiKeys"

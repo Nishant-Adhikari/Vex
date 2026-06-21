@@ -3,9 +3,13 @@
  *
  * Sequenced execution with explicit failure contract (codex v3 D10):
  *
- *   1. Validate envState — defensive; renderer is supposed to gate
- *      Review behind every prior step but a hand-crafted wizard-state
- *      file could land here without provider/wallets/etc.
+ *   1. Validate envState — the four infrastructure connections (wallets,
+ *      API keys, embeddings, provider) are OPTIONAL (configure later in
+ *      Settings); the ONLY hard requirement is the master password. This
+ *      check is defensive: the renderer lets the operator advance past
+ *      unconfigured connections with a consequence alert, but a master
+ *      password must exist before we can encrypt keystores / unlock the
+ *      vault, so a hand-crafted wizard-state file is still rejected here.
  *   2. autoBackup() (engine bridge `@vex-lib/wallet-backup`). Throws
  *      VexError(AUTO_BACKUP_FAILED) on fs failure → mapped to
  *      onboarding.step_failed step:auto_backup. backupPath is
@@ -77,25 +81,18 @@ interface IncompleteItem {
   readonly reason: string;
 }
 
+// Optional-connections model: the four infrastructure connections
+// (wallets, API keys, embeddings, inference provider) are OPTIONAL — the
+// operator can configure them later from in-app Settings. The wizard
+// steps let the user advance past them with a consequence alert. The
+// ONLY hard requirement at finalize is the master password, because it
+// is what encrypts every wallet keystore and gates the local vault.
+// Keeping the server as the hard authority means a hand-crafted
+// wizard-state.json still cannot finalize without a master password.
 function listMissingItems(envState: EnvState): IncompleteItem[] {
   const missing: IncompleteItem[] = [];
   if (!envState.hasKeystorePassword) {
     missing.push({ section: "keystore", reason: "Master password not set." });
-  }
-  if (envState.walletStatus.evm !== "present") {
-    missing.push({ section: "wallets", reason: "EVM wallet not configured." });
-  }
-  if (envState.walletStatus.solana !== "present") {
-    missing.push({ section: "wallets", reason: "Solana wallet not configured." });
-  }
-  if (!envState.apiKeys.jupiterConfigured) {
-    missing.push({ section: "apiKeys", reason: "Jupiter API key required." });
-  }
-  if (!envState.embeddings.allFieldsConfigured) {
-    missing.push({ section: "embedding", reason: "Embedding configuration incomplete." });
-  }
-  if (!envState.provider.configured) {
-    missing.push({ section: "provider", reason: "Inference provider not configured." });
   }
   return missing;
 }
@@ -104,7 +101,8 @@ function buildValidationError(missing: IncompleteItem[]): VexError {
   return {
     code: "validation.invalid_input",
     domain: "onboarding",
-    message: "Setup is incomplete — finish every prior step before finalizing.",
+    message:
+      "Setup cannot be finalized without a master password — it encrypts your wallet keystores and unlocks the local vault.",
     retryable: false,
     userActionable: true,
     redacted: true,
