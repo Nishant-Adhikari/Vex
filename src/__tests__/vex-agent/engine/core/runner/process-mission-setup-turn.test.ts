@@ -351,6 +351,42 @@ describe("runner", () => {
       expect(mockUpdateDraft).not.toHaveBeenCalled();
     });
 
+    it("honours a user Stop during setup — no patch applied, no not-ready notice, faithful stopReason, signal threaded to both turn-loop positions", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }))
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }));
+      // result.text is BOTH a parseable mission patch (```json block with a
+      // title) AND matches START_SUGGESTION_PATTERN ("start the mission") — so
+      // the test proves the Stop guard suppresses BOTH the patch-apply and the
+      // not-ready notice, not the parser/regex failing to match.
+      const stoppedText =
+        "You can start the mission now.\n```json\n{\"title\":\"SOL Flip\"}\n```";
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: stoppedText,
+        toolCallsMade: 2,
+        pendingApprovals: [],
+        stopReason: "user_stopped",
+      });
+
+      const signal = new AbortController().signal;
+      const result = await processMissionSetupTurn("session-1", "stop", signal);
+
+      // (1) No mission patch applied from the truncated/partial Stop text.
+      expect(mockUpdateDraft).not.toHaveBeenCalled();
+      // (2) No not-ready guidance notice appended on Stop.
+      expect(mockAddEngineMessage).not.toHaveBeenCalled();
+      // (3) Faithful stopReason — not masked to null.
+      expect(result.stopReason).toBe("user_stopped");
+      // Signal forwarded into runTurnLoop at BOTH pos 10 (abortSignal) and
+      // pos 11 (inferenceAbortSignal).
+      expect(mockRunTurnLoop.mock.calls[0][9]).toBe(signal);
+      expect(mockRunTurnLoop.mock.calls[0][10]).toBe(signal);
+    });
+
     it("carries LIVE plan-mode into the dispatch context during setup (Approach A: plan co-authored with the contract; mission_draft_update stays unblocked via the PLAN_GATE_SAFE_CONTROL safe-list)", async () => {
       // Approach A: when the session has plan-mode enabled, setup co-authors the
       // action plan (HOW) alongside the mission contract (WHAT), so the dispatch

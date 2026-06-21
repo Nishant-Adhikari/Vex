@@ -34,6 +34,7 @@ import { toToolDefinitions, DEFAULT_LOOP_CONFIG, ITERATION_LIMIT_REPLY } from ".
 export async function processMissionSetupTurn(
   sessionId: string,
   userInput: string,
+  signal?: AbortSignal,
 ): Promise<TurnResult> {
   logger.info("engine.mission.setup_turn", { sessionId });
 
@@ -142,6 +143,7 @@ export async function processMissionSetupTurn(
     } : undefined,
   };
 
+  const startedAt = Date.now();
   const result = await runTurnLoop(
     setupContext,
     hydrated.messages,
@@ -152,6 +154,13 @@ export async function processMissionSetupTurn(
     tools,
     loopConfig,
     promptOptions,
+    // Setup threads the Stop signal into BOTH the tool-call iteration
+    // boundary (pos 10 `abortSignal`) AND the in-flight inference stream
+    // (pos 11 `inferenceAbortSignal`): pos 11 cancels a long setup
+    // inference, pos 10 stops the next tool-call iteration. This is
+    // intentionally broader than agent.ts (which threads only pos 11).
+    signal, // abortSignal
+    signal, // inferenceAbortSignal
   );
 
   // Graceful cap-hit reply (setup): when the loop exhausted maxIterations
@@ -161,6 +170,13 @@ export async function processMissionSetupTurn(
   // not-ready notice below. The turn-loop persists real model text itself;
   // nothing was saved on this path, so we persist the synthesised reply here.
   const capHit = result.stopReason === "iteration_limit" && !result.text;
+  logger.info("engine.mission.setup_turn.timing", {
+    sessionId,
+    elapsedMs: Date.now() - startedAt,
+    toolCallsMade: result.toolCallsMade,
+    stopReason: result.stopReason,
+    capHit,
+  });
   if (capHit) {
     await appendMessage(
       sessionId,
@@ -169,8 +185,10 @@ export async function processMissionSetupTurn(
     );
   }
 
-  // Apply mission patch from model response to draft (never from synthesised text)
-  if (!capHit && result.text && missionId) {
+  // Apply mission patch from model response to draft (never from synthesised
+  // text, never from text truncated by a user Stop — a partial patch could
+  // corrupt the draft).
+  if (!capHit && result.stopReason !== "user_stopped" && result.text && missionId) {
     const parsed = parseModelMissionOutput(result.text);
     if (parsed) {
       await applyMissionPatch(missionId, parsed);
@@ -185,6 +203,7 @@ export async function processMissionSetupTurn(
   let text = capHit ? ITERATION_LIMIT_REPLY : result.text;
   if (
     !capHit
+    && result.stopReason !== "user_stopped"
     && latestSetupState
     && latestSetupState.status !== "ready"
     && textSuggestsMissionStart(text)
@@ -212,7 +231,7 @@ export async function processMissionSetupTurn(
       text,
       toolCallsMade: result.toolCallsMade,
       pendingApprovals: [],
-      stopReason: null,
+      stopReason: result.stopReason,
       missionStatus,
     };
   } finally {
