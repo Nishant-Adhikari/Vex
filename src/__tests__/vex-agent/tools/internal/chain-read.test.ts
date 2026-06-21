@@ -6,6 +6,8 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import { HttpRequestError, TransactionReceiptNotFoundError } from "viem";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 import { makeTestContext } from "../_test-context.js";
 
 // Mock khalani chain resolution
@@ -110,5 +112,96 @@ describe("chain_read — erc721_mint", () => {
     const result = await handleChainRead({ action: "erc721_mint", chainId: "137" }, ctx);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required: txHash");
+  });
+});
+
+// ── Error-redaction guards (P1-6 / B-003) ────────────────────────────────────
+//
+// Raw viem/RPC text can embed RPC URLs (often carrying api keys), request /
+// response bodies, and auth — none of which may reach the model output. These
+// tests prove every throwing seam (chain resolution + both getTransactionReceipt
+// calls) is reduced to the redacted, bounded summary owned by
+// summarizeProtocolError, and that the original secret/URL never survives.
+
+// The mocked khalani/chains module is reused here so we can make resolveChainId
+// throw a real VexError (KHALANI_UNSUPPORTED_CHAIN) for one test, then restore.
+const khalaniChains = await import("@tools/khalani/chains.js");
+
+describe("chain_read — error redaction", () => {
+  it("redacts an unsupported-chain VexError from chain resolution", async () => {
+    // resolveChainId throws the same VexError shape khalani uses for an unknown
+    // chain. The hint is folded through the SAME redaction pipeline as the
+    // message, so it is safe to surface; what must NOT leak is provider internals.
+    const err = new VexError(
+      ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
+      'Chain "not-a-real-chain" is not supported.',
+      "Check the supported chain list first.",
+    );
+    vi.mocked(khalaniChains.resolveChainId).mockImplementationOnce(() => {
+      throw err;
+    });
+    // Clear accumulated calls from the happy-path tests above so the
+    // "never reached the receipt seam" assertion below reflects THIS call only.
+    mockGetTransactionReceipt.mockClear();
+
+    const result = await handleChainRead(
+      { action: "tx_receipt", chainId: "not-a-real-chain", txHash: "0xabc123" },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    // Redacted summary is non-empty and bounded (length cap is 200 + ellipsis).
+    expect(result.output.length).toBeGreaterThan(0);
+    expect(result.output.length).toBeLessThanOrEqual(201);
+    // The on-chain receipt path must never run when resolution failed.
+    expect(mockGetTransactionReceipt).not.toHaveBeenCalled();
+    // resolveChainId restored to its default (returns 137) for later tests.
+    expect(vi.mocked(khalaniChains.resolveChainId)("137", [])).toBe(137);
+  });
+
+  it("redacts a viem TransactionReceiptNotFoundError from tx_receipt", async () => {
+    mockGetTransactionReceipt.mockRejectedValueOnce(
+      new TransactionReceiptNotFoundError({ hash: "0xdeadbeef" }),
+    );
+
+    const result = await handleChainRead(
+      { action: "tx_receipt", chainId: "137", txHash: "0xdeadbeef" },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output.length).toBeGreaterThan(0);
+    expect(result.output.length).toBeLessThanOrEqual(201);
+    // No raw JSON receipt object leaked through the catch.
+    expect(() => JSON.parse(result.output)).toThrow();
+  });
+
+  it("strips RPC url + body from a viem HttpRequestError (no secret leak)", async () => {
+    // This error embeds a fake RPC endpoint carrying a key and a request body —
+    // precisely the provider internals B-003 forbids surfacing.
+    const SECRET_HOST = "secret-rpc.example.com";
+    const SECRET_KEY = "KEY123abcSECRET";
+    mockGetTransactionReceipt.mockRejectedValueOnce(
+      new HttpRequestError({
+        url: `https://${SECRET_HOST}/${SECRET_KEY}`,
+        body: { method: "eth_getTransactionReceipt", params: ["0xabc"] },
+        status: 429,
+        details: "rate limited",
+      }),
+    );
+
+    const result = await handleChainRead(
+      { action: "erc721_mint", chainId: "137", txHash: "0xabc" },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    // The raw RPC URL, host, and key must NOT survive redaction.
+    expect(result.output).not.toContain(SECRET_HOST);
+    expect(result.output).not.toContain(SECRET_KEY);
+    expect(result.output).not.toContain("https://");
+    // Bounded, non-empty summary.
+    expect(result.output.length).toBeGreaterThan(0);
+    expect(result.output.length).toBeLessThanOrEqual(201);
   });
 });
