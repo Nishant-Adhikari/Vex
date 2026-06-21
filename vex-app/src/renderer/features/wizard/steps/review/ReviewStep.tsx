@@ -137,8 +137,9 @@ export function ReviewStep({
     if (result.data.telemetryWarning) {
       setWarning(result.data.telemetryWarning);
     }
-    // wizardState invalidation in useCompleteSetup triggers WizardShell
-    // to flip to the appShell view; no explicit nav needed here.
+    // wizardState invalidation in useCompleteSetup refetches `completed:
+    // true`, which fires WizardShell's COMPLETION WATCHER effect to flip
+    // to the appShell view (or unlock/keystore); no explicit nav here.
   }, [completeSetup, telemetryAvailable, telemetryConsent]);
 
   // ── back-edit branch: render the chosen sub-step directly, with a
@@ -301,9 +302,10 @@ export function ReviewStep({
 
       {/*
         Onward navigation note: after a successful finalize, useCompleteSetup
-        invalidates wizardState; WizardShell then reads `completed: true`
-        and switches the view to the Phase 2 appShell. We don't call
-        `onAdvance` here because there is no next step — the wizard ends.
+        invalidates wizardState; the refetched `completed: true` fires
+        WizardShell's COMPLETION WATCHER effect, which switches the view to
+        the Phase 2 appShell. We don't call `onAdvance` here because there
+        is no next step — the wizard ends.
       */}
       <span className="sr-only" data-vex-onadvance-stub>
         {typeof onAdvance === "function" ? "" : ""}
