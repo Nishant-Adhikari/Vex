@@ -237,12 +237,17 @@ export function ProviderStep({
   }
 
   // ── Form ─────────────────────────────────────────────────────────
+  // The inference provider is OPTIONAL at setup (configure later in
+  // Settings), but it carries the strongest consequence: without a
+  // provider the agent cannot run inference at all. In the forward setup
+  // flow we let the operator advance, surfacing that warning prominently.
+  const showConfigureLater = flowMode === "first-pass";
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "provider", value: "form" }}
       icon={meta.icon}
       title="Inference provider"
-      description="Vex needs an OpenRouter key and model id before starting the agent."
+      description="The inference provider is optional here — you can add it later in Settings — but the agent cannot run until one is configured. Provide an OpenRouter key and model id to set it up now."
       formProps={{
         onSubmit: (e) => {
           void onSubmit(e);
@@ -251,18 +256,46 @@ export function ProviderStep({
         providerFormAttr: "openrouter",
       }}
       footer={
-        <Button type="submit" disabled={submitting || stepAdvance.isPending}>
-          {submitting
-            ? "Verifying..."
-            : stepAdvance.isPending
-              ? "Continuing..."
-              : flowMode === "back-edit"
-                ? "Verify and return to review"
-                : "Verify and save"}
-        </Button>
+        <>
+          {showConfigureLater ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                void advanceToReview();
+              }}
+              disabled={submitting || stepAdvance.isPending}
+              data-vex-provider-configure-later
+            >
+              {stepAdvance.isPending
+                ? "Continuing..."
+                : "Continue without a provider"}
+            </Button>
+          ) : null}
+          <Button type="submit" disabled={submitting || stepAdvance.isPending}>
+            {submitting
+              ? "Verifying..."
+              : stepAdvance.isPending
+                ? "Continuing..."
+                : flowMode === "back-edit"
+                  ? "Verify and return to review"
+                  : "Verify and save"}
+          </Button>
+        </>
       }
     >
       <div className="flex flex-col gap-5">
+        {showConfigureLater ? (
+          <p
+            role="status"
+            data-vex-provider-configure-later-alert
+            className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-warning)]"
+          >
+            The agent cannot run any inference without a provider — it will
+            stay idle until you add an OpenRouter key and model. You can do
+            this later from Settings, but nothing will run until then.
+          </p>
+        ) : null}
         <div className="flex flex-col gap-2">
           <Label htmlFor="vex-provider-key">OpenRouter API key</Label>
           <PasswordField

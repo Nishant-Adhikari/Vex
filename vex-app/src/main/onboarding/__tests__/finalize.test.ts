@@ -121,7 +121,9 @@ describe("completeSetup", () => {
     expect(mockInitSentry).not.toHaveBeenCalled();
   });
 
-  it("validation.invalid_input when prior steps incomplete", async () => {
+  it("validation.invalid_input when the master password is missing", async () => {
+    // Master password is the ONLY hard finalize requirement (optional-
+    // connections model). Absent it, finalize must reject.
     mockGatherEnvState.mockResolvedValue({
       ...(fullEnvState() as Record<string, unknown>),
       hasKeystorePassword: false,
@@ -131,6 +133,41 @@ describe("completeSetup", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected err");
     expect(result.error.code).toBe("validation.invalid_input");
+  });
+
+  it("SUCCEEDS with master password present but all four connections unconfigured", async () => {
+    // Optional-connections model: wallets, API keys, embeddings, and the
+    // inference provider may all be deferred to in-app Settings. As long
+    // as the master password exists, finalize must complete.
+    mockGatherEnvState.mockResolvedValue({
+      ...(fullEnvState() as Record<string, unknown>),
+      hasKeystorePassword: true,
+      hasJupiterApiKey: false,
+      apiKeys: {
+        jupiterConfigured: false,
+        tavilyConfigured: false,
+        rettiwtConfigured: false,
+        polymarketStatus: "missing",
+      },
+      embeddings: {
+        configured: false,
+        reachable: false,
+        baseUrlRedacted: null,
+        allFieldsConfigured: false,
+        dbReachable: null,
+      },
+      walletStatus: { evm: "missing", solana: "missing" },
+      walletAddresses: { evm: null, solana: null },
+      provider: { configured: false, name: null, modelLabel: null },
+    });
+    mockAutoBackup.mockResolvedValue(null);
+    mockWizardUpdate.mockResolvedValue({ ok: true });
+
+    const result = await completeSetup({ telemetryConsent: false });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.data.backupPath).toBeNull();
+    expect(mockWizardUpdate).toHaveBeenCalledTimes(1);
   });
 
   it("autoBackup throws: returns onboarding.step_failed step=auto_backup", async () => {

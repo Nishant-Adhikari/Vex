@@ -48,12 +48,12 @@ export function JupiterCard({
         />
       }
       name="Jupiter"
-      required
       status={status}
       description={
         <>
-          Required for Solana swap + portfolio tools. Free API key — open
-          the portal, then{" "}
+          Needed for Solana token swaps + portfolio tools — optional, add it
+          later in Settings (Solana swaps stay unavailable until you do). Free
+          API key — open the portal, then{" "}
           <span className="font-medium text-[var(--color-text-primary)]">
             Settings → API Keys → + Create new API key
           </span>
@@ -77,7 +77,7 @@ export function JupiterCard({
       <p className="text-xs text-[var(--color-text-muted)]">
         {configured
           ? "Leave blank to keep, or paste a new key to overwrite."
-          : "Required to continue."}
+          : "Optional — leave blank to add later; Solana swaps stay unavailable until you set it."}
       </p>
     </ProviderCard>
   );

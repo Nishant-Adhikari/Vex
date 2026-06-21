@@ -154,6 +154,11 @@ export function EmbeddingStep({
 
   const isDimLocked = serverError?.code === "embedding.dim_locked";
   const isDbDown = serverError?.code === "embedding.db_unavailable";
+  // Embeddings are OPTIONAL (configure later in Settings). In the forward
+  // setup flow we let the operator advance without configuring an
+  // endpoint, surfacing a consequence alert (no memory / semantic search
+  // until it's set up). back-edit keeps the save-only footer.
+  const showConfigureLater = flowMode === "first-pass";
 
   return (
     <WizardStepPanel
@@ -162,9 +167,10 @@ export function EmbeddingStep({
       title="Embedding configuration"
       description={
         <>
-          Vex needs an OpenAI-compatible embedding endpoint to power
-          long-term memory recall. The bundled stack runs llama.cpp:server with
-          EmbeddingGemma 300M on{" "}
+          Embeddings are optional — you can configure them later in
+          Settings. They power long-term memory recall via an
+          OpenAI-compatible endpoint. The bundled stack runs
+          llama.cpp:server with EmbeddingGemma 300M on{" "}
           <code>127.0.0.1:{DEFAULT_EMBED_PORT}</code> — point this at
           your own OpenAI / Ollama / remote endpoint if you prefer.
         </>
@@ -176,21 +182,47 @@ export function EmbeddingStep({
         noValidate: true,
       }}
       footer={
-        <Button
-          type="submit"
-          disabled={configure.isPending || stepAdvance.isPending}
-        >
-          {configure.isPending
-            ? "Saving…"
-            : stepAdvance.isPending
-              ? "Continuing…"
-              : flowMode === "back-edit"
-                ? "Save and return to review"
-                : "Save and continue"}
-        </Button>
+        <>
+          {showConfigureLater ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                void advanceToAgentCore();
+              }}
+              disabled={configure.isPending || stepAdvance.isPending}
+              data-vex-embedding-configure-later
+            >
+              {stepAdvance.isPending ? "Continuing…" : "Configure later"}
+            </Button>
+          ) : null}
+          <Button
+            type="submit"
+            disabled={configure.isPending || stepAdvance.isPending}
+          >
+            {configure.isPending
+              ? "Saving…"
+              : stepAdvance.isPending
+                ? "Continuing…"
+                : flowMode === "back-edit"
+                  ? "Save and return to review"
+                  : "Save and continue"}
+          </Button>
+        </>
       }
     >
       <div className="flex flex-col gap-5">
+        {showConfigureLater ? (
+          <p
+            role="status"
+            data-vex-embedding-configure-later-alert
+            className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-warning)]"
+          >
+            Without an embedding endpoint, long-term memory and semantic
+            search stay unavailable until you configure one. You can set this
+            up later from Settings.
+          </p>
+        ) : null}
         <EmbeddingWarningPanels
           isDimLocked={isDimLocked}
           isDbDown={isDbDown}

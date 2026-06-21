@@ -29,7 +29,11 @@
  *
  * If `completed === true` (Review finalised on a previous launch) we
  * flip the view to `appShell` immediately unless the app shell opened
- * the wizard in reconfiguration mode.
+ * the wizard in reconfiguration mode. Two effects own this routing: the
+ * one-time init effect handles first-mount (relaunch into a completed
+ * setup), and a dedicated COMPLETION WATCHER handles the in-session flip
+ * after Finalize succeeds on Review (where `currentStepId` is already
+ * non-null, so the init effect's guard skips it).
  */
 
 import { useCallback, useEffect, useState, type JSX } from "react";
@@ -184,6 +188,45 @@ export function WizardShell(): JSX.Element {
         return;
       }
       setCurrentStepId(persisted.currentStepId);
+    };
+    void route();
+    return () => {
+      cancelled = true;
+    };
+  }, [persisted, currentStepId, setCurrentView, wizardEntryMode, openUnlock]);
+
+  // Completion watcher. The init effect above owns first-mount routing
+  // and early-returns once `currentStepId !== null`, so it never re-runs
+  // the completed-routing after the wizard is mounted. When Finalize
+  // succeeds the wizardState query refetches with `completed: true` while
+  // the user is still parked on Review (`currentStepId === "review"`);
+  // this effect performs the SAME completed-routing as the init effect so
+  // the shell actually flips to the app shell. It guards on
+  // `currentStepId !== null` (the init effect owns first-mount; this
+  // avoids a relaunch double-fire) and on `persisted.completed` (only
+  // fires after a real completion). Reconfigure mode is skipped so a
+  // settings-editor reviewing infrastructure is not bounced out of Review.
+  useEffect(() => {
+    if (persisted === null || currentStepId === null || !persisted.completed) {
+      return;
+    }
+    if (wizardEntryMode === "reconfigure") return;
+    let cancelled = false;
+    const route = async (): Promise<void> => {
+      const status = await window.vex.secrets.status();
+      if (cancelled) return;
+      const vaultConfigured = status.ok ? status.data.vaultConfigured : false;
+      const unlocked = status.ok ? status.data.unlocked : false;
+
+      if (vaultConfigured && !unlocked) {
+        openUnlock("appShell");
+        return;
+      }
+      if (!vaultConfigured) {
+        setCurrentStepId("keystore");
+        return;
+      }
+      setCurrentView("appShell");
     };
     void route();
     return () => {

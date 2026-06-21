@@ -14,7 +14,9 @@ export function EmbeddingCard({
   editDisabled,
 }: EmbeddingCardProps): JSX.Element {
   const e = envState.embeddings;
-  const status = e.allFieldsConfigured ? "ok" : "missing";
+  // Optional-connections model: embeddings never block finalize. Not
+  // configured is a warning (no memory / semantic search), not a hard miss.
+  const status = e.allFieldsConfigured ? "ok" : "warning";
   return (
     <SummaryCard
       title="Embedding"
@@ -24,13 +26,17 @@ export function EmbeddingCard({
           ? e.reachable
             ? "Configured · reachable"
             : "Configured · not reachable"
-          : "Not configured"
+          : "Optional — not configured"
       }
       onEdit={onEdit}
       editDisabled={editDisabled}
       testId="embedding"
     >
-      <span>Endpoint: {e.baseUrlRedacted ?? "—"}</span>
+      {e.allFieldsConfigured ? (
+        <span>Endpoint: {e.baseUrlRedacted ?? "—"}</span>
+      ) : (
+        <span>Memory and semantic search stay off until configured.</span>
+      )}
     </SummaryCard>
   );
 }

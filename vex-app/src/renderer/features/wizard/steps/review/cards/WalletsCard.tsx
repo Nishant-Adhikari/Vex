@@ -39,7 +39,9 @@ export function WalletsCard({
 }: WalletsCardProps): JSX.Element {
   const evmOk = envState.walletStatus.evm === "present";
   const solOk = envState.walletStatus.solana === "present";
-  const status = evmOk && solOk ? "ok" : evmOk || solOk ? "partial" : "missing";
+  // Optional-connections model: wallets never block finalize. No wallet at
+  // all is a warning (no trading / on-chain activity), not a hard miss.
+  const status = evmOk && solOk ? "ok" : evmOk || solOk ? "partial" : "warning";
   const evmAddr = envState.walletAddresses?.evm ?? null;
   const solAddr = envState.walletAddresses?.solana ?? null;
 
@@ -52,7 +54,11 @@ export function WalletsCard({
       title="Wallets"
       status={status}
       statusLabel={
-        status === "ok" ? "Both chains" : status === "partial" ? "Partial" : "Missing"
+        status === "ok"
+          ? "Both chains"
+          : status === "partial"
+            ? "Partial"
+            : "None — optional"
       }
       onEdit={onEdit}
       editDisabled={editDisabled}

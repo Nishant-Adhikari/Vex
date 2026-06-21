@@ -7,8 +7,10 @@
  * primary UX gate.
  *
  * On success we invalidate BOTH envState + wizardState — the latter
- * flips `completed: true` so WizardShell's effect-based "show
- * placeholder when completed" branch fires on the next render cycle.
+ * refetches with `completed: true`, which fires WizardShell's dedicated
+ * COMPLETION WATCHER effect (the one-time init effect skips it because
+ * `currentStepId` is already "review" by then), routing the user to the
+ * app shell / unlock / keystore as appropriate.
  */
 
 import {

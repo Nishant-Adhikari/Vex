@@ -365,6 +365,109 @@ describe("WizardShell", () => {
     );
   });
 
+  // ── Completion watcher (Finalize-on-Review in-session flip) ────────
+  //
+  // Reproduces the stuck-on-Review bug: the wizard mounts on Review with
+  // `completed: false`, then the wizardState query refetches `completed:
+  // true` (Finalize succeeded). The init effect early-returns because
+  // `currentStepId === "review"` is non-null, so the dedicated COMPLETION
+  // WATCHER effect must perform the completed-routing.
+  function reviewState(completed: boolean): Result<WizardState> {
+    return {
+      ok: true,
+      data: {
+        schemaVersion: 2,
+        currentStepId: "review",
+        completedSteps: [
+          "keystore",
+          "wallets",
+          "apiKeys",
+          "embedding",
+          "agentCore",
+          "provider",
+        ],
+        completed,
+      },
+    };
+  }
+
+  interface SecretsStatusData {
+    readonly vaultConfigured: boolean;
+    readonly unlocked: boolean;
+  }
+
+  /**
+   * Mount on Review (incomplete) with an UNLOCKED vault so the init
+   * effect cleanly sets `currentStepId === "review"` (a locked vault on
+   * an incomplete non-keystore step would divert to openUnlock("wizard")
+   * and never render Review). Wait for ReviewStep, then optionally swap
+   * the secrets status to `completeStatus` and flip the query result to
+   * `completed: true` + re-render — exactly what `useCompleteSetup`'s
+   * wizardState invalidation produces. The watcher effect re-fires with
+   * the post-finalize status. Returns the render handle.
+   */
+  async function renderReviewThenCompleteReturning(
+    completeStatus?: SecretsStatusData,
+  ): Promise<ReturnType<typeof renderWithQuery>> {
+    mockUseWizardState.mockReturnValue(makeQueryResult(reviewState(false)));
+    const handle = renderWithQuery(<WizardShell />);
+    await handle.findByTestId("review-step");
+    if (completeStatus) {
+      mockSecretsStatus.mockResolvedValue({ ok: true, data: completeStatus });
+    }
+    // Only the mocked query result flips; `rerender` re-runs the tree so
+    // the watcher effect re-fires now that `completed === true`.
+    mockUseWizardState.mockReturnValue(makeQueryResult(reviewState(true)));
+    handle.rerender(<WizardShell />);
+    return handle;
+  }
+
+  it("(a) completion watcher: flips to appShell when completed flips true while on Review (vault unlocked)", async () => {
+    // Default mockSecretsStatus = vaultConfigured:true, unlocked:true.
+    await renderReviewThenCompleteReturning();
+    await waitFor(() => {
+      expect(mockSetCurrentView).toHaveBeenCalledWith("appShell");
+    });
+  });
+
+  it("(b) completion watcher: does NOT flip to appShell in reconfigure mode", async () => {
+    mockWizardEntryMode = "reconfigure";
+    // In reconfigure mode the init effect parks on Review and the watcher
+    // must skip. Mount directly completed — the watcher must not fire.
+    mockUseWizardState.mockReturnValue(makeQueryResult(reviewState(true)));
+    const { findByTestId } = renderWithQuery(<WizardShell />);
+    await findByTestId("review-step");
+    // Give any pending async route() a tick to settle.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockSetCurrentView).not.toHaveBeenCalledWith("appShell");
+  });
+
+  it("(c) SECURITY: completion watcher opens unlock (not appShell) when vault is locked", async () => {
+    // Vault was unlocked while editing; it relocks by the time Finalize
+    // lands (e.g. an idle lock). The watcher must route to unlock, not
+    // straight into the app shell.
+    await renderReviewThenCompleteReturning({
+      vaultConfigured: true,
+      unlocked: false,
+    });
+    await waitFor(() => {
+      expect(mockOpenUnlock).toHaveBeenCalledWith("appShell");
+    });
+    expect(mockSetCurrentView).not.toHaveBeenCalledWith("appShell");
+  });
+
+  it("(d) SECURITY: completion watcher routes to keystore (not appShell) when vault is not configured", async () => {
+    const { findByTestId } = await renderReviewThenCompleteReturning({
+      vaultConfigured: false,
+      unlocked: false,
+    });
+    // Vault not configured → watcher re-routes to keystore via local step
+    // state; the keystore step renders and the app shell is never opened.
+    await findByTestId("keystore-step");
+    expect(mockOpenUnlock).not.toHaveBeenCalledWith("appShell");
+    expect(mockSetCurrentView).not.toHaveBeenCalledWith("appShell");
+  });
+
   it("renders the error shell when the query returns ok:false", async () => {
     mockUseWizardState.mockReturnValue(
       makeQueryResult(

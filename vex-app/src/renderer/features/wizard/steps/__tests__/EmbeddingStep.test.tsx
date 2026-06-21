@@ -143,6 +143,32 @@ describe("EmbeddingStep", () => {
     expect(container.querySelector('[data-vex-wizard-embedding="form"]')).not.toBeNull();
   });
 
+  it("first-pass: 'Configure later' advances without configuring an endpoint + shows the alert (optional model)", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        currentStepId: "agentCore",
+        completedSteps: ["keystore", "wallets", "apiKeys", "embedding"],
+        completed: false,
+      },
+    } as Result<WizardState>);
+    const { container, getByText } = renderWithQuery(
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    // Consequence alert is shown above the form.
+    expect(
+      container.querySelector("[data-vex-embedding-configure-later-alert]"),
+    ).not.toBeNull();
+    fireEvent.click(getByText("Configure later"));
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("agentCore");
+    });
+    // No embedding configure mutation when deferring.
+    expect(mockConfigureMutate).not.toHaveBeenCalled();
+  });
+
   it("client-side rejects malformed URL before calling configure", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
     const { container, getByLabelText, getByText } = renderWithQuery(

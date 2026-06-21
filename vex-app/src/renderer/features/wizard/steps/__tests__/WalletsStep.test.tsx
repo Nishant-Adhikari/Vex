@@ -255,6 +255,33 @@ describe("WalletsStep", () => {
     expect(getByRole("tab", { name: /Solana/i })).toBeTruthy();
   });
 
+  it("first-pass with no wallet: surfaces the configure-later alert + 'Continue without a wallet' and advances (optional model)", async () => {
+    mockUseEnvState.mockReturnValue(
+      envQueryFor({ evm: "missing", solana: "missing" })
+    );
+    mockSetWizardMutate.mockResolvedValue({
+      ok: true,
+      data: {
+        schemaVersion: 1,
+        currentStepId: "apiKeys",
+        completedSteps: ["keystore", "wallets"],
+        completed: false,
+      },
+    });
+    const view = renderStep(["keystore"]);
+    // Consequence alert is shown.
+    expect(
+      view.container.querySelector("[data-vex-wallets-configure-later-alert]")
+    ).not.toBeNull();
+    // Advance is allowed even with no wallet configured.
+    fireEvent.click(
+      view.getByRole("button", { name: /Continue without a wallet/i })
+    );
+    await waitFor(() => {
+      expect(mockOnAdvance).toHaveBeenCalledWith("apiKeys");
+    });
+  });
+
   it("renders skip card when both chains have wallets, with both addresses + Continue", async () => {
     mockUseEnvState.mockReturnValue(
       envQueryFor({
