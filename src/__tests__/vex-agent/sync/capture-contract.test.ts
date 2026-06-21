@@ -137,6 +137,12 @@ describe("capture contract — contract invariants", () => {
     expect(c.exceptions).toBeDefined();
     expect(c.exceptions!.some(e => e.includes("instrumentKey"))).toBe(true);
   });
+
+  it("solana.predict.closeAll has exception for instrumentKey (claim items match via positionKey)", () => {
+    const c = MUTATION_MATRIX.get("solana.predict.closeAll")!;
+    expect(c.exceptions).toBeDefined();
+    expect(c.exceptions!.some(e => /no instrumentKey/i.test(e))).toBe(true);
+  });
 });
 
 // ── Capture validator tests ────────────────────────────────────
@@ -192,6 +198,22 @@ describe("capture contract — runtime validator", () => {
       outputValueUsd: "3.50", valuationSource: "prediction_exact",
     });
     expect(valid).toBe(true);
+  });
+
+  it("solana.predict.closeAll item passes without instrumentKey (exception) with valuation", () => {
+    const valid = validateCaptureContract("solana.predict.closeAll", {
+      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "PK1",
+      outputValueUsd: "3.50", valuationSource: "prediction_exact",
+    });
+    expect(valid).toBe(true);
+  });
+
+  it("solana.predict.closeAll item missing positionKey is REJECTED (exception is instrumentKey-only)", () => {
+    const valid = validateCaptureContract("solana.predict.closeAll", {
+      type: "prediction", walletAddress: "0x", status: "claimed",
+      outputValueUsd: "3.50", valuationSource: "prediction_exact",
+    });
+    expect(valid).toBe(false);
   });
 
   it("rejects unexpected type", () => {
