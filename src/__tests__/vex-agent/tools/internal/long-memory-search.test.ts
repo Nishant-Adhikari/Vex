@@ -447,8 +447,9 @@ describe("long_memory_search — empty + failure paths", () => {
 // ── get ───────────────────────────────────────────────────────────
 
 describe("long_memory_get", () => {
-  it("returns an active entry and loads its content into context", async () => {
-    mockGetById.mockResolvedValue({
+  /** A full active entry as knowledgeRepo.getById returns it. */
+  function activeEntry(overrides: Record<string, unknown> = {}) {
+    return {
       id: 5,
       kind: "risk_rule",
       title: "T",
@@ -467,13 +468,45 @@ describe("long_memory_get", () => {
       statusReason: null,
       changeSummary: null,
       whatFailed: null,
-    });
+      ...overrides,
+    };
+  }
+
+  it("concise (default): omits contentMd from output but still loads the body into context", async () => {
+    mockGetById.mockResolvedValue(activeEntry());
     const context = ctx();
+    // No response_format → server-side default is now 'concise' (no double-emission).
     const res = await handleLongMemoryGet({ id: 5 }, context);
     expect(res.success).toBe(true);
     const data = JSON.parse(res.output);
     expect(data.id).toBe(5);
+    // Concise keeps the navigation/lineage metadata…
+    expect(data.kind).toBe("risk_rule");
+    expect(data.title).toBe("T");
+    expect(data.summary).toBe("S");
+    expect(data.status).toBe("active");
+    expect(data.supersedesId).toBeNull();
+    expect(data.supersededBy).toBeNull();
+    // …but the body is NOT inlined in the tool output (it goes through loadedDocuments only).
+    expect(res.output).not.toContain("BODY");
+    expect(data).not.toHaveProperty("contentMd");
+    expect(data).not.toHaveProperty("tags");
+    // The body is still injected into context — single source of the content.
+    expect(context.loadedDocuments.get("long_memory:5")).toBe("BODY");
+  });
+
+  it("detailed (opt-in): inlines contentMd in the output and still loads the body into context", async () => {
+    mockGetById.mockResolvedValue(activeEntry());
+    const context = ctx();
+    const res = await handleLongMemoryGet({ id: 5, response_format: "detailed" }, context);
+    expect(res.success).toBe(true);
+    const data = JSON.parse(res.output);
+    expect(data.id).toBe(5);
+    // Detailed re-inlines the full body + metadata bag.
+    expect(res.output).toContain("BODY");
     expect(data.contentMd).toBe("BODY");
+    expect(data).toHaveProperty("tags");
+    // Body still injected regardless of format.
     expect(context.loadedDocuments.get("long_memory:5")).toBe("BODY");
   });
 

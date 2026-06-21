@@ -1,9 +1,11 @@
 /**
  * long_memory_get handler (S3) — direct fetch of a long-term memory entry by id.
  *
- * Explicit fetch ⇒ returns the full entry (detailed by default). Injects
- * content_md into the engine's loadedDocuments under `long_memory:{id}` so it
- * surfaces in the system prompt's loaded-content section.
+ * Explicit fetch ⇒ returns the entry. Concise by default (metadata + lineage
+ * only); pass response_format='detailed' to also inline the full metadata bag.
+ * Either way content_md injects into the engine's loadedDocuments under
+ * `long_memory:{id}` so it surfaces in the system prompt's loaded-content
+ * section — so concise avoids double-emitting the body in the tool output.
  *
  * Steering on miss: not-found → re-search hint; a non-active entry steers the
  * agent toward the live successor (`supersededBy`) when one exists, otherwise
@@ -29,7 +31,7 @@ export async function handleLongMemoryGet(
   if (id === undefined) return fail("Missing required parameter: id");
 
   const responseFormat: ResponseFormat =
-    enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "detailed";
+    enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "concise";
 
   const entry = await knowledgeRepo.getById(id);
   if (!entry) {

@@ -191,7 +191,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     description: [
       "Fetch a single long-term memory entry by id (the numeric id returned by long_memory_search results with source:'long_memory'). Loads its full content into context.",
       "If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use long_memory_search to find a current id, long_memory_history to trace the version chain.",
-      "response_format: 'detailed' (default) returns the full entry + lineage; 'concise' returns id/kind/title/status + lineage links only. Does not require the embeddings service.",
+      "response_format: 'concise' (default) returns id/kind/title/summary/status + lineage links (the full body is still loaded into context); 'detailed' additionally inlines content_md, tags, source refs, confidence, and lifecycle metadata. Does not require the embeddings service.",
     ].join(" "),
     parameters: {
       type: "object",
@@ -200,7 +200,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
         response_format: {
           type: "string",
           enum: ["concise", "detailed"],
-          description: "detailed (default) → full entry + lineage; concise → metadata + lineage links only.",
+          description: "concise (default) → metadata + lineage links (body still loaded into context); detailed → also inlines content_md + lifecycle metadata.",
         },
       },
       required: ["id"],
