@@ -56,12 +56,21 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   "releases.electronjs.org",
   "desktop.docker.com",
   "docs.docker.com",
+  // Solana explorer + DexScreener: agent-surfaced token/tx links. Exact-host
+  // entries are safe — `isAllowedExternalUrl` matches `url.hostname === entry`,
+  // so `dexscreener.com.evil.com` / `notdexscreener.com` do not match.
+  "explorer.solana.com",
+  "dexscreener.com",
   // GitHub: restrict to Vex Foundation org + Electron releases (specific repos only)
   { host: "github.com", pathPrefix: "/Vex-Foundation/" },
   { host: "github.com", pathPrefix: "/electron/electron/releases" },
-  // Rettiwt extension stores — exact extension URLs only. Path-boundary
-  // in `pathStartsWithBoundary` keeps `-malicious`/`-clone` suffixes out.
-  // Chrome ext ID from Rettiwt-API-dev/README.md (X Auth Helper).
+  // Rettiwt = the privacy-respecting Twitter/X API client the agent uses for
+  // authenticated timeline/tweet reads (src/tools/twitter-account). Its
+  // "X Auth Helper" browser extensions let a user mint a Rettiwt API key from
+  // their own logged-in X session — no cookie/password is handed to Vex — so
+  // these two store URLs are allow-listed to open externally. Exact extension
+  // URLs only: path-boundary matching in `pathStartsWithBoundary` blocks
+  // `-malicious`/`-clone` lookalike suffixes on the same store host.
   {
     host: "chromewebstore.google.com",
     pathPrefix:
@@ -75,6 +84,27 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
 
 function checkExternalUrl(raw: string): boolean {
   return isAllowedExternalUrl(raw, ALLOWED_EXTERNAL);
+}
+
+/** Max length of a sanitized URL emitted to the log. */
+const SANITIZED_URL_MAX_LEN = 200;
+
+/**
+ * Reduce a URL to `scheme//host/pathname` for logging, dropping `search` and
+ * `hash`. Denied URLs may carry secrets in the query string (e.g.
+ * `?token=…`), so the raw URL must NEVER reach the log. A non-parseable input
+ * returns the literal `"[unparseable-url]"` rather than echoing the raw value.
+ */
+function sanitizeUrlForLog(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const sanitized = `${url.protocol}//${url.host}${url.pathname}`;
+    return sanitized.length > SANITIZED_URL_MAX_LEN
+      ? `${sanitized.slice(0, SANITIZED_URL_MAX_LEN)}…`
+      : sanitized;
+  } catch {
+    return "[unparseable-url]";
+  }
 }
 
 function isAllowedAppUrl(raw: string): boolean {
@@ -179,6 +209,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (checkExternalUrl(url)) {
       void shell.openExternal(url);
+    } else {
+      log.warn(`[window] blocked window.open to ${sanitizeUrlForLog(url)}`);
     }
     return { action: "deny" };
   });
@@ -189,6 +221,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       event.preventDefault();
       if (checkExternalUrl(url)) {
         void shell.openExternal(url);
+      } else {
+        log.warn(`[window] blocked navigation to ${sanitizeUrlForLog(url)}`);
       }
     }
   });

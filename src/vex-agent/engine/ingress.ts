@@ -105,7 +105,7 @@ export async function routeUserMessage(
   // No active run — distinguish agent / mission-setup by mission presence.
   const mission = await missionsRepo.getActiveMission(sessionId);
   if (mission && mission.status !== "running") {
-    return processMissionSetupTurn(sessionId, userInput);
+    return processMissionSetupTurn(sessionId, userInput, signal);
   }
 
   // Chat/agent turn — the only path that honours the chat-turn "stop

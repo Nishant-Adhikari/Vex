@@ -233,7 +233,9 @@ describe("ingress.routeUserMessage", () => {
     const result = await routeUserMessage("s1", "goal is x");
 
     expect(result).toBe(setupResult);
-    expect(mockProcessMissionSetupTurn).toHaveBeenCalledWith("s1", "goal is x");
+    // The chat-turn Stop signal (undefined here) is threaded into setup so a
+    // Stop pressed during mission SETUP is honoured, mirroring the agent path.
+    expect(mockProcessMissionSetupTurn).toHaveBeenCalledWith("s1", "goal is x", undefined);
   });
 
   it("routes to agent when no mission and no run exist", async () => {
