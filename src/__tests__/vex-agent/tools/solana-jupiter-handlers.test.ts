@@ -1,5 +1,28 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+
+// Mock the Jupiter tokens service so category-routing tests never hit the
+// network and we can assert WHICH provider a category routes to. `vi.hoisted`
+// is required because the `vi.mock` factory is hoisted above top-level imports.
+const {
+  getJupiterTokensByCategory,
+  getJupiterRecentTokens,
+  getJupiterTokensByTag,
+  searchJupiterTokens,
+} = vi.hoisted(() => ({
+  getJupiterTokensByCategory: vi.fn(async () => []),
+  getJupiterRecentTokens: vi.fn(async () => []),
+  getJupiterTokensByTag: vi.fn(async () => []),
+  searchJupiterTokens: vi.fn(async () => []),
+}));
+
+vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
+  getJupiterTokensByCategory,
+  getJupiterRecentTokens,
+  getJupiterTokensByTag,
+  searchJupiterTokens,
+}));
+
 import { SOLANA_JUPITER_HANDLERS } from "../../../vex-agent/tools/protocols/solana-jupiter/handlers.js";
 import { SOLANA_JUPITER_TOOLS } from "../../../vex-agent/tools/protocols/solana-jupiter/manifest.js";
 
@@ -136,5 +159,91 @@ describe("solana-jupiter handlers", () => {
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("query");
+  });
+
+  // ── solana.tokens.trending — category/interval routing & guards ──
+
+  const trending = (p: Record<string, unknown>) =>
+    SOLANA_JUPITER_HANDLERS["solana.tokens.trending"]!(p, ctx());
+
+  beforeEach(() => {
+    getJupiterTokensByCategory.mockClear();
+    getJupiterRecentTokens.mockClear();
+    getJupiterTokensByTag.mockClear();
+  });
+
+  it("solana.tokens.trending rejects a present-but-unknown category", async () => {
+    const result = await trending({ category: "hot" });
+    expect(result.success).toBe(false);
+    for (const valid of ["toptrending", "toptraded", "toporganicscore", "recent", "lst", "verified"]) {
+      expect(result.output).toContain(valid);
+    }
+    expect(getJupiterTokensByCategory).not.toHaveBeenCalled();
+    expect(getJupiterRecentTokens).not.toHaveBeenCalled();
+    expect(getJupiterTokensByTag).not.toHaveBeenCalled();
+  });
+
+  // Codex BLOCKER regression: a prototype key must NOT pass membership and must
+  // NOT route to any provider (previously `"constructor" in TAG_MAP` was true).
+  it("solana.tokens.trending rejects prototype keys (constructor / toString)", async () => {
+    for (const proto of ["constructor", "toString", "hasOwnProperty"]) {
+      const result = await trending({ category: proto });
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("Unknown category");
+    }
+    expect(getJupiterTokensByCategory).not.toHaveBeenCalled();
+    expect(getJupiterRecentTokens).not.toHaveBeenCalled();
+    expect(getJupiterTokensByTag).not.toHaveBeenCalled();
+  });
+
+  it("solana.tokens.trending rejects a present-but-unknown interval", async () => {
+    const result = await trending({ interval: "4h" });
+    expect(result.success).toBe(false);
+    for (const valid of ["5m", "1h", "6h", "24h"]) {
+      expect(result.output).toContain(valid);
+    }
+    expect(getJupiterTokensByCategory).not.toHaveBeenCalled();
+  });
+
+  it("solana.tokens.trending defaults absent category/interval to toptrending/1h via category provider", async () => {
+    const result = await trending({});
+    expect(result.success).toBe(true);
+    expect(getJupiterTokensByCategory).toHaveBeenCalledTimes(1);
+    expect(getJupiterTokensByCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ category: "toptrending", interval: "1h" }),
+    );
+    expect(getJupiterRecentTokens).not.toHaveBeenCalled();
+    expect(getJupiterTokensByTag).not.toHaveBeenCalled();
+  });
+
+  it("solana.tokens.trending routes 'recent' to the recent provider", async () => {
+    const result = await trending({ category: "recent" });
+    expect(result.success).toBe(true);
+    expect(getJupiterRecentTokens).toHaveBeenCalledTimes(1);
+    expect(getJupiterTokensByCategory).not.toHaveBeenCalled();
+    expect(getJupiterTokensByTag).not.toHaveBeenCalled();
+  });
+
+  it("solana.tokens.trending routes 'lst' and 'verified' to the tag provider", async () => {
+    for (const tag of ["lst", "verified"] as const) {
+      getJupiterTokensByTag.mockClear();
+      const result = await trending({ category: tag });
+      expect(result.success).toBe(true);
+      expect(getJupiterTokensByTag).toHaveBeenCalledTimes(1);
+      expect(getJupiterTokensByTag).toHaveBeenCalledWith(tag);
+    }
+    expect(getJupiterTokensByCategory).not.toHaveBeenCalled();
+    expect(getJupiterRecentTokens).not.toHaveBeenCalled();
+  });
+
+  it("solana.tokens.trending routes 'toptraded' to the category provider", async () => {
+    const result = await trending({ category: "toptraded" });
+    expect(result.success).toBe(true);
+    expect(getJupiterTokensByCategory).toHaveBeenCalledTimes(1);
+    expect(getJupiterTokensByCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ category: "toptraded" }),
+    );
+    expect(getJupiterTokensByTag).not.toHaveBeenCalled();
+    expect(getJupiterRecentTokens).not.toHaveBeenCalled();
   });
 });

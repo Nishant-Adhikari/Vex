@@ -60,15 +60,18 @@ export function walletSecret(ctx: ProtocolExecutionContext): Uint8Array {
 
 // ── Category routing for tokens.trending ─────────────────────────
 
-const CATEGORY_MAP: Record<string, JupiterTokenCategory> = {
-  toptrending: "toptrending",
-  toptraded: "toptraded",
-  toporganicscore: "toporganicscore",
-};
-const TAG_MAP: Record<string, JupiterTokenTag> = {
-  lst: "lst",
-  verified: "verified",
-};
+// Membership uses Sets (not the maps' `in` operator) so prototype keys like
+// "constructor"/"toString" cannot pass a check and route to an undefined value.
+const VALID_TAGS = new Set<JupiterTokenTag>(["lst", "verified"]);
+const VALID_CATEGORIES = new Set<string>([
+  "toptrending",
+  "toptraded",
+  "toporganicscore",
+  "recent",
+  "lst",
+  "verified",
+]);
+const VALID_INTERVALS = new Set<JupiterTokenInterval>(["5m", "1h", "6h", "24h"]);
 
 // ── Handler map ──────────────────────────────────────────────────
 
@@ -96,16 +99,27 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const interval = (str(p, "interval") || "1h") as JupiterTokenInterval;
     const limit = num(p, "limit") ?? 20;
 
+    // Guard a PRESENT-but-unrecognized category (don't silently fall back to toptrending).
+    if (str(p, "category") && !VALID_CATEGORIES.has(category)) {
+      return fail("Unknown category '" + category + "'. Valid categories: toptrending, toptraded, toporganicscore, recent, lst, verified.");
+    }
+    // Guard a PRESENT-but-unrecognized interval (don't let it fail deep in the client with a generic HTTP error).
+    if (str(p, "interval") && !VALID_INTERVALS.has(interval)) {
+      return fail("Unknown interval '" + interval + "'. Valid intervals: 5m, 1h, 6h, 24h.");
+    }
+
     // Every return path maps the raw token array through the concise projector
     // (P0-3c) so default-limit trending stays under the overflow threshold.
     if (category === "recent") {
       return ok(projectJupiterTokens(await getJupiterRecentTokens()));
     }
-    if (category in TAG_MAP) {
-      return ok(projectJupiterTokens(await getJupiterTokensByTag(TAG_MAP[category])));
+    // Casts are safe: membership was validated by the Sets above (recent + tags
+    // handled here; unknown categories already failed), so `category` is one of
+    // the real tag/category literals.
+    if (VALID_TAGS.has(category as JupiterTokenTag)) {
+      return ok(projectJupiterTokens(await getJupiterTokensByTag(category as JupiterTokenTag)));
     }
-    const jupiterCategory = CATEGORY_MAP[category] ?? "toptrending";
-    return ok(projectJupiterTokens(await getJupiterTokensByCategory({ category: jupiterCategory, interval, limit })));
+    return ok(projectJupiterTokens(await getJupiterTokensByCategory({ category: category as JupiterTokenCategory, interval, limit })));
   },
 
   // Swap
