@@ -13,7 +13,8 @@
  * uses, tags/launchpad, age, and a concise per-interval stats subset.
  *
  * Default-concise with NO verbosity knob: there is no agent use case for the
- * dropped icon/social URLs or raw provider sub-objects. (Both wiring tools are
+ * dropped social URLs or raw provider sub-objects (the icon is re-surfaced as a
+ * single bounded `logoUrl` the renderer can display). (Both wiring tools are
  * `mutating:false` / `actionKind:"read"` with no `_tradeCapture`, so projecting
  * the `ok()` arg — which trims both the output string and the unused `data` — is
  * safe; see CC-3 / P0-3 in the tool-output eval.)
@@ -57,9 +58,10 @@ export interface ConciseJupiterTokenAudit {
 
 /**
  * Concise Jupiter token row. Keeps identity, market signals, organic/trending
- * signals, the safety audit, tags/launchpad and age; drops icon/social URLs,
- * raw authority pubkeys, the open passthrough bag, APY, and raw provider
- * sub-objects (`firstPool`, full stat blocks).
+ * signals, the safety audit, tags/launchpad, age, and a single bounded
+ * `logoUrl` (from `icon`); drops social URLs, raw authority pubkeys, the open
+ * passthrough bag, APY, and raw provider sub-objects (`firstPool`, full stat
+ * blocks).
  */
 export interface ConciseJupiterToken {
   /** Mint address (Jupiter `id`). */
@@ -77,6 +79,8 @@ export interface ConciseJupiterToken {
   organicScore: number | null;
   organicScoreLabel: string | null;
   isVerified: boolean | null;
+  /** Bounded, https-only token logo URL (from `icon`); `null` when unsafe/absent. */
+  logoUrl: string | null;
   tags: string[] | null;
   launchpad: string | null;
   createdAt: string | null;
@@ -97,6 +101,35 @@ function numOrNull(value: number | null | undefined): number | null {
 /** Normalise an optional/nullable boolean off an external shape to `boolean | null`. */
 function boolOrNull(value: boolean | null | undefined): boolean | null {
   return typeof value === "boolean" ? value : null;
+}
+
+/** Max length of a surfaced logo URL — bounds the field against an oversized icon. */
+const MAX_LOGO_URL_LEN = 512;
+
+/**
+ * Normalise Jupiter's `icon` to a bounded, https-only logo URL the renderer can
+ * safely display. Returns `null` when the value is absent, non-https, carries a
+ * control char, or exceeds the length cap.
+ *
+ * The logic is duplicated (not imported from the renderer's `safeImgSrc`) on
+ * purpose: the engine and the untrusted renderer must not share a helper across
+ * the process boundary. The renderer re-validates every src independently, so
+ * this is a bounding/normalisation step, not the trust gate.
+ */
+function normalizeLogoUrl(icon: string | null | undefined): string | null {
+  if (typeof icon !== "string") return null;
+  const trimmed = icon.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_LOGO_URL_LEN) return null;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const code = trimmed.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return null; // control chars
+  }
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -144,11 +177,11 @@ function projectAudit(
  * Project a raw `JupiterMintInformation` to a concise, decision-relevant row.
  *
  * KEEP: mint/symbol/name/decimals, usdPrice, marketCap (`mcap`)/fdv, liquidity,
- * circ/total supply, holderCount, organicScore (+ label), isVerified, the audit
- * safety flags, tags, launchpad, createdAt, and a concise per-interval stats
- * subset.
+ * circ/total supply, holderCount, organicScore (+ label), isVerified, a bounded
+ * https-only `logoUrl` (from `icon`), the audit safety flags, tags, launchpad,
+ * createdAt, and a concise per-interval stats subset.
  *
- * DROP: icon, twitter/telegram/website/discord/instagram/tiktok/otherUrl, dev,
+ * DROP: twitter/telegram/website/discord/instagram/tiktok/otherUrl, dev,
  * raw mintAuthority/freezeAuthority pubkeys (the disabled-booleans carry the
  * signal), tokenProgram, partnerConfig, graduatedPool/graduatedAt, priceBlockId,
  * apy, the raw `firstPool` sub-object, the full stat blocks, updatedAt, and the
@@ -170,6 +203,7 @@ export function projectJupiterToken(token: JupiterMintInformation): ConciseJupit
     organicScore: numOrNull(token.organicScore),
     organicScoreLabel: typeof token.organicScoreLabel === "string" ? token.organicScoreLabel : null,
     isVerified: boolOrNull(token.isVerified),
+    logoUrl: normalizeLogoUrl(token.icon),
     tags: Array.isArray(token.tags) ? token.tags : null,
     launchpad: typeof token.launchpad === "string" ? token.launchpad : null,
     createdAt: typeof token.createdAt === "string" ? token.createdAt : null,
