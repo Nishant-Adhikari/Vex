@@ -18,6 +18,9 @@ import { getKhalaniClient } from "@tools/khalani/client.js";
 import { resolveChainId, getChain } from "@tools/khalani/chains.js";
 import { createDynamicPublicClient } from "@tools/khalani/evm-client.js";
 import { extractMintedNftId } from "@tools/kyberswap/evm-utils.js";
+import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+
+type DynamicPublicClient = ReturnType<typeof createDynamicPublicClient>;
 
 function str(p: Record<string, unknown>, k: string): string {
   const v = p[k]; return typeof v === "string" ? v : "";
@@ -33,18 +36,33 @@ export async function handleChainRead(
   if (!action) return { success: false, output: "Missing required: action" };
   if (!chainIdRaw) return { success: false, output: "Missing required: chainId" };
 
-  // Resolve chain via khalani
-  const chains = await getKhalaniClient().getChains();
-  const chainId = resolveChainId(chainIdRaw, chains);
-  const chain = getChain(chainId, chains);
-  const client = createDynamicPublicClient(chain, chains);
+  // Resolve chain via khalani. Any throw here (unsupported chain, RPC discovery,
+  // provider/SDK error) is reduced to a redacted, bounded summary so raw viem/RPC
+  // text — which can carry URLs, request/response bodies, or key material — never
+  // reaches the model output (B-003).
+  let chainId: number;
+  let chain: ReturnType<typeof getChain>;
+  let client: DynamicPublicClient;
+  try {
+    const chains = await getKhalaniClient().getChains();
+    chainId = resolveChainId(chainIdRaw, chains);
+    chain = getChain(chainId, chains);
+    client = createDynamicPublicClient(chain, chains);
+  } catch (err) {
+    return { success: false, output: summarizeProtocolError(err).message };
+  }
 
   switch (action) {
     case "tx_receipt": {
       const txHash = str(params, "txHash");
       if (!txHash) return { success: false, output: "Missing required: txHash" };
 
-      const receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+      let receipt: Awaited<ReturnType<DynamicPublicClient["getTransactionReceipt"]>>;
+      try {
+        receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+      } catch (err) {
+        return { success: false, output: summarizeProtocolError(err).message };
+      }
       return {
         success: true,
         output: JSON.stringify({
@@ -67,7 +85,12 @@ export async function handleChainRead(
       const recipient = str(params, "address");
       if (!txHash) return { success: false, output: "Missing required: txHash" };
 
-      const receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+      let receipt: Awaited<ReturnType<DynamicPublicClient["getTransactionReceipt"]>>;
+      try {
+        receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+      } catch (err) {
+        return { success: false, output: summarizeProtocolError(err).message };
+      }
       const logs = receipt.logs.map(l => ({
         address: l.address,
         topics: l.topics as string[],

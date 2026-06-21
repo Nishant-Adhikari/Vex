@@ -60,6 +60,9 @@ vi.mock("@tools/khalani/client.js", () => ({
       return [
         { address: "native", chainId, symbol: "ETH", name: "Ether", decimals: 18, extensions: { balance: "5000000000000000000", price: { usd: "3000.00" } } },
         { address: "0xUSDC", chainId, symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "100000000", price: { usd: "1.00" } } },
+        // No `price` extension → projector omits priceUsd. Held-USD value of this
+        // row is 0, so it must sort LAST in the concise top-N trim (null-safe).
+        { address: "0xNOPRICE", chainId, symbol: "NOPX", name: "No Price Token", decimals: 18, extensions: { balance: "1000000000000000000" } },
       ];
     },
     getChains: async () => [MOCK_CHAIN, MOCK_SOLANA_CHAIN],
@@ -151,9 +154,69 @@ describe("wallet_balances", () => {
     expect(tokens.map((token: { symbol: string }) => token.symbol)).toContain("ETH");
     const eth = tokens.find((token: {
       symbol: string;
-      extensions?: { price?: { usd?: string } };
+      priceUsd?: string;
     }) => token.symbol === "ETH");
-    expect(eth?.extensions?.price?.usd).toBe("3000.00");
+    expect(eth?.priceUsd).toBe("3000.00");
+  });
+
+  // ── concise + limit trim (P1-7) ────────────────────────────────
+  // The EVM mock returns 3 tokens: ETH (~15000 held USD), USDC (~100),
+  // NOPX (no price → 0 held USD). `trimTokens` only trims when
+  // response_format is 'concise' AND a positive limit is supplied.
+
+  it("concise + limit=1 trims to the single highest held-USD token (ETH)", async () => {
+    const result = await handleWalletBalances(
+      { wallet: "eip155", response_format: "concise", limit: 1 },
+      baseContext,
+    );
+    expect(result.success).toBe(true);
+    const data = JSON.parse(result.output);
+    const tokens = data.wallets[0].tokens;
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0].symbol).toBe("ETH");
+    // tokenCount/totalUsd are computed off the FULL scan — a trim must not
+    // distort the held totals.
+    expect(data.wallets[0].tokenCount).toBe(3);
+  });
+
+  it("concise + limit greater than token count returns all tokens", async () => {
+    const result = await handleWalletBalances(
+      { wallet: "eip155", response_format: "concise", limit: 99 },
+      baseContext,
+    );
+    expect(result.success).toBe(true);
+    const data = JSON.parse(result.output);
+    expect(data.wallets[0].tokens).toHaveLength(3);
+  });
+
+  it("concise + limit is null-safe for a token with no priceUsd (sinks to bottom, no throw)", async () => {
+    const result = await handleWalletBalances(
+      { wallet: "eip155", response_format: "concise", limit: 2 },
+      baseContext,
+    );
+    expect(result.success).toBe(true);
+    const data = JSON.parse(result.output);
+    const tokens = data.wallets[0].tokens;
+    // Top 2 by held USD = ETH then USDC; the price-less NOPX row is trimmed
+    // out (sorted last), proving the sort never threw on a missing price.
+    expect(tokens.map((t: { symbol: string }) => t.symbol)).toEqual(["ETH", "USDC"]);
+    expect(tokens.map((t: { symbol: string }) => t.symbol)).not.toContain("NOPX");
+  });
+
+  it("default (no limit / detailed) returns all tokens unchanged", async () => {
+    const detailedDefault = await handleWalletBalances({ wallet: "eip155" }, baseContext);
+    const conciseNoLimit = await handleWalletBalances(
+      { wallet: "eip155", response_format: "concise" },
+      baseContext,
+    );
+    expect(detailedDefault.success).toBe(true);
+    expect(conciseNoLimit.success).toBe(true);
+    // Detailed default returns every projected row, in upstream order.
+    const detailedTokens = JSON.parse(detailedDefault.output).wallets[0].tokens;
+    expect(detailedTokens.map((t: { symbol: string }) => t.symbol)).toEqual(["ETH", "USDC", "NOPX"]);
+    // Concise WITHOUT a limit is also untouched (trim needs both knobs).
+    const conciseTokens = JSON.parse(conciseNoLimit.output).wallets[0].tokens;
+    expect(conciseTokens).toHaveLength(3);
   });
 
   // ── errors ─────────────────────────────────────────────────────

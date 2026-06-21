@@ -49,7 +49,7 @@ export const limitOrderCreate: ProtocolHandler = async (p, ctx) => {
   });
 
   if (p.dryRun === true) {
-    return ok({ dryRun: true, chain: slug, makerAsset: makerToken.symbol, takerAsset: takerToken.symbol, makingAmount, takingAmount, expiredAt, salt: eip712.message.salt });
+    return ok({ dryRun: true, chain: slug, makerAsset: makerToken.symbol, takerAsset: takerToken.symbol, makingAmount, takingAmount, expiredAt, expiresAtIso: new Date(expiredAt * 1000).toISOString() });
   }
 
   // Signing wallet — decrypt AFTER the dryRun gate, real exec only.
@@ -79,7 +79,7 @@ export const limitOrderCreate: ProtocolHandler = async (p, ctx) => {
 
   return {
     success: true,
-    output: JSON.stringify({ chain: slug, orderId: result.orderId, makerAsset: makerToken.symbol, takerAsset: takerToken.symbol, makingAmount, takingAmount, expiredAt }, null, 2),
+    output: JSON.stringify({ chain: slug, orderId: result.orderId, makerAsset: makerToken.symbol, takerAsset: takerToken.symbol, makingAmount, takingAmount, makingAmountHuman: makingAmountRaw, takingAmountHuman: takingAmountRaw, expiredAt, expiresAtIso: new Date(expiredAt * 1000).toISOString() }, null, 2),
     data: {
       orderId: result.orderId,
       _tradeCapture: {

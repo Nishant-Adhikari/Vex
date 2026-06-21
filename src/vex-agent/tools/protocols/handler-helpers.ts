@@ -46,7 +46,7 @@ export function num(p: Record<string, unknown>, k: string): number | undefined {
 
 /** Success result with JSON output. */
 export function ok(data: unknown): ToolResult {
-  return { success: true, output: JSON.stringify(data, null, 2), data: data as Record<string, unknown> };
+  return { success: true, output: JSON.stringify(data), data: data as Record<string, unknown> };
 }
 
 /** Failure result with message. */

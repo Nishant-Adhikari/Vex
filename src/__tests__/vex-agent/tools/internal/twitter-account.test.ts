@@ -135,7 +135,7 @@ describe("twitter_account", () => {
     expect(result.success).toBe(true);
     expect(result.output).not.toContain("profileImage");
     expect(result.output).not.toContain("profileBanner");
-    expect(result.output).toContain("\"userName\": \"openai\"");
+    expect(result.output).toContain("\"userName\":\"openai\"");
   });
 
   it("response_format='concise' returns the projection", async () => {

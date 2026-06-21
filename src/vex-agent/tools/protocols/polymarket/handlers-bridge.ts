@@ -15,6 +15,7 @@ export const BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
 
   "polymarket.bridge.deposit": async (p) => {
     const address = str(p, "address");
+    // Money-moving guard: empty address must fail BEFORE any bridge API call.
     if (!address) return fail("Missing required: address");
     return ok(await getPolyBridgeClient().createDeposit(address));
   },
@@ -22,7 +23,9 @@ export const BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
   "polymarket.bridge.withdraw": async (p) => {
     const address = str(p, "address"), toChainId = str(p, "toChainId");
     const toTokenAddress = str(p, "toTokenAddress"), recipientAddr = str(p, "recipientAddr");
-    if (!address || !toChainId || !toTokenAddress || !recipientAddr)
+    // Money-moving guard: empty address must fail BEFORE any bridge API call.
+    if (!address) return fail("Missing required: address");
+    if (!toChainId || !toTokenAddress || !recipientAddr)
       return fail("Missing required: address, toChainId, toTokenAddress, recipientAddr");
     return ok(await getPolyBridgeClient().createWithdraw({ address, toChainId, toTokenAddress, recipientAddr }));
   },

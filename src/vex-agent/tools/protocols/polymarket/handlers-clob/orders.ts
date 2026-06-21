@@ -96,9 +96,27 @@ export const ORDERS_HANDLERS: Record<string, ProtocolHandler> = {
     });
 
     const isMatched = result.status === "matched";
+    // Lean output literal (money-moving correctness): build from result+params
+    // instead of spreading the whole SendOrderResponse. Drop the empty `errorMsg`
+    // field; surface an explicit `filled` boolean derived from order status.
+    const buyOutput = {
+      orderID: result.orderID,
+      status: result.status,
+      success: result.success,
+      filled: isMatched,
+      conditionId,
+      outcome,
+      amount,
+      price,
+      ...(result.makingAmount !== undefined ? { makingAmount: result.makingAmount } : {}),
+      ...(result.takingAmount !== undefined ? { takingAmount: result.takingAmount } : {}),
+      ...(result.transactionsHashes?.length ? { transactionsHashes: result.transactionsHashes } : {}),
+      ...(result.tradeIDs?.length ? { tradeIDs: result.tradeIDs } : {}),
+      ...(result.errorMsg ? { errorMsg: result.errorMsg } : {}),
+    };
     return {
       success: true,
-      output: JSON.stringify({ ...result, conditionId, outcome, amount, price }, null, 2),
+      output: JSON.stringify(buyOutput, null, 2),
       data: { ...result, conditionId, _tradeCapture: {
         type: isMatched ? "prediction" : "order",
         chain: "polygon",
@@ -174,9 +192,29 @@ export const ORDERS_HANDLERS: Record<string, ProtocolHandler> = {
     const result = await clob.postOrder({ address: signer.address }, { order: { ...orderData, signature }, owner: creds.apiKey, orderType: (str(p, "orderType") || "GTC") as "GTC" | "FOK" | "GTD" | "FAK", deferExec: p.deferExec === true ? true : undefined });
 
     const isMatched = result.status === "matched";
+    // Lean output literal (money-moving correctness, P1-10): mirror the buy
+    // handler — build from result+params instead of spreading the whole
+    // SendOrderResponse. Drop the empty `errorMsg`; surface an explicit
+    // `filled` boolean derived from order status. `amount` carries the sell
+    // size (shares), matching the buy handler's `amount` field.
+    const sellOutput = {
+      orderID: result.orderID,
+      status: result.status,
+      success: result.success,
+      filled: isMatched,
+      conditionId,
+      outcome,
+      amount: shares,
+      price,
+      ...(result.makingAmount !== undefined ? { makingAmount: result.makingAmount } : {}),
+      ...(result.takingAmount !== undefined ? { takingAmount: result.takingAmount } : {}),
+      ...(result.transactionsHashes?.length ? { transactionsHashes: result.transactionsHashes } : {}),
+      ...(result.tradeIDs?.length ? { tradeIDs: result.tradeIDs } : {}),
+      ...(result.errorMsg ? { errorMsg: result.errorMsg } : {}),
+    };
     return {
       success: true,
-      output: JSON.stringify({ ...result, conditionId, outcome, shares, price }, null, 2),
+      output: JSON.stringify(sellOutput, null, 2),
       data: { ...result, conditionId, _tradeCapture: {
         type: isMatched ? "prediction" : "order",
         chain: "polygon",
@@ -202,7 +240,19 @@ export const ORDERS_HANDLERS: Record<string, ProtocolHandler> = {
       return walletScopeErrorToResult(err);
     }
     const result = await getPolyClobClient().cancelOrder({ address }, orderId);
-    return { success: true, output: JSON.stringify(result, null, 2), data: { ...result, orderId, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: address, positionKey: orderId, meta: { action: "cancel" } } } };
+    // Correctness guard (money-moving): the CLOB returns 200 even when the
+    // requested order was NOT cancelled — it lands in `not_canceled` with a
+    // reason. Treat that as a failure instead of reporting silent success.
+    const cancelReason = result.not_canceled?.[orderId];
+    const cancelled = cancelReason === undefined;
+    if (!cancelled) {
+      return {
+        success: false,
+        output: JSON.stringify({ ...result, orderId, cancelled: false, reason: cancelReason }, null, 2),
+        data: { ...result, orderId, cancelled: false },
+      };
+    }
+    return { success: true, output: JSON.stringify({ ...result, orderId, cancelled: true }, null, 2), data: { ...result, orderId, cancelled: true, _tradeCapture: { type: "order", chain: "polygon", status: "cancelled", walletAddress: address, positionKey: orderId, meta: { action: "cancel" } } } };
   },
 
   "polymarket.clob.cancelOrders": async (p, ctx) => {

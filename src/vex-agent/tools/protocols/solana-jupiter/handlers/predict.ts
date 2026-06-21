@@ -30,21 +30,121 @@ const PREDICT_CATEGORY = [
 ] as const;
 const PREDICT_FILTER = ["new", "live", "trending"] as const;
 
+// ── Compact-JSON projector (P1-11) ───────────────────────────────
+// Events and positions are returned verbatim from the SDK and carry heavy,
+// agent-irrelevant payload: imageUrl / rulesPdf blobs, marketResultPubkey
+// account addresses, and event-metadata noise (slug/series/closeTime/imageUrl).
+// `toPredictView` projects each item down to the fields the agent reasons over.
+// It is intentionally narrow and structural: it discriminates a position (has a
+// top-level `pubkey`) from an event (has `eventId` but no `pubkey`) and curates
+// each. Unknown / non-object input is returned untouched so the handler never
+// turns a real SDK shape into `null` silently.
+//
+// NOT advertised as guaranteed output (verified against manifest + discovery):
+// imageUrl, rulesPdf, marketResultPubkey, event metadata.{slug,series,closeTime,imageUrl}.
+
+/** Narrow an unknown to a plain object (excludes null + arrays). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Keep only the listed keys that are actually present on the source object. */
+function pick(
+  source: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (key in source) out[key] = source[key];
+  }
+  return out;
+}
+
+/** Curate event metadata down to title/subtitle/eventId (drop slug/series/closeTime/imageUrl). */
+function projectEventMetadata(metadata: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(metadata)) return undefined;
+  return pick(metadata, ["eventId", "title", "subtitle"]);
+}
+
+/** Curate market metadata, keeping title/subtitle/eventId. */
+function projectMarketMetadata(metadata: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(metadata)) return undefined;
+  return pick(metadata, ["marketId", "eventId", "title", "subtitle", "status", "result"]);
+}
+
+/**
+ * Curate a single market: keep marketId/status/result/timings/pricing and the
+ * curated metadata; drop imageUrl + marketResultPubkey.
+ */
+function projectMarket(market: unknown): unknown {
+  if (!isRecord(market)) return market;
+  const view = pick(market, [
+    "marketId", "status", "result", "openTime", "closeTime", "resolveAt", "pricing",
+  ]);
+  const metadata = projectMarketMetadata(market.metadata);
+  if (metadata !== undefined) view.metadata = metadata;
+  return view;
+}
+
+/** Curate a single event: keep eventId/category/volumeUsd + curated metadata + curated markets. */
+function projectEvent(event: Record<string, unknown>): Record<string, unknown> {
+  const view = pick(event, ["eventId", "category", "volumeUsd"]);
+  const metadata = projectEventMetadata(event.metadata);
+  if (metadata !== undefined) view.metadata = metadata;
+  if (Array.isArray(event.markets)) view.markets = event.markets.map(projectMarket);
+  return view;
+}
+
+/** Curate a single position: keep exposure/PnL/claim fields + curated metadata; drop noise. */
+function projectPosition(position: Record<string, unknown>): Record<string, unknown> {
+  const view = pick(position, [
+    "pubkey", "owner", "contracts", "sizeUsd", "valueUsd", "avgPriceUsd",
+    "markPriceUsd", "pnlUsd", "claimed", "payoutUsd", "eventId",
+  ]);
+  const eventMetadata = projectEventMetadata(position.eventMetadata);
+  if (eventMetadata !== undefined) view.eventMetadata = eventMetadata;
+  const marketMetadata = projectMarketMetadata(position.marketMetadata);
+  if (marketMetadata !== undefined) view.marketMetadata = marketMetadata;
+  return view;
+}
+
+/**
+ * Project a prediction event or position to its agent-facing view.
+ * Returns the input untouched for non-object values so it is safe to map over
+ * arrays of mixed/unknown shape without producing `null` holes.
+ */
+function toPredictView(item: unknown): unknown {
+  if (!isRecord(item)) return item;
+  // A position carries a top-level `pubkey`; an event never does.
+  if (typeof item.pubkey === "string") return projectPosition(item);
+  if (typeof item.eventId === "string") return projectEvent(item);
+  return item;
+}
+
 // ── Handler map ──────────────────────────────────────────────────
 
 export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.events": async (p) => {
+    // Pagination: manifest exposes limit/offset; the SDK takes start/end
+    // (mirrors solana.predict.history). Unbounded list → always paginate.
+    // Clamp negatives to 0 (Math.max) so a negative limit/offset can never
+    // translate into an invalid/negative start/end window for the SDK.
+    const start = Math.max(0, num(p, "offset") ?? 0);
+    const limit = Math.max(0, num(p, "limit") ?? 10);
     const result = await getJupiterPredictionEvents({
       category: enumField(p, "category", PREDICT_CATEGORY),
       filter: enumField(p, "filter", PREDICT_FILTER),
       includeMarkets: true,
+      start,
+      end: start + limit,
     });
-    return ok(result);
+    return ok({ ...result, data: result.data.map(toPredictView) });
   },
   "solana.predict.search": async (p) => {
     const q = str(p, "query");
     if (!q) return fail("Missing required: query");
-    return ok(await searchJupiterPredictionEvents({ query: q }));
+    const result = await searchJupiterPredictionEvents({ query: q });
+    return ok({ ...result, data: result.data.map(toPredictView) });
   },
   "solana.predict.market": async (p) => {
     const id = str(p, "marketId");
@@ -58,7 +158,18 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
-    return ok(await getJupiterPredictionPositions({ ownerPubkey: owner }));
+    // Pagination: manifest exposes limit/offset; the SDK takes start/end
+    // (mirrors solana.predict.history). Unbounded list → always paginate.
+    // Clamp negatives to 0 (Math.max) so a negative limit/offset can never
+    // translate into an invalid/negative start/end window for the SDK.
+    const start = Math.max(0, num(p, "offset") ?? 0);
+    const limit = Math.max(0, num(p, "limit") ?? 10);
+    const result = await getJupiterPredictionPositions({
+      ownerPubkey: owner,
+      start,
+      end: start + limit,
+    });
+    return ok({ ...result, data: result.data.map(toPredictView) });
   },
   "solana.predict.history": async (p, ctx) => {
     let owner: string;
@@ -298,11 +409,11 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.event": async (p) => {
     const id = str(p, "eventId");
     if (!id) return fail("Missing required: eventId");
-    return ok(await getJupiterPredictionEvent({ eventId: id, includeMarkets: true }));
+    return ok(toPredictView(await getJupiterPredictionEvent({ eventId: id, includeMarkets: true })));
   },
   "solana.predict.position": async (p) => {
     const pk = str(p, "positionPubkey");
     if (!pk) return fail("Missing required: positionPubkey");
-    return ok(await getJupiterPredictionPosition(pk));
+    return ok(toPredictView(await getJupiterPredictionPosition(pk)));
   },
 };

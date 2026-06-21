@@ -134,6 +134,24 @@ describe("solana-jupiter manifest", () => {
     expect(required).toContain("amountUsdc");
   });
 
+  // ── Pagination on unbounded list tools (P1-11) ───────────────────
+  // events + positions are unbounded lists and MUST expose limit/offset;
+  // history already did. Both params are optional numbers.
+
+  for (const toolId of ["solana.predict.events", "solana.predict.positions", "solana.predict.history"]) {
+    it(`${toolId} declares optional number limit + offset params`, () => {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const limit = tool.params.find(p => p.key === "limit");
+      const offset = tool.params.find(p => p.key === "offset");
+      expect(limit, `${toolId} missing limit param`).toBeDefined();
+      expect(offset, `${toolId} missing offset param`).toBeDefined();
+      expect(limit!.type).toBe("number");
+      expect(offset!.type).toBe("number");
+      expect(limit!.required).toBeFalsy();
+      expect(offset!.required).toBeFalsy();
+    });
+  }
+
   // ── Descriptions quality ─────────────────────────────────────────
 
   it("every tool has non-empty description", () => {

@@ -14,6 +14,8 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
     parameters: { type: "object", properties: {
       wallet: { type: "string", enum: ["eip155", "solana", "all"], description: "Which wallet family to read. Default 'all' aggregates your EVM + Solana wallets." },
       chainIds: { type: "string", description: "Optional. Omit (or pass empty) to scan all supported chains. To restrict, pass comma-separated chain IDs/aliases like 'ethereum,base,solana'." },
+      response_format: { type: "string", enum: ["concise", "detailed"], description: "Output verbosity. Default 'detailed' returns every token per wallet. Set 'concise' to enable the `limit` trim (top tokens by held USD value)." },
+      limit: { type: "number", description: "Optional. Max tokens returned per wallet snapshot, top-N by held USD value. Only applied when response_format='concise'; ignored under the default 'detailed'. `tokenCount`/`totalUsd` always reflect the full scan." },
     } },
   },
   {
