@@ -11,6 +11,7 @@ import { resolveSelectedAddress, walletScopeErrorToResult } from "@vex-agent/too
 
 import type { ProtocolHandler } from "../../../types.js";
 import { str, ok, fail } from "../../../handler-helpers.js";
+import { projectOrders } from "./projectors.js";
 
 // ── Limit Orders (Maker) ─────────────────────────────────────────
 export const limitOrderList: ProtocolHandler = async (p, ctx) => {
@@ -25,11 +26,11 @@ export const limitOrderList: ProtocolHandler = async (p, ctx) => {
   } catch (err) {
     return walletScopeErrorToResult(err);
   }
-  const orders = await getKyberLimitOrderClient().getOrders({
+  const orders = projectOrders(await getKyberLimitOrderClient().getOrders({
     chainId: String(chainId),
     maker,
     status: str(p, "status") || undefined,
-  });
+  }));
   return ok({ chain: slug, count: orders.length, orders });
 };
 
@@ -61,10 +62,10 @@ export const limitOrderTakerOrders: ProtocolHandler = async (p) => {
   const chain = str(p, "chain");
   if (!chain) return fail("Missing required: chain");
   const { slug, chainId } = resolveChainWithId(chain);
-  const orders = await getKyberLimitOrderTakerClient().getTakerOrders({
+  const orders = projectOrders(await getKyberLimitOrderTakerClient().getTakerOrders({
     chainId: String(chainId),
     makerAsset: str(p, "makerAsset") || undefined,
     takerAsset: str(p, "takerAsset") || undefined,
-  });
+  }));
   return ok({ chain: slug, count: orders.length, orders });
 };
