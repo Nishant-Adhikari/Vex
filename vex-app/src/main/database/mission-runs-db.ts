@@ -287,3 +287,92 @@ export async function getActiveRunForSession(
     }
   });
 }
+
+const AGENT_WORK_UNVERIFIABLE =
+  "Couldn't verify it's safe to update right now. Make sure Vex's services are running, then try again.";
+
+/**
+ * Safe-restart signal for the updater (M13): is any agent work in flight that
+ * an app restart could corrupt? Does NOT reuse `withClient` because it must be
+ * TRI-STATE on DB availability:
+ *   - DB UNCONFIGURED (`buildPoolConfig() === null`, e.g. pre-onboarding) ->
+ *     not active (fail-OPEN): no agent can run without a DB.
+ *   - CONFIGURED but connect/query fails -> ACTIVE (fail-CLOSED): a broken
+ *     runtime signal must not be read as "idle" (no in-memory fallback gate
+ *     exists).
+ *   - query succeeds -> running mission OR live runner lease OR pending approval.
+ */
+export async function hasActiveAgentWork(): Promise<{
+  active: boolean;
+  reason: string;
+}> {
+  let cfg: Awaited<ReturnType<typeof buildPoolConfig>>;
+  try {
+    cfg = await buildPoolConfig();
+  } catch (cause) {
+    log.warn("[mission-runs-db] hasActiveAgentWork: buildPoolConfig threw", cause);
+    return { active: true, reason: AGENT_WORK_UNVERIFIABLE };
+  }
+  if (cfg === null) {
+    // DB not configured yet — no agent work is possible (fail-open).
+    return { active: false, reason: "" };
+  }
+
+  const clientConfig: ClientConfig = {
+    host: cfg.host,
+    port: cfg.port,
+    database: cfg.database,
+    user: cfg.user,
+    password: cfg.password,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    statement_timeout: QUERY_TIMEOUT_MS,
+  };
+  const client = new Client(clientConfig);
+  try {
+    await client.connect();
+  } catch (cause) {
+    log.warn("[mission-runs-db] hasActiveAgentWork: connect failed", cause);
+    return { active: true, reason: AGENT_WORK_UNVERIFIABLE };
+  }
+  try {
+    const result = await client.query<{
+      running_mission: boolean;
+      active_lease: boolean;
+      pending_approval: boolean;
+    }>(
+      `SELECT
+         EXISTS(SELECT 1 FROM mission_runs WHERE status = 'running')      AS running_mission,
+         EXISTS(SELECT 1 FROM runner_leases WHERE expires_at >= NOW())    AS active_lease,
+         EXISTS(SELECT 1 FROM approval_queue WHERE status = 'pending')    AS pending_approval`,
+    );
+    const row = result.rows[0];
+    if (!row) return { active: false, reason: "" };
+    if (row.running_mission || row.active_lease) {
+      return {
+        active: true,
+        reason:
+          "An agent run is still in progress. Let it finish or pause it, then update.",
+      };
+    }
+    if (row.pending_approval) {
+      return {
+        active: true,
+        reason:
+          "An approval is waiting for your decision. Resolve it before updating.",
+      };
+    }
+    return { active: false, reason: "" };
+  } catch (cause) {
+    log.warn("[mission-runs-db] hasActiveAgentWork: query failed", cause);
+    return { active: true, reason: AGENT_WORK_UNVERIFIABLE };
+  } finally {
+    try {
+      await client.end();
+    } catch (cause) {
+      log.warn(
+        "[mission-runs-db] hasActiveAgentWork: client.end failed (non-fatal)",
+        cause,
+      );
+    }
+  }
+}

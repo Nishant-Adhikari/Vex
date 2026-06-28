@@ -21,6 +21,8 @@
  * No handler path needs both locks (audited M9 plan turn 1 R1).
  */
 
+import { CRITICAL_OP, beginCriticalOp } from "../updates/critical-ops.js";
+
 let envChain: Promise<unknown> = Promise.resolve();
 
 export function withEnvWriteLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -30,22 +32,20 @@ export function withEnvWriteLock<T>(fn: () => Promise<T>): Promise<T> {
     resolved = res;
     rejected = rej;
   });
-  const next = envChain.then(
-    async () => {
-      try {
-        resolved(await fn());
-      } catch (e) {
-        rejected(e);
-      }
-    },
-    async () => {
-      try {
-        resolved(await fn());
-      } catch (e) {
-        rejected(e);
-      }
+  // Every env-write mutation persists a secret (api key / provider / embedding /
+  // agent-core) into the vault + .env. Mark it as a secret-vault op so the
+  // updater safe-restart gate (M13) blocks while it runs. `finally` releases.
+  const run = async (): Promise<void> => {
+    const endCriticalOp = beginCriticalOp(CRITICAL_OP.secretVaultOp);
+    try {
+      resolved(await fn());
+    } catch (e) {
+      rejected(e);
+    } finally {
+      endCriticalOp();
     }
-  );
+  };
+  const next = envChain.then(run, run);
   envChain = next.catch(() => undefined);
   return result;
 }

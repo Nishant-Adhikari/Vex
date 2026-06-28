@@ -158,6 +158,13 @@ describe("preload bridge surface", () => {
       "CH.sessions.getModel",
       // Error-diagnostics phase (D-FOLDER) — "Open logs folder".
       "CH.support.openLogsFolder",
+      // Updater (M13) — user-triggered in-app update bridge.
+      "CH.updater.check",
+      "CH.updater.getStatus",
+      "CH.updater.startUpdateNow",
+      "CH.updater.cancelDownload",
+      "CH.updater.restartAndInstallNow",
+      "CH.updater.openReleaseNotes",
     ];
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     for (const channel of expected) {

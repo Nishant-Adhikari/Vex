@@ -28,6 +28,10 @@ import {
   registerAppProtocolPrivileges,
 } from "./protocol/app-protocol.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
+import {
+  configureUpdater,
+  removeUpdaterEventListeners,
+} from "./updates/configureUpdater.js";
 import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
@@ -145,6 +149,16 @@ app.whenReady().then(async () => {
 
   // 6. IPC surface
   registerAllIpcHandlers();
+
+  // 6-updater. User-triggered updater (M13): own the electron-updater event
+  // stream so the renderer's update card reflects live status. MANUAL check
+  // only — NO startup auto-check (preferences contract: "manual check only,
+  // no startup auto, no periodic poll"); download + restart are explicit user
+  // actions. Teardown removes our listeners on quit.
+  configureUpdater();
+  globalCleanup.add(() => {
+    removeUpdaterEventListeners();
+  });
 
   // 6a. Agent integration stage 7-1: own the Track-2 compaction worker so
   // enqueued compact_jobs process into session memory. Enabled by default,

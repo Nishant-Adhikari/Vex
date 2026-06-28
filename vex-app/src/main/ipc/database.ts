@@ -25,6 +25,7 @@ import {
   type MigrateRunResult,
 } from "../database/migrate-runner.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
+import { CRITICAL_OP, trackCriticalOp } from "../updates/critical-ops.js";
 import { log } from "../logger/index.js";
 import { ensureEmbeddingDefaults } from "../onboarding/ensure-embedding-defaults.js";
 import { registerHandler } from "./register-handler.js";
@@ -89,7 +90,9 @@ export function registerDatabaseHandlers(): Array<() => void> {
       domain: "database",
       inputSchema: migrateInputSchema,
       outputSchema: migrateResultSchema,
-      handle: async (_input, ctx): Promise<Result<MigrateResult>> => {
+      handle: trackCriticalOp(
+        CRITICAL_OP.dbMigration,
+        async (_input, ctx): Promise<Result<MigrateResult>> => {
         let run: Promise<MigrateRunResult>;
         if (migrateInFlight !== null) {
           log.info(
@@ -146,6 +149,7 @@ export function registerDatabaseHandlers(): Array<() => void> {
           }
         }
       },
+      ),
     })
   );
 

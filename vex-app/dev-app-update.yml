@@ -1,0 +1,20 @@
+# Dev-only updater feed (M13) — NOT a production release config.
+#
+# electron-updater reads this file ONLY in a non-packaged run when
+# `forceDevUpdateConfig` is enabled. Per `src/main/updates/configureUpdater.ts`,
+# that happens exclusively when BOTH:
+#   - the app is not packaged (dev), AND
+#   - the env flag VEX_UPDATER_DEV_FEED=1 is set.
+#
+# Purpose: exercise the full banner -> download -> progress -> restart flow
+# against a LOCAL static server (no signing) during development. Stand up a
+# server that serves `latest.yml` + a dummy newer artifact at the url below,
+# then launch with VEX_UPDATER_DEV_FEED=1 and trigger a manual check.
+#
+# Real signed releases use a separate publish config + hosting in the RELEASE
+# track (code signing, macOS notarization, CI matrix) — intentionally NOT here.
+# Linux AppImage installed-app update behavior is release-track QA, not covered
+# by this dev harness.
+provider: generic
+url: http://127.0.0.1:8910/updates
+channel: latest

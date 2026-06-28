@@ -192,3 +192,12 @@ export const portfolioKeys = {
    */
   moves: (sessionId: string) => ["portfolio", "moves", sessionId] as const,
 };
+
+/**
+ * User-triggered updater (M13) — a single global status entry. Kept live by
+ * `useUpdaterLiveSync` (main-pushed `EV.updater.status` events → cache).
+ */
+export const updaterKeys = {
+  all: ["updater"] as const,
+  status: () => ["updater", "status"] as const,
+};
