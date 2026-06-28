@@ -110,11 +110,6 @@ const RESERVED_UNREGISTERED: Readonly<Record<string, string>> = {
     "Reserved provider model-list responder — provider step verifies inside providerPersist; standalone list is not wired yet.",
   [CH.onboarding.providerTest]:
     "Reserved provider connection-test responder — verify is folded into providerPersist; standalone test is not wired yet.",
-
-  // Manual updater check (M13). No updater handler exists in main yet; the
-  // channel constant is reserved for the user-triggered update flow.
-  [CH.updater.check]:
-    "Reserved manual updater check (M13) — no updater handler is registered yet.",
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

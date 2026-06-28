@@ -12,7 +12,7 @@
  * they are not part of the user-facing flow.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type JSX } from "react";
 import { IntroScreen } from "./features/splash/IntroScreen.js";
 import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
 import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
@@ -21,6 +21,7 @@ import { Migrations } from "./features/database/Migrations.js";
 import { WizardShell } from "./features/wizard/WizardShell.js";
 import { AppShell } from "./features/appShell/AppShell.js";
 import { UnlockScreen } from "./features/secrets/UnlockScreen.js";
+import { UpdateLayer } from "./features/updates/UpdateLayer.js";
 import { useUiStore, type View } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
@@ -51,6 +52,9 @@ export function App(): JSX.Element {
   return (
     <>
       {views[currentView]()}
+      {/* Global, view-independent: a user-triggered update prompt can appear
+          over any screen. No-ops when the updater bridge is absent. */}
+      <UpdateLayer />
       {import.meta.env.DEV ? <DevDiagnostics /> : null}
     </>
   );

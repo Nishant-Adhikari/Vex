@@ -19,6 +19,8 @@
  * failed wallet operation never blocks subsequent ones.
  */
 
+import { CRITICAL_OP, beginCriticalOp } from "../updates/critical-ops.js";
+
 let walletChain: Promise<unknown> = Promise.resolve();
 
 export function withWalletLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -28,22 +30,20 @@ export function withWalletLock<T>(fn: () => Promise<T>): Promise<T> {
     resolved = res;
     rejected = rej;
   });
-  const next = walletChain.then(
-    async () => {
-      try {
-        resolved(await fn());
-      } catch (e) {
-        rejected(e);
-      }
-    },
-    async () => {
-      try {
-        resolved(await fn());
-      } catch (e) {
-        rejected(e);
-      }
+  // Mark a keystore/secret-vault operation in flight for the whole locked
+  // section so the updater's safe-restart gate (M13) blocks while a wallet
+  // generate/import/restore is mutating keystores. `finally` always releases.
+  const run = async (): Promise<void> => {
+    const endCriticalOp = beginCriticalOp(CRITICAL_OP.secretVaultOp);
+    try {
+      resolved(await fn());
+    } catch (e) {
+      rejected(e);
+    } finally {
+      endCriticalOp();
     }
-  );
+  };
+  const next = walletChain.then(run, run);
   walletChain = next.catch(() => undefined);
   return result;
 }

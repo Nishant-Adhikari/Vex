@@ -43,6 +43,7 @@ import { registerSettingsHandlers } from "./settings.js";
 import { registerSupportHandler } from "./support.js";
 import { registerSystemHandlers } from "./system.js";
 import { registerTelemetryHandler } from "./telemetry.js";
+import { registerUpdaterHandlers } from "./updates.js";
 import { registerUsageHandlers } from "./usage.js";
 import { registerWalletExportHandler } from "./wallet-export.js";
 import { registerWalletsSessionHandlers } from "./wallets-session.js";
@@ -109,6 +110,10 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(...registerSettingsHandlers());
   teardowns.push(registerTelemetryHandler());
   teardowns.push(registerSupportHandler());
+  // Updater (M13): user-triggered in-app update check/download/restart.
+  // Handlers are thin; the autoUpdater event stream is owned by
+  // `configureUpdater()` in index.ts.
+  teardowns.push(...registerUpdaterHandlers());
 
   globalCleanup.add(() => {
     for (const t of teardowns) t();

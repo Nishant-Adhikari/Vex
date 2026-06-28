@@ -37,6 +37,7 @@ import { CONFIG_DIR } from "../paths/config-dir.js";
 import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
 import { setDbConnection } from "../database/connection-state.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
+import { CRITICAL_OP, trackCriticalOp } from "../updates/critical-ops.js";
 import { registerHandler } from "./register-handler.js";
 import {
   cancelledError,
@@ -92,10 +93,13 @@ export function registerDockerHandlers(): Array<() => void> {
       domain: "docker",
       inputSchema: installInputSchema,
       outputSchema: installResultSchema,
-      handle: async (input): Promise<Result<InstallResult>> => {
-        const result = await performInstall(input.method);
-        return ok(result);
-      },
+      handle: trackCriticalOp(
+        CRITICAL_OP.dockerLifecycle,
+        async (input): Promise<Result<InstallResult>> => {
+          const result = await performInstall(input.method);
+          return ok(result);
+        },
+      ),
     })
   );
 
@@ -105,10 +109,13 @@ export function registerDockerHandlers(): Array<() => void> {
       domain: "docker",
       inputSchema: empty,
       outputSchema: startResultSchema,
-      handle: async (): Promise<Result<StartResult>> => {
-        const result = await performStart();
-        return ok(result);
-      },
+      handle: trackCriticalOp(
+        CRITICAL_OP.dockerLifecycle,
+        async (): Promise<Result<StartResult>> => {
+          const result = await performStart();
+          return ok(result);
+        },
+      ),
     })
   );
 
@@ -161,7 +168,9 @@ export function registerDockerHandlers(): Array<() => void> {
       domain: "docker",
       inputSchema: composeUpInputSchema,
       outputSchema: composeUpResultSchema,
-      handle: async (input, ctx): Promise<Result<ComposeUpResult>> => {
+      handle: trackCriticalOp(
+        CRITICAL_OP.dockerLifecycle,
+        async (input, ctx): Promise<Result<ComposeUpResult>> => {
         const key = `pgPort=${input.pgPort ?? "default"}`;
         if (composeUpInFlight !== null && composeUpInFlightKey === key) {
           log.info(
@@ -246,6 +255,7 @@ export function registerDockerHandlers(): Array<() => void> {
           }
         }
       },
+      ),
     })
   );
 
@@ -255,7 +265,9 @@ export function registerDockerHandlers(): Array<() => void> {
       domain: "docker",
       inputSchema: empty,
       outputSchema: composeDownResultSchema,
-      handle: async (): Promise<Result<ComposeDownResult>> => {
+      handle: trackCriticalOp(
+        CRITICAL_OP.dockerLifecycle,
+        async (): Promise<Result<ComposeDownResult>> => {
         if (!lastComposeOutPath || !lastInstallId) {
           return ok({
             kind: "not_running",
@@ -273,6 +285,7 @@ export function registerDockerHandlers(): Array<() => void> {
         }
         return ok(result);
       },
+      ),
     })
   );
 

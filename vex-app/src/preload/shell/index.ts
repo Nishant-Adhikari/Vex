@@ -24,6 +24,7 @@ import { settings } from "./settings.js";
 import { support } from "./support.js";
 import { system } from "./system.js";
 import { telemetry } from "./telemetry.js";
+import { updater } from "./updater.js";
 import { wallet } from "./wallet.js";
 
 export const shellBridge = {
@@ -37,4 +38,5 @@ export const shellBridge = {
   settings,
   telemetry,
   support,
+  updater,
 } satisfies VexShellBridge;

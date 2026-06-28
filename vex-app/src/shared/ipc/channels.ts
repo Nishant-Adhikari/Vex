@@ -252,9 +252,18 @@ export const CH = {
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
   },
 
-  // Updater — manual check only (M13)
+  // Updater — user-triggered in-app update flow (M13). `check` may run on
+  // app start/focus or manually; download + restart happen ONLY after an
+  // explicit user action (skill vex-user-triggered-updates §"Non-negotiable
+  // rules": no silent download/install). Renderer never receives installer
+  // paths, artifact URLs, tokens, or raw metadata — only sanitized status.
   updater: {
     check: "vex:updater:check",
+    getStatus: "vex:updater:getStatus",
+    startUpdateNow: "vex:updater:startUpdateNow",
+    cancelDownload: "vex:updater:cancelDownload",
+    restartAndInstallNow: "vex:updater:restartAndInstallNow",
+    openReleaseNotes: "vex:updater:openReleaseNotes",
   },
 
   // Telemetry — renderer-side error reporting (Sentry, opt-in only)
@@ -289,7 +298,11 @@ export const EV = {
     migrateProgress: "vex:event:database:migrateProgress",
   },
   updater: {
-    available: "vex:event:updater:available",
+    // Full `UpdateStatus` discriminated union pushed on every updater state
+    // transition (checking → available → downloading → downloaded → … |
+    // error | blockedByOperation). Main is the source of truth; the payload
+    // is sanitized (versions + bounded progress + safe summary only).
+    status: "vex:event:updater:status",
   },
   /**
    * Engine spine (agent integration puzzle 2 + puzzle 3).

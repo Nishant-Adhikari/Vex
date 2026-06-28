@@ -20,6 +20,7 @@ import type { SettingsBridge } from "./settings.js";
 import type { SupportBridge } from "./support.js";
 import type { SystemBridge } from "./system.js";
 import type { TelemetryBridge } from "./telemetry.js";
+import type { UpdaterBridge } from "./updater.js";
 import type { WalletBridge } from "./wallet.js";
 
 export type { CapabilitiesBridge } from "./capabilities.js";
@@ -31,6 +32,7 @@ export type { SettingsBridge } from "./settings.js";
 export type { SupportBridge } from "./support.js";
 export type { SystemBridge } from "./system.js";
 export type { TelemetryBridge } from "./telemetry.js";
+export type { UpdaterBridge } from "./updater.js";
 export type { WalletBridge } from "./wallet.js";
 
 export interface VexShellBridge {
@@ -44,4 +46,5 @@ export interface VexShellBridge {
   readonly settings: SettingsBridge;
   readonly telemetry: TelemetryBridge;
   readonly support: SupportBridge;
+  readonly updater: UpdaterBridge;
 }

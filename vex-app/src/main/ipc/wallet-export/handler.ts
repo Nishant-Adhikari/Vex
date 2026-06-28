@@ -32,6 +32,7 @@ import {
   recordExportSuccess,
 } from "../../wallet/export-throttle.js";
 import { log } from "../../logger/index.js";
+import { CRITICAL_OP, trackCriticalOp } from "../../updates/critical-ops.js";
 import { registerHandler } from "../register-handler.js";
 import { invalidWalletSelectionError } from "../_wallet-refs.js";
 import {
@@ -52,10 +53,12 @@ export function registerWalletExportHandler(): () => void {
     domain: "wallet",
     inputSchema: walletExportPrivateKeyInputSchema,
     outputSchema: walletExportPrivateKeyResultSchema,
-    handle: async (
-      input,
-      ctx,
-    ): Promise<Result<WalletExportPrivateKeyResult>> => {
+    handle: trackCriticalOp(
+      CRITICAL_OP.secretVaultOp,
+      async (
+        input,
+        ctx,
+      ): Promise<Result<WalletExportPrivateKeyResult>> => {
       // 1. Throttle gate ─────────────────────────────────────────────
       const gate = checkExportAllowed();
       if (!gate.allowed) {
@@ -245,6 +248,7 @@ export function registerWalletExportHandler(): () => void {
         copied: true,
         clearAfterMs: CLEAR_AFTER_MS,
       });
-    },
+      },
+    ),
   });
 }
