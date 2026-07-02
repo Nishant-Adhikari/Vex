@@ -59,7 +59,7 @@ export function ReasoningSwitch({
       disabled={busy}
       onClick={onCycle}
       className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] border px-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors duration-[160ms]",
+        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors duration-[160ms]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
         "disabled:cursor-not-allowed",
         nonDefault

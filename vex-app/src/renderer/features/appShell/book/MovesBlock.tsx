@@ -97,16 +97,26 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
     );
   } else {
     body = (
-      <ul className="flex flex-col gap-1">
+      // Landing .ws-stat grammar: hairline-separated rows, mono figures.
+      <ul className="flex flex-col">
         {moves.map((m) => {
           const state = moveState(m.captureStatus);
           const label = moveLabel(m);
           const time = formatClock(m.createdAt);
           return (
-            <li key={m.id} className="flex items-center gap-2">
+            <li
+              key={m.id}
+              className="flex items-center gap-2 border-b border-[var(--vex-line)] py-1 last:border-b-0"
+            >
+              {/* Pending = verifiably in-flight → the pulse ring loops; every
+               * terminal state (done/failed/cancelled) rests still. */}
               <span
                 aria-hidden
-                className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[state])}
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  DOT[state],
+                  state === "pending" && "vex-pulse-dot",
+                )}
               />
               <span
                 className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text)]"

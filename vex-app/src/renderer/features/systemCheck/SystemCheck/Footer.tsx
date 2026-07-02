@@ -30,8 +30,19 @@ export function Footer({
   const armed = !disabled;
   return (
     <>
-      {/* GATE COUNTER — quiet attestation progress, left-aligned. */}
-      <div className="mt-5 flex w-full items-center">
+      {/* GATE COUNTER — quiet attestation progress, left-aligned. The
+       * status dot pulses ONLY while probes are verifiably in flight
+       * (the landing .hero-status law); once resolved it rests still —
+       * neutral ink, because "attested" covers warn/fail stamps too. */}
+      <div className="mt-5 flex w-full items-center gap-2.5">
+        <span
+          aria-hidden
+          className={
+            armed
+              ? "h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-text-muted)]"
+              : "vex-pulse-dot h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-accent-secondary)]"
+          }
+        />
         <span
           aria-live="polite"
           className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]"

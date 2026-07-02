@@ -94,7 +94,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
       return {
         caption: "Ready",
         toneClass:
-          "border-[color-mix(in_oklab,var(--vex-accent)_40%,transparent)] text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]",
+          "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]",
         iconClass: "text-[var(--vex-accent-text)]",
         icon: InformationCircleIcon,
         dataState: "ready",
@@ -147,8 +147,10 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
         aria-hidden
         className={cn("shrink-0", meta.iconClass)}
       />
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-sm font-semibold text-foreground">
+      <span className="flex min-w-0 flex-col gap-0.5">
+        {/* Landing register: the key's name is a mono micro-label (white),
+         * the state caption beneath carries the tone. */}
+        <span className="truncate font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-foreground">
           {label}
         </span>
         <span className="font-mono text-[10px] uppercase tracking-[0.14em]">

@@ -3,10 +3,11 @@
  * `instructions` arrives from the main process so we don't ship the
  * exact command list in the renderer bundle (privacy + bundle size).
  *
- * Visual under the onboarding glass aesthetic — embedded into the
- * BootstrapPanel's C-linux body. Copy button writes to the system
- * clipboard via `navigator.clipboard.writeText()` with visible
- * "Copied" / "Copy failed" feedback per codex post-v3 SHOULD-FIX.
+ * Visual: recessed (surface-down) terminal block behind a hairline —
+ * no glass, no inset highlight — embedded into the BootstrapPanel's
+ * C-linux body. Copy button writes to the system clipboard via
+ * `navigator.clipboard.writeText()` with visible "Copied" /
+ * "Copy failed" feedback per codex post-v3 SHOULD-FIX.
  *
  * Recheck lives in the orchestrator footer (single source of truth for
  * the rerun action — codex post-impl SHOULD-FIX #3 removed the
@@ -64,7 +65,7 @@ export function LinuxManualInstructions({
   return (
     <div className="flex flex-col gap-3">
       <div className="relative">
-        <pre className="max-h-72 overflow-auto rounded-xl border border-white/[0.08] bg-black/30 p-3 pr-12 text-[11px] leading-relaxed text-[var(--color-text-primary)] backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <pre className="max-h-72 overflow-auto rounded-lg border border-white/[0.08] bg-black/40 p-3 pr-12 text-[11px] leading-relaxed text-[var(--color-text-primary)]">
           <code className="font-mono">{instructions}</code>
         </pre>
         <button
@@ -72,8 +73,8 @@ export function LinuxManualInstructions({
           onClick={() => void handleCopy()}
           aria-label="Copy install commands to clipboard"
           className={cn(
-            "absolute right-2 top-2 inline-flex items-center gap-1 rounded-md border border-white/[0.12] bg-white/[0.08] px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-[var(--color-text-primary)] backdrop-blur-md transition-colors duration-150",
-            "hover:border-white/[0.2] hover:bg-white/[0.14]",
+            "absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-white/[0.12] bg-[var(--vex-onboarding-bg,var(--color-bg-primary))] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-primary)] transition-colors duration-150",
+            "hover:border-white/[0.2] hover:bg-[var(--color-bg-elevated)]",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
             copyState === "ok"
               ? "border-[color-mix(in_oklab,var(--color-success)_45%,transparent)] text-[var(--color-success)]"

@@ -10,13 +10,14 @@ import { cn } from "../../../lib/utils.js";
 import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
 import { BookBlock } from "./BookBlock.js";
 
+/** Landing .ws-stat row: key muted / value white, hairline-separated. */
 function Row({ label, children }: { readonly label: string; readonly children: ReactNode }): JSX.Element {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
+    <div className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0">
       <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
         {label}
       </span>
-      <span className="min-w-0 truncate text-right text-[12px] text-[var(--vex-text)]">
+      <span className="min-w-0 truncate text-right font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
         {children}
       </span>
     </div>
@@ -40,7 +41,7 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
   const activity = getMissionActivity(session);
   return (
     <BookBlock title="Session">
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col">
         <Row label="Mode">{session.mode === "mission" ? "Mission" : "Agent"}</Row>
         <Row label="Access">{session.permission === "full" ? "Full" : "Restricted"}</Row>
         {activity !== null ? (

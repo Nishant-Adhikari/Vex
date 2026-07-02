@@ -43,6 +43,7 @@ import {
   type WizardState,
 } from "@shared/schemas/wizard.js";
 import { Button } from "../../components/ui/button.js";
+import { DotmSquare3 } from "../../components/ui/dotm-square-3.js";
 import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useWizardState } from "../../lib/api/wizard.js";
@@ -114,7 +115,7 @@ function TopChrome(): JSX.Element {
           className="h-9 w-9 object-contain opacity-90"
         />
         <div className="flex flex-col leading-tight">
-          <span className="font-mono text-sm font-semibold tracking-[0.3em] text-[var(--color-text-primary)]">
+          <span className="font-display text-sm font-extrabold uppercase tracking-[0.3em] text-[var(--color-text-primary)]">
             VEX
           </span>
           <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
@@ -261,7 +262,7 @@ export function WizardShell(): JSX.Element {
           className={cn(ERROR_PANEL_CHROME, "relative z-10 flex flex-col gap-4 p-6")}
         >
           <div className="flex flex-col gap-1">
-            <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">
+            <h1 className="font-display text-lg font-bold tracking-[-0.02em] text-[var(--color-text-primary)]">
               Setup unavailable
             </h1>
             <p className="text-sm text-[var(--color-text-secondary)]">{message}</p>
@@ -295,18 +296,15 @@ export function WizardShell(): JSX.Element {
         className={cn(SHELL_CHROME, "items-center justify-center p-8")}
       >
         <TopChrome />
-        <div
-          role="status"
-          aria-live="polite"
-          className="relative z-10 flex flex-col items-center gap-3"
-        >
-          <div
-            aria-hidden
-            className="h-1 w-32 overflow-hidden rounded-full bg-white/[0.07]"
-          >
-            <div className="h-full w-1/3 animate-pulse bg-[var(--vex-onboarding-accent)]" />
-          </div>
-          <span className="sr-only">Loading wizard progress…</span>
+        {/* Brand loading language — DotMatrix, never a generic pulse bar.
+            The loader root carries role="status" aria-live itself. */}
+        <div className="relative z-10 flex flex-col items-center">
+          <DotmSquare3
+            size={24}
+            dotSize={3}
+            colorPreset="grad-cobalt"
+            ariaLabel="Loading wizard progress…"
+          />
         </div>
       </main>
     );

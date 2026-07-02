@@ -1,7 +1,7 @@
 /**
- * Glass panel chrome for each wizard step — matches the onboarding
- * aesthetic shared with SystemCheck, BootstrapPanel, ComposeBootstrap,
- * and Migrations.
+ * Document-panel chrome for each wizard step — a flat hairline sheet in
+ * the landing ink grammar, matching the onboarding aesthetic shared with
+ * SystemCheck, BootstrapPanel, ComposeBootstrap, and Migrations.
  *
  * Three important contracts:
  *
@@ -112,8 +112,13 @@ const HEADER_CHROME = cn(
   "flex shrink-0 items-start gap-3 border-b border-white/[0.06] px-6 py-5",
 );
 
+/* Accent-tinted icon tile — the landing's cobalt-fill treatment (hairline
+ * border at 35% mix + 10% tint fill). The ONE accent moment in the panel
+ * header; title stays a mono stamp, description stays quiet. */
 const ICON_TILE_CHROME = cn(
-  "flex h-10 w-10 shrink-0 items-center justify-center",
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+  "border border-[color-mix(in_oklab,var(--vex-onboarding-accent)_35%,transparent)]",
+  "bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_10%,transparent)]",
   "text-[var(--vex-onboarding-accent)]",
 );
 

@@ -49,11 +49,12 @@ import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
 
 /**
- * Primary mission action (Start/Renew) — full-width accent-hairline key:
- * quiet at rest, accent fill only on hover, never a glow or gradient.
+ * Primary mission action (Start/Renew) — the landing's solid cobalt CTA:
+ * full-width mono-uppercase pill, hover is a color change only (never a
+ * glow or gradient).
  */
 const PRIMARY_KEY =
-  "flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[var(--vex-accent-border)] text-sm font-medium text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-50";
+  "flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-white transition-colors hover:bg-[var(--vex-accent-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
 
 export interface MissionControlsProps {
   readonly sessionId: string;
@@ -334,9 +335,9 @@ function ControlButton({
       onClick={onClick}
       aria-label={`${label} mission`}
       className={cn(
-        // Toolbar keys: quiet white-hairline by default; Stop keeps the
+        // Toolbar keys: quiet mono-uppercase hairline pills; Stop keeps the
         // destructive tone with the one sanctioned danger fill (/10).
-        "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-40",
+        "inline-flex h-8 items-center rounded-full border px-3.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-40",
         tone === "danger"
           ? "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 text-destructive hover:bg-destructive/15"
           : "border-[var(--vex-line-strong)] text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground",

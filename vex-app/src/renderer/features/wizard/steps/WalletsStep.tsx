@@ -31,6 +31,7 @@ import { useCallback, useState, type JSX } from "react";
 import { Ethereum, Solana } from "@thesvg/react";
 
 import { Button } from "../../../components/ui/button.js";
+import { DotmSquare3 } from "../../../components/ui/dotm-square-3.js";
 import {
   Tabs,
   TabsContent,
@@ -133,14 +134,15 @@ export function WalletsStep({
         description="Loading wallet status…"
         footer={null}
       >
-        <div role="status" aria-live="polite" className="flex items-center gap-2">
-          <div
-            aria-hidden
-            className="h-1 w-32 overflow-hidden rounded-full bg-white/[0.07]"
-          >
-            <div className="h-full w-1/3 animate-pulse bg-[var(--vex-onboarding-accent)]" />
-          </div>
-          <span className="sr-only">Loading wallet status…</span>
+        {/* Brand loading language — DotMatrix (role="status" lives on the
+            loader root), never a generic pulse bar. */}
+        <div className="flex justify-center py-4">
+          <DotmSquare3
+            size={24}
+            dotSize={3}
+            colorPreset="grad-cobalt"
+            ariaLabel="Loading wallet status…"
+          />
         </div>
       </WizardStepPanel>
     );

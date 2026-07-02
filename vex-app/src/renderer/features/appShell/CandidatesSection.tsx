@@ -48,9 +48,7 @@ export function CandidatesSection(): JSX.Element {
   return (
     <section data-vex-section="memory-candidates" className={SECTION}>
       <div>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
-          Memory candidates
-        </h2>
+        <h2 className="vex-eyebrow">Memory candidates</h2>
         <p className="mt-1 text-xs text-[var(--vex-text-2)]">
           What the agent proposed for long-term memory. The memory manager
           decides each candidate&apos;s fate automatically — this view is

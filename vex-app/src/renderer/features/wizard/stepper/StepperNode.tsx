@@ -73,6 +73,9 @@ export function StepperNode({
             size={22}
             dotSize={2}
             colorPreset={variant.colorPreset}
+            {...(variant.pattern !== undefined
+              ? { pattern: variant.pattern }
+              : {})}
             ariaLabel={`Current step: ${meta.label}`}
           />
         ) : status === "completed" ? (

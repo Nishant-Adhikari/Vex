@@ -65,7 +65,8 @@ export function AddressDisplay({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-2 rounded-md border border-border bg-card/40 px-2 py-1",
+        // Hairline chip — luminance step + hairline (landing ink grammar).
+        "inline-flex items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1",
         className
       )}
     >

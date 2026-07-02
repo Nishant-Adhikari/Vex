@@ -27,11 +27,13 @@ export interface ApprovalDecisionActionsProps {
   readonly onApprove: () => void;
 }
 
-// Shared key shape; tone classes below pick quiet/accent/armed variants. The
-// ARMED (confirm) state swaps the border to the danger mix on that button
-// only — the second click is the irreversible one.
+// Shared key shape — the landing's mono-uppercase pill. Tone classes below
+// pick the quiet ghost (Reject) vs the FILLED amber primary (Approve — the
+// landing .ws-alert review key: solid --vex-pin with ink text). The ARMED
+// (confirm) state swaps the border to the danger mix on that button only —
+// the second click is the irreversible one.
 const KEY_BASE =
-  "rounded-md border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50";
+  "rounded-full border px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50";
 const ARMED_BORDER =
   "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)]";
 
@@ -64,8 +66,8 @@ export function ApprovalDecisionActions({
         onClick={onApprove}
         disabled={inFlight}
         aria-label={approveArmed ? "Confirm approve" : "Approve"}
-        className={`${KEY_BASE} font-medium text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)] ${
-          approveArmed ? ARMED_BORDER : "border-[var(--vex-accent-border)]"
+        className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[#0a0d18] hover:bg-[color-mix(in_oklab,var(--vex-pin)_85%,white)] ${
+          approveArmed ? ARMED_BORDER : "border-transparent"
         }`}
       >
         {approveArmed ? "Click again to confirm approve" : "Approve"}

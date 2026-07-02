@@ -181,7 +181,7 @@ export function SelectMenu({
         onKeyDown={handleKeyDown}
         className={cn(
           "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-white/[0.08] bg-white/[0.035] px-2 text-left text-sm text-foreground",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent,var(--color-accent-primary))]",
           "disabled:cursor-not-allowed disabled:opacity-60",
           className,
         )}
@@ -229,7 +229,7 @@ export function SelectMenu({
                 className={cn(
                   "flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm",
                   active
-                    ? "bg-[var(--vex-accent-fill-12)] text-foreground"
+                    ? "bg-[var(--vex-accent-fill-12,color-mix(in_oklab,var(--color-accent-primary)_12%,transparent))] text-foreground"
                     : "text-[var(--color-text-secondary)]",
                   selected && !active && "text-foreground",
                 )}
@@ -238,7 +238,7 @@ export function SelectMenu({
                 {selected ? (
                   <span
                     aria-hidden
-                    className="ml-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--vex-accent)]"
+                    className="ml-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--vex-accent,var(--color-accent-primary))]"
                   />
                 ) : null}
               </li>

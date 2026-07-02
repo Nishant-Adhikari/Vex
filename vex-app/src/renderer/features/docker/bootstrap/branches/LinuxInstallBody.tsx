@@ -58,7 +58,7 @@ export function LinuxInstallBody({
             type="button"
             onClick={onRetryFetch}
             className={cn(
-              "self-start rounded-[3px] border border-white/[0.12] bg-transparent px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
+              "self-start rounded-full border border-white/[0.12] bg-transparent px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
               "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
               "transition-colors duration-150",
@@ -83,7 +83,7 @@ export function LinuxInstallBody({
           href={DOCKER_ROOTLESS_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[var(--dockerbootstrap-accent)] underline-offset-4 hover:underline"
+          className="text-[color-mix(in_oklab,var(--dockerbootstrap-accent)_55%,white)] underline-offset-4 hover:underline"
         >
           Docker&rsquo;s rootless mode
         </a>{" "}

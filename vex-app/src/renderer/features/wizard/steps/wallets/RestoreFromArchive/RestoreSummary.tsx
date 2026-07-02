@@ -11,12 +11,12 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
     result.walletsRestored.length === 1 ? "wallet" : "wallets";
   return (
     <div
-      className="flex flex-col gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] p-3"
+      className="flex flex-col gap-3 rounded-xl border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-success)_10%,transparent)] p-3"
       role="status"
       aria-live="polite"
       data-vex-restore-success
     >
-      <p className="text-sm text-emerald-700 dark:text-emerald-400">
+      <p className="text-sm text-[var(--color-success)]">
         Restored {result.walletsRestored.length} {walletWord} and{" "}
         {result.filesRestored.length} file
         {result.filesRestored.length === 1 ? "" : "s"} from the backup.
@@ -36,7 +36,7 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
       ) : null}
       {result.vaultLocked ? (
         <p
-          className="rounded-md border border-amber-500/40 bg-amber-500/[0.08] p-3 text-sm text-amber-700 dark:text-amber-400"
+          className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] p-3 text-sm text-[var(--color-warning)]"
           role="alert"
           data-vex-restore-vault-locked
         >

@@ -5,8 +5,9 @@
  * reasoning preview, the critical-args well, and the inline error alert. Pure
  * presentation: it holds no state, owns no decision logic, and emits no events
  * — the two-step confirm gate and mutation wiring stay in `ApprovalCard`.
- * Testids, aria, and TEXT CONTENT are pinned by tests and stay verbatim; S3
- * restyled the chrome only (stamp grammar + recessed args well).
+ * Testids, aria, and TEXT CONTENT are pinned by tests and stay verbatim; the
+ * chrome speaks the landing's amber alert register (.ws-alert): mono-uppercase
+ * title in --vex-pin over the card's pin fill.
  */
 
 import type { JSX } from "react";
@@ -46,7 +47,7 @@ export function ApprovalDetails({
         <div className="min-w-0 flex-1">
           <h3
             id={titleId}
-            className="truncate font-mono text-[13px] text-foreground"
+            className="truncate font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-pin)]"
           >
             Approval needed:{" "}
             <span className="font-mono">

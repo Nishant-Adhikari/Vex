@@ -1,17 +1,15 @@
 /**
  * Per-step DotMatrix loader signature — every wizard step has its own
- * shape × color pairing so the horizontal stepper gives each step a
+ * SHAPE × PATTERN pairing so the horizontal stepper gives each step a
  * distinct visual identity instead of seven identical dots.
  *
- * Shape pairings carry light metaphor: Hex for embedding (vector
- * lattice), Circular for wallets/agentCore (loop / cycle), Square for
- * the rest. Color presets reuse `DotMatrixColorPreset` from the owned
- * `dotmatrix-core` primitive — no new dependency, no new gradient
- * tokens.
- *
- * `provider` deliberately uses `grad-sunset` (warm gold) rather than
- * `grad-fire` so it doesn't read as a warning state next to the
- * active-step accent (codex review V2 #5).
+ * Landing rebrand: ALL seven steps speak the single cobalt accent
+ * family — `solid-theme` (flat accent via `--color-dot-on`) or
+ * `grad-cobalt` (periwinkle → cobalt → deep, the one sanctioned
+ * gradient). Steps are differentiated by geometry, not rainbow color:
+ * Hex for embedding (vector lattice), Circular for wallets/agentCore
+ * (loop / cycle), Square spirals with distinct dot patterns (full /
+ * rings / diamond / outline) for the rest.
  */
 
 import type { ComponentType } from "react";
@@ -22,22 +20,40 @@ import { DotmSquare3 } from "../../../components/ui/dotm-square-3.js";
 import type {
   DotMatrixColorPreset,
   DotMatrixCommonProps,
+  MatrixPattern,
 } from "../../../components/ui/dotmatrix-core.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 
 export interface StepperLoaderVariant {
   readonly Component: ComponentType<DotMatrixCommonProps>;
   readonly colorPreset: DotMatrixColorPreset;
+  /**
+   * Dot pattern override — meaningful for the Square3 spiral only
+   * (Circular8 masks its own disc; Hex3 draws a custom lattice).
+   */
+  readonly pattern?: MatrixPattern;
 }
 
 export const STEPPER_LOADER_VARIANTS: Readonly<
   Record<WizardStepId, StepperLoaderVariant>
 > = {
   keystore: { Component: DotmSquare3, colorPreset: "solid-theme" },
-  wallets: { Component: DotmCircular8, colorPreset: "grad-ocean" },
-  apiKeys: { Component: DotmSquare3, colorPreset: "solid-mint" },
-  embedding: { Component: DotmHex3, colorPreset: "grad-aurora" },
-  agentCore: { Component: DotmCircular8, colorPreset: "grad-prism" },
-  provider: { Component: DotmSquare3, colorPreset: "grad-sunset" },
-  review: { Component: DotmSquare3, colorPreset: "grad-neon" },
+  wallets: { Component: DotmCircular8, colorPreset: "grad-cobalt" },
+  apiKeys: {
+    Component: DotmSquare3,
+    colorPreset: "grad-cobalt",
+    pattern: "rings",
+  },
+  embedding: { Component: DotmHex3, colorPreset: "grad-cobalt" },
+  agentCore: { Component: DotmCircular8, colorPreset: "solid-theme" },
+  provider: {
+    Component: DotmSquare3,
+    colorPreset: "solid-theme",
+    pattern: "diamond",
+  },
+  review: {
+    Component: DotmSquare3,
+    colorPreset: "grad-cobalt",
+    pattern: "outline",
+  },
 };

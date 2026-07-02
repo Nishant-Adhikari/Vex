@@ -58,13 +58,13 @@ export function KeyButton({
         onClick={onClick}
         aria-label={ariaLabel}
         className={cn(
-          "group relative inline-flex items-center justify-center gap-2 rounded-xl border",
+          "group relative inline-flex items-center justify-center gap-2 rounded-full border",
           ONBOARDING_KEY_SLOT_CLASS,
-          "bg-[var(--vex-onboarding-bg)] font-sans text-[13px] font-medium uppercase tracking-[0.18em]",
+          "bg-[var(--vex-onboarding-bg)] font-mono text-[12px] font-medium uppercase tracking-[0.18em]",
           "transition-colors duration-200 ease-out",
           armed
             ? cn(
-                "border-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,transparent)] text-[var(--vex-onboarding-accent)]",
+                "border-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,transparent)] text-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,white)]",
                 "hover:border-[color-mix(in_oklab,var(--vex-onboarding-accent)_85%,transparent)] hover:bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_8%,transparent)]",
                 "active:scale-[0.98]"
               )
@@ -82,7 +82,7 @@ export function KeyButton({
         {armed ? (
           <span
             aria-hidden
-            className="vex-intro-glint pointer-events-none absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-white opacity-0 shadow-[0_0_14px_5px_rgba(238,240,255,0.5)]"
+            className="vex-intro-glint pointer-events-none absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-white opacity-0 shadow-[0_0_14px_5px_rgba(255,255,255,0.5)]"
           />
         ) : null}
       </button>

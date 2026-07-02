@@ -9,6 +9,8 @@
  */
 
 import { useState, type JSX } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowUp01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 import { Button } from "../../components/ui/button.js";
 import {
@@ -100,24 +102,41 @@ function UpdateBanner({
   onDismiss,
 }: UpdateBannerProps): JSX.Element {
   return (
+    // Solid ink strip + hairline rule — no glass (the landing depth law:
+    // luminance steps + hairlines, never backdrop-filter).
     <div
-      className="fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-3 border-b border-border bg-card/95 px-4 py-2 text-sm text-foreground backdrop-blur"
+      className="fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-3 border-b border-white/10 bg-card px-4 py-2 text-foreground"
       data-vex-screen="updateBanner"
       role="status"
     >
-      <span aria-hidden>⬆</span>
-      <span>{bannerLabel(status)}</span>
+      {status.kind === "downloading" ? (
+        // Live in-flight work → the sanctioned pulse ring on the status dot.
+        <span
+          aria-hidden
+          className="vex-pulse-dot h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-accent-primary)]"
+        />
+      ) : (
+        <HugeiconsIcon
+          icon={ArrowUp01Icon}
+          size={14}
+          className="shrink-0 text-[var(--color-accent-secondary)]"
+          aria-hidden
+        />
+      )}
+      <span className="font-mono text-[11px] uppercase tracking-[0.16em] tabular-nums">
+        {bannerLabel(status)}
+      </span>
       <Button size="sm" onClick={onView}>
-        Zobacz
+        View
       </Button>
       {onDismiss ? (
         <button
           type="button"
-          aria-label="Zamknij powiadomienie o aktualizacji"
+          aria-label="Dismiss update notification"
           onClick={onDismiss}
-          className="text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground transition-colors hover:text-foreground"
         >
-          ✕
+          <HugeiconsIcon icon={Cancel01Icon} size={14} aria-hidden />
         </button>
       ) : null}
     </div>
@@ -127,16 +146,16 @@ function UpdateBanner({
 function bannerLabel(status: UpdateStatus): string {
   switch (status.kind) {
     case "available":
-      return `Vex ${status.latestVersion} jest dostępna`;
+      return `Update available — Vex ${status.latestVersion}`;
     case "downloading":
-      return `Pobieranie Vex ${status.latestVersion}… ${Math.round(status.percent)}%`;
+      return `Downloading… ${Math.round(status.percent)}%`;
     case "downloaded":
-      return `Vex ${status.latestVersion} gotowa do instalacji`;
+      return "Ready to install";
     case "blockedByOperation":
-      return "Aktualizacja wstrzymana";
+      return "Update blocked during an operation";
     case "error":
-      return "Aktualizacja nie powiodła się";
+      return "Update failed";
     default:
-      return "Aktualizacja Vex";
+      return "Vex update";
   }
 }

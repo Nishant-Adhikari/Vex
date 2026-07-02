@@ -1,6 +1,5 @@
-// Body/UI + display fonts (Google Sans, Poppins) are self-hosted via
-// @font-face in globals.css. Geist Mono is kept for numerals/code.
-import "@fontsource-variable/geist-mono";
+// Brand fonts (Archivo, Inter Tight, JetBrains Mono — the landing-page
+// stack) are self-hosted via @font-face in globals.css (CSP font-src 'self').
 import "./styles/globals.css";
 
 import React from "react";

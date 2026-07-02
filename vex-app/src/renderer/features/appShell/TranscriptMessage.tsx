@@ -119,7 +119,7 @@ export function TranscriptMessage({
     case "user":
       return (
         <div data-vex-message-role="user" className="flex flex-col items-end">
-          <div className="max-w-[70%] whitespace-pre-wrap break-words rounded-lg border border-[var(--vex-line-strong)] bg-white/[0.04] px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
+          <div className="max-w-[70%] whitespace-pre-wrap break-words rounded-xl border border-[var(--vex-line-strong)] bg-white/[0.04] px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
             {row.content}
           </div>
           <span className="mt-1 flex items-baseline justify-end gap-2 font-mono text-[10px] uppercase tabular-nums">

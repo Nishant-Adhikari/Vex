@@ -37,7 +37,7 @@ export function MemoryButton({
       onClick={onClick}
       aria-label="Open memory"
       className={cn(
-        "h-9 w-full rounded-none border-0 bg-transparent text-xs text-[var(--vex-text-2)] hover:bg-white/[0.035] hover:text-foreground",
+        "h-9 w-full rounded-none border-0 bg-transparent text-[11px] tracking-[0.14em] text-[var(--vex-text-2)] hover:bg-white/[0.035] hover:text-foreground",
         compact ? "justify-center px-0" : "justify-start gap-2 px-4",
       )}
     >

@@ -32,6 +32,9 @@ export function RadioCard({
     <label
       className={cn(
         "flex min-h-[112px] cursor-pointer flex-col gap-2 rounded-lg border px-3 py-3 text-sm transition-colors",
+        // Keyboard focus on the sr-only radio lights the card (hairline law:
+        // the ring is the accent, never a glow).
+        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--vex-accent)]",
         checked
           ? "border-[var(--vex-accent-border)] bg-[var(--vex-accent-fill-8)]"
           : "border-[var(--vex-line)] hover:bg-white/[0.03]",

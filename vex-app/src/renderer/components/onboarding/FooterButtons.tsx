@@ -32,9 +32,9 @@ export function RecheckButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "relative inline-flex items-center justify-center gap-2 rounded-xl border",
+        "relative inline-flex items-center justify-center gap-2 rounded-full border",
         ONBOARDING_KEY_SLOT_CLASS,
-        "border-white/[0.10] bg-[var(--vex-onboarding-bg)] font-sans text-[13px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
+        "border-white/[0.10] bg-[var(--vex-onboarding-bg)] font-mono text-[12px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
         "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
         "disabled:cursor-not-allowed disabled:opacity-50",

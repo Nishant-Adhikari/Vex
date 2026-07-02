@@ -56,9 +56,7 @@ export function CompactionHistorySection({
   return (
     <section data-vex-section="compaction-history" className={SECTION}>
       <div>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
-          Compaction history
-        </h2>
+        <h2 className="vex-eyebrow">Compaction history</h2>
         <p className="mt-1 text-xs text-[var(--vex-text-2)]">
           When this session&apos;s older messages were compacted into memory.
         </p>

@@ -4,12 +4,14 @@ Vex bundled fonts — license notice
 The font files in this directory tree are redistributed under the
 SIL Open Font License, Version 1.1 (see OFL-*.txt alongside this file).
 
-Shipped (subset, latin + selected punctuation, WOFF2):
-  /fonts/GoogleSans-latin.woff2  — "Google Sans" variable (axes: opsz, wght, GRAD)
-  /fonts/Poppins-500.woff2       — Poppins Medium
-  /fonts/Poppins-600.woff2       — Poppins SemiBold
-  /fonts/Poppins-700.woff2       — Poppins Bold
+Shipped (variable WOFF2, latin + latin-ext subsets, wght axis):
+  /fonts/archivo-latin-wght.woff2            — "Archivo" (display)
+  /fonts/archivo-latin-ext-wght.woff2
+  /fonts/inter-tight-latin-wght.woff2        — "Inter Tight" (body/UI)
+  /fonts/inter-tight-latin-ext-wght.woff2
+  /fonts/jetbrains-mono-latin-wght.woff2     — "JetBrains Mono" (labels/code)
+  /fonts/jetbrains-mono-latin-ext-wght.woff2
 
-These are subsetted/converted copies of the upstream OFL fonts. The
-unmodified upstream files (variable + static TTFs, README, OFL) are kept
-in the repository under vex-app/assets/fonts/ for provenance.
+These are the Fontsource-packaged builds (fontsource.org) of the upstream
+OFL fonts: Omnibus-Type/Archivo, Google Fonts Inter Tight, and
+JetBrains/JetBrainsMono.

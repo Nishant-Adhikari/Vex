@@ -186,9 +186,10 @@ export function ApprovalCard({
       // call focus(); tabIndex={-1} makes the region programmatically
       // focusable without entering the tab order.
       tabIndex={-1}
-      // The accent border IS the "awaiting your signature" emphasis — this
-      // card is the one place the page asks for the user's pen (S3).
-      className="mt-3 overflow-hidden rounded-lg border border-[var(--vex-accent-border)] bg-[var(--vex-surface-1)] text-sm text-[var(--vex-text-2)]"
+      // The landing's amber alert language (.ws-alert): pin border + pin fill
+      // ARE the "awaiting your signature" emphasis — this card is the one
+      // place the page asks for the user's pen.
+      className="mt-3 overflow-hidden rounded-lg border border-[var(--vex-pin-border)] bg-[var(--vex-pin-fill)] text-sm text-[var(--vex-text-2)]"
     >
       <ApprovalDetails
         summary={summary}

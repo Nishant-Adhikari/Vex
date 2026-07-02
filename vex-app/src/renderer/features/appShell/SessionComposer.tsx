@@ -55,10 +55,11 @@ import { nextReasoningEffort, ReasoningSwitch } from "./ReasoningSwitch.js";
 
 /**
  * Shared slot geometry for the send key's three states (send / stop /
- * stopping) — hard-cut swaps must never shift the chrome row.
+ * stopping) — hard-cut swaps must never shift the chrome row. Pill
+ * silhouette (the landing button language); the enabled state fills cobalt.
  */
 const SEND_KEY_BASE =
-  "inline-flex h-9 w-[68px] shrink-0 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]";
+  "inline-flex h-9 w-[68px] shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 type ComposerNotice =
   | {
@@ -443,10 +444,9 @@ export function SessionComposer({
                 aria-label="Send message"
                 className={cn(
                   SEND_KEY_BASE,
-                  "bg-[var(--vex-surface-0)]",
                   submitDisabled
-                    ? "border-[var(--vex-line-strong)] text-[var(--vex-text-3)]"
-                    : "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:border-[var(--vex-accent-border-strong)] hover:bg-[var(--vex-accent-fill-8)] active:scale-[0.98]",
+                    ? "border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[var(--vex-text-3)]"
+                    : "border-transparent bg-[var(--vex-accent)] text-white hover:bg-[var(--vex-accent-hover)] active:scale-[0.98]",
                 )}
               >
                 <HugeiconsIcon icon={ArrowUp01Icon} size={16} aria-hidden />

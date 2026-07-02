@@ -31,7 +31,7 @@ export function ReadyBody({ result, celebrate }: ReadyBodyProps): JSX.Element {
       {celebrate ? (
         <span
           aria-hidden
-          className="vex-intro-glint pointer-events-none absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-white opacity-0 shadow-[0_0_14px_5px_rgba(238,240,255,0.5)]"
+          className="vex-intro-glint pointer-events-none absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-white opacity-0 shadow-[0_0_14px_5px_rgba(255,255,255,0.5)]"
         />
       ) : null}
       <StatusTile

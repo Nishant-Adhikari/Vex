@@ -1,7 +1,7 @@
 /**
  * ProviderCard — per-provider section primitive used by ApiKeysStep.
  *
- * Renders a glass-tinted card with:
+ * Renders a flat hairline card with:
  *   - 36×36 icon tile (slot — caller passes a brand SVG / `<img>`)
  *   - provider name + required/optional + Set/Partial/Not-set badges
  *   - description (ReactNode — caller can embed inline links / warnings)
@@ -15,11 +15,11 @@
  * inside ApiKeysStep (rule 18 — "stop duplication early").
  *
  * Visual contract:
- *   - card root: `rounded-2xl border-white/[0.06] bg-white/[0.02] p-4`,
+ *   - card root: `rounded-xl border-white/[0.06] bg-white/[0.02] p-4`,
  *     stack-spacing 3 (header / description / body).
  *   - icon slot: 36×36 sizing-only box (flex centering, no bg, no
  *     border, no border-radius) so the brand icon / PNG sits directly
- *     on the glass surface. Caller's icon should be ~20px.
+ *     on the card surface. Caller's icon should be ~20px.
  *   - badges: small inline pills with semantic palette tokens.
  *   - data attributes: `data-vex-apikeys-card` set from the `slug` prop
  *     so tests can address each card individually.
@@ -56,7 +56,7 @@ export interface ProviderCardProps {
 }
 
 const CARD_CHROME = cn(
-  "flex flex-col gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4",
+  "flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4",
 );
 
 const ICON_TILE_CHROME = cn(

@@ -40,9 +40,7 @@ export function JobsSection(): JSX.Element {
   return (
     <section data-vex-section="memory-jobs" className={SECTION}>
       <div>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
-          Memory jobs
-        </h2>
+        <h2 className="vex-eyebrow">Memory jobs</h2>
         <p className="mt-1 text-xs text-[var(--vex-text-2)]">
           The memory manager&apos;s work queue — consolidation sweeps and
           reconcile passes. Retries are handled automatically by the manager.

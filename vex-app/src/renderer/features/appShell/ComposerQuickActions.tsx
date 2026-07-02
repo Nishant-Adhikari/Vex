@@ -36,7 +36,9 @@ export function ComposerQuickActions({
             aria-hidden
             className="vex-sign-stroke absolute left-0 top-1/2 h-px w-6 bg-[var(--vex-accent)]"
           />
-          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+          {/* Numbered-card grammar (landing spec-sheet "01—08"): the index is
+              the one accent mark on a resting row. */}
+          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-accent-text)]">
             {String(index + 1).padStart(2, "0")}
           </span>
           <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">

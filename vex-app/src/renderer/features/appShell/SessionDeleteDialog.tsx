@@ -46,13 +46,11 @@ export function SessionDeleteDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      {/* Solid raised surface + hairline — no glass, no glow (S7; the
-       * backdrop-blur-none override beats the dialog base's blur-sm). */}
-      <DialogContent className="max-w-md rounded-xl border-[var(--vex-line-strong)] bg-[var(--vex-surface-2)] text-foreground shadow-none backdrop:bg-black/70 backdrop:backdrop-blur-none">
+      {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
+       * is the Dialog base since the rebrand — only width is per-modal. */}
+      <DialogContent className="max-w-md">
         <DialogHeader className="border-[var(--vex-line)]">
-          <DialogTitle className="font-mono text-[13px] font-medium uppercase tracking-[0.3em]">
-            Remove session?
-          </DialogTitle>
+          <DialogTitle>Remove session?</DialogTitle>
           <DialogDescription className="text-[var(--vex-text-2)]">
             {describeOutcome(title, blockedOutcome)}
           </DialogDescription>
@@ -73,9 +71,9 @@ export function SessionDeleteDialog({
           </Button>
           <Button
             type="button"
+            variant="destructive"
             onClick={onConfirm}
             disabled={pending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/85"
           >
             {pending ? "Removing…" : "Remove"}
           </Button>

@@ -10,6 +10,11 @@
  * RUNNING (so a started, quiet run no longer looks idle); IDLE at rest. Blue is
  * rationed to the non-idle states.
  *
+ * Landing hero-status treatment: the dot carries the `.vex-pulse-dot` ring
+ * ONLY while the state is verifiably in flight (awaiting / live / running —
+ * the same law as vex-sign-stroke); PAUSED holds a still warning dot, IDLE a
+ * still muted one.
+ *
  * Renders nothing off the session view / with no active session. All data
  * hooks accept a null id and self-gate (no IPC when idle); the pending +
  * runtime queries share ApprovalsRegion's / MissionControls' keys, so this adds
@@ -60,6 +65,11 @@ export function DeskRuleTapeState(): JSX.Element | null {
             ? "Running"
             : "Idle";
   const lit = state !== "idle";
+  // A loop may only bind to verifiable in-flight work: awaiting (frozen on a
+  // signature ask), live (streaming), running (active run). PAUSED is a held
+  // state — a still warning dot, no ring.
+  const pulsing =
+    state === "awaiting" || state === "live" || state === "running";
 
   return (
     <span
@@ -67,14 +77,23 @@ export function DeskRuleTapeState(): JSX.Element | null {
       role="status"
       className={cn(
         "inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.28em]",
-        lit ? "text-[var(--vex-accent-text)]" : "text-[var(--vex-text-3)]",
+        state === "paused"
+          ? "text-warning"
+          : lit
+            ? "text-[var(--vex-accent-text)]"
+            : "text-[var(--vex-text-3)]",
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "h-1 w-1 rounded-full",
-          lit ? "bg-[var(--vex-accent)]" : "bg-[var(--vex-text-3)]",
+          "h-1.5 w-1.5 rounded-full",
+          pulsing && "vex-pulse-dot",
+          state === "paused"
+            ? "bg-warning"
+            : lit
+              ? "bg-[var(--vex-accent)]"
+              : "bg-[var(--vex-text-3)]",
         )}
       />
       {label}

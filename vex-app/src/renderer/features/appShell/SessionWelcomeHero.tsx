@@ -47,8 +47,9 @@ export function SessionWelcomeHero(): JSX.Element {
       </div>
 
       {/* Centered idle landing — the register head sits in the middle of the
-       * screen (the left-anchored tape only applies once a session is live). */}
-      <h1 className="mt-7 text-center text-[26px] font-medium leading-[1.25] text-foreground">
+       * screen (the left-anchored tape only applies once a session is live).
+       * Display voice: Archivo bold with the landing's tight tracking. */}
+      <h1 className="mt-7 text-center font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-foreground">
         What should I execute?
       </h1>
 
@@ -56,6 +57,15 @@ export function SessionWelcomeHero(): JSX.Element {
         Type below. Everything runs locally — on-chain actions always wait for
         your signature.
       </p>
+
+      {/* BARCODE STRIP — the landing's print-shop artifact under the subline.
+       * currentColor-driven bars at whisper opacity: chrome, never content. */}
+      <div className="mt-6 flex flex-col items-center gap-2 text-[var(--vex-text-3)]">
+        <div aria-hidden className="vex-barcode h-3 w-20 opacity-40" />
+        <span className="font-mono text-[9px] uppercase tracking-[0.3em]">
+          Local-first capital runtime
+        </span>
+      </div>
     </>
   );
 }

@@ -1,5 +1,6 @@
 /**
- * Shared review summary primitive (M11; PR6 redesign — glass tile).
+ * Shared review summary primitive (M11; landing rebrand — flat hairline
+ * tile).
  *
  * Each domain card under `cards/` uses this to render the same
  * label / status / children / Edit-button layout. Pulling the layout
@@ -7,9 +8,9 @@
  * between cards (e.g. one renders the Edit button at the top, another
  * at the bottom — confusing operator UX during finalize review).
  *
- * PR6: the shell switched to the onboarding glass aesthetic; this
- * tile now mirrors the `WizardStepPanel` surface so the review screen
- * doesn't double-wrap a shadcn card inside a glass panel.
+ * Landing rebrand: the tile mirrors the `WizardStepPanel` surface —
+ * depth is a luminance step + hairline, never backdrop blur or inset
+ * shadows — so the review screen reads as one continuous sheet.
  */
 
 import type { JSX, ReactNode } from "react";
@@ -49,9 +50,10 @@ export function SummaryCard({
     <div
       data-vex-review-card={testId}
       className={cn(
+        // Flat hairline tile — one luminance step above the panel, no
+        // glass, no inset shadow (landing ink-surface grammar).
         "flex flex-col gap-2 rounded-xl border border-white/[0.08]",
-        "bg-white/[0.03] px-3 py-2.5 backdrop-blur-md",
-        "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+        "bg-white/[0.03] px-3 py-2.5",
       )}
     >
       <div className="flex items-center justify-between gap-3">

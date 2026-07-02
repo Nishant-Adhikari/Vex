@@ -66,7 +66,7 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
               {current.file}
             </span>
           </div>
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--vex-onboarding-accent)]">
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--color-accent-secondary)]">
             {current.phase}
           </span>
         </div>

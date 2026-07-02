@@ -226,10 +226,11 @@ export function StreamingBubble({
           </span>
           <div className="flex items-baseline justify-between gap-2">
             {awaitingApproval ? (
-              // Quiet accent register — no pulse, no fill; the pen decides.
+              // Quiet pin/amber register (matches the amber approval card) —
+              // no pulse, no fill; the pen decides.
               <span
                 data-vex-stream-awaiting=""
-                className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-accent-text)]"
+                className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-pin)]"
               >
                 Awaiting signature
               </span>

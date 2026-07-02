@@ -1,10 +1,12 @@
 /**
  * A single ledger row (56px): mode glyph, two text lines (title + time/
  * activity, subtitle + exception stamps), hairline-separated — no card box,
- * no resting glow. Selection is a 2px accent bar on the left edge plus a
- * one-step surface lift. Mode/permission badge pairs are gone: the glyph
- * already says mode, and stamps appear only when state deviates from the
- * default (restricted / live / paused — terminal sessions earn silence).
+ * no resting glow. Selection is the landing's workspace beam
+ * (`.vex-select-beam`, globals.css): a cobalt gradient sweep with a white
+ * ledger bar on the left edge, text lifted to white. Mode/permission badge
+ * pairs are gone: the glyph already says mode, and stamps appear only when
+ * state deviates from the default (restricted / live / paused — terminal
+ * sessions earn silence).
  *
  * The row-select control and the row actions (trash + pin) are SIBLINGS
  * inside a non-interactive wrapper — never nested buttons — so Enter/Space
@@ -73,18 +75,14 @@ export function SessionRow({
       <div
         className={cn(
           "group relative flex w-full transition-colors",
-          selected ? "bg-white/[0.03]" : "hover:bg-white/[0.035]",
+          // Selection = the landing beam (cobalt gradient + white left bar,
+          // globals.css `.vex-select-beam`); hover stays a quiet surface lift.
+          selected ? "vex-select-beam text-white" : "hover:bg-white/[0.035]",
           // Fixed height drives the fit-to-height packer; see
           // SIDEBAR_ROW_HEIGHT_PX in sessionListLayout.ts.
           sidebarOpen ? "h-14" : "h-11",
         )}
       >
-        {selected ? (
-          <span
-            aria-hidden
-            className="absolute inset-y-2 left-0 w-0.5 bg-[var(--vex-accent)]"
-          />
-        ) : null}
         <button
           type="button"
           onClick={() => onSelect(row.id)}
@@ -103,7 +101,7 @@ export function SessionRow({
           <span
             className={cn(
               "relative flex h-8 w-8 shrink-0 items-center justify-center",
-              selected ? "text-[var(--vex-accent-text)]" : "text-[var(--vex-text-3)]",
+              selected ? "text-white" : "text-[var(--vex-text-3)]",
             )}
           >
             <HugeiconsIcon icon={Icon} size={15} aria-hidden />
@@ -112,7 +110,9 @@ export function SessionRow({
                 aria-hidden
                 className={cn(
                   "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-black/60",
-                  activity.dotClass,
+                  // On the selected beam the tone dot flips to white — an
+                  // accent dot would vanish into the cobalt gradient.
+                  selected ? "bg-white" : activity.dotClass,
                 )}
               />
             ) : null}
@@ -121,30 +121,47 @@ export function SessionRow({
           {sidebarOpen ? (
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-[13px] font-medium",
+                    selected ? "text-white" : "text-foreground",
+                  )}
+                >
                   {title}
                 </span>
                 {activity?.tone === "active" ? (
-                  // Unified SIGNAL DOT (open rail): a quiet accent dot for the
-                  // live signal — same tone→colour language as the collapsed
-                  // badge, no ambient matrix animation. The "live" stamp on the
-                  // line below carries the word.
+                  // Unified SIGNAL DOT (open rail): the live signal earns the
+                  // landing pulse ring — a running mission is verifiably
+                  // in-flight work. Same tone→colour language as the collapsed
+                  // badge; the "live" stamp on the line below carries the word.
                   <span
                     role="img"
                     aria-label="Session active"
                     className={cn(
-                      "h-2 w-2 shrink-0 rounded-full",
-                      activity?.dotClass,
+                      "vex-pulse-dot h-2 w-2 shrink-0 rounded-full",
+                      selected
+                        ? "bg-white [--vex-pulse-color:rgba(255,255,255,0.45)]"
+                        : activity?.dotClass,
                     )}
                   />
                 ) : (
-                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--vex-text-2)]">
+                  <span
+                    className={cn(
+                      "shrink-0 font-mono text-[10px] tabular-nums",
+                      selected ? "text-white/80" : "text-[var(--vex-text-2)]",
+                    )}
+                  >
                     {startedLabel}
                   </span>
                 )}
               </span>
               <span className="mt-0.5 flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--vex-text-2)]">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-[11px]",
+                    selected ? "text-white/80" : "text-[var(--vex-text-2)]",
+                  )}
+                >
                   {subtitle}
                 </span>
                 {row.permission !== "full" ? (

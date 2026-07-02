@@ -28,7 +28,7 @@ export function ExportPrivateKeyFooter({
     <>
       <Button
         type="button"
-        variant="secondary"
+        variant="ghost"
         onClick={onCancel}
         disabled={pending}
         data-vex-export-cancel

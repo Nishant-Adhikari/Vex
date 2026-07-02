@@ -1,7 +1,9 @@
 /**
  * Post-submit status banners for the export-private-key modal: the "copied —
- * scrub in {N}s" amber banner (phase === "copied") and the "scrub attempted —
- * closing" emerald banner (phase === "cleared" | "closing").
+ * scrub in {N}s" warning banner (phase === "copied") and the "scrub attempted —
+ * closing" success banner (phase === "cleared" | "closing"). Tones ride the
+ * semantic tokens (--color-warning / --color-success) via the repo's
+ * color-mix hairline recipe (StatusTile/ReviewStep pattern).
  *
  * Extracted verbatim from `ExportPrivateKeyModal.tsx`. Purely presentational:
  * it shows only the countdown integer — never any secret material.
@@ -23,7 +25,7 @@ export function ExportPrivateKeyBanners({
     <>
       {phase === "copied" ? (
         <p
-          className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400"
+          className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] p-3 text-sm text-[var(--color-warning)]"
           role="status"
           data-vex-export-status="copied"
         >
@@ -33,7 +35,7 @@ export function ExportPrivateKeyBanners({
 
       {phase === "cleared" || phase === "closing" ? (
         <p
-          className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400"
+          className="rounded-md border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-success)_10%,transparent)] p-3 text-sm text-[var(--color-success)]"
           role="status"
           data-vex-export-status="cleared"
         >

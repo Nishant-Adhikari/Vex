@@ -30,9 +30,9 @@ export function BookBlock({
       )}
     >
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
-          {title}
-        </h3>
+        {/* Landing eyebrow (mono micro-label + leading rule) — the section
+         * head grammar for every labeled block. */}
+        <h3 className="vex-eyebrow">{title}</h3>
         {trailing !== undefined ? (
           <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
             {trailing}

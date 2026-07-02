@@ -412,7 +412,7 @@ function CodeBlock({
   };
 
   return (
-    <div className="overflow-hidden rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)]">
+    <div className="overflow-hidden rounded-[10px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)]">
       <div className="flex h-7 items-center justify-between border-b border-[var(--vex-line)] px-3">
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
           {lang}

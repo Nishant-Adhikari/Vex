@@ -209,8 +209,10 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
           // on the dialog element, not the inner content (so the
           // currentTarget check above is reliable).
           "fixed inset-0 m-auto max-h-[85vh] w-full max-w-md overflow-hidden",
-          "rounded-lg border border-border bg-card p-0 text-card-foreground shadow-lg",
-          "backdrop:bg-background/80 backdrop:backdrop-blur-sm",
+          // Brand chrome: raised ink panel + hairline; depth comes from the
+          // opaque backdrop dimming the desk, never from glass or glow.
+          "rounded-xl border border-border bg-popover p-0 text-card-foreground shadow-none",
+          "backdrop:bg-black/70 backdrop:backdrop-blur-none",
           "open:flex open:flex-col",
           className,
         )}
@@ -247,7 +249,12 @@ export const DialogTitle = forwardRef<
     <h2
       ref={ref}
       id={id ?? ctx.titleId}
-      className={cn("text-lg font-semibold leading-none tracking-tight", className)}
+      // Brand modal title — the landing mono-stamp register (uppercase
+      // micro-type), consistent across every dialog.
+      className={cn(
+        "font-mono text-[13px] font-medium uppercase leading-none tracking-[0.3em]",
+        className,
+      )}
       {...props}
     />
   );

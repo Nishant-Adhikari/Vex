@@ -20,6 +20,7 @@ import { assertNever } from "@shared/ipc/result.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { useAcceptPlan, useSessionPlan } from "../../lib/api/sessions.js";
 import { useRequestResume } from "../../lib/api/runtime.js";
+import { Button } from "../../components/ui/button.js";
 import {
   Dialog,
   DialogBody,
@@ -29,9 +30,12 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog.js";
 
-/** Accent-hairline action key (Accept/Resume) — quiet until hovered. */
-const ACTION_KEY =
-  "rounded-md border border-[var(--vex-accent-border)] px-3 py-1.5 text-xs font-medium text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-50";
+/**
+ * Accent-hairline key for the SECONDARY recovery action (Resume) — quiet
+ * until hovered; the primary Accept is the filled cobalt Button default.
+ */
+const RESUME_KEY =
+  "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:border-[var(--vex-accent-border-strong)] hover:bg-[var(--vex-accent-fill-8)] hover:text-[var(--vex-accent-text)]";
 
 export interface PlanDisplayModalProps {
   readonly sessionId: string;
@@ -88,24 +92,36 @@ export function PlanDisplayModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Shell dialog chrome: solid surface + hairline + the sanctioned
-       * backdrop-blur-none override that beats the dialog base's blur-sm
-       * (THE PROTOCOL DESK never uses glass — see shell-design-guard). */}
+      {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
+       * is the Dialog base since the rebrand — only width is per-modal. */}
       <DialogContent
         data-vex-area="plan-display-modal"
-        className="max-w-lg rounded-xl border-[var(--vex-line-strong)] bg-[var(--vex-surface-2)] text-foreground shadow-none backdrop:bg-black/70 backdrop:backdrop-blur-none"
+        className="max-w-lg"
       >
-        <DialogHeader className="flex-row items-center justify-between gap-3">
-          <DialogTitle className="text-base">Action plan</DialogTitle>
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-[var(--vex-line)]">
+          <DialogTitle>Action plan</DialogTitle>
           {hasPlan ? (
             <span
               data-vex-state={pending ? "pending" : "accepted"}
               className={
                 pending
-                  ? "shrink-0 text-[11px] font-medium text-warning"
-                  : "shrink-0 text-[11px] font-medium text-success"
+                  ? "flex shrink-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-warning"
+                  : "flex shrink-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-success"
               }
             >
+              {pending ? (
+                // Waiting on the host's decision — a live pending state, so
+                // the dot carries the sanctioned pulse ring (amber family).
+                <span
+                  aria-hidden
+                  className="vex-pulse-dot h-1.5 w-1.5 rounded-full bg-warning [--vex-pulse-color:color-mix(in_oklab,var(--color-warning)_50%,transparent)]"
+                />
+              ) : (
+                <span
+                  aria-hidden
+                  className="h-1.5 w-1.5 rounded-full bg-success"
+                />
+              )}
               {pending ? "Pending your acceptance" : "Accepted"}
             </span>
           ) : null}
@@ -136,7 +152,7 @@ export function PlanDisplayModal({
         </DialogBody>
 
         {showAcceptButton || awaitingResume || acceptNotice !== null ? (
-          <DialogFooter className="flex-col items-stretch gap-2 sm:flex-col">
+          <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-col">
             <div className="flex flex-wrap items-center gap-2">
               {awaitingResume ? (
                 <span className="mr-auto text-[11px] text-warning">
@@ -144,8 +160,10 @@ export function PlanDisplayModal({
                 </span>
               ) : null}
               {showAcceptButton ? (
-                <button
+                // THE single primary action — filled cobalt pill.
+                <Button
                   type="button"
+                  size="sm"
                   disabled={acceptBusy}
                   onClick={() =>
                     acceptPlan.mutate({
@@ -153,20 +171,21 @@ export function PlanDisplayModal({
                       expectedPlanMd: plan?.planMd ?? "",
                     })
                   }
-                  className={ACTION_KEY}
                 >
                   {acceptBusy ? "Accepting…" : "Accept plan"}
-                </button>
+                </Button>
               ) : null}
               {awaitingResume ? (
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="outline"
                   disabled={resumeBusy}
                   onClick={() => requestResume.mutate({ sessionId })}
-                  className={ACTION_KEY}
+                  className={RESUME_KEY}
                 >
                   {resumeBusy ? "Resuming…" : "Resume mission"}
-                </button>
+                </Button>
               ) : null}
             </div>
             {acceptNotice !== null ? (

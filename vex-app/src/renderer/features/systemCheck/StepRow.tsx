@@ -69,9 +69,11 @@ export function StepRow({
       className="motion-cascade-row flex items-center gap-3 border-b border-white/[0.06] py-4"
       data-step-status={status}
     >
+      {/* Ledger index — the landing's numbered-spec voice (.prob-card
+       * .num): mono digits in the on-dark accent (periwinkle mix). */}
       <span
         aria-hidden
-        className="w-7 shrink-0 font-mono text-[10px] tabular-nums tracking-[0.1em] text-[var(--color-text-muted)]"
+        className="w-7 shrink-0 font-mono text-[10px] tabular-nums tracking-[0.2em] text-[var(--color-accent-secondary)]"
       >
         {index != null ? String(index).padStart(2, "0") : null}
       </span>

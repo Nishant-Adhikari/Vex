@@ -146,14 +146,12 @@ export function ReportIssueDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Solid raised surface + hairline — no glass, no glow (S7; the
-       * backdrop-blur-none override beats the dialog base's blur-sm). */}
-      <DialogContent className="max-w-lg rounded-xl border-[var(--vex-line-strong)] bg-[var(--vex-surface-2)] text-foreground shadow-none backdrop:bg-black/70 backdrop:backdrop-blur-none">
+      {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
+       * is the Dialog base since the rebrand — only width is per-modal. */}
+      <DialogContent className="max-w-lg">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader className="border-[var(--vex-line)]">
-            <DialogTitle className="font-mono text-[13px] font-medium uppercase tracking-[0.3em]">
-              Report an issue
-            </DialogTitle>
+            <DialogTitle>Report an issue</DialogTitle>
             <DialogDescription className="text-[var(--vex-text-3)]">
               The report is saved locally on this machine. Secrets are
               automatically redacted before storage. Nothing is sent to a
@@ -185,7 +183,9 @@ export function ReportIssueDialog({
                   <label
                     key={opt.value}
                     className={cn(
-                      "cursor-pointer rounded-[6px] border px-3 py-1.5 text-xs transition-colors",
+                      // Landing chip: mono micro-label pill on a hairline.
+                      "cursor-pointer rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors",
+                      "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--vex-accent)]",
                       severity === opt.value
                         ? "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)] text-[var(--vex-accent-text)]"
                         : "border-[var(--vex-line-strong)] text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground",
@@ -252,7 +252,7 @@ export function ReportIssueDialog({
               </p>
             ) : null}
             {submitInfo !== null ? (
-              <p className="text-sm text-emerald-500" role="status">
+              <p className="text-sm text-[var(--color-success)]" role="status">
                 {submitInfo}
               </p>
             ) : null}
@@ -268,13 +268,9 @@ export function ReportIssueDialog({
             >
               Cancel
             </Button>
-            {/* Key form, not a filled pill — disabled dimming rides the
-             * tokens, never an opacity stack (mirrors SessionCreator). */}
-            <Button
-              type="submit"
-              disabled={submitDisabled}
-              className="rounded-lg border border-[var(--vex-accent-border)] bg-transparent font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--vex-accent-text)] hover:border-[var(--vex-accent-border-strong)] hover:bg-[var(--vex-accent-fill-8)] disabled:border-[var(--vex-line-strong)] disabled:text-[var(--vex-text-3)] disabled:opacity-100"
-            >
+            {/* THE primary action — the landing's filled cobalt pill
+             * (Button default variant: mono uppercase; mirrors SessionCreator). */}
+            <Button type="submit" disabled={submitDisabled}>
               {submitting ? "Saving…" : "Save report"}
             </Button>
           </DialogFooter>
@@ -303,6 +299,7 @@ function CategoryRadio({
     <label
       className={cn(
         "flex cursor-pointer flex-col gap-1 rounded-[6px] border px-3 py-2 text-sm transition-colors",
+        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--vex-accent)]",
         checked
           ? "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)]"
           : "border-[var(--vex-line-strong)] hover:bg-white/[0.04]",

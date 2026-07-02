@@ -98,7 +98,7 @@ export function ExportWalletPicker({
           onChange={(e) => setSelectedId(e.target.value)}
           className={cn(
             "h-9 rounded-lg border border-white/[0.08] bg-white/[0.035] px-2 text-sm text-foreground",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3275f8]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]",
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
           data-vex-export-wallet-select

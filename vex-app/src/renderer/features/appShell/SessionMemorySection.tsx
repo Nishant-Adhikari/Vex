@@ -29,7 +29,7 @@ export function MemorySection({
   return (
     <section data-vex-section="memory" className={SECTION}>
       <div>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
+        <h2 className="vex-eyebrow">
           Session memory
         </h2>
         <p className="mt-1 text-xs text-[var(--vex-text-2)]">

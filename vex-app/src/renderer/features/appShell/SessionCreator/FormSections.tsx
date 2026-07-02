@@ -15,8 +15,8 @@ import {
   type SessionMode,
   type SessionPermission,
 } from "@shared/schemas/sessions.js";
+import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
-import { cn } from "../../../lib/utils.js";
 import { WalletSelect, type WalletSelectOption } from "../SessionWalletSelect.js";
 import { MODE_OPTIONS, PERMISSION_OPTIONS } from "./options.js";
 import { RadioCard } from "./RadioCard.js";
@@ -35,7 +35,9 @@ export function NameField({
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor="vex-session-name">Name</Label>
-      <input
+      {/* The Input primitive is the brand field (transparent, hairline,
+       * accent focus border) — h-10 keeps this hero field's weight. */}
+      <Input
         ref={nameRef}
         id="vex-session-name"
         type="text"
@@ -44,15 +46,15 @@ export function NameField({
         value={name}
         onChange={(e) => onNameChange(e.target.value)}
         placeholder="Give this session a short name."
-        className={cn(
-          "h-10 w-full rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 text-sm shadow-sm",
-          "placeholder:text-muted-foreground",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-        )}
+        className="h-10"
       />
       <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
         <p>The sidebar uses this as the session title.</p>
-        <span aria-live="polite">
+        {/* Numerals speak mono/tabular (mirrors the ReportIssue counter). */}
+        <span
+          aria-live="polite"
+          className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+        >
           {name.length} / {SESSION_TITLE_MAX_LENGTH}
         </span>
       </div>

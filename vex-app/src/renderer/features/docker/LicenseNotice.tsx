@@ -7,9 +7,11 @@
  * deny-clicks outside the dialog so the user must explicitly accept or
  * dismiss.
  *
- * Visual under the onboarding glass aesthetic — stronger backdrop blur
- * + frosted card matching the BootstrapPanel surface + accent color
- * matching `--dockerbootstrap-accent`.
+ * Visual: the landing ink dialog language — solid elevated panel
+ * (--color-bg-elevated) behind a hairline border, black/70 backdrop with
+ * NO blur, no inset shadows; mono-uppercase title; pill actions (quiet
+ * hairline Cancel, filled cobalt Continue). Accent tracks
+ * `--dockerbootstrap-accent`.
  *
  * No "I have a license" toggle — Vex cannot verify legal state and
  * presenting one would imply a verification it doesn't perform.
@@ -90,7 +92,7 @@ export function LicenseNotice({
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6"
       onClick={onDismiss}
     >
       <div
@@ -101,14 +103,16 @@ export function LicenseNotice({
         tabIndex={-1}
         className={cn(
           "w-full max-w-md outline-none",
-          "rounded-2xl border border-white/[0.12] bg-white/[0.06] p-6 text-[var(--color-text-primary)] backdrop-blur-2xl",
-          "shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.2),0_18px_60px_rgba(0,0,0,0.5)]",
+          // One-shot rise-and-settle on mount (the landing dialog law:
+          // modals never pop); reduced motion collapses it globally.
+          "vex-entry-settle",
+          "rounded-xl border border-white/[0.10] bg-[var(--color-bg-elevated)] p-6 text-[var(--color-text-primary)]",
         )}
         onClick={(event) => event.stopPropagation()}
       >
         <h2
           id="vex-license-title"
-          className="mb-2 text-lg font-semibold tracking-tight"
+          className="mb-4 font-mono text-[13px] font-medium uppercase tracking-[0.3em]"
         >
           Docker Desktop license
         </h2>
@@ -125,7 +129,7 @@ export function LicenseNotice({
         <button
           type="button"
           onClick={openDocs}
-          className="mb-5 inline-flex items-center gap-1 text-sm text-[var(--dockerbootstrap-accent,var(--color-accent-primary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+          className="mb-5 inline-flex items-center gap-1 text-sm text-[color-mix(in_oklab,var(--dockerbootstrap-accent,var(--color-accent-primary))_55%,white)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]"
         >
           Docker Desktop license terms
           <HugeiconsIcon icon={ArrowUpRight01Icon} size={14} aria-hidden />
@@ -135,9 +139,9 @@ export function LicenseNotice({
             type="button"
             onClick={onDismiss}
             className={cn(
-              "rounded-lg border border-white/[0.1] bg-white/[0.04] px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-[var(--color-text-secondary)] backdrop-blur-md",
-              "hover:border-white/[0.2] hover:bg-white/[0.1] hover:text-[var(--color-text-primary)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+              "inline-flex h-9 items-center justify-center rounded-full border border-white/[0.10] bg-transparent px-5 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--color-text-secondary)]",
+              "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]",
               "transition-colors duration-150",
             )}
           >
@@ -147,11 +151,10 @@ export function LicenseNotice({
             type="button"
             onClick={onAccept}
             className={cn(
-              "rounded-lg border border-white/[0.16] bg-[var(--dockerbootstrap-accent,var(--color-accent-primary))]/85 px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-white backdrop-blur-md",
-              "shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_24px_rgba(50,117,248,0.28)]",
-              "hover:bg-[var(--dockerbootstrap-accent,var(--color-accent-primary))]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-              "active:scale-[0.98] transition-all duration-150",
+              "inline-flex h-9 items-center justify-center rounded-full bg-[var(--dockerbootstrap-accent,var(--color-accent-primary))] px-5 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-white",
+              "hover:bg-[color-mix(in_oklab,var(--dockerbootstrap-accent,var(--color-accent-primary))_82%,white)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dockerbootstrap-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]",
+              "active:scale-[0.98] transition-colors duration-150",
             )}
           >
             Continue to download

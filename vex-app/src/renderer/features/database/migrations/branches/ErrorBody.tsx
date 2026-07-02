@@ -53,14 +53,14 @@ export function ErrorBody({
 
       {appliedBeforeFailure.length > 0 ? (
         expanded ? (
-          <pre className="max-h-40 overflow-auto rounded-[3px] border border-white/[0.08] bg-black/40 p-3 font-mono text-[10px] leading-relaxed text-[var(--color-text-primary)]">
+          <pre className="max-h-40 overflow-auto rounded-lg border border-white/[0.08] bg-black/40 p-3 font-mono text-[10px] leading-relaxed text-[var(--color-text-primary)]">
             <code>{appliedBeforeFailure.join("\n")}</code>
           </pre>
         ) : (
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="self-start font-mono text-[11px] text-[var(--vex-onboarding-accent)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
+            className="self-start font-mono text-[11px] text-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,white)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
           >
             Show {appliedBeforeFailure.length} applied before failure
           </button>

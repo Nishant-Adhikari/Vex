@@ -163,12 +163,12 @@ export function SessionCreator({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl rounded-xl border-[var(--vex-line-strong)] bg-[var(--vex-surface-2)] text-foreground shadow-none backdrop:bg-black/70 backdrop:backdrop-blur-none">
+      {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
+       * is the Dialog base since the rebrand — only width is per-modal. */}
+      <DialogContent className="max-w-xl">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader className="border-[var(--vex-line)]">
-            <DialogTitle className="font-mono text-[13px] font-medium uppercase tracking-[0.3em]">
-              New session
-            </DialogTitle>
+            <DialogTitle>New session</DialogTitle>
             {/* Ceremony subline — the retired welcome headline, read once
              * per new act (where ceremony belongs). */}
             <p className="text-xs text-[var(--vex-text-2)]">
@@ -212,13 +212,9 @@ export function SessionCreator({
             >
               Cancel
             </Button>
-            {/* Key form, not a filled pill — disabled dimming rides the
-             * tokens, never an opacity stack. */}
-            <Button
-              type="submit"
-              disabled={submitDisabled}
-              className="h-10 rounded-lg border border-[var(--vex-accent-border)] bg-transparent font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--vex-accent-text)] hover:border-[var(--vex-accent-border-strong)] hover:bg-[var(--vex-accent-fill-8)] disabled:border-[var(--vex-line-strong)] disabled:text-[var(--vex-text-3)] disabled:opacity-100"
-            >
+            {/* THE primary action — the landing's filled cobalt pill
+             * (Button default variant: mono uppercase, bg-primary). */}
+            <Button type="submit" disabled={submitDisabled}>
               {createMutation.isPending ? "Creating…" : "Create"}
             </Button>
           </DialogFooter>

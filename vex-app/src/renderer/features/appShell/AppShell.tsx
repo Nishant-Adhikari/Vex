@@ -1,11 +1,13 @@
 /**
- * Main app shell — THE PROTOCOL DESK (Countersign, opened for business).
+ * Main app shell — THE SIGNAL DESK (the landing's design language, opened
+ * for business).
  *
  * Onboarding proved identity in a dark room (one light, one signature);
- * the shell is the working register that signature unlocked. Same canvas
- * (#04060f via --vex-surface-0), zero photography, zero gradients, zero
- * resting glow: depth comes from the three solid luminance steps defined
- * by the [data-vex-shell] scope in globals.css, separated by hairlines.
+ * the shell is the working register that signature unlocked. Same ink
+ * canvas (#0a0d18 via --vex-surface-0), zero photography, zero resting
+ * glow: depth comes from the three solid luminance steps defined by the
+ * [data-vex-shell] scope in globals.css, separated by hairlines. The one
+ * sanctioned gradient is the selection beam (.vex-select-beam).
  *
  * Layout: sidebar rail (SessionsList) | content column under the DESK RULE
  * | optional on-demand BOOK panel (right <aside>, gated on bookOpen). The

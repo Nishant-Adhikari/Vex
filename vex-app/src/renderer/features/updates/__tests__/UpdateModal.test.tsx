@@ -33,8 +33,8 @@ describe("UpdateModal two-step buttons", () => {
       latestVersion: "1.1.0",
       severity: "normal",
     });
-    expect(screen.getByText("Pobierz aktualizację")).toBeTruthy();
-    expect(screen.queryByText("Zrestartuj i zainstaluj")).toBeNull();
+    expect(screen.getByText("Update now")).toBeTruthy();
+    expect(screen.queryByText("Restart and install")).toBeNull();
   });
 
   it("downloading shows a progressbar at the right value + Cancel", () => {
@@ -51,7 +51,7 @@ describe("UpdateModal two-step buttons", () => {
         .getByRole("progressbar", { hidden: true })
         .getAttribute("aria-valuenow"),
     ).toBe("40");
-    expect(screen.getByText("Anuluj")).toBeTruthy();
+    expect(screen.getByText("Cancel")).toBeTruthy();
   });
 
   it("downloaded shows the explicit Restart CTA (step 2)", () => {
@@ -60,7 +60,7 @@ describe("UpdateModal two-step buttons", () => {
       currentVersion: "1.0.0",
       latestVersion: "1.1.0",
     });
-    expect(screen.getByText("Zrestartuj i zainstaluj")).toBeTruthy();
+    expect(screen.getByText("Restart and install")).toBeTruthy();
   });
 
   it("blockedByOperation surfaces the reason", () => {
@@ -82,7 +82,7 @@ describe("UpdateModal two-step buttons", () => {
       latestVersion: "1.1.0",
       severity: "normal",
     });
-    fireEvent.click(screen.getByText("Pobierz aktualizację"));
+    fireEvent.click(screen.getByText("Update now"));
     expect(props.onDownload).toHaveBeenCalledTimes(1);
   });
 
@@ -92,7 +92,7 @@ describe("UpdateModal two-step buttons", () => {
       currentVersion: "1.0.0",
       latestVersion: "1.1.0",
     });
-    fireEvent.click(screen.getByText("Zrestartuj i zainstaluj"));
+    fireEvent.click(screen.getByText("Restart and install"));
     expect(props.onRestart).toHaveBeenCalledTimes(1);
   });
 });

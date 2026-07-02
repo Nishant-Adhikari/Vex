@@ -106,7 +106,8 @@ function PositionBody({
         pnlVsPrev={pnlVsPrev}
       />
       {visible.length > 0 ? (
-        <ul className="flex flex-col gap-1">
+        // Landing .ws-stat rows: hairline-separated, key muted / value white.
+        <ul className="flex flex-col">
           {visible.map((token) => (
             <TokenRow key={tokenKey(token)} token={token} />
           ))}
@@ -141,7 +142,7 @@ function TotalRow({
       <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
         Total
       </span>
-      <span className="text-[22px] font-medium tabular-nums text-[var(--vex-accent-text)]">
+      <span className="font-display text-[24px] font-bold leading-[1.1] tracking-[-0.02em] tabular-nums text-[var(--vex-accent-text)]">
         {formatUsd(liveTotalUsd)}
       </span>
       {snapshotTotalUsd !== null ? (
@@ -168,11 +169,11 @@ function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element 
     ? token.symbol
     : "—";
   return (
-    <li className="flex items-baseline justify-between gap-3">
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text)]">
+    <li className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1 last:border-b-0">
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)]">
         {symbol}
       </span>
-      <span className="shrink-0 tabular-nums text-[12px] text-[var(--vex-text-2)]">
+      <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
         {formatUsd(token.balanceUsd)}
       </span>
     </li>

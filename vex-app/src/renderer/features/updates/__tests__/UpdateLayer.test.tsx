@@ -10,7 +10,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
-import { UpdateLayer } from "../UpdateLayer.js";
+
+// Isolate from the @hugeicons ESM icon lib (banner glyphs render nothing) —
+// same convention as the appShell modal tests.
+vi.mock("@hugeicons/react", () => ({
+  HugeiconsIcon: () => null,
+}));
+
+const { UpdateLayer } = await import("../UpdateLayer.js");
 
 function stubUpdater(status: UpdateStatus): void {
   Object.defineProperty(window, "vex", {
@@ -53,6 +60,8 @@ describe("UpdateLayer", () => {
       severity: "normal",
     });
     render(withClient(<UpdateLayer />));
-    expect(await screen.findByText("Vex 1.1.0 jest dostępna")).toBeTruthy();
+    expect(
+      await screen.findByText("Update available — Vex 1.1.0"),
+    ).toBeTruthy();
   });
 });

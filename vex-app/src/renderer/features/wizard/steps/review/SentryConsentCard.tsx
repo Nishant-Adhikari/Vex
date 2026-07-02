@@ -58,7 +58,7 @@ export function SentryConsentCard({
 
   return (
     <div
-      className="flex flex-col gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      className="flex flex-col gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5"
       data-vex-review-card="sentry-consent"
     >
       <label className="flex cursor-pointer items-start gap-3">
@@ -67,7 +67,7 @@ export function SentryConsentCard({
           checked={checked}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
-          className="mt-1"
+          className="mt-1 accent-[var(--color-accent-primary)]"
         />
         <span className="flex flex-col">
           <span className="text-sm font-medium text-[var(--color-text-primary)]">

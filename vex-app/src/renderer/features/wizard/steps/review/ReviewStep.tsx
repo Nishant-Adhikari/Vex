@@ -26,6 +26,7 @@ import type { Capabilities } from "@shared/schemas/capabilities.js";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
 import { Button } from "../../../../components/ui/button.js";
+import { DotmSquare3 } from "../../../../components/ui/dotm-square-3.js";
 import { cn } from "../../../../lib/utils.js";
 import { useEnvState } from "../../../../lib/api/onboarding.js";
 import { useCompleteSetup } from "../../../../lib/api/finalize.js";
@@ -152,9 +153,10 @@ export function ReviewStep({
       <div className="flex w-full flex-col gap-3">
         <div
           className={cn(
+            // Flat hairline banner — luminance step + hairline, no glass.
             "flex items-center justify-between gap-3 rounded-xl",
             "border border-white/[0.1] bg-white/[0.04] px-4 py-2.5",
-            "backdrop-blur-md text-xs text-[var(--color-text-secondary)]",
+            "text-xs text-[var(--color-text-secondary)]",
           )}
           data-vex-wizard-review-editing={editingStep}
         >
@@ -193,14 +195,15 @@ export function ReviewStep({
         description="Gathering current configuration…"
         footer={null}
       >
-        <div role="status" aria-live="polite" className="flex items-center gap-2">
-          <div
-            aria-hidden
-            className="h-1 w-32 overflow-hidden rounded-full bg-white/[0.07]"
-          >
-            <div className="h-full w-1/3 animate-pulse bg-[var(--vex-onboarding-accent)]" />
-          </div>
-          <span className="sr-only">Loading review…</span>
+        {/* Brand loading language — DotMatrix (role="status" lives on the
+            loader root), never a generic pulse bar. */}
+        <div className="flex justify-center py-4">
+          <DotmSquare3
+            size={24}
+            dotSize={3}
+            colorPreset="grad-cobalt"
+            ariaLabel="Loading review…"
+          />
         </div>
       </WizardStepPanel>
     );

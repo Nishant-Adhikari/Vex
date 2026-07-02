@@ -2,9 +2,10 @@
  * Update detail modal (M13) — the two-step flow surface.
  *
  * Presentational: it renders the current `UpdateStatus` and calls back into
- * `UpdateLayer` for actions. Step 1 is an explicit "Pobierz aktualizację"
- * (download); step 2 is a SEPARATE "Zrestartuj i zainstaluj" (restart) shown
- * only once the download is ready. No auto-restart, no artifact paths/URLs.
+ * `UpdateLayer` for actions. Step 1 is an explicit "Update now" (download);
+ * step 2 is a SEPARATE "Restart and install" shown only once the download is
+ * ready. No auto-restart, no artifact paths/URLs. Copy follows the
+ * user-triggered-updates contract (vex-user-triggered-updates §Update UX).
  */
 
 import type { JSX } from "react";
@@ -56,6 +57,11 @@ export function UpdateModal({
           {status.kind === "available" && status.summary ? (
             <p className="text-sm text-muted-foreground">{status.summary}</p>
           ) : null}
+          {status.kind === "available" ? (
+            <p className="text-xs text-muted-foreground">
+              Downloads the update and restarts Vex when ready.
+            </p>
+          ) : null}
           {status.kind === "downloading" ? (
             <UpdateProgress percent={status.percent} />
           ) : null}
@@ -99,57 +105,57 @@ function renderFooter(status: UpdateStatus, a: FooterActions): JSX.Element {
       return (
         <>
           <Button variant="ghost" onClick={a.onReleaseNotes}>
-            Informacje o wydaniu
+            Release notes
           </Button>
           <Button variant="ghost" onClick={a.close}>
-            Później
+            Later
           </Button>
           <Button onClick={a.onDownload} disabled={a.busy}>
-            Pobierz aktualizację
+            Update now
           </Button>
         </>
       );
     case "downloading":
       return (
         <Button variant="ghost" onClick={a.onCancel} disabled={a.busy}>
-          Anuluj
+          Cancel
         </Button>
       );
     case "downloaded":
       return (
         <>
           <Button variant="ghost" onClick={a.close}>
-            Później
+            Later
           </Button>
           <Button onClick={a.onRestart} disabled={a.busy}>
-            Zrestartuj i zainstaluj
+            Restart and install
           </Button>
         </>
       );
     case "blockedByOperation":
       return (
-        <Button onClick={a.close}>Rozumiem</Button>
+        <Button onClick={a.close}>Got it</Button>
       );
     case "error":
       return (
         <>
           <Button variant="ghost" onClick={a.onReleaseNotes}>
-            Otwórz stronę pobierania
+            Open download page
           </Button>
           <Button onClick={a.onCheck} disabled={a.busy}>
-            Spróbuj ponownie
+            Try again
           </Button>
         </>
       );
     case "installing":
-      return <Button disabled>Instalowanie…</Button>;
+      return <Button disabled>Installing…</Button>;
     case "checking":
-      return <Button disabled>Sprawdzanie…</Button>;
+      return <Button disabled>Checking…</Button>;
     case "current":
     case "idle":
       return (
         <Button variant="ghost" onClick={a.close}>
-          Zamknij
+          Close
         </Button>
       );
   }
@@ -158,46 +164,46 @@ function renderFooter(status: UpdateStatus, a: FooterActions): JSX.Element {
 function titleFor(status: UpdateStatus): string {
   switch (status.kind) {
     case "available":
-      return `Dostępna aktualizacja — Vex ${status.latestVersion}`;
+      return `Vex ${status.latestVersion} is available`;
     case "downloading":
-      return `Pobieranie Vex ${status.latestVersion}`;
+      return `Downloading Vex ${status.latestVersion}`;
     case "downloaded":
-      return "Aktualizacja gotowa do instalacji";
+      return "Ready to install";
     case "installing":
-      return "Instalowanie aktualizacji";
+      return "Installing update";
     case "blockedByOperation":
-      return "Najpierw dokończ bieżącą operację";
+      return "Update blocked";
     case "error":
-      return "Aktualizacja nie powiodła się";
+      return "Update failed";
     case "checking":
-      return "Sprawdzanie aktualizacji";
+      return "Checking for updates";
     case "current":
-      return "Masz najnowszą wersję";
+      return "You're up to date";
     case "idle":
-      return "Aktualizacje";
+      return "Updates";
   }
 }
 
 function descriptionFor(status: UpdateStatus): string {
   switch (status.kind) {
     case "available":
-      return `Masz wersję ${status.currentVersion}. Pobranie nie uruchomi restartu — zrobisz to osobno.`;
+      return `Current version: ${status.currentVersion}.`;
     case "downloading":
-      return "Vex pobiera aktualizację. Możesz dalej korzystać z aplikacji.";
+      return "The update is downloading. You can keep using Vex.";
     case "downloaded":
-      return `Vex ${status.latestVersion} jest gotowa. Vex uruchomi się ponownie, aby zainstalować.`;
+      return `Vex ${status.latestVersion} is ready. Vex will restart to install it.`;
     case "installing":
-      return "Vex zamyka się i uruchomi ponownie automatycznie.";
+      return "Vex is closing and will reopen automatically.";
     case "blockedByOperation":
-      return "Zaktualizuj, gdy bieżąca operacja się zakończy.";
+      return "Finish the current operation before updating.";
     case "error":
-      return "Sprawdź połączenie i spróbuj ponownie.";
+      return "Check your connection and try again.";
     case "checking":
-      return "Łączenie z kanałem aktualizacji…";
+      return "Contacting the update channel…";
     case "current":
-      return `Vex ${status.currentVersion} jest aktualna.`;
+      return `Vex ${status.currentVersion} is the latest version.`;
     case "idle":
-      return "Brak aktywnej aktualizacji.";
+      return "No update in progress.";
   }
 }
 
@@ -207,7 +213,7 @@ function UpdateProgress({ percent }: { readonly percent: number }): JSX.Element 
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between text-xs">
         <span className="font-mono uppercase tracking-[0.2em] text-muted-foreground">
-          Pobieranie
+          Downloading
         </span>
         <span className="font-mono tabular-nums">{clamped}%</span>
       </div>

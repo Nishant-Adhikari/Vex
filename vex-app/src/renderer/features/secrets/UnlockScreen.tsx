@@ -175,8 +175,9 @@ export function UnlockScreen(): JSX.Element {
           </span>
         </div>
       </div>
-      <div className="pointer-events-none absolute bottom-7 left-10 z-10">
-        <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-60">
+      <div className="pointer-events-none absolute bottom-7 left-10 z-10 flex flex-col gap-2 text-[var(--color-text-muted)]">
+        <span aria-hidden className="vex-barcode h-2.5 w-16 opacity-30" />
+        <span className="font-mono text-[10px] uppercase tracking-[0.4em] opacity-60">
           Clarity · Focus · Understand · Evolve
         </span>
       </div>

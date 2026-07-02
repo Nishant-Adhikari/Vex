@@ -219,11 +219,13 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
             onClick={onCreate}
             aria-label="New session"
             className={cn(
-              "vex-sign-key relative flex h-11 items-center justify-center gap-2 rounded-lg border border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[13px] font-medium text-[var(--vex-text-2)] transition-colors duration-150",
+              // Pill silhouette — the landing button language (radius 100px);
+              // the signing stroke + glint mechanics are unchanged.
+              "vex-sign-key relative flex h-11 items-center justify-center gap-2 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[13px] font-medium text-[var(--vex-text-2)] transition-colors duration-150",
               "hover:border-[var(--vex-accent-border)] hover:text-[var(--vex-accent-text)]",
               "active:scale-[0.99] active:border-[var(--vex-accent-border-strong)] active:bg-[var(--vex-accent-fill-8)]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
-              sidebarOpen ? "w-full px-3" : "mx-auto w-10",
+              sidebarOpen ? "w-full px-3" : "mx-auto w-11",
             )}
           >
             <HugeiconsIcon icon={Add01Icon} size={16} aria-hidden />

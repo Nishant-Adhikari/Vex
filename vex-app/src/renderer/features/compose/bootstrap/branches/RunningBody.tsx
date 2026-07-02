@@ -27,7 +27,7 @@ interface RunningBodyProps {
 /** Status ink for the row's mono stamp text + matrix color. */
 const statusInk: Record<ServiceStatus, string> = {
   starting: "text-[var(--color-text-secondary)]",
-  probing: "text-[var(--vex-onboarding-accent)]",
+  probing: "text-[var(--color-accent-secondary)]",
   ready: "text-[var(--color-success)]",
   failed: "text-[var(--color-danger)]",
 };
@@ -65,9 +65,11 @@ export function RunningBody({
             data-service={s.service}
             data-status={s.status}
           >
+            {/* Ledger index — landing .num voice, same treatment as the
+             * SystemCheck StepRow indexes (on-dark accent). */}
             <span
               aria-hidden
-              className="w-7 shrink-0 font-mono text-[10px] tabular-nums tracking-[0.1em] text-[var(--color-text-muted)]"
+              className="w-7 shrink-0 font-mono text-[10px] tabular-nums tracking-[0.2em] text-[var(--color-accent-secondary)]"
             >
               {String(i + 1).padStart(2, "0")}
             </span>
@@ -108,7 +110,7 @@ export function RunningBody({
           ? { "data-vex-compose-cancelling": "" }
           : { "data-vex-compose-cancel": "" })}
         className={cn(
-          "inline-flex items-center gap-1.5 self-center rounded-[3px] border border-white/[0.12] bg-transparent px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
+          "inline-flex items-center gap-1.5 self-center rounded-full border border-white/[0.12] bg-transparent px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]",
           "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
           "disabled:cursor-not-allowed disabled:opacity-60",

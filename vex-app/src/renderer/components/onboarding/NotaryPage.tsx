@@ -55,6 +55,12 @@ export function NotaryPage({
       data-vex-screen={screen}
       className="relative h-screen w-screen overflow-hidden bg-[var(--vex-onboarding-bg)] text-[var(--color-text-primary)]"
     >
+      {/* PRINT TEXTURE — the landing's machine artifacts at whisper
+       * opacity: vertical scanlines + fractal grain on the canvas only
+       * (paint layers, never over body text at more than a whisper). */}
+      <div aria-hidden className="vex-scanlines absolute inset-0" />
+      <div aria-hidden className="vex-noise absolute inset-0" />
+
       <section
         aria-labelledby={headingId}
         className={cn(
@@ -70,7 +76,7 @@ export function NotaryPage({
           draggable={false}
           className="mx-auto h-12 w-12 object-contain opacity-90"
         />
-        <span className="mt-3 text-center font-sans text-[10px] uppercase tracking-[0.35em] text-[var(--color-text-muted)] opacity-70">
+        <span className="vex-eyebrow mt-3 self-center">
           AI-Powered Clarity Engine
         </span>
 
@@ -107,9 +113,12 @@ export function NotaryPage({
         {children}
       </section>
 
-      {/* VIEWPORT CHROME — identical voice and position on every page. */}
-      <div className="pointer-events-none absolute bottom-7 left-10">
-        <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-60">
+      {/* VIEWPORT CHROME — identical voice and position on every page.
+       * The barcode strip is the landing's .barcode-ind artifact
+       * (currentColor bars — the muted text token sets the ink). */}
+      <div className="pointer-events-none absolute bottom-7 left-10 flex flex-col gap-2 text-[var(--color-text-muted)]">
+        <span aria-hidden className="vex-barcode h-2.5 w-16 opacity-30" />
+        <span className="font-mono text-[10px] uppercase tracking-[0.4em] opacity-60">
           Clarity · Focus · Understand · Evolve
         </span>
       </div>

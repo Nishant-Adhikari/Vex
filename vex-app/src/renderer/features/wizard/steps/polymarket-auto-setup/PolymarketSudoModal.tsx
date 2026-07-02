@@ -203,7 +203,7 @@ export function PolymarketSudoModal({
             className="flex flex-col gap-4"
           >
             <p
-              className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-foreground"
+              className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] p-3 text-sm text-foreground"
               role="alert"
             >
               Vex will use your EVM wallet to sign a Polymarket
@@ -220,7 +220,7 @@ export function PolymarketSudoModal({
                 checked={riskAcknowledged}
                 onChange={(event) => setRiskAcknowledged(event.target.checked)}
                 disabled={pending}
-                className="mt-0.5 h-4 w-4 rounded border-input"
+                className="mt-0.5 h-4 w-4 rounded accent-[var(--color-accent-primary)]"
                 data-vex-polymarket-sudo-ack
               />
               <span>I understand and accept the risks</span>

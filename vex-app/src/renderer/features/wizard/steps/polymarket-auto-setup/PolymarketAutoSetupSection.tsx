@@ -198,8 +198,9 @@ export function PolymarketAutoSetupSection({
   const walletsLoading = walletsQuery.isPending;
 
   return (
+    // Hairline inner well — luminance step + hairline (landing ink grammar).
     <div
-      className="flex flex-col gap-2 rounded-md border border-border bg-popover/40 p-3"
+      className="flex flex-col gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3"
       data-vex-polymarket-auto="root"
     >
       {/* EVM wallet picker — per-wallet ✓ configured / ◦ not badge. */}
@@ -234,7 +235,7 @@ export function PolymarketAutoSetupSection({
             return (
               <label
                 key={wallet.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-sm hover:bg-accent/40 has-[:checked]:border-primary has-[:checked]:bg-accent/30"
+                className="flex cursor-pointer items-center gap-2 rounded-md border border-white/[0.08] px-2 py-1.5 text-sm hover:bg-white/[0.04] has-[:checked]:border-[color-mix(in_oklab,var(--color-accent-primary)_55%,transparent)] has-[:checked]:bg-[color-mix(in_oklab,var(--color-accent-primary)_8%,transparent)]"
                 data-vex-polymarket-auto-wallet={wallet.id}
                 data-vex-polymarket-auto-wallet-selected={
                   isSelected ? "true" : "false"
@@ -249,7 +250,7 @@ export function PolymarketAutoSetupSection({
                   value={wallet.id}
                   checked={isSelected}
                   onChange={() => setSelectedWalletId(wallet.id)}
-                  className="h-4 w-4"
+                  className="h-4 w-4 accent-[var(--color-accent-primary)]"
                   data-vex-polymarket-auto-wallet-radio={wallet.id}
                 />
                 <span className="min-w-0 flex-1 truncate">
@@ -261,7 +262,7 @@ export function PolymarketAutoSetupSection({
                 <span
                   className={
                     isConfigured
-                      ? "shrink-0 text-xs font-medium text-[var(--color-success,#16a34a)]"
+                      ? "shrink-0 text-xs font-medium text-[var(--color-success)]"
                       : "shrink-0 text-xs text-muted-foreground"
                   }
                   aria-label={

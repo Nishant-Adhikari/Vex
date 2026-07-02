@@ -39,7 +39,7 @@ export function PrimaryButton({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          "inline-flex items-center justify-center gap-2 self-start rounded-xl border border-white/[0.10] bg-transparent px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-text-secondary)]",
+          "inline-flex items-center justify-center gap-2 self-start rounded-full border border-white/[0.10] bg-transparent px-4 py-2.5 font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-text-secondary)]",
           "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",
           "active:scale-[0.98] transition-colors duration-150",
@@ -57,8 +57,8 @@ export function PrimaryButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-transparent font-mono text-xs uppercase tracking-[0.22em]",
-        "border-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,transparent)] text-[var(--vex-onboarding-accent)]",
+        "inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border bg-transparent font-mono text-xs uppercase tracking-[0.22em]",
+        "border-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,transparent)] text-[color-mix(in_oklab,var(--vex-onboarding-accent)_55%,white)]",
         "hover:border-[color-mix(in_oklab,var(--vex-onboarding-accent)_85%,transparent)] hover:bg-[color-mix(in_oklab,var(--vex-onboarding-accent)_8%,transparent)]",
         "active:scale-[0.98]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-onboarding-bg)]",

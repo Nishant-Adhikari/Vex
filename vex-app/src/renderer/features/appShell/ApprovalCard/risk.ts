@@ -35,8 +35,10 @@ export function isHighRisk(summary: ApprovalSummaryDto): boolean {
 }
 
 /**
- * Stamp-grammar tone classes (S3): hairline color-mix border + text in tone;
- * fill is reserved for danger (`critical` only, at /10). The caller supplies
+ * Stamp-grammar tone classes: hairline border + text in tone; fill is
+ * reserved for danger (`critical` only, at /10). high/medium speak the same
+ * pin amber as the approval card they sit on (one amber per surface — the
+ * landing .ws-alert family); low keeps the quiet accent. The caller supplies
  * the shared stamp shape (radius/spacing/type) — these add tone only.
  */
 export function riskChipClasses(level: string): string {
@@ -44,9 +46,9 @@ export function riskChipClasses(level: string): string {
     case "critical":
       return "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 text-destructive";
     case "high":
-      return "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning";
+      return "border-[var(--vex-pin-border)] text-[var(--vex-pin)]";
     case "medium":
-      return "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning";
+      return "border-[var(--vex-pin-border)] text-[var(--vex-pin)]";
     case "low":
       return "border-[color-mix(in_oklab,var(--vex-accent)_40%,transparent)] text-[var(--vex-accent-text)]";
     default:

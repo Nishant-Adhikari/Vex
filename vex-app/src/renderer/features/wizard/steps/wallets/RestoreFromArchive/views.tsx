@@ -1,6 +1,7 @@
 import type { FormEvent, JSX, RefObject } from "react";
 import type { WalletAvailableBackup } from "@shared/schemas/wallets.js";
 import { Button } from "../../../../../components/ui/button.js";
+import { DotmSquare3 } from "../../../../../components/ui/dotm-square-3.js";
 import { Label } from "../../../../../components/ui/label.js";
 import { PasswordField } from "../../../../../components/common/PasswordField.js";
 import { AddressDisplay } from "../../../../../components/common/AddressDisplay.js";
@@ -48,20 +49,19 @@ export function PanelHeader({ onClose }: PanelHeaderProps): JSX.Element {
 }
 
 export function LoadingBackups(): JSX.Element {
+  // Brand loading language — DotMatrix (role="status" + aria-label live
+  // on the loader root), never a generic pulse bar.
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex items-center gap-2"
-      data-vex-restore-loading
-    >
-      <div
-        aria-hidden
-        className="h-1 w-32 overflow-hidden rounded-full bg-white/[0.07]"
-      >
-        <div className="h-full w-1/3 animate-pulse bg-[var(--vex-onboarding-accent)]" />
-      </div>
-      <span className="text-xs text-muted-foreground">Loading backups…</span>
+    <div className="flex items-center gap-2.5" data-vex-restore-loading>
+      <DotmSquare3
+        size={22}
+        dotSize={3}
+        colorPreset="grad-cobalt"
+        ariaLabel="Loading backups…"
+      />
+      <span aria-hidden className="text-xs text-[var(--color-text-muted)]">
+        Loading backups…
+      </span>
     </div>
   );
 }
@@ -102,7 +102,7 @@ export function BackupsListError({
 export function EmptyBackups(): JSX.Element {
   return (
     <p
-      className="text-sm text-muted-foreground"
+      className="text-sm text-[var(--color-text-muted)]"
       role="status"
       data-vex-restore-empty
     >
@@ -163,21 +163,21 @@ export function RestoreForm({
                       value={backup.id}
                       checked={checked}
                       onChange={() => onSelect(backup.id)}
-                      className="mt-1 h-4 w-4"
+                      className="mt-1 h-4 w-4 accent-[var(--color-accent-primary)]"
                       aria-label={backupCardLabel(backup)}
                     />
                     <div className="flex flex-1 flex-col gap-1">
-                      <span className="text-sm text-foreground">
+                      <span className="text-sm text-[var(--color-text-primary)]">
                         {backupCardLabel(backup)}
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {backup.vaultIncluded ? (
-                          <span className="rounded-sm border border-white/[0.12] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          <span className="rounded-sm border border-white/[0.12] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                             vault
                           </span>
                         ) : null}
                         {backup.envIncluded ? (
-                          <span className="rounded-sm border border-white/[0.12] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          <span className="rounded-sm border border-white/[0.12] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                             .env
                           </span>
                         ) : null}
@@ -208,7 +208,7 @@ export function RestoreForm({
             }
             data-vex-restore-password
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[var(--color-text-muted)]">
             Enter the master password for the selected backup.
           </p>
         </div>
@@ -216,7 +216,7 @@ export function RestoreForm({
 
       {error !== null ? (
         <p
-          className="text-sm text-destructive"
+          className="text-sm text-[var(--color-danger)]"
           role="alert"
           aria-live="assertive"
           data-vex-restore-error

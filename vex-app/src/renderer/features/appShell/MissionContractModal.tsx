@@ -168,15 +168,18 @@ export function MissionContractModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Shell dialog chrome: solid surface + hairline + the sanctioned
-       * backdrop-blur-none override that beats the dialog base's blur-sm
-       * (THE PROTOCOL DESK never uses glass — see shell-design-guard). */}
+      {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
+       * is the Dialog base since the rebrand — only width is per-modal. */}
       <DialogContent
         data-vex-area="mission-contract-modal"
-        className="max-w-lg rounded-xl border-[var(--vex-line-strong)] bg-[var(--vex-surface-2)] text-foreground shadow-none backdrop:bg-black/70 backdrop:backdrop-blur-none"
+        className="max-w-lg"
       >
-        <DialogHeader className="flex-row items-center justify-between gap-3">
-          <DialogTitle className="truncate text-base">{title}</DialogTitle>
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-[var(--vex-line)]">
+          {/* Mission titles are authored content, not chrome — they speak the
+           * display register (Archivo), not the base mono stamp. */}
+          <DialogTitle className="truncate font-display text-base font-bold normal-case tracking-[-0.01em]">
+            {title}
+          </DialogTitle>
           {/* Status marker only — the modal is already open, so this is a
            * non-interactive `<span>` (no dead focus target), not the rail's
            * clickable badge. */}
@@ -255,14 +258,14 @@ function FooterAction({
 
   if (kind === "setup-needed") {
     return (
-      <DialogFooter className="justify-start text-xs text-[var(--vex-text-3)]">
+      <DialogFooter className="justify-start border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
         Add a goal, constraints, and stop conditions to enable Accept.
       </DialogFooter>
     );
   }
   if (kind === "accepted") {
     return (
-      <DialogFooter className="justify-start text-xs text-[var(--vex-text-3)]">
+      <DialogFooter className="justify-start border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
         Use the{" "}
         <span className="text-[var(--vex-accent-text)]">Start mission</span>{" "}
         button to dispatch.
@@ -275,7 +278,7 @@ function FooterAction({
   // first (matches the engine `plan_missing`).
   if (planGate.kind === "missing") {
     return (
-      <DialogFooter className="justify-start">
+      <DialogFooter className="justify-start border-[var(--vex-line)]">
         <p
           className="text-xs text-warning"
           role="alert"
@@ -304,15 +307,16 @@ function FooterAction({
         : "Accept contract";
 
   return (
-    <DialogFooter className="flex-col items-stretch gap-2 sm:flex-col">
+    <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-[var(--vex-text-3)]">{helperText}</span>
+        {/* THE single primary action — filled cobalt pill (Button default). */}
         <Button
           type="button"
+          size="sm"
           onClick={() => onAccept(currentHash)}
           disabled={pending}
           data-vex-action="accept-contract"
-          className="h-8 border border-[var(--vex-accent-border)] bg-transparent px-3 text-xs text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]"
         >
           {acceptLabel}
         </Button>

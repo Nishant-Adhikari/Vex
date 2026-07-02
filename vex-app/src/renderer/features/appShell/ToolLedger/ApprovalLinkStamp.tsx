@@ -5,12 +5,14 @@
  * a sibling of the disclosure button, never nested inside it (nested buttons
  * are invalid HTML and break both contracts' aria semantics).
  *
- * The stamp is quiet by design: accent tone, no fill, no pulse — the card
- * itself is the place that asks for the pen.
+ * The stamp is quiet by design: pin/amber tone (matching the amber approval
+ * card it points at), no fill, no pulse — the card itself is the place that
+ * asks for the pen. Inlined stamp grammar: the shared `Stamp` primitive only
+ * carries accent/warn tones, and this is the lone pin-toned stamp in the
+ * shell (1 use → local, per the duplication rule).
  */
 
 import type { JSX } from "react";
-import { Stamp } from "../SessionRows/Stamp.js";
 
 /**
  * Escape an approval id for the attribute selector. `CSS.escape` is the
@@ -61,7 +63,9 @@ export function ApprovalLinkStamp({
       onClick={() => jumpToApproval(approvalId)}
       className="shrink-0 rounded-[3px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
     >
-      <Stamp tone="accent">Awaiting signature</Stamp>
+      <span className="inline-flex items-center rounded-[3px] border border-[var(--vex-pin-border)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-pin)]">
+        Awaiting signature
+      </span>
     </button>
   );
 }

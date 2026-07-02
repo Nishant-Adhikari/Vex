@@ -38,7 +38,7 @@ function WarningIcon(): JSX.Element {
   return (
     <svg
       aria-hidden
-      className="h-5 w-5 text-warning"
+      className="h-5 w-5 text-[var(--color-warning)]"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

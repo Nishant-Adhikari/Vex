@@ -6,6 +6,7 @@ export type DotMatrixPhase = "idle" | "collapse" | "hoverRipple" | "loadingRippl
 export type DotMatrixColorPreset =
   | "solid-theme"
   | "solid-mint"
+  | "grad-cobalt"
   | "grad-sunset"
   | "grad-ocean"
   | "grad-neon"

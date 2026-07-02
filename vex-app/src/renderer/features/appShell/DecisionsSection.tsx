@@ -53,9 +53,7 @@ export function DecisionsSection(): JSX.Element {
   return (
     <section data-vex-section="memory-decisions" className={SECTION}>
       <div>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
-          Manager decisions
-        </h2>
+        <h2 className="vex-eyebrow">Manager decisions</h2>
         <p className="mt-1 text-xs text-[var(--vex-text-2)]">
           The memory manager&apos;s decision audit — every promote, merge,
           reject, or reconcile verdict, append-only and immutable.
