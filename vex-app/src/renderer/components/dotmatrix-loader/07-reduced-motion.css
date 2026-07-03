@@ -10,10 +10,7 @@
   .dmx-spiral-snake,
   .dmx-diagonal-snake,
   .dmx-outer-snake,
-  .dmx-middle-snake,
-  .dmx-square9-bit,
-  .dmx-square6-col-snake,
-  .dmx-circular2-ring {
+  .dmx-middle-snake {
     animation: none !important;
     transition: none !important;
   }

@@ -194,31 +194,3 @@ describe("compose/render core", () => {
     expect(bContent).toBe(aContent);
   });
 });
-
-describe("posixSecretAdapter (real fs)", () => {
-  let dir = "";
-  beforeEach(() => {
-    dir = mkdtempSync(path.join(tmpdir(), "vex-posix-secret-"));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("writes the secret file with mode 0o600 (POSIX)", async () => {
-    if (process.platform === "win32") return; // POSIX modes not enforced on Windows
-    const { posixSecretAdapter } = await import("../posix-secret-adapter.js");
-    const target = path.join(dir, "secrets", "pg_password");
-    await posixSecretAdapter.write(target, "secret-value");
-    const fsModule = await import("node:fs/promises");
-    const stat = await fsModule.stat(target);
-    // Mask off file-type bits, keep just permission bits.
-    expect(stat.mode & 0o777).toBe(0o600);
-    const value = await posixSecretAdapter.read(target);
-    expect(value).toBe("secret-value");
-  });
-
-  it("returns null when the file is missing", async () => {
-    const { posixSecretAdapter } = await import("../posix-secret-adapter.js");
-    expect(await posixSecretAdapter.read(path.join(dir, "missing"))).toBeNull();
-  });
-});

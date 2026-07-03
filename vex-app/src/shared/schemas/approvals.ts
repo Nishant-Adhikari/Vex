@@ -10,10 +10,10 @@
  *   - `permissionAtEnqueue`,
  *   - `reasoningPreview` (first 200 chars of `reasoning`).
  *
- * Pending approve/reject mutations fail closed with
- * `approvals.feature_unavailable` until puzzle 05 lands the durable
- * intents + idempotent runtime continuation. The Result-typed contract
- * ships now so the renderer hook surface compiles end-to-end.
+ * Approve/reject are wired (puzzle 05 phase 3): a durable decision tx
+ * plus a background runtime continuation. Non-actionable states surface
+ * the `approvals.*` decision codes (`expired`, `already_resolved`,
+ * `run_terminated`, `dispatch_failed`, `policy_drift_blocked`).
  *
  * Field names match the canonical refs vocabulary in
  * `BUG-REPORTING.md §3` (`sessionId`, `toolCallId`, `toolName`).

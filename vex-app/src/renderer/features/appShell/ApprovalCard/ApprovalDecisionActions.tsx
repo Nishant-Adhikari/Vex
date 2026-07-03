@@ -66,7 +66,7 @@ export function ApprovalDecisionActions({
         onClick={onApprove}
         disabled={inFlight}
         aria-label={approveArmed ? "Confirm approve" : "Approve"}
-        className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[#0a0d18] hover:bg-[color-mix(in_oklab,var(--vex-pin)_85%,white)] ${
+        className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[color-mix(in_oklab,var(--vex-pin)_85%,white)] ${
           approveArmed ? ARMED_BORDER : "border-transparent"
         }`}
       >

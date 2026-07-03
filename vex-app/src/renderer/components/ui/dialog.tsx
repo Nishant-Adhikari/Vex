@@ -36,6 +36,7 @@ import {
   useRef,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
+  type ReactEventHandler,
   type ReactNode,
 } from "react";
 import { cn } from "../../lib/utils.js";
@@ -89,6 +90,13 @@ export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
    * false for destructive prompts that require an explicit choice.
    */
   readonly closeOnBackdropClick?: boolean;
+  /**
+   * Native `<dialog>` cancel intent (ESC). `HTMLAttributes` does not
+   * include it (React types it on `DialogHTMLAttributes` only), so it is
+   * declared here to match the wired implementation. Runs before the
+   * component routes the close through `onOpenChange(false)`.
+   */
+  readonly onCancel?: ReactEventHandler<HTMLDialogElement>;
 }
 
 /**

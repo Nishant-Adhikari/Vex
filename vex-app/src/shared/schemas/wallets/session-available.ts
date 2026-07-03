@@ -2,12 +2,10 @@
  * Agent integration puzzle 1: per-session wallet scope + available-wallets
  * inventory DTOs (the create picker), plus the set-scope result.
  *
- * Per-session wallet scope DB rows don't exist yet (planned for puzzle 05/10
- * when wallet scope + mission contract hash + audit storage land together).
- * In puzzle 1 the read-only handler returns an empty scope so the renderer
- * hooks compile end-to-end; the mutating handlers fail closed with
- * `wallets.feature_unavailable`. The DTO shapes ship now so the bridge
- * surface is stable for the puzzle 05/10 UI work.
+ * Per-session wallet scope is DB-backed (phase 5C): the read-only handler
+ * returns the stored scope, and `setSessionWalletScope` resolves wallet
+ * ids server-side, failing closed on unknown ids with
+ * `wallets.invalid_selection`.
  *
  * Field names match the canonical refs vocabulary in `BUG-REPORTING.md §3`
  * — `sessionId` is the canonical identifier, never `session_id` snake_case.

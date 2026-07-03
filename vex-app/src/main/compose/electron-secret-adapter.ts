@@ -1,7 +1,7 @@
 /**
- * Electron secret adapter — POSIX-compatible plaintext format for the
- * canonical secret file (codex turn 5 RED #3 — adapter MUST be format-
- * compatible with `posixSecretAdapter`).
+ * Electron secret adapter — plaintext POSIX-style secret file format
+ * (codex turn 5 RED #3 pinned the format; the separate posix adapter it
+ * had to stay compatible with was never wired and has been removed).
  *
  * The canonical file at `${SECRETS_DIR}/pg_password` is always written
  * plaintext mode 0o600. DPAPI / Keychain / libsecret defense-in-depth

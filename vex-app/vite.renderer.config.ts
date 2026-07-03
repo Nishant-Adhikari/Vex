@@ -79,6 +79,12 @@ export default defineConfig(({ command }) => ({
   publicDir: path.resolve(rendererRoot, "public"),
 
   define: {
+    // Stamped at build time straight from package.json `version` — the same
+    // mechanism for dev and packaged builds (main uses app.getVersion(), which
+    // reads the same field). Nothing appends a dev suffix: the current
+    // `-dev` prerelease IS the package.json version on development trees and
+    // must be bumped as part of the release cut (release-track), together
+    // with the signed/publish electron-builder profile.
     __VEX_APP_VERSION__: JSON.stringify(pkg.version),
   },
 

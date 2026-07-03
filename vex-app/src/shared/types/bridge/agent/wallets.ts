@@ -13,11 +13,12 @@ import type {
 } from "../../../schemas/wallets.js";
 
 /**
- * Per-session wallet scope. Puzzle 1 returns an empty scope (no DB
- * column yet); puzzle 05/10 lands the wallet scope rows + audit
- * trail. Mutations fail closed with `wallets.feature_unavailable`.
- * Wallet side effects use hot wallets created or imported by the user
- * during onboarding. This bridge exposes only that user-wallet flow.
+ * Per-session wallet scope, DB-backed (phase 5C). `setSessionWalletScope`
+ * resolves wallet ids server-side and fails closed on unknown ids with
+ * `wallets.invalid_selection`; prepared-intent reads/cancels are
+ * DB-backed (phase 4). Wallet side effects use hot wallets created or
+ * imported by the user during onboarding. This bridge exposes only that
+ * user-wallet flow.
  */
 export interface WalletsBridge {
   readonly listAvailable: (

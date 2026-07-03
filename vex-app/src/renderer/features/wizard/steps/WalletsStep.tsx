@@ -202,11 +202,7 @@ export function WalletsStep({
             }}
             disabled={stepAdvance.isPending}
           >
-            {stepAdvance.isPending
-              ? "Continuing…"
-              : flowMode === "back-edit"
-                ? "Return to review"
-                : "Continue"}
+            {stepAdvance.isPending ? "Continuing…" : "Continue"}
           </Button>
         }
       >

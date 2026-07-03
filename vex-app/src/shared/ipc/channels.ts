@@ -107,10 +107,10 @@ export const CH = {
 
   // ── Agent integration puzzle 1 (typed bridge surface) ─────────────────
   // Each namespace is a new VexDomain with paired Zod shared schemas.
-  // Read-only handlers serve real DB data; mutating handlers fail-closed
-  // with the per-domain `*.feature_unavailable` code until the matching
-  // puzzle ships its backing runtime. Renderer never sees raw DB JSONB —
-  // every mapper is allowlist + Zod validated in main.
+  // Read-only and mutating handlers are all DB-backed (the puzzle-1
+  // `*.feature_unavailable` fail-closed stubs are retired). Renderer
+  // never sees raw DB JSONB — every mapper is allowlist + Zod validated
+  // in main.
 
   // Messages — paginated transcript reads. Live transcript only; archive
   // rows are not exposed to the renderer.
@@ -121,8 +121,8 @@ export const CH = {
   },
 
   // Runtime — durable control plane for an active mission run. `getState`
-  // resolves the active run row for the session; control mutations fail
-  // closed until puzzle 03 adds DB-backed pause/stop/resume + leases.
+  // resolves the active run row for the session; control mutations are
+  // DB-backed pause/stop/resume + leases (puzzle 03).
   runtime: {
     getState: "vex:runtime:getState",
     requestPause: "vex:runtime:requestPause",
@@ -153,8 +153,8 @@ export const CH = {
   // Approvals — queue browsing + decisions. Pending/get/history are
   // read-only (renderer never receives raw `tool_call` JSONB — mapper
   // extracts toolName/permissionAtEnqueue/reasoningPreview only).
-  // approve/reject fail closed until puzzle 05 wires durable approval
-  // intents + runtime continuation.
+  // approve/reject run the durable decision tx + background runtime
+  // continuation (puzzle 05 phase 3).
   approvals: {
     listPending: "vex:approvals:listPending",
     get: "vex:approvals:get",
@@ -164,10 +164,12 @@ export const CH = {
   },
 
   // Wallets — per-session wallet scope contract. `listSessionWallets`
-  // returns an empty scope until puzzle 05 introduces the DB-backed
-  // wallet scope rows. setSessionWalletScope / prepared-intent mutations
-  // fail closed. Wallet side effects are local user-wallet flows only; no
-  // remote-signing action kind exists in the app contract.
+  // returns the DB-backed per-session scope (phase 5C).
+  // setSessionWalletScope resolves wallet ids server-side and fails
+  // closed on unknown ids (`wallets.invalid_selection`); prepared-intent
+  // reads/cancels are DB-backed (phase 4). Wallet side effects are local
+  // user-wallet flows only; no remote-signing action kind exists in the
+  // app contract.
   wallets: {
     listAvailable: "vex:wallets:listAvailable",
     listSessionWallets: "vex:wallets:listSessionWallets",

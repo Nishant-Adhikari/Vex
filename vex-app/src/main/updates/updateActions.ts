@@ -32,9 +32,10 @@ const { autoUpdater, CancellationToken } = electronUpdater;
 
 let downloadInFlight: InstanceType<typeof CancellationToken> | null = null;
 
-// TODO(release-track): replace with the real release-notes URL once hosting
-// lands. Built in main; the renderer never constructs updater URLs.
-const RELEASE_NOTES_URL = "https://vex.example/releases";
+// Built in main; the renderer never constructs updater URLs. The GitHub
+// releases page is also covered by the external-link allowlist in
+// windows/main-window.ts (host "github.com", pathPrefix "/Vex-Foundation/").
+const RELEASE_NOTES_URL = "https://github.com/Vex-Foundation/Vex/releases";
 
 export async function getStatus(): Promise<Result<UpdateStatus>> {
   return ok(getCurrentStatus());

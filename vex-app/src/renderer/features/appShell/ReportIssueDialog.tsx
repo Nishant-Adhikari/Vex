@@ -19,7 +19,7 @@
  * + clearer redaction proof.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Button } from "../../components/ui/button.js";
 import {
@@ -86,6 +86,10 @@ export function ReportIssueDialog({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitInfo, setSubmitInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  // Pending success auto-close (mirrors the AddressDisplay/MarkdownContent
+  // timer-ref pattern). Cleared below so a stale timer never fires
+  // `onOpenChange` after the dialog is dismissed, reopened, or unmounted.
+  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -97,6 +101,14 @@ export function ReportIssueDialog({
       setSubmitInfo(null);
       setSubmitting(false);
     }
+    // Cleanup runs on every open/close transition and on unmount — any
+    // pending auto-close belongs to the previous open cycle.
+    return () => {
+      if (autoCloseTimerRef.current !== null) {
+        clearTimeout(autoCloseTimerRef.current);
+        autoCloseTimerRef.current = null;
+      }
+    };
   }, [open]);
 
   const trimmedTitle = title.trim();
@@ -130,7 +142,11 @@ export function ReportIssueDialog({
       }
       setSubmitInfo("Report saved locally. Thank you.");
       // Auto-close after a short pause so the success state is visible.
-      setTimeout(() => {
+      if (autoCloseTimerRef.current !== null) {
+        clearTimeout(autoCloseTimerRef.current);
+      }
+      autoCloseTimerRef.current = setTimeout(() => {
+        autoCloseTimerRef.current = null;
         onOpenChange(false);
       }, 800);
     },

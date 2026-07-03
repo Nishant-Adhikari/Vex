@@ -89,7 +89,6 @@ If a primitive injects runtime `<style>`, two options exist:
 
 | Primitive | Status | Verifier | Commit |
 |---|---|---|---|
-| Card (shadcn-pattern, no Radix) | safe | M1 | TBD |
 | Button (shadcn-pattern, no Radix) | safe | M1 | TBD |
 
 ## Allowed

@@ -208,8 +208,9 @@ describe("runtime handlers", () => {
     ]) {
       const result = await call(ch, { sessionId: SESSION });
       expect(result.ok).toBe(false);
-      // `runtime.feature_unavailable` would mean the stub still runs.
-      expect(result.error?.code).not.toBe("runtime.feature_unavailable");
+      // The DB-backed handler fails at `ensureEngineDbUrl` in this
+      // environment — anything else would mean a stub is back.
+      expect(result.error?.code).toBe("internal.unexpected");
     }
   });
 });

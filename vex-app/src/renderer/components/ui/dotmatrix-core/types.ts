@@ -3,16 +3,7 @@ import type { CSSProperties } from "react";
 export type MatrixPattern = "diamond" | "full" | "outline" | "rose" | "cross" | "rings";
 export type DotShape = "circle" | "square" | "diamond" | "hearts";
 export type DotMatrixPhase = "idle" | "collapse" | "hoverRipple" | "loadingRipple";
-export type DotMatrixColorPreset =
-  | "solid-theme"
-  | "solid-mint"
-  | "grad-cobalt"
-  | "grad-sunset"
-  | "grad-ocean"
-  | "grad-neon"
-  | "grad-aurora"
-  | "grad-fire"
-  | "grad-prism";
+export type DotMatrixColorPreset = "solid-theme" | "grad-cobalt";
 
 export interface DotMatrixCommonProps {
   size?: number;

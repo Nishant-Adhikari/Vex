@@ -6,9 +6,9 @@
  * listed `SessionMessageDto` page; raw `tool_calls` / `metadata` JSONB
  * never crosses the boundary.
  *
- * Read-only — no fail-closed mutations here, no `feature_unavailable`
- * codes. DB unavailability maps to `internal.unexpected` (per the
- * `messages-db.ts` `dbUnavailable`/`dbError` helpers).
+ * Read-only — no mutations here. DB unavailability maps to
+ * `internal.unexpected` (per the `messages-db.ts`
+ * `dbUnavailable`/`dbError` helpers).
  */
 
 import { CH } from "@shared/ipc/channels.js";

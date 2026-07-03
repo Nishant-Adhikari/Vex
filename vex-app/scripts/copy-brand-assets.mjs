@@ -18,11 +18,6 @@ const PUBLIC_DIR = path.join(VEX_APP, "src", "renderer", "public");
 
 const SOURCES = [
   {
-    src: path.join(REPO_ROOT, "src", "vex-agent", "public", "logo.png"),
-    dest: path.join(PUBLIC_DIR, "logo.png"),
-    expect: { width: 965, height: 965, format: "png", maxBytes: 25_000 },
-  },
-  {
     src: path.join(REPO_ROOT, "src", "vex-agent", "public", "logo_clean.png"),
     dest: path.join(PUBLIC_DIR, "logo_clean.png"),
     expect: { width: 500, height: 500, format: "png", maxBytes: 40_000 },

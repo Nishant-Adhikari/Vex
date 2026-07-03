@@ -250,7 +250,6 @@ check("main bundle — entrypoint exists + uses single-instance lock", () => {
 
 // 6. brand assets — exist, decode, expected dimensions, byte budget, no EXIF
 const BRAND_ASSETS = [
-  { file: "logo.png", width: 965, height: 965, format: "png", maxBytes: 25_000 },
   { file: "logo_clean.png", width: 500, height: 500, format: "png", maxBytes: 40_000 },
   { file: "vex.jpg", width: 1254, height: 1254, format: "jpeg", maxBytes: 130_000 },
 ];

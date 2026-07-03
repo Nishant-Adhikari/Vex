@@ -32,13 +32,11 @@ All top-level packages: stable releases, no prereleases, no deprecated, license 
 | `@hugeicons/react` | ~1.1.6 | 1.1.6 | `~1.1.6` | 2026-03-10 | MIT | peerDep React ≥16 (satisfied) |
 | `@hugeicons/core-free-icons` | ~1.0.0 | **4.1.1** | `~4.1.1` | 2026-03-30 | MIT | **Major bump 1→4** is data-versioning (icon SVG bundle); no API surface, compatible with `@hugeicons/react` 1.x |
 | `@tanstack/react-query` | ~5.100 | 5.100.9 | `~5.100.9` | 2026-05-03 | MIT | |
-| `@tanstack/react-virtual` | ~3.10 | 3.13.24 | `~3.13.24` | 2026-04-17 | MIT | |
 | `zustand` | ~5.0 | 5.0.13 | `~5.0.13` | 2026-05-05 | MIT | |
 | `zod` | ~4.4.3 | 4.4.3 | `~4.4.3` | 2026-05-04 | MIT | |
 | `react-hook-form` | ~7.75 | 7.75.0 | `~7.75.0` | 2026-05-02 | MIT | |
 | `@hookform/resolvers` | ~5.2 | 5.2.2 | `~5.2.2` | 2025-09-14 | MIT | |
 | `marked` | ~18.0.3 | 18.0.3 | `~18.0.3` | 2026-05-01 | MIT | Phase 2 |
-| `dompurify` | ~3.4.2 | 3.4.2 | `~3.4.2` | 2026-04-30 | MPL-2.0 OR Apache-2.0 | ≥3.4.0 mandatory (CVE-2026-0540, CVE-2026-41238, CVE-2026-41239) |
 | `pg` | ~8.20 | 8.20.0 | `~8.20.0` | 2026-03-04 | MIT | Pure-JS bindings; no `pg-native` |
 | `@sentry/electron` | ~5.0 | **7.13.0** | `~7.13.0` | 2026-04-30 | MIT | **Major bump 5→7**; opt-in only init per plan §L; `@sentry/node-native` is optional peer (skip) |
 | `electron-log` | ~5.4 | 5.4.3 | `~5.4.3` | 2025-08-18 | MIT | File rotation 5MB/archive |
@@ -70,6 +68,14 @@ Three direct deps received major bumps vs planned targets. Each verified safe:
 ## Removed from plan
 - **`@types/dompurify`** — DOMPurify v3.x ships own types (`@types/dompurify` deprecated as stub). Removed.
 
+## Removed 2026-07-03 — unused dependencies (MVP-readiness audit)
+
+Three production deps had zero imports anywhere in vex-app (`src/`, `scripts/`, `e2e/`, vite configs) and were removed from `dependencies`:
+
+- **`@tanstack/react-virtual`** — the SessionTranscript virtualization it was added for was only speced (`docs/SIGNAL_TAPE_REDESIGN.md`), never wired. Re-add together with the wiring PR if virtualization lands.
+- **`dompurify`** — `MarkdownContent.tsx` renders marked tokens as auto-escaped React nodes; there is no HTML sink, so no sanitizer is needed. Keeping it listed misled reviewers into assuming a sanitizer-hardened pipeline.
+- **`bs58`** — never imported by vex-app code. The root `src/tools/wallet/solana-keystore.ts` import resolves from `/Vex/node_modules` (root declares its own `bs58 ^6.0.0`), never from vex-app's tree — see `.claude/rules/80-edge-cases.md` §4, which supersedes the 2026-05-14 resolution rationale above. The vex-app copy was an orphan.
+
 ## Added 2026-05-14 — root runtime deps bundled into main bundle
 
 The vex-app main process consumes shared root runtime code (`/mnt/x/Vex/src/lib/*`, `/mnt/x/Vex/src/tools/*`) through the `@vex-lib` Vite alias declared in `vite.main.config.ts`. At BUILD time, Rolldown bundles that source into `dist/main/index.js` and must resolve its third-party imports against vex-app's own `node_modules` — pnpm hoisting across workspace boundaries is not honoured during bundling. The fix is to declare these runtime deps directly in `vex-app/package.json` so they are resolvable at build AND copied into the packaged Electron app.
@@ -77,11 +83,10 @@ The vex-app main process consumes shared root runtime code (`/mnt/x/Vex/src/lib/
 | Package | Version | Verified | License | Why |
 |---|---|---|---|---|
 | `viem` | `2.45.1` | matches root pin | MIT | Wallet primitives — keystore decryption, `privateKeyToAddress`, chain definitions. Used by `wallet-export`, `polymarket-setup`, `wallet-restore`, `wallets-runner`. |
-| `@solana/web3.js` | `^1.98.4` | matches root range | Apache-2.0 / MIT | Solana keystore handling, native balances. Used by root `tools/wallet/solana-create.ts`, `solana-keystore.ts`. |
-| `bs58` | `^6.0.0` | matches root range | MIT | Base58 encoding for Solana keys. Used by root `tools/wallet/solana-keystore.ts`. Listed direct (not transitive via `@solana/web3.js`) because that package pins `bs58@4` which would conflict with our `^6.0.0` selection. |
+| `@solana/web3.js` | `~1.98.4` | matches root range | Apache-2.0 / MIT | Solana keystore handling, native balances. Used by root `tools/wallet/solana-create.ts`, `solana-keystore.ts`; also imported directly by vex-app `src/main/onboarding/wallet-restore.ts`. |
 | `@openrouter/sdk` | `^0.9.11` | matches root range | Apache-2.0 | OpenRouter client used by `openrouter-test-client.ts`. |
 
-All four are declared in `dependencies` (not `devDependencies`) because electron-builder must ship them in the packaged app.
+All are declared in `dependencies` (not `devDependencies`) because electron-builder must ship them in the packaged app.
 
 This addition does NOT close the root runtime boundary issue — that is a separate refactor (split `src/lib/wallet.ts` so `loadConfig` does not pull `viem/accounts`) tracked in task #13. The build fix unblocks CI; the proper boundary fix follows.
 

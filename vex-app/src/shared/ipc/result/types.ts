@@ -32,9 +32,8 @@ export type VexDomain =
   | "capabilities"
   /**
    * Agent integration puzzle 1 — dedicated domains for the typed bridge
-   * surface (`vex.<domain>.<method>`). Each owns its DTO contracts and any
-   * `<domain>.feature_unavailable` codes the read-only or fail-closed
-   * handlers emit. Adding a handler under one of these domains MUST go
+   * surface (`vex.<domain>.<method>`). Each owns its DTO contracts and
+   * error codes. Adding a handler under one of these domains MUST go
    * through the matching shared schema; ad-hoc dot-property strings in
    * channel constants without a paired schema/DTO are rejected by review.
    */
@@ -135,20 +134,10 @@ export type VexErrorCode =
   | "provider.test_failed"
   | "support.persist_failed"
   /**
-   * Agent integration puzzle 1 — per-domain `feature_unavailable` codes.
-   * Emitted by fail-closed mutating handlers whose backing runtime lands
-   * in a later puzzle (runtime control = 03, mission contract/commands =
-   * 04, approval queue runtime = 05, wallet scope/intents = 05/10). These
-   * are `retryable: false,
-   * userActionable: true` so the renderer surfaces "not yet available"
-   * without triggering an automatic bug report. Read-only handlers do
-   * not return these codes — DB unavailability still maps to
-   * `internal.unexpected` via the per-domain wrapper.
+   * Unknown/unresolvable wallet id in a renderer-supplied selection
+   * (wallet scope set, key export). The main process resolves ids
+   * server-side and fails closed on any id it does not own.
    */
-  | "runtime.feature_unavailable"
-  | "mission.feature_unavailable"
-  | "approvals.feature_unavailable"
-  | "wallets.feature_unavailable"
   | "wallets.invalid_selection"
   /**
    * Puzzle 5 phase 3 — approve/reject runtime semantics. Surfaced when the

@@ -92,7 +92,7 @@ export function useExportPrivateKey({
   // re-render or a re-submission can't queue a second close.
   const lockAutoCloseScheduledRef = useRef<boolean>(false);
   // Timer id for the session-lock auto-close, so we can cancel it on unmount.
-  const lockAutoCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const lockAutoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const wipePasswordField = useCallback((): void => {
     if (passwordRef.current !== null) passwordRef.current.value = "";
@@ -148,7 +148,7 @@ export function useExportPrivateKey({
     return () => {
       closedRef.current = true;
       if (lockAutoCloseTimerRef.current !== null) {
-        window.clearTimeout(lockAutoCloseTimerRef.current);
+        clearTimeout(lockAutoCloseTimerRef.current);
         lockAutoCloseTimerRef.current = null;
       }
     };
@@ -157,7 +157,7 @@ export function useExportPrivateKey({
   const scheduleSessionLockAutoClose = useCallback((): void => {
     if (lockAutoCloseScheduledRef.current) return;
     lockAutoCloseScheduledRef.current = true;
-    lockAutoCloseTimerRef.current = window.setTimeout(() => {
+    lockAutoCloseTimerRef.current = setTimeout(() => {
       lockAutoCloseTimerRef.current = null;
       safeClose();
     }, SESSION_LOCK_AUTOCLOSE_MS);

@@ -30,7 +30,7 @@ export function SessionContext({
   activeSessionId,
   loading,
   error,
-}: SessionContextProps): JSX.Element {
+}: SessionContextProps): JSX.Element | null {
   if (loading) {
     return (
       <div className="flex h-9 items-center gap-2 font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
@@ -83,8 +83,8 @@ export function SessionContext({
     );
   }
 
-  // Sessions-list sidebar owns the "New session" CTA. The welcome
-  // panel keeps the layout spacer so the chat input position is
-  // identical in the empty-state and the has-sessions empty-active state.
-  return <div className="mt-7 h-0" aria-hidden />;
+  // Unreachable by contract: SessionPanel mounts this header only when a
+  // session id is selected (the null-id welcome stage early-returns before
+  // rendering it), so activeSessionId === null never lands here.
+  return null;
 }

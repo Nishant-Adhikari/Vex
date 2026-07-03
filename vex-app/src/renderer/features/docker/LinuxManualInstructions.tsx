@@ -52,7 +52,7 @@ export function LinuxManualInstructions({
     if (resetTimerRef.current !== null) {
       clearTimeout(resetTimerRef.current);
     }
-    resetTimerRef.current = window.setTimeout(() => setCopyState("idle"), 2000);
+    resetTimerRef.current = setTimeout(() => setCopyState("idle"), 2000);
   }, [instructions]);
 
   const copyLabel =

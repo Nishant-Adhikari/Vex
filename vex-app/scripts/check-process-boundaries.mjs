@@ -44,6 +44,33 @@ const NODE_BUILTINS = new Set([
   "zlib",
 ]);
 
+// Privileged repo-root trees reachable through build aliases. `@vex-lib`
+// resolves to `../src/lib` (vite.renderer.config.ts / tsconfig.renderer.json),
+// which contains wallet.ts, local-secret-vault.ts, secret-keys.ts,
+// wallet-backup.ts and db/ — wallet/secret/db code that must never enter the
+// untrusted renderer (nor `shared`, which bundles into it). `@vex-agent`
+// (repo-root runtime engine) is main-process-only.
+const rootLibDir = path.resolve(root, "..", "src", "lib");
+const rootAgentDir = path.resolve(root, "..", "src", "vex-agent");
+
+// The only `@vex-lib` modules the renderer/shared may import: deliberately
+// pure, dependency-free constants/schemas with zero privileged imports
+// (verified: agent-config and embedding-constants import nothing;
+// bug-report-schema imports only zod). Anything else fails the gate.
+const PURE_VEX_LIB_MODULES = new Set([
+  "@vex-lib/agent-config.js",
+  "@vex-lib/embedding-constants.js",
+  "@vex-lib/diagnostics/bug-report-schema.js",
+]);
+
+function isForbiddenRootAliasImport(spec) {
+  if (spec === "@vex-agent" || spec.startsWith("@vex-agent/")) return true;
+  if (spec === "@vex-lib" || spec.startsWith("@vex-lib/")) {
+    return !PURE_VEX_LIB_MODULES.has(spec);
+  }
+  return false;
+}
+
 const failures = [];
 
 function collectFiles(dir) {
@@ -111,10 +138,13 @@ function checkRendererFile(file) {
       spec === "electron" ||
       spec.startsWith("@main/") ||
       spec.startsWith("@preload/") ||
+      isForbiddenRootAliasImport(spec) ||
       isNodeBuiltin(spec) ||
       (resolved !== null &&
         (isInside(resolved, path.join(srcRoot, "main")) ||
-          isInside(resolved, path.join(srcRoot, "preload"))));
+          isInside(resolved, path.join(srcRoot, "preload")) ||
+          isInside(resolved, rootLibDir) ||
+          isInside(resolved, rootAgentDir)));
     if (forbidden) {
       failures.push(
         `${path.relative(root, file)} imports privileged module "${spec}"`
@@ -133,11 +163,14 @@ function checkSharedFile(file) {
       spec.startsWith("@main/") ||
       spec.startsWith("@preload/") ||
       spec.startsWith("@renderer/") ||
+      isForbiddenRootAliasImport(spec) ||
       isNodeBuiltin(spec) ||
       (resolved !== null &&
         (isInside(resolved, path.join(srcRoot, "main")) ||
           isInside(resolved, path.join(srcRoot, "preload")) ||
-          isInside(resolved, path.join(srcRoot, "renderer"))));
+          isInside(resolved, path.join(srcRoot, "renderer")) ||
+          isInside(resolved, rootLibDir) ||
+          isInside(resolved, rootAgentDir)));
     if (forbidden) {
       failures.push(
         `${path.relative(root, file)} imports runtime-specific module "${spec}"`

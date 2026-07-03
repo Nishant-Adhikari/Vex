@@ -1,5 +1,9 @@
 # Signal Tape — main-app UI/UX redesign spec
 
+> **HISTORICAL — superseded by the projectvex.ai landing rebrand (2026-07).**
+> Token names/fonts below describe the retired Protocol Desk language —
+> see `src/renderer/styles/globals.css` for current law.
+
 > **Status:** DRAFT for acceptance. Spec + foundation first; implementation follows
 > per-area after sign-off. Scope = the **post-launch main app** (`features/appShell`
 > + the renderer token/primitive layer). The **intro/onboarding wizard stays** and is

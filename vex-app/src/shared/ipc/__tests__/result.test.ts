@@ -57,18 +57,6 @@ describe("VEX_DOMAINS / VEX_ERROR_CODES bridge coverage", () => {
     }
   });
 
-  it("includes per-domain feature_unavailable codes for fail-closed mutations", () => {
-    const required = [
-      "runtime.feature_unavailable",
-      "mission.feature_unavailable",
-      "approvals.feature_unavailable",
-      "wallets.feature_unavailable",
-    ] as const;
-    for (const code of required) {
-      expect(VEX_ERROR_CODES).toContain(code);
-    }
-  });
-
   it("includes the compaction retry error codes (8-5)", () => {
     expect(VEX_ERROR_CODES).toContain("compaction.not_found");
     expect(VEX_ERROR_CODES).toContain("compaction.invalid_state");
@@ -76,9 +64,8 @@ describe("VEX_DOMAINS / VEX_ERROR_CODES bridge coverage", () => {
 
   it("does NOT add codes that no handler emits yet (closed union = public contract)", () => {
     // Codex review constraint: closed VexErrorCode union is a public
-    // contract, not a parking lot. The renderer treats `feature_unavailable`
-    // codes as final UI states — adding unused variants would prompt the
-    // UI to render disabled paths that the runtime never reaches.
+    // contract, not a parking lot. Adding unused variants would prompt
+    // the UI to render disabled paths that the runtime never reaches.
     const forbidden = [
       "messages.feature_unavailable",
       "models.feature_unavailable",
@@ -90,6 +77,13 @@ describe("VEX_DOMAINS / VEX_ERROR_CODES bridge coverage", () => {
       // Removed with the cancelled per-session model write (`setModel` was
       // the only producer) — must not linger as dead public contract.
       "sessions.feature_unavailable",
+      // Retired puzzle-1 fail-closed stub codes: every backing handler is
+      // now wired (runtime control 03, mission commands 04, approvals 05,
+      // wallets 05/10), so no emitter remains — must not linger either.
+      "runtime.feature_unavailable",
+      "mission.feature_unavailable",
+      "approvals.feature_unavailable",
+      "wallets.feature_unavailable",
     ] as const;
     for (const code of forbidden) {
       expect(VEX_ERROR_CODES).not.toContain(code as never);
