@@ -1,22 +1,23 @@
 /**
  * Welcome stage — the landing hero (projectvex.ai), recomposed CENTERED over
- * the Signal Sky (phase 5).
+ * the Signal Sky (phase 5), crowned by the VEX SIGIL (phase 6).
  *
- * The stage's WOW is the procedural WebGL dither sky a sibling component
- * mounts BEHIND the session panel — this component paints NO canvas and NO
- * scrim panel of its own; its only imagery is the inline script monogram
- * (/logo_clean.png) inside the status line. It contributes exactly three
- * layers; the absolute ones resolve against the panel's relative frame
- * (`SessionPanel` sets it):
+ * The stage carries TWO wows: the procedural WebGL dither sky a sibling
+ * component mounts BEHIND the session panel, and the particle-constellation
+ * monogram (`VexSigil`) that conjures itself at the top of the hero column —
+ * the ONLY imagery this component contributes (the quips are standalone
+ * text now; no inline <img> in the status line). It contributes exactly
+ * three layers; the absolute ones resolve against the panel's relative
+ * frame (`SessionPanel` sets it):
  *
  *   1. VIGNETTE (absolute, decorative): ONE soft bottom gradient to ink
  *      (rgba of --vex-surface-0) so the instrument and chips stay legible
  *      over the sky's brightest flecks.
  *   2. HERO COLUMN (in flow; `mt-auto` bottom-anchors it inside the parent's
  *      flex-1 zone, directly above the docked composer): the landing
- *      .hero-inner grammar — centered mono status line with the live dot,
- *      now carrying the TaglineRotator (rotating brand quips where the word
- *      VEX is the script monogram image), then the H1 as the ONLY display
+ *      .hero-inner grammar — the sigil as the crown, then the centered mono
+ *      status line with the live dot carrying the TaglineRotator (standalone
+ *      mono-uppercase brand quips), then the H1 as the ONLY display
  *      statement, wearing the landing barcode flicker (.vex-title-barcode).
  *      The H1 "What should I execute?" is test-pinned: a REAL heading with
  *      this exact copy. Nothing else renders above the composer.
@@ -25,60 +26,34 @@
  *      barcode strip + LOCAL-FIRST CAPITAL RUNTIME left, YOU SIGN EVERY
  *      ACTION right. The ONLY other copy on the stage.
  *
- * Load-in: the one-shot .vex-rise choreography (status → d1 H1; the parent
- * staggers the instrument at d2 and the chips row at d3; the bottom row
- * closes at d4). Mount-once — the choreography classes on the H1 and the
- * bottom row never re-toggle on re-render; the rotator's phrase swap
- * remounts ONLY its own phrase span (keyed) so each quip replays the same
- * one-shot rise without new keyframes (CSP-safe).
+ * Load-in: the one-shot .vex-rise choreography, shifted one step for the
+ * crown (sigil → d1 status → d2 H1; the parent staggers the instrument at
+ * d2 and the chips row at d3; the bottom row closes at d4). Mount-once —
+ * the choreography classes on the sigil, H1 and the bottom row never
+ * re-toggle on re-render; the rotator's phrase swap remounts ONLY its own
+ * phrase span (keyed) so each quip replays the same one-shot rise without
+ * new keyframes (CSP-safe).
  * Pure presentation: no session state, no composer coupling.
  */
 
 import { useEffect, useState, type JSX } from "react";
+import { VexSigil } from "./VexSigil.js";
 
 /** ~4.2s per quip — long enough to read, short enough to feel alive. */
 const TAGLINE_ROTATE_MS = 4200;
 
 /**
- * The word VEX rendered as the script monogram, sized in em so it scales
- * with the phrase's mono type and sunk slightly below the baseline
- * (vertical-align: -0.35em) so the script mark sits like a signature.
+ * Standalone brand quips for the status line — mono-uppercase text ONLY
+ * (the monogram lives above as the VexSigil constellation; the old
+ * img-in-text mechanism is retired). Order is user-pinned; the CSS
+ * uppercases the rendering, so source casing stays natural.
  */
-function VexMark(): JSX.Element {
-  return (
-    <img
-      src="/logo_clean.png"
-      alt="Vex"
-      className="inline-block h-[1.35em] w-auto align-[-0.35em] opacity-95"
-    />
-  );
-}
-
-/**
- * Brand quips for the status line. Playful but on-brand (enforcement /
- * proof / local-first). JSX fragments so the monogram can sit mid-sentence;
- * the surrounding text is uppercased by CSS, so source casing stays natural.
- */
-const TAGLINES: readonly JSX.Element[] = [
-  // No list keys needed: the array is indexed into (one element rendered
-  // at a time), never rendered as a children list.
-  <>
-    Time for <VexMark />
-    ing?
-  </>,
-  <>
-    <VexMark />
-    ed your thoughts…
-  </>,
-  <>
-    What should <VexMark /> hunt today?
-  </>,
-  <>
-    <VexMark /> is listening.
-  </>,
-  <>
-    <VexMark /> keeps the receipts.
-  </>,
+const TAGLINES: readonly string[] = [
+  "Signed. Sealed. Executed.",
+  "Your rules. My moves.",
+  "Propose. Enforce. Prove.",
+  "The desk is open.",
+  "VEX is listening.",
 ];
 
 /** jsdom-safe read — mirrors useLoaderProgress / SignalSky. */
@@ -149,8 +124,8 @@ function TaglineRotator(): JSX.Element {
   return (
     <>
       {/* key={index}: remount per swap replays the one-shot rise. Inline
-       * flow (inline-block, NOT flex) keeps the text + monogram on one
-       * shared baseline and preserves the spaces between fragments. */}
+       * flow (inline-block) keeps the quip on the eyebrow's baseline next
+       * to the live dot. */}
       <span
         key={index}
         aria-hidden
@@ -178,7 +153,12 @@ export function SessionWelcomeHero(): JSX.Element {
        * above the docked composer; the parent's trailing spacer balances
        * the column so hero + instrument center vertically as one group. */}
       <div className="relative z-10 mt-auto flex w-full flex-col items-center px-8 pb-4 text-center">
-        <span className="vex-eyebrow vex-rise">
+        {/* THE SIGIL — the particle-constellation monogram, the hero's
+         * crown. Takes the base .vex-rise slot; the status line and H1
+         * shift one stagger step so the choreography reads sigil →
+         * tagline → H1. */}
+        <VexSigil className="vex-rise mx-auto mb-5 h-28 md:h-32" />
+        <span className="vex-eyebrow vex-rise vex-rise-d1">
           {/* Live dot — STATIC accent ink: no runtime state reaches this
            * component and .vex-pulse-dot stays reserved for verifiable
            * live/pending states. */}
@@ -190,7 +170,7 @@ export function SessionWelcomeHero(): JSX.Element {
         </span>
         {/* H1 — the only display statement on the stage. Pinned by shell
          * tests: stays a REAL heading with this exact copy. */}
-        <h1 className="vex-title-barcode vex-rise vex-rise-d1 mt-6 text-center font-display text-[clamp(44px,6vw,72px)] font-black leading-[0.95] tracking-[-0.025em] text-[var(--vex-text)]">
+        <h1 className="vex-title-barcode vex-rise vex-rise-d2 mt-6 text-center font-display text-[clamp(44px,6vw,72px)] font-black leading-[0.95] tracking-[-0.025em] text-[var(--vex-text)]">
           What should I execute?
         </h1>
       </div>

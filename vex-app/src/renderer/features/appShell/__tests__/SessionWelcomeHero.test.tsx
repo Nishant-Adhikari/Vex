@@ -1,27 +1,30 @@
 /**
- * SessionWelcomeHero — phase-5 "Signal Sky" centered-hero contract.
+ * SessionWelcomeHero — phase-6 "Vex Sigil" centered-hero contract.
  *
  * Pins the pieces other suites and the design system depend on:
  *   1. the H1 "What should I execute?" stays a REAL heading (shell-sidebar
  *      asserts it through the full AppShell; this is the close-range pin)
  *      and wears the landing barcode flicker (.vex-title-barcode);
- *   2. the stage carries the minimal centered grammar ONLY — the mono status
- *      line (now the TaglineRotator: rotating brand quips where the word VEX
- *      is the script monogram /logo_clean.png) + the H1 above the composer,
- *      and the bottom row copy (LOCAL-FIRST CAPITAL RUNTIME / YOU SIGN EVERY
- *      ACTION). The retired compositions stay dead: the phase-3 register
- *      stack, the phase-4 combined trust caption, AND the static "Register
- *      open" eyebrow the rotator replaced;
- *   3. the hero paints no canvas — the procedural WebGL sky is a sibling
- *      mounted BEHIND the panel — and its ONLY imagery is the inline script
- *      monogram (img[src="/logo_clean.png"], alt "Vex") inside the quips;
- *   4. the one-shot rise choreography stagger: status (.vex-rise) → H1 (d1)
- *      → bottom row (d4). The instrument (d2) and chips (d3) are staggered
- *      by SessionPanel / ComposerQuickActions, outside this component;
- *   5. the rotator contract: advances every ~4.2s replaying .vex-rise on a
- *      fresh keyed span, pauses while document.hidden, renders the first
- *      quip statically under prefers-reduced-motion, and keeps screen
- *      readers out of the rotation (aria-hidden line + stable sr-only copy).
+ *   2. the stage carries the minimal centered grammar ONLY — the VexSigil
+ *      particle monogram as the crown, the mono status line (the
+ *      TaglineRotator: STANDALONE mono-uppercase brand quips, no inline
+ *      imagery) + the H1 above the composer, and the bottom row copy
+ *      (LOCAL-FIRST CAPITAL RUNTIME / YOU SIGN EVERY ACTION). The retired
+ *      compositions stay dead: the phase-3 register stack, the phase-4
+ *      combined trust caption, the phase-5 static "Register open" eyebrow
+ *      AND the phase-5 img-in-text quips (the inline monogram mechanism);
+ *   3. the hero's ONLY imagery is the sigil: in jsdom the VexSigil canvas
+ *      falls back to the plain monogram <img> INSIDE [data-vex-sigil]; the
+ *      tagline line itself carries NO <img> anymore;
+ *   4. the one-shot rise choreography, shifted one step for the crown:
+ *      sigil (.vex-rise) → status (d1) → H1 (d2) → bottom row (d4). The
+ *      instrument (d2) and chips (d3) are staggered by SessionPanel /
+ *      ComposerQuickActions, outside this component;
+ *   5. the rotator contract: exactly five user-pinned quips advancing every
+ *      ~4.2s replaying .vex-rise on a fresh keyed span, pausing while
+ *      document.hidden, rendering the first quip statically under
+ *      prefers-reduced-motion, and keeping screen readers out of the
+ *      rotation (aria-hidden line + stable sr-only copy).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,6 +33,14 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { SessionWelcomeHero } from "../SessionWelcomeHero.js";
 
 const ROTATE_MS = 4200;
+
+const QUIPS = [
+  "Signed. Sealed. Executed.",
+  "Your rules. My moves.",
+  "Propose. Enforce. Prove.",
+  "The desk is open.",
+  "VEX is listening.",
+] as const;
 
 type MatchMediaListener = (event: MediaQueryListEvent) => void;
 
@@ -82,11 +93,12 @@ describe("SessionWelcomeHero", () => {
     expect(h1.classList.contains("vex-title-barcode")).toBe(true);
   });
 
-  it("renders ONLY the centered status line + H1 above the composer, plus the bottom row copy", () => {
-    render(<SessionWelcomeHero />);
-    // The rotator opens on quip 1 ("Time for VEXing?") with the monogram.
-    expect(screen.getByText(/Time for/i)).not.toBeNull();
-    expect(screen.getByAltText("Vex")).not.toBeNull();
+  it("renders ONLY the sigil + status line + H1 above the composer, plus the bottom row copy", () => {
+    const { container } = render(<SessionWelcomeHero />);
+    // The sigil crowns the hero column.
+    expect(container.querySelector("[data-vex-sigil]")).not.toBeNull();
+    // The rotator opens on the first user-pinned quip.
+    expect(screen.getByText(QUIPS[0])).not.toBeNull();
     expect(screen.getByText("LOCAL-FIRST CAPITAL RUNTIME")).not.toBeNull();
     expect(screen.getByText("YOU SIGN EVERY ACTION")).not.toBeNull();
     // Retired compositions stay dead — the phase-3 register stack…
@@ -99,32 +111,49 @@ describe("SessionWelcomeHero", () => {
     expect(
       screen.queryByText("Local-first · You sign every action"),
     ).toBeNull();
-    // …and the phase-5 static eyebrow the rotator replaced.
+    // …the phase-5 static eyebrow the rotator replaced…
     expect(screen.queryByText("Register open")).toBeNull();
+    // …and the phase-5 img-in-text quips (the inline monogram mechanism).
+    expect(screen.queryByText(/Time for/i)).toBeNull();
+    expect(screen.queryByAltText("Vex")).toBeNull();
   });
 
-  it("paints no canvas; its only imagery is the script monogram inside the quip", () => {
+  it("carries its only imagery inside the sigil — the tagline line has NO inline img", () => {
     const { container } = render(<SessionWelcomeHero />);
-    expect(container.querySelector("canvas")).toBeNull();
+    const sigil = container.querySelector("[data-vex-sigil]");
+    expect(sigil).not.toBeNull();
+    // Decorative contract on the mark.
+    expect(sigil?.getAttribute("aria-hidden")).toBe("true");
+    expect(sigil?.className).toContain("pointer-events-none");
+    // jsdom: the sigil's canvas 2D is unavailable → its <img> fallback is
+    // the hero's ONLY imagery, and it lives INSIDE the sigil box.
     const images = Array.from(container.querySelectorAll("img"));
-    expect(images.length).toBeGreaterThan(0);
     for (const img of images) {
-      expect(img.getAttribute("src")).toBe("/logo_clean.png");
-      expect(img.getAttribute("alt")).toBe("Vex");
+      expect(sigil?.contains(img)).toBe(true);
     }
+    // The status line is standalone text now — no img-in-text.
+    const eyebrow = container.querySelector(".vex-eyebrow");
+    expect(eyebrow).not.toBeNull();
+    expect(eyebrow?.querySelector("img")).toBeNull();
   });
 
-  it("staggers the one-shot rise choreography: status → H1 (d1) → bottom row (d4)", () => {
+  it("staggers the one-shot rise choreography: sigil → status (d1) → H1 (d2) → bottom row (d4)", () => {
     const { container } = render(<SessionWelcomeHero />);
+    // The sigil takes the base .vex-rise slot (no delay modifier).
+    const sigil = container.querySelector("[data-vex-sigil]");
+    expect(sigil?.classList.contains("vex-rise")).toBe(true);
+    expect(sigil?.classList.contains("vex-rise-d1")).toBe(false);
+    // The status line shifts one step down.
     const status = container.querySelector(".vex-eyebrow");
     expect(status).not.toBeNull();
     expect(status?.classList.contains("vex-rise")).toBe(true);
+    expect(status?.classList.contains("vex-rise-d1")).toBe(true);
     const h1 = screen.getByRole("heading", {
       level: 1,
       name: /What should I execute\?/i,
     });
     expect(h1.classList.contains("vex-rise")).toBe(true);
-    expect(h1.classList.contains("vex-rise-d1")).toBe(true);
+    expect(h1.classList.contains("vex-rise-d2")).toBe(true);
     // The bottom row rises LAST (d4) as one unit.
     const bottomRow = screen
       .getByText("YOU SIGN EVERY ACTION")
@@ -150,19 +179,27 @@ describe("SessionWelcomeHero", () => {
       restoreDocumentHidden();
     });
 
-    it("advances to the next quip every ~4.2s on a fresh keyed .vex-rise span", () => {
+    it("cycles the five user-pinned quips in order on fresh keyed .vex-rise spans", () => {
       render(<SessionWelcomeHero />);
-      const first = screen.getByText(/Time for/i);
+      const first = screen.getByText(QUIPS[0]);
       expect(first.classList.contains("vex-rise")).toBe(true);
+      // Walk the full cycle: each swap unmounts the previous quip and
+      // mounts the next on a fresh keyed span replaying the one-shot rise.
+      let previous: string = QUIPS[0];
+      for (const quip of QUIPS.slice(1)) {
+        act(() => {
+          vi.advanceTimersByTime(ROTATE_MS);
+        });
+        expect(screen.queryByText(previous)).toBeNull();
+        const current = screen.getByText(quip);
+        expect(current.classList.contains("vex-rise")).toBe(true);
+        previous = quip;
+      }
+      // …and wraps back around to the first.
       act(() => {
         vi.advanceTimersByTime(ROTATE_MS);
       });
-      // Quip 1 is gone; quip 2 ("VEXed your thoughts…") mounted fresh and
-      // wears the one-shot rise again (keyed remount, no new keyframes).
-      expect(screen.queryByText(/Time for/i)).toBeNull();
-      const second = screen.getByText(/your thoughts/i);
-      expect(second.classList.contains("vex-rise")).toBe(true);
-      expect(screen.getByAltText("Vex")).not.toBeNull();
+      expect(screen.getByText(QUIPS[0])).not.toBeNull();
     });
 
     it("pauses rotation while document.hidden and resumes on visibility", () => {
@@ -175,7 +212,7 @@ describe("SessionWelcomeHero", () => {
         vi.advanceTimersByTime(3 * ROTATE_MS);
       });
       // Hidden → no swaps happened.
-      expect(screen.getByText(/Time for/i)).not.toBeNull();
+      expect(screen.getByText(QUIPS[0])).not.toBeNull();
       setDocumentHidden(false);
       act(() => {
         document.dispatchEvent(new Event("visibilitychange"));
@@ -183,7 +220,7 @@ describe("SessionWelcomeHero", () => {
       act(() => {
         vi.advanceTimersByTime(ROTATE_MS);
       });
-      expect(screen.getByText(/your thoughts/i)).not.toBeNull();
+      expect(screen.getByText(QUIPS[1])).not.toBeNull();
     });
 
     it("prefers-reduced-motion: no interval — the first quip renders statically", () => {
@@ -192,14 +229,13 @@ describe("SessionWelcomeHero", () => {
       act(() => {
         vi.advanceTimersByTime(3 * ROTATE_MS);
       });
-      expect(screen.getByText(/Time for/i)).not.toBeNull();
-      expect(screen.queryByText(/your thoughts/i)).toBeNull();
-      expect(screen.getByAltText("Vex")).not.toBeNull();
+      expect(screen.getByText(QUIPS[0])).not.toBeNull();
+      expect(screen.queryByText(QUIPS[1])).toBeNull();
     });
 
     it("keeps screen readers out of the rotation: aria-hidden line + stable sr-only copy", () => {
       render(<SessionWelcomeHero />);
-      expect(screen.getByText(/Time for/i).getAttribute("aria-hidden")).toBe(
+      expect(screen.getByText(QUIPS[0]).getAttribute("aria-hidden")).toBe(
         "true",
       );
       const stable = screen.getByText("Vex is ready.");
