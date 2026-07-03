@@ -370,6 +370,43 @@ describe("SessionRuntimeBar", () => {
     expect(title).not.toContain("Cache net:");
   });
 
+  it("stack layout (BOOK panel) renders the same facts under data-vex-layout=stack", async () => {
+    setVex({
+      getModel: vi.fn().mockResolvedValue(ok(MODEL_CONFIGURED)),
+      getLastTurn: vi.fn().mockResolvedValue(ok(lastTurn())),
+      getSessionTotals: vi.fn().mockResolvedValue(ok(totals(1, 0.01))),
+      getContextWindow: vi
+        .fn()
+        .mockResolvedValue(ok({ sessionId: SESSION, tokensUsed: 64000, contextLimit: 128000 })),
+    });
+    const { container } = render(
+      createElement(SessionRuntimeBar, { sessionId: SESSION, layout: "stack" }),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+
+    await waitFor(() => {
+      const group = container.querySelector(
+        '[data-vex-area="runtime-status"][data-vex-layout="stack"]',
+      );
+      expect(group).not.toBeNull();
+      // The de-boxed BOOK rows keep every fact + its contract attributes.
+      expect(
+        container.querySelector(
+          '[data-vex-area="session-model-indicator"][data-state="configured"]',
+        ),
+      ).not.toBeNull();
+      expect(
+        container.querySelector('[data-vex-area="usage-meter"]'),
+      ).not.toBeNull();
+      const meter = container.querySelector(
+        '[data-vex-area="session-context-meter"][data-state="ok"]',
+      );
+      expect(meter).not.toBeNull();
+      expect(meter?.textContent).toContain("50%");
+      expect(meter?.getAttribute("aria-label")).toBe("Context 50% used");
+    });
+  });
+
   it("⚡ chip gating unchanged: shows on cachedTokens > 0 even with negative savings", async () => {
     setVex({
       getModel: vi.fn().mockResolvedValue(ok(MODEL_CONFIGURED)),

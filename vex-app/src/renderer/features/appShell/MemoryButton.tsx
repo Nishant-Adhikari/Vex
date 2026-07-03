@@ -29,15 +29,17 @@ export function MemoryButton({
   if (!memoryEnabled) return null;
 
   return (
-    // Quiet registry row: full-width, borderless, hairline-separated by the
-    // footer — the Button size variants lose to these classes via cn/twMerge.
+    // Quiet registry row: full-width, mono uppercase (Button base), carrying
+    // its own border-t hairline so the footer stack stays separated even
+    // when this row is capability-gated away — the Button size variants
+    // lose to these classes via cn/twMerge.
     <Button
       variant="ghost"
       size={compact ? "icon" : "sm"}
       onClick={onClick}
       aria-label="Open memory"
       className={cn(
-        "h-9 w-full rounded-none border-0 bg-transparent text-[11px] tracking-[0.14em] text-[var(--vex-text-2)] hover:bg-white/[0.035] hover:text-foreground",
+        "h-9 w-full rounded-none border-0 border-t border-[var(--vex-line)] bg-transparent text-[10px] tracking-[0.18em] text-[var(--vex-text-2)] hover:bg-white/[0.035] hover:text-foreground",
         compact ? "justify-center px-0" : "justify-start gap-2 px-4",
       )}
     >

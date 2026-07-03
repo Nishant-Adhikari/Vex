@@ -1,18 +1,20 @@
 /**
- * MISSION RAIL — the fixed contextual column between the chat section and the
- * BOOK panel. It carries the mission/plan status KEYS (clickable
- * `PremiumBadge`s) that open the contract / plan review dialogs. The tall
+ * MISSION RAIL — the DESK RULE header's mission/plan status cluster. It
+ * carries the mission/plan status KEYS (compact clickable `PremiumBadge`
+ * pills) that open the contract / plan review dialogs. Formerly a fixed 200px
+ * column between chat and BOOK; the badges now sit inline in the header's
+ * center zone so the chat column can center in the freed width. The tall
  * contract + plan cards used to live inline in `SessionPanel`, which pushed
- * `MissionControls` + the Accept footer below the fold (the bug this rail
- * resolves); the rail keeps only the compact badges in the layout and moves the
- * full review surfaces into top-layer `<dialog>`s where the Accept action is
- * pinned and can never be scrolled away.
+ * `MissionControls` + the Accept footer below the fold (the bug this cluster
+ * resolves); the cluster keeps only the compact badges in the layout and moves
+ * the full review surfaces into top-layer `<dialog>`s where the Accept action
+ * is pinned and can never be scrolled away.
  *
- * Render gate (decided in the redesign plan): the rail renders only in the
+ * Render gate (decided in the redesign plan): the cluster renders only in the
  * active session view, and only when the session is mission-mode OR plan-mode
- * is enabled. A plain agent session with plan-mode off gets NO rail (render
+ * is enabled. A plain agent session with plan-mode off gets NO cluster (render
  * nothing — never a broken empty frame). The gate is computed from the same
- * TanStack Query hooks the modals use, so the rail and modals always agree.
+ * TanStack Query hooks the modals use, so the cluster and modals always agree.
  *
  * Badge state derivation (§4 of the plan):
  *   - Mission badge mirrors the contract diff state machine
@@ -30,7 +32,7 @@
  *
  * Trust boundary: 100% renderer presentation over existing hooks. No new IPC,
  * no `src/vex-agent`/DB/wallet imports, and no plan CONTENT is read here — the
- * rail only derives badge states; the modals own the content render.
+ * cluster only derives badge states; the modals own the content render.
  */
 
 import { useMemo, useState } from "react";
@@ -42,7 +44,6 @@ import type {
 } from "@shared/schemas/mission.js";
 import type { PlanGetResult } from "@shared/schemas/session-plan.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-import { Target02Icon, Route01Icon } from "@hugeicons/core-free-icons";
 import {
   useMissionDiff,
   useMissionDraft,
@@ -78,7 +79,7 @@ export function MissionRail({
   const isMission = session?.mode === "mission";
   const planEnabled = plan?.enabled === true;
   // Gate: active session AND (mission-mode OR plan-enabled). A plain agent
-  // session with plan-mode off earns no rail.
+  // session with plan-mode off earns no cluster.
   const shouldRender =
     activeSessionId !== null && session !== null && (isMission || planEnabled);
 
@@ -118,15 +119,16 @@ export function MissionRail({
     isMission && (session?.missionStatus ?? null) === null;
 
   return (
-    <aside
+    <div
       data-vex-area="mission-rail"
+      role="group"
       aria-label="Mission and plan status"
-      className="flex w-[200px] shrink-0 flex-col gap-3 border-l border-[var(--vex-line)] p-3"
+      className="flex min-w-0 items-center gap-2"
     >
       {mission !== null ? (
         <PremiumBadge
+          compact
           label="Mission"
-          icon={Target02Icon}
           state={mission.state}
           shimmer={mission.shimmer}
           expanded={open === "mission"}
@@ -136,8 +138,8 @@ export function MissionRail({
 
       {planBadge !== null ? (
         <PremiumBadge
+          compact
           label="Plan"
-          icon={Route01Icon}
           state={planBadge.state}
           shimmer={planBadge.shimmer}
           expanded={open === "plan"}
@@ -165,7 +167,7 @@ export function MissionRail({
           onOpenChange={(next) => setOpen(next ? "plan" : "none")}
         />
       ) : null}
-    </aside>
+    </div>
   );
 }
 
@@ -181,7 +183,7 @@ interface BadgeDerivation {
  * so the badge never invites an accept the engine would refuse.
  *
  * Returns null when there is no mission to surface (non-mission session) so the
- * rail simply omits the Mission badge.
+ * cluster simply omits the Mission badge.
  */
 function deriveMissionBadge(
   isMission: boolean,
@@ -263,7 +265,8 @@ function planMissing(plan: PlanGetResult | null): boolean {
 type ReadyDiff = Extract<MissionGetDiffResult, { outcome: "ready" }>;
 
 function readSession(
-  data: Result<SessionListItem> | undefined,
+  // useSession resolves Result<SessionListItem | null> (null = unknown id).
+  data: Result<SessionListItem | null> | undefined,
 ): SessionListItem | null {
   if (!data || !data.ok) return null;
   return data.data;

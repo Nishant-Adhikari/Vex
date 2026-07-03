@@ -310,6 +310,11 @@
   --vex-pin-fill-hover: color-mix(in oklab, #ffce5a 16%, transparent);
   /* compaction permanently-failed text — danger family (unrecoverable). */
   --vex-warn-text: color-mix(in oklab, var(--color-danger) 70%, white);
+  /* Glass rail surface — user-sanctioned translucent ink for the two side
+   * rails (SessionsList / BookPanel) floating over the Signal Sky. The ONLY
+   * surfaces allowed to pair this with backdrop-blur (guard-whitelisted). */
+  --vex-glass: rgba(11, 15, 29, 0.66);
+  --vex-glass-strong: rgba(11, 15, 29, 0.82);
   /* shadcn projection — stock Button/Input/Dialog inside the shell speak
    * the brand automatically (same mechanism as the onboarding scope). */
   --color-primary: var(--vex-accent);
@@ -467,6 +472,66 @@
   border-radius: 0 3px 3px 0;
   background: #ffffff;
   opacity: 0.9;
+}
+
+/* Hero rise — the landing's load-in reveal (masked line rise, "Out" curve),
+ * one-shot with stagger delay modifiers for the welcome-stage choreography:
+ * status line → headline → instrument → chips. Rests perfectly still. */
+@keyframes vex-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.vex-rise {
+  animation: vex-rise 600ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+.vex-rise-d1 {
+  animation-delay: 90ms;
+}
+.vex-rise-d2 {
+  animation-delay: 190ms;
+}
+.vex-rise-d3 {
+  animation-delay: 300ms;
+}
+.vex-rise-d4 {
+  animation-delay: 420ms;
+}
+
+/* Barcode flicker on display titles — the landing .pixel-title::after
+ * signature: hairline ink bars over the letterforms, stepping sideways.
+ * Decorative texture sanctioned for the welcome stage only; the global
+ * reduced-motion rule freezes the flicker (static bars remain, opacity is
+ * kept low so legibility never depends on motion). */
+@keyframes vex-barcode-flicker {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+}
+.vex-title-barcode {
+  position: relative;
+}
+.vex-title-barcode::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.3;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 3px,
+    var(--color-bg-primary) 3px 4.5px
+  );
+  animation: vex-barcode-flicker 6s steps(40) infinite;
 }
 
 /* Dialog reveal — the landing's reveal language (rise + settle, "Out" curve

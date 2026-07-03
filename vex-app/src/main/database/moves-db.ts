@@ -25,7 +25,11 @@
  *  - join key is the raw ADDRESS string — DO NOT lowercase (the engine stores
  *    raw checksum/base58 addresses).
  *  - The SELECT projects ONLY bounded, renderer-safe columns. It NEVER selects
- *    `params`, `result`, `trade_capture`, `meta`, or `external_refs`.
+ *    `params`, `result`, `trade_capture`, `meta`, or the raw `external_refs`
+ *    JSONB. The single sanctioned extraction from `external_refs` is the
+ *    on-chain tx reference scalar (`->>'txHash'` for EVM, `->>'signature'`
+ *    for Solana) — public on-chain data powering the renderer's
+ *    block-explorer deep links; never the whole blob.
  *  - logging records sessionId + the row COUNT only; NEVER raw addresses,
  *    USD figures, token symbols, or tx hashes.
  */
@@ -118,6 +122,8 @@ interface MoveRow {
   readonly value_usd: number | string | null;
   readonly capture_status: string | null;
   readonly instrument_key: string | null;
+  readonly chain: string;
+  readonly tx_ref: string | null;
   readonly created_at: string | Date;
 }
 
@@ -190,6 +196,9 @@ export async function getMovesForSession(
                 value_usd,
                 capture_status,
                 instrument_key,
+                chain,
+                COALESCE(external_refs->>'txHash', external_refs->>'signature')
+                  AS tx_ref,
                 created_at
            FROM proj_activity
           WHERE wallet_address = ANY($1::text[])
@@ -208,6 +217,8 @@ export async function getMovesForSession(
         valueUsd: toNumberOrNull(row.value_usd),
         captureStatus: row.capture_status,
         instrumentKey: row.instrument_key,
+        chain: row.chain,
+        txRef: row.tx_ref,
         createdAt: toIso(row.created_at),
       }));
 

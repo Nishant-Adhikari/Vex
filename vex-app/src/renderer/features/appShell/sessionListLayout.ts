@@ -19,20 +19,18 @@
 import type { SessionGroup } from "./sessionListModel.js";
 
 /**
- * Fixed sidebar row height in pixels. Ledger rows render `h-14` (56px),
- * single-block vertically centered with two text lines (title + subtitle),
- * hairline-separated via border-b on each `<li>` — not gaps. Keep this in
- * lockstep with `SessionRow.tsx`.
+ * Fixed sidebar row height in pixels. Dense ledger rows render `h-12`
+ * (48px), single-block vertically centered with two text lines (title +
+ * subtitle), hairline-separated via border-b on each `<li>` — not gaps.
+ * Keep this in lockstep with `SessionRow.tsx`.
  */
-export const SIDEBAR_ROW_HEIGHT_PX = 56;
+export const SIDEBAR_ROW_HEIGHT_PX = 48;
 /** Rows are hairline-separated (border-b on `<li>`), no flex gap. */
 export const SIDEBAR_ROW_GAP_PX = 0;
-/** Section `<h2>` height: h-7 (28px) + mb-1 (4px) = 32px total. */
-export const SIDEBAR_GROUP_HEADER_HEIGHT_PX = 32;
-/** `flex flex-col gap-4` between sections. */
-export const SIDEBAR_GROUP_GAP_PX = 16;
-/** Browse-all CTA height: button h-10 + py-3 around it = ~56px. */
-export const SIDEBAR_VIEW_ALL_BUTTON_HEIGHT_PX = 56;
+/** Section eyebrow `<h2>` height: h-6 (24px) + mb-1 (4px) = 28px total. */
+export const SIDEBAR_GROUP_HEADER_HEIGHT_PX = 28;
+/** `flex flex-col gap-3` between sections. */
+export const SIDEBAR_GROUP_GAP_PX = 12;
 
 export interface ComputeVisibleGroupsResult {
   readonly visible: readonly SessionGroup[];

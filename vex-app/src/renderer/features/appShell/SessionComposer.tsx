@@ -7,9 +7,13 @@
  *     session-scoped plan mode; `SessionPlanCard` only displays the plan,
  *   - mission-run-status gating on free-text submit,
  *   - composer notice (success / error / inline Retry on a retryable error),
- *   - starter ledger rows (hidden in mission mode — replaced by the
- *     mission contract card the parent renders),
- *   - the welcome trust letterpress (no-session state only).
+ *   - starter chips (hidden in mission mode — replaced by the mission
+ *     contract card the parent renders),
+ *   - the stage presence (phase 4, kept in phase 5): on the welcome/idle
+ *     stage the parent passes `stage` and the instrument grows — taller
+ *     textarea, larger type, near-opaque ink frame so it reads over the
+ *     Signal Sky. The old trust letterpress moved onto the stage's bottom
+ *     row (`SessionWelcomeHero`).
  *
  * Pure helpers (gating reasons, placeholders) live in `composer-helpers.ts`.
  * Mission controls (start/continue/recover/stop/edit/renew) are buttons in
@@ -55,11 +59,13 @@ import { nextReasoningEffort, ReasoningSwitch } from "./ReasoningSwitch.js";
 
 /**
  * Shared slot geometry for the send key's three states (send / stop /
- * stopping) — hard-cut swaps must never shift the chrome row. Pill
- * silhouette (the landing button language); the enabled state fills cobalt.
+ * stopping) — hard-cut swaps must never shift the chrome row. A 36px
+ * circle (the landing circle-cta in miniature); the enabled state fills
+ * cobalt, stop keeps the accent rim, stopping goes inert while the
+ * chrome-row hint carries the "Stopping…" label.
  */
 const SEND_KEY_BASE =
-  "inline-flex h-9 w-[68px] shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 type ComposerNotice =
   | {
@@ -77,11 +83,20 @@ type ComposerNotice =
 export interface SessionComposerProps {
   readonly activeSession: SessionListItem | null;
   readonly activeSessionId: string | null;
+  /**
+   * Welcome/idle stage presence — presentation only. The parent
+   * (`SessionPanel`) sets it for the Signal Sky stage: taller idle
+   * textarea, 16px type, and a near-opaque ink frame (solid color-mix, NO
+   * blur) so the instrument reads over the sky. The state machine, roles
+   * and gating are identical in both variants.
+   */
+  readonly stage?: boolean;
 }
 
 export function SessionComposer({
   activeSession,
   activeSessionId,
+  stage = false,
 }: SessionComposerProps): JSX.Element {
   // Submit/enable gate on the canonical selected id (uiStore), NOT the
   // detail-query object: the engine ingress loads its own session context,
@@ -330,6 +345,9 @@ export function SessionComposer({
   }, []);
 
   const submitDisabled = draft.trim().length === 0 || submitPending;
+  // Stop acknowledged and the turn still in flight — the send key goes
+  // inert and the chrome-row hint swaps to the STOPPING… label.
+  const stopping = submitPending && stopRequested;
 
   return (
     <>
@@ -338,7 +356,15 @@ export function SessionComposer({
           ref={formRef}
           onSubmit={onSubmit}
           data-vex-area="chat-composer"
-          className="relative overflow-hidden rounded-xl border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] transition-colors focus-within:border-[var(--vex-accent-border)]"
+          className={cn(
+            "relative overflow-hidden rounded-[14px] border border-[var(--vex-line-strong)] transition-colors focus-within:border-[var(--vex-accent-border-strong)]",
+            // Stage: near-opaque ink (solid color-mix — glass/blur is banned
+            // by the design guard) so the frame reads over the Signal Sky
+            // while its edges still sit IN the scene.
+            stage
+              ? "bg-[color-mix(in_oklab,var(--vex-surface-1)_90%,transparent)]"
+              : "bg-[var(--vex-surface-1)]",
+          )}
         >
           {/* MODE LINE — 1px accent ink along the top edge, drawn (scaleX
            * 0→1) when plan mode turns on. Reuses the .vex-sign-stroke draw
@@ -376,13 +402,14 @@ export function SessionComposer({
             }
             aria-label="Session draft"
             className={cn(
-              "block w-full resize-none overflow-y-auto bg-transparent px-4 pt-3.5 pb-2 text-[15px] leading-[1.7] text-foreground caret-[var(--vex-accent)] outline-none",
-              "min-h-[52px] max-h-[200px]",
-              "placeholder:text-[var(--vex-text-3)]",
+              "block w-full resize-none overflow-y-auto bg-transparent px-4 pt-3.5 pb-2 leading-[1.7] text-foreground caret-[var(--vex-accent)] outline-none",
+              "max-h-[200px] placeholder:text-[var(--vex-text-3)]",
+              // Stage: taller idle presence + larger type (the instrument).
+              stage ? "min-h-[64px] text-[16px]" : "min-h-[52px] text-[15px]",
             )}
           />
 
-          <div className="flex h-11 items-center gap-3 border-t border-[var(--vex-line)] px-3">
+          <div className="flex h-12 items-center gap-3 border-t border-[var(--vex-line)] px-3">
             <PlanSwitch
               sessionId={sessionId}
               planOn={planOn}
@@ -401,10 +428,20 @@ export function SessionComposer({
               />
             ) : null}
 
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-              {sessionId === null
-                ? "type a message to start a session"
-                : "Enter ↵ send · Shift+Enter newline"}
+            {/* Chrome-row hint — mono 10px, centered between the mode
+             * cluster and the send key; while a stop is acknowledged it
+             * carries the STOPPING… label (the key itself goes inert). */}
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-center font-mono text-[10px] uppercase tracking-[0.14em]",
+                stopping ? "text-[var(--vex-text-2)]" : "text-[var(--vex-text-3)]",
+              )}
+            >
+              {stopping
+                ? "Stopping…"
+                : sessionId === null
+                  ? "type a message to start a session"
+                  : "Enter ↵ send · Shift+Enter newline"}
             </span>
 
             {/* THE SEND KEY — three hard-cut states in one slot geometry. */}
@@ -416,10 +453,10 @@ export function SessionComposer({
                   aria-label="Stopping"
                   className={cn(
                     SEND_KEY_BASE,
-                    "border-[var(--vex-accent-border-strong)] bg-[var(--vex-surface-0)] font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]",
+                    "border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[var(--vex-text-3)]",
                   )}
                 >
-                  Stopping
+                  <HugeiconsIcon icon={StopCircleIcon} size={16} aria-hidden />
                 </button>
               ) : (
                 <button
@@ -454,13 +491,8 @@ export function SessionComposer({
             )}
           </div>
         </form>
-
-        {/* TRUST LETTERPRESS — welcome only; the old hero badges, set in type. */}
-        {sessionId === null ? (
-          <p className="mt-3 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
-            Local-first · Private by default · You sign every action
-          </p>
-        ) : null}
+        {/* The welcome trust letterpress that used to sit here moved onto the
+         * stage's bottom row (mono lines in `SessionWelcomeHero`). */}
       </div>
 
       {notice !== null ? (

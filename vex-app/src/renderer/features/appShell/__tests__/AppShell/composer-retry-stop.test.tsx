@@ -54,7 +54,6 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   PanelRightCloseIcon: "PanelRightCloseIcon",
   PanelRightOpenIcon: "PanelRightOpenIcon",
   Search01Icon: "Search01Icon",
-  StopCircleIcon: "StopCircleIcon",
   Settings02Icon: "Settings02Icon",
   Shield02Icon: "Shield02Icon",
   SparklesIcon: "SparklesIcon",
@@ -511,6 +510,12 @@ describe("AppShell", () => {
     expect(cancel).toHaveBeenCalledTimes(1);
     // type="button": clicking Stop must not fire a second submit.
     expect(chatSubmitMock).toHaveBeenCalledTimes(1);
+
+    // Stop acknowledged → the key hard-cuts to a disabled Stopping circle
+    // and the chrome-row hint carries the "Stopping…" label (no spinner).
+    const stopping = await screen.findByRole("button", { name: "Stopping" });
+    expect((stopping as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Stopping…")).toBeTruthy();
   });
 
   it("shows 'Stopped.' (not 'Message sent.') when a turn stops with no partial (9-5b)", async () => {

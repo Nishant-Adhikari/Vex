@@ -23,8 +23,12 @@ export function ListPlaceholder({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 p-3 text-xs",
-        tone === "error" ? "text-destructive" : "text-[var(--vex-text-2)]",
+        // Registry micro-type; error messages keep their sentence case (an
+        // uppercase transform on a long IPC message would shout).
+        "flex items-center gap-2 p-3 font-mono text-[10px] tracking-[0.16em]",
+        tone === "error"
+          ? "text-destructive"
+          : "uppercase text-[var(--vex-text-2)]",
         !sidebarOpen && "justify-center px-0",
       )}
     >

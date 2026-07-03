@@ -2,20 +2,28 @@
  * Welcome / session panel — orchestration only.
  *
  * Two layouts, branched on whether a session is active:
- *   - no active session → centered welcome hero + composer (onboarding feel);
+ *   - no active session → the WELCOME STAGE (phase 5, "Signal Sky"): the
+ *     center column is TRANSPARENT — the procedural WebGL sky mounted behind
+ *     the shell shows through. `SessionWelcomeHero` paints the centered hero
+ *     (status + H1), one bottom vignette and the absolute bottom row against
+ *     this panel's relative frame; the composer docks directly beneath the
+ *     hero, centered at min(680px, 92%), and a trailing flex spacer balances
+ *     the column so hero + instrument center vertically as one group;
  *   - active session → full-height chat shell: header (`SessionContext`) + live
  *     transcript (`SessionTranscript`, stage 8-1) + mission controls + bottom
  *     composer. The hero is hidden so a selected session's loading/error/empty
  *     states never sit under onboarding copy.
  *
  * The mission contract + action plan are NOT in this column any more — they
- * moved to the MISSION RAIL (`MissionRail`) as clickable badges that open
- * `MissionContractModal` / `PlanDisplayModal`. The two tall cards used to push
- * `MissionControls` + the Accept footer below the fold; pulling them out lets
- * the transcript own the full column height and keeps the controls reachable.
+ * moved to the DESK RULE header's badge cluster (`MissionRail`) as clickable
+ * badges that open `MissionContractModal` / `PlanDisplayModal`. The two tall
+ * cards used to push `MissionControls` + the Accept footer below the fold;
+ * pulling them out lets the transcript own the full column height and keeps
+ * the controls reachable. With no right rail in the layout, the active-session
+ * column (max-w 860px) centers itself (mx-auto) in the freed width.
  *
  * Sub-components keep this file small:
- *   - hero (register head; trust line lives in the composer) → `SessionWelcomeHero`
+ *   - hero (centered status + H1, vignette, bottom row) → `SessionWelcomeHero`
  *   - context strip/header → `SessionContext` (runtime bar now lives in BOOK)
  *   - mission controls     → `MissionControls` (mission sessions only)
  *   - transcript          → `SessionTranscript`
@@ -89,24 +97,30 @@ export function SessionPanel(): JSX.Element {
     transcriptPages !== undefined &&
     flattenTranscriptPages(transcriptPages).length === 0;
 
-  // No active session → centered onboarding hero + composer.
+  // No active session → the welcome stage. The panel is the stage frame:
+  // relative (the hero's absolute vignette + bottom row resolve against it)
+  // + overflow-hidden, and TRANSPARENT — the Signal Sky behind the shell is
+  // the backdrop. The hero bottom-anchors itself (mt-auto) inside the flex-1
+  // zone, the composer docks directly beneath it, and the trailing spacer
+  // balances the flex-1 hero zone so the whole group centers vertically.
   if (activeSessionId === null) {
     return (
       <div
         data-vex-area="session-panel"
         data-vex-state={panelState}
-        className="flex h-full min-h-0 w-full items-center justify-center px-8 py-10 sm:px-12 lg:px-20"
+        className="relative flex h-full min-h-0 w-full flex-col overflow-hidden"
       >
-        <div className="w-full max-w-[680px]">
+        <div className="flex min-h-0 flex-1 flex-col">
           <SessionWelcomeHero />
-          <SessionContext
-            activeSession={null}
-            activeSessionId={null}
-            loading={false}
-            error={null}
-          />
-          <SessionComposer activeSession={null} activeSessionId={null} />
         </div>
+        {/* THE INSTRUMENT — centered with the hero as one rising group. */}
+        <div className="vex-rise vex-rise-d2 relative z-10 mx-auto w-[min(680px,92%)] shrink-0">
+          <SessionComposer activeSession={null} activeSessionId={null} stage />
+        </div>
+        {/* Trailing spacer — balances the hero zone above (vertical
+            centering) and reserves the band the hero's absolute bottom row
+            occupies, so chips and the row never collide. */}
+        <div aria-hidden className="min-h-16 flex-1" />
       </div>
     );
   }
@@ -114,8 +128,8 @@ export function SessionPanel(): JSX.Element {
   // Active session. The composer is the STABLE last child of the column, so it
   // never remounts across the idle↔tape switch — a fresh first send and its
   // retry survive. The content ABOVE it swaps: an empty, non-mission session
-  // shows the centered idle landing (logo + prompt, same as the welcome
-  // screen); once messages land it becomes the left-anchored tape.
+  // shows the full-bleed welcome stage (same scene as the no-session state);
+  // once messages land it becomes the left-anchored tape.
   const showMissionCard =
     activeSession !== null && activeSession.mode === "mission";
   return (
@@ -124,30 +138,24 @@ export function SessionPanel(): JSX.Element {
       data-vex-state={panelState}
       className={cn(
         "flex h-full min-h-0 w-full",
-        isIdleSession
-          ? "items-center justify-center px-8 py-10 sm:px-12 lg:px-20"
-          : "justify-start",
+        // Idle stage: this panel is the stage frame (relative → the hero's
+        // absolute vignette + bottom row resolve against it).
+        isIdleSession ? "relative flex-col overflow-hidden" : "justify-start",
       )}
     >
       <div
         className={cn(
           "flex h-full min-h-0 w-full flex-col",
-          isIdleSession
-            ? "max-w-[680px] justify-center"
-            : "max-w-[860px] px-6 py-4",
+          // Idle stage is full-bleed (no max-w, no padding).
+          isIdleSession ? undefined : "mx-auto max-w-[860px] px-6 py-4",
         )}
       >
-        {/* Content above the composer — swaps the centered idle landing for the
-            left-anchored tape. ONE wrapper element so the composer below keeps a
-            stable index (no remount, no lost first send). When idle it shrinks to
-            the hero (no flex-1) so the column's justify-center centres the
-            hero+composer as one group, matching the welcome screen. */}
-        <div
-          className={cn(
-            "flex min-h-0 flex-col",
-            isIdleSession ? "items-center" : "flex-1",
-          )}
-        >
+        {/* Content above the composer — swaps the full-bleed idle stage for
+            the left-anchored tape. ONE wrapper element so the composer below
+            keeps a stable index (no remount, no lost first send). Kept
+            position-static so the hero's absolute backdrop resolves against
+            the panel frame above, not this wrapper. */}
+        <div className="flex min-h-0 flex-1 flex-col">
           {isIdleSession ? (
             <SessionWelcomeHero />
           ) : (
@@ -160,8 +168,9 @@ export function SessionPanel(): JSX.Element {
               />
               {/* The mission contract + action plan no longer render inline:
                   the two tall cards used to push MissionControls + the Accept
-                  footer below the fold. They now live in the MISSION RAIL's
-                  PremiumBadge → top-layer dialog (`MissionContractModal` /
+                  footer below the fold. They now live in the DESK RULE
+                  header's badge cluster (`MissionRail`) — PremiumBadge →
+                  top-layer dialog (`MissionContractModal` /
                   `PlanDisplayModal`), which keeps the Accept action pinned and
                   reachable. The transcript now owns the full column height. */}
               {activeSession !== null ? (
@@ -176,10 +185,27 @@ export function SessionPanel(): JSX.Element {
             </>
           )}
         </div>
-        <SessionComposer
-          activeSession={activeSession}
-          activeSessionId={activeSessionId}
-        />
+        {/* ALWAYS-PRESENT wrapper (className only changes) so the composer's
+            tree position stays stable across the idle↔tape switch. On the
+            idle stage it docks the instrument: centered, min(680px, 92%),
+            rising with the d2 stagger of the stage choreography. */}
+        <div
+          className={cn(
+            isIdleSession &&
+              "vex-rise vex-rise-d2 relative z-10 mx-auto w-[min(680px,92%)] shrink-0",
+          )}
+        >
+          <SessionComposer
+            activeSession={activeSession}
+            activeSessionId={activeSessionId}
+            stage={isIdleSession}
+          />
+        </div>
+        {/* Idle-stage trailing spacer — appears AFTER the composer wrapper so
+            its mount/unmount never shifts the composer's tree position. Same
+            role as on the welcome stage: vertical centering + clearance for
+            the hero's absolute bottom row. */}
+        {isIdleSession ? <div aria-hidden className="min-h-16 flex-1" /> : null}
       </div>
     </div>
   );

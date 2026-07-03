@@ -58,6 +58,15 @@ export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
  *  - `valueUsd`      — notional USD; `null` when the engine could not price it.
  *  - `captureStatus` — the trade-capture lifecycle status string (tolerant).
  *  - `instrumentKey` — opaque instrument identifier; `null` when absent.
+ *  - `chain`         — `proj_activity.chain` (NOT NULL in the DDL): the venue
+ *                      chain identifier the engine recorded (e.g. `solana`,
+ *                      `ethereum`, `base`) — tolerant string, NOT an enum.
+ *                      Powers the renderer's block-explorer deep links.
+ *  - `txRef`         — the on-chain transaction reference extracted server-side
+ *                      as a SINGLE bounded scalar from `external_refs`
+ *                      (`txHash` for EVM, `signature` for Solana); `null` when
+ *                      the capture recorded neither. The raw `external_refs`
+ *                      JSONB is still never shipped to the renderer.
  *  - `createdAt`     — activity timestamp (offset ISO; NOT NULL in the DDL).
  */
 export const moveItemSchema = z
@@ -71,6 +80,8 @@ export const moveItemSchema = z
     valueUsd: z.number().nullable(),
     captureStatus: z.string().nullable(),
     instrumentKey: z.string().nullable(),
+    chain: z.string(),
+    txRef: z.string().nullable(),
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();

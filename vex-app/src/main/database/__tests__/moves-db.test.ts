@@ -202,6 +202,8 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
           value_usd: null,
           capture_status: "filled",
           instrument_key: null,
+          chain: "solana",
+          tx_ref: null,
           created_at: "2026-05-21T10:00:00.000Z",
         },
       ],
@@ -221,6 +223,8 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         valueUsd: null,
         captureStatus: "filled",
         instrumentKey: null,
+        chain: "solana",
+        txRef: null,
         createdAt: "2026-05-21T10:00:00.000Z",
       },
     ]);
@@ -241,6 +245,8 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
           value_usd: "123.45",
           capture_status: "executed",
           instrument_key: "eth-usdc",
+          chain: "ethereum",
+          tx_ref: "0xdeadbeef",
           created_at: at,
         },
       ],
@@ -252,6 +258,8 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
     const row = result.data[0];
     expect(row?.valueUsd).toBeCloseTo(123.45, 4);
     expect(row?.createdAt).toBe("2026-05-21T10:00:00.000Z");
+    expect(row?.chain).toBe("ethereum");
+    expect(row?.txRef).toBe("0xdeadbeef");
   });
 });
 

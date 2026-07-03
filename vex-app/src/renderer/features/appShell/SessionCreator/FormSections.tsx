@@ -5,8 +5,11 @@
  * every value + change handler in through typed props. No hooks, no fetches,
  * no local state: state ownership stays with the parent component.
  *
- * Markup, accessibility roles, and copy are preserved verbatim from the
- * original inline JSX so the modal renders byte-identically.
+ * Visual grammar (landing rebrand): every section label is a `.vex-eyebrow`
+ * mono micro-label with its leading rule, the option grids are numbered
+ * trust-zone cards ({@link RadioCard}), and numerals speak mono/tabular.
+ * Accessibility contracts are unchanged: the Name <Label htmlFor> pairing,
+ * real <fieldset>/<legend> radio groups, and role="alert" on submit errors.
  */
 
 import type { JSX } from "react";
@@ -33,8 +36,10 @@ export function NameField({
   nameRef,
 }: NameFieldProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor="vex-session-name">Name</Label>
+    <div className="flex flex-col gap-2.5">
+      <Label htmlFor="vex-session-name" className="vex-eyebrow">
+        Name
+      </Label>
       {/* The Input primitive is the brand field (transparent, hairline,
        * accent focus border) — h-10 keeps this hero field's weight. */}
       <Input
@@ -48,12 +53,12 @@ export function NameField({
         placeholder="Give this session a short name."
         className="h-10"
       />
-      <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
+      <div className="flex items-center justify-between gap-3 text-xs text-[var(--vex-text-3)]">
         <p>The sidebar uses this as the session title.</p>
         {/* Numerals speak mono/tabular (mirrors the ReportIssue counter). */}
         <span
           aria-live="polite"
-          className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+          className="font-mono text-[10px] tracking-[0.14em] tabular-nums text-[var(--vex-text-3)]"
         >
           {name.length} / {SESSION_TITLE_MAX_LENGTH}
         </span>
@@ -72,8 +77,8 @@ export function ModeFieldset({
   onModeChange,
 }: ModeFieldsetProps): JSX.Element {
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="text-sm font-medium text-foreground">Mode</legend>
+    <fieldset className="flex flex-col gap-2.5">
+      <legend className="vex-eyebrow">Mode</legend>
       <div className="grid grid-cols-2 gap-2">
         {MODE_OPTIONS.map((opt) => (
           <RadioCard
@@ -82,9 +87,9 @@ export function ModeFieldset({
             value={opt.value}
             checked={mode === opt.value}
             onChange={() => onModeChange(opt.value)}
+            index={opt.index}
             title={opt.title}
             description={opt.description}
-            icon={opt.icon}
           />
         ))}
       </div>
@@ -102,10 +107,8 @@ export function PermissionFieldset({
   onPermissionChange,
 }: PermissionFieldsetProps): JSX.Element {
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="text-sm font-medium text-foreground">
-        Permission
-      </legend>
+    <fieldset className="flex flex-col gap-2.5">
+      <legend className="vex-eyebrow">Permission</legend>
       <div className="grid grid-cols-2 gap-2">
         {PERMISSION_OPTIONS.map((opt) => (
           <RadioCard
@@ -114,9 +117,10 @@ export function PermissionFieldset({
             value={opt.value}
             checked={permission === opt.value}
             onChange={() => onPermissionChange(opt.value)}
+            index={opt.index}
             title={opt.title}
             description={opt.description}
-            icon={opt.icon}
+            caution={opt.caution}
           />
         ))}
       </div>
@@ -142,13 +146,11 @@ export function WalletFieldset({
   onSolanaChange,
 }: WalletFieldsetProps): JSX.Element {
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="text-sm font-medium text-foreground">
-        Wallets (optional)
-      </legend>
-      <p className="text-xs text-[var(--color-text-secondary)]">
-        Pick the EVM + Solana wallet this session may use. Locked once the
-        session starts; leave empty for a chat-only session.
+    <fieldset className="flex flex-col gap-2.5">
+      <legend className="vex-eyebrow">Wallets</legend>
+      <p className="text-xs text-[var(--vex-text-3)]">
+        Optional — pick the EVM + Solana wallet this session may use. Locked
+        once the session starts; leave empty for a chat-only session.
       </p>
       <div className="grid grid-cols-2 gap-2">
         <WalletSelect

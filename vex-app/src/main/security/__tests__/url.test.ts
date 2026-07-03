@@ -69,6 +69,12 @@ describe("isAllowedExternalUrl", () => {
     "docs.docker.com",
     "explorer.solana.com",
     "dexscreener.com",
+    "etherscan.io",
+    "basescan.org",
+    "arbiscan.io",
+    "bscscan.com",
+    "polygonscan.com",
+    "optimistic.etherscan.io",
     { host: "github.com", pathPrefix: "/Vex-Foundation/" },
     { host: "github.com", pathPrefix: "/electron/electron/releases" },
     {
@@ -99,6 +105,12 @@ describe("isAllowedExternalUrl", () => {
     "https://github.com/electron/electron/releases/tag/v42.0.0",
     "https://dexscreener.com/solana/8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj",
     "https://explorer.solana.com/tx/3xY2",
+    "https://etherscan.io/tx/0xabc123",
+    "https://basescan.org/tx/0xabc123",
+    "https://arbiscan.io/tx/0xabc123",
+    "https://bscscan.com/tx/0xabc123",
+    "https://polygonscan.com/tx/0xabc123",
+    "https://optimistic.etherscan.io/tx/0xabc123",
     "https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp",
     "https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp/reviews",
     "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper",
@@ -138,6 +150,16 @@ describe("isAllowedExternalUrl", () => {
     "https://notdexscreener.com/",
     "https://explorer.solana.com.evil.com/",
     "http://dexscreener.com/", // wrong scheme
+    // EVM explorers — exact-host pollution / subdomain / lookalike / scheme
+    "https://etherscan.io.evil.com/",
+    "https://api.etherscan.io/", // subdomain not allow-listed (exact host only)
+    "https://notetherscan.io/",
+    "https://basescan.org.evil.com/",
+    "https://arbiscan.io.evil.com/",
+    "https://bscscan.com.evil.com/",
+    "https://polygonscan.com.evil.com/",
+    "https://optimistic.etherscan.io.evil.com/",
+    "http://etherscan.io/tx/0xabc123", // wrong scheme
     // Chrome Web Store — exact-extension path-boundary regression
     "https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp-malicious",
     "https://chromewebstore.google.com/detail/x-auth-helper-clone/igpkhkjmpdecacocghpgkghdcmcmpfhp",

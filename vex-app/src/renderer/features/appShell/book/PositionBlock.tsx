@@ -14,6 +14,14 @@
  * and the top token holdings (capped, remainder noted). Loading / error /
  * empty (no wallets) states are boxless lines on the same register.
  *
+ * Token rows that would print `$0.00` (|USD| below formatUsd's 2-decimal
+ * rounding threshold) are hidden — the cap and "+N more" count only rows
+ * worth showing. Total/snapshot/PnL still reflect the FULL portfolio.
+ *
+ * `hero` = the BOOK column's single dominant section. The de-boxed column has
+ * no tile chrome to strengthen, so hero presence lives in CONTENT: the total
+ * figure scales up to the giant Archivo treatment (27px vs 22px).
+ *
  * Signal Tape language: surface/hairline/text trio; blue ONLY on the live
  * total, semantic up/down on the PnL; `tabular-nums` on every figure.
  */
@@ -29,6 +37,18 @@ import { BookBlock } from "./BookBlock.js";
 
 /** Visible token rows before the "+N more" tail. */
 const TOKENS_VISIBLE = 8;
+
+/**
+ * Smallest |USD| that `formatUsd` still renders as a non-zero figure:
+ * `(0.005).toFixed(2) === "0.01"` while anything smaller rounds to `"0.00"`.
+ * Rows below this would print a meaningless `$0.00` line, so they are hidden.
+ */
+const MIN_DISPLAY_USD = 0.005;
+
+/** True when the row's USD figure would display as something other than $0.00. */
+function hasDisplayableBalance(token: PositionTokenDto): boolean {
+  return Math.abs(token.balanceUsd) >= MIN_DISPLAY_USD;
+}
 
 export function PositionBlock({
   activeSessionId,
@@ -46,7 +66,7 @@ export function PositionBlock({
 
   if (query.isLoading) {
     return (
-      <BookBlock title={title} hero={hero}>
+      <BookBlock title={title}>
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
           Loading…
         </p>
@@ -56,7 +76,7 @@ export function PositionBlock({
 
   if ((result !== undefined && !result.ok) || query.isError) {
     return (
-      <BookBlock title={title} hero={hero}>
+      <BookBlock title={title}>
         <p className="text-[11px] text-[var(--vex-warn-text)]">
           Couldn&apos;t load your portfolio.
         </p>
@@ -66,7 +86,7 @@ export function PositionBlock({
 
   if (portfolio === null || portfolio.walletCount === 0) {
     return (
-      <BookBlock title={title} hero={hero}>
+      <BookBlock title={title}>
         <p className="text-[11px] text-[var(--vex-text-3)]">
           {isSession
             ? "No wallets in this session."
@@ -79,24 +99,27 @@ export function PositionBlock({
   return (
     <BookBlock
       title={title}
-      hero={hero}
       trailing={`${portfolio.walletCount} ${
         portfolio.walletCount === 1 ? "wallet" : "wallets"
       }`}
     >
-      <PositionBody portfolio={portfolio} />
+      <PositionBody portfolio={portfolio} hero={hero} />
     </BookBlock>
   );
 }
 
 function PositionBody({
   portfolio,
+  hero,
 }: {
   readonly portfolio: PortfolioDto;
+  readonly hero: boolean;
 }): JSX.Element {
   const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev, tokens } = portfolio;
-  const visible = tokens.slice(0, TOKENS_VISIBLE);
-  const remainder = tokens.length - visible.length;
+  // Cap and "+N more" count only displayable rows; totals keep the full set.
+  const displayable = tokens.filter(hasDisplayableBalance);
+  const visible = displayable.slice(0, TOKENS_VISIBLE);
+  const remainder = displayable.length - visible.length;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -104,6 +127,7 @@ function PositionBody({
         liveTotalUsd={liveTotalUsd}
         snapshotTotalUsd={snapshotTotalUsd}
         pnlVsPrev={pnlVsPrev}
+        hero={hero}
       />
       {visible.length > 0 ? (
         // Landing .ws-stat rows: hairline-separated, key muted / value white.
@@ -112,6 +136,12 @@ function PositionBody({
             <TokenRow key={tokenKey(token)} token={token} />
           ))}
         </ul>
+      ) : tokens.length > 0 ? (
+        // Wallet HAS tokens but every row rounds to $0.00 — say so instead
+        // of leaving an unexplained gap under the total.
+        <p className="font-mono text-[11px] text-[var(--vex-text-3)]">
+          No priced balances.
+        </p>
       ) : (
         <p className="text-[11px] text-[var(--vex-text-3)]">
           No token balances.
@@ -130,19 +160,26 @@ function TotalRow({
   liveTotalUsd,
   snapshotTotalUsd,
   pnlVsPrev,
+  hero,
 }: {
   readonly liveTotalUsd: number;
   readonly snapshotTotalUsd: number | null;
   readonly pnlVsPrev: number | null;
+  readonly hero: boolean;
 }): JSX.Element {
   // Blue is rationed to the single live-total figure — the one number the
   // panel is built around. Everything else stays on the muted text trio.
+  // Hero = the landing display treatment: giant Archivo 800, tight-tracked.
   return (
     <div className="flex flex-col gap-0.5">
       <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
         Total
       </span>
-      <span className="font-display text-[24px] font-bold leading-[1.1] tracking-[-0.02em] tabular-nums text-[var(--vex-accent-text)]">
+      <span
+        className={`font-display font-extrabold leading-[1.05] tracking-[-0.02em] tabular-nums text-[var(--vex-accent-text)] ${
+          hero ? "text-[27px]" : "text-[22px]"
+        }`}
+      >
         {formatUsd(liveTotalUsd)}
       </span>
       {snapshotTotalUsd !== null ? (
@@ -169,7 +206,7 @@ function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element 
     ? token.symbol
     : "—";
   return (
-    <li className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1 last:border-b-0">
+    <li className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0">
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)]">
         {symbol}
       </span>

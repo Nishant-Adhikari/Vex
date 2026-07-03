@@ -1,35 +1,28 @@
 /**
- * One BOOK panel block — a TILE (raised card) with a mono instrument header.
- * Shared chrome for MOVES / RUNTIME / SESSION / POSITION. Tonal layering, not
- * thick borders: surface-2 over the panel's surface-1, hairline edge, no
- * resting glow. One tile (POSITION) is the `hero`; the rest defer to it — the
- * prominence comes from content, never equal-weight competition.
+ * One BOOK panel section — the landing right-workspace-column grammar
+ * (.ws-col): a continuous editorial column, NOT a boxed tile. No rounded
+ * border, no tile background; separation is a single border-t hairline
+ * between sections (the first section carries none). Header row = eyebrow
+ * title + optional trailing datum; the body renders directly beneath.
+ * Shared chrome for POSITION / MOVES / RUNTIME / SESSION. Prominence comes
+ * from content (POSITION's giant total figure), never from competing frames.
  */
 
 import type { JSX, ReactNode } from "react";
-import { cn } from "../../../lib/utils.js";
 
 export function BookBlock({
   title,
   trailing,
-  hero = false,
   children,
 }: {
   readonly title: string;
   /** Optional right-aligned header datum (e.g. a count or total). */
   readonly trailing?: ReactNode;
-  /** The single dominant tile (POSITION): a slightly stronger hairline. */
-  readonly hero?: boolean;
   readonly children: ReactNode;
 }): JSX.Element {
   return (
-    <section
-      className={cn(
-        "rounded-lg border bg-[var(--vex-surface-2)] px-4 py-3",
-        hero ? "border-[var(--vex-line-strong)]" : "border-[var(--vex-line)]",
-      )}
-    >
-      <div className="mb-2 flex items-baseline justify-between gap-2">
+    <section className="border-t border-[var(--vex-line)] py-4 first:border-t-0 first:pt-1.5">
+      <div className="mb-2.5 flex items-baseline justify-between gap-2">
         {/* Landing eyebrow (mono micro-label + leading rule) — the section
          * head grammar for every labeled block. */}
         <h3 className="vex-eyebrow">{title}</h3>

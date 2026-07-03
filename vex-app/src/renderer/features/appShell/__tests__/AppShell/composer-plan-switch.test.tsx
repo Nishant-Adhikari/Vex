@@ -6,7 +6,8 @@
  *   - toggling calls useSetPlanMode with { sessionId, enabled: !current },
  *   - real `disabled` on welcome (no session) and on a mission parked for
  *     plan acceptance (the state where the engine refuses toggles),
- *   - the plan-on placeholder + welcome trust letterpress.
+ *   - the plan-on placeholder. (The welcome trust letterpress moved onto the
+ *     stage caption in phase 4 — pinned by SessionWelcomeHero.test now.)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -119,14 +120,18 @@ describe("SessionComposer plan switch", () => {
     });
   });
 
-  it("is truly disabled on welcome (no session) and renders the trust letterpress", () => {
+  it("is truly disabled on welcome (no session)", () => {
     render(<SessionComposer activeSession={null} activeSessionId={null} />);
     const sw = screen.getByRole("switch", { name: "Plan mode" }) as HTMLButtonElement;
     expect(sw.disabled).toBe(true);
     expect(sw.title).toBe("Available once a session is open");
+    // Phase 4: the trust letterpress no longer renders under the composer —
+    // the stage caption (SessionWelcomeHero) carries the trust copy.
     expect(
-      screen.getByText("Local-first · Private by default · You sign every action"),
-    ).toBeTruthy();
+      screen.queryByText(
+        "Local-first · Private by default · You sign every action",
+      ),
+    ).toBeNull();
   });
 
   it("is disabled while a mission is parked for plan acceptance", () => {

@@ -9,11 +9,19 @@
  * [data-vex-shell] scope in globals.css, separated by hairlines. The one
  * sanctioned gradient is the selection beam (.vex-select-beam).
  *
+ * Phase 5 (Signal Sky): the room's back wall is the landing's procedural
+ * WebGL dither sky (SignalSky, z-0 — no imagery), running FULL on the
+ * welcome/idle stage and DIMMED behind an active session transcript. The
+ * columns float above it: the center section carries `relative z-10`; the
+ * two side rails (SessionsList / BookPanel) are guard-whitelisted glass
+ * (--vex-glass over a blurred backdrop) so the sky reads through them.
+ *
  * Layout: sidebar rail (SessionsList) | content column under the DESK RULE
  * | optional on-demand BOOK panel (right <aside>, gated on bookOpen). The
- * DESK RULE (h-12 header) carries the live tape-state word (left) plus the
- * BOOK toggle + version stamp (right); its bottom-hairline accent tick sits
- * over the left-anchored transcript spine.
+ * DESK RULE (h-12 header) is a 3-zone grid: the live tape-state word (left),
+ * the MISSION/PLAN badge cluster (`MissionRail`, center — session view only),
+ * and the BOOK toggle (right; the version stamp lives in BookPanel). Its
+ * bottom-hairline accent tick sits over the left-anchored transcript spine.
  *
  * `data-vex-shell="true"` scopes the Protocol Desk tokens (sibling of
  * data-vex-onboarding); `data-vex-screen="appShell"` stays the e2e/test
@@ -39,6 +47,11 @@ import { SessionsLibrary } from "./SessionsLibrary.js";
 import { SessionsList } from "./SessionsList.js";
 import { SidebarIconButton } from "./SessionRows.js";
 import { MemoryPanel } from "./MemoryPanel.js";
+import { SignalSky } from "./SignalSky.js";
+
+/** Sky strength behind an active session transcript — dimmed so the tape
+ * stays the protagonist; the welcome/idle stage runs the sky at full 1. */
+const SKY_DIM_INTENSITY = 0.35;
 
 export function AppShell(): JSX.Element {
   const appShellView = useUiStore((s) => s.appShellView);
@@ -49,32 +62,56 @@ export function AppShell(): JSX.Element {
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const closeCreateSession = useUiStore((s) => s.closeCreateSession);
 
-  // Stage F responsive: below ~1360px the four columns (sidebar + chat + rail +
+  // Stage F responsive: below ~1360px the three columns (sidebar + chat +
   // BOOK) no longer fit, so auto-collapse BOOK on the narrowing edge. One-way on
   // the transition (not continuously enforced) so a user can still re-open BOOK
   // inside a narrow window — we don't fight a manual toggle.
   useAutoCollapseBook();
 
+  // Sky intensity is derived from state AppShell already subscribes to —
+  // full on welcome/idle (no active session, or a non-session sub-view),
+  // dimmed behind an active session transcript. The uniform itself eases
+  // inside SignalSky, so this can flip freely.
+  const skyIntensity =
+    activeSessionId === null || appShellView !== "session"
+      ? 1
+      : SKY_DIM_INTENSITY;
+
   return (
+    // `relative isolate`: anchors the absolutely-positioned Signal Sky and
+    // traps the shell's z-layering in one stacking context.
     <main
-      className="flex h-screen w-screen overflow-hidden bg-[var(--vex-surface-0)] text-foreground"
+      className="relative isolate flex h-screen w-screen overflow-hidden bg-[var(--vex-surface-0)] text-foreground"
       data-vex-shell="true"
       data-vex-screen="appShell"
     >
+      <SignalSky intensity={skyIntensity} />
       <SessionsList onCreate={() => openCreateSession()} />
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="relative z-10 flex min-w-0 flex-1 flex-col">
         {/* DESK RULE — the working header datum and the head of the tape: its
-         * accent tick sits over the left-anchored spine, with the live tape
-         * state on the left and the version stamp pinned right. The rule itself
-         * never moves; only the tape-state word changes. */}
-        <header className="relative flex h-12 shrink-0 items-center gap-3 border-b border-[var(--vex-line)] px-6">
+         * accent tick sits over the left-anchored spine. Three zones on a
+         * 1fr/auto/1fr grid (equal flanks keep the center truly centered):
+         * live tape state (left), MISSION/PLAN badge cluster (center), BOOK
+         * toggle (right). The rule itself never moves; only the tape-state
+         * word and the cluster's badge states change. */}
+        <header className="relative grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-[var(--vex-line)] px-6">
           <span
             aria-hidden
             className="absolute -bottom-px left-6 h-px w-6 bg-[var(--vex-accent)]"
           />
-          <DeskRuleTapeState />
-          <div className="ml-auto flex items-center gap-3">
+          <div className="flex min-w-0 items-center justify-start">
+            <DeskRuleTapeState />
+          </div>
+          {/* Center cell is a stable grid child so the BOOK toggle stays in
+           * column 3 even when the cluster gates itself away (MissionRail
+           * renders nothing for a plain agent session with plan-mode off). */}
+          <div className="flex min-w-0 items-center justify-center">
+            {appShellView === "session" ? (
+              <MissionRail activeSessionId={activeSessionId} />
+            ) : null}
+          </div>
+          <div className="flex items-center justify-end gap-3">
             {appShellView === "session" ? (
               // Collapse/expand chevron — same affordance as the sidebar's
               // PanelLeft toggle, mirrored to the right panel (PanelRight). The
@@ -107,10 +144,6 @@ export function AppShell(): JSX.Element {
           )}
         </div>
       </section>
-
-      {appShellView === "session" ? (
-        <MissionRail activeSessionId={activeSessionId} />
-      ) : null}
 
       {appShellView === "session" ? (
         // Always mounted in session view — the panel owns its collapsed state

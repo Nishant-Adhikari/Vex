@@ -61,6 +61,16 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   // so `dexscreener.com.evil.com` / `notdexscreener.com` do not match.
   "explorer.solana.com",
   "dexscreener.com",
+  // EVM block explorers: user-clicked MOVES tx deep links (etherscan family +
+  // per-chain forks). Exact-host semantics as above — subdomain/lookalike
+  // hosts do not match — and https-only is enforced upstream in
+  // `isAllowedExternalUrl`.
+  "etherscan.io",
+  "basescan.org",
+  "arbiscan.io",
+  "bscscan.com",
+  "polygonscan.com",
+  "optimistic.etherscan.io",
   // GitHub: restrict to Vex Foundation org + Electron releases (specific repos only)
   { host: "github.com", pathPrefix: "/Vex-Foundation/" },
   { host: "github.com", pathPrefix: "/electron/electron/releases" },

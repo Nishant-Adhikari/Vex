@@ -1,7 +1,8 @@
 /**
- * MissionRail — the contextual status column between chat and BOOK.
+ * MissionRail — the DESK RULE header's mission/plan badge cluster (formerly a
+ * fixed right rail between chat and BOOK).
  *
- * Pins the three behaviours the rail owns:
+ * Pins the three behaviours the cluster owns:
  *   1. Render gate — renders only for an active session that is mission-mode OR
  *      plan-enabled; a plain agent session with plan-mode off renders NOTHING
  *      (not a broken empty frame).
@@ -12,8 +13,8 @@
  *      other (two dialogs never stack).
  *
  * The API hooks are mocked (no IPC) and the heavy review modals are stubbed to
- * a marker that echoes its `open` prop, so the rail's own logic is exercised in
- * isolation. @hugeicons/react is mocked (ESM-heavy; the badge glyph is
+ * a marker that echoes its `open` prop, so the cluster's own logic is exercised
+ * in isolation. @hugeicons/react is mocked (ESM-heavy; the badge glyph is
  * irrelevant to behaviour).
  */
 
@@ -196,6 +197,11 @@ describe("MissionRail render gate", () => {
     const { container } = rail();
     expect(
       container.querySelector('[data-vex-area="mission-rail"]'),
+    ).not.toBeNull();
+    // Header-cluster a11y contract: a named group (no longer an <aside>
+    // landmark — the cluster lives inside the DESK RULE <header>).
+    expect(
+      screen.getByRole("group", { name: "Mission and plan status" }),
     ).not.toBeNull();
     // Mission badge present.
     expect(screen.getByText("Mission")).not.toBeNull();

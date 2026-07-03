@@ -1,16 +1,18 @@
 /**
- * Starter ledger rows rendered under the composer (S2 rebrand — icon chips
- * retired; hidden in mission mode, where the parent swaps in the mission
- * contract card). Presentational only: the row catalog lives in
- * `composer-quick-actions.ts`; picking a row seeds the draft via the
- * parent's `onPick`. Each row is a `.vex-sign-key` so the left accent tick
- * draws in on hover/focus via the shared signing-stroke rule in globals.css.
+ * Starter chips — ONE horizontal row of three compact ghost pills under the
+ * composer (phase 4: the full-width ledger rows collapsed into chips so the
+ * welcome stage stays cinematic instead of stacking a list). Presentational
+ * only: the catalog lives in `composer-quick-actions.ts`; picking a chip
+ * seeds the draft via the parent's `onPick`. Grammar: numbered 01–03 (the
+ * landing .prob-card num), mono 10px uppercase, hairline pill; hover/focus
+ * lifts the border to the accent. Real buttons → keyboard focusable.
+ *
+ * The row only ever renders on the welcome/idle stage (empty conversation),
+ * so it carries the stage's one-shot rise choreography at the d3 stagger
+ * (status → H1 → instrument → chips).
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import { cn } from "../../lib/utils.js";
 import { QUICK_ACTIONS } from "./composer-quick-actions.js";
 
 export function ComposerQuickActions({
@@ -19,37 +21,23 @@ export function ComposerQuickActions({
   readonly onPick: (prompt: string) => void;
 }): JSX.Element {
   return (
-    <div className="mt-4">
+    <div className="vex-rise vex-rise-d3 mt-4 flex flex-wrap items-center justify-center gap-2">
       {QUICK_ACTIONS.map((action, index) => (
         <button
           key={action.label}
           type="button"
           onClick={() => onPick(action.prompt)}
-          className={cn(
-            "vex-sign-key relative flex h-10 w-full items-center gap-3 border-b border-[var(--vex-line)] px-1 text-left transition-colors hover:bg-white/[0.03]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-            index === 0 && "border-t",
-          )}
+          className="inline-flex min-w-0 items-center gap-2.5 rounded-full border border-[var(--vex-line)] px-3.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-2)] transition-colors hover:border-[var(--vex-accent-border)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          {/* 24px accent tick — drawn in by .vex-sign-key:hover/:focus-visible. */}
+          {/* Numbered-card index — decorative accent mark, not part of the
+              accessible name. */}
           <span
             aria-hidden
-            className="vex-sign-stroke absolute left-0 top-1/2 h-px w-6 bg-[var(--vex-accent)]"
-          />
-          {/* Numbered-card grammar (landing spec-sheet "01—08"): the index is
-              the one accent mark on a resting row. */}
-          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-accent-text)]">
+            className="tabular-nums tracking-[0.2em] text-[var(--vex-accent-text)]"
+          >
             {String(index + 1).padStart(2, "0")}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
-            {action.label}
-          </span>
-          <HugeiconsIcon
-            icon={ArrowRight01Icon}
-            size={12}
-            aria-hidden
-            className="text-[var(--vex-text-3)]"
-          />
+          <span className="truncate">{action.label}</span>
         </button>
       ))}
     </div>

@@ -1,8 +1,8 @@
 /**
- * Starter ledger rows shown under an empty conversation's composer (S2
- * rebrand — the six icon chips became three numbered rows). Pure data —
- * each row seeds the composer draft with a prompt. Hidden in mission mode
- * and once the transcript has messages.
+ * Starter chips shown under an empty conversation's composer (phase 4 —
+ * three compact ghost pills in one row; labels are chip-short, prompts stay
+ * full sentences). Pure data — each chip seeds the composer draft with its
+ * prompt. Hidden in mission mode and once the transcript has messages.
  */
 
 export interface QuickAction {
@@ -12,16 +12,16 @@ export interface QuickAction {
 
 export const QUICK_ACTIONS: readonly QuickAction[] = [
   {
-    label: "Check my wallet balances and recent activity",
+    label: "Wallet balances & activity",
     prompt: "Check my wallet balances and recent activity.",
   },
   {
-    label: "Plan a swap — show me the route before anything moves",
+    label: "Plan a swap — route first",
     prompt:
       "Plan a swap for me — show me the full route and costs before anything moves.",
   },
   {
-    label: "Set up a mission that watches gas and reports daily",
+    label: "Watch gas, report daily",
     prompt: "Set up a mission that watches gas prices and reports to me daily.",
   },
 ];

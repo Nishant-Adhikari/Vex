@@ -167,20 +167,24 @@ export function SessionCreator({
        * is the Dialog base since the rebrand — only width is per-modal. */}
       <DialogContent className="max-w-xl">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="border-[var(--vex-line)]">
-            <DialogTitle>New session</DialogTitle>
-            {/* Ceremony subline — the retired welcome headline, read once
-             * per new act (where ceremony belongs). */}
-            <p className="text-xs text-[var(--vex-text-2)]">
+          <DialogHeader className="gap-2.5 border-[var(--vex-line)] py-5">
+            {/* The stamp becomes the landing eyebrow (mono micro-label +
+             * leading rule). Same <h2>, same aria-labelledby id — only the
+             * register changes; text stays "New session" (uppercased by
+             * CSS) so the accessible name is untouched. */}
+            <DialogTitle className="vex-eyebrow">New session</DialogTitle>
+            {/* Ceremony line — the retired welcome headline promoted to the
+             * display register (landing .prob-card h3: Archivo 700 19px),
+             * read once per new act (where ceremony belongs). */}
+            <p className="font-display text-[19px] font-bold leading-tight tracking-[-0.02em] text-[var(--vex-text)]">
               Your chain. Your rules. I execute.
             </p>
-            <DialogDescription className="text-[var(--vex-text-3)]">
-              Choose how the session behaves. Mode and permission are
-              locked once the session is created.
+            <DialogDescription className="text-xs text-[var(--vex-text-3)]">
+              Mode and permission are locked once the session is created.
             </DialogDescription>
           </DialogHeader>
 
-          <DialogBody className="gap-5">
+          <DialogBody className="gap-6">
             <NameField name={name} onNameChange={setName} nameRef={nameRef} />
 
             <ModeFieldset mode={mode} onModeChange={setMode} />
@@ -202,7 +206,7 @@ export function SessionCreator({
             <SubmitError submitError={submitError} />
           </DialogBody>
 
-          <DialogFooter className="border-[var(--vex-line)]">
+          <DialogFooter className="border-[var(--vex-line)] py-4">
             <Button
               type="button"
               variant="ghost"
@@ -213,8 +217,9 @@ export function SessionCreator({
               Cancel
             </Button>
             {/* THE primary action — the landing's filled cobalt pill
-             * (Button default variant: mono uppercase, bg-primary). */}
-            <Button type="submit" disabled={submitDisabled}>
+             * (Button default variant: mono uppercase, bg-primary), one
+             * step heavier than Cancel (h-10 vs h-9). */}
+            <Button type="submit" disabled={submitDisabled} className="h-10 px-6">
               {createMutation.isPending ? "Creating…" : "Create"}
             </Button>
           </DialogFooter>

@@ -77,7 +77,7 @@ export function NotaryPage({
           className="mx-auto h-12 w-12 object-contain opacity-90"
         />
         <span className="vex-eyebrow mt-3 self-center">
-          AI-Powered Clarity Engine
+          Enforce AI Trades · Prove Every Action
         </span>
 
         {/* PLINTH RULE — the intro's plinth carried forward, 24px accent
@@ -119,7 +119,7 @@ export function NotaryPage({
       <div className="pointer-events-none absolute bottom-7 left-10 flex flex-col gap-2 text-[var(--color-text-muted)]">
         <span aria-hidden className="vex-barcode h-2.5 w-16 opacity-30" />
         <span className="font-mono text-[10px] uppercase tracking-[0.4em] opacity-60">
-          Clarity · Focus · Understand · Evolve
+          Models Reason · Runtimes Enforce · Chains Prove
         </span>
       </div>
       <footer className="absolute bottom-7 right-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)] opacity-60">

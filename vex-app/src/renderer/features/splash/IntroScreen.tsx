@@ -198,7 +198,7 @@ export function IntroScreen({
           className="h-6 w-auto self-start object-contain opacity-80"
         />
         <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
-          AI-Powered Clarity Engine
+          Enforce AI Trades · Prove Every Action
         </span>
       </div>
 
@@ -210,7 +210,7 @@ export function IntroScreen({
       {/* MICROCOPY — brand tetrad from the vex-theme boards, bottom-left. */}
       <div className="pointer-events-none absolute bottom-8 left-10">
         <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-60">
-          Clarity · Focus · Understand · Evolve
+          Models Reason · Runtimes Enforce · Chains Prove
         </span>
       </div>
 

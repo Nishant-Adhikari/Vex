@@ -59,7 +59,6 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   Shield02Icon: "Shield02Icon",
   SparklesIcon: "SparklesIcon",
   StarIcon: "StarIcon",
-  StopCircleIcon: "StopCircleIcon",
   Target02Icon: "Target02Icon",
   Wallet01Icon: "Wallet01Icon",
   ZapIcon: "ZapIcon",
@@ -303,6 +302,16 @@ describe("AppShell", () => {
 
     expect(screen.getAllByText("Arbitrum LP Rebalance").length).toBeGreaterThan(0);
     expect(screen.queryByText("Portfolio Check")).toBeNull();
+  });
+
+  it("mounts the Signal Sky background layer", () => {
+    const view = renderShell();
+
+    // jsdom has no WebGL, so the sky renders its static-gradient fallback —
+    // either selector proves the z-0 layer is mounted behind the columns.
+    expect(
+      view.container.querySelector("[data-vex-sky], [data-vex-sky-fallback]"),
+    ).not.toBeNull();
   });
 
   it("collapses and expands the glass sidebar", async () => {

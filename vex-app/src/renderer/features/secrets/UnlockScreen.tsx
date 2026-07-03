@@ -1,23 +1,25 @@
 /**
- * UnlockScreen — master-password re-prompt shown when the vault is
- * configured but locked (typical cause: app restart after onboarding).
+ * UnlockScreen — THE GATE. Master-password re-prompt shown when the
+ * vault is configured but locked (typical cause: app restart after
+ * onboarding).
  *
- * Countersign/NOTARY visual identity, shared with the rest of the
- * onboarding flow: near-black `--vex-onboarding-bg` canvas, top-left
- * hallmark + "VEX UNLOCK" chip, shared bottom corner chrome (tetrad +
- * version), central hairline document panel with header (lock icon +
- * mono title + description) + body (form with master password input +
- * error/throttle + submit).
+ * Redesigned as a full-canvas hero-dark moment in the landing register
+ * (projectvex.ai): no floating card — the whole viewport is the gate.
+ *   - Canvas: onboarding ink + a faint deep-cobalt dawn scrim at the top
+ *     edge (the landing hero scrim, whisper strength), the landing hero's
+ *     64px hairline grid under a radial mask, then the machine artifacts
+ *     (.vex-scanlines + .vex-noise) — all aria-hidden paint layers.
+ *   - Center column: white wordmark → centered eyebrow "MASTER VAULT ·
+ *     SEALED" → Archivo display headline → one-line subline → the form.
+ *   - Form: mono micro-label (landing .wl-form grammar), wide h-11
+ *     password field with show/hide, a signature rail under the field
+ *     that runs the .vex-sign-stroke ink loop ONLY while the unlock IPC
+ *     is in flight, then a full-width filled cobalt pill.
+ *   - Corner chrome: hallmark + VEX/UNLOCK (top-left), live gate status
+ *     readout (top-right — pulses only while pending), brand tetrad +
+ *     barcode (bottom-left), version (bottom-right).
  *
- * Why inline (not extracted): every polished screen currently inlines
- * its own copy of `ShellBackdrop` + `TopChrome` + glass-panel chrome
- * (6 screens before this one — 7 after). Extracting an
- * <OnboardingShell> + <GlassPanel> primitive is a separate refactor
- * tracked outside this task; mixing it with the unlock upgrade would
- * widen the diff to 7 files and risk regressions in already-shipping
- * screens (skill §5 + Rule 7 — keep changes small and reversible).
- *
- * Functional logic (unchanged from the original Card-based version):
+ * Functional logic (unchanged from the previous version):
  *   - password ref is uncontrolled (skill §14 — secret never lands in
  *     observable React state),
  *   - PASSWORD_MIN_LENGTH client-side gate before IPC,
@@ -27,43 +29,21 @@
  *     routes back to `unlockReturnView` ("wizard" | "appShell").
  *
  * Test selectors preserved verbatim:
- *   - `data-vex-screen="unlock"` (root),
+ *   - `data-vex-screen="unlock"` + `data-vex-onboarding="true"` (root),
  *   - `data-vex-unlock-throttle="active"` (throttle alert),
  *   - `<label htmlFor="vex-unlock-password">Master password</label>`,
- *   - button text "Unlock" / "Unlocking…".
+ *   - button text "Unlock" / "Unlocking…",
+ *   - `img[src="/logo_clean.png"]` hallmark.
  */
 
 import { useEffect, useRef, useState, type FormEvent, type JSX } from "react";
 import { Button } from "../../components/ui/button.js";
-import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { PasswordField } from "../../components/common/PasswordField.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { PASSWORD_MIN_LENGTH } from "@shared/schemas/secrets.js";
 import { getErrorCopy } from "../../lib/errors/error-copy.js";
-
-/**
- * Inline lock-icon SVG. `lucide-react` is not a vex-app dependency, so
- * we render the glyph directly — avoids pulling in a 200KB icon set
- * for a single screen. Tinted with the onboarding accent so it tracks
- * the rest of the chrome.
- */
-function LockIcon(): JSX.Element {
-  return (
-    <svg
-      aria-hidden
-      className="h-5 w-5 text-[var(--vex-onboarding-accent)]"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
+import { cn } from "../../lib/utils.js";
 
 interface ThrottleState {
   readonly message: string;
@@ -105,6 +85,11 @@ export function UnlockScreen(): JSX.Element {
   const throttleRemainingSeconds = Math.ceil(throttleRemainingMs / 1000);
   const throttleActive = throttle !== null && throttleRemainingMs > 0;
   const inputsDisabled = pending || throttleActive;
+
+  // Gate readout for the top-right corner — bound to real state only:
+  // OPENING while the unlock IPC is in flight, HELD during a throttle
+  // window, SEALED at rest.
+  const gateStatus = pending ? "Opening" : throttleActive ? "Held" : "Sealed";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -152,12 +137,25 @@ export function UnlockScreen(): JSX.Element {
     <main
       data-vex-onboarding="true"
       data-vex-screen="unlock"
-      className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-[var(--vex-onboarding-bg)] px-6 py-24 text-[var(--color-text-primary)]"
+      className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-[var(--vex-onboarding-bg)] px-6 py-16 text-[var(--color-text-primary)]"
     >
-      {/* TOP CHROME — hallmark + VEX wordmark + "UNLOCK" tag (left);
-        shared corner chrome (tetrad + version) at the bottom, matching
-        every other Countersign/NOTARY page. Pointer-events-none so the
-        panel keeps the focus surface to itself. */}
+      {/* CANVAS — hero-dark register, back to front: a deep-cobalt dawn
+        scrim on the top edge (the landing hero scrim at whisper
+        strength), the hero's 64px hairline grid dissolved by a radial
+        mask, then scanlines + grain. Paint layers only. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_60%_at_50%_-12%,color-mix(in_oklab,var(--color-accent-deep)_35%,transparent),transparent_70%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(255,255,255,0.06)_0_1px,transparent_1px_64px),repeating-linear-gradient(90deg,rgba(255,255,255,0.06)_0_1px,transparent_1px_64px)] opacity-70 [mask-image:radial-gradient(120%_90%_at_50%_38%,black_0%,transparent_74%)]"
+      />
+      <div aria-hidden className="vex-scanlines absolute inset-0" />
+      <div aria-hidden className="vex-noise absolute inset-0" />
+
+      {/* CORNER CHROME — four quiet instruments framing the gate.
+        Top-left: hallmark + wordmark tag (shared onboarding voice). */}
       <div className="pointer-events-none absolute left-6 top-6 z-10 flex items-center gap-3">
         <img
           src="/logo_clean.png"
@@ -175,80 +173,153 @@ export function UnlockScreen(): JSX.Element {
           </span>
         </div>
       </div>
+
+      {/* Top-right: live gate readout. The dot pulses ONLY while the
+        unlock IPC is in flight (motion law: loops bind to real work). */}
+      <div className="pointer-events-none absolute right-6 top-8 z-10 flex items-center gap-2.5">
+        <span
+          aria-hidden
+          className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            pending
+              ? "vex-pulse-dot bg-[var(--color-accent-primary)]"
+              : throttleActive
+                ? "bg-[var(--color-warning)]"
+                : "bg-[var(--color-text-muted)]",
+          )}
+        />
+        <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
+          Gate · {gateStatus}
+        </span>
+      </div>
+
+      {/* Bottom-left: barcode artifact + brand tetrad. */}
       <div className="pointer-events-none absolute bottom-7 left-10 z-10 flex flex-col gap-2 text-[var(--color-text-muted)]">
         <span aria-hidden className="vex-barcode h-2.5 w-16 opacity-30" />
         <span className="font-mono text-[10px] uppercase tracking-[0.4em] opacity-60">
           Clarity · Focus · Understand · Evolve
         </span>
       </div>
+
+      {/* Bottom-right: version. */}
       <span className="pointer-events-none absolute bottom-7 right-10 z-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)] opacity-60">
         v{__VEX_APP_VERSION__}
       </span>
 
-      {/* DOCUMENT PANEL — NOTARY material: hairline-bounded sheet one
-        tonal step above the canvas. No glass, no photo. */}
+      {/* THE GATE COLUMN — wordmark, sealed eyebrow, display headline,
+        subline, form. No panel: the canvas itself is the surface. */}
       <section
         aria-labelledby="vex-unlock-title"
-        className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]"
+        className="relative z-10 flex w-full max-w-[440px] flex-col"
       >
-        <header className="flex items-start gap-3 border-b border-white/[0.06] px-6 py-5">
-          <span
-            aria-hidden
-            className="flex h-10 w-10 shrink-0 items-center justify-center"
-          >
-            <LockIcon />
+        <img
+          src="/vex-wordmark.png"
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="mx-auto h-11 w-auto object-contain"
+        />
+
+        {/* Eyebrow — .vex-eyebrow carries the leading rule; a mirrored
+          trailing dash (inherits currentColor + the class's 10px gap)
+          keeps the centered composition symmetric. */}
+        <div className="mt-8 flex justify-center">
+          <span className="vex-eyebrow">
+            Master Vault · Sealed
+            <span aria-hidden className="h-px w-7 bg-current opacity-70" />
           </span>
-          <div className="flex flex-col gap-1.5">
-            <h1
-              id="vex-unlock-title"
-              className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-[var(--color-text-primary)]"
-            >
-              Unlock Vex
-            </h1>
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              Enter your master password to decrypt the local vault and
-              continue.
-            </p>
-          </div>
-        </header>
+        </div>
+
+        <h1
+          id="vex-unlock-title"
+          className="mt-5 text-center font-display text-[30px] font-bold leading-none tracking-[-0.02em] text-[var(--color-text-primary)]"
+        >
+          Unlock Vex
+        </h1>
+        <p className="mt-3 text-center text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+          Your master password decrypts the local vault on this machine.
+        </p>
 
         <form
           onSubmit={(event) => {
             void onSubmit(event);
           }}
-          className="flex flex-col gap-4 px-6 py-5"
+          className="mt-9 flex flex-col gap-4"
         >
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="vex-unlock-password">Master password</Label>
-            <Input
+          <div className="flex flex-col gap-2.5">
+            <Label
+              htmlFor="vex-unlock-password"
+              className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-text-muted)]"
+            >
+              Master password
+            </Label>
+            <PasswordField
               id="vex-unlock-password"
               ref={passwordRef}
-              type="password"
               autoComplete="current-password"
               autoFocus
               disabled={inputsDisabled}
+              className="[&_input]:h-11"
             />
+            {/* SIGNATURE RAIL — resting hairline under the field; while
+              the unlock IPC is in flight the cobalt ink travels it
+              (.vex-sign-stroke--signing, the shell's signing loop). */}
+            <div
+              aria-hidden
+              className="relative h-px w-full overflow-hidden bg-white/[0.06]"
+            >
+              <span
+                className={cn(
+                  "vex-sign-stroke absolute inset-0 bg-[var(--vex-onboarding-accent)]",
+                  pending && "vex-sign-stroke--signing",
+                )}
+              />
+            </div>
           </div>
+
           {throttleActive ? (
             <p
-              className="text-sm text-[var(--color-danger)]"
               role="alert"
               data-vex-unlock-throttle="active"
+              className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] px-3.5 py-2.5 text-[13px] text-[color-mix(in_oklab,var(--color-warning)_70%,white)]"
             >
-              {throttle.message} ({throttleRemainingSeconds}s)
+              {throttle.message}{" "}
+              <span className="font-mono text-xs tabular-nums">
+                ({throttleRemainingSeconds}s)
+              </span>
             </p>
           ) : error ? (
             <p
-              className="text-sm text-[var(--color-danger)]"
               role="alert"
+              className="rounded-md border border-[color-mix(in_oklab,var(--color-danger)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-danger)_10%,transparent)] px-3.5 py-2.5 text-[13px] text-[color-mix(in_oklab,var(--color-danger)_70%,white)]"
             >
               {error}
             </p>
           ) : null}
-          <Button type="submit" disabled={inputsDisabled}>
-            {pending ? "Unlocking…" : "Unlock"}
+
+          <Button
+            type="submit"
+            size="lg"
+            disabled={inputsDisabled}
+            className="w-full"
+          >
+            {pending ? (
+              "Unlocking…"
+            ) : (
+              <>
+                Unlock
+                <span aria-hidden>→</span>
+              </>
+            )}
           </Button>
         </form>
+
+        {/* SPEC LINE — hairline meta row, landing hero-meta grammar.
+          Right side reads the real return route (wizard vs desk). */}
+        <div className="mt-7 flex items-center justify-between border-t border-white/[0.06] pt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+          <span>Store · Local vault</span>
+          <span>Resumes · {returnView === "wizard" ? "Setup" : "Desk"}</span>
+        </div>
       </section>
     </main>
   );

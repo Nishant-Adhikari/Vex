@@ -103,7 +103,24 @@ interface WhitelistEntry {
   readonly reason: string;
 }
 
-const WHITELIST: readonly WhitelistEntry[] = [];
+const WHITELIST: readonly WhitelistEntry[] = [
+  {
+    file: "features/appShell/SessionsList.tsx",
+    pattern: "backdrop-blur (glass)",
+    reason:
+      "User-sanctioned glass rail: the sessions sidebar floats as translucent " +
+      "ink (--vex-glass) with backdrop-blur over the Signal Sky WebGL canvas. " +
+      "Glass is allowed ONLY on the two side rails.",
+  },
+  {
+    file: "features/appShell/BookPanel.tsx",
+    pattern: "backdrop-blur (glass)",
+    reason:
+      "User-sanctioned glass rail: the BOOK panel floats as translucent ink " +
+      "(--vex-glass) with backdrop-blur over the Signal Sky WebGL canvas. " +
+      "Glass is allowed ONLY on the two side rails.",
+  },
+];
 
 interface Violation {
   readonly file: string;

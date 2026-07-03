@@ -1,69 +1,80 @@
 /**
- * Welcome hero — the register head of THE PROTOCOL DESK (S2 rebrand).
+ * Welcome stage — the landing hero (projectvex.ai), recomposed CENTERED over
+ * the Signal Sky (phase 5).
  *
- * Composer-hero layout: hallmark → status overline → plinth rule → H1 →
- * subline. The parent (`SessionPanel`) centers the column; the composer +
- * trust line + starter rows render below it. Pure presentation: no session
- * state, no draft state, no composer coupling. The old poster headline
- * ("Your chain. Your rules. I execute.") retired into the SessionCreator
- * ceremony subline; the trust badges became the composer's letterpress line.
+ * The stage's WOW is the procedural WebGL dither sky a sibling component
+ * mounts BEHIND the session panel — this component paints NO canvas, NO
+ * imagery and NO scrim panel of its own. It contributes exactly three
+ * layers; the absolute ones resolve against the panel's relative frame
+ * (`SessionPanel` sets it):
+ *
+ *   1. VIGNETTE (absolute, decorative): ONE soft bottom gradient to ink
+ *      (rgba of --vex-surface-0) so the instrument and chips stay legible
+ *      over the sky's brightest flecks.
+ *   2. HERO COLUMN (in flow; `mt-auto` bottom-anchors it inside the parent's
+ *      flex-1 zone, directly above the docked composer): the landing
+ *      .hero-inner grammar — centered mono status line with the live dot,
+ *      then the H1 as the ONLY display statement, wearing the landing
+ *      barcode flicker (.vex-title-barcode). The H1 "What should I execute?"
+ *      is test-pinned: a REAL heading with this exact copy. Nothing else
+ *      renders above the composer.
+ *   3. BOTTOM ROW (absolute at the stage's bottom edge — the parent's
+ *      trailing spacer keeps this band clear): the landing .hero-bottom —
+ *      barcode strip + LOCAL-FIRST CAPITAL RUNTIME left, YOU SIGN EVERY
+ *      ACTION right. The ONLY other copy on the stage.
+ *
+ * Load-in: the one-shot .vex-rise choreography (status → d1 H1; the parent
+ * staggers the instrument at d2 and the chips row at d3; the bottom row
+ * closes at d4). Mount-once — the classes never re-toggle on re-render.
+ * Pure presentation: no session state, no composer coupling.
  */
 
 import type { JSX } from "react";
-import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
 
 export function SessionWelcomeHero(): JSX.Element {
   return (
     <>
-      {/* HALLMARK — same mark language as onboarding's NotaryPage, no glow. */}
-      <img
-        src="/logo_clean.png"
-        alt=""
-        draggable={false}
-        className="mx-auto h-14 w-auto opacity-90"
+      {/* VIGNETTE — the single gradient layer on the stage: melts the sky
+       * into ink at the bottom so the composer group always reads. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[46%] bg-[linear-gradient(180deg,transparent_0%,rgba(10,13,24,0.42)_52%,rgba(10,13,24,0.88)_100%)]"
       />
 
-      {/* OVERLINE — static register status. The hex matrix is aria-hidden
-       * here because it is decoration, not machine work (DotMatrix only
-       * animates for verifiable in-flight work). */}
-      <div className="mt-6 flex items-center justify-center gap-2.5">
-        <span aria-hidden>
-          <DotmHex3
-            size={16}
-            dotSize={2.5}
-            color="var(--vex-accent)"
-            animated={false}
+      {/* HERO COLUMN — the landing .hero-inner, centered. `mt-auto`
+       * bottom-anchors it in the parent's flex-1 zone so it sits directly
+       * above the docked composer; the parent's trailing spacer balances
+       * the column so hero + instrument center vertically as one group. */}
+      <div className="relative z-10 mt-auto flex w-full flex-col items-center px-8 pb-4 text-center">
+        <span className="vex-eyebrow vex-rise">
+          {/* Live dot — STATIC accent ink: no runtime state reaches this
+           * component and .vex-pulse-dot stays reserved for verifiable
+           * live/pending states. */}
+          <span
+            aria-hidden
+            className="h-[7px] w-[7px] shrink-0 rounded-full bg-[var(--vex-accent)]"
           />
+          Register open
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.35em] text-[var(--vex-text-3)]">
-          Register open — no entries today
-        </span>
+        {/* H1 — the only display statement on the stage. Pinned by shell
+         * tests: stays a REAL heading with this exact copy. */}
+        <h1 className="vex-title-barcode vex-rise vex-rise-d1 mt-6 text-center font-display text-[clamp(44px,6vw,72px)] font-black leading-[0.95] tracking-[-0.025em] text-[var(--vex-text)]">
+          What should I execute?
+        </h1>
       </div>
 
-      {/* PLINTH RULE — onboarding's plinth carried forward: full hairline
-       * with a 24px accent tick centered under the idle mark. */}
-      <div aria-hidden className="relative mt-4 h-px w-full bg-[var(--vex-line)]">
-        <span className="absolute -top-px left-1/2 h-px w-6 -translate-x-1/2 bg-[var(--vex-accent)]" />
-      </div>
-
-      {/* Centered idle landing — the register head sits in the middle of the
-       * screen (the left-anchored tape only applies once a session is live).
-       * Display voice: Archivo bold with the landing's tight tracking. */}
-      <h1 className="mt-7 text-center font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-foreground">
-        What should I execute?
-      </h1>
-
-      <p className="mx-auto mt-3 max-w-[52ch] text-center text-sm leading-relaxed text-foreground">
-        Type below. Everything runs locally — on-chain actions always wait for
-        your signature.
-      </p>
-
-      {/* BARCODE STRIP — the landing's print-shop artifact under the subline.
-       * currentColor-driven bars at whisper opacity: chrome, never content. */}
-      <div className="mt-6 flex flex-col items-center gap-2 text-[var(--vex-text-3)]">
-        <div aria-hidden className="vex-barcode h-3 w-20 opacity-40" />
-        <span className="font-mono text-[9px] uppercase tracking-[0.3em]">
-          Local-first capital runtime
+      {/* BOTTOM ROW — the landing .hero-bottom at the stage's bottom edge.
+       * Copy-only (pointer-events-none keeps the band click-transparent). */}
+      <div className="vex-rise vex-rise-d4 pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-6 px-8 pb-5 sm:px-12">
+        <span className="flex min-w-0 items-center gap-3 font-mono text-[9px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
+          <span
+            aria-hidden
+            className="vex-barcode h-3 w-24 shrink-0 opacity-40"
+          />
+          <span className="truncate">LOCAL-FIRST CAPITAL RUNTIME</span>
+        </span>
+        <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
+          YOU SIGN EVERY ACTION
         </span>
       </div>
     </>

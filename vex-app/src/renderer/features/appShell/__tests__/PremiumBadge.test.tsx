@@ -1,10 +1,12 @@
 /**
  * PremiumBadge — state → caption/aria/tone mapping + shimmer gating.
  *
- * The badge is the MISSION RAIL's clickable status key (not the presentational
- * `Stamp`): a real <button> with aria-haspopup="dialog". These tests pin the
- * caption per state, that the shimmer class is applied ONLY in `ready` (and
- * only when opted in), and that the click handler + aria-expanded work.
+ * The badge is the DESK RULE header cluster's clickable status key (not the
+ * presentational `Stamp`): a real <button> with aria-haspopup="dialog". These
+ * tests pin the caption per state, that the shimmer class is applied ONLY in
+ * `ready` (and only when opted in), and that the click handler + aria-expanded
+ * work — for both the full (dialog-header) geometry and the `compact` header
+ * pill the cluster renders.
  *
  * @hugeicons/react is mocked to render nothing (the icon lib is ESM + heavy);
  * the badge's behavior is independent of the glyph.
@@ -114,6 +116,55 @@ describe("PremiumBadge", () => {
     // shimmer opted in but not ready → no class.
     rerender(
       <PremiumBadge
+        label="Mission"
+        state="accepted"
+        shimmer
+        onClick={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button").classList.contains("vex-badge--shimmer"),
+    ).toBe(false);
+  });
+});
+
+describe("PremiumBadge compact variant (DESK RULE header pill)", () => {
+  it("keeps the dialog-popup semantics and the descriptive accessible name", () => {
+    render(
+      <PremiumBadge compact label="Mission" state="ready" onClick={() => {}} />,
+    );
+    const btn = screen.getByRole("button");
+    expect(btn.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(btn.getAttribute("aria-label")).toMatch(/Mission ready/i);
+    expect(btn.getAttribute("data-vex-state")).toBe("ready");
+    expect(btn.getAttribute("data-vex-action")).toBe("open-mission-detail");
+  });
+
+  it("renders label + caption on the single-line pill", () => {
+    render(
+      <PremiumBadge compact label="Plan" state="accepted" onClick={() => {}} />,
+    );
+    expect(screen.getByText("Plan")).not.toBeNull();
+    expect(screen.getByText(/Accepted/i)).not.toBeNull();
+  });
+
+  it("honours the shimmer contract (ready + opted-in only)", () => {
+    const { rerender } = render(
+      <PremiumBadge
+        compact
+        label="Mission"
+        state="ready"
+        shimmer
+        onClick={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button").classList.contains("vex-badge--shimmer"),
+    ).toBe(true);
+
+    rerender(
+      <PremiumBadge
+        compact
         label="Mission"
         state="accepted"
         shimmer

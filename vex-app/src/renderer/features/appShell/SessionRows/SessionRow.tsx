@@ -1,12 +1,13 @@
 /**
- * A single ledger row (56px): mode glyph, two text lines (title + time/
- * activity, subtitle + exception stamps), hairline-separated — no card box,
- * no resting glow. Selection is the landing's workspace beam
+ * A single dense ledger row (48px): mode glyph, two text lines (title +
+ * time/activity, subtitle + exception stamps), hairline-separated — no card
+ * box, no resting glow. Selection is the landing's workspace beam
  * (`.vex-select-beam`, globals.css): a cobalt gradient sweep with a white
- * ledger bar on the left edge, text lifted to white. Mode/permission badge
- * pairs are gone: the glyph already says mode, and stamps appear only when
- * state deviates from the default (restricted / live / paused — terminal
- * sessions earn silence).
+ * ledger bar on the left edge, text lifted to white (stamps flip to
+ * white-ink via `onBeam` so they stay legible on the gradient).
+ * Mode/permission badge pairs are gone: the glyph already says mode, and
+ * stamps appear only when state deviates from the default (restricted /
+ * live / paused — terminal sessions earn silence).
  *
  * The row-select control and the row actions (trash + pin) are SIBLINGS
  * inside a non-interactive wrapper — never nested buttons — so Enter/Space
@@ -80,7 +81,7 @@ export function SessionRow({
           selected ? "vex-select-beam text-white" : "hover:bg-white/[0.035]",
           // Fixed height drives the fit-to-height packer; see
           // SIDEBAR_ROW_HEIGHT_PX in sessionListLayout.ts.
-          sidebarOpen ? "h-14" : "h-11",
+          sidebarOpen ? "h-12" : "h-11",
         )}
       >
         <button
@@ -94,13 +95,13 @@ export function SessionRow({
             // absolutely positioned Trash + Pin sibling cluster so the
             // title flex never paints under them. Collapsed sidebar
             // hides both actions, so no reservation.
-            sidebarOpen ? "items-center gap-3 px-3 pr-14" : "items-center justify-center px-0",
+            sidebarOpen ? "items-center gap-2.5 px-2.5 pr-14" : "items-center justify-center px-0",
           )}
           title={sidebarOpen ? undefined : title}
         >
           <span
             className={cn(
-              "relative flex h-8 w-8 shrink-0 items-center justify-center",
+              "relative flex h-7 w-7 shrink-0 items-center justify-center",
               selected ? "text-white" : "text-[var(--vex-text-3)]",
             )}
           >
@@ -155,23 +156,25 @@ export function SessionRow({
                   </span>
                 )}
               </span>
-              <span className="mt-0.5 flex items-center gap-2">
+              <span className="mt-0.5 flex items-center gap-1.5">
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate text-[11px]",
-                    selected ? "text-white/80" : "text-[var(--vex-text-2)]",
+                    // Metadata line: text-3 at rest (quiet ledger), lifted
+                    // to white/85 on the beam so it stays legible on cobalt.
+                    selected ? "text-white/85" : "text-[var(--vex-text-3)]",
                   )}
                 >
                   {subtitle}
                 </span>
                 {row.permission !== "full" ? (
-                  <Stamp tone="warn">restricted</Stamp>
+                  <Stamp tone="warn" onBeam={selected}>restricted</Stamp>
                 ) : null}
                 {activity?.tone === "active" ? (
-                  <Stamp tone="accent">live</Stamp>
+                  <Stamp tone="accent" onBeam={selected}>live</Stamp>
                 ) : null}
                 {activity?.tone === "paused" ? (
-                  <Stamp tone="warn">paused</Stamp>
+                  <Stamp tone="warn" onBeam={selected}>paused</Stamp>
                 ) : null}
               </span>
             </span>

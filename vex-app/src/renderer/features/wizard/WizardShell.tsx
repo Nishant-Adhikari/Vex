@@ -125,7 +125,7 @@ function TopChrome(): JSX.Element {
       </div>
       <div className="pointer-events-none absolute bottom-7 left-10 z-10">
         <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-60">
-          Clarity · Focus · Understand · Evolve
+          Models Reason · Runtimes Enforce · Chains Prove
         </span>
       </div>
       <span className="pointer-events-none absolute bottom-7 right-10 z-10 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--color-text-muted)] opacity-60">

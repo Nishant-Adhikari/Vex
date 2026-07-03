@@ -63,6 +63,7 @@ beforeEach(() => {
       retryable: true,
       userActionable: true,
       redacted: true,
+      correlationId: "test-correlation",
     },
   });
   mockSetCurrentView.mockReset();
@@ -153,6 +154,7 @@ describe("UnlockScreen", () => {
         retryable: true,
         userActionable: true,
         redacted: true,
+        correlationId: "test-correlation",
       },
     });
     const view = renderUnlockScreen();
@@ -189,6 +191,7 @@ describe("UnlockScreen", () => {
         retryable: true,
         userActionable: true,
         redacted: true,
+        correlationId: "test-correlation",
         retryAfterMs: 8000,
       },
     });
@@ -224,6 +227,7 @@ describe("UnlockScreen", () => {
         retryable: true,
         userActionable: true,
         redacted: true,
+        correlationId: "test-correlation",
         // 1.2s is short enough for a real-timer wait to stay fast without
         // racing the test runner's default 5s timeout.
         retryAfterMs: 1200,

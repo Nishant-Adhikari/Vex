@@ -156,7 +156,10 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
   return (
     <aside
       className={cn(
-        "relative z-10 flex h-full shrink-0 flex-col border-r border-[var(--vex-line)] bg-[var(--vex-surface-1)] transition-[width] duration-200",
+        // Glass rail (Signal Sky): translucent ink floating over the WebGL
+        // sky behind the shell — the ONLY sanctioned backdrop-blur surface
+        // besides BookPanel (guard-whitelisted).
+        "relative z-10 flex h-full shrink-0 flex-col border-r border-[var(--vex-line)] bg-[var(--vex-glass)] backdrop-blur-xl transition-[width] duration-200",
         sidebarOpen ? "w-[296px]" : "w-[72px]",
       )}
       data-vex-area="sessions-sidebar"
@@ -164,7 +167,9 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
     >
       <header
         className={cn(
-          "flex h-12 shrink-0 items-center border-b border-[var(--vex-line)]",
+          // glass-strong anchors the brand strip: extra ink keeps the VEX
+          // wordmark solid where the sky is brightest (top of the canvas).
+          "flex h-12 shrink-0 items-center border-b border-[var(--vex-line)] bg-[var(--vex-glass-strong)]",
           sidebarOpen ? "justify-between px-4" : "justify-center px-2",
         )}
       >
@@ -192,11 +197,13 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
       </header>
 
       <div className={cn("p-3", !sidebarOpen && "px-2")}>
-        {/* The signing key: a recessed slot (canvas bg) sunk into a full-width
-         * plinth hairline that passes visibly behind it — the onboarding
-         * KeyButton DNA. The ink stroke draws on hover/focus (globals.css
-         * owns the draw) and loops while SessionCreator's mutation is in
-         * flight; the glint is the one-shot success light. */}
+        {/* The signing key: the sidebar's primary CTA — the landing's filled
+         * cobalt pill (mono uppercase micro-type, radius 100px) sunk into a
+         * full-width plinth hairline that passes visibly behind it. The
+         * signing mechanics are unchanged: the ink stroke draws on
+         * hover/focus (globals.css owns the draw) and loops while
+         * SessionCreator's mutation is in flight; the glint is the one-shot
+         * success light. Both flip to white ink on the cobalt fill. */}
         <div className="relative">
           <span
             aria-hidden
@@ -219,22 +226,20 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
             onClick={onCreate}
             aria-label="New session"
             className={cn(
-              // Pill silhouette — the landing button language (radius 100px);
-              // the signing stroke + glint mechanics are unchanged.
-              "vex-sign-key relative flex h-11 items-center justify-center gap-2 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[13px] font-medium text-[var(--vex-text-2)] transition-colors duration-150",
-              "hover:border-[var(--vex-accent-border)] hover:text-[var(--vex-accent-text)]",
-              "active:scale-[0.99] active:border-[var(--vex-accent-border-strong)] active:bg-[var(--vex-accent-fill-8)]",
+              "vex-sign-key relative flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-white transition-colors duration-150",
+              "hover:bg-[var(--vex-accent-hover)]",
+              "active:scale-[0.99] active:bg-[var(--vex-accent-active)]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
-              sidebarOpen ? "w-full px-3" : "mx-auto w-11",
+              sidebarOpen ? "w-full px-4" : "mx-auto w-10",
             )}
           >
-            <HugeiconsIcon icon={Add01Icon} size={16} aria-hidden />
+            <HugeiconsIcon icon={Add01Icon} size={15} aria-hidden />
             {sidebarOpen ? <span>New session</span> : null}
             <span
               aria-hidden
               className={cn(
-                "vex-sign-stroke absolute bottom-[7px] h-[1.5px] rounded-full bg-[var(--vex-accent)]",
-                sidebarOpen ? "inset-x-3.5" : "inset-x-2.5",
+                "vex-sign-stroke absolute bottom-[6px] h-[1.5px] rounded-full bg-white/90",
+                sidebarOpen ? "inset-x-4" : "inset-x-3",
                 signingState === "signing" && "vex-sign-stroke--signing",
               )}
             />
@@ -242,7 +247,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
               <span
                 aria-hidden
                 onAnimationEnd={() => setSigningState("idle")}
-                className="vex-intro-glint absolute bottom-[4px] right-3 h-1.5 w-1.5 rounded-full bg-[var(--vex-accent-text)]"
+                className="vex-intro-glint absolute bottom-[3px] right-4 h-1.5 w-1.5 rounded-full bg-white"
               />
             ) : null}
           </button>
@@ -265,7 +270,9 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
                 aria-selected={active}
                 onClick={() => setSessionModeFilter(filter.value)}
                 className={cn(
-                  "relative pb-2 pt-1 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+                  // Landing micro-label grammar: mono 9.5px, wide-tracked,
+                  // accent underline carries the active state.
+                  "relative pb-2 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.2em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
                   active
                     ? "text-foreground"
                     : "text-[var(--vex-text-3)] hover:text-foreground",
@@ -326,8 +333,12 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
                 : "Open sessions library"
             }
             className={cn(
-              "flex h-9 w-full items-center font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.035] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]",
-              sidebarOpen ? "justify-between px-3" : "justify-center px-0",
+              // Registry-row micro-type: 10px/0.18em — one grammar with the
+              // Memory/Settings rows and the runtime ledger line below.
+              // Hover fill runs at 5% (not the solid-surface 3.5%) so it
+              // stays legible over the glass + sky luminance.
+              "flex h-9 w-full items-center font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]",
+              sidebarOpen ? "justify-between px-4" : "justify-center px-0",
             )}
           >
             {sidebarOpen ? (
@@ -340,9 +351,13 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         </div>
       ) : null}
 
+      {/* Footer registry: every row carries its own border-t hairline (the
+       * first one doubles as the footer's top rule), so separators stay
+       * correct when MemoryButton renders null (capability-gated).
+       * glass-strong anchors the registry rows against the sky's flecks. */}
       <footer
         className={cn(
-          "flex flex-col border-t border-[var(--vex-line)]",
+          "flex flex-col bg-[var(--vex-glass-strong)]",
           sidebarOpen ? "" : "items-stretch",
         )}
       >

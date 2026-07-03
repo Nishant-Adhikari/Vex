@@ -45,7 +45,9 @@ export function SessionGroups({
   idPrefix,
 }: SessionGroupsProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-4">
+    // gap-3 (12px) between sections — SIDEBAR_GROUP_GAP_PX must stay in
+    // lockstep (sessionListLayout.ts).
+    <div className="flex flex-col gap-3">
       {groups.map((group) => {
         if (group.rows.length === 0) return null;
         // When the sidebar is collapsed we hide the <h2>, so referring
@@ -59,11 +61,16 @@ export function SessionGroups({
             aria-label={sidebarOpen ? undefined : group.title}
           >
             {sidebarOpen ? (
+              // Landing eyebrow group header (mono micro-label + leading
+              // rule, globals.css `.vex-eyebrow`). The h2 keeps layout
+              // control (flex/h-6) and the span carries the eyebrow so the
+              // unlayered utility never fights Tailwind's display classes.
+              // h-6 (24px) + mb-1 (4px) = SIDEBAR_GROUP_HEADER_HEIGHT_PX.
               <h2
                 id={sectionId}
-                className="mb-1 flex h-7 items-center px-2 font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]"
+                className="mb-1 flex h-6 items-center px-2"
               >
-                {group.title}
+                <span className="vex-eyebrow">{group.title}</span>
               </h2>
             ) : null}
             {/* Rows are hairline-separated (border-b on each <li>), not

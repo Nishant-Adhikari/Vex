@@ -45,6 +45,8 @@ describe("move item schema (tolerant)", () => {
       valueUsd: 100,
       captureStatus: "executed",
       instrumentKey: "eth-usdc",
+      chain: "ethereum",
+      txRef: "0xabc123",
       createdAt: ISO,
       ...overrides,
     };
@@ -95,6 +97,17 @@ describe("move item schema (tolerant)", () => {
     ).toBe(true);
   });
 
+  it("accepts a null txRef (capture recorded no tx reference)", () => {
+    expect(
+      moveItemSchema.safeParse(itemFixture({ txRef: null })).success,
+    ).toBe(true);
+  });
+
+  it("rejects a missing chain (NOT NULL in the DDL)", () => {
+    const { chain: _chain, ...withoutChain } = itemFixture();
+    expect(moveItemSchema.safeParse(withoutChain).success).toBe(false);
+  });
+
   it("rejects an unknown key (strict)", () => {
     expect(
       moveItemSchema.safeParse(itemFixture({ rawResult: "0xdeadbeef" })).success,
@@ -119,6 +132,8 @@ describe("moves dto schema (array + cap)", () => {
     valueUsd: null,
     captureStatus: "filled",
     instrumentKey: null,
+    chain: "solana",
+    txRef: null,
     createdAt: ISO,
   };
 

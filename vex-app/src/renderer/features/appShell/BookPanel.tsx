@@ -6,11 +6,16 @@
  * inventory POSITION ("Portfolio"). The MISSION contract/setup lives in the
  * centre column (SessionPanel), not here — this rail is instruments only.
  *
- * The rail itself is background-free: standalone cards sit on the shell canvas
- * (surface-0) separated by a left hairline, echoing the left sidebar's bordered
- * rail. Mode is a pure derivation of `activeSessionId`: null = welcome (global),
- * else the open session (scoped). Slides in via a CSP-safe one-shot keyframe
- * (`vex-book-enter`); reduced motion collapses it to the final frame.
+ * The rail is ONE continuous editorial column of GLASS — translucent ink
+ * (--vex-glass + backdrop-blur, guard-whitelisted for exactly this file and
+ * SessionsList) floating over the Signal Sky WebGL canvas behind the shell,
+ * behind a single left hairline. Inside, the landing right-workspace-column
+ * grammar (.ws-col) holds: eyebrow section heads + border-t hairlines between
+ * sections (BookBlock owns that chrome), no boxed tiles, so the column reads
+ * as one pane of glass, not a card stack. Mode is a pure derivation of
+ * `activeSessionId`: null = welcome (global), else the open session (scoped).
+ * Slides in via a CSP-safe one-shot keyframe (`vex-book-enter`); reduced
+ * motion collapses it to the final frame.
  *
  * The panel owns its own collapse header bar (first child): the version stamp
  * (relocated from the DESK RULE) + a chevron that calls the same `toggleBook`
@@ -49,7 +54,9 @@ export function BookPanel({
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label="Session instrument"
       className={cn(
-        "vex-book-enter flex h-full shrink-0 flex-col overflow-y-auto border-l border-[var(--vex-line)]",
+        // Glass rail (Signal Sky): the pane is translucent ink over the WebGL
+        // sky in BOTH states — the collapsed spine is the same glass, thinner.
+        "vex-book-enter flex h-full shrink-0 flex-col overflow-y-auto border-l border-[var(--vex-line)] bg-[var(--vex-glass)] backdrop-blur-xl",
         // Collapsed: a thin spine carrying only the header bar (version +
         // chevron). Expanded: the full instrument rail. Width change is CSS
         // only — the panel never remounts, so the blocks keep their state.
@@ -83,7 +90,9 @@ export function BookPanel({
       </div>
 
       {bookOpen ? (
-        <div className="flex min-h-0 flex-col gap-3">
+        // Sections separate themselves (BookBlock border-t hairlines + py
+        // rhythm) — no gap here, so the rules run edge to edge as one column.
+        <div className="flex min-h-0 flex-col">
           {activeSessionId !== null ? (
             <>
               <PositionBlock activeSessionId={activeSessionId} hero />

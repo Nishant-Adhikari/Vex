@@ -2,7 +2,8 @@
  * THE RUNTIME LEDGER LINE — runtime status moved from the AppShell footer
  * overlay (the desk rule's right side) into the sidebar registry's last
  * line, so the rail reads top-to-bottom as one continuous ledger. The dot
- * is flat (no glow); depth stays with the hairline above it.
+ * is flat (no resting glow); the pulse ring is bound to live/pending state
+ * only, and depth stays with the hairline above it.
  *
  * Label strings are a test contract (pinned by shell-sidebar.test.tsx via
  * findByText) — visual uppercase is CSS-only, never baked into the string.
@@ -26,13 +27,17 @@ export function RuntimeLedger({
     result: healthQuery.data,
   });
 
-  // The pulse ring loops ONLY while the first health probe is in flight
-  // (verifiably pending work); every resolved state rests still.
+  // The pulse ring loops ONLY on verifiable live/pending state (the shell's
+  // pulse law): amber while the first health probe is in flight, green while
+  // the runtime is connected and healthy — the landing hero-status "live
+  // earns the ring". Unavailable/degraded rest still.
   const dotClasses = cn(
     "h-1.5 w-1.5 rounded-full",
     runtime.dotClass,
     runtime.pending &&
       "vex-pulse-dot [--vex-pulse-color:color-mix(in_oklab,var(--color-warning)_50%,transparent)]",
+    runtime.live &&
+      "vex-pulse-dot [--vex-pulse-color:color-mix(in_oklab,var(--color-success)_45%,transparent)]",
   );
 
   if (!sidebarOpen) {
@@ -72,12 +77,15 @@ function getRuntimeStatus({ loading, result }: RuntimeStatusInput): {
   readonly dotClass: string;
   /** True only while the health probe is unresolved (the one pending state). */
   readonly pending: boolean;
+  /** True only when the runtime is verifiably connected and healthy. */
+  readonly live: boolean;
 } {
   if (loading || result === undefined) {
     return {
       label: "Connecting to local runtime",
       dotClass: "bg-warning",
       pending: true,
+      live: false,
     };
   }
   if (!result.ok) {
@@ -85,6 +93,7 @@ function getRuntimeStatus({ loading, result }: RuntimeStatusInput): {
       label: "Local runtime unavailable",
       dotClass: "bg-destructive",
       pending: false,
+      live: false,
     };
   }
   if (result.data.overall === "ok") {
@@ -92,6 +101,7 @@ function getRuntimeStatus({ loading, result }: RuntimeStatusInput): {
       label: "Connected to local runtime",
       dotClass: "bg-success",
       pending: false,
+      live: true,
     };
   }
   return {
@@ -101,5 +111,6 @@ function getRuntimeStatus({ loading, result }: RuntimeStatusInput): {
         : "Local runtime not ready",
     dotClass: "bg-warning",
     pending: false,
+    live: false,
   };
 }

@@ -1,5 +1,6 @@
 /**
- * PremiumBadge — the mission/plan status key for the MISSION RAIL.
+ * PremiumBadge — the mission/plan status key (DESK RULE header cluster +
+ * dialog headers).
  *
  * Default (`interactive`, the omitted case): a real `<button type="button">`
  * that opens a dialog — it carries `aria-haspopup`, `aria-expanded`, and a
@@ -13,16 +14,22 @@
  * Used inside an already-open dialog header as a status marker, where a
  * focusable control that does nothing would be a dead focus target.
  *
- * Larger than `Stamp` (rounded-lg, icon + label + caption) but the same NOTARY
- * token grammar as `MissionContractCardSections.headerMeta`: a hairline tone
- * border with text in the tone, never a filled chip. Color carries meaning;
- * neutrals carry the rest.
+ * Two geometries, one grammar:
+ *   - full (default): rounded-lg, icon + stacked label/caption — the dialog
+ *     headers' status marker. Larger than `Stamp` but the same NOTARY token
+ *     grammar as `MissionContractCardSections.headerMeta`.
+ *   - `compact`: an h-7 mono pill for the DESK RULE header cluster — a still
+ *     status dot + label + caption on one line (no icon). Pills are the
+ *     landing's button silhouette; the dot is STILL (never `.vex-pulse-dot`,
+ *     which is reserved for verifiably in-flight work).
+ * Both keep a hairline tone border with text in the tone, never a filled
+ * chip. Color carries meaning; neutrals carry the rest.
  *
  * Shimmer (the opacity pulse defined in globals.css as `.vex-badge--shimmer`)
  * is applied ONLY in the `ready` state, and only when the caller opts in via
  * `shimmer`. The pulse is "awaiting your action" — it stops the moment the
  * badge leaves `ready` (e.g. on accept). Reduced motion collapses it to a
- * static frame (global rule).
+ * static frame (global rule). The contract holds for both geometries.
  */
 
 import type { JSX } from "react";
@@ -46,10 +53,14 @@ interface PremiumBadgeBaseProps {
   /** Primary line (e.g. "Mission", "Plan"). */
   readonly label: string;
   readonly state: PremiumBadgeState;
-  /** Optional leading icon — defaults to the per-state icon. */
+  /** Optional leading icon — defaults to the per-state icon. Full variant
+   * only; the compact pill renders a status dot instead. */
   readonly icon?: IconSvgElement;
   /** Opt-in to the "ready" opacity pulse. Ignored unless state === "ready". */
   readonly shimmer?: boolean;
+  /** h-7 single-line header pill (dot + label + caption) instead of the
+   * full rounded-lg card. Defaults to false. */
+  readonly compact?: boolean;
 }
 
 /**
@@ -74,6 +85,8 @@ interface StateMeta {
   /** Border + text tone (the only color the badge carries). */
   readonly toneClass: string;
   readonly iconClass: string;
+  /** Compact-pill status dot fill — the same tone as the icon/text. */
+  readonly dotClass: string;
   /** Default per-state icon (overridable via the `icon` prop). */
   readonly icon: IconSvgElement;
   readonly dataState: string;
@@ -87,6 +100,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[var(--vex-line-strong)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)]",
         iconClass: "text-[var(--vex-text-3)]",
+        dotClass: "bg-[var(--vex-text-3)]",
         icon: Target02Icon,
         dataState: "preparing",
       };
@@ -96,6 +110,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]",
         iconClass: "text-[var(--vex-accent-text)]",
+        dotClass: "bg-[var(--vex-accent)]",
         icon: InformationCircleIcon,
         dataState: "ready",
       };
@@ -105,6 +120,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success hover:bg-[color-mix(in_oklab,var(--color-success)_8%,transparent)]",
         iconClass: "text-success",
+        dotClass: "bg-success",
         icon: CheckmarkCircle02Icon,
         dataState: "accepted",
       };
@@ -114,6 +130,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
         iconClass: "text-warning",
+        dotClass: "bg-warning",
         icon: InformationCircleIcon,
         dataState: "stale",
       };
@@ -123,23 +140,45 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
         iconClass: "text-warning",
+        dotClass: "bg-warning",
         icon: AlertCircleIcon,
         dataState: "error",
       };
   }
 }
 
-/** Shared layout (icon + label + caption) — identical for both variants. */
+/** Full layout (icon + stacked label/caption) — identical for both
+ * interactive variants. */
 const BADGE_LAYOUT =
   "group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left";
 
+/** Compact layout — the DESK RULE header pill: dot + label + caption on one
+ * h-7 line (the landing's mono-uppercase pill silhouette). */
+const COMPACT_LAYOUT =
+  "group inline-flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3";
+
 export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
-  const { label, state, icon, shimmer = false } = props;
+  const { label, state, icon, shimmer = false, compact = false } = props;
   const meta = stateMeta(state);
   const Icon = icon ?? meta.icon;
   const showShimmer = shimmer && state === "ready";
 
-  const inner = (
+  const inner = compact ? (
+    <>
+      {/* Still status dot — NOT .vex-pulse-dot (reserved for in-flight work);
+       * "awaiting your action" is carried by the shimmer contract instead. */}
+      <span
+        aria-hidden
+        className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dotClass)}
+      />
+      <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-foreground">
+        {label}
+      </span>
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
+        {meta.caption}
+      </span>
+    </>
+  ) : (
     <>
       <HugeiconsIcon
         icon={Icon}
@@ -160,6 +199,8 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
     </>
   );
 
+  const layoutClass = compact ? COMPACT_LAYOUT : BADGE_LAYOUT;
+
   // Presentational status marker — a `<span>`, not a focus target. Used inside
   // an already-open dialog header where a clickable control would do nothing.
   if (props.interactive === false) {
@@ -167,7 +208,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
       <span
         data-vex-state={meta.dataState}
         className={cn(
-          BADGE_LAYOUT,
+          layoutClass,
           meta.toneClass,
           showShimmer && "vex-badge--shimmer",
         )}
@@ -187,7 +228,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
       data-vex-state={meta.dataState}
       data-vex-action="open-mission-detail"
       className={cn(
-        BADGE_LAYOUT,
+        layoutClass,
         "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
         meta.toneClass,
         showShimmer && "vex-badge--shimmer",

@@ -5,7 +5,7 @@
  * management UI in back-edit), so there is no separate in-app settings card.
  */
 
-import { useCallback } from "react";
+import { useCallback, type JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Settings02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "../../components/ui/button.js";
@@ -24,15 +24,17 @@ export function SettingsButton({
     openWizard("reconfigure");
   }, [openWizard]);
   return (
-    // Quiet registry row: full-width, borderless, hairline-separated by the
-    // footer — the Button size variants lose to these classes via cn/twMerge.
+    // Quiet registry row: full-width, mono uppercase (Button base), carrying
+    // its own border-t hairline so the footer stack stays separated no
+    // matter which sibling rows render — the Button size variants lose to
+    // these classes via cn/twMerge.
     <Button
       variant="ghost"
       size={compact ? "icon" : "sm"}
       onClick={onClick}
       aria-label="Open settings"
       className={cn(
-        "h-9 w-full rounded-none border-0 bg-transparent text-[11px] tracking-[0.14em] text-[var(--vex-text-2)] hover:bg-white/[0.035] hover:text-foreground",
+        "h-9 w-full rounded-none border-0 border-t border-[var(--vex-line)] bg-transparent text-[10px] tracking-[0.18em] text-[var(--vex-text-2)] hover:bg-white/[0.035] hover:text-foreground",
         compact ? "justify-center px-0" : "justify-start gap-2 px-4",
       )}
     >

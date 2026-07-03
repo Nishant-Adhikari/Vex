@@ -48,9 +48,11 @@ import { ModelBrandIcon } from "../wizard/steps/provider/ModelBrandIcon.js";
 export interface SessionRuntimeBarProps {
   readonly sessionId: string;
   /**
-   * `inline` (default) = the horizontal flex-wrap bar under the session header.
-   * `stack` = a vertical column for the BOOK panel's RUNTIME block. Additive:
-   * every existing call site keeps the inline bar unchanged.
+   * `inline` (default) = the horizontal flex-wrap bar under the session header
+   * (pill chips, unchanged). `stack` = the BOOK panel's RUNTIME & COST section:
+   * landing .ws-stat rows — full-width, mono tabular figures, hairline rules
+   * between rows, no pill chrome. Additive: every existing call site keeps
+   * the inline bar unchanged.
    */
   readonly layout?: "inline" | "stack";
 }
@@ -75,6 +77,7 @@ export function SessionRuntimeBar({
     ? compactionQuery.data.data
     : null;
 
+  const stack = layout === "stack";
   return (
     <div
       data-vex-area="runtime-status"
@@ -82,21 +85,29 @@ export function SessionRuntimeBar({
       role="group"
       aria-label="Session runtime status"
       className={
-        layout === "stack"
-          ? "flex w-full flex-col items-start gap-1.5 text-[11px] text-[var(--vex-text-3)]"
+        stack
+          ? "flex w-full flex-col text-[11px] text-[var(--vex-text-3)]"
           : "flex w-full flex-wrap items-center gap-2 text-[11px] text-[var(--vex-text-3)]"
       }
     >
-      <ModelIndicator model={model} />
-      <UsageChip lastTurn={lastTurn} totals={totals} />
-      <ContextMeter context={context} />
-      <CompactionChip status={compaction} />
+      <ModelIndicator model={model} stack={stack} />
+      <UsageChip lastTurn={lastTurn} totals={totals} stack={stack} />
+      <ContextMeter context={context} stack={stack} />
+      <CompactionChip status={compaction} stack={stack} />
     </div>
   );
 }
 
 const PILL =
   "inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[10px]";
+
+/**
+ * Landing .ws-stat row for the BOOK stack: full-width, mono, hairline rule
+ * under every row except the last (the enclosing BookBlock section already
+ * separates itself from the next section).
+ */
+const STACK_ROW =
+  "flex w-full items-center gap-2 border-b border-[var(--vex-line)] py-1.5 font-mono text-[10px] last:border-b-0";
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -120,8 +131,10 @@ function fmtSignedCost(cost: number): string {
 
 function ModelIndicator({
   model,
+  stack,
 }: {
   readonly model: SessionModelDto | null;
+  readonly stack: boolean;
 }): JSX.Element {
   if (model === null || model.source === "unconfigured" || model.modelId === null) {
     return (
@@ -129,7 +142,11 @@ function ModelIndicator({
         data-vex-area="session-model-indicator"
         data-state="unconfigured"
         aria-label="Model not configured"
-        className="inline-flex items-center rounded-md px-2 py-1 text-[10px] text-[var(--vex-text-3)]"
+        className={
+          stack
+            ? `${STACK_ROW} text-[var(--vex-text-3)]`
+            : "inline-flex items-center rounded-md px-2 py-1 text-[10px] text-[var(--vex-text-3)]"
+        }
       >
         Model not configured
       </span>
@@ -140,11 +157,19 @@ function ModelIndicator({
       data-vex-area="session-model-indicator"
       data-state="configured"
       aria-label={`Model: ${model.modelId}`}
-      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1"
+      className={
+        stack ? STACK_ROW : "inline-flex items-center gap-1.5 rounded-md px-2 py-1"
+      }
       title={`Global model${model.provider !== null ? ` · ${model.provider}` : ""} · ${model.modelId}`}
     >
       <ModelBrandIcon modelId={model.modelId} size={13} />
-      <span className="max-w-[220px] truncate font-mono text-[10px] text-foreground">
+      <span
+        className={
+          stack
+            ? "min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--vex-text)]"
+            : "max-w-[220px] truncate font-mono text-[10px] text-foreground"
+        }
+      >
         {model.modelId}
       </span>
     </span>
@@ -154,9 +179,11 @@ function ModelIndicator({
 function UsageChip({
   lastTurn,
   totals,
+  stack,
 }: {
   readonly lastTurn: TurnUsageDto | null;
   readonly totals: SessionUsageTotalsDto | null;
+  readonly stack: boolean;
 }): JSX.Element | null {
   const hasTurns =
     lastTurn !== null || (totals !== null && totals.requestCount > 0);
@@ -175,7 +202,11 @@ function UsageChip({
   return (
     <span
       data-vex-area="usage-meter"
-      className={`${PILL} text-[var(--vex-text-3)]`}
+      className={
+        stack
+          ? `${STACK_ROW} flex-wrap tabular-nums text-[var(--vex-text-3)]`
+          : `${PILL} text-[var(--vex-text-3)]`
+      }
       title={buildUsageTitle(lastTurn, totals)}
     >
       {lastTurn !== null ? (
@@ -246,8 +277,10 @@ function buildUsageTitle(
 
 function ContextMeter({
   context,
+  stack,
 }: {
   readonly context: ContextWindowDto | null;
+  readonly stack: boolean;
 }): JSX.Element | null {
   // `null` = session missing/deleted/out-of-scope → no meter at all.
   if (context === null) return null;
@@ -261,7 +294,7 @@ function ContextMeter({
       <span
         data-vex-area="session-context-meter"
         data-state="no-limit"
-        className={PILL}
+        className={stack ? `${STACK_ROW} tabular-nums` : PILL}
         title="Context limit unavailable (invalid AGENT_CONTEXT_LIMIT)"
       >
         ctx {fmtTokens(tokensUsed)}
@@ -278,12 +311,18 @@ function ContextMeter({
     <span
       data-vex-area="session-context-meter"
       data-state="ok"
-      className={PILL}
+      className={stack ? `${STACK_ROW} tabular-nums` : PILL}
       title={`Context (approx, lags one turn): ${tokensUsed} / ${contextLimit} tokens`}
       aria-label={`Context ${pct}% used`}
     >
+      {/* Stack: the bar stretches to the row's width (percent figure at the
+       * right edge, ws-stat justify grammar); inline keeps the fixed chip. */}
       <span
-        className="relative h-1.5 w-12 overflow-hidden rounded-full bg-white/[0.12]"
+        className={
+          stack
+            ? "relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.12]"
+            : "relative h-1.5 w-12 overflow-hidden rounded-full bg-white/[0.12]"
+        }
         aria-hidden
       >
         <span
@@ -291,7 +330,9 @@ function ContextMeter({
           style={{ width: `${pct}%` }}
         />
       </span>
-      <span>{pct}%</span>
+      <span className={stack ? "shrink-0 text-[var(--vex-text)]" : undefined}>
+        {pct}%
+      </span>
     </span>
   );
 }
@@ -302,8 +343,10 @@ const COMPACTION_REMOTE_NOTE =
 
 function CompactionChip({
   status,
+  stack,
 }: {
   readonly status: CompactionStatusDto | null;
+  readonly stack: boolean;
 }): JSX.Element | null {
   // `null` = session missing/deleted/out-of-scope → no chip.
   if (status === null) return null;
@@ -327,15 +370,16 @@ function CompactionChip({
   // The remote-path note lives in `aria-label` (NOT title-only) so it is
   // accessible without hover; `title` mirrors it for sighted pointer users.
   // Full remote diagnostics land in stage 7-4.
+  // Tones stay on the tokens: failed = warn-text, in-flight = muted trio.
+  const tone =
+    state === "failed"
+      ? "text-[var(--vex-warn-text)]"
+      : "text-[var(--vex-text-3)]";
   return (
     <span
       data-vex-area="session-compaction-chip"
       data-state={state}
-      className={`${PILL} ${
-        state === "failed"
-          ? "text-[var(--vex-warn-text)]"
-          : "text-[var(--vex-text-3)]"
-      }`}
+      className={`${stack ? STACK_ROW : PILL} ${tone}`}
       title={`${label} · ${COMPACTION_REMOTE_NOTE}`}
       aria-label={`Compaction status: ${label}. ${COMPACTION_REMOTE_NOTE}`}
     >
