@@ -28,6 +28,7 @@ import type {
 import { pressureFraction, type ContextUsageBand } from "./context-band.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
+import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
 import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
@@ -66,6 +67,11 @@ export async function buildTurnPromptStack(args: {
   const turnFraction = pressureFraction(args.currentTokenCount, args.contextLimit);
   const promptOptions: PromptStackOptions = { ...args.basePromptOptions };
   promptOptions.contextPressureBanner = buildContextPressureBanner(args.turnBand, turnFraction);
+
+  // $VEX live-metrics banner (turn-state). Fully fail-soft inside the builder:
+  // any fetch error yields "" so the banner is omitted and the turn is never
+  // blocked. Throttled + cached at the client, so repeated turns hit cache.
+  promptOptions.ownTokenBanner = await buildOwnTokenBanner();
 
   let nextPostCompactBridgeRemaining = args.postCompactBridgeRemaining;
   if (args.postCompactBridgeRemaining > 0) {

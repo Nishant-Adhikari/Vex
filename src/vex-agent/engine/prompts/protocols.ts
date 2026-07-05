@@ -136,6 +136,18 @@ export function buildProtocolsPrompt(): string {
   lines.push("- Quote and execute on the SAME bridge provider (`khalani` or `relay`). The runtime enforces this.");
   lines.push("");
 
+  // ── Virtuals Agent Tokens (Wave 3) — static trading doctrine for Virtuals
+  // Protocol agent tokens. Imperative rules; no live data (KV-cache safe).
+  // `virtuals.*` is read-only research; execution stays on the venue tools.
+  lines.push("## Virtuals Agent Tokens");
+  lines.push("");
+  lines.push("`virtuals.*` is read-only agent-token intelligence — it never executes. Trade through the venue tools:");
+  lines.push("- A GRADUATED agent token trades on its chain's venue quoted in VIRTUAL: `uniswap.*` on Robinhood Chain, `kyberswap.*` on Base/Ethereum, `solana.*` on Solana. The `virtuals.get` result's `tradingRoute` hint names the exact venue and the VIRTUAL quote-token address — use it.");
+  lines.push("- ANTI-SNIPER: before buying a graduated agent, call `virtuals.get` and check `antiSniper`. NEVER buy while `windowActive` is true — the buy tax starts near 99% at graduation and decays to ~1% over the window. Wait out `remainingSeconds`, or tell the user the token is inside its sniper-protection window.");
+  lines.push("- UNDERGRAD means bonding-curve pre-graduation: illiquid, LP not locked, and it may never graduate. Treat UNDERGRAD agents with extreme caution and prefer graduated (AVAILABLE) ones.");
+  lines.push("- `isVerified` is an anti-impersonation badge, not a quality or safety signal — never present it as one.");
+  lines.push("");
+
   cached = lines.join("\n");
   return cached;
 }

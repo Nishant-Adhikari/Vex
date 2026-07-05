@@ -842,4 +842,88 @@ describe("prompt-stack", () => {
       expect(dexSection).toContain("robinhood");
     });
   });
+
+  // ── Virtuals Protocol integration (Wave 3) ───────────────────
+  // Every pin below maps to one intentional Wave-3 change: the static
+  // Virtuals trading doctrine (anti-sniper / UNDERGRAD / isVerified rules),
+  // the advertised `virtuals` namespace, and the volatile `# $VEX (own token)`
+  // banner that must stay OUT of the static prefix (KV-cache invariant).
+  describe("Virtuals Protocol (Wave 3)", () => {
+    it("protocols prompt advertises the read-only virtuals namespace", () => {
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("### virtuals");
+      const section = prompt.split("### virtuals")[1]?.split("###")[0] ?? "";
+      expect(section).toContain("agent-token intelligence");
+      // Read-only namespace: no mutating marker in its section.
+      expect(section).not.toContain("Contains mutating tools");
+    });
+
+    it("carries the static Virtuals Agent Tokens trading doctrine (imperative, cache-safe)", () => {
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("## Virtuals Agent Tokens");
+      // Graduated tokens trade via the chain's venue tool quoted in VIRTUAL.
+      expect(prompt).toContain("trades on its chain's venue quoted in VIRTUAL");
+      expect(prompt).toContain("`tradingRoute` hint");
+      // NEVER buy while the anti-sniper window is active.
+      expect(prompt).toContain("NEVER buy while `windowActive` is true");
+      expect(prompt).toContain("virtuals.get");
+      // UNDERGRAD = bonding-curve pre-graduation, extreme caution.
+      expect(prompt).toContain("UNDERGRAD means bonding-curve pre-graduation");
+      expect(prompt).toContain("extreme caution");
+      // isVerified is an anti-impersonation badge, not a quality/safety signal.
+      expect(prompt).toContain("anti-impersonation badge, not a quality or safety signal");
+    });
+
+    it("Virtuals doctrine renders in the STATIC prefix in every mode", () => {
+      const variants: EngineContext[] = [
+        makeContext({ sessionKind: "agent", sessionPermission: "restricted" }),
+        makeContext({ sessionKind: "agent", sessionPermission: "full" }),
+        makeContext({ sessionKind: "mission", sessionPermission: "full", missionId: "m-1", missionRunId: "run-1" }),
+      ];
+      for (const ctx of variants) {
+        const staticJoined = buildPromptStack(ctx).staticLayers.join("\n");
+        expect(staticJoined).toContain("## Virtuals Agent Tokens");
+      }
+    });
+
+    it("ownTokenBanner is TURN-state only: right after the runtime clock, never static", () => {
+      const banner = "# $VEX (own token)\n\n- Price: $0.0002918 (24h -54.21%)\n- Market cap: $291,811";
+      const stack = buildPromptStack(makeContext(), { ownTokenBanner: banner });
+      // Never in the static prefix (live numbers would bust the KV-cache).
+      expect(stack.staticLayers.join("\n")).not.toContain("# $VEX (own token)");
+      // Turn layer 0 is the runtime clock; the banner is the very next layer.
+      expect(stack.turnLayers[0]).toContain("# Runtime Clock");
+      expect(stack.turnLayers[1]).toContain("# $VEX (own token)");
+    });
+
+    it("banner ordering holds with the full turn-state option set", () => {
+      const stack = buildPromptStack(makeContext(), {
+        ownTokenBanner: "# $VEX (own token)\n\n- Price: $1",
+        contextPressureBanner: "[Context pressure: elevated — 72% used]",
+        memorySection: "# Memory\n\n## Memory Routing\n\n- line",
+        toolCatalogPrompt: "# Available Tool Map\n\n- wallet_balances",
+      });
+      const turnJoined = stack.turnLayers.join("\n");
+      const order = [
+        "# Runtime Clock",
+        "# $VEX (own token)",
+        "[Context pressure: elevated",
+        "# Memory",
+        "# Available Tool Map",
+      ];
+      let lastIdx = -1;
+      for (const marker of order) {
+        const idx = turnJoined.indexOf(marker);
+        expect(idx, `marker missing or out of order: ${marker}`).toBeGreaterThan(lastIdx);
+        lastIdx = idx;
+      }
+    });
+
+    it("empty/absent ownTokenBanner is omitted entirely (fail-soft contract)", () => {
+      const withoutOption = buildPromptStack(makeContext());
+      expect(withoutOption.turnLayers.join("\n")).not.toContain("$VEX (own token)");
+      const withEmpty = buildPromptStack(makeContext(), { ownTokenBanner: "" });
+      expect(withEmpty.turnLayers.join("\n")).not.toContain("$VEX (own token)");
+    });
+  });
 });

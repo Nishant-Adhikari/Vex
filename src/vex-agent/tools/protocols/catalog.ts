@@ -35,6 +35,8 @@ import { RELAY_TOOLS } from "./relay/manifest.js";
 import { RELAY_HANDLERS } from "./relay/handlers.js";
 import { DEXSCREENER_TOOLS } from "./dexscreener/manifest.js";
 import { DEXSCREENER_HANDLERS } from "./dexscreener/handlers.js";
+import { VIRTUALS_TOOLS } from "./virtuals/manifest.js";
+import { VIRTUALS_HANDLERS } from "./virtuals/handlers.js";
 import { POLYMARKET_TOOLS } from "./polymarket/manifest.js";
 import { POLYMARKET_HANDLERS } from "./polymarket/handlers.js";
 
@@ -48,6 +50,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "solana",
   "polymarket",
   "dexscreener",
+  "virtuals",
 ] as const;
 
 export const PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] =
@@ -79,6 +82,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "uniswap", manifests: UNISWAP_TOOLS, handlers: UNISWAP_HANDLERS },
   { namespace: "relay", manifests: RELAY_TOOLS, handlers: RELAY_HANDLERS },
   { namespace: "dexscreener", manifests: DEXSCREENER_TOOLS, handlers: DEXSCREENER_HANDLERS },
+  { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
   { namespace: "polymarket", manifests: POLYMARKET_TOOLS, handlers: POLYMARKET_HANDLERS },
 ];
 
@@ -182,4 +186,5 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   khalani: "bridge",
   relay: "bridge",
   dexscreener: "non_portfolio",
+  virtuals: "non_portfolio",
 };
