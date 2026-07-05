@@ -41,4 +41,11 @@ describe("portfolio-chain-map", () => {
     expect(getPortfolioChainId(chainIds, "base")).toBe(8453);
     expect(getPortfolioChainId(chainIds, "unknown")).toBeUndefined();
   });
+
+  it("resolves a local (non-Khalani) chain via the fallback", async () => {
+    // The Khalani registry does not contain Robinhood Chain; the local registry
+    // fallback maps the alias to 4663.
+    const chainIds = await resolvePortfolioChainIds(["robinhood"]);
+    expect(getPortfolioChainId(chainIds, "robinhood")).toBe(4663);
+  });
 });

@@ -8,6 +8,7 @@
 
 import { resolveChainId, getCachedKhalaniChains } from "@tools/khalani/chains.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
+import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import logger from "@utils/logger.js";
 
 export interface ChainResolution {
@@ -38,6 +39,13 @@ export async function resolveChainHint(hint: string): Promise<ChainResolution> {
     const family: ChainFamily = chain?.type === "solana" ? "solana" : "eip155";
     return { family, chainIds: [chainId] };
   } catch {
+    // Not a Khalani chain — try the LOCAL (non-Khalani) EVM registry before
+    // giving up, so a hint like "robinhood" resolves to its chain id (4663)
+    // instead of silently triggering an all-EVM refresh.
+    const localId = resolveLocalChainId(normalized);
+    if (localId !== undefined) {
+      return { family: "eip155", chainIds: [localId] };
+    }
     logger.debug("sync.chains.resolve_failed", { hint: normalized, fallback: "eip155_all" });
     // Fallback: assume EVM, full refresh (no chainId filter)
     return { family: "eip155", chainIds: [] };

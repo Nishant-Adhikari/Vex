@@ -7,11 +7,14 @@
 
 import { randomUUID } from "node:crypto";
 import { getTokenBalancesAcrossChains } from "@tools/khalani/balances.js";
+import { getCachedKhalaniChains } from "@tools/khalani/chains.js";
 import { listWallets, type InventoryFamily } from "@tools/wallet/inventory.js";
 import type { KhalaniToken, ChainFamily } from "@tools/khalani/types.js";
+import { listLocalChains } from "@tools/evm-chains/registry.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import { resolveChainHint } from "./chains.js";
+import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
 import logger from "@utils/logger.js";
 
 /** ChainFamily ("eip155"|"solana") → inventory family ("evm"|"solana"). */
@@ -56,10 +59,118 @@ export interface SelectiveSyncResult {
 // ── Core sync ───────────────────────────────────────────────────
 
 /**
- * Sync balances for one wallet family via Khalani.
- * Uses transactional full-replace per chain — tokens absent from response are removed.
+ * Sync balances for one wallet — Khalani chains via the Khalani scan, LOCAL
+ * (non-Khalani) EVM chains via direct RPC. Both write the same transactional
+ * per-chain replace, so callers (`fullBalanceSync`, `selectiveBalanceSync`) and
+ * the snapshot / active_chains logic treat every chain uniformly.
+ *
+ * Routing is Khalani-registry-FIRST (same order as the inclusive resolver): a
+ * chain genuinely present in the Khalani dynamic registry is synced via Khalani
+ * even if the local registry also lists it — if Khalani later adds 4663, Khalani
+ * wins automatically. Only chains in the local registry AND absent from Khalani
+ * go to the direct-RPC path. When the ONLY requested chains are local, Khalani
+ * is not called at all. For every pre-existing case (no local chain in scope)
+ * the Khalani path is byte-identical to before.
  */
 export async function syncWalletBalances(
+  family: ChainFamily,
+  address: string,
+  chainIds?: number[],
+): Promise<SyncResult> {
+  const { khalaniChainIds, localChainIds, skipKhalani } = await partitionChainScope(family, chainIds);
+
+  // Local chains FIRST so the Khalani path's final total-USD read (which sums
+  // ALL of the wallet's proj_balances) already includes freshly-written local rows.
+  let localTokens = 0;
+  let localChainsUpdated = 0;
+  for (const localChainId of localChainIds) {
+    const local = await syncLocalChainForWallet(family, address, localChainId);
+    localTokens += local.tokensUpdated;
+    if (!local.skipped) localChainsUpdated += 1;
+  }
+
+  let base: SyncResult;
+  if (skipKhalani) {
+    // Only local chains were requested — do NOT call Khalani (an empty filter
+    // there means "all Khalani chains"). Recompute the wallet total from the DB.
+    const walletBalances = await balancesRepo.getBalances(address);
+    base = {
+      walletFamily: family,
+      walletAddress: address,
+      tokensUpdated: 0,
+      chainsUpdated: 0,
+      totalUsd: walletBalances.reduce((sum, b) => sum + (b.balanceUsd ?? 0), 0),
+    };
+  } else {
+    base = await syncKhalaniWalletBalances(family, address, khalaniChainIds);
+  }
+
+  return {
+    ...base,
+    tokensUpdated: base.tokensUpdated + localTokens,
+    chainsUpdated: base.chainsUpdated + localChainsUpdated,
+  };
+}
+
+/**
+ * Split a requested chain scope into Khalani vs local ids — Khalani registry
+ * membership FIRST, local registry as fallback:
+ * - A chain present in the Khalani dynamic registry routes to Khalani even if
+ *   the local registry also lists it (upstream coverage wins by order).
+ * - A chain is "local" only when it is in the local registry AND not in the
+ *   Khalani registry.
+ * - `chainIds` undefined → all Khalani chains (khalani filter undefined) + all
+ *   local-only EVM chains (eip155 family only).
+ * - `chainIds` provided  → the local-only subset goes direct-RPC; the rest go
+ *   to Khalani. When nothing is left for Khalani, `skipKhalani` is set so the
+ *   Khalani scan (whose empty filter means "all chains") is skipped entirely.
+ * - Fail-open: if the Khalani registry fetch itself fails, partition on local
+ *   registry membership alone — local chains keep syncing during a Khalani
+ *   outage, and the Khalani scan surfaces its own error for its chains.
+ */
+async function partitionChainScope(
+  family: ChainFamily,
+  chainIds: number[] | undefined,
+): Promise<{ khalaniChainIds: number[] | undefined; localChainIds: number[]; skipKhalani: boolean }> {
+  if (family !== "eip155") {
+    // No local chains outside EVM — preserve existing behavior exactly.
+    return { khalaniChainIds: chainIds, localChainIds: [], skipKhalani: false };
+  }
+
+  const localRegistryIds = new Set(listLocalChains("eip155").map((chain) => chain.id));
+
+  // Khalani-first: consult the dynamic registry (24h-cached; the Khalani scan
+  // below reuses the same cache, so this adds no extra fetch). Fail-open on
+  // registry-fetch failure (khalaniIds = null → local-registry partition).
+  let khalaniIds: Set<number> | null = null;
+  try {
+    khalaniIds = new Set((await getCachedKhalaniChains()).map((chain) => chain.id));
+  } catch {
+    khalaniIds = null;
+  }
+
+  const isLocalOnly = (id: number): boolean =>
+    localRegistryIds.has(id) && !(khalaniIds?.has(id) ?? false);
+
+  if (chainIds === undefined) {
+    const localChainIds = [...localRegistryIds].filter((id) => isLocalOnly(id));
+    return { khalaniChainIds: undefined, localChainIds, skipKhalani: false };
+  }
+
+  const localChainIds = chainIds.filter((id) => isLocalOnly(id));
+  const khalaniRemaining = chainIds.filter((id) => !isLocalOnly(id));
+  if (khalaniRemaining.length === 0) {
+    return { khalaniChainIds: undefined, localChainIds, skipKhalani: true };
+  }
+  return { khalaniChainIds: khalaniRemaining, localChainIds, skipKhalani: false };
+}
+
+/**
+ * Sync balances for one wallet family via Khalani (byte-identical to the
+ * pre-Wave-2 `syncWalletBalances`). Uses transactional full-replace per chain —
+ * tokens absent from the response are removed.
+ */
+async function syncKhalaniWalletBalances(
   family: ChainFamily,
   address: string,
   chainIds?: number[],

@@ -5,6 +5,7 @@
 
 import { CHAIN_ALIASES, getCachedKhalaniChains } from "@tools/khalani/chains.js";
 import type { KhalaniChain } from "@tools/khalani/types.js";
+import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import logger from "@utils/logger.js";
 
 export type PortfolioChainIdMap = ReadonlyMap<string, number>;
@@ -37,6 +38,11 @@ function resolveFallback(chain: string): number | undefined {
   const normalized = normalizeChainKey(chain);
   const alias = CHAIN_ALIASES[normalized];
   if (alias !== undefined) return alias;
+
+  // Local (non-Khalani) EVM registry — resolves aliases/name/id like "robinhood"
+  // or "4663" without leaking those aliases into Khalani's own resolver.
+  const localId = resolveLocalChainId(normalized);
+  if (localId !== undefined) return localId;
 
   const numeric = Number(normalized);
   return Number.isInteger(numeric) && numeric > 0 ? numeric : undefined;

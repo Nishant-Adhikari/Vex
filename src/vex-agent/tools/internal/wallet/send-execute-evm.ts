@@ -31,37 +31,60 @@ export async function executeEvmTransfer(
 
   // Setup + broadcast — any throw is pre-broadcast.
   try {
-    const { createDynamicPublicClient, createDynamicWalletClient } =
-      await import("@tools/khalani/evm-client.js");
-    const { getKhalaniClient } = await import("@tools/khalani/client.js");
-    const { resolveChainId, getChain } = await import(
-      "@tools/khalani/chains.js"
-    );
     const { parseUnits, getAddress } = await import("viem");
+    const { resolveInclusiveEvmChain } = await import(
+      "@tools/evm-chains/resolver.js"
+    );
 
-    const chains = await getKhalaniClient().getChains();
     if (intent.chainAlias === null) {
       return preBroadcastFailed(
         new Error("Missing chain for eip155 transfer"),
       );
     }
-    const chainId = resolveChainId(intent.chainAlias, chains);
-    const chain = getChain(chainId, chains);
-    publicClient = createDynamicPublicClient(chain, chains);
-    const walletClient = createDynamicWalletClient(
-      chain,
-      chains,
-      wallet.privateKey as `0x${string}`,
-    );
+
+    // Inclusive resolver (LOCKED correction #2): a Khalani-registered chain keeps
+    // the Khalani client path (byte-identical to before); a local-registry chain
+    // (e.g. Robinhood Chain 4663) resolves a viem wallet client with NO Khalani
+    // dependency.
+    const resolved = await resolveInclusiveEvmChain(intent.chainAlias);
+    let walletClient;
+    let nativeDecimals: number;
+    if (resolved.source === "khalani") {
+      const { createDynamicPublicClient, createDynamicWalletClient } =
+        await import("@tools/khalani/evm-client.js");
+      publicClient = createDynamicPublicClient(
+        resolved.khalaniChain,
+        resolved.khalaniChains,
+      );
+      walletClient = createDynamicWalletClient(
+        resolved.khalaniChain,
+        resolved.khalaniChains,
+        wallet.privateKey as `0x${string}`,
+      );
+      chainName = resolved.khalaniChain.name || intent.chainAlias;
+      tokenSymbol = resolved.khalaniChain.nativeCurrency.symbol;
+      nativeDecimals = resolved.khalaniChain.nativeCurrency.decimals;
+    } else {
+      const { getLocalEvmClients } = await import(
+        "@tools/evm-chains/evm-client.js"
+      );
+      const clients = getLocalEvmClients(
+        resolved.config,
+        wallet.privateKey as `0x${string}`,
+      );
+      publicClient = clients.publicClient;
+      walletClient = clients.walletClient;
+      chainName = resolved.config.name || intent.chainAlias;
+      tokenSymbol = resolved.config.nativeCurrency.symbol;
+      nativeDecimals = resolved.config.nativeCurrency.decimals;
+    }
 
     const isNft = intent.token?.startsWith("nft:");
     isNftTransfer = isNft === true;
     const isNative = intent.token === null || intent.token === "native";
-    chainName = chain.name || intent.chainAlias;
-    tokenSymbol = chain.nativeCurrency.symbol;
 
     if (isNative) {
-      const value = parseUnits(intent.amount, chain.nativeCurrency.decimals);
+      const value = parseUnits(intent.amount, nativeDecimals);
       hash = await walletClient.sendTransaction({
         to: getAddress(intent.toAddress),
         value,
