@@ -285,4 +285,43 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
       },
     ],
   },
+  {
+    namespace: "virtuals",
+    advertised: true,
+    groupId: "market-research",
+    groupLabel: "Market Research",
+    summary:
+      "Read-only Virtuals Protocol agent-token intelligence — screen, inspect, and track agent tokens on Robinhood (chain 4663), Base, Solana, and Ethereum: status (bonding-curve UNDERGRAD vs graduated), holders, market cap in VIRTUAL, the anti-sniper buy-tax window, recent graduations, and the genesis launch calendar.",
+    whenToUse:
+      "Use to discover or vet a Virtuals agent token before trading it: list/screen agents on a chain, get one agent's full detail (ALWAYS before buying a graduated token — check the anti-sniper window; never buy while it is active), watch the 'what just graduated' feed, or browse the genesis launch calendar. Trades execute via the venue tool named in each result's tradingRoute hint (uniswap on Robinhood, kyberswap on Base/ETH, solana on Solana).",
+    preferInstead:
+      "Use `dexscreener` for general multi-chain pair/liquidity research and `uniswap`/`kyberswap`/`solana` to execute the trade — Virtuals never executes.",
+    exampleQueries: [
+      'discover_tools(query="list agent tokens on robinhood", namespace="virtuals")',
+      'discover_tools(query="virtuals agent detail anti-sniper", namespace="virtuals")',
+      'discover_tools(query="what just graduated", namespace="virtuals")',
+    ],
+    aliases: ["virtuals", "agent tokens", "virtuals protocol", "anti-sniper window", "agent token graduations"],
+    discoveryHints: [
+      "agent tokens on robinhood",
+      "virtuals agent detail",
+      "anti-sniper buy tax window",
+      "recent graduations",
+      "genesis launch calendar",
+    ],
+    facets: [
+      {
+        label: "Agent-token screening and detail",
+        summary: "List/screen agent tokens on a chain and pull one agent's full detail, anti-sniper window, and trading route.",
+        toolPrefixes: ["virtuals.list", "virtuals.get"],
+        hints: ["agent tokens", "virtuals list", "agent detail", "anti-sniper window", "trading route"],
+      },
+      {
+        label: "Graduations and launch calendar",
+        summary: "Watch recently graduated agent tokens and browse the genesis launch calendar.",
+        toolPrefixes: ["virtuals.graduations", "virtuals.geneses"],
+        hints: ["recent graduations", "just graduated", "genesis calendar", "upcoming launches"],
+      },
+    ],
+  },
 ] as const;

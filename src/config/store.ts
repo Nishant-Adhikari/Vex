@@ -76,6 +76,7 @@ export interface VexConfig {
     khalaniApiUrl: string;
     relayApiUrl: string;
     dexScreenerApiUrl: string;
+    virtualsApiUrl: string;
     kyberswapAggregatorUrl: string;
     kyberswapTokenApiUrl: string;
     kyberswapLimitOrderUrl: string;
@@ -134,6 +135,7 @@ export function getDefaultConfig(): VexConfig {
       khalaniApiUrl: "https://api.hyperstream.dev",
       relayApiUrl: "https://api.relay.link",
       dexScreenerApiUrl: "https://api.dexscreener.com",
+      virtualsApiUrl: "https://api.virtuals.io",
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapLimitOrderUrl: "https://limit-order.kyberswap.com",

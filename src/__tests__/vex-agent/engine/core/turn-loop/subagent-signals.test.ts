@@ -183,6 +183,13 @@ vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Wave 3: the $VEX own-token banner inside buildTurnPromptStack reaches the
+// public DexScreener/Virtuals APIs — stub it so the turn loop stays hermetic
+// ("" = banner omitted, the fail-soft contract).
+vi.mock("@vex-agent/engine/prompts/own-token-banner.js", () => ({
+  buildOwnTokenBanner: vi.fn().mockResolvedValue(""),
+}));
+
 vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
   PROTOCOL_TOOLS: [],
   PROTOCOL_NAMESPACE_ALLOWLIST: [],

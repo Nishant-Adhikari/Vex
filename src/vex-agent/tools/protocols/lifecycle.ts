@@ -39,6 +39,7 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   solana: "active",
   polymarket: "active",
   dexscreener: "active",
+  virtuals: "active",
 };
 
 /** True iff the namespace is currently `deprecated_hidden`. */

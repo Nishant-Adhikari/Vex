@@ -75,6 +75,15 @@ export interface PromptStackOptions {
    */
   planOffNotice?: string;
   /**
+   * Pre-formatted `# $VEX (own token)` live-metrics banner from
+   * `buildOwnTokenBanner` (DexScreener snapshot + best-effort Virtuals
+   * holderCount). TURN-STATE (volatile live numbers) — sits right after the
+   * runtime clock. Built async + fail-soft in `buildTurnPromptStack`; any fetch
+   * error yields "" so the banner is omitted (never blocks a turn). Empty/
+   * undefined omits the section.
+   */
+  ownTokenBanner?: string;
+  /**
    * Pre-formatted context-pressure banner from `buildContextPressureBanner`.
    * Empty string (band='normal') omits the section. Built by `runTurnLoop`
    * from the lagging token-count + context-limit before invoking `executeTurn`.
@@ -198,6 +207,13 @@ export function buildPromptStack(
     missionRunStartedAt: context.missionRunStartedAt ?? null,
     missionDeadline: context.missionDeadline ?? null,
   })));
+
+  // $VEX own-token live metrics — right after the runtime clock (P1 audit slot).
+  // Volatile live numbers; fail-soft "" omits it. Kept out of the static prefix
+  // so price moves never bust the KV-cache prefix.
+  if (options.ownTokenBanner && options.ownTokenBanner.length > 0) {
+    turnLayers.push(options.ownTokenBanner);
+  }
 
   // Pressure-state first (drives immediate tool behaviour), then the
   // post-compact bridge, then the consolidated memory section (routing at
