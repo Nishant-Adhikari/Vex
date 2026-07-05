@@ -183,11 +183,11 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     advertised: true,
     groupId: "market-research",
     groupLabel: "Market Research",
-    summary: "Read-only multi-chain DEX research for search, pair analytics, trending narratives, attention/boost signals, CTO signals, ads, and order verification.",
+    summary: "The market-discovery backbone: read-only, multi-chain DEX intelligence — search any token on any chain (chainId filter, including robinhood), resolve token addresses, verify pair liquidity/momentum, and read trending narratives, attention/boost signals, CTO signals, ads, and paid-order verification.",
     whenToUse:
-      "Use when the user needs research/discovery rather than execution: search tokens (optionally by chain/liquidity), inspect pairs/liquidity, browse trending narratives/themes and their tokens, see attention/boost signals, profiles, community takeovers, ads, or paid-order verification.",
+      "Reach for it FIRST on any discovery or research step: search a token on any chain (optionally filtered by chainId such as robinhood, or by minimum liquidity), resolve its address before a trade, and verify the pair's liquidity and momentum. Separate genuine narratives (trending/meta) from paid attention (boost/attention signals), and check profiles, community takeovers, ads, or paid-order verification. Canonical flow: discover → resolve address → verify liquidity → quote.",
     preferInstead:
-      "Use `kyberswap`, `solana`, or `khalani` for execution after the research step.",
+      "Use `kyberswap`, `solana`, or `khalani` for execution after the discovery step — DexScreener never executes.",
     exampleQueries: [
       'discover_tools(query="trending narratives", namespace="dexscreener")',
       'discover_tools(query="community takeover", namespace="dexscreener")',

@@ -14,6 +14,24 @@ vi.mock("@tools/khalani/balances.js", () => ({
   getTokenBalancesAcrossChains: (...args: unknown[]) => mockScan(...args),
 }));
 
+// Khalani dynamic registry — drives the Khalani-first partition in
+// syncWalletBalances (and resolveChainHint via sync/chains.js). Default fixture
+// below does NOT contain 4663, so 4663 routes to the local path.
+const mockGetCachedKhalaniChains = vi.fn();
+const mockResolveChainId = vi.fn();
+vi.mock("@tools/khalani/chains.js", () => ({
+  getCachedKhalaniChains: () => mockGetCachedKhalaniChains(),
+  resolveChainId: (...a: unknown[]) => mockResolveChainId(...a),
+}));
+
+// Local (non-Khalani) direct-RPC sync is exercised by its own suite. Here it is
+// mocked to a no-op so these Khalani-focused tests stay hermetic (no real RPC)
+// and prove the Khalani path is unchanged when a local chain is also in scope.
+const mockLocalSync = vi.fn();
+vi.mock("../../../vex-agent/sync/local-chain-balance-sync.js", () => ({
+  syncLocalChainForWallet: (...args: unknown[]) => mockLocalSync(...args),
+}));
+
 const mockReplaceBalances = vi.fn().mockResolvedValue(0);
 const mockGetBalances = vi.fn().mockResolvedValue([]);
 const mockGetBalancesByChain = vi.fn().mockResolvedValue([]);
@@ -49,6 +67,15 @@ function emptyScan(scannedChainIds: number[] = []) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockScan.mockResolvedValue(emptyScan());
+  mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 0, skipped: true });
+  // Khalani registry WITHOUT 4663 (the real-world state today).
+  mockGetCachedKhalaniChains.mockResolvedValue([
+    { id: 1, name: "Ethereum", type: "eip155" },
+    { id: 8453, name: "Base", type: "eip155" },
+  ]);
+  mockResolveChainId.mockImplementation(() => {
+    throw new Error("unsupported");
+  });
   mockGetBalances.mockResolvedValue([]);
   mockGetBalancesByChain.mockResolvedValue([]);
   mockGetLatestSnapshot.mockResolvedValue(null);
@@ -195,5 +222,71 @@ describe("selectiveBalanceSync", () => {
     const result = await selectiveBalanceSync("solana");
     expect(result.wallets).toHaveLength(0);
     expect(result.tokensUpdated).toBe(0);
+  });
+});
+
+// ── Local-chain routing (Wave 2) ────────────────────────────────
+// Proves the direct-RPC path is wired for the local registry chain (4663) and,
+// critically, that Khalani chains keep their exact pre-Wave-2 behavior.
+describe("local-chain routing", () => {
+  it("full EVM sync also invokes the local direct-RPC path for chain 4663", async () => {
+    await syncWalletBalances("eip155", EVM_A);
+    expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
+    // Khalani still scanned with the all-chains filter — unchanged.
+    expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: undefined });
+  });
+
+  it("routes a local chain id (4663) to the local path and NEVER calls Khalani", async () => {
+    await syncWalletBalances("eip155", EVM_A, [4663]);
+    expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
+    // Only-local scope: an empty Khalani filter would mean "all chains", so the
+    // Khalani scan must not run at all.
+    expect(mockScan).not.toHaveBeenCalled();
+  });
+
+  it("a mixed scope sends only the non-local ids to Khalani", async () => {
+    await syncWalletBalances("eip155", EVM_A, [1, 4663, 8453]);
+    expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
+    expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: [1, 8453] });
+  });
+
+  it("the solana family never touches the local EVM path", async () => {
+    await syncWalletBalances("solana", SOL_A);
+    expect(mockLocalSync).not.toHaveBeenCalled();
+  });
+
+  it("merges local token counts into the wallet result", async () => {
+    mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 3, skipped: false });
+    const res = await syncWalletBalances("eip155", EVM_A);
+    expect(res.tokensUpdated).toBe(3); // 0 khalani + 3 local
+    expect(res.chainsUpdated).toBeGreaterThanOrEqual(1);
+  });
+
+  // ── Khalani-first partition (Codex final-review item 2) ────────
+  it("Khalani WINS when its registry lists 4663 — local path not used", async () => {
+    mockGetCachedKhalaniChains.mockResolvedValue([
+      { id: 1, name: "Ethereum", type: "eip155" },
+      { id: 4663, name: "Robinhood Chain", type: "eip155" },
+    ]);
+
+    // Filtered scope: 4663 routes to Khalani, not the local path.
+    await syncWalletBalances("eip155", EVM_A, [4663]);
+    expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: [4663] });
+    expect(mockLocalSync).not.toHaveBeenCalled();
+
+    // Unfiltered scope: the all-chains Khalani scan covers 4663; no local sync.
+    mockScan.mockClear();
+    mockLocalSync.mockClear();
+    await syncWalletBalances("eip155", EVM_A);
+    expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: undefined });
+    expect(mockLocalSync).not.toHaveBeenCalled();
+  });
+
+  it("fails OPEN to local-registry partition when the Khalani registry fetch fails", async () => {
+    mockGetCachedKhalaniChains.mockRejectedValue(new Error("registry down"));
+    await syncWalletBalances("eip155", EVM_A, [4663]);
+    // 4663 still syncs via the local path during a Khalani outage.
+    expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
+    expect(mockScan).not.toHaveBeenCalled();
   });
 });

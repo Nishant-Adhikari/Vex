@@ -125,6 +125,45 @@ export async function getByInstrumentKey(instrumentKey: string): Promise<Activit
   return rows.map(mapRow);
 }
 
+/**
+ * Distinct hex EVM token addresses this wallet has traded on a given chain —
+ * the "tracked tokens" the direct-RPC balance sync scans in addition to the
+ * seed set (LOCKED Wave-2 correction #1). Derived from SUCCESSFUL `proj_activity`
+ * rows only: the activity populator writes rows exclusively from successful
+ * captures (a failed swap never emits `_tradeCapture`), and this deliberately
+ * does NOT touch `protocol_executions` (which includes failures) or parse
+ * `instrument_key`.
+ *
+ * Filters (exactly the locked query spec): product_type='spot' + wallet scope +
+ * chain match (against the chain's `activityChainKeys`, case-insensitive) + a
+ * hex-address shape guard on input_token/output_token (drops symbol-only legs).
+ */
+export async function getTrackedEvmTokensForChain(opts: {
+  walletAddress: string;
+  /** Lowercased `_tradeCapture.chain` candidates for the target chain. */
+  chainKeys: string[];
+}): Promise<string[]> {
+  if (opts.chainKeys.length === 0) return [];
+  const rows = await query<{ token: string }>(
+    `SELECT DISTINCT token FROM (
+       SELECT input_token AS token FROM proj_activity
+        WHERE product_type = 'spot'
+          AND wallet_address = $1
+          AND LOWER(chain) = ANY($2::text[])
+          AND input_token ~* '^0x[0-9a-f]{40}$'
+       UNION
+       SELECT output_token AS token FROM proj_activity
+        WHERE product_type = 'spot'
+          AND wallet_address = $1
+          AND LOWER(chain) = ANY($2::text[])
+          AND output_token ~* '^0x[0-9a-f]{40}$'
+     ) t
+     WHERE token IS NOT NULL`,
+    [opts.walletAddress, opts.chainKeys],
+  );
+  return rows.map((r) => r.token);
+}
+
 function mapRow(r: Record<string, unknown>): Activity {
   const inputValueUsd = r.input_value_usd != null ? String(r.input_value_usd) : null;
   const outputValueUsd = r.output_value_usd != null ? String(r.output_value_usd) : null;
