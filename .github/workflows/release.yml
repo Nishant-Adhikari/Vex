@@ -1,0 +1,215 @@
+# Vex — release pipeline (Wave 4).
+#
+# Builds, signs, notarizes, and publishes the desktop app to GitHub Releases on
+# a version tag. Two independent jobs run in parallel on OS-native runners:
+#   - macOS  (macos-latest): dmg + zip, arm64 AND x64, Developer ID signed +
+#     notarized. Consumes the 5 Apple/signing secrets.
+#   - Linux  (ubuntu-latest): AppImage + deb, x64, unsigned. Needs no signing
+#     secrets, so it ships even while Apple account approval is pending
+#     (owner-agreed strategy — Linux is independent of macOS/Apple delays).
+#
+# electron-updater (GitHub provider) consumes latest-mac.yml / latest-linux.yml
+# that electron-builder emits into each release. The packaged app auto-loads the
+# app-update.yml electron-builder generates from the `publish` block in
+# vex-app/electron-builder.release.yml — no feed URL is hardcoded in app source.
+#
+# ── RELEASE PROCEDURE (3 commands) ─────────────────────────────────────────
+#   1. Bump the version in vex-app/package.json (e.g. 0.1.0-dev -> 0.1.0).
+#      It MUST be strictly higher than the last release and MUST equal the tag
+#      below (a guard step enforces tag == vex-app/package.json version).
+#   2. git tag v0.1.0
+#   3. git push origin v0.1.0
+#   Then, in GitHub, review the DRAFT release (confirm signed+notarized macOS
+#   artifacts and both latest-*.yml uploaded), add notes, and click
+#   "Publish release". Users' updaters only see PUBLISHED releases.
+#   (To make publish fully zero-touch, set publish.releaseType: release in
+#   vex-app/electron-builder.release.yml.)
+#
+# ── REQUIRED REPOSITORY SECRETS (Settings -> Secrets and variables -> Actions) ─
+#   CSC_LINK                     Developer ID Application cert (.p12) base64-encoded
+#   CSC_KEY_PASSWORD             password protecting that .p12
+#   APPLE_ID                     Apple ID email used for notarization
+#   APPLE_APP_SPECIFIC_PASSWORD  app-specific password (appleid.apple.com)
+#   APPLE_TEAM_ID                10-character Apple Team ID
+#   GITHUB_TOKEN                 provided automatically by Actions (no setup)
+#
+# Windows is a deliberate SECOND release (needs an OV/EV cert) and is not built here.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Creating the GitHub Release and uploading assets needs write access to contents.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Serialize DRAFT-RELEASE CREATION only (Codex review finding): electron-publish
+  # has no retry-on-422 for simultaneous createRelease() calls, so two parallel
+  # jobs racing to create the same draft can fail. This job creates the draft
+  # idempotently up front; both build jobs then find-and-upload (get-or-upload is
+  # safe per-asset). Builds themselves stay parallel and Linux stays independent
+  # of Apple delays.
+  create-release:
+    name: Create draft release (idempotent)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ensure draft release exists for tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists — nothing to do."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Draft created by release workflow; electron-builder uploads artifacts."
+            echo "Draft release $GITHUB_REF_NAME created."
+          fi
+
+  macos:
+    name: Build, sign, notarize & publish macOS (arm64 + x64)
+    needs: create-release
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm version is read from the root package.json "packageManager" field
+      # (pnpm@10.32.1) — do NOT also pass `version:` or action-setup errors on a
+      # double-specified version.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            vex-app/pnpm-lock.yaml
+
+      - name: Verify tag matches vex-app/package.json version
+        working-directory: vex-app
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag v$TAG does not match vex-app/package.json version $PKG — bump the version before tagging."
+            exit 1
+          fi
+          echo "Version OK: $PKG"
+
+      # electron-builder 26 SILENTLY skips notarization (only a warning) when the
+      # Apple env vars are missing, and forceCodeSigning only catches a missing
+      # cert — so without this guard a missing secret would publish a signed but
+      # UN-notarized ("app is damaged") build. Fail closed instead. Until Apple
+      # creds exist this intentionally fails the macOS job while Linux still
+      # ships (owner-agreed: Linux is independent of Apple approval).
+      - name: Preflight — require signing & notarization secrets
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required macOS release secret(s):$missing — add them in repo Settings -> Secrets and variables -> Actions. (Linux releases do not need these.)"
+            exit 1
+          fi
+          echo "All macOS signing/notarization secrets present."
+
+      # Monorepo (NOT a pnpm workspace): the @vex-lib / @vex-agent aliases bundle
+      # root agent/shared code into vex-app's main process, so root node_modules
+      # must exist at build time. Install BOTH trees.
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        working-directory: vex-app
+        run: pnpm install --frozen-lockfile
+
+      # Full app build chain (same as `pnpm --dir vex-app make` up to packaging):
+      # prebuild copy-migrations -> lint + process-boundary check -> build
+      # main/preload/renderer -> postbuild check-build-artifacts.
+      - name: Build app
+        working-directory: vex-app
+        run: pnpm run build
+
+      # Replaces `make`'s `electron-builder --publish never` with the signed,
+      # notarized, publishing invocation using the production release profile.
+      - name: Package, sign, notarize & publish
+        working-directory: vex-app
+        run: pnpm exec electron-builder --mac --arm64 --x64 --publish always --config electron-builder.release.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  linux:
+    name: Build & publish Linux (x64)
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            vex-app/pnpm-lock.yaml
+
+      - name: Verify tag matches vex-app/package.json version
+        working-directory: vex-app
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag v$TAG does not match vex-app/package.json version $PKG — bump the version before tagging."
+            exit 1
+          fi
+          echo "Version OK: $PKG"
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        working-directory: vex-app
+        run: pnpm install --frozen-lockfile
+
+      - name: Build app
+        working-directory: vex-app
+        run: pnpm run build
+
+      # No signing env on Linux (AppImage/deb are unsigned). --linux with no arch
+      # flag uses the release profile's arch list (x64). electron-updater feed is
+      # latest-linux.yml. Publishes to the SAME tagged draft release as the macOS
+      # job (parallel by design — Linux is not gated on macOS/Apple).
+      - name: Package & publish
+        working-directory: vex-app
+        run: pnpm exec electron-builder --linux --publish always --config electron-builder.release.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
