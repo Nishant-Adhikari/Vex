@@ -28,7 +28,16 @@ import { execute, queryOne } from "../client.js";
 import { jsonb } from "../params.js";
 
 export type PrequoteFamily = "eip155" | "solana";
-export type PrequoteKind = "swap" | "bridge" | "redeem";
+// 'mint' / 'redeem_py' land with the Pendle PY surface (P4); 'lp_add' / 'lp_remove'
+// with the LP surface (P5). All widen the DB CHECK via migration 035.
+export type PrequoteKind =
+  | "swap"
+  | "bridge"
+  | "redeem"
+  | "mint"
+  | "redeem_py"
+  | "lp_add"
+  | "lp_remove";
 export type SafetyVerdict = "pass" | "fail" | "unknown";
 
 export interface SwapPrequote {

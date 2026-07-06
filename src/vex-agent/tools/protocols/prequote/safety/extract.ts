@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 
+import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 
@@ -249,10 +250,22 @@ const UniswapSafetySchema = z.object({
 });
 const UniswapQuoteResultSchema = z.object({
   chainId: z.number(),
-  tokenIn: z.object({ address: z.string() }),
-  tokenOut: z.object({ address: z.string() }),
+  tokenIn: z.object({ address: z.string(), isNative: z.boolean().optional() }),
+  tokenOut: z.object({ address: z.string(), isNative: z.boolean().optional() }),
   safety: UniswapSafetySchema,
 });
+
+/**
+ * Identity leg for a uniswap quote token: a native leg records the SAME
+ * sentinel the gate canonicalizes execute-time "native"/ETH input to
+ * (`evmLegIdentity` in gate.ts) — the uniswap quote echoes its routing WETH
+ * address for a native leg, which would otherwise never hash-match the
+ * execute. A verbatim WETH-address quote still records verbatim: an ERC-20
+ * WETH swap is a genuinely different trade from a native-ETH swap.
+ */
+function uniswapLegIdentity(leg: { address: string; isNative?: boolean }): string {
+  return leg.isNative === true ? NATIVE_TOKEN_ADDRESS : leg.address;
+}
 
 function extractUniswap(
   params: Record<string, unknown>,
@@ -276,8 +289,8 @@ function extractUniswap(
   }
 
   return {
-    tokenIn: parsed.data.tokenIn.address,
-    tokenOut: parsed.data.tokenOut.address,
+    tokenIn: uniswapLegIdentity(parsed.data.tokenIn),
+    tokenOut: uniswapLegIdentity(parsed.data.tokenOut),
     chainId: parsed.data.chainId,
     amount: amountRaw,
     slippageBps: slippage,
@@ -307,6 +320,10 @@ const PENDLE_IMPACT_HIGH = 0.05;
 const PendleQuoteResultSchema = z.object({
   action: z.enum(["swap", "redeem"]),
   direction: z.enum(["buy", "sell", "redeem"]),
+  // PT (default when absent) vs YT. A YT buy still fails on an expired market but
+  // emits NO term-lock — a YT is not locked, it decays to zero — so the approval
+  // preview never renders a misleading "funds locked until maturity" for it.
+  instrument: z.enum(["pt", "yt"]).optional(),
   chainId: z.number(),
   tokenIn: z.object({ address: z.string() }),
   tokenOut: z.object({ address: z.string() }),
@@ -389,8 +406,12 @@ export function extractPendleQuote(
       legs.push("pass");
       safetyDetail.expiry = { checked: true, expired: false };
       // Typed, unspoofable term-lock — the approval preview renders the fixed
-      // message from `maturityIso` (never from model args).
-      safetyDetail.termLock = { maturityIso: new Date(expiryMs).toISOString() };
+      // message from `maturityIso` (never from model args). ONLY for a PT (a
+      // committed term): a YT decays to zero rather than locking, so it carries
+      // no term-lock and the preview shows no "locked until maturity" message.
+      if (d.instrument !== "yt") {
+        safetyDetail.termLock = { maturityIso: new Date(expiryMs).toISOString() };
+      }
     }
   }
 
@@ -404,6 +425,211 @@ export function extractPendleQuote(
     ytAddress: d.yt,
     marketAddress: d.market,
     receiver: d.receiver,
+    amount: amountRaw,
+    slippageBps,
+    verdict: aggregateVerdict(legs),
+    safetyDetail,
+  };
+}
+
+// ── Pendle PY quote result (pendle.py.quote) — mint / pre-expiry redeem (P4) ─────
+//
+// A PY quote previews a mint (token → PT+YT) or a pre-expiry redeem (PT+YT →
+// token). The verdict reuses the PT market-quality signals: liquidity floor +
+// price-impact magnitude. A MINT also enforces expiry sanity (you cannot mint
+// into an expired market) and emits `termLock { maturityIso }` — the minted PT is
+// a committed term. A pre-expiry redeem is an EXIT, so it carries no term-lock and
+// no expiry gate.
+
+const PendlePyQuoteResultSchema = z.object({
+  direction: z.enum(["mint", "redeem"]),
+  chainId: z.number(),
+  tokenIn: z.object({ address: z.string() }),
+  tokenOut: z.object({ address: z.string() }),
+  pt: z.string(),
+  yt: z.string().nullable(),
+  market: z.string().nullable(),
+  expiry: z.string().nullable(),
+  liquidityUsd: z.number().nullable(),
+  priceImpact: z.number().nullable(),
+});
+
+export interface ExtractedPendlePyQuote {
+  readonly direction: "mint" | "redeem";
+  readonly chainId: number;
+  readonly tokenIn: string;
+  readonly tokenOut: string;
+  readonly ptAddress: string;
+  readonly ytAddress: string | null;
+  readonly marketAddress: string | null;
+  readonly amount: string;
+  readonly slippageBps: number | null;
+  readonly verdict: SafetyVerdict;
+  readonly safetyDetail: Record<string, unknown>;
+}
+
+/**
+ * Validate + extract a Pendle PY quote (`pendle.py.quote`). Returns null when the
+ * result payload does not structurally validate. Exported for focused unit tests.
+ */
+export function extractPendlePyQuote(
+  params: Record<string, unknown>,
+  data: Record<string, unknown>,
+): ExtractedPendlePyQuote | null {
+  const parsed = PendlePyQuoteResultSchema.safeParse(data);
+  if (!parsed.success) return null;
+  const amountRaw = params.amountIn;
+  if (typeof amountRaw !== "string" || amountRaw.trim() === "") return null;
+  const slippageBps = typeof params.slippageBps === "number" ? params.slippageBps : null;
+  const d = parsed.data;
+
+  const legs: LegVerdict[] = [];
+  const safetyDetail: Record<string, unknown> = {};
+
+  // Liquidity floor.
+  if (d.liquidityUsd === null) {
+    legs.push("unknown");
+    safetyDetail.liquidity = { checked: false };
+  } else {
+    const ok = d.liquidityUsd >= PENDLE_LIQUIDITY_FLOOR_USD;
+    legs.push(ok ? "pass" : "unknown");
+    safetyDetail.liquidity = { checked: true, usd: d.liquidityUsd, aboveFloor: ok };
+  }
+
+  // Price-impact magnitude (sign unreliable).
+  if (d.priceImpact === null) {
+    legs.push("unknown");
+    safetyDetail.priceImpact = { checked: false };
+  } else {
+    const mag = Math.abs(d.priceImpact);
+    const ok = mag <= PENDLE_IMPACT_WARN;
+    legs.push(ok ? "pass" : "unknown");
+    safetyDetail.priceImpact = { checked: true, magnitude: mag, high: mag > PENDLE_IMPACT_HIGH };
+  }
+
+  // Expiry sanity + term-lock — MINT only (a redeem is an exit).
+  if (d.direction === "mint") {
+    const expiryMs = d.expiry ? Date.parse(d.expiry) : NaN;
+    if (!Number.isFinite(expiryMs)) {
+      legs.push("unknown");
+      safetyDetail.expiry = { checked: false };
+    } else if (expiryMs <= Date.now()) {
+      legs.push("fail");
+      safetyDetail.expiry = { checked: true, expired: true };
+    } else {
+      legs.push("pass");
+      safetyDetail.expiry = { checked: true, expired: false };
+      // The minted PT commits funds until maturity — surface the typed,
+      // unspoofable term-lock to the approval preview.
+      safetyDetail.termLock = { maturityIso: new Date(expiryMs).toISOString() };
+    }
+  }
+
+  return {
+    direction: d.direction,
+    chainId: d.chainId,
+    tokenIn: d.tokenIn.address,
+    tokenOut: d.tokenOut.address,
+    ptAddress: d.pt,
+    ytAddress: d.yt,
+    marketAddress: d.market,
+    amount: amountRaw,
+    slippageBps,
+    verdict: aggregateVerdict(legs),
+    safetyDetail,
+  };
+}
+
+// ── Pendle LP quote result (pendle.lp.quote) — single-token add / remove (P5) ────
+//
+// An LP quote previews adding single-token liquidity (token → LP) or removing it
+// (LP → token). The verdict reuses the PT market-quality signals: liquidity floor
+// + price-impact magnitude. LP is NOT a fixed-rate term commitment, so there is NO
+// term-lock on either direction. The market EXPIRES, though: after expiry LP still
+// removes (principal side) but stops earning swap fees/rewards — so the bounded
+// `safetyDetail` DISCLOSES expiry/matured state (informational; never a hard fail).
+
+const PendleLpQuoteResultSchema = z.object({
+  direction: z.enum(["add", "remove"]),
+  chainId: z.number(),
+  tokenIn: z.object({ address: z.string() }),
+  tokenOut: z.object({ address: z.string() }),
+  market: z.string(),
+  expiry: z.string().nullable(),
+  liquidityUsd: z.number().nullable(),
+  priceImpact: z.number().nullable(),
+});
+
+export interface ExtractedPendleLpQuote {
+  readonly direction: "add" | "remove";
+  readonly chainId: number;
+  readonly tokenIn: string;
+  readonly tokenOut: string;
+  readonly market: string;
+  readonly amount: string;
+  readonly slippageBps: number | null;
+  readonly verdict: SafetyVerdict;
+  readonly safetyDetail: Record<string, unknown>;
+}
+
+/**
+ * Validate + extract a Pendle LP quote (`pendle.lp.quote`). Returns null when the
+ * result payload does not structurally validate. Exported for focused unit tests.
+ */
+export function extractPendleLpQuote(
+  params: Record<string, unknown>,
+  data: Record<string, unknown>,
+): ExtractedPendleLpQuote | null {
+  const parsed = PendleLpQuoteResultSchema.safeParse(data);
+  if (!parsed.success) return null;
+  const amountRaw = params.amountIn;
+  if (typeof amountRaw !== "string" || amountRaw.trim() === "") return null;
+  const slippageBps = typeof params.slippageBps === "number" ? params.slippageBps : null;
+  const d = parsed.data;
+
+  const legs: LegVerdict[] = [];
+  const safetyDetail: Record<string, unknown> = {};
+
+  // Liquidity floor.
+  if (d.liquidityUsd === null) {
+    legs.push("unknown");
+    safetyDetail.liquidity = { checked: false };
+  } else {
+    const ok = d.liquidityUsd >= PENDLE_LIQUIDITY_FLOOR_USD;
+    legs.push(ok ? "pass" : "unknown");
+    safetyDetail.liquidity = { checked: true, usd: d.liquidityUsd, aboveFloor: ok };
+  }
+
+  // Price-impact magnitude (sign unreliable).
+  if (d.priceImpact === null) {
+    legs.push("unknown");
+    safetyDetail.priceImpact = { checked: false };
+  } else {
+    const mag = Math.abs(d.priceImpact);
+    const ok = mag <= PENDLE_IMPACT_WARN;
+    legs.push(ok ? "pass" : "unknown");
+    safetyDetail.priceImpact = { checked: true, magnitude: mag, high: mag > PENDLE_IMPACT_HIGH };
+  }
+
+  // Expiry disclosure — informational (NOT a term-lock, NOT a hard fail). A
+  // matured market can still be removed but no longer earns fees/rewards.
+  const expiryMs = d.expiry ? Date.parse(d.expiry) : NaN;
+  if (Number.isFinite(expiryMs)) {
+    safetyDetail.expiry = {
+      checked: true,
+      maturityIso: new Date(expiryMs).toISOString(),
+      matured: expiryMs <= Date.now(),
+    };
+  } else {
+    safetyDetail.expiry = { checked: false };
+  }
+
+  return {
+    direction: d.direction,
+    chainId: d.chainId,
+    tokenIn: d.tokenIn.address,
+    tokenOut: d.tokenOut.address,
+    market: d.market,
     amount: amountRaw,
     slippageBps,
     verdict: aggregateVerdict(legs),

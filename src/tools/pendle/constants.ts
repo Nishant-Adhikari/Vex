@@ -1,41 +1,41 @@
 /**
- * Pendle v2 (Ethereum mainnet) — pinned addresses, method selectors, and the
- * fund-safety constants every broadcast is checked against.
+ * Pendle v2 — pinned addresses, method selectors, and the fund-safety constants
+ * every broadcast is checked against.
  *
- * Pendle is Ethereum-v1-only in this wave. The Router is the SINGLE canonical
- * on-chain target: every mutating broadcast asserts `tx.to === PENDLE_ROUTER`
- * (checksummed) and rejects otherwise. `requiredApprovals` from the hosted
- * Convert API carry NO spender field — the spender is IMPLICITLY the Router, so
- * approvals are ALWAYS granted to the pinned Router for the EXACT amount.
+ * Pendle runs on 11 chains (see `@tools/pendle/chains.ts` for the registry). The
+ * Router address is IDENTICAL on every supported chain (live-verified), so it is
+ * the SINGLE canonical on-chain target: every mutating broadcast asserts
+ * `tx.to === PENDLE_ROUTER` (checksummed) and rejects otherwise, regardless of
+ * chain. `requiredApprovals` from the hosted Convert API carry NO spender field —
+ * the spender is IMPLICITLY the Router, so approvals are ALWAYS granted to the
+ * pinned Router for the EXACT amount.
  *
- * The four Router methods below are the ONLY selectors a Pendle broadcast may
- * carry. The intent-binding check (see protocols/pendle/calldata.ts) FULL-decodes
+ * The Router methods below are the ONLY selectors a Pendle broadcast may carry.
+ * The intent-binding check (see protocols/pendle/calldata.ts) FULL-decodes
  * `tx.data` against `PENDLE_ROUTER_ABI` and asserts receiver == session wallet,
  * market/YT == the quoted market/YT, and the ACTUAL spend token/amount inside the
- * TokenInput/TokenOutput tuples == the quoted intent.
+ * TokenInput/TokenOutput tuples == the quoted intent. YT swaps
+ * (`swapExactTokenForYt` / `swapExactYtForToken`, IPActionSwapYTV3) share the PT
+ * struct layout. The income-sweep claim (`redeemDueInterestAndRewardsV2`,
+ * IPActionMiscV3) has a DIFFERENT flat response shape and its own binding — its
+ * ABI lives in the separate `PENDLE_CLAIM_ABI` so `decodeRouterCall` never treats
+ * a claim selector as a swap.
  */
 
 import { getAddress, type Address } from "viem";
 
-/** Pendle v2 Router (Ethereum mainnet). Checksummed; every broadcast pins tx.to here. */
+/** Pendle v2 Router — IDENTICAL on all supported chains. Every broadcast pins tx.to here. */
 export const PENDLE_ROUTER: Address = getAddress("0x888888888889758F76e7103c6CbF23ABbF58F946");
 
 /** Native-token sentinel (Convert uses the zero address for native ETH input). */
 export const PENDLE_NATIVE_TOKEN: Address = getAddress("0x0000000000000000000000000000000000000000");
 
-/** Pendle is Ethereum-mainnet only in this wave. */
-export const PENDLE_CHAIN_ID = 1;
-
 /**
- * Default Ethereum mainnet RPC for keyless quoting / broadcast / balance reads.
- * A public, key-less endpoint (same provider family the other venues default to);
- * a user override can be threaded via config in a later wave if needed.
- */
-export const PENDLE_ETHEREUM_RPC_URL = "https://ethereum-rpc.publicnode.com";
-
-/**
- * Aggregators Convert is allowed to route through. Restricting to these two keeps
- * the compute-unit spend bounded (convert = 5 base + 1 per aggregator) and the
+ * Aggregators Convert is ALLOWED to route through (the ceiling set). The convert
+ * body sends the INTERSECTION of this set with the chain's supported aggregators
+ * (`PendleClient.getSupportedAggregators`) — e.g. HyperEVM/Berachain support only
+ * kyberswap, so okx is never sent there. Restricting to these keeps the
+ * compute-unit spend bounded (convert = 5 base + 1 per aggregator) and the
  * broadcast surface to venues we have verified. Order is not significant.
  */
 export const PENDLE_AGGREGATORS = ["kyberswap", "okx"] as const;
@@ -43,18 +43,33 @@ export const PENDLE_AGGREGATORS = ["kyberswap", "okx"] as const;
 /**
  * Router method selectors (4-byte), pinned for documentation/audit. These are
  * the ONLY methods a Pendle broadcast may carry:
- *   - swapExactTokenForPt : token → PT (buy)
- *   - swapExactPtForToken : PT → token (early-exit sell)
- *   - redeemPyToToken     : PT → underlying (redeem)
+ *   - swapExactTokenForPt : token → PT (PT buy)
+ *   - swapExactPtForToken : PT → token (PT early-exit sell)
+ *   - swapExactTokenForYt : token → YT (YT buy — IPActionSwapYTV3)
+ *   - swapExactYtForToken : YT → token (YT sell — IPActionSwapYTV3)
+ *   - mintPyFromToken     : token → PT+YT (PY mint — IPActionMiscV3)
+ *   - redeemPyToToken     : PT(+YT) → underlying (redeem; pre-expiry PY burns the
+ *                           PT+YT pair, matured PT reuses the same method)
  *   - redeemPyToSy        : PT → SY (redeem fallback)
+ *   - addLiquiditySingleToken    : token → LP (LP add, IPActionAddRemoveLiqV3)
+ *   - removeLiquiditySingleToken : LP → token (LP remove, IPActionAddRemoveLiqV3)
  * The fund-safety extractor decodes against the FULL `PENDLE_ROUTER_ABI` below
  * (whose computed selectors are test-pinned to these values via live calldata).
+ * The claim selector is separate (see `PENDLE_CLAIM_SELECTOR`).
  */
 export const PENDLE_SELECTORS = {
   swapExactTokenForPt: "0xc81f847a",
   swapExactPtForToken: "0x594a88cc",
+  swapExactTokenForYt: "0xed48907e",
+  swapExactYtForToken: "0x05eb5327",
+  mintPyFromToken: "0xd0f42385",
   redeemPyToToken: "0x47f1de22",
   redeemPyToSy: "0x339748cb",
+  // LP single-token (IPActionAddRemoveLiqV3, P5) — token → LP and LP → token.
+  // Live-probed 2026-07-06 on chains 1 + 42161 (identical Router, identical
+  // selectors); test-pinned by decoding the live calldata against the ABI below.
+  addLiquiditySingleToken: "0x12599ac6",
+  removeLiquiditySingleToken: "0x60da0860",
 } as const;
 
 export type PendleRouterMethod = keyof typeof PENDLE_SELECTORS;
@@ -63,11 +78,35 @@ export type PendleRouterMethod = keyof typeof PENDLE_SELECTORS;
 export const PENDLE_SELECTOR_TO_METHOD: Readonly<Record<string, PendleRouterMethod>> = {
   [PENDLE_SELECTORS.swapExactTokenForPt]: "swapExactTokenForPt",
   [PENDLE_SELECTORS.swapExactPtForToken]: "swapExactPtForToken",
+  [PENDLE_SELECTORS.swapExactTokenForYt]: "swapExactTokenForYt",
+  [PENDLE_SELECTORS.swapExactYtForToken]: "swapExactYtForToken",
+  [PENDLE_SELECTORS.mintPyFromToken]: "mintPyFromToken",
   [PENDLE_SELECTORS.redeemPyToToken]: "redeemPyToToken",
   [PENDLE_SELECTORS.redeemPyToSy]: "redeemPyToSy",
+  [PENDLE_SELECTORS.addLiquiditySingleToken]: "addLiquiditySingleToken",
+  [PENDLE_SELECTORS.removeLiquiditySingleToken]: "removeLiquiditySingleToken",
 };
 
-// ── Full Router ABI (the four allowed methods; structs from IPAllActionTypeV3) ──
+/**
+ * Income-sweep claim selector (`redeemDueInterestAndRewardsV2`, IPActionMiscV3).
+ * Live-probed (2026-07-06) + 4byte-confirmed; test-pinned via `PENDLE_CLAIM_ABI`.
+ * Kept OUT of `PENDLE_SELECTORS` so the swap decode path can never accept it.
+ */
+export const PENDLE_CLAIM_SELECTOR = "0x0741a803" as const;
+
+/**
+ * Pendle's swap-helper contract the hosted SDK pins into `pendleSwap` — LIVE-pinned
+ * 2026-07-06 from /v1/sdk/{chainId}/redeem-interests-and-rewards (identical on
+ * chains 1/42161/8453; also the TokenInput.pendleSwap in live Convert routes).
+ * Router source PROVES it is inert for a pure claim: with `swaps == []` the
+ * dispatcher takes `__redeemDueInterestAndRewardsV2NoSwap`, which never receives
+ * it (pendle-core-v2-public ActionMiscV3.sol:99-103). The claim binding still
+ * pins `pendleSwap ∈ {zero, this}` as defense-in-depth — any other value fails
+ * closed as an unverified helper.
+ */
+export const PENDLE_SWAP_HELPER: Address = getAddress("0xd4F480965D2347d421F1bEC7F545682E5Ec2151D");
+
+// ── Full Router ABI (the allowed swap/redeem methods; structs from IPAllActionTypeV3) ──
 //
 // The fund-safety extractor FULL-decodes every broadcast against this ABI (Codex
 // fix: the static head alone never bound the ACTUAL spend token/amount inside the
@@ -172,6 +211,47 @@ export const PENDLE_ROUTER_ABI = [
     ],
   },
   {
+    // token → YT (YT buy, IPActionSwapYTV3). SAME struct layout as
+    // swapExactTokenForPt (minYtOut/guessYtOut in place of minPtOut/guessPtOut) —
+    // live-probed selector 0xed48907e (test-pinned via live calldata).
+    type: "function",
+    name: "swapExactTokenForYt",
+    stateMutability: "payable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "minYtOut", type: "uint256" },
+      { name: "guessYtOut", type: "tuple", components: APPROX_PARAMS_COMPONENTS },
+      { name: "input", type: "tuple", components: TOKEN_INPUT_COMPONENTS },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netYtOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+      { name: "netSyInterm", type: "uint256" },
+    ],
+  },
+  {
+    // YT → token (YT sell, IPActionSwapYTV3). SAME struct layout as
+    // swapExactPtForToken (exactYtIn in place of exactPtIn) — live-probed
+    // selector 0x05eb5327 (test-pinned via live calldata).
+    type: "function",
+    name: "swapExactYtForToken",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "exactYtIn", type: "uint256" },
+      { name: "output", type: "tuple", components: TOKEN_OUTPUT_COMPONENTS },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netTokenOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+      { name: "netSyInterm", type: "uint256" },
+    ],
+  },
+  {
     type: "function",
     name: "redeemPyToToken",
     stateMutability: "nonpayable",
@@ -198,6 +278,72 @@ export const PENDLE_ROUTER_ABI = [
     ],
     outputs: [{ name: "netSyOut", type: "uint256" }],
   },
+  {
+    // token → PT+YT (PY mint, IPActionMiscV3). Live-probed selector 0xd0f42385
+    // (test-pinned via live calldata). Splits ONE input token into an EQUAL
+    // amount of PT and YT; the ONLY approval is the input token. arg1 is the YT
+    // (the market's canonical YT), NOT the market — the intent binding asserts it
+    // against the quoted market's YT. Same TokenInput layout as the PT/YT buys,
+    // but at arg 3 (there is no ApproxParams/guess tuple).
+    type: "function",
+    name: "mintPyFromToken",
+    stateMutability: "payable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "YT", type: "address" },
+      { name: "minPyOut", type: "uint256" },
+      { name: "input", type: "tuple", components: TOKEN_INPUT_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netPyOut", type: "uint256" },
+      { name: "netSyInterm", type: "uint256" },
+    ],
+  },
+  {
+    // token → LP, single-token add (IPActionAddRemoveLiqV3, P5). Live-probed
+    // selector 0x12599ac6 (test-pinned via live calldata). arg1 is the MARKET
+    // (== the LP token address); the TokenInput at arg 4 carries the ACTUAL
+    // spend token/amount, and the ONLY approval is the input token. minLpOut is
+    // the slippage floor; guessPtReceivedFromSy is the on-chain PT/SY search.
+    type: "function",
+    name: "addLiquiditySingleToken",
+    stateMutability: "payable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "minLpOut", type: "uint256" },
+      { name: "guessPtReceivedFromSy", type: "tuple", components: APPROX_PARAMS_COMPONENTS },
+      { name: "input", type: "tuple", components: TOKEN_INPUT_COMPONENTS },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netLpOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+      { name: "netSyInterm", type: "uint256" },
+    ],
+  },
+  {
+    // LP → token, single-token remove (IPActionAddRemoveLiqV3, P5). Live-probed
+    // selector 0x60da0860 (test-pinned via live calldata). arg1 is the MARKET;
+    // arg2 (netLpToRemove) is the ACTUAL LP burned, the TokenOutput at arg 3
+    // carries the quoted output token, and the ONLY approval is the LP (market)
+    // token itself.
+    type: "function",
+    name: "removeLiquiditySingleToken",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "netLpToRemove", type: "uint256" },
+      { name: "output", type: "tuple", components: TOKEN_OUTPUT_COMPONENTS },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netTokenOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+      { name: "netSyInterm", type: "uint256" },
+    ],
+  },
 ] as const;
 
 /**
@@ -217,6 +363,57 @@ export const PENDLE_ROUTER_REDEEM_ABI = [
       { name: "minSyOut", type: "uint256" },
     ],
     outputs: [{ name: "netSyOut", type: "uint256" }],
+  },
+] as const;
+
+/**
+ * Income-sweep claim ABI — `redeemDueInterestAndRewardsV2` (IPActionMiscV3).
+ * Live-probed 2026-07-06 + 4byte-confirmed signature:
+ *   redeemDueInterestAndRewardsV2(
+ *     address[] SYs,
+ *     (address yt, bool doRedeemInterest, bool doRedeemRewards,
+ *      address tokenRedeemSy, uint256 minTokenRedeemOut)[] YTs,
+ *     address[] markets,
+ *     address pendleSwap,
+ *     (address tokenIn, address tokenOut, uint256 minOut,
+ *      (uint8 swapType, address extRouter, bytes extCalldata, bool needScale) swapData)[] swaps)
+ *
+ * There is NO `receiver` argument — accrued interest/rewards go to msg.sender by
+ * protocol. The ONLY external-call surface is `swaps` (extRouter/extCalldata); a
+ * pure income sweep carries an EMPTY `swaps`, so the claim binding
+ * (`protocols/pendle/calldata.ts` `assertClaimSafe`) REJECTS any non-empty
+ * `swaps` and any non-empty `SYs`, and asserts each decoded `YTs[].yt` /
+ * `markets[]` is a subset of the wallet's intended positions. Separate from
+ * `PENDLE_ROUTER_ABI` so the swap decode path never accepts a claim selector.
+ */
+const YT_INCOME_COMPONENTS = [
+  { name: "yt", type: "address" },
+  { name: "doRedeemInterest", type: "bool" },
+  { name: "doRedeemRewards", type: "bool" },
+  { name: "tokenRedeemSy", type: "address" },
+  { name: "minTokenRedeemOut", type: "uint256" },
+] as const;
+
+const SWAP_DATA_EXTRA_COMPONENTS = [
+  { name: "tokenIn", type: "address" },
+  { name: "tokenOut", type: "address" },
+  { name: "minOut", type: "uint256" },
+  { name: "swapData", type: "tuple", components: SWAP_DATA_COMPONENTS },
+] as const;
+
+export const PENDLE_CLAIM_ABI = [
+  {
+    type: "function",
+    name: "redeemDueInterestAndRewardsV2",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "SYs", type: "address[]" },
+      { name: "YTs", type: "tuple[]", components: YT_INCOME_COMPONENTS },
+      { name: "markets", type: "address[]" },
+      { name: "pendleSwap", type: "address" },
+      { name: "swaps", type: "tuple[]", components: SWAP_DATA_EXTRA_COMPONENTS },
+    ],
+    outputs: [],
   },
 ] as const;
 

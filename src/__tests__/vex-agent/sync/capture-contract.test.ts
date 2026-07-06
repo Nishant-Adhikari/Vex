@@ -47,8 +47,9 @@ describe("capture contract — structural coverage", () => {
   it("pnl_spot tools all have capture:full", () => {
     const spot = getToolsByRole("pnl_spot");
     // solana.swap.execute, kyberswap.swap.sell/buy, uniswap.swap.sell/buy (Wave 2c),
-    // pendle.pt.buy/sell/redeem (Wave 5).
-    expect(spot.length).toBe(8);
+    // pendle.pt.buy/sell/redeem (Wave 5), pendle.yt.buy/sell (P3 YT surface),
+    // pendle.py.mint/redeem (P4 PY — two capture items each).
+    expect(spot.length).toBe(12);
     for (const [toolId, c] of spot) {
       expect(c.capture, `${toolId} should have capture:full`).toBe("full");
     }
@@ -127,6 +128,9 @@ describe("capture contract — contract invariants", () => {
       "polymarket.clob.cancelOrders",
       "polymarket.clob.cancelAll",
       "polymarket.clob.cancelMarket",
+      // P4: PY mint/redeem emit two spot capture items (PT leg + YT leg).
+      "pendle.py.mint",
+      "pendle.py.redeem",
     ];
     for (const toolId of bulkTools) {
       const c = MUTATION_MATRIX.get(toolId)!;

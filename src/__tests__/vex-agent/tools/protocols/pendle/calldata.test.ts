@@ -17,13 +17,19 @@ import { decodeFunctionData, encodeFunctionData, getAddress, type Hex } from "vi
 
 import {
   assertRouteSafe,
+  assertClaimSafe,
+  decodeClaimCall,
   decodeRouterCall,
   selectSafeRoute,
   type PendleTxIntent,
+  type PendleClaimIntent,
 } from "@vex-agent/tools/protocols/pendle/calldata.js";
-import { PENDLE_ROUTER, PENDLE_ROUTER_ABI } from "@tools/pendle/constants.js";
+import { PENDLE_CLAIM_ABI, PENDLE_ROUTER, PENDLE_ROUTER_ABI, PENDLE_SWAP_HELPER } from "@tools/pendle/constants.js";
 import { ErrorCodes } from "../../../../../errors.js";
 import { PENDLE_LIVE_FIXTURES as F } from "./fixtures.js";
+
+// sUSDe YT + market (the P3 YT/claim fixtures live on this market).
+const YT_SUSDE = getAddress("0x45a699a11a4a17fe0931ef3cea4bfc3235e659f2");
 
 // deep-clone a readonly fixture into a mutable object
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -87,6 +93,28 @@ function redeemIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
     ptAddress: PT_REDEEM,
     expectedOutputToken: REDEEM_OUT,
     ...over,
+  };
+}
+
+/** A structurally-valid (ABI-encodable) maker-order fill for limit-tuple poisons. */
+function poisonFill(): unknown {
+  return {
+    order: {
+      salt: 0n,
+      expiry: 0n,
+      nonce: 0n,
+      orderType: 0,
+      token: ATTACKER,
+      YT: ATTACKER,
+      maker: ATTACKER,
+      receiver: ATTACKER,
+      makingAmount: 1n,
+      lnImpliedRate: 0n,
+      failSafeRate: 0n,
+      permit: "0x",
+    },
+    signature: "0x",
+    makingAmount: 1n,
   };
 }
 
@@ -223,9 +251,33 @@ describe("pendle buy — poisoned matrix (each rejects, no sign)", () => {
     });
     expectUnsafe(() => selectSafeRoute(buyIntent(), resp));
   });
+
+  it("INJECTED limit-order fill (useLimitOrder is disabled — limit tuple must be empty)", () => {
+    const resp = clone(F.buy);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => {
+      (args[5] as { normalFills: unknown[] }).normalFills.push(poisonFill());
+    });
+    expectUnsafe(() => selectSafeRoute(buyIntent(), resp));
+  });
+
+  it("INJECTED flash fill (limit tuple must be empty)", () => {
+    const resp = clone(F.buy);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => {
+      (args[5] as { flashFills: unknown[] }).flashFills.push(poisonFill());
+    });
+    expectUnsafe(() => selectSafeRoute(buyIntent(), resp));
+  });
 });
 
 describe("pendle sell — poisoned matrix", () => {
+  it("INJECTED limit-order fill (sell-side limit tuple must be empty)", () => {
+    const resp = clone(F.sell);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => {
+      (args[4] as { normalFills: unknown[] }).normalFills.push(poisonFill());
+    });
+    expectUnsafe(() => selectSafeRoute(sellIntent(), resp));
+  });
+
   it("INFLATED exactPtIn (spend > quoted input)", () => {
     const resp = clone(F.sell);
     resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => {
@@ -322,5 +374,269 @@ describe("pendle redeem — poisoned matrix", () => {
       args[0] = ATTACKER;
     });
     expectUnsafe(() => selectSafeRoute(redeemIntent(), resp));
+  });
+});
+
+// ── YT swaps (P3) — IPActionSwapYTV3, identical layout to the PT swaps ──
+
+function ytBuyIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
+  return {
+    action: "yt-buy",
+    wallet: WALLET,
+    inputToken: USDC,
+    inputAmountWei: 100000000n,
+    isNative: false,
+    expectedMarket: MARKET,
+    ...over,
+  };
+}
+
+function ytSellIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
+  return {
+    action: "yt-sell",
+    wallet: WALLET,
+    inputToken: YT_SUSDE,
+    inputAmountWei: 1000000000000000000000n,
+    isNative: false,
+    expectedMarket: MARKET,
+    expectedOutputToken: USDC,
+    ...over,
+  };
+}
+
+describe("pendle YT full calldata decode (live-probed)", () => {
+  it("decodes the YT buy route: receiver, market, TokenInput spend", () => {
+    const call = decodeRouterCall(F.ytBuy.routes[0].tx.data);
+    expect(call.method).toBe("swapExactTokenForYt");
+    expect(call.receiver).toBe(WALLET);
+    expect(call.marketOrYt).toBe(MARKET);
+    expect(call.spendWei).toBe(100000000n);
+    expect(call.input?.token).toBe(USDC);
+  });
+
+  it("decodes the YT sell route: exactYtIn AND the TokenOutput token", () => {
+    const call = decodeRouterCall(F.ytSell.routes[0].tx.data);
+    expect(call.method).toBe("swapExactYtForToken");
+    expect(call.spendWei).toBe(1000000000000000000000n);
+    expect(call.output?.token).toBe(USDC);
+  });
+});
+
+describe("pendle YT clean routes pass", () => {
+  it("accepts the live-probed YT buy route", () => {
+    const route = selectSafeRoute(ytBuyIntent(), clone(F.ytBuy));
+    expect(getAddress(route.tx.to)).toBe(PENDLE_ROUTER);
+  });
+  it("accepts the live-probed YT sell route (output token bound)", () => {
+    const route = selectSafeRoute(ytSellIntent(), clone(F.ytSell));
+    expect(getAddress(route.tx.to)).toBe(PENDLE_ROUTER);
+  });
+});
+
+describe("pendle YT buy — poisoned matrix (each rejects, no sign)", () => {
+  it("wrong tx.to (not the Router)", () => {
+    const resp = clone(F.ytBuy); resp.routes[0].tx.to = ATTACKER;
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent(), resp));
+  });
+  it("wrong receiver inside the calldata", () => {
+    const resp = clone(F.ytBuy);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => { args[0] = ATTACKER; });
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent(), resp));
+  });
+  it("wrong market (intent market != decoded market)", () => {
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent({ expectedMarket: ATTACKER }), clone(F.ytBuy)));
+  });
+  it("wrong selector — a PT-buy method can never satisfy a YT-buy intent", () => {
+    const resp = clone(F.ytBuy); resp.routes[0].tx.data = F.buy.routes[0].tx.data;
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent(), resp));
+  });
+  it("extra approval entry", () => {
+    const resp = clone(F.ytBuy); resp.requiredApprovals.push({ token: ATTACKER, amount: "100000000" });
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent(), resp));
+  });
+  it("non-native trade must not send native value", () => {
+    const resp = clone(F.ytBuy); resp.routes[0].tx.value = "1000000000000000000";
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent(), resp));
+  });
+  it("INFLATED TokenInput.netTokenIn (spend > quoted input)", () => {
+    const resp = clone(F.ytBuy);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => { (args[4] as { netTokenIn: bigint }).netTokenIn = 999999999999n; });
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent(), resp));
+  });
+  it("WRONG TokenInput.tokenIn (spend token != quoted input)", () => {
+    const resp = clone(F.ytBuy);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => { (args[4] as { tokenIn: string }).tokenIn = ATTACKER; });
+    expectUnsafe(() => selectSafeRoute(ytBuyIntent(), resp));
+  });
+});
+
+describe("pendle YT sell — poisoned matrix", () => {
+  it("INFLATED exactYtIn (spend > quoted input)", () => {
+    const resp = clone(F.ytSell);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => { args[2] = 2000000000000000000000n; });
+    expectUnsafe(() => selectSafeRoute(ytSellIntent(), resp));
+  });
+  it("WRONG TokenOutput.tokenOut (output != quoted output)", () => {
+    const resp = clone(F.ytSell);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => { (args[3] as { tokenOut: string }).tokenOut = ATTACKER; });
+    expectUnsafe(() => selectSafeRoute(ytSellIntent(), resp));
+  });
+  it("wrong receiver on the sell (proceeds redirected)", () => {
+    const resp = clone(F.ytSell);
+    resp.routes[0].tx.data = tamper(resp.routes[0].tx.data, (args) => { args[0] = ATTACKER; });
+    expectUnsafe(() => selectSafeRoute(ytSellIntent(), resp));
+  });
+});
+
+// ── Claim (income sweep) — redeemDueInterestAndRewardsV2 ──────────────
+//
+// The populated fixture is a LIVE probe for a real SIERRA-YT holder (see
+// fixtures.ts): tuple {yt, doRedeemInterest:true, doRedeemRewards:false,
+// tokenRedeemSy == the market's underlyingAsset, minTokenRedeemOut > 0} and
+// tokenApprovals == [the market's SY] (the Router pulls the freshly-redeemed SY
+// interest — ActionMiscV3.sol:117-126).
+
+const CLAIM_WALLET = getAddress("0x6a1372b4fb791a50f58f0249cf82ebbc69b1a6ac");
+const YT_SIERRA = getAddress("0xdf0bd47a116be19f2d4a2577372bd773060a01dc");
+const MARKET_SIERRA = getAddress("0x1f40b9a1d21afedbe3c49776e7790ed2139ec075");
+const SIERRA_UNDERLYING = "0x6bf7788eaa948d9ffba7e9bb386e2d3c9810e0fc";
+const SIERRA_SY = "0x399e426e6812943ac22976333698e16eaa80a209";
+
+function claimIntent(over: Partial<PendleClaimIntent> = {}): PendleClaimIntent {
+  return {
+    wallet: CLAIM_WALLET,
+    intendedYts: new Map([[YT_SIERRA.toLowerCase(), { tokenRedeemSy: SIERRA_UNDERLYING, sy: SIERRA_SY }]]),
+    intendedMarkets: new Set([MARKET_SIERRA.toLowerCase()]),
+    ...over,
+  };
+}
+
+/** Re-encode a claim call with mutated decoded args (still ABI-valid). */
+function tamperClaim(data: string, mutate: (args: unknown[]) => void): string {
+  const d = decodeFunctionData({ abi: PENDLE_CLAIM_ABI, data: data as Hex });
+  const args = structuredClone(d.args) as unknown[];
+  mutate(args);
+  return encodeFunctionData({ abi: PENDLE_CLAIM_ABI, functionName: d.functionName, args: args as never });
+}
+
+/** The decoded YT tuple shape inside tamperClaim mutations. */
+interface TamperYtTuple {
+  yt: string;
+  doRedeemInterest: boolean;
+  doRedeemRewards: boolean;
+  tokenRedeemSy: string;
+  minTokenRedeemOut: bigint;
+}
+
+describe("pendle claim (income sweep) — decode + clean", () => {
+  it("decodes the live EMPTY claim (pure sweep — SYs/YTs/markets/swaps empty; pinned pendleSwap)", () => {
+    const call = decodeClaimCall(F.claim.tx.data);
+    expect(call.yts).toEqual([]);
+    expect(call.markets).toEqual([]);
+    expect(call.pendleSwap).toBe(PENDLE_SWAP_HELPER);
+  });
+
+  it("accepts the LIVE populated claim (tuple + SY approval bound)", () => {
+    const call = assertClaimSafe(claimIntent(), clone(F.claimPopulated));
+    expect(call.yts).toHaveLength(1);
+    expect(call.yts[0]!.yt).toBe(YT_SIERRA);
+    expect(call.yts[0]!.doRedeemInterest).toBe(true);
+    expect(call.yts[0]!.tokenRedeemSy.toLowerCase()).toBe(SIERRA_UNDERLYING);
+    // The SDK's slippage floor is decoded but NOT value-bound (it is protection).
+    expect(call.yts[0]!.minTokenRedeemOut > 0n).toBe(true);
+    expect(call.markets).toEqual([]);
+  });
+
+  it("accepts the empty live claim (server pruned nothing in)", () => {
+    const call = assertClaimSafe(claimIntent({ wallet: WALLET }), clone(F.claim));
+    expect(call.yts).toEqual([]);
+    expect(call.markets).toEqual([]);
+  });
+});
+
+describe("pendle claim — poisoned matrix (each rejects, no sign)", () => {
+  it("wrong tx.to (not the Router)", () => {
+    const resp = clone(F.claimPopulated); resp.tx.to = ATTACKER;
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("wrong tx.from (not the wallet)", () => {
+    const resp = clone(F.claimPopulated); resp.tx.from = ATTACKER;
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("non-zero native value", () => {
+    const resp = clone(F.claimPopulated); resp.tx.value = "1";
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("foreign YT (outside the intended positions)", () => {
+    expectUnsafe(() => assertClaimSafe(claimIntent({ intendedYts: new Map() }), clone(F.claimPopulated)));
+  });
+  it("foreign market smuggled into the markets list", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tx.data = tamperClaim(resp.tx.data, (args) => { (args[2] as unknown[]).push(ATTACKER); });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("populated swaps (the only external-call surface) is rejected", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tx.data = tamperClaim(resp.tx.data, (args) => {
+      (args[4] as unknown[]).push({
+        tokenIn: ATTACKER, tokenOut: ATTACKER, minOut: 0n,
+        swapData: { swapType: 0, extRouter: ATTACKER, extCalldata: "0x", needScale: false },
+      });
+    });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("non-empty SYs leg is rejected", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tx.data = tamperClaim(resp.tx.data, (args) => { (args[0] as unknown[]).push(ATTACKER); });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("FOREIGN pendleSwap helper is rejected (defense-in-depth over the source-proven inert arg)", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tx.data = tamperClaim(resp.tx.data, (args) => { args[3] = ATTACKER; });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("WRONG tokenRedeemSy (interest redeemed into an unexpected token)", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tx.data = tamperClaim(resp.tx.data, (args) => {
+      (args[1] as TamperYtTuple[])[0]!.tokenRedeemSy = ATTACKER;
+    });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("no-op YT tuple (both redeem flags false) is rejected", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tx.data = tamperClaim(resp.tx.data, (args) => {
+      (args[1] as TamperYtTuple[])[0]!.doRedeemInterest = false; // doRedeemRewards is false in the live tuple
+    });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("FOREIGN approval token (outside the intended SYs)", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tokenApprovals[0]!.token = ATTACKER;
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("duplicate approval token is rejected", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tokenApprovals.push({ ...resp.tokenApprovals[0]! });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("non-positive approval amount is rejected", () => {
+    const resp = clone(F.claimPopulated);
+    resp.tokenApprovals[0]!.amount = "0";
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("an SY approval without a matching doRedeemInterest tuple is rejected", () => {
+    const resp = clone(F.claimPopulated);
+    // Flip the tuple to rewards-only (NOT a no-op) — the SY approval then has no
+    // interest leg to justify it, so the allowed set is empty.
+    resp.tx.data = tamperClaim(resp.tx.data, (args) => {
+      const tuple = (args[1] as TamperYtTuple[])[0]!;
+      tuple.doRedeemInterest = false;
+      tuple.doRedeemRewards = true;
+    });
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
+  });
+  it("unknown selector is rejected", () => {
+    const resp = clone(F.claimPopulated); resp.tx.data = "0xdeadbeef" + resp.tx.data.slice(10);
+    expectUnsafe(() => assertClaimSafe(claimIntent(), resp));
   });
 });

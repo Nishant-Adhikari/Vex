@@ -1,16 +1,22 @@
 /**
- * Pendle v2 hosted-API client (Ethereum v1, KEYLESS).
+ * Pendle v2 hosted-API client (multichain, KEYLESS).
  *
- * Four endpoints back the fixed-yield PT tools:
+ * Five endpoints back the fixed-yield PT tools:
  *   - GET  /v1/{chainId}/markets/active              → discovery / valuation
  *   - GET  /v1/assets/all                            → metadata + prices (cache 5m)
  *   - GET  /v1/dashboard/positions/database/{wallet} → session-wallet positions
+ *   - GET  /v1/sdk/{chainId}/supported-aggregators   → per-chain aggregator gate
  *   - POST /v3/sdk/{chainId}/convert                 → mutating quote/plan (201 = ok)
  *
- * All reads are CU-throttled + TTL-cached; convert is throttled but NEVER cached
- * (each broadcast plan must be fresh). Aggregators are restricted to
- * kyberswap/okx and `useLimitOrder` is FALSE (live-probed: deterministic
- * AMM-only routing, identical tx/approval semantics, cheaper to reason about).
+ * Markets + convert are chainId-scoped; assets/positions are GLOBAL. All reads
+ * are CU-throttled + TTL-cached (URL-keyed, so per-chain caches come free);
+ * convert is throttled but NEVER cached (each broadcast plan must be fresh).
+ *
+ * Aggregators: the convert body sends the INTERSECTION of PENDLE_AGGREGATORS
+ * (kyberswap/okx) with the chain's supported set (some chains support only
+ * kyberswap), falling back to `["kyberswap"]` when the support fetch fails.
+ * `useLimitOrder` is FALSE (live-probed: the server defaults it to true, which
+ * would inject limit-order fills and widen the safety-decode surface).
  *
  * The upstream error body is HOSTILE input — it is logged as bounded metadata
  * only and NEVER copied into the thrown (model-facing) error. Singleton via
@@ -22,15 +28,18 @@ import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import logger from "../../utils/logger.js";
 import { mapPendleError, mapPendleTransportError } from "./errors.js";
 import { PendleThrottle, PENDLE_TTL, PENDLE_CU, parseRetryAfterMs } from "./throttle.js";
-import { PENDLE_AGGREGATORS, PENDLE_CHAIN_ID } from "./constants.js";
+import { PENDLE_AGGREGATORS } from "./constants.js";
 import {
   validateAssets,
+  validateClaim,
   validateConvert,
   validateMarkets,
   validatePositions,
+  validateSupportedAggregators,
 } from "./validation.js";
 import type {
   PendleAsset,
+  PendleClaimResponse,
   PendleConvertResponse,
   PendleMarket,
   PendleTokenAmount,
@@ -44,6 +53,25 @@ export interface PendleConvertParams {
   input: PendleTokenAmount;
   /** Output token address. */
   outputToken: string;
+  /** Slippage tolerance 0-1 (0.01 = 1%). */
+  slippage: number;
+}
+
+/**
+ * Multi-leg convert (PY mint / pre-expiry PY redeem). Convert expresses these as
+ * MULTIPLE inputs and/or outputs:
+ *   - mint-py   : inputs `[{token}]`, outputs `[pt, yt]` (server returns action
+ *                 `mint-py` + `mintPyFromToken`; a single `[pt]` output would be a
+ *                 plain swap instead — live-verified),
+ *   - redeem-py : inputs `[pt, yt]` (EQUAL amounts), outputs `[token]` (action
+ *                 `redeem-py` + `redeemPyToToken`).
+ * Same throttle/dedupe/error path as the single-leg `convert`.
+ */
+export interface PendleConvertMultiParams {
+  receiver: string;
+  inputs: PendleTokenAmount[];
+  /** Output token addresses. */
+  outputs: string[];
   /** Slippage tolerance 0-1 (0.01 = 1%). */
   slippage: number;
 }
@@ -98,14 +126,46 @@ export class PendleClient {
     }
   }
 
-  /** Active markets on Ethereum (discovery + valuation source). */
-  getActiveMarkets(): Promise<PendleMarket[]> {
-    return this.get(`/v1/${PENDLE_CHAIN_ID}/markets/active`, PENDLE_CU.markets, PENDLE_TTL.markets, validateMarkets);
+  /** Active markets on one chain (discovery + valuation source). */
+  getActiveMarkets(chainId: number): Promise<PendleMarket[]> {
+    return this.get(`/v1/${chainId}/markets/active`, PENDLE_CU.markets, PENDLE_TTL.markets, validateMarkets);
   }
 
-  /** All Pendle assets (metadata + prices). Cached aggressively (5m, ~2.4k assets). */
+  /** All Pendle assets (metadata + prices), GLOBAL. Cached aggressively (5m, ~2.4k assets). */
   getAllAssets(): Promise<PendleAsset[]> {
     return this.get("/v1/assets/all", PENDLE_CU.assets, PENDLE_TTL.assets, validateAssets);
+  }
+
+  /**
+   * Aggregators the chain's Convert supports. TTL-cached 1h + CU-throttled. A
+   * failing/odd response degrades to `[]` (via the tolerant validator); the
+   * caller then falls back to kyberswap.
+   */
+  getSupportedAggregators(chainId: number): Promise<string[]> {
+    return this.get(
+      `/v1/sdk/${chainId}/supported-aggregators`,
+      PENDLE_CU.aggregators,
+      PENDLE_TTL.aggregators,
+      validateSupportedAggregators,
+    );
+  }
+
+  /**
+   * The aggregators the convert body should carry for `chainId`: the intersection
+   * of PENDLE_AGGREGATORS with the chain's supported set. Falls back to
+   * `["kyberswap"]` when the support fetch fails OR the intersection is empty, so
+   * a chain that only supports kyberswap NEVER receives okx.
+   */
+  private async resolveAggregators(chainId: number): Promise<string[]> {
+    let supported: string[];
+    try {
+      supported = await this.getSupportedAggregators(chainId);
+    } catch {
+      return ["kyberswap"];
+    }
+    const allowed = new Set(supported);
+    const intersection = PENDLE_AGGREGATORS.filter((a) => allowed.has(a));
+    return intersection.length > 0 ? intersection : ["kyberswap"];
   }
 
   /** Dashboard positions for one wallet (valuation included per leg). */
@@ -119,19 +179,60 @@ export class PendleClient {
   }
 
   /**
-   * POST convert — build a mutating quote/broadcast plan. NEVER cached; still
-   * CU-throttled + in-flight-deduped. Aggregators restricted to kyberswap/okx;
-   * `useLimitOrder` false. Returns null when the body has no usable route.
+   * Build a single income-sweep tx that claims accrued YT interest + rewards and
+   * LP rewards for `yts` / `markets` on `chainId`. The hosted SDK PRUNES the
+   * lists to what is actually claimable, so the returned tx sweeps a SUBSET of
+   * the passed sets. NEVER cached (mutating). Returns null when there is no
+   * usable tx. The tool binds the result via `assertClaimSafe` before signing —
+   * we never pass a `tokensOut`/swap, so the response carries no external swap.
    */
-  async convert(params: PendleConvertParams): Promise<PendleConvertResponse | null> {
-    const url = this.buildUrl(`/v3/sdk/${PENDLE_CHAIN_ID}/convert`);
+  redeemInterestsAndRewards(
+    chainId: number,
+    params: { receiver: string; yts: readonly string[]; markets: readonly string[] },
+  ): Promise<PendleClaimResponse | null> {
+    return this.get(
+      `/v1/sdk/${chainId}/redeem-interests-and-rewards`,
+      PENDLE_CU.claim,
+      PENDLE_TTL.claim,
+      validateClaim,
+      {
+        receiver: params.receiver,
+        yts: params.yts.length > 0 ? params.yts.join(",") : undefined,
+        markets: params.markets.length > 0 ? params.markets.join(",") : undefined,
+      },
+    );
+  }
+
+  /**
+   * POST convert on `chainId` — build a mutating quote/broadcast plan. NEVER
+   * cached; still CU-throttled + in-flight-deduped. Aggregators are the per-chain
+   * intersection of PENDLE_AGGREGATORS with the chain's supported set;
+   * `useLimitOrder` false (load-bearing). Returns null when the body has no
+   * usable route.
+   */
+  async convert(chainId: number, params: PendleConvertParams): Promise<PendleConvertResponse | null> {
+    return this.convertMulti(chainId, {
+      receiver: params.receiver,
+      inputs: [params.input],
+      outputs: [params.outputToken],
+      slippage: params.slippage,
+    });
+  }
+
+  /**
+   * Multi-leg convert — the single code path for mint-py (one input → PT+YT) and
+   * pre-expiry redeem-py (PT+YT → one output). Identical throttle/dedupe/error
+   * handling to `convert`; only the inputs/outputs arity differs.
+   */
+  async convertMulti(chainId: number, params: PendleConvertMultiParams): Promise<PendleConvertResponse | null> {
+    const url = this.buildUrl(`/v3/sdk/${chainId}/convert`);
     const body = {
       receiver: params.receiver,
       slippage: params.slippage,
-      inputs: [params.input],
-      outputs: [params.outputToken],
+      inputs: params.inputs,
+      outputs: params.outputs,
       enableAggregator: true,
-      aggregators: [...PENDLE_AGGREGATORS],
+      aggregators: await this.resolveAggregators(chainId),
       useLimitOrder: false,
     };
     // Dedupe key includes the body so identical concurrent converts share a call.

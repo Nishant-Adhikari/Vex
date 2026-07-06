@@ -15,8 +15,8 @@ import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import { resolveChainHint } from "./chains.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
-import { enrichChainOnePendleBalances } from "./pendle-enrichment.js";
-import { PENDLE_CHAIN_ID } from "@tools/pendle/constants.js";
+import { enrichPendleBalances, seedPendleChainBalances } from "./pendle-enrichment.js";
+import { PENDLE_SUPPORTED_CHAIN_IDS } from "@tools/pendle/chains.js";
 import logger from "@utils/logger.js";
 
 /** ChainFamily ("eip155"|"solana") → inventory family ("evm"|"solana"). */
@@ -79,7 +79,10 @@ export async function syncWalletBalances(
   address: string,
   chainIds?: number[],
 ): Promise<SyncResult> {
-  const { khalaniChainIds, localChainIds, skipKhalani } = await partitionChainScope(family, chainIds);
+  const { khalaniChainIds, localChainIds, pendleSeedChainIds, skipKhalani } = await partitionChainScope(
+    family,
+    chainIds,
+  );
 
   // Local chains FIRST so the Khalani path's final total-USD read (which sums
   // ALL of the wallet's proj_balances) already includes freshly-written local rows.
@@ -91,10 +94,21 @@ export async function syncWalletBalances(
     if (!local.skipped) localChainsUpdated += 1;
   }
 
+  // Pendle chains Khalani CANNOT scan — seed PT balances via the chain's own RPC
+  // (same transactional per-chain replace). Also BEFORE the Khalani total-USD
+  // read, and fail-soft per chain (a skipped chain keeps its last-good rows).
+  let pendleSeedTokens = 0;
+  let pendleSeedChainsUpdated = 0;
+  for (const seedChainId of pendleSeedChainIds) {
+    const seeded = await seedPendleChainBalances(family, address, seedChainId);
+    pendleSeedTokens += seeded.tokensUpdated;
+    if (!seeded.skipped) pendleSeedChainsUpdated += 1;
+  }
+
   let base: SyncResult;
   if (skipKhalani) {
-    // Only local chains were requested — do NOT call Khalani (an empty filter
-    // there means "all Khalani chains"). Recompute the wallet total from the DB.
+    // Only local / Pendle-seed chains were requested — do NOT call Khalani (an
+    // empty filter there means "all Khalani chains"). Recompute the total from DB.
     const walletBalances = await balancesRepo.getBalances(address);
     base = {
       walletFamily: family,
@@ -109,37 +123,49 @@ export async function syncWalletBalances(
 
   return {
     ...base,
-    tokensUpdated: base.tokensUpdated + localTokens,
-    chainsUpdated: base.chainsUpdated + localChainsUpdated,
+    tokensUpdated: base.tokensUpdated + localTokens + pendleSeedTokens,
+    chainsUpdated: base.chainsUpdated + localChainsUpdated + pendleSeedChainsUpdated,
   };
 }
 
 /**
- * Split a requested chain scope into Khalani vs local ids — Khalani registry
- * membership FIRST, local registry as fallback:
+ * Split a requested chain scope into Khalani vs local vs Pendle-seed ids —
+ * Khalani registry membership FIRST, then the local registry, then the Pendle
+ * registry:
  * - A chain present in the Khalani dynamic registry routes to Khalani even if
- *   the local registry also lists it (upstream coverage wins by order).
- * - A chain is "local" only when it is in the local registry AND not in the
- *   Khalani registry.
+ *   another registry also lists it (upstream coverage wins by order). Pendle
+ *   chains Khalani DOES cover are enriched in-place there (see the merge loop).
+ * - A chain is "local" only when it is in the local registry AND not in Khalani.
+ * - A chain is "Pendle-seed" only when it is a Pendle chain absent from BOTH the
+ *   Khalani registry and the local registry — Khalani's scan would THROW for it
+ *   (`khalani/balances/scan.ts`), so PT balances are seeded direct from its RPC.
  * - `chainIds` undefined → all Khalani chains (khalani filter undefined) + all
- *   local-only EVM chains (eip155 family only).
- * - `chainIds` provided  → the local-only subset goes direct-RPC; the rest go
- *   to Khalani. When nothing is left for Khalani, `skipKhalani` is set so the
- *   Khalani scan (whose empty filter means "all chains") is skipped entirely.
- * - Fail-open: if the Khalani registry fetch itself fails, partition on local
- *   registry membership alone — local chains keep syncing during a Khalani
- *   outage, and the Khalani scan surfaces its own error for its chains.
+ *   local-only EVM chains + all Pendle chains Khalani cannot scan (eip155 only).
+ * - `chainIds` provided  → the local + Pendle-seed subsets go direct-RPC; the
+ *   rest go to Khalani. When nothing is left for Khalani, `skipKhalani` is set so
+ *   the Khalani scan (whose empty filter means "all chains") is skipped entirely.
+ * - Fail-open: if the Khalani registry fetch itself fails (`khalaniIds === null`),
+ *   partition on local-registry membership alone and seed NOTHING — a standalone
+ *   Pendle replace could delete cached Khalani rows for a chain Khalani actually
+ *   covers, so Pendle chains fall through to the Khalani path, which surfaces its
+ *   own error. Local chains keep syncing during a Khalani outage.
  */
 async function partitionChainScope(
   family: ChainFamily,
   chainIds: number[] | undefined,
-): Promise<{ khalaniChainIds: number[] | undefined; localChainIds: number[]; skipKhalani: boolean }> {
+): Promise<{
+  khalaniChainIds: number[] | undefined;
+  localChainIds: number[];
+  pendleSeedChainIds: number[];
+  skipKhalani: boolean;
+}> {
   if (family !== "eip155") {
-    // No local chains outside EVM — preserve existing behavior exactly.
-    return { khalaniChainIds: chainIds, localChainIds: [], skipKhalani: false };
+    // No local / Pendle chains outside EVM — preserve existing behavior exactly.
+    return { khalaniChainIds: chainIds, localChainIds: [], pendleSeedChainIds: [], skipKhalani: false };
   }
 
   const localRegistryIds = new Set(listLocalChains("eip155").map((chain) => chain.id));
+  const pendleIds = new Set(PENDLE_SUPPORTED_CHAIN_IDS);
 
   // Khalani-first: consult the dynamic registry (24h-cached; the Khalani scan
   // below reuses the same cache, so this adds no extra fetch). Fail-open on
@@ -153,18 +179,25 @@ async function partitionChainScope(
 
   const isLocalOnly = (id: number): boolean =>
     localRegistryIds.has(id) && !(khalaniIds?.has(id) ?? false);
+  // A Pendle chain Khalani cannot scan (and that isn't a local chain). Requires a
+  // KNOWN Khalani registry: on a registry-fetch failure we do NOT seed, so a
+  // Pendle chain Khalani actually covers is never clobbered by a standalone replace.
+  const isPendleSeed = (id: number): boolean =>
+    khalaniIds !== null && pendleIds.has(id) && !khalaniIds.has(id) && !localRegistryIds.has(id);
 
   if (chainIds === undefined) {
     const localChainIds = [...localRegistryIds].filter((id) => isLocalOnly(id));
-    return { khalaniChainIds: undefined, localChainIds, skipKhalani: false };
+    const pendleSeedChainIds = [...pendleIds].filter((id) => isPendleSeed(id));
+    return { khalaniChainIds: undefined, localChainIds, pendleSeedChainIds, skipKhalani: false };
   }
 
   const localChainIds = chainIds.filter((id) => isLocalOnly(id));
-  const khalaniRemaining = chainIds.filter((id) => !isLocalOnly(id));
+  const pendleSeedChainIds = chainIds.filter((id) => isPendleSeed(id));
+  const khalaniRemaining = chainIds.filter((id) => !isLocalOnly(id) && !isPendleSeed(id));
   if (khalaniRemaining.length === 0) {
-    return { khalaniChainIds: undefined, localChainIds, skipKhalani: true };
+    return { khalaniChainIds: undefined, localChainIds, pendleSeedChainIds, skipKhalani: true };
   }
-  return { khalaniChainIds: khalaniRemaining, localChainIds, skipKhalani: false };
+  return { khalaniChainIds: khalaniRemaining, localChainIds, pendleSeedChainIds, skipKhalani: false };
 }
 
 /**
@@ -206,16 +239,18 @@ async function syncKhalaniWalletBalances(
     }
   }
 
-  // Pendle enrichment (Wave 5) — merge tracked PT balances into the chain-1 set
-  // BEFORE the per-chain replace. SCOPE LOCK (G2#2): run ONLY when the Khalani
-  // scan actually refreshed chain 1, so a sync scoped to another chain never
-  // synthesizes/replaces chain-1 rows. Fail-soft (keeps Khalani rows); the DB
-  // read inside PROPAGATES (2b doctrine).
-  if (refreshedChainIds.has(PENDLE_CHAIN_ID)) {
-    const existing = byChain.get(PENDLE_CHAIN_ID) ?? [];
-    const merged = await enrichChainOnePendleBalances(family, address, existing);
-    if (merged.length > 0 || byChain.has(PENDLE_CHAIN_ID)) {
-      byChain.set(PENDLE_CHAIN_ID, merged);
+  // Pendle enrichment (P2) — merge tracked PT balances into EACH Pendle chain the
+  // Khalani scan actually refreshed, BEFORE the per-chain replace. SCOPE LOCK
+  // (G2#2): run ONLY for refreshed chains, so a sync scoped elsewhere never
+  // synthesizes/replaces those rows. Pendle chains Khalani CANNOT scan are seeded
+  // standalone upstream (syncWalletBalances). Fail-soft per chain (keeps the
+  // Khalani rows); the DB read inside PROPAGATES (2b doctrine).
+  for (const chainId of PENDLE_SUPPORTED_CHAIN_IDS) {
+    if (!refreshedChainIds.has(chainId)) continue;
+    const existing = byChain.get(chainId) ?? [];
+    const merged = await enrichPendleBalances(family, address, chainId, existing);
+    if (merged.length > 0 || byChain.has(chainId)) {
+      byChain.set(chainId, merged);
     }
   }
 

@@ -15,6 +15,7 @@ import { z } from "zod";
 import { isRecord } from "../../utils/validation-helpers.js";
 import type {
   PendleAsset,
+  PendleClaimResponse,
   PendleConvertResponse,
   PendleConvertRoute,
   PendleMarket,
@@ -47,6 +48,16 @@ export function stripChainPrefix(v: unknown): string | null {
   return addr.length > 0 ? addr : null;
 }
 
+/** Read the numeric chain id from a `chainId-address` id (e.g. "1-0x…"); else null. */
+export function chainIdFromId(v: unknown): number | null {
+  const s = readString(v);
+  if (!s) return null;
+  const idx = s.indexOf("-");
+  if (idx <= 0) return null;
+  const n = Number(s.slice(0, idx));
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
 // ── markets/active ─────────────────────────────────────────────────
 
 function readCategoryIds(raw: unknown): string[] {
@@ -56,7 +67,10 @@ function readCategoryIds(raw: unknown): string[] {
 
 function normalizeMarket(raw: unknown): PendleMarket | null {
   if (!isRecord(raw)) return null;
-  const address = readString(raw.address);
+  // Normalize like the PT/YT/SY legs: some payloads carry `{chainId}-{address}`
+  // composite ids — a prefixed market address would silently break the market
+  // lookups / LP anchors that compare bare lowercase addresses (Codex hardening).
+  const address = stripChainPrefix(raw.address);
   if (!address) return null;
   const details = isRecord(raw.details) ? raw.details : {};
   return {
@@ -103,6 +117,7 @@ function normalizeAsset(raw: unknown): PendleAsset | null {
   const price = isRecord(raw.price) ? raw.price : {};
   return {
     address,
+    chainId: readNumber(raw.chainId) ?? chainIdFromId(raw.id),
     symbol: readString(raw.symbol),
     decimals: readNumber(raw.decimals),
     expiry: readString(raw.expiry),
@@ -233,4 +248,60 @@ export function validateConvert(raw: unknown): PendleConvertResponse | null {
     requiredApprovals,
     routes,
   };
+}
+
+// ── redeem-interests-and-rewards (income-sweep claim, FLAT response) ─────────
+
+const claimEnvelope = z.object({ tx: z.unknown() }).passthrough();
+
+/**
+ * `GET /v1/sdk/{chainId}/redeem-interests-and-rewards` → a flat claim tx.
+ * Returns null when the body carries no usable `tx.to`/`tx.data` (the handler
+ * then surfaces a clean "no claim"). `tokenApprovals` is normalized to a
+ * (usually empty) token-amount list; the claim binding rejects a non-empty set.
+ */
+export function validateClaim(raw: unknown): PendleClaimResponse | null {
+  const env = claimEnvelope.safeParse(raw);
+  if (!env.success || !isRecord(env.data.tx)) return null;
+  const tx = env.data.tx;
+  const to = readString(tx.to);
+  const data = readString(tx.data);
+  if (!to || !data) return null;
+  const root = env.data as Record<string, unknown>;
+  const tokenApprovals = Array.isArray(root.tokenApprovals)
+    ? root.tokenApprovals.map(normalizeTokenAmount).filter((a): a is PendleTokenAmount => a !== null)
+    : [];
+  return {
+    method: readString(root.method),
+    tx: {
+      to,
+      data,
+      from: readString(tx.from),
+      value: readString(tx.value),
+    },
+    tokenApprovals,
+  };
+}
+
+// ── supported-aggregators (GET /v1/sdk/{chainId}/supported-aggregators) ──────
+
+/**
+ * `GET /v1/sdk/{chainId}/supported-aggregators` → the aggregator names the chain
+ * supports. TOLERANT: accepts a bare `["kyberswap", …]` array OR an object that
+ * carries the list under a common key (`aggregators` / `supportedAggregators` /
+ * `data`). Any other shape degrades to `[]` (the caller then falls back to
+ * kyberswap). Names are lowercased + de-duped so the intersection is case-safe.
+ */
+export function validateSupportedAggregators(raw: unknown): string[] {
+  let list: unknown = raw;
+  if (isRecord(raw)) {
+    list = raw.aggregators ?? raw.supportedAggregators ?? raw.data ?? [];
+  }
+  if (!Array.isArray(list)) return [];
+  const out = new Set<string>();
+  for (const item of list) {
+    const s = readString(item);
+    if (s) out.add(s.toLowerCase());
+  }
+  return [...out];
 }

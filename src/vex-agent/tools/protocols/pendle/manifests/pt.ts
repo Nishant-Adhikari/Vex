@@ -2,7 +2,7 @@ import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_PT_DISCOVERY } from "../../embeddings/pendle/pt.js";
 
 const SWAP_PARAMS = [
-  { key: "chain", type: "string" as const, required: true, description: "Chain — Pendle is Ethereum only ('ethereum' / 1)." },
+  { key: "chain", type: "string" as const, required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
   { key: "tokenIn", type: "string" as const, required: true, description: "Input token CONTRACT ADDRESS (ERC-20; use WETH for ETH). Buy: the payment token. Sell: the PT address." },
   { key: "tokenOut", type: "string" as const, required: true, description: "Output token CONTRACT ADDRESS. Buy: the PT address. Sell: the payment token." },
   { key: "amountIn", type: "string" as const, required: true, description: "Amount of tokenIn in human-readable units." },
@@ -23,7 +23,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chain", type: "string", required: true, description: "Chain — Pendle is Ethereum only ('ethereum' / 1)." },
+      { key: "chain", type: "string", required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
       { key: "tokenIn", type: "string", required: true, description: "Input token address (payment token for a buy; PT address for a sell/redeem)." },
       { key: "tokenOut", type: "string", required: true, description: "Output token address (PT for a buy; payment/underlying for a sell/redeem)." },
       { key: "amountIn", type: "string", required: true, description: "Amount of tokenIn in human-readable units." },
@@ -65,7 +65,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
-      { key: "chain", type: "string", required: true, description: "Chain — Pendle is Ethereum only ('ethereum' / 1)." },
+      { key: "chain", type: "string", required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
       { key: "tokenIn", type: "string", required: true, description: "The matured PT CONTRACT ADDRESS to redeem." },
       { key: "amountIn", type: "string", required: true, description: "Amount of PT to redeem in human-readable units." },
       { key: "slippageBps", type: "number", description: "Slippage tolerance in basis points (default 50)." },

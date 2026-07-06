@@ -67,17 +67,27 @@ export function projectMarket(market: PendleMarket): ProjectedMarket {
   return projected;
 }
 
+/**
+ * Comparator over the ranked market fields (`apy` or `liquidity`, descending).
+ * Structural param so it also sorts chain-labeled rows in the merged multichain
+ * `pendle.yields` view without duplicating the ordering rule.
+ */
+export function compareMarketsBy(sort: "liquidity" | "apy") {
+  return (
+    a: { impliedApy: number | null; liquidityUsd: number | null },
+    b: { impliedApy: number | null; liquidityUsd: number | null },
+  ): number => {
+    if (sort === "apy") return (b.impliedApy ?? -Infinity) - (a.impliedApy ?? -Infinity);
+    return (b.liquidityUsd ?? -Infinity) - (a.liquidityUsd ?? -Infinity);
+  };
+}
+
 /** Sort projected markets by `liquidity` (default) or `apy`. */
 export function projectMarkets(
   markets: readonly PendleMarket[],
   sort: "liquidity" | "apy",
 ): ProjectedMarket[] {
-  const projected = markets.map(projectMarket);
-  projected.sort((a, b) => {
-    if (sort === "apy") return (b.impliedApy ?? -Infinity) - (a.impliedApy ?? -Infinity);
-    return (b.liquidityUsd ?? -Infinity) - (a.liquidityUsd ?? -Infinity);
-  });
-  return projected;
+  return markets.map(projectMarket).sort(compareMarketsBy(sort));
 }
 
 // ── positions → value ───────────────────────────────────────────────
@@ -128,6 +138,80 @@ export function projectPtPositions(
     });
   }
   return out;
+}
+
+// ── LP positions → value ─────────────────────────────────────────────
+
+export interface ProjectedLpPosition {
+  market: string | null;
+  lpSymbol: string | null;
+  expiry: string | null;
+  balance: string;
+  /** Dashboard valuation, else spot (balance × LP price); null when neither. */
+  valueUsd: number | null;
+  valuationBasis: "dashboard" | "spot" | "unknown";
+  /**
+   * True once now ≥ expiry. A matured LP can still be REMOVED (principal side) but
+   * no longer earns swap fees or rewards — surfaced so the model never frames a
+   * matured LP as still-earning.
+   */
+  matured: boolean;
+}
+
+/**
+ * Project a wallet's open LP legs (the `lp` leg of each dashboard position).
+ * `marketByAddress` maps a lowercase MARKET address to its active market (for
+ * expiry + LP symbol); `assetByAddress` maps a lowercase address to its asset (for
+ * the LP token spot price). The market address IS the LP token.
+ */
+export function projectLpPositions(
+  positions: readonly PendleMarketPosition[],
+  marketByAddress: Map<string, PendleMarket>,
+  assetByAddress: Map<string, PendleAsset>,
+): ProjectedLpPosition[] {
+  const now = Date.now();
+  const out: ProjectedLpPosition[] = [];
+  for (const pos of positions) {
+    if (!pos.lp || pos.lp.balance === "0") continue;
+    const marketAddr = stripChainPrefix(pos.marketId);
+    const resolved = marketAddr ? marketByAddress.get(marketAddr.toLowerCase()) : undefined;
+    const expiryMs = resolved?.expiry ? Date.parse(resolved.expiry) : NaN;
+    const matured = Number.isFinite(expiryMs) && expiryMs <= now;
+    const lpAddr = resolved?.address ?? marketAddr;
+
+    const value = valueLpLeg(pos.lp.balance, pos.lp.valuationUsd, lpAddr, assetByAddress);
+    out.push({
+      market: trustedAddress(resolved?.address ?? marketAddr),
+      lpSymbol: lpAddr ? trustedText(assetByAddress.get(lpAddr.toLowerCase())?.symbol ?? null) : null,
+      expiry: trustedIsoTimestamp(resolved?.expiry ?? null),
+      balance: pos.lp.balance,
+      valueUsd: value.valueUsd,
+      valuationBasis: value.basis,
+      matured,
+    });
+  }
+  return out;
+}
+
+function valueLpLeg(
+  balanceWei: string,
+  dashboardUsd: number | null,
+  lpAddr: string | null,
+  assetByAddress: Map<string, PendleAsset>,
+): { valueUsd: number | null; basis: ProjectedLpPosition["valuationBasis"] } {
+  const dash = trustedNumber(dashboardUsd);
+  if (dash !== null) return { valueUsd: dash, basis: "dashboard" };
+  // Fallback: spot LP price (the market address) × human balance.
+  if (lpAddr) {
+    const asset = assetByAddress.get(lpAddr.toLowerCase());
+    const price = trustedNumber(asset?.priceUsd ?? null, 1e12);
+    const decimals = asset?.decimals ?? 18;
+    if (price !== null) {
+      const human = Number(balanceWei) / 10 ** decimals;
+      if (Number.isFinite(human)) return { valueUsd: human * price, basis: "spot" };
+    }
+  }
+  return { valueUsd: null, basis: "unknown" };
 }
 
 function valuePtLeg(

@@ -22,6 +22,7 @@ const REDEEM: RedeemMatchInput = {
   ytAddress: "0x8a9e90fe18e9d243f804022224fbd8380d6b76f6",
   amount: "100",
   receiver: "0x742d35cc6634c0532925a3b844bc454e4438f44e",
+  slippageBps: "50",
 };
 
 describe("redeem identity hash", () => {
@@ -43,6 +44,23 @@ describe("redeem identity hash", () => {
     expect(computePrequoteMatchHash({ ...REDEEM, amount: "101" })).not.toBe(base);
     expect(computePrequoteMatchHash({ ...REDEEM, receiver: "0x0000000000000000000000000000000000000003" })).not.toBe(base);
     expect(computePrequoteMatchHash({ ...REDEEM, provider: "notpendle" })).not.toBe(base);
+  });
+
+  it("does NOT collide across chains: same material, different chainId ⇒ different hash", () => {
+    // A redeem quoted on Arbitrum can never authorize an Ethereum redeem for the
+    // same PT/YT/amount (a bare address is not chain-unique).
+    const eth = computePrequoteMatchHash({ ...REDEEM, chainId: 1 });
+    const arb = computePrequoteMatchHash({ ...REDEEM, chainId: 42161 });
+    expect(eth).not.toBe(arb);
+  });
+
+  it("BLOCKS on slippage divergence: a 50 bps quote never matches a 5000 bps execute", () => {
+    // Codex blocker: the execute handler accepts slippageBps, so it MUST be bound.
+    const quote = computePrequoteMatchHash({ ...REDEEM, slippageBps: "50" });
+    const execute = computePrequoteMatchHash({ ...REDEEM, slippageBps: "5000" });
+    expect(quote).not.toBe(execute);
+    // Same slippage (both defaulted to 50) still collides → quote authorizes execute.
+    expect(computePrequoteMatchHash({ ...REDEEM, slippageBps: "50" })).toBe(quote);
   });
 
   it("NEVER collides with a swap identity over the same tokens/amount", () => {

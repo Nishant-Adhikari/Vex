@@ -92,6 +92,24 @@ describe("pendle spot projection (raw base-unit amounts)", () => {
     expect((mockOpenLot.mock.calls[0]![0] as { quantityRaw: string }).quantityRaw).toBe(RAW_1_5_PT);
   });
 
+  it("a NON-ETH (arbitrum) BUY opens the lot chain-scoped (raw quantity, arbitrum key)", async () => {
+    // Multichain P1: captures carry the RESOLVED chain slug + `${slug}:${pt}` key.
+    await projectSpotLot(
+      pendleActivity({
+        chain: "arbitrum",
+        instrumentKey: `arbitrum:${PT}`,
+        tradeSide: "buy",
+        inputAmount: "1500000",
+        outputAmount: RAW_1_5_PT,
+      }),
+    );
+    expect(mockOpenLot).toHaveBeenCalledTimes(1);
+    const lot = mockOpenLot.mock.calls[0]![0] as { quantityRaw: string; instrumentKey: string; chain: string };
+    expect(lot.quantityRaw).toBe(RAW_1_5_PT);
+    expect(lot.instrumentKey).toBe(`arbitrum:${PT}`);
+    expect(lot.chain).toBe("arbitrum");
+  });
+
   it("negative control: the OLD human-decimal format would throw in the sell path", async () => {
     await expect(
       projectSpotLot(pendleActivity({ tradeSide: "sell", inputAmount: "1.5", outputAmount: "1.487" })),

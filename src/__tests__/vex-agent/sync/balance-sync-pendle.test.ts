@@ -1,9 +1,11 @@
 /**
- * Pendle balance enrichment — G2#2 scope lock + merge dedup.
+ * Pendle enrichment scope lock (G2#2) — multichain (harness P2).
  *
- * The enrichment runs ONLY when the Khalani scan actually refreshed chain 1. A
- * selective sync scoped to another chain must NOT invoke the Pendle enrichment
- * (and therefore never synthesizes/replaces chain-1 rows).
+ * The MERGE enrichment runs ONLY for a Pendle chain the Khalani scan actually
+ * refreshed (so a sync scoped elsewhere never synthesizes/replaces those rows),
+ * and now for EVERY refreshed Pendle chain — not just Ethereum. A refreshed
+ * NON-Pendle chain is never enriched. A Pendle chain Khalani CANNOT scan is
+ * seeded STANDALONE (no Khalani scan for it) so post-trade balances still appear.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -43,10 +45,17 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
 }));
 
-// The unit under scope: spy the enrichment so we can assert IF/WHEN it is called.
-const mockEnrich = vi.fn(async (_f: string, _a: string, rows: unknown) => rows);
+// The units under scope: spy BOTH the MERGE enrichment and the STANDALONE seed so
+// we can assert IF/WHEN each is called (and with which chainId).
+const mockEnrich = vi.fn(async (_f: string, _a: string, _c: number, rows: unknown) => rows);
+const mockSeed = vi.fn(async (_f: string, _a: string, chainId: number) => ({
+  chainId,
+  tokensUpdated: 0,
+  skipped: true,
+}));
 vi.mock("../../../vex-agent/sync/pendle-enrichment.js", () => ({
-  enrichChainOnePendleBalances: (...a: unknown[]) => mockEnrich(...(a as [string, string, unknown])),
+  enrichPendleBalances: (...a: unknown[]) => mockEnrich(...(a as [string, string, number, unknown])),
+  seedPendleChainBalances: (...a: unknown[]) => mockSeed(...(a as [string, string, number])),
 }));
 
 const { selectiveBalanceSync } = await import("../../../vex-agent/sync/balance-sync.js");
@@ -55,13 +64,18 @@ const EVM_A = "0xAAAaaa";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Khalani dynamic registry: Ethereum + Arbitrum + Polygon are covered; Monad
+  // (a Pendle chain) is ABSENT — Khalani's scan would throw for it.
   mockGetCachedKhalaniChains.mockResolvedValue([
     { id: 1, name: "Ethereum", type: "eip155" },
-    { id: 8453, name: "Base", type: "eip155" },
+    { id: 42161, name: "Arbitrum", type: "eip155" },
+    { id: 137, name: "Polygon", type: "eip155" },
   ]);
   mockResolveChainId.mockImplementation((hint: string) => {
     if (hint === "ethereum") return 1;
-    if (hint === "base") return 8453;
+    if (hint === "arbitrum") return 42161;
+    if (hint === "polygon") return 137;
+    if (hint === "monad") return 143; // Pendle chain, absent from the registry above
     throw new Error("unsupported");
   });
   mockListWallets.mockImplementation((family: string) =>
@@ -75,17 +89,38 @@ beforeEach(() => {
   }));
 });
 
-describe("pendle enrichment scope lock (G2#2)", () => {
-  it("runs the Pendle enrichment when the ETH (chain 1) selective sync refreshes chain 1", async () => {
+describe("pendle enrichment scope lock — multichain (G2#2 / P2)", () => {
+  it("runs the MERGE enrichment for the refreshed Ethereum chain (1)", async () => {
     await selectiveBalanceSync("ethereum");
     expect(mockEnrich).toHaveBeenCalledTimes(1);
-    expect(mockEnrich).toHaveBeenCalledWith("eip155", EVM_A, expect.any(Array));
+    expect(mockEnrich).toHaveBeenCalledWith("eip155", EVM_A, 1, expect.any(Array));
+    expect(mockSeed).not.toHaveBeenCalled();
   });
 
-  it("does NOT run the Pendle enrichment for a non-ETH selective sync (base)", async () => {
-    await selectiveBalanceSync("base");
+  it("runs the MERGE enrichment for the refreshed Arbitrum chain (42161)", async () => {
+    await selectiveBalanceSync("arbitrum");
+    expect(mockEnrich).toHaveBeenCalledTimes(1);
+    expect(mockEnrich).toHaveBeenCalledWith("eip155", EVM_A, 42161, expect.any(Array));
+    expect(mockSeed).not.toHaveBeenCalled();
+  });
+
+  it("does NOT enrich a refreshed NON-Pendle chain (polygon 137)", async () => {
+    await selectiveBalanceSync("polygon");
+    expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: [137] });
     expect(mockEnrich).not.toHaveBeenCalled();
-    // And chain 1 is never replaced by a base-scoped sync.
+    expect(mockSeed).not.toHaveBeenCalled();
+  });
+
+  it("SEEDS a Khalani-uncovered Pendle chain (monad 143) standalone — no Khalani scan, no merge", async () => {
+    await selectiveBalanceSync("monad");
+    // Khalani never scans a chain absent from its registry (it would throw).
+    expect(mockScan).not.toHaveBeenCalled();
+    // The standalone seed runs for the traded chain so post-trade PT balances appear.
+    expect(mockSeed).toHaveBeenCalledTimes(1);
+    expect(mockSeed).toHaveBeenCalledWith("eip155", EVM_A, 143);
+    // The MERGE path is not used for a chain Khalani did not scan.
+    expect(mockEnrich).not.toHaveBeenCalled();
+    // A monad-scoped sync never replaces some other chain's rows (e.g. chain 1).
     for (const call of mockReplaceBalances.mock.calls) {
       expect(call[1]).not.toBe(1);
     }

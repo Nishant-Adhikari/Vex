@@ -149,8 +149,15 @@ export interface BridgeMatchInput {
  * reuses the Khalani/Relay bridge identity (Codex G2#3).
  *
  * Material (FIXED order): ["redeem", sessionId, provider, chainId, wallet,
- * ptAddress, ytAddress, amount, receiver]. Addresses are EVM (lowercase);
- * `amount` is the human decimal via `canonAmount`.
+ * ptAddress, ytAddress, amount, receiver, slippageBps]. Addresses are EVM
+ * (lowercase); `amount` is the human decimal via `canonAmount`.
+ *
+ * `slippageBps` is bound too (Codex blocker fix): the redeem EXECUTE accepts a
+ * `slippageBps` param, so without binding it a 50 bps quote could authorize a
+ * 5000 bps execute. The shared builder normalizes the default identically on both
+ * sides, so a quote-without-slippage still matches an execute-without-slippage,
+ * while divergent slippage → different digest → gate BLOCK (swap-identity
+ * doctrine, this file's `SwapMatchInput.slippageBps`).
  */
 export interface RedeemMatchInput {
   readonly kind: "redeem";
@@ -168,10 +175,157 @@ export interface RedeemMatchInput {
   readonly amount: string;
   /** Where the redeemed asset lands (defaults to the selected wallet). */
   readonly receiver: string;
+  /** Slippage tolerance (integer bps string), default-normalized on both sides. */
+  readonly slippageBps: string;
 }
 
-/** Discriminated on `kind` — swap / bridge / redeem identities never collide. */
-export type PrequoteMatchInput = SwapMatchInput | BridgeMatchInput | RedeemMatchInput;
+/**
+ * Pendle PY mint trade identity (P4). A mint (token → PT+YT) is its OWN kind —
+ * not a swap, bridge, or matured redeem: it acquires BOTH an equal PT and YT in
+ * one transaction from a single payment token. Computed IDENTICALLY at the
+ * `pendle.py.quote` (direction "mint") record-time and the `pendle.py.mint`
+ * EXECUTE gate-time — both resolve the market (and its YT) from the PT anchor
+ * through the SAME market lookup, so the digests collide.
+ *
+ * Material (FIXED order): ["mint", sessionId, provider, chainId, wallet, receiver,
+ * tokenIn, amount, ptAddress, ytAddress, market, slippageBps]. Addresses are EVM
+ * (lowercase); `amount` is the human decimal via `canonAmount`. The FULL execute-
+ * variance surface is bound (Codex doctrine): a changed `tokenIn`, `slippageBps`,
+ * or `chainId` produces a different digest → the gate BLOCKS.
+ */
+export interface MintMatchInput {
+  readonly kind: "mint";
+  readonly sessionId: string;
+  /** VENUE binding — "pendle". A mint quote can never authorize another venue. */
+  readonly provider: string;
+  readonly chainId: number;
+  /** Selected EVM wallet (signer). */
+  readonly walletAddress: string;
+  /** Where the minted PT+YT land (defaults to the selected wallet). */
+  readonly receiver: string;
+  /** Payment token spent to mint. */
+  readonly tokenIn: string;
+  /** Human decimal amount of tokenIn. */
+  readonly amount: string;
+  /** PT anchor (the market is resolved from it). */
+  readonly ptAddress: string;
+  /** YT resolved from the PT's market (record + gate resolve it identically). */
+  readonly ytAddress: string;
+  /** The PT's canonical market/LP address (bound so the market is unmixable). */
+  readonly market: string;
+  /** Slippage tolerance (integer bps string), default-normalized on both sides. */
+  readonly slippageBps: string;
+}
+
+/**
+ * Pendle PRE-EXPIRY PY redeem trade identity (P4). Burns an EQUAL PT+YT pair back
+ * to a token BEFORE expiry — distinct from the matured-PT `redeem` (PT only). It
+ * extends the redeem material with an explicit `outputToken` (the matured redeem
+ * always outputs the underlying; a pre-expiry redeem can output any token, so it
+ * must be bound). Computed IDENTICALLY at `pendle.py.quote` (direction "redeem")
+ * record-time and the `pendle.py.redeem` EXECUTE gate-time.
+ *
+ * Material (FIXED order): ["redeem_py", sessionId, provider, chainId, wallet,
+ * receiver, ptAddress, ytAddress, amount, outputToken, slippageBps].
+ */
+export interface RedeemPyMatchInput {
+  readonly kind: "redeem_py";
+  readonly sessionId: string;
+  /** VENUE binding — "pendle". */
+  readonly provider: string;
+  readonly chainId: number;
+  /** Selected EVM wallet (signer). */
+  readonly walletAddress: string;
+  /** Where the redeemed token lands (defaults to the selected wallet). */
+  readonly receiver: string;
+  /** PT being burned (half of the pair). */
+  readonly ptAddress: string;
+  /** YT being burned (resolved from the PT's market — the other half). */
+  readonly ytAddress: string;
+  /** Human decimal amount of the PT+YT pair to burn (equal legs). */
+  readonly amount: string;
+  /** Output token (default = the market's underlyingAsset; can be overridden). */
+  readonly outputToken: string;
+  /** Slippage tolerance (integer bps string), default-normalized on both sides. */
+  readonly slippageBps: string;
+}
+
+/**
+ * Pendle LP single-token ADD trade identity (P5). Adding single-token liquidity
+ * (token → LP) is its OWN kind — not a swap, mint, or redeem: it deposits ONE
+ * payment token into a Pendle market and receives the LP token. Computed
+ * IDENTICALLY at the `pendle.lp.quote` (direction "add") record-time and the
+ * `pendle.lp.add` EXECUTE gate-time — both bind the MARKET (the LP anchor)
+ * directly (never resolved from a PT), so the digests collide.
+ *
+ * Direction is structurally unmixable from a remove: `lp_add` and `lp_remove` are
+ * DISTINCT kinds, so an add quote can never authorize a remove execute (and
+ * vice-versa) even for the same market/amount. Material (FIXED order): ["lp_add",
+ * sessionId, provider, chainId, wallet, receiver, market, tokenIn, amount,
+ * slippageBps]. Addresses EVM (lowercased); `amount` via `canonAmount`.
+ */
+export interface LpAddMatchInput {
+  readonly kind: "lp_add";
+  readonly sessionId: string;
+  /** VENUE binding — "pendle". */
+  readonly provider: string;
+  readonly chainId: number;
+  /** Selected EVM wallet (signer). */
+  readonly walletAddress: string;
+  /** Where the minted LP lands (defaults to the selected wallet). */
+  readonly receiver: string;
+  /** The Pendle market (== the LP token) liquidity is added to. */
+  readonly market: string;
+  /** Payment token deposited. */
+  readonly tokenIn: string;
+  /** Human decimal amount of tokenIn. */
+  readonly amount: string;
+  /** Slippage tolerance (integer bps string), default-normalized on both sides. */
+  readonly slippageBps: string;
+}
+
+/**
+ * Pendle LP single-token REMOVE trade identity (P5). Removing single-token
+ * liquidity (LP → token) is its OWN kind. Computed IDENTICALLY at the
+ * `pendle.lp.quote` (direction "remove") record-time and the `pendle.lp.remove`
+ * EXECUTE gate-time — both bind the MARKET directly. It carries `tokenOut` (the
+ * output token; a remove can target any token, default = the market's underlying),
+ * bound so a divergent output blocks. Material (FIXED order): ["lp_remove",
+ * sessionId, provider, chainId, wallet, receiver, market, tokenOut, amount,
+ * slippageBps].
+ */
+export interface LpRemoveMatchInput {
+  readonly kind: "lp_remove";
+  readonly sessionId: string;
+  /** VENUE binding — "pendle". */
+  readonly provider: string;
+  readonly chainId: number;
+  /** Selected EVM wallet (signer). */
+  readonly walletAddress: string;
+  /** Where the withdrawn token lands (defaults to the selected wallet). */
+  readonly receiver: string;
+  /** The Pendle market (== the LP token) liquidity is removed from. */
+  readonly market: string;
+  /** Output token (default = the market's underlyingAsset; can be overridden). */
+  readonly tokenOut: string;
+  /** Human decimal amount of the LP token to remove. */
+  readonly amount: string;
+  /** Slippage tolerance (integer bps string), default-normalized on both sides. */
+  readonly slippageBps: string;
+}
+
+/**
+ * Discriminated on `kind` — swap / bridge / redeem / mint / redeem_py / lp_add /
+ * lp_remove identities never collide.
+ */
+export type PrequoteMatchInput =
+  | SwapMatchInput
+  | BridgeMatchInput
+  | RedeemMatchInput
+  | MintMatchInput
+  | RedeemPyMatchInput
+  | LpAddMatchInput
+  | LpRemoveMatchInput;
 
 /** Canonical bridge trade direction; mirrors `parseTradeType` in khalani/request. */
 export type BridgeTradeType = "EXACT_INPUT" | "EXACT_OUTPUT";
@@ -246,13 +400,120 @@ function canonAmount(raw: string): string {
  * omit them still collide.
  */
 export function computePrequoteMatchHash(input: PrequoteMatchInput): string {
-  const material =
-    input.kind === "swap"
-      ? swapHashMaterial(input)
-      : input.kind === "bridge"
-        ? bridgeHashMaterial(input)
-        : redeemHashMaterial(input);
+  let material: string;
+  switch (input.kind) {
+    case "swap":
+      material = swapHashMaterial(input);
+      break;
+    case "bridge":
+      material = bridgeHashMaterial(input);
+      break;
+    case "redeem":
+      material = redeemHashMaterial(input);
+      break;
+    case "mint":
+      material = mintHashMaterial(input);
+      break;
+    case "redeem_py":
+      material = redeemPyHashMaterial(input);
+      break;
+    case "lp_add":
+      material = lpAddHashMaterial(input);
+      break;
+    case "lp_remove":
+      material = lpRemoveHashMaterial(input);
+      break;
+  }
   return createHash("sha256").update(material).digest("hex");
+}
+
+/**
+ * Pendle LP ADD material (P5, FIXED order). Venue `provider` is bound so an add
+ * quote can never authorize a non-Pendle execute. The full execute-variance
+ * surface is bound: market / tokenIn / chainId / slippage / receiver all feed the
+ * digest, so any divergence blocks. The distinct `lp_add` kind tag makes the
+ * direction structurally unmixable from a remove. Addresses EVM (lowercased);
+ * `amount` via `canonAmount`.
+ */
+function lpAddHashMaterial(input: LpAddMatchInput): string {
+  return [
+    input.kind,
+    input.sessionId,
+    input.provider.trim().toLowerCase(),
+    String(input.chainId),
+    canonAddress("eip155", input.walletAddress),
+    canonAddress("eip155", input.receiver),
+    canonAddress("eip155", input.market),
+    canonAddress("eip155", input.tokenIn),
+    canonAmount(input.amount),
+    input.slippageBps,
+  ].join(" ");
+}
+
+/**
+ * Pendle LP REMOVE material (P5, FIXED order). Mirrors the add material but binds
+ * `tokenOut` (a remove can target any token) instead of `tokenIn`, and carries the
+ * distinct `lp_remove` kind tag so a remove quote can never authorize an add (or
+ * vice-versa). Addresses EVM (lowercased); `amount` via `canonAmount`.
+ */
+function lpRemoveHashMaterial(input: LpRemoveMatchInput): string {
+  return [
+    input.kind,
+    input.sessionId,
+    input.provider.trim().toLowerCase(),
+    String(input.chainId),
+    canonAddress("eip155", input.walletAddress),
+    canonAddress("eip155", input.receiver),
+    canonAddress("eip155", input.market),
+    canonAddress("eip155", input.tokenOut),
+    canonAmount(input.amount),
+    input.slippageBps,
+  ].join(" ");
+}
+
+/**
+ * Pendle PY mint material (P4, FIXED order). Venue `provider` is bound so a mint
+ * quote can never authorize a non-Pendle execute. The full execute-variance
+ * surface is bound: tokenIn / chainId / slippage / market / YT / receiver all
+ * feed the digest, so any divergence blocks. Addresses are EVM (lowercased);
+ * `amount` via `canonAmount`.
+ */
+function mintHashMaterial(input: MintMatchInput): string {
+  return [
+    input.kind,
+    input.sessionId,
+    input.provider.trim().toLowerCase(),
+    String(input.chainId),
+    canonAddress("eip155", input.walletAddress),
+    canonAddress("eip155", input.receiver),
+    canonAddress("eip155", input.tokenIn),
+    canonAmount(input.amount),
+    canonAddress("eip155", input.ptAddress),
+    canonAddress("eip155", input.ytAddress),
+    canonAddress("eip155", input.market),
+    input.slippageBps,
+  ].join(" ");
+}
+
+/**
+ * Pendle PRE-EXPIRY PY redeem material (P4, FIXED order). Extends the redeem
+ * material with `outputToken` (a pre-expiry redeem can target any token) + venue
+ * binding. Addresses EVM (lowercased); `amount` via `canonAmount`.
+ */
+function redeemPyHashMaterial(input: RedeemPyMatchInput): string {
+  return [
+    input.kind,
+    input.sessionId,
+    input.provider.trim().toLowerCase(),
+    String(input.chainId),
+    canonAddress("eip155", input.walletAddress),
+    canonAddress("eip155", input.receiver),
+    canonAddress("eip155", input.ptAddress),
+    canonAddress("eip155", input.ytAddress),
+    canonAmount(input.amount),
+    canonAddress("eip155", input.outputToken),
+    input.slippageBps,
+  ].join(" ");
 }
 
 /**
@@ -271,6 +532,10 @@ function redeemHashMaterial(input: RedeemMatchInput): string {
     canonAddress("eip155", input.ytAddress),
     canonAmount(input.amount),
     canonAddress("eip155", input.receiver),
+    // Slippage tail (Codex blocker): integer bps string; the builder normalizes
+    // the default identically on both sides so quote↔execute collide when both
+    // omit it, and a divergent slippage blocks.
+    input.slippageBps,
   ].join(" ");
 }
 
