@@ -38,6 +38,8 @@ describe("move item schema (tolerant)", () => {
     return {
       id: "42",
       tradeSide: "buy",
+      productType: "spot",
+      venue: "kyberswap",
       inputToken: "USDC",
       inputAmount: "100",
       outputToken: "ETH",
@@ -59,6 +61,21 @@ describe("move item schema (tolerant)", () => {
   it("accepts a null tradeSide (neutral Solana swap)", () => {
     expect(
       moveItemSchema.safeParse(itemFixture({ tradeSide: null })).success,
+    ).toBe(true);
+  });
+
+  it("accepts null productType and venue (tolerant legacy rows)", () => {
+    expect(
+      moveItemSchema.safeParse(itemFixture({ productType: null, venue: null }))
+        .success,
+    ).toBe(true);
+  });
+
+  it("accepts a bridge row (productType bridge, venue relay, null tradeSide)", () => {
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({ tradeSide: null, productType: "bridge", venue: "relay" }),
+      ).success,
     ).toBe(true);
   });
 
@@ -85,6 +102,8 @@ describe("move item schema (tolerant)", () => {
       moveItemSchema.safeParse(
         itemFixture({
           tradeSide: null,
+          productType: null,
+          venue: null,
           inputToken: null,
           inputAmount: null,
           outputToken: null,
@@ -125,6 +144,8 @@ describe("moves dto schema (array + cap)", () => {
   const row = {
     id: "1",
     tradeSide: null,
+    productType: null,
+    venue: null,
     inputToken: "USDC",
     inputAmount: "1",
     outputToken: "SOL",

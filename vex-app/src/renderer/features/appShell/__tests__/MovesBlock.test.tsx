@@ -7,8 +7,13 @@
  *   - address-like strings (long alnum base58/hex) truncate via the canonical
  *     `truncateAddress` shape (`7jk8Ub…rmYK`), full mint on the tooltip,
  *   - short token strings render as uppercase symbols,
- *   - SIDE stamps derive from the tolerant `tradeSide`: buy → BUY,
- *     sell → SELL, null (neutral Solana swap) → SWAP,
+ *   - stamps give `productType` priority: bridge → BRIDGE·VENUE (plain BRIDGE
+ *     without a venue), send/transfer → TRANSFER; otherwise the tolerant
+ *     `tradeSide` derives: buy → BUY, sell → SELL, null (neutral Solana
+ *     swap) → SWAP,
+ *   - leg amounts render ONLY for dotted-decimal strings (compact ≤6
+ *     significant digits); raw base-unit integers (legacy wei/lamports) and
+ *     nulls render nothing,
  *   - the pulse ring is bound ONLY to a pending (in-flight) fill,
  *   - rows whose `chain`+`txRef` resolve through `moveExplorerUrl` render as
  *     external links (href + target=_blank + rel="noopener noreferrer");
@@ -39,6 +44,8 @@ const LONG_MINT = "7jk8UbH339rCgnohpBvqiss4a7bXWmicMPCUCFmDrmYK";
 function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem {
   return {
     tradeSide: null,
+    productType: null,
+    venue: null,
     inputToken: null,
     inputAmount: null,
     outputToken: null,
@@ -103,6 +110,53 @@ describe("MovesBlock ledger display", () => {
     expect(screen.getByText("BUY")).not.toBeNull();
     expect(screen.getByText("SELL")).not.toBeNull();
     expect(screen.getByText("SWAP")).not.toBeNull();
+  });
+
+  it("stamps a bridge move BRIDGE·VENUE (productType beats tradeSide), plain BRIDGE without a venue", () => {
+    mockMoves([
+      // Venue-qualified: a Relay bridge never renders as SWAP again.
+      move({ id: "1", productType: "bridge", venue: "relay", tradeSide: null }),
+      move({ id: "2", productType: "bridge", venue: "khalani", tradeSide: null }),
+      // Legacy tolerance: bridge row without a venue → plain BRIDGE.
+      move({ id: "3", productType: "bridge", venue: null }),
+      move({ id: "4", productType: "send" }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("BRIDGE·RELAY")).not.toBeNull();
+    expect(screen.getByText("BRIDGE·KHALANI")).not.toBeNull();
+    expect(screen.getByText("BRIDGE")).not.toBeNull();
+    expect(screen.getByText("TRANSFER")).not.toBeNull();
+    expect(screen.queryByText("SWAP")).toBeNull();
+  });
+
+  it("renders dotted-decimal amounts on the legs (≤6 significant digits) and hides raw/null amounts", () => {
+    mockMoves([
+      move({
+        id: "1",
+        productType: "bridge",
+        venue: "relay",
+        inputToken: "ETH",
+        inputAmount: "0.001714",
+        outputToken: "ETH",
+        outputAmount: "0.001693900188686176",
+      }),
+      // Legacy raw base-unit integer (wei) + null → both legs stay amount-less.
+      move({
+        id: "2",
+        inputToken: "wif",
+        inputAmount: "1714000000000000",
+        outputToken: "sol",
+        outputAmount: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("0.001714 ETH")).not.toBeNull();
+    // Compacted to 6 significant digits.
+    expect(screen.getByText("0.0016939 ETH")).not.toBeNull();
+    // Raw wei never prints; the legacy legs render exactly as before.
+    expect(screen.queryByText(/1714000000000000/)).toBeNull();
+    expect(screen.getByText("WIF")).not.toBeNull();
+    expect(screen.getByText("SOL")).not.toBeNull();
   });
 
   it("binds the pulse ring ONLY to a pending fill", () => {

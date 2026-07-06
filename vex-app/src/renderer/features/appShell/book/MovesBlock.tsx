@@ -11,11 +11,15 @@
  * produces multiple fills per execution, so they are shown individually.
  *
  * LEDGER GRAMMAR (landing .ws-stat): one hairline-separated row per fill —
- * status dot · SIDE stamp (mono 9px chip: BUY success-tone / SELL paper-tone /
- * SWAP muted) · `IN → OUT` legs · HH:MM. Raw mint addresses never print in
- * full: address-like token strings truncate to `So1111…1112` (full mint on the
- * tooltip) and a deliberately tiny well-known-mint map resolves the unmissable
- * tickers. Short token strings render as uppercase symbols.
+ * status dot · stamp (mono 9px chip: BUY success-tone / SELL paper-tone /
+ * SWAP muted; `productType` takes priority — `bridge` → BRIDGE·VENUE,
+ * `send`/`transfer` → TRANSFER, both muted) · `IN → OUT` legs · HH:MM. Raw
+ * mint addresses never print in full: address-like token strings truncate to
+ * `So1111…1112` (full mint on the tooltip) and a deliberately tiny
+ * well-known-mint map resolves the unmissable tickers. Short token strings
+ * render as uppercase symbols. A leg carries its amount (`0.0017 ETH`) ONLY
+ * when the recorded amount is a dotted decimal — raw base-unit integers from
+ * legacy captures (wei/lamports) and nulls render nothing.
  *
  * The ledger shows the 10 newest fills (`MOVES_DISPLAY_CAP`); the header badge
  * still counts the FULL fetched result (server-capped at `MOVES_MAX`). A row
@@ -117,6 +121,28 @@ function tokenDisplay(token: string | null): TokenDisplay {
   return { text: token.toUpperCase(), full: null };
 }
 
+/** ≤6 significant digits, no grouping — mono-ledger compact figures. */
+const AMOUNT_FORMAT = new Intl.NumberFormat("en-US", {
+  maximumSignificantDigits: 6,
+  useGrouping: false,
+});
+
+/**
+ * Compact leg amount. The engine records HUMAN-readable amounts only for
+ * newer captures (relay bridge, uniswap spot); older captures store raw
+ * base-unit integers (wei/lamports) that are meaningless to print. Tolerant
+ * guard: render ONLY dotted-decimal strings that parse to a finite positive
+ * number (a raw base-unit integer never carries a `.`); everything else —
+ * null, integers, non-numeric — renders nothing, so legacy rows keep today's
+ * amount-less legs.
+ */
+function amountDisplay(amount: string | null): string | null {
+  if (amount === null || !amount.includes(".")) return null;
+  const parsed = Number.parseFloat(amount);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return AMOUNT_FORMAT.format(parsed);
+}
+
 type SideTone = "buy" | "sell" | "neutral";
 
 interface SideStamp {
@@ -125,13 +151,24 @@ interface SideStamp {
 }
 
 /**
- * SIDE stamp over the tolerant `tradeSide`: `buy`/`sell` (EVM spot) carry
- * their own tones; `null`/empty is a neutral Solana swap → SWAP; any other
- * engine value prints uppercased in the neutral tone — never throw, never
- * hide data.
+ * Chip stamp with `productType` priority: `bridge` → BRIDGE, venue-qualified
+ * (`BRIDGE·RELAY`) when the tolerant `venue` is present; `send`/`transfer` →
+ * TRANSFER; anything else falls through to the tolerant `tradeSide` —
+ * `buy`/`sell` (EVM spot) carry their own tones; `null`/empty is a neutral
+ * Solana swap → SWAP; any other engine value prints uppercased in the neutral
+ * tone. Never throw, never hide data (legacy rows carry `productType: null`
+ * and keep the tradeSide-only derivation).
  */
-function sideStamp(tradeSide: string | null): SideStamp {
-  const side = tradeSide?.toLowerCase() ?? "";
+function sideStamp(move: MoveItem): SideStamp {
+  const product = move.productType?.toLowerCase() ?? "";
+  if (product === "bridge") {
+    const venue = move.venue !== null && move.venue.length > 0 ? move.venue.toUpperCase() : null;
+    return { text: venue !== null ? `BRIDGE·${venue}` : "BRIDGE", tone: "neutral" };
+  }
+  if (product === "send" || product === "transfer") {
+    return { text: "TRANSFER", tone: "neutral" };
+  }
+  const side = move.tradeSide?.toLowerCase() ?? "";
   if (side === "buy") return { text: "BUY", tone: "buy" };
   if (side === "sell") return { text: "SELL", tone: "sell" };
   if (side.length === 0) return { text: "SWAP", tone: "neutral" };
@@ -204,9 +241,11 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
 
 function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const state = moveState(move.captureStatus);
-  const side = sideStamp(move.tradeSide);
+  const side = sideStamp(move);
   const input = tokenDisplay(move.inputToken);
   const output = tokenDisplay(move.outputToken);
+  const inputAmount = amountDisplay(move.inputAmount);
+  const outputAmount = amountDisplay(move.outputAmount);
   const time = formatClock(move.createdAt);
   const explorerUrl = moveExplorerUrl(move.chain, move.txRef);
 
@@ -233,9 +272,13 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
         {side.text}
       </span>
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
-        <span title={input.full ?? undefined}>{input.text}</span>
+        <span title={input.full ?? undefined}>
+          {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+        </span>
         <span className="text-[var(--vex-text-3)]">{" → "}</span>
-        <span title={output.full ?? undefined}>{output.text}</span>
+        <span title={output.full ?? undefined}>
+          {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+        </span>
       </span>
       {time !== null ? (
         <span className="shrink-0 text-right font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">

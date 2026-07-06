@@ -124,6 +124,27 @@ describe("portfolio dto schema", () => {
     ).toBe(true);
   });
 
+  it("allows an UNPRICED token line (balanceUsd null) carrying an amount", () => {
+    const parsed = positionTokenDtoSchema.safeParse({
+      chainId: 4663,
+      symbol: "ETH",
+      balanceUsd: null,
+      amount: 0.005,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.amount).toBe(0.005);
+  });
+
+  it("defaults a missing amount to null (tolerant of pre-amount payloads)", () => {
+    const parsed = positionTokenDtoSchema.safeParse({
+      chainId: 1,
+      symbol: "ETH",
+      balanceUsd: 1,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.amount).toBeNull();
+  });
+
   it("rejects an unknown key on a token line (strict)", () => {
     expect(
       positionTokenDtoSchema.safeParse({
@@ -163,17 +184,20 @@ describe("portfolio dto schema", () => {
     expect(portfolioDtoSchema.safeParse(withoutChains).success).toBe(false);
   });
 
-  it("rejects a non-positive chain totalUsd (positive by construction)", () => {
-    for (const totalUsd of [0, -1]) {
-      expect(
-        portfolioDtoSchema.safeParse(
-          dtoFixture({ chains: [chainFixture({ totalUsd })] }),
-        ).success,
-      ).toBe(false);
-    }
+  it("accepts a zero chain totalUsd (unpriced-only chain) but rejects a negative one", () => {
+    expect(
+      portfolioDtoSchema.safeParse(
+        dtoFixture({ chains: [chainFixture({ totalUsd: 0, tokens: [] })] }),
+      ).success,
+    ).toBe(true);
+    expect(
+      portfolioDtoSchema.safeParse(
+        dtoFixture({ chains: [chainFixture({ totalUsd: -1 })] }),
+      ).success,
+    ).toBe(false);
   });
 
-  it("rejects a non-positive chain token balanceUsd", () => {
+  it("rejects a zero chain token balanceUsd but accepts null (unpriced line)", () => {
     expect(
       portfolioDtoSchema.safeParse(
         dtoFixture({
@@ -181,6 +205,18 @@ describe("portfolio dto schema", () => {
         }),
       ).success,
     ).toBe(false);
+    expect(
+      portfolioDtoSchema.safeParse(
+        dtoFixture({
+          chains: [
+            chainFixture({
+              totalUsd: 0,
+              tokens: [{ symbol: "ETH", balanceUsd: null, amount: 0.005 }],
+            }),
+          ],
+        }),
+      ).success,
+    ).toBe(true);
   });
 
   it("rejects more than 3 tokens on a chain (top-3 bound)", () => {

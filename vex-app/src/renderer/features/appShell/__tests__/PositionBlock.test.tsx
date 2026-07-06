@@ -8,6 +8,9 @@
  *   - when the wallet has tokens but ALL of them round to $0.00, a single
  *     muted "No priced balances." line replaces the list (the truly-empty
  *     "No token balances." copy is reserved for zero token rows),
+ *   - UNPRICED rows (`balanceUsd: null`) with a positive amount stay VISIBLE
+ *     as `amount + symbol` plus a muted em dash — owner decision: show held
+ *     funds without a valuation, never a fabricated $0.00,
  *   - totals stay untouched — they reflect the full portfolio.
  *
  * `usePortfolio` is mocked — this suite owns the block's display rules,
@@ -56,10 +59,11 @@ beforeAll(() => {
 
 function token(
   symbol: string,
-  balanceUsd: number,
+  balanceUsd: number | null,
   chainId: number | null = 1,
+  amount: number | null = null,
 ): PositionTokenDto {
-  return { chainId, symbol, balanceUsd };
+  return { chainId, symbol, balanceUsd, amount };
 }
 
 function portfolio(overrides: Partial<PortfolioDto> = {}): PortfolioDto {
@@ -186,6 +190,39 @@ describe("PositionBlock zero-balance display", () => {
     expect(screen.queryByText("+4 more")).toBeNull();
   });
 
+  it("shows an UNPRICED holding as amount + symbol with a muted em dash (no $0.00)", () => {
+    mockPortfolio(
+      portfolio({
+        tokens: [token("ETH", null, 4663, 0.005)],
+      }),
+    );
+    const { container } = render(<PositionBlock activeSessionId={null} />);
+
+    expect(screen.getByText("ETH")).not.toBeNull();
+    expect(screen.getByText("0.005 ETH")).not.toBeNull();
+    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.queryByText("$0.00")).toBeNull();
+    expect(screen.queryByText("No priced balances.")).toBeNull();
+    expect(container.querySelectorAll("li")).toHaveLength(1);
+  });
+
+  it("hides an unpriced row whose amount is unknown or zero (nothing to show)", () => {
+    mockPortfolio(
+      portfolio({
+        tokens: [
+          token("SOL", 12.3),
+          token("GHOST", null, 1, null),
+          token("EMPTY", null, 1, 0),
+        ],
+      }),
+    );
+    render(<PositionBlock activeSessionId={null} />);
+
+    expect(screen.getByText("SOL")).not.toBeNull();
+    expect(screen.queryByText("GHOST")).toBeNull();
+    expect(screen.queryByText("EMPTY")).toBeNull();
+  });
+
   it("keeps the live total on the FULL portfolio even when rows filter out", () => {
     mockPortfolio(
       portfolio({
@@ -244,7 +281,7 @@ describe("PositionBlock session view (addresses + chains)", () => {
     mockPortfolio(
       portfolio({
         scope: "session",
-        chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25 }])],
+        chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25, amount: null }])],
       }),
     );
     render(<PositionBlock activeSessionId={SESSION} />);
@@ -258,7 +295,7 @@ describe("PositionBlock session view (addresses + chains)", () => {
     mockPortfolio(
       portfolio({
         scope: "session",
-        chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25 }])],
+        chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25, amount: null }])],
       }),
     );
     render(<PositionBlock activeSessionId={SESSION} />);
@@ -273,13 +310,40 @@ describe("PositionBlock session view (addresses + chains)", () => {
     expect(screen.getAllByText("$25.00")).toHaveLength(2);
   });
 
+  it("shows an unpriced-only chain (Robinhood 4663): amount + symbol, muted dashes, no $0.00", () => {
+    mockSessionWallets(EVM_ADDR, null);
+    mockPortfolio(
+      portfolio({
+        scope: "session",
+        // Only holding: native ETH on Robinhood Chain with NO price source —
+        // the chain still appears (totalUsd 0) and the funds stay visible.
+        chains: [
+          chain(4663, "evm", 0, [
+            { symbol: "ETH", balanceUsd: null, amount: 0.005 },
+          ]),
+        ],
+      }),
+    );
+    render(<PositionBlock activeSessionId={SESSION} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Robinhood assets" }));
+    expect(screen.getAllByText("Robinhood").length).toBeGreaterThan(0);
+    expect(screen.getByText("ETH")).not.toBeNull();
+    expect(screen.getByText("0.005 ETH")).not.toBeNull();
+    // Chain total AND token valuation both render the muted em dash — a $0.00
+    // would fabricate a valuation that does not exist.
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("$0.00")).toBeNull();
+    expect(screen.queryByText("No assets on Robinhood")).toBeNull();
+  });
+
   it("always offers 'more'; the dialog lists only funded networks", () => {
     mockSessionWallets(EVM_ADDR, null);
     mockPortfolio(
       portfolio({
         scope: "session",
         // Polygon (137) is not a quick chain — it appears ONLY in the dialog.
-        chains: [chain(137, "evm", 5, [{ symbol: "POL", balanceUsd: 5 }])],
+        chains: [chain(137, "evm", 5, [{ symbol: "POL", balanceUsd: 5, amount: null }])],
       }),
     );
     render(<PositionBlock activeSessionId={SESSION} />);
@@ -306,8 +370,8 @@ describe("PositionBlock session view (addresses + chains)", () => {
         scope: "session",
         chains: [
           chain(20011000000, "solana", 60, [
-            { symbol: "SOL", balanceUsd: 50 },
-            { symbol: "BONK", balanceUsd: 10 },
+            { symbol: "SOL", balanceUsd: 50, amount: null },
+            { symbol: "BONK", balanceUsd: 10, amount: null },
           ]),
         ],
       }),

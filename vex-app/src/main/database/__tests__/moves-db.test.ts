@@ -249,6 +249,8 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
         {
           id: 42,
           trade_side: "buy",
+          product_type: "spot",
+          venue: "uniswap",
           input_token: "USDC",
           input_amount: "50",
           output_token: "ETH",
@@ -270,6 +272,17 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
     expect(result.data[0]?.id).toBe("42");
     expect(result.data[0]?.chain).toBe("ethereum");
     expect(result.data[0]?.txRef).toBe("0xfeed");
+    expect(result.data[0]?.productType).toBe("spot");
+    expect(result.data[0]?.venue).toBe("uniswap");
+  });
+
+  it("selects product_type and namespace-as-venue for the chip derivation", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    await getMovesForSession(SESSION);
+    const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
+    expect(sql).toContain("a.product_type");
+    expect(sql).toContain("a.namespace AS venue");
   });
 });
 
@@ -281,6 +294,8 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         {
           id: 7,
           trade_side: null,
+          product_type: null,
+          venue: null,
           input_token: "USDC",
           input_amount: "100",
           output_token: "SOL",
@@ -302,6 +317,8 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
       {
         id: "7",
         tradeSide: null,
+        productType: null,
+        venue: null,
         inputToken: "USDC",
         inputAmount: "100",
         outputToken: "SOL",
@@ -314,6 +331,40 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         createdAt: "2026-05-21T10:00:00.000Z",
       },
     ]);
+  });
+
+  it("maps a bridge row (product_type bridge, venue relay)", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 8,
+          trade_side: null,
+          product_type: "bridge",
+          venue: "relay",
+          input_token: "ETH",
+          input_amount: "0.001714",
+          output_token: "ETH",
+          output_amount: "0.001693",
+          value_usd: null,
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "4663",
+          tx_ref: "0xbridge",
+          created_at: "2026-07-05T10:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const row = result.data[0];
+    expect(row?.productType).toBe("bridge");
+    expect(row?.venue).toBe("relay");
+    expect(row?.inputToken).toBe("ETH");
+    expect(row?.inputAmount).toBe("0.001714");
+    expect(row?.outputAmount).toBe("0.001693");
   });
 
   it("coerces a NUMERIC value_usd string to a finite number and a Date created_at to ISO", async () => {

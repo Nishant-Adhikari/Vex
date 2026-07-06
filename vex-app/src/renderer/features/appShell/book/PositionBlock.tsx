@@ -19,7 +19,10 @@
  *
  * Token rows that would print `$0.00` (|USD| below formatUsd's 2-decimal
  * rounding threshold) are hidden — the cap and "+N more" count only rows
- * worth showing. Total/snapshot/PnL still reflect the FULL portfolio.
+ * worth showing. UNPRICED rows (`balanceUsd: null`, no price source) with a
+ * positive amount stay VISIBLE — owner decision: show held funds as
+ * `amount + symbol` with a muted em dash instead of hiding them or faking
+ * $0.00. Total/snapshot/PnL still reflect the FULL portfolio.
  *
  * `hero` = the BOOK column's single dominant section. The de-boxed column has
  * no tile chrome to strengthen, so hero presence lives in CONTENT: the total
@@ -36,7 +39,11 @@ import type {
 } from "@shared/schemas/portfolio.js";
 import { usePortfolio } from "../../../lib/api/portfolio.js";
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
-import { formatUsd, formatUsdDelta } from "../../../lib/format.js";
+import {
+  formatTokenQuantity,
+  formatUsd,
+  formatUsdDelta,
+} from "../../../lib/format.js";
 import { BookBlock } from "./BookBlock.js";
 import { DepositAddresses } from "./DepositAddresses.js";
 import { PositionChains } from "./PositionChains.js";
@@ -51,8 +58,15 @@ const TOKENS_VISIBLE = 8;
  */
 const MIN_DISPLAY_USD = 0.005;
 
-/** True when the row's USD figure would display as something other than $0.00. */
+/**
+ * True when the row is worth a line: a priced row whose USD figure renders
+ * as something other than $0.00, or an UNPRICED row (`balanceUsd: null`)
+ * with a positive token amount to show instead.
+ */
 function hasDisplayableBalance(token: PositionTokenDto): boolean {
+  if (token.balanceUsd === null) {
+    return token.amount !== null && token.amount > 0;
+  }
   return Math.abs(token.balanceUsd) >= MIN_DISPLAY_USD;
 }
 
@@ -257,13 +271,28 @@ function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element 
   const symbol = token.symbol !== null && token.symbol.length > 0
     ? token.symbol
     : "—";
+  // Quantity is the muted secondary figure; the USD value keeps the white
+  // register when priced and drops to a muted em dash when UNPRICED (null —
+  // never a fabricated $0.00).
+  const quantity = formatTokenQuantity(token.amount, token.symbol);
   return (
     <li className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0">
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)]">
         {symbol}
       </span>
-      <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
-        {formatUsd(token.balanceUsd)}
+      <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
+        {quantity !== null ? (
+          <span className="text-[var(--vex-text-3)]">{quantity}</span>
+        ) : null}
+        <span
+          className={
+            token.balanceUsd === null
+              ? "text-[var(--vex-text-3)]"
+              : "text-[var(--vex-text)]"
+          }
+        >
+          {formatUsd(token.balanceUsd)}
+        </span>
       </span>
     </li>
   );

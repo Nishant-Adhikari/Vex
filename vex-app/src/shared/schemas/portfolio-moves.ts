@@ -53,6 +53,14 @@ export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
  *
  *  - `id`            — `proj_activity.id` (SERIAL) stringified for the renderer.
  *  - `tradeSide`     — `buy`/`sell` for EVM spot; `null` for neutral swaps.
+ *  - `productType`   — `proj_activity.product_type` (`spot`, `bridge`, `perps`,
+ *                      `send`, …) — tolerant string, NOT an enum; drives the
+ *                      renderer's chip (`bridge` → BRIDGE). Nullable for
+ *                      tolerance even though the DDL is NOT NULL.
+ *  - `venue`         — `proj_activity.namespace`: the protocol namespace that
+ *                      executed the move (e.g. `relay`, `khalani`, `uniswap`) —
+ *                      distinguishes bridge venues in the chip. Nullable for
+ *                      tolerance even though the DDL is NOT NULL.
  *  - `inputToken` / `inputAmount` / `outputToken` / `outputAmount` — the swap
  *                      legs as the engine recorded them (all nullable).
  *  - `valueUsd`      — notional USD; `null` when the engine could not price it.
@@ -73,6 +81,8 @@ export const moveItemSchema = z
   .object({
     id: z.string(),
     tradeSide: z.string().nullable(),
+    productType: z.string().nullable(),
+    venue: z.string().nullable(),
     inputToken: z.string().nullable(),
     inputAmount: z.string().nullable(),
     outputToken: z.string().nullable(),

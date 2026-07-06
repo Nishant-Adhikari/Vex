@@ -16,7 +16,10 @@
  * (most recent complete snapshot group for the exact address set). All USD
  * figures are JS numbers coerced from `NUMERIC` columns; `chainId` tolerates
  * a `BIGINT` chain id that overflows the JS safe-integer range via `Number()`
- * (no value is fabricated — `null` when absent/unparseable).
+ * (no value is fabricated — `null` when absent/unparseable). Token lines keep
+ * `balanceUsd: null` for UNPRICED holdings (no price source — owner decision:
+ * show the funds instead of hiding them) and carry `amount`, the human token
+ * quantity derived per row from `balance_raw / 10^decimals`.
  */
 
 import { z } from "zod";
@@ -41,28 +44,33 @@ export type PortfolioReadInput = z.infer<typeof portfolioReadInputSchema>;
  * One aggregated position line — a single (chain, token) bucket summed
  * across every wallet in the resolved allow-list. `chainId` is `null` when
  * the DB chain id is absent or could not be coerced to a finite JS number;
- * `symbol` is `null` for rows without a token symbol. `balanceUsd` is a
- * finite JS number (the SQL `COALESCE(SUM(...),0)::float8` guarantees a
- * value, never `null`).
+ * `symbol` is `null` for rows without a token symbol. `balanceUsd` is `null`
+ * for an UNPRICED holding (no price available); `amount` is the human token
+ * quantity (per-row `balance_raw / 10^decimals`, summed AFTER the division so
+ * mixed-decimals buckets stay correct), `null` when no row is computable.
+ * `amount` defaults to `null` so pre-amount payloads still parse.
  */
 export const positionTokenDtoSchema = z
   .object({
     chainId: z.number().nullable(),
     symbol: z.string().max(64).nullable(),
-    balanceUsd: z.number(),
+    balanceUsd: z.number().nullable(),
+    amount: z.number().nullable().default(null),
   })
   .strict();
 export type PositionTokenDto = z.infer<typeof positionTokenDtoSchema>;
 
 /**
  * One token line inside a per-chain breakdown — like `positionTokenDtoSchema`
- * but WITHOUT `chainId` (the parent chain carries it) and guaranteed a
- * strictly positive USD figure by the purpose-built breakdown query.
+ * but WITHOUT `chainId` (the parent chain carries it). `balanceUsd` is
+ * strictly positive when priced (the breakdown query drops priced-at-zero
+ * lines) and `null` for an unpriced holding; `amount` mirrors the flat line.
  */
 export const chainTokenDtoSchema = z
   .object({
     symbol: z.string().max(64).nullable(),
-    balanceUsd: z.number().positive(),
+    balanceUsd: z.number().positive().nullable(),
+    amount: z.number().nullable().default(null),
   })
   .strict();
 export type ChainTokenDto = z.infer<typeof chainTokenDtoSchema>;
@@ -73,9 +81,11 @@ export type ChainTokenDto = z.infer<typeof chainTokenDtoSchema>;
  * NOT a post-process of the capped flat `tokens` list, which is bounded at
  * 500 rows and could silently drop chains). Invariants by construction:
  *
- *  - only chains with a strictly positive `totalUsd` appear ("see more"
- *    lists only chains with balance > $0);
- *  - `tokens` holds that chain's top holdings by USD, max 3, each > $0;
+ *  - `totalUsd` is non-negative: 0 means the chain holds ONLY unpriced
+ *    tokens (owner decision — funds show without a USD valuation rather
+ *    than the chain disappearing);
+ *  - `tokens` holds that chain's top holdings ranked usd DESC NULLS LAST,
+ *    max 3, each either > $0 or unpriced (`balanceUsd: null`);
  *  - rows with a NULL `chain_id` stay in the legacy flat `tokens` field
  *    only — they can't be attributed to a chain switcher entry;
  *  - `family` derives from the chain id (the Khalani synthetic Solana id
@@ -85,7 +95,7 @@ export const positionChainDtoSchema = z
   .object({
     chainId: z.number(),
     family: z.enum(["evm", "solana"]),
-    totalUsd: z.number().positive(),
+    totalUsd: z.number().nonnegative(),
     tokens: z.array(chainTokenDtoSchema).max(3),
   })
   .strict();
@@ -101,11 +111,12 @@ export type PositionChainDto = z.infer<typeof positionChainDtoSchema>;
  *  - `snapshotTotalUsd`/`pnlVsPrev`/`snapshotAt` — the most recent COMPLETE
  *                        snapshot group covering exactly the resolved address
  *                        set; all `null` when no such snapshot exists.
- *  - `tokens`          — per-(chain,token) live USD lines, newest USD first,
+ *  - `tokens`          — per-(chain,token) live lines, biggest USD first,
  *                        capped at 500 (defensive bound, never expected to hit).
- *                        UNCHANGED legacy field — additive evolution only.
- *  - `chains`          — per-chain breakdown for the chain switcher: positive
- *                        totals only, top-3 tokens each, bounded at 64 chains.
+ *                        `balanceUsd: null` marks an unpriced holding.
+ *  - `chains`          — per-chain breakdown for the chain switcher:
+ *                        non-negative totals (0 = unpriced-only chain),
+ *                        top-3 tokens each, bounded at 64 chains.
  */
 export const portfolioDtoSchema = z
   .object({
