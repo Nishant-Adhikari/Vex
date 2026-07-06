@@ -35,10 +35,11 @@ describe("safeHref", () => {
 });
 
 describe("safeImgSrc", () => {
-  it("allows an absolute https URL", () => {
-    expect(safeImgSrc("https://cdn.example/logo.png")).toBe(
-      "https://cdn.example/logo.png",
-    );
+  it("returns null for a well-formed https URL — remote images disabled for launch (W1)", () => {
+    // Remote images are DISABLED for launch to close the CSP img-src
+    // exfiltration channel; every source (even a clean public https logo)
+    // resolves to null so the caller renders alt text only.
+    expect(safeImgSrc("https://cdn.example/logo.png")).toBeNull();
   });
 
   it("rejects every non-https / unsafe form", () => {
@@ -63,8 +64,8 @@ describe("safeImgSrc", () => {
     expect(safeImgSrc("https://[fc00::1]/a.png")).toBeNull();
     expect(safeImgSrc("https://[fe80::1]/a.png")).toBeNull();
     expect(safeImgSrc("https://[::ffff:127.0.0.1]/a.png")).toBeNull(); // IPv4-mapped IPv6
-    // A public IP / host is still allowed.
-    expect(safeImgSrc("https://8.8.8.8/a.png")).toBe("https://8.8.8.8/a.png");
+    // A public IP / host is now ALSO rejected — remote images disabled (W1).
+    expect(safeImgSrc("https://8.8.8.8/a.png")).toBeNull();
   });
 });
 
@@ -108,24 +109,23 @@ describe("MarkdownContent", () => {
     expect(container.textContent).toContain('onerror="alert(1)"');
   });
 
-  it("renders an https image as a hardened no-referrer <img>", () => {
+  it("renders a well-formed https image as alt text only, never an <img> (remote images disabled for launch, W1)", () => {
     const { container } = renderMd("![the alt](https://a.b/c.png)");
-    const img = container.querySelector("img");
-    expect(img).not.toBeNull();
-    expect(img?.getAttribute("src")).toBe("https://a.b/c.png");
-    expect(img?.getAttribute("referrerpolicy")).toBe("no-referrer");
-    expect(img?.getAttribute("loading")).toBe("lazy");
-    expect(img?.getAttribute("decoding")).toBe("async");
-    expect(img?.getAttribute("alt")).toBe("the alt");
+    // Remote images are DISABLED for launch: even a clean https source renders
+    // its alt text via the existing fallback branch — no <img> reaches the DOM,
+    // closing the CSP img-src exfiltration channel.
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("the alt");
   });
 
-  it("falls back to alt text (no <img>) for every unsafe image source", () => {
+  it("falls back to alt text (no <img>) for every image source, including well-formed public https", () => {
     const cases = [
       "![a](http://a.b/c.png)", // wrong scheme
       "![b](javascript:alert(1))",
       "![c](//a.b/c.png)", // protocol-relative
       "![d](https://u:p@a.b/c.png)", // embedded credentials
       "![e](https://localhost/c.png)", // localhost
+      "![g](https://cdn.example/logo.png)", // clean public https — still disabled for launch (W1)
     ];
     for (const md of cases) {
       const { container } = renderMd(md);

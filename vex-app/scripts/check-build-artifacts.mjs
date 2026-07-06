@@ -6,8 +6,10 @@
  *   1. dist/main/index.js exists and matches package.json `main` field.
  *   2. dist/preload/index.cjs exists, is CJS, exposes contextBridge, NEVER raw ipcRenderer.
  *   3. dist/renderer/index.html has strict CSP — no `'unsafe-inline'`, no `'unsafe-eval'`,
- *      and `script-src`/`connect-src` parse to EXACTLY `'self'` (img-src may widen
- *      to `https:` for token logos — Option A2).
+ *      and `script-src`/`connect-src` parse to EXACTLY `'self'`. `img-src` is now
+ *      pinned to EXACTLY `'self' data:` (remote images DISABLED for launch to
+ *      close the img-src exfiltration channel — see docs/audit/vexapp-prerelease-audit.md
+ *      finding W1); this gate fails if anyone re-widens it back to `https:`.
  *   4. dist/renderer/assets/*.js bundle has no `localStorage`/`sessionStorage`/`dangerouslySetInnerHTML`.
  *   5. Built CSP includes mandatory directives: default-src 'self', object-src 'none',
  *      base-uri 'none', frame-ancestors 'none', form-action 'none'.
@@ -151,8 +153,7 @@ check("renderer index.html CSP — no unsafe-inline / unsafe-eval", () => {
     if (tokens.length === 0) continue;
     directives.set(tokens[0], tokens.slice(1));
   }
-  // script-src and connect-src must remain EXACTLY ['self']. img-src is
-  // allowed to widen (token logos: `'self' data: https:`) — not asserted here.
+  // script-src and connect-src must remain EXACTLY ['self'].
   for (const name of ["script-src", "connect-src"]) {
     const sources = directives.get(name);
     if (!sources) {
@@ -161,6 +162,26 @@ check("renderer index.html CSP — no unsafe-inline / unsafe-eval", () => {
     if (sources.length !== 1 || sources[0] !== "'self'") {
       throw new Error(
         `CSP ${name} must be exactly 'self' (found: ${name} ${sources.join(" ")})`
+      );
+    }
+  }
+  // img-src must be EXACTLY `'self' data:` — remote images are disabled for
+  // launch to close the img-src exfiltration channel. If anyone re-widens it
+  // (e.g. back to `https:`), this gate fails. Compare as sorted source sets so
+  // ordering does not matter.
+  {
+    const sources = directives.get("img-src");
+    if (!sources) {
+      throw new Error("CSP missing required directive: img-src 'self' data:");
+    }
+    const expected = ["'self'", "data:"].slice().sort();
+    const actual = sources.slice().sort();
+    if (
+      actual.length !== expected.length ||
+      actual.some((src, i) => src !== expected[i])
+    ) {
+      throw new Error(
+        `CSP img-src must be exactly 'self' data: (found: img-src ${sources.join(" ")})`
       );
     }
   }
