@@ -124,6 +124,9 @@ describe("MissionControls", () => {
     renderControls();
 
     const startBtn = await screen.findByRole("button", { name: "Start mission" });
+    // Accepted-clean contract → the acceptance-pending notice must be gone
+    // (the Start CTA is the deterministic signal from here).
+    expect(screen.queryByText(/Mission contract not accepted/i)).toBeNull();
     fireEvent.click(startBtn);
     await waitFor(() => expect(startMock).toHaveBeenCalledTimes(1));
     expect(startMock).toHaveBeenCalledWith({ sessionId: SESSION, missionId: MISSION });
@@ -137,6 +140,19 @@ describe("MissionControls", () => {
 
     await waitFor(() => expect(getDiffMock).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("button", { name: "Start mission" })).toBeNull();
+    // Standing acceptance-pending notice: the runtime gate blocks every
+    // on-chain broadcast pre-acceptance, and the user must SEE that.
+    await screen.findByText(/on-chain actions .* are blocked until you accept/i);
+  });
+
+  it("shows the standing acceptance-pending notice while the draft is still in setup", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok({ missionId: MISSION, status: "draft" }));
+    getDiffMock.mockResolvedValue(diffAccepted(false));
+    renderControls();
+
+    await screen.findByText(/Mission contract not accepted/i);
     expect(screen.queryByRole("button", { name: "Start mission" })).toBeNull();
   });
 

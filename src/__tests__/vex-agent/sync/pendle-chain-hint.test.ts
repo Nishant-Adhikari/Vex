@@ -1,17 +1,20 @@
 /**
  * Pendle post-mutation sync seeding (G2#5) — the pendle captures' chain slug
- * ("ethereum") resolves to chain 1, so a buy/sell/redeem seeds a selective sync
- * of Ethereum.
+ * resolves to its chainId, so a buy/sell/redeem seeds a selective sync of that
+ * chain. This drives the REAL Khalani alias resolver (only the network fetch is
+ * stubbed) so every one of the 11 Pendle registry slugs is proven to resolve to
+ * its chainId via `resolveChainHint`.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockGetCachedKhalaniChains = vi.fn();
-const mockResolveChainId = vi.fn();
-vi.mock("@tools/khalani/chains.js", () => ({
-  getCachedKhalaniChains: () => mockGetCachedKhalaniChains(),
-  resolveChainId: (...a: unknown[]) => mockResolveChainId(...a),
-}));
+// Use the REAL resolveChainId (Khalani CHAIN_ALIASES) — only stub the network
+// fetch so no live Khalani call is made. The Pendle slugs are aliases in
+// CHAIN_ALIASES, so resolution does not depend on the fetched chain list.
+vi.mock("@tools/khalani/chains.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tools/khalani/chains.js")>();
+  return { ...actual, getCachedKhalaniChains: vi.fn().mockResolvedValue([]) };
+});
 vi.mock("@tools/evm-chains/registry.js", () => ({
   resolveLocalChainId: () => undefined,
 }));
@@ -20,19 +23,14 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const { resolveChainHint } = await import("../../../vex-agent/sync/chains.js");
-const { PENDLE_CHAIN_SLUG } = await import("../../../tools/pendle/chains.js");
+const { PENDLE_CHAIN_SLUG, PENDLE_CHAIN_REGISTRY } = await import("../../../tools/pendle/chains.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetCachedKhalaniChains.mockResolvedValue([{ id: 1, name: "Ethereum", type: "eip155" }]);
-  mockResolveChainId.mockImplementation((hint: string) => {
-    if (hint === "ethereum") return 1;
-    throw new Error("unsupported");
-  });
 });
 
 describe("pendle capture chain hint → selective sync (G2#5)", () => {
-  it("the pendle capture slug is 'ethereum'", () => {
+  it("the Ethereum capture slug is 'ethereum'", () => {
     expect(PENDLE_CHAIN_SLUG).toBe("ethereum");
   });
 
@@ -40,5 +38,13 @@ describe("pendle capture chain hint → selective sync (G2#5)", () => {
     const resolved = await resolveChainHint(PENDLE_CHAIN_SLUG);
     expect(resolved.family).toBe("eip155");
     expect(resolved.chainIds).toEqual([1]);
+  });
+
+  it("EVERY Pendle registry slug resolves to its chainId as an EVM chain", async () => {
+    for (const chain of PENDLE_CHAIN_REGISTRY) {
+      const resolved = await resolveChainHint(chain.slug);
+      expect(resolved.family, `slug ${chain.slug}`).toBe("eip155");
+      expect(resolved.chainIds, `slug ${chain.slug}`).toEqual([chain.chainId]);
+    }
   });
 });

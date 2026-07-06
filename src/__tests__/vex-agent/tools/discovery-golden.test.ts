@@ -51,11 +51,13 @@ const FIXTURES: readonly GoldenFixture[] = [
   // ── rare-chain lexical recall (validates structured `chains` field) ─
   { intent: "swap on plasma", expectedAny: ["kyberswap.swap"] },
   { intent: "bridge to monad", expectedAny: ["khalani.bridge", "khalani.quote"] },
-  // Berachain is a rare chain — only some manifests list it. Query "lp on berachain"
-  // is short and ambiguous; the chain-field hit is the validation goal here, so accept
-  // either kyberswap.zap (LP intent) or kyberswap.swap (kyberswap-on-berachain) as a
-  // valid top-K — both show the chains lexical field is working for rare chains.
-  { intent: "lp on berachain", expectedAny: ["kyberswap.zap", "kyberswap.swap"] },
+  // Query "lp on berachain" is short and ambiguous; the chain-field hit is the
+  // validation goal here. Since the Pendle namespace went multichain, its LP tools
+  // also list berachain in `chains` and are an equally correct LP hit — accept any
+  // of kyberswap.zap (LP intent), kyberswap.swap (kyberswap-on-berachain), or
+  // pendle.lp (Pendle LP-on-berachain); each proves the chains lexical field works.
+  // The rare-chain top-5 case below still pins kyberswap.zap specifically.
+  { intent: "lp on berachain", expectedAny: ["kyberswap.zap", "kyberswap.swap", "pendle.lp"] },
 ];
 
 describe("discovery golden harness", () => {

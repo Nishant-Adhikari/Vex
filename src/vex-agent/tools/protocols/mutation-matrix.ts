@@ -81,6 +81,20 @@ const entries: [string, MutationContract][] = [
   ["pendle.pt.sell",         { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
   ["pendle.pt.redeem",       { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
 
+  // Pendle YT (variable/leveraged yield). Buy opens a YT lot, early-exit sell
+  // closes it — captured as spot swaps with exact USD from the payment leg
+  // (valuationSource "pendle"). The YT lot key is the YT address (distinct from
+  // the market's PT). No redeem — a YT decays to zero rather than maturing to face.
+  ["pendle.yt.buy",          { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+  ["pendle.yt.sell",         { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+
+  // Pendle PY mint / pre-expiry redeem (P4). ONE execution, TWO capture items (a
+  // PT leg + a YT leg) with DISTINCT instrument keys → fanOut:"items" (mint opens
+  // a PT lot AND a YT lot; redeem closes both). Each item is a complete spot swap
+  // with exact USD split proportionally across the legs (valuationSource "pendle").
+  ["pendle.py.mint",         { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "items",  requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+  ["pendle.py.redeem",       { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "items",  requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+
   // ── pnl_prediction ────────────────────────────────────────
   // Solana predictions — single positionPubkey per buy/sell/claim
   ["solana.predict.buy",     { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: PNL_PREDICTION_FIELDS, valuationExpected: "exact", requiredMetaFields: ["contracts"] }],
@@ -108,12 +122,24 @@ const entries: [string, MutationContract][] = [
   ["kyberswap.zap.in",              { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
   ["kyberswap.zap.out",             { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
   ["kyberswap.zap.migrate",         { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
+  // Pendle single-token LP add/remove (P5) — same LP-lifecycle projection as the
+  // kyberswap zaps: type:"lp", positionKey `slug:lp:market:wallet`, meta.action
+  // "lp-add"/"lp-remove" drives openPositions open/close (remove closes only on a
+  // proven full exit) + proj_lp_events via the protocol-neutral meta.lpLegs path.
+  // valuationExpected "none" — the handler emits honest Pendle-priced USD when
+  // available, honest null otherwise (validator does not force it).
+  ["pendle.lp.add",                 { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
+  ["pendle.lp.remove",              { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
 
   // ── audit (capture: full) ─────────────────────────────────
   ["khalani.bridge",           { role: "audit", capture: "full", expectedType: "bridge",       previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
   ["relay.bridge",             { role: "audit", capture: "full", expectedType: "bridge",       previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
   ["solana.lend.deposit",      { role: "audit", capture: "full", expectedType: "lend",         previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
   ["solana.lend.withdraw",     { role: "audit", capture: "full", expectedType: "lend",         previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  // Pendle income sweep — claims accrued YT interest + rewards / LP rewards to the
+  // wallet. Not a spot trade (no input/output pair, no principal moved) → audited
+  // as a "reward" income event (type→product "reward"; honest null valuation).
+  ["pendle.claim",             { role: "audit", capture: "full", expectedType: "reward",       previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
 
   // ── audit (capture: none — address creation, no direct tx) ─
   ["polymarket.bridge.deposit",  { role: "audit", capture: "none", expectedType: "bridge", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS, valuationExpected: "none" }],

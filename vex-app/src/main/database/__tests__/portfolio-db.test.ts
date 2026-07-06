@@ -190,8 +190,8 @@ describe("portfolio-db getPortfolio — global scope", () => {
     expect(result.data.pnlVsPrev).toBeCloseTo(34.5, 4);
     expect(result.data.snapshotAt).toBe("2026-05-21T10:00:00.000Z");
     expect(result.data.tokens).toEqual([
-      { chainId: 1, symbol: "ETH", balanceUsd: 1000 },
-      { chainId: 137, symbol: "USDC", balanceUsd: 234.5 },
+      { chainId: 1, symbol: "ETH", balanceUsd: 1000, amount: null },
+      { chainId: 137, symbol: "USDC", balanceUsd: 234.5, amount: null },
     ]);
 
     // Every SELECT (live + tokens + breakdown + snapshot) carries the
@@ -333,7 +333,32 @@ describe("portfolio-db getPortfolio — coercion + fallback", () => {
       chainId: null,
       symbol: null,
       balanceUsd: 1,
+      amount: null,
     });
+  });
+
+  it("preserves an UNPRICED holding as balanceUsd null with its amount (owner: show funds)", async () => {
+    scriptPortfolioQueries({
+      live: "0",
+      tokens: [
+        { chain_id: "4663", token_symbol: "ETH", usd: null, amount: "0.005" },
+      ],
+      snapshot: null,
+    });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.tokens[0]).toEqual({
+      chainId: 4663,
+      symbol: "ETH",
+      balanceUsd: null,
+      amount: 0.005,
+    });
+    // The flat query no longer coalesces usd to 0 and computes the human
+    // amount PER ROW (divide before summing — mixed decimals stay correct).
+    const tokenSql = String(mocks.query.mock.calls[1]?.[0] ?? "");
+    expect(tokenSql).not.toContain("COALESCE(SUM(balance_usd)");
+    expect(tokenSql).toContain("balance_raw::numeric / power(10::numeric, decimals)");
   });
 
   it("returns dbUnavailable (domain portfolio) when buildPoolConfig yields null", async () => {
@@ -435,8 +460,12 @@ describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)"
     expect(breakdownSql).toContain("PARTITION BY chain_id");
     // …NULL chain ids stay in the legacy flat list only…
     expect(breakdownSql).toContain("chain_id IS NOT NULL");
-    // …only positive chain totals survive, bounded to the schema caps.
-    expect(breakdownSql).toContain("HAVING SUM(usd) > 0");
+    // …EVERY funded chain survives (an unpriced-only chain totals 0 instead
+    // of being HAVING-filtered away), tokens rank positive-USD-or-unpriced,
+    // bounded to the schema caps.
+    expect(breakdownSql).not.toContain("HAVING");
+    expect(breakdownSql).toContain("COALESCE(SUM(usd), 0)");
+    expect(breakdownSql).toContain("usd > 0 OR usd IS NULL");
     expect(breakdownSql).toContain("LIMIT 64");
     expect(breakdownSql).toContain("rn <= 3");
     // Same address allow-list binding as every other SELECT.
@@ -468,36 +497,84 @@ describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)"
         family: "solana",
         totalUsd: 60,
         tokens: [
-          { symbol: "SOL", balanceUsd: 50 },
-          { symbol: "BONK", balanceUsd: 10 },
+          { symbol: "SOL", balanceUsd: 50, amount: null },
+          { symbol: "BONK", balanceUsd: 10, amount: null },
         ],
       },
       {
         chainId: 1,
         family: "evm",
         totalUsd: 40,
-        tokens: [{ symbol: "ETH", balanceUsd: 40 }],
+        tokens: [{ symbol: "ETH", balanceUsd: 40, amount: null }],
       },
     ]);
   });
 
-  it("drops non-positive chain totals and unparseable chain ids defensively", async () => {
+  it("keeps an unpriced-only chain (Robinhood 4663) with totalUsd 0 and a null-USD line carrying the amount", async () => {
     scriptPortfolioQueries({
       live: "10",
       tokens: [],
       snapshot: null,
       breakdown: [
         { chain_id: "1", chain_total: "10", token_symbol: "ETH", token_usd: "10" },
-        // Should never arrive (SQL HAVING > 0) — the builder still drops them.
+        // Native ETH on Robinhood Chain with NO price source: the chain
+        // must still appear (totalUsd 0) and the line keeps balanceUsd null
+        // with the human amount (owner decision: show funds, no fake $0.00).
+        {
+          chain_id: "4663",
+          chain_total: "0",
+          token_symbol: "ETH",
+          token_usd: null,
+          token_amount: "0.005",
+        },
+      ],
+    });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.chains).toEqual([
+      {
+        chainId: 1,
+        family: "evm",
+        totalUsd: 10,
+        tokens: [{ symbol: "ETH", balanceUsd: 10, amount: null }],
+      },
+      {
+        chainId: 4663,
+        family: "evm",
+        totalUsd: 0,
+        tokens: [{ symbol: "ETH", balanceUsd: null, amount: 0.005 }],
+      },
+    ]);
+  });
+
+  it("keeps zero totals; drops negative totals and unparseable chain ids defensively", async () => {
+    scriptPortfolioQueries({
+      live: "10",
+      tokens: [],
+      snapshot: null,
+      breakdown: [
+        { chain_id: "1", chain_total: "10", token_symbol: "ETH", token_usd: "10" },
+        // Zero total is now LEGAL (unpriced-only chain); its priced-at-zero
+        // line is still dropped from the top-3.
         { chain_id: "137", chain_total: "0", token_symbol: "POL", token_usd: "0" },
+        // Should never arrive — the builder still drops them.
+        { chain_id: "10", chain_total: "-5", token_symbol: "OP", token_usd: "-5" },
         { chain_id: "not-a-number", chain_total: "5", token_symbol: "X", token_usd: "5" },
       ],
     });
     const result = await getPortfolio({ scope: "global" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.chains).toHaveLength(1);
-    expect(result.data.chains[0]?.chainId).toBe(1);
+    expect(result.data.chains).toEqual([
+      {
+        chainId: 1,
+        family: "evm",
+        totalUsd: 10,
+        tokens: [{ symbol: "ETH", balanceUsd: 10, amount: null }],
+      },
+      { chainId: 137, family: "evm", totalUsd: 0, tokens: [] },
+    ]);
   });
 
   it("keeps at most 3 tokens per chain and drops non-positive token lines", async () => {
@@ -518,9 +595,9 @@ describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)"
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.chains[0]?.tokens).toEqual([
-      { symbol: "A", balanceUsd: 4 },
-      { symbol: "B", balanceUsd: 3 },
-      { symbol: "C", balanceUsd: 2 },
+      { symbol: "A", balanceUsd: 4, amount: null },
+      { symbol: "B", balanceUsd: 3, amount: null },
+      { symbol: "C", balanceUsd: 2, amount: null },
     ]);
   });
 
@@ -579,7 +656,7 @@ describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)"
       snapshot: null,
       breakdown: [
         // LEFT JOIN emits the chain with NULL token columns when no ranked
-        // line survived the usd > 0 filter.
+        // line survived the positive-USD-or-unpriced filter.
         { chain_id: "1", chain_total: "10", token_symbol: null, token_usd: null },
       ],
     });

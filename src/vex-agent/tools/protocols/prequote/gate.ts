@@ -41,6 +41,8 @@ import { computePrequoteMatchHash } from "./identity/hash.js";
 import { assertBridgeParamsBindable, buildBridgeIdentity } from "./identity/bridge.js";
 import { buildRelayBridgeIdentity } from "./identity/relay-bridge.js";
 import { buildPendleRedeemIdentity } from "./identity/pendle-redeem.js";
+import { buildPendleMintIdentity, buildPendleRedeemPyIdentity } from "./identity/pendle-py.js";
+import { buildPendleLpAddIdentity, buildPendleLpRemoveIdentity } from "./identity/pendle-lp.js";
 import { GateIdentityError } from "./gate-errors.js";
 import type { GateBlockReason } from "./gate-errors.js";
 import { canonSlippageBps, readParamSlippageBps } from "./slippage.js";
@@ -140,9 +142,105 @@ const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Redeem blocked: a parameter cannot be bound to a quote. Remove it and retry.",
 };
 
+const MINT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Mint blocked: could not verify a fresh mint quote. Re-run pendle.py.quote (direction mint) for this PT and retry.",
+  no_session:
+    "Mint blocked: could not verify a fresh mint quote (no session). Re-run pendle.py.quote and retry.",
+  unresolved_token:
+    "Mint blocked: the PT could not be resolved to an active Pendle market. Re-check the PT address, then retry.",
+  no_quote:
+    "Mint blocked: no fresh mint quote for this exact PT/token/amount. Call pendle.py.quote (direction mint) first, then retry.",
+  safety_fail:
+    "Mint blocked: the quoted mint was flagged unsafe. Aborting.",
+  wallet_setup:
+    "Mint blocked: the mission is still in setup (no active run), so mints cannot broadcast yet. Accept and start the mission run, then mint — do NOT re-quote.",
+  wallet_scope:
+    "Mint blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+  wallet_not_selected:
+    "Mint blocked: no wallet is selected (or configured) for this mint's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+  unbindable_param:
+    "Mint blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+const REDEEM_PY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Redeem blocked: could not verify a fresh redeem quote. Re-run pendle.py.quote (direction redeem) for this PT and retry.",
+  no_session:
+    "Redeem blocked: could not verify a fresh redeem quote (no session). Re-run pendle.py.quote and retry.",
+  unresolved_token:
+    "Redeem blocked: the PT could not be resolved to an active Pendle market. Re-check the PT address, then retry.",
+  no_quote:
+    "Redeem blocked: no fresh redeem quote for this exact PT/output/amount. Call pendle.py.quote (direction redeem) first, then retry. A MATURED PT (PT only, no YT) uses pendle.pt.redeem instead.",
+  safety_fail:
+    "Redeem blocked: the quoted redemption was flagged unsafe. Aborting.",
+  wallet_setup:
+    "Redeem blocked: the mission is still in setup (no active run), so redeems cannot broadcast yet. Accept and start the mission run, then redeem — do NOT re-quote.",
+  wallet_scope:
+    "Redeem blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+  wallet_not_selected:
+    "Redeem blocked: no wallet is selected (or configured) for this redeem's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+  unbindable_param:
+    "Redeem blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+const LP_ADD_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Add liquidity blocked: could not verify a fresh LP quote. Re-run pendle.lp.quote (direction add) for this market and retry.",
+  no_session:
+    "Add liquidity blocked: could not verify a fresh LP quote (no session). Re-run pendle.lp.quote and retry.",
+  unresolved_token:
+    "Add liquidity blocked: the market could not be resolved to an active Pendle market. Re-check the market address, then retry.",
+  no_quote:
+    "Add liquidity blocked: no fresh add quote for this exact market/token/amount. Call pendle.lp.quote (direction add) first, then retry.",
+  safety_fail:
+    "Add liquidity blocked: the quoted add was flagged unsafe. Aborting.",
+  wallet_setup:
+    "Add liquidity blocked: the mission is still in setup (no active run), so LP adds cannot broadcast yet. Accept and start the mission run, then add — do NOT re-quote.",
+  wallet_scope:
+    "Add liquidity blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+  wallet_not_selected:
+    "Add liquidity blocked: no wallet is selected (or configured) for this add's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+  unbindable_param:
+    "Add liquidity blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Remove liquidity blocked: could not verify a fresh LP quote. Re-run pendle.lp.quote (direction remove) for this market and retry.",
+  no_session:
+    "Remove liquidity blocked: could not verify a fresh LP quote (no session). Re-run pendle.lp.quote and retry.",
+  unresolved_token:
+    "Remove liquidity blocked: the market could not be resolved to an active Pendle market. Re-check the market address, then retry.",
+  no_quote:
+    "Remove liquidity blocked: no fresh remove quote for this exact market/output/amount. Call pendle.lp.quote (direction remove) first, then retry.",
+  safety_fail:
+    "Remove liquidity blocked: the quoted removal was flagged unsafe. Aborting.",
+  wallet_setup:
+    "Remove liquidity blocked: the mission is still in setup (no active run), so LP removes cannot broadcast yet. Accept and start the mission run, then remove — do NOT re-quote.",
+  wallet_scope:
+    "Remove liquidity blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+  wallet_not_selected:
+    "Remove liquidity blocked: no wallet is selected (or configured) for this remove's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+  unbindable_param:
+    "Remove liquidity blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
 function block(reason: GateBlockReason, kind: PrequoteKind): GateDecision {
   const messages =
-    kind === "bridge" ? BRIDGE_BLOCK_MESSAGES : kind === "redeem" ? REDEEM_BLOCK_MESSAGES : SWAP_BLOCK_MESSAGES;
+    kind === "bridge"
+      ? BRIDGE_BLOCK_MESSAGES
+      : kind === "redeem"
+        ? REDEEM_BLOCK_MESSAGES
+        : kind === "mint"
+          ? MINT_BLOCK_MESSAGES
+          : kind === "redeem_py"
+            ? REDEEM_PY_BLOCK_MESSAGES
+            : kind === "lp_add"
+              ? LP_ADD_BLOCK_MESSAGES
+              : kind === "lp_remove"
+                ? LP_REMOVE_BLOCK_MESSAGES
+                : SWAP_BLOCK_MESSAGES;
   return { kind: "block", reason, message: messages[reason] };
 }
 
@@ -298,8 +396,9 @@ function buildEvmIdentity(
     }
     chainId = resolved;
   } else if (provider === "pendle") {
-    // Pendle is Ethereum-v1 only — resolve via its own network-free registry so
-    // the identity is not coupled to another venue's chain map.
+    // Pendle resolves via its own network-free 11-chain registry so the identity
+    // is not coupled to another venue's chain map. Throws on an unsupported chain
+    // → caught upstream → gate_error block (fail-closed).
     const resolved = resolvePendleChainId(chainParam);
     if (resolved === undefined) {
       throw new VexError(ErrorCodes.PENDLE_API_ERROR, `Pendle unsupported chain: ${chainParam}`);
@@ -384,6 +483,36 @@ async function computeGateMatch(
     // the SAME market lookup the recorder uses, so the digests collide. A resolve/
     // wallet-scope throw propagates → caught upstream → fail-closed block.
     const identity = await buildPendleRedeemIdentity(sessionId, params, context);
+    return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
+  }
+
+  if (gated.kind === "mint") {
+    // Pendle PY mint — its OWN identity path (P4). Resolves the market (+ YT) from
+    // the PT anchor via the SAME lookup the recorder uses, so the digests collide.
+    const identity = await buildPendleMintIdentity(sessionId, params, context);
+    return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
+  }
+
+  if (gated.kind === "redeem_py") {
+    // Pendle PRE-EXPIRY PY redeem — its OWN identity path (P4). Binds the output
+    // token (default underlying) so a divergent output blocks.
+    const identity = await buildPendleRedeemPyIdentity(sessionId, params, context);
+    return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
+  }
+
+  if (gated.kind === "lp_add") {
+    // Pendle LP single-token add — its OWN identity path (P5). Binds the market
+    // (validated against active markets) + input token + slippage, so a divergent
+    // market/token/slippage blocks. The distinct kind makes an add unmixable from
+    // a remove.
+    const identity = await buildPendleLpAddIdentity(sessionId, params, context);
+    return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
+  }
+
+  if (gated.kind === "lp_remove") {
+    // Pendle LP single-token remove — its OWN identity path (P5). Binds the output
+    // token (default underlying) so a divergent output blocks.
+    const identity = await buildPendleLpRemoveIdentity(sessionId, params, context);
     return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
   }
 

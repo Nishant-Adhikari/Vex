@@ -6,9 +6,13 @@
  * and the Solana group headed by the Solana mark instead of a "SOL" label).
  *
  * Data: `PortfolioDto.chains` — the purpose-built per-chain breakdown
- * (positive totals only, top-3 positive-USD tokens each). Selection is local
- * UI state; the parent remounts this component per session (React `key`), so
- * a session switch always lands back on Ethereum.
+ * (non-negative totals; top-3 tokens each, positive-USD or UNPRICED). An
+ * unpriced holding (`balanceUsd: null` — no price source) shows its
+ * `amount + symbol` with a muted em dash, and a chain total that would print
+ * $0.00 renders as the same muted dash (owner decision: show funds, never a
+ * fabricated $0.00). Selection is local UI state; the parent remounts this
+ * component per session (React `key`), so a session switch always lands back
+ * on Ethereum.
  *
  * Grammar: landing .ws-stat rows (hairline separations, mono figures,
  * tabular-nums), accent rationed to the selected-chain ring. Icon-only chain
@@ -33,7 +37,7 @@ import {
 } from "../../../components/ui/dialog.js";
 import { ChainIcon } from "../../../components/common/ChainIcon.js";
 import { TokenIcon } from "../../../components/common/TokenIcon.js";
-import { formatUsd } from "../../../lib/format.js";
+import { formatTokenQuantity, formatUsd } from "../../../lib/format.js";
 import { cn } from "../../../lib/utils.js";
 
 /**
@@ -73,9 +77,7 @@ export function PositionChains({
               </span>
             </span>
             {selected !== null ? (
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
-                {formatUsd(selected.totalUsd)}
-              </span>
+              <ChainTotalFigure totalUsd={selected.totalUsd} />
             ) : null}
           </div>
           <div
@@ -140,9 +142,7 @@ export function PositionChains({
               </span>
             </span>
             {solana !== null ? (
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
-                {formatUsd(solana.totalUsd)}
-              </span>
+              <ChainTotalFigure totalUsd={solana.totalUsd} />
             ) : null}
           </div>
           <ChainTokenList
@@ -184,9 +184,7 @@ export function PositionChains({
                             {chainDisplay(c.chainId).name}
                           </span>
                         </span>
-                        <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
-                          {formatUsd(c.totalUsd)}
-                        </span>
+                        <ChainTotalFigure totalUsd={c.totalUsd} />
                       </button>
                     </li>
                   ))}
@@ -205,8 +203,33 @@ export function PositionChains({
 }
 
 /**
- * Top-3 holdings of one chain — token mark + symbol + USD on .ws-stat rows.
- * An empty (or all-sub-cent) list states the fact quietly instead of leaving
+ * One chain-total figure on the .ws-stat register. Totals that would print
+ * `$0.00` (an unpriced-only chain totals 0 by construction) render as a
+ * muted em dash — the funds show on the token rows, never a fabricated $0.00.
+ */
+function ChainTotalFigure({
+  totalUsd,
+}: {
+  readonly totalUsd: number;
+}): JSX.Element {
+  const unpriced = Math.abs(totalUsd) < MIN_DISPLAY_USD;
+  return (
+    <span
+      className={cn(
+        "shrink-0 font-mono text-[11px] tabular-nums",
+        unpriced ? "text-[var(--vex-text-3)]" : "text-[var(--vex-text)]",
+      )}
+    >
+      {unpriced ? "—" : formatUsd(totalUsd)}
+    </span>
+  );
+}
+
+/**
+ * Top-3 holdings of one chain — token mark + symbol + muted quantity + USD
+ * on .ws-stat rows. UNPRICED rows (`balanceUsd: null`) with a positive
+ * amount stay visible with a muted em dash for the missing valuation. An
+ * empty (or all-sub-cent) list states the fact quietly instead of leaving
  * a gap: Ethereum stays the standing default even with nothing on it.
  */
 function ChainTokenList({
@@ -216,8 +239,10 @@ function ChainTokenList({
   readonly chainId: number;
   readonly tokens: readonly PositionChainDto["tokens"][number][];
 }): JSX.Element {
-  const displayable = tokens.filter(
-    (t) => Math.abs(t.balanceUsd) >= MIN_DISPLAY_USD,
+  const displayable = tokens.filter((t) =>
+    t.balanceUsd === null
+      ? t.amount !== null && t.amount > 0
+      : Math.abs(t.balanceUsd) >= MIN_DISPLAY_USD,
   );
   if (displayable.length === 0) {
     return (
@@ -228,24 +253,38 @@ function ChainTokenList({
   }
   return (
     <ul className="flex flex-col">
-      {displayable.map((token) => (
-        <li
-          key={`${chainId}:${token.symbol ?? "—"}`}
-          className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0"
-        >
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <TokenIcon symbol={token.symbol} size={13} />
-            <span className="truncate font-mono text-[11px] text-[var(--vex-text-2)]">
-              {token.symbol !== null && token.symbol.length > 0
-                ? token.symbol
-                : "—"}
+      {displayable.map((token) => {
+        const quantity = formatTokenQuantity(token.amount, token.symbol);
+        return (
+          <li
+            key={`${chainId}:${token.symbol ?? "—"}`}
+            className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0"
+          >
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              <TokenIcon symbol={token.symbol} size={13} />
+              <span className="truncate font-mono text-[11px] text-[var(--vex-text-2)]">
+                {token.symbol !== null && token.symbol.length > 0
+                  ? token.symbol
+                  : "—"}
+              </span>
             </span>
-          </span>
-          <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
-            {formatUsd(token.balanceUsd)}
-          </span>
-        </li>
-      ))}
+            <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
+              {quantity !== null ? (
+                <span className="text-[var(--vex-text-3)]">{quantity}</span>
+              ) : null}
+              <span
+                className={
+                  token.balanceUsd === null
+                    ? "text-[var(--vex-text-3)]"
+                    : "text-[var(--vex-text)]"
+                }
+              >
+                {formatUsd(token.balanceUsd)}
+              </span>
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

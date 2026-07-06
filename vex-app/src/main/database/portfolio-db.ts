@@ -6,7 +6,7 @@
  * Postgres the engine writes to, against:
  *
  *   proj_balances(wallet_address TEXT, chain_id BIGINT, token_symbol TEXT,
- *                 balance_usd NUMERIC)
+ *                 balance_raw TEXT, decimals INTEGER, balance_usd NUMERIC)
  *   proj_portfolio_snapshots(wallet_family eip155|solana, wallet_address TEXT,
  *                 snapshot_group_id UUID, total_usd NUMERIC,
  *                 pnl_vs_prev NUMERIC, created_at)
@@ -114,6 +114,7 @@ interface TokenRow {
   readonly chain_id: number | string | null;
   readonly token_symbol: string | null;
   readonly usd: number | string | null;
+  readonly amount: number | string | null;
 }
 
 interface SnapshotRow {
@@ -126,7 +127,22 @@ interface ChainBreakdownRow {
   readonly chain_total: number | string;
   readonly token_symbol: string | null;
   readonly token_usd: number | string | null;
+  readonly token_amount: number | string | null;
 }
+
+/**
+ * Human token QUANTITY for one balance row: `balance_raw / 10^decimals`,
+ * computed PER ROW inside the aggregate (mixed-decimals buckets must divide
+ * before summing). The CASE guard keeps a NULL-decimals or malformed
+ * `balance_raw` row as a NULL contribution (SUM skips it) instead of failing
+ * the whole query on a bad cast — SUM over only-NULL rows yields NULL, which
+ * the DTO carries as `amount: null` (nothing fabricated).
+ */
+const AMOUNT_SUM_SQL = `SUM(
+              CASE WHEN decimals IS NOT NULL AND balance_raw ~ '^[0-9]+$'
+                   THEN balance_raw::numeric / power(10::numeric, decimals)
+              END
+            )::float8`;
 
 /**
  * Cap on per-(chain, token) holding lines. Matches the `portfolioDtoSchema`
@@ -150,7 +166,9 @@ const MAX_CHAIN_TOKENS = 3;
  * ordered chain-total DESC then chain id ASC then token rank ASC — the
  * chain-id tie-breaker keeps equal-total chains CONTIGUOUS, which this
  * single-pass grouper depends on; codex final review). Rows arrive
- * pre-filtered: positive chain totals, positive token USD, NULL chain_id
+ * pre-filtered: non-negative chain totals (0 = a chain holding ONLY unpriced
+ * tokens — owner decision: still shown), token lines either positive-USD or
+ * UNPRICED (NULL usd, amount carried when computable), NULL chain_id
  * excluded.
  */
 function buildChainBreakdown(
@@ -160,14 +178,15 @@ function buildChainBreakdown(
   let current: {
     chainId: number;
     totalUsd: number;
-    tokens: { symbol: string | null; balanceUsd: number }[];
+    tokens: { symbol: string | null; balanceUsd: number | null; amount: number | null }[];
   } | null = null;
   for (const row of rows) {
     const chainId = toChainId(row.chain_id);
     const totalUsd = toNumber(row.chain_total);
-    // Defensive: the SQL already excludes NULL chain ids and non-positive
-    // totals; a row that still fails coercion is dropped, not fabricated.
-    if (chainId === null || totalUsd <= 0) continue;
+    // Defensive: the SQL already excludes NULL chain ids and cannot emit a
+    // negative total; a row that still fails coercion is dropped, not
+    // fabricated. Zero totals are KEPT (unpriced-only chain).
+    if (chainId === null || totalUsd < 0) continue;
     if (current === null || current.chainId !== chainId) {
       if (current !== null) {
         chains.push({
@@ -181,8 +200,23 @@ function buildChainBreakdown(
       current = { chainId, totalUsd, tokens: [] };
     }
     const tokenUsd = toNumberOrNull(row.token_usd);
-    if (tokenUsd !== null && tokenUsd > 0 && current.tokens.length < MAX_CHAIN_TOKENS) {
-      current.tokens.push({ symbol: row.token_symbol, balanceUsd: tokenUsd });
+    const tokenAmount = toNumberOrNull(row.token_amount);
+    // A LEFT-JOIN miss (chain with no rankable lines) emits all-NULL token
+    // columns — skip it. Real lines are either priced (> $0 by the ranked
+    // filter; defensively re-checked) or UNPRICED (NULL usd) and kept so
+    // held funds stay visible without a valuation.
+    const hasTokenRow =
+      row.token_symbol !== null || tokenUsd !== null || tokenAmount !== null;
+    if (
+      hasTokenRow &&
+      (tokenUsd === null || tokenUsd > 0) &&
+      current.tokens.length < MAX_CHAIN_TOKENS
+    ) {
+      current.tokens.push({
+        symbol: row.token_symbol,
+        balanceUsd: tokenUsd,
+        amount: tokenAmount,
+      });
     }
   }
   if (current !== null && chains.length < MAX_BREAKDOWN_CHAINS) {
@@ -308,12 +342,16 @@ export async function getPortfolio(
       );
       const liveTotalUsd = toNumber(liveResult.rows[0]?.live);
 
-      // (b) Per-(chain, token) live USD lines, newest USD first, capped at
+      // (b) Per-(chain, token) live lines, biggest USD first, capped at
       // MAX_TOKEN_LINES so the response stays inside the output-schema bound.
+      // `usd` stays NULL for an UNPRICED holding (no COALESCE — the renderer
+      // shows the amount with an em dash instead of a fabricated $0.00);
+      // `amount` is the human token quantity (see AMOUNT_SUM_SQL).
       const tokensResult = await client.query<TokenRow>(
         `SELECT chain_id,
                 token_symbol,
-                COALESCE(SUM(balance_usd), 0)::float8 AS usd
+                SUM(balance_usd)::float8 AS usd,
+                ${AMOUNT_SUM_SQL} AS amount
            FROM proj_balances
           WHERE wallet_address = ANY($1::text[])
           GROUP BY chain_id, token_symbol
@@ -326,7 +364,8 @@ export async function getPortfolio(
         .map((row) => ({
           chainId: toChainId(row.chain_id),
           symbol: row.token_symbol,
-          balanceUsd: toNumber(row.usd),
+          balanceUsd: toNumberOrNull(row.usd),
+          amount: toNumberOrNull(row.amount),
         }));
 
       // (b2) Per-chain breakdown for the POSITION chain switcher — a
@@ -334,38 +373,42 @@ export async function getPortfolio(
       // review: post-processing the capped flat query above would silently
       // drop chains once the 500-row bound bites). Invariants pushed into
       // SQL: NULL chain ids excluded (legacy `tokens` still carries them),
-      // only chains with a strictly positive total survive, and each chain
-      // contributes its top-${MAX_CHAIN_TOKENS} positive-USD token lines.
+      // EVERY funded chain survives — a chain holding only UNPRICED tokens
+      // totals 0 instead of disappearing (owner decision: show funds without
+      // a valuation) — and each chain contributes its top-${MAX_CHAIN_TOKENS}
+      // lines ranked usd DESC NULLS LAST (positive-USD first, then unpriced;
+      // priced-at-zero lines are dropped).
       const breakdownResult = await client.query<ChainBreakdownRow>(
         `WITH lines AS (
            SELECT chain_id,
                   token_symbol,
-                  COALESCE(SUM(balance_usd), 0)::float8 AS usd
+                  SUM(balance_usd)::float8 AS usd,
+                  ${AMOUNT_SUM_SQL} AS amount
              FROM proj_balances
             WHERE wallet_address = ANY($1::text[])
               AND chain_id IS NOT NULL
             GROUP BY chain_id, token_symbol
          ),
          ranked AS (
-           SELECT chain_id, token_symbol, usd,
+           SELECT chain_id, token_symbol, usd, amount,
                   ROW_NUMBER() OVER (
                     PARTITION BY chain_id ORDER BY usd DESC NULLS LAST
                   ) AS rn
              FROM lines
-            WHERE usd > 0
+            WHERE usd > 0 OR usd IS NULL
          ),
          totals AS (
-           SELECT chain_id, SUM(usd)::float8 AS chain_total
+           SELECT chain_id, COALESCE(SUM(usd), 0)::float8 AS chain_total
              FROM lines
             GROUP BY chain_id
-           HAVING SUM(usd) > 0
             ORDER BY chain_total DESC
             LIMIT ${MAX_BREAKDOWN_CHAINS}
          )
          SELECT t.chain_id,
                 t.chain_total,
                 r.token_symbol,
-                r.usd AS token_usd
+                r.usd AS token_usd,
+                r.amount AS token_amount
            FROM totals t
            LEFT JOIN ranked r
              ON r.chain_id = t.chain_id AND r.rn <= ${MAX_CHAIN_TOKENS}

@@ -9,33 +9,51 @@
  * resolved from the PT through the SAME market lookup on both sides, so neither
  * side reimplements the mapping.
  *
- * Material = { provider, wallet, chainId, ptAddress, ytAddress, amount, receiver }.
- * Any throw (missing field, unresolved YT, wallet-scope) propagates: the recorder
- * treats it as a skip, the gate as a fail-closed BLOCK.
+ * Material = { provider, wallet, chainId, ptAddress, ytAddress, amount, receiver,
+ * slippageBps }. Any throw (missing field, unsupported chain, unresolved YT,
+ * wallet-scope) propagates: the recorder treats it as a skip, the gate as a
+ * fail-closed BLOCK.
  */
 
 import { getAddress } from "viem";
 
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
-import { PENDLE_CHAIN_ID } from "@tools/pendle/constants.js";
+import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveYtForPt } from "../../pendle/market-lookup.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { RedeemMatchInput } from "./hash.js";
 
+/**
+ * Default slippage (bps) when the caller omits it — MUST match the handler's
+ * default (`handlers/pt.ts` DEFAULT_SLIPPAGE_BPS) so a quote-without-slippage
+ * authorizes an execute-without-slippage. Both sides go through THIS builder, so
+ * the default is applied identically by construction.
+ */
+const DEFAULT_SLIPPAGE_BPS = 50;
+
 function pStr(params: Record<string, unknown>, key: string): string {
   const v = params[key];
   return typeof v === "string" ? v.trim() : "";
 }
 
+/** Normalize `slippageBps` to the bound integer-string (default 50). */
+function normalizeSlippageBps(params: Record<string, unknown>): string {
+  const v = params.slippageBps;
+  const bps = typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : DEFAULT_SLIPPAGE_BPS;
+  return String(bps);
+}
+
 /**
  * Build the canonical Pendle redeem identity from (untrusted) params + context.
  * The PT is read from `ptAddress` (recorder) or `tokenIn` (execute gate); the
- * amount from `amount` or `amountIn`. The receiver is ALWAYS the selected EVM
- * wallet — no `recipient` param exists on any Pendle manifest (Codex cleanup),
- * and the calldata intent binding asserts receiver == wallet before signing.
- * YT is resolved from the PT via the active-market lookup.
+ * amount from `amount` or `amountIn`; the chain from `chain` via the SAME
+ * network-free registry both sides use, so record and gate agree on the id. The
+ * receiver is ALWAYS the selected EVM wallet — no `recipient` param exists on any
+ * Pendle manifest (Codex cleanup), and the calldata intent binding asserts
+ * receiver == wallet before signing. YT is resolved from the PT via the
+ * chain-scoped active-market lookup.
  */
 export async function buildPendleRedeemIdentity(
   sessionId: string,
@@ -48,6 +66,11 @@ export async function buildPendleRedeemIdentity(
     throw new VexError(ErrorCodes.AGENT_VALIDATION_ERROR, "Pendle redeem identity missing PT/amount.");
   }
 
+  const chainId = resolvePendleChainId(pStr(params, "chain"));
+  if (chainId === undefined) {
+    throw new VexError(ErrorCodes.PENDLE_API_ERROR, "Pendle redeem identity on an unsupported chain.");
+  }
+
   let ptAddress: string;
   try {
     ptAddress = getAddress(ptRaw);
@@ -55,7 +78,7 @@ export async function buildPendleRedeemIdentity(
     throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, "Pendle redeem PT is not a valid address.");
   }
 
-  const yt = await resolveYtForPt(ptAddress);
+  const yt = await resolveYtForPt(chainId, ptAddress);
   if (!yt) {
     throw new VexError(ErrorCodes.PENDLE_MARKET_NOT_FOUND, "No active Pendle market for this PT.");
   }
@@ -66,11 +89,12 @@ export async function buildPendleRedeemIdentity(
     kind: "redeem",
     sessionId,
     provider: "pendle",
-    chainId: PENDLE_CHAIN_ID,
+    chainId,
     walletAddress: wallet,
     ptAddress,
     ytAddress: yt,
     amount,
     receiver: wallet,
+    slippageBps: normalizeSlippageBps(params),
   };
 }

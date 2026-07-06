@@ -51,6 +51,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Release gate: run the vex-app unit suite BEFORE anything else. create-release
+  # needs this job, so a RED test blocks the whole pipeline (no draft, no signing,
+  # no publish). Scope is deliberately vex-app `pnpm test` only — the root suite
+  # needs testcontainers and the e2e suite needs a display, neither of which fit a
+  # fast pre-release gate.
+  test:
+    name: Unit tests (release gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            vex-app/pnpm-lock.yaml
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        working-directory: vex-app
+        run: pnpm install --frozen-lockfile
+
+      - name: Run vex-app unit tests
+        working-directory: vex-app
+        run: pnpm test
+
   # Serialize DRAFT-RELEASE CREATION only (Codex review finding): electron-publish
   # has no retry-on-422 for simultaneous createRelease() calls, so two parallel
   # jobs racing to create the same draft can fail. This job creates the draft
@@ -59,6 +94,7 @@ jobs:
   # of Apple delays.
   create-release:
     name: Create draft release (idempotent)
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

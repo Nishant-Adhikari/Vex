@@ -16,9 +16,9 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 6 sync jobs (2 global + 4 per-namespace)", async () => {
+  it("inserts 7 sync jobs (2 global + 5 per-namespace)", async () => {
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(6);
+    expect(mockExecute).toHaveBeenCalledTimes(7);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {
@@ -44,7 +44,7 @@ describe("seedSyncJobs", () => {
     const postMutationCalls = mockExecute.mock.calls.filter(
       (call: unknown[]) => (call[1] as unknown[])[3] === "post_mutation",
     );
-    expect(postMutationCalls).toHaveLength(4); // khalani, solana, kyberswap, polymarket
+    expect(postMutationCalls).toHaveLength(5); // khalani, solana, kyberswap, polymarket, pendle
     for (const call of postMutationCalls) {
       expect((call[1] as unknown[])[4]).toBeNull(); // no interval
     }
@@ -58,6 +58,17 @@ describe("seedSyncJobs", () => {
     for (const call of balanceCalls) {
       expect((call[1] as unknown[])[2]).toBe("khalani.tokens.balances");
     }
+  });
+
+  it("seeds a pendle post_mutation balances job (immediate post-trade refresh)", async () => {
+    await seedSyncJobs();
+    const pendleCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[0] === "pendle",
+    );
+    expect(pendleCall).toBeDefined();
+    expect((pendleCall![1] as unknown[])[1]).toBe("balances"); // sync_type
+    expect((pendleCall![1] as unknown[])[3]).toBe("post_mutation"); // strategy
+    expect((pendleCall![1] as unknown[])[4]).toBeNull(); // no interval
   });
 
   it("seeds prediction_settlement periodic job", async () => {

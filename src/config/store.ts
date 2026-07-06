@@ -108,6 +108,11 @@ export interface VexConfig {
   // chainId string (e.g. "4663"). User-supplied endpoint URL only — never a
   // bundled key. Absent by default; consumed by src/tools/evm-chains/registry.ts.
   localChainRpcUrls?: Record<string, string> | undefined;
+  // Optional user RPC overrides for Pendle chains, keyed by chainId string
+  // (e.g. "42161"). User-supplied endpoint URL only — never a bundled key.
+  // Absent by default; the bundled default RPC (per the Pendle chain registry)
+  // wins otherwise. Consumed by src/tools/pendle/evm-client.ts.
+  pendleRpcUrls?: Record<string, string> | undefined;
 }
 
 export function getDefaultConfig(): VexConfig {
@@ -155,11 +160,12 @@ export function ensureConfigDir(): void {
 }
 
 /**
- * Validate the optional `localChainRpcUrls` map (chainId string → RPC URL).
- * Untrusted config input: keep only string→string entries. The registry
- * additionally validates each URL shape before use.
+ * Validate an optional chainId-string → RPC-URL override map (used by both
+ * `localChainRpcUrls` and `pendleRpcUrls`). Untrusted config input: keep only
+ * string→string entries. The consuming registry additionally validates each URL
+ * shape before use.
  */
-function parseLocalChainRpcUrls(raw: unknown): Record<string, string> | undefined {
+function parseChainRpcUrls(raw: unknown): Record<string, string> | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -295,7 +301,8 @@ export function loadConfig(): VexConfig {
       },
       ...(parsed.polymarket && typeof parsed.polymarket === "object" && !Array.isArray(parsed.polymarket) ? { polymarket: parsed.polymarket as VexConfig["polymarket"] } : {}),
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
-      ...(parseLocalChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseLocalChainRpcUrls(parsed.localChainRpcUrls) } : {}),
+      ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),
+      ...(parseChainRpcUrls(parsed.pendleRpcUrls) ? { pendleRpcUrls: parseChainRpcUrls(parsed.pendleRpcUrls) } : {}),
     };
   } catch (err) {
     logger.error(`Failed to parse config: ${err}`);

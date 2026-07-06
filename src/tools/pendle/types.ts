@@ -42,6 +42,13 @@ export interface PendleMarket {
 export interface PendleAsset {
   /** Bare 0x address (chainId prefix stripped). */
   address: string;
+  /**
+   * Chain the asset lives on (from the top-level `chainId` field or the `id`
+   * prefix). assets/all is GLOBAL, so callers MUST filter by this before keying
+   * by bare address — the same address (e.g. an OP-Stack WETH predeploy) exists
+   * on multiple chains with different prices/decimals.
+   */
+  chainId: number | null;
   symbol: string | null;
   decimals: number | null;
   /** ISO expiry for PT/YT/LP; null for generic assets. */
@@ -78,8 +85,8 @@ export interface PendleUserPositions {
 
 // ── convert (mutating quote / broadcast plan) ──────────────────────
 
-/** Convert `action` discriminant (only the two we act on are meaningful). */
-export type PendleConvertAction = "swap" | "redeem-py" | string;
+/** Convert `action` discriminant (only the ones we act on are meaningful). */
+export type PendleConvertAction = "swap" | "mint-py" | "redeem-py" | string;
 
 export interface PendleTokenAmount {
   token: string;
@@ -122,6 +129,21 @@ export interface PendleConvertResponse {
   /** Tokens the Router needs allowance for (spender is IMPLICIT = Router). */
   requiredApprovals: PendleTokenAmount[];
   routes: PendleConvertRoute[];
+}
+
+// ── redeem-interests-and-rewards (income-sweep claim, FLAT response) ─────────
+
+/**
+ * `GET /v1/sdk/{chainId}/redeem-interests-and-rewards` — a SINGLE tx that claims
+ * accrued YT interest + rewards / LP rewards for the wallet's positions. Unlike
+ * convert this is a FLAT object (no `routes[]`); `tx.to` is asserted against
+ * PENDLE_ROUTER and the calldata FULL-decodes to `redeemDueInterestAndRewardsV2`.
+ * `tokenApprovals` is the (empty for a pure claim) approval set.
+ */
+export interface PendleClaimResponse {
+  method: string | null;
+  tx: PendleConvertTx;
+  tokenApprovals: PendleTokenAmount[];
 }
 
 export interface PendleConvertRequest {

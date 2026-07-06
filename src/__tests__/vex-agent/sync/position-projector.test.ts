@@ -364,4 +364,92 @@ describe("position-projector", () => {
       expect(mockUpsertPosition.mock.calls[0][0].notionalUsd).toBe("500.00");
     });
   });
+
+  // ── Pendle LP lifecycle + economics (P5, meta.lpLegs neutral path) ─────
+  //
+  // Pendle add/remove use their OWN action names (lp-add / lp-remove) and a
+  // protocol-neutral meta.lpLegs block instead of the kyberswap ZaaS zapDetails.
+  // add opens the position; remove closes it ONLY on a proven full exit
+  // (meta.fullExit === true) — a partial remove leaves it open. Both directions
+  // always record proj_lp_events + legs.
+
+  describe("Pendle LP lifecycle", () => {
+    const PK = "ethereum:lp:0xmkt:0xwallet";
+    const addMeta = {
+      action: "lp-add", dex: "pendle", pool: "0xmkt",
+      pendle: { marketAddress: "0xmkt", expiry: "2027-12-30T00:00:00.000Z" },
+      lpLegs: [{ legType: "deposit", tokenAddress: "0xtok", amountRaw: "1000000000000000000", amountUsd: "100.00" }],
+    };
+
+    it("lp-add opens the LP position (per-chain key) and records the event + deposit leg", async () => {
+      await projectPosition(makeActivity({
+        productType: "lp", positionKey: PK, instrumentKey: "ethereum:lp:0xmkt",
+        meta: addMeta, namespace: "pendle", chain: "ethereum",
+        inputValueUsd: "100.00", valuationSource: "pendle",
+      }));
+
+      expect(mockUpsertPosition).toHaveBeenCalledTimes(1);
+      expect(mockUpsertPosition.mock.calls[0][0].positionType).toBe("lp");
+      expect(mockUpsertPosition.mock.calls[0][0].positionKey).toBe(PK);
+      expect(mockUpsertPosition.mock.calls[0][0].notionalUsd).toBe("100.00");
+
+      expect(mockInsertLpEvent).toHaveBeenCalledTimes(1);
+      const ev = mockInsertLpEvent.mock.calls[0][0];
+      expect(ev.action).toBe("lp-add");
+      expect(ev.dex).toBe("pendle");
+      expect(ev.positionKey).toBe(PK);
+      expect(ev.totalValueUsd).toBe("100.00");
+      expect(ev.valuationSource).toBe("pendle");
+      // Neutral path: legs come from meta.lpLegs, NOT the kyberswap extractLpLegs.
+      expect(mockExtractLpLegs).not.toHaveBeenCalled();
+      expect(mockInsertLpLegs).toHaveBeenCalledTimes(1);
+      const legs = mockInsertLpLegs.mock.calls[0][0];
+      expect(legs).toHaveLength(1);
+      expect(legs[0]).toMatchObject({ lpEventId: 1, legType: "deposit", tokenAddress: "0xtok", amountRaw: "1000000000000000000", amountUsd: "100.00" });
+    });
+
+    it("lp-remove with proven full exit closes the position and records the withdraw leg", async () => {
+      await projectPosition(makeActivity({
+        productType: "lp", positionKey: PK, instrumentKey: "ethereum:lp:0xmkt",
+        meta: {
+          action: "lp-remove", dex: "pendle", pool: "0xmkt", fullExit: true,
+          lpLegs: [{ legType: "withdraw", tokenAddress: "0xtok", amountRaw: "1786480896063125847", amountUsd: "3.20" }],
+        },
+        namespace: "pendle", chain: "ethereum", outputValueUsd: "3.20", valuationSource: "pendle",
+      }));
+
+      expect(mockClosePosition).toHaveBeenCalledWith("pendle", "lp", "ethereum", "0xWallet", PK, "closed");
+      expect(mockInsertLpEvent).toHaveBeenCalledTimes(1);
+      expect(mockInsertLpEvent.mock.calls[0][0].action).toBe("lp-remove");
+      expect(mockInsertLpLegs).toHaveBeenCalledTimes(1);
+      expect(mockInsertLpLegs.mock.calls[0][0][0].legType).toBe("withdraw");
+    });
+
+    it("lp-remove PARTIAL (fullExit false) leaves the position OPEN but still records economics", async () => {
+      await projectPosition(makeActivity({
+        productType: "lp", positionKey: PK, instrumentKey: "ethereum:lp:0xmkt",
+        meta: {
+          action: "lp-remove", dex: "pendle", pool: "0xmkt", fullExit: false,
+          lpLegs: [{ legType: "withdraw", tokenAddress: "0xtok", amountRaw: "500000000000000000" }],
+        },
+        namespace: "pendle", chain: "ethereum", outputValueUsd: "1.60",
+      }));
+
+      // A partial remove neither opens nor closes the position.
+      expect(mockClosePosition).not.toHaveBeenCalled();
+      expect(mockUpsertPosition).not.toHaveBeenCalled();
+      // Economics are still recorded (the withdraw is a real cashflow).
+      expect(mockInsertLpEvent).toHaveBeenCalledTimes(1);
+      expect(mockInsertLpLegs).toHaveBeenCalledTimes(1);
+    });
+
+    it("lp-remove with fullExit OMITTED is treated as partial (not closed) — fail-safe", async () => {
+      await projectPosition(makeActivity({
+        productType: "lp", positionKey: PK,
+        meta: { action: "lp-remove", dex: "pendle", pool: "0xmkt", lpLegs: [{ legType: "withdraw", tokenAddress: "0xtok", amountRaw: "1" }] },
+        namespace: "pendle", chain: "ethereum",
+      }));
+      expect(mockClosePosition).not.toHaveBeenCalled();
+    });
+  });
 });

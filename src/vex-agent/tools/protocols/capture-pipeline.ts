@@ -11,6 +11,8 @@
 import { sanitizeJsonbValue } from "@vex-agent/db/params.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
 import type { LedgerWakeKey } from "@vex-agent/memory/ledger-wake.js";
+import { MUTATION_MATRIX } from "./mutation-matrix.js";
+import logger from "@utils/logger.js";
 
 /**
  * Extract external_refs from handler result data for correlation/lookup.
@@ -68,8 +70,27 @@ export async function populateCaptureItems(
   tradeCaptureItems: Record<string, unknown>[] | undefined,
   executionExternalRefs: Record<string, string>,
 ): Promise<void> {
-  const items: Record<string, unknown>[] = Array.isArray(tradeCaptureItems) && tradeCaptureItems.length > 0
-    ? tradeCaptureItems
+  const hasItems = Array.isArray(tradeCaptureItems) && tradeCaptureItems.length > 0;
+
+  // FAIL-CLOSED GUARD (P4): a spot fanOut:"items" tool MUST provide per-item
+  // captures. Its summary `_tradeCapture` carries a SINGLE instrumentKey, so
+  // falling back to project it would collapse the tool's N distinct spot legs
+  // (e.g. a mint's PT lot AND YT lot) into one mislabeled lot — a portfolio-
+  // integrity bug. When such a tool yields no items, skip projection entirely
+  // rather than silently project the summary. Scoped to `pnl_spot` so the
+  // projection/prediction batch tools' existing zero-item summary behavior is
+  // unchanged.
+  const contract = MUTATION_MATRIX.get(toolId);
+  if (contract?.fanOut === "items" && contract.role === "pnl_spot" && !hasItems) {
+    logger.warn("protocol.capture.items_fanout_missing_items", {
+      toolId,
+      hint: "spot fanOut:items tool emitted no _tradeCaptureItems — summary NOT projected (fail-closed)",
+    });
+    return;
+  }
+
+  const items: Record<string, unknown>[] = hasItems
+    ? tradeCaptureItems!
     : tradeCapture ? [tradeCapture] : [];
 
   if (items.length === 0) return;

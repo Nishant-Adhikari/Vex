@@ -25,7 +25,11 @@ export const PENDLE_TTL = {
   assets: 300_000,
   prices: 15_000,
   positions: 30_000,
+  /** Supported aggregators change rarely — cache aggressively (1h). */
+  aggregators: 3_600_000,
   convert: 0,
+  /** Claim builds a fresh mutating tx — NEVER cached. */
+  claim: 0,
 } as const;
 
 /** Per-endpoint compute-unit cost estimates. */
@@ -34,8 +38,11 @@ export const PENDLE_CU = {
   assets: 1,
   prices: 1,
   positions: 3,
+  aggregators: 1,
   /** 5 base + 1 per allowed aggregator (kyberswap, okx). */
   convert: 7,
+  /** Claim (redeem-interests-and-rewards) — x-computing-unit 5 per the spec. */
+  claim: 5,
 } as const;
 
 const DEFAULT_MAX_CACHE_ENTRIES = 64;

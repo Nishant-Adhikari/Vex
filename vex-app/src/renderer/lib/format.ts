@@ -67,6 +67,41 @@ export function formatTokenPriceUsd(value: number | null | undefined): string {
   return `$${value.toFixed(decimals)}`;
 }
 
+/**
+ * Human token QUANTITY (not USD): compact above 10K (`1.2K`, `3.4M`), two
+ * decimals from 1 up, and adaptive decimals below 1 (~4 significant figures,
+ * trailing zeros trimmed) so a small native balance like 0.005 ETH never
+ * collapses to `0.00`. `null`/non-finite → em dash.
+ */
+export function formatTokenAmount(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  if (value === 0) return "0";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 10_000) return `${(value / 1_000).toFixed(1)}K`;
+  if (abs >= 1) return value.toFixed(2);
+  const decimals = Math.min(12, Math.ceil(-Math.log10(abs)) + 3);
+  return value.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * `0.005 ETH` — token quantity + symbol for a holdings row. Symbolless rows
+ * show the bare figure; `null` when the amount itself is unknown (an
+ * unpriced row with no computable quantity renders nothing fabricated).
+ */
+export function formatTokenQuantity(
+  amount: number | null | undefined,
+  symbol: string | null | undefined,
+): string | null {
+  if (amount === null || amount === undefined || !Number.isFinite(amount)) {
+    return null;
+  }
+  const figure = formatTokenAmount(amount);
+  return symbol != null && symbol.length > 0 ? `${figure} ${symbol}` : figure;
+}
+
 /** Signed percent for a price-change readout: `+113.00%` / `-1.73%` / `—`. */
 export function formatPercentDelta(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {

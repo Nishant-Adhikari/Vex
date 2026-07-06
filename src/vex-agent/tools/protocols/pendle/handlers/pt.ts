@@ -13,117 +13,35 @@
  * Upstream error text NEVER reaches the model — only bounded, code-keyed detail.
  */
 
-import { formatUnits, getAddress, parseUnits, type Address, type Hex } from "viem";
+import { getAddress, parseUnits, type Hex } from "viem";
 
 import { getPendleClient } from "@tools/pendle/client.js";
-import {
-  PENDLE_CHAIN_ID,
-  PENDLE_NATIVE_TOKEN,
-  PENDLE_ROUTER,
-  PENDLE_ERC20_ABI,
-} from "@tools/pendle/constants.js";
-import { PENDLE_CHAIN_SLUG, resolvePendleChainId } from "@tools/pendle/chains.js";
-import { getPendleEvmClients, getPendlePublicClient } from "@tools/pendle/evm-client.js";
+import { PENDLE_ROUTER } from "@tools/pendle/constants.js";
+import { getPendleEvmClients } from "@tools/pendle/evm-client.js";
 import { ensurePendleAllowanceExact } from "@tools/pendle/erc20.js";
-import type { PendleAsset, PendleConvertResponse } from "@tools/pendle/types.js";
+import type { PendleConvertResponse } from "@tools/pendle/types.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
-import { VexError, ErrorCodes } from "../../../../../errors.js";
+import { VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
-import { resolveMarketByPt, buildAssetMap, priceUsdFor } from "../market-lookup.js";
+import { resolveMarketByPt, buildAssetMap } from "../market-lookup.js";
 import { selectSafeRoute, type PendleAction, type PendleTxIntent } from "../calldata.js";
 import { buildRedeemPyToSyPlan } from "../redeem-fallback.js";
-
-const DEFAULT_SLIPPAGE_BPS = 50;
-
-function isNativeInput(input: string): boolean {
-  const lower = input.trim().toLowerCase();
-  return lower === "native" || lower === "eth" || lower === PENDLE_NATIVE_TOKEN.toLowerCase();
-}
-
-function slippageFraction(bps: number | undefined): number {
-  const b = bps !== undefined && bps >= 0 ? bps : DEFAULT_SLIPPAGE_BPS;
-  return Math.min(b, 5000) / 10_000;
-}
-
-function failureDetail(toolId: string, err: unknown): string {
-  logger.warn("pendle.handler.error", {
-    toolId,
-    code: err instanceof VexError ? err.code : "UNEXPECTED",
-    error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
-  });
-  if (err instanceof VexError) return err.hint ? `${err.code}: ${err.hint}` : err.code;
-  return "unexpected error";
-}
-
-function requireEthereum(chain: string): void {
-  if (resolvePendleChainId(chain) !== PENDLE_CHAIN_ID) {
-    throw new VexError(ErrorCodes.PENDLE_API_ERROR, `Pendle is Ethereum-only; unsupported chain "${chain}".`);
-  }
-}
-
-interface InputToken {
-  address: Address;
-  isNative: boolean;
-  decimals: number;
-}
-
-/**
- * Resolve the input token leg. Native ETH is REJECTED for the mutating Pendle
- * paths (this wave): the shared prequote gate canonicalizes native to a
- * different sentinel than Pendle's Convert API, which would make a native buy
- * fail the quote↔execute identity match. Users wanting ETH exposure pass WETH.
- * Decimals are read on-chain.
- */
-async function resolveInputToken(raw: string): Promise<InputToken> {
-  if (isNativeInput(raw)) {
-    throw new VexError(
-      ErrorCodes.PENDLE_TOKEN_NOT_FOUND,
-      "Pendle trades require an ERC-20 input token — native ETH is not supported here.",
-      "Pass WETH (0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) for ETH exposure.",
-    );
-  }
-  let address: Address;
-  try {
-    address = getAddress(raw);
-  } catch {
-    throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, `Pendle input token "${raw}" is not a valid address or native ETH.`);
-  }
-  const client = getPendlePublicClient();
-  let decimals: number;
-  try {
-    decimals = Number(await client.readContract({ address, abi: PENDLE_ERC20_ABI, functionName: "decimals" }));
-  } catch {
-    throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, `Cannot read decimals for ${address} — not an ERC-20 on Ethereum.`);
-  }
-  return { address, isNative: false, decimals };
-}
-
-function requirePtAddress(raw: string, label: string): Address {
-  try {
-    return getAddress(raw);
-  } catch {
-    throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, `Pendle ${label} "${raw}" is not a valid address.`);
-  }
-}
-
-function humanAmount(wei: string | bigint, decimals: number | null): number {
-  const n = Number(formatUnits(BigInt(wei), decimals ?? 18));
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** USD value of a leg from the Pendle asset map, with a best-effort fallback. */
-function legUsd(assetMap: Map<string, PendleAsset>, address: string, human: number): number | null {
-  const price = priceUsdFor(assetMap, address);
-  if (price === null) return null;
-  const usd = human * price;
-  return Number.isFinite(usd) ? usd : null;
-}
+import {
+  DEFAULT_SLIPPAGE_BPS,
+  failureDetail,
+  humanAmount,
+  legUsd,
+  requirePendleChain,
+  requireTokenAddress,
+  resolveInputToken,
+  slippageFraction,
+} from "./shared.js";
 
 // ── Quote ────────────────────────────────────────────────────────────
 
@@ -133,15 +51,31 @@ async function pendlePtQuote(p: Record<string, unknown>, context: ProtocolExecut
     return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
   }
   try {
-    requireEthereum(chain);
+    const chainEntry = requirePendleChain(chain);
+    const chainId = chainEntry.chainId;
     const receiver = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
-    const tokenIn = await resolveInputToken(tokenInRaw);
-    const tokenOut = requirePtAddressOrToken(tokenOutRaw);
+    const tokenIn = await resolveInputToken(chainEntry, tokenInRaw);
+    const tokenOut = requireTokenAddress(tokenOutRaw);
+
+    // INSTRUMENT GUARD (fail-closed, BEFORE any Convert call): one leg must be an
+    // active PT on the resolved chain (out → buy, in → sell/redeem). Mirrors the
+    // execute side (which already fails without a market) and the YT quote's
+    // guard: a quote with NO PT leg must never record a generic swap identity
+    // that could authorize a same-legged execute on the wrong instrument.
+    const marketByOut = await resolveMarketByPt(chainId, tokenOut);
+    const marketByIn = await resolveMarketByPt(chainId, tokenIn.address);
+    if (!marketByOut && !marketByIn) {
+      return fail("Neither token is an active Pendle PT on this chain — find the PT via pendle.yields, or use pendle.yt.quote for YT trades.");
+    }
+    const ptIsOut = marketByOut !== null;
+    const ptAddress = ptIsOut ? tokenOut : tokenIn.address;
+    const market = ptIsOut ? marketByOut : marketByIn;
+
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
     const slippage = slippageFraction(num(p, "slippageBps"));
 
     const client = getPendleClient();
-    const response = await client.convert({
+    const response = await client.convert(chainId, {
       receiver,
       input: { token: tokenIn.address, amount: amountWei.toString() },
       outputToken: tokenOut,
@@ -152,23 +86,19 @@ async function pendlePtQuote(p: Record<string, unknown>, context: ProtocolExecut
     }
     const best = response.routes[0]!;
     const action = response.action === "redeem-py" ? "redeem" : "swap";
-
-    // Which leg is the PT? Buy → PT is tokenOut; sell/redeem → PT is tokenIn.
-    const ptIsOut = await resolveMarketByPt(tokenOut) !== null;
-    const ptAddress = ptIsOut ? tokenOut : tokenIn.address;
-    const market = await resolveMarketByPt(ptAddress);
     const direction: "buy" | "sell" | "redeem" = action === "redeem" ? "redeem" : ptIsOut ? "buy" : "sell";
 
-    const assetMap = await buildAssetMap();
+    const assetMap = await buildAssetMap(chainId);
     const outAmount = best.outputs[0]?.amount ?? "0";
     const outDecimals = assetMap.get(tokenOut.toLowerCase())?.decimals ?? null;
 
-    // Echo EXACTLY the fields the recorder + extractPendleQuote validate. `receiver`
-    // is the resolved wallet (self); the redeem identity re-derives it identically.
+    // Echo EXACTLY the fields the recorder + extractPendleQuote validate. `chainId`
+    // is the RESOLVED chain (the prequote identity binds it). `receiver` is the
+    // resolved wallet (self); the redeem identity re-derives it identically.
     return ok({
       action,
       direction,
-      chainId: PENDLE_CHAIN_ID,
+      chainId,
       tokenIn: { address: tokenIn.address, isNative: tokenIn.isNative },
       tokenOut: { address: tokenOut },
       pt: ptAddress,
@@ -188,14 +118,6 @@ async function pendlePtQuote(p: Record<string, unknown>, context: ProtocolExecut
   }
 }
 
-function requirePtAddressOrToken(raw: string): Address {
-  try {
-    return getAddress(raw);
-  } catch {
-    throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, `Pendle token "${raw}" is not a valid address.`);
-  }
-}
-
 // ── Buy / Sell (token↔PT swap) ───────────────────────────────────────
 
 async function executePendleSwap(
@@ -208,22 +130,24 @@ async function executePendleSwap(
     return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
   }
   try {
-    requireEthereum(chain);
-    const tokenIn = await resolveInputToken(tokenInRaw);
-    const tokenOut = requirePtAddressOrToken(tokenOutRaw);
+    const chainEntry = requirePendleChain(chain);
+    const chainId = chainEntry.chainId;
+    const chainSlug = chainEntry.slug;
+    const tokenIn = await resolveInputToken(chainEntry, tokenInRaw);
+    const tokenOut = requireTokenAddress(tokenOutRaw);
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
     const slippage = slippageFraction(num(p, "slippageBps"));
 
     // PT + canonical market — buy: PT is tokenOut; sell: PT is tokenIn.
     const ptAddress = side === "buy" ? tokenOut : tokenIn.address;
-    const market = await resolveMarketByPt(ptAddress);
+    const market = await resolveMarketByPt(chainId, ptAddress);
     if (!market || !market.address) {
       return fail("No active Pendle market for this PT — check pendle.yields.");
     }
     const expectedMarket = getAddress(market.address);
 
     if (p.dryRun === true) {
-      const response = await getPendleClient().convert({
+      const response = await getPendleClient().convert(chainId, {
         receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
         input: { token: tokenIn.address, amount: amountWei.toString() },
         outputToken: tokenOut,
@@ -243,7 +167,7 @@ async function executePendleSwap(
     if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
     const wallet = getAddress(signer.address);
 
-    const response = await getPendleClient().convert({
+    const response = await getPendleClient().convert(chainId, {
       receiver: wallet,
       input: { token: tokenIn.address, amount: amountWei.toString() },
       outputToken: tokenOut,
@@ -270,7 +194,7 @@ async function executePendleSwap(
 
     // Approve EXACTLY the required input token (native needs none). Spender is the
     // pinned Router (implicit in Convert's spender-less requiredApprovals).
-    const { publicClient, walletClient } = getPendleEvmClients(signer.privateKey as Hex);
+    const { publicClient, walletClient } = getPendleEvmClients(chainId, signer.privateKey as Hex);
     if (!tokenIn.isNative) {
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
@@ -285,7 +209,7 @@ async function executePendleSwap(
     });
 
     // Exact USD valuation from Pendle prices (valuationSource "pendle").
-    const assetMap = await buildAssetMap();
+    const assetMap = await buildAssetMap(chainId);
     const outAmount = route.outputs[0]?.amount ?? "0";
     const outDecimals = assetMap.get(tokenOut.toLowerCase())?.decimals ?? null;
     const inHuman = humanAmount(amountWei, tokenIn.decimals);
@@ -304,9 +228,9 @@ async function executePendleSwap(
         txHash,
         _tradeCapture: {
           type: "swap",
-          chain: PENDLE_CHAIN_SLUG, // resolves selective balance sync to chain 1
+          chain: chainSlug, // resolves selective balance sync to the traded chain
           status: "executed",
-          inputToken: tokenIn.isNative ? "ETH" : tokenIn.address,
+          inputToken: tokenIn.isNative ? chainEntry.nativeSymbol : tokenIn.address,
           outputToken: tokenOut,
           inputTokenAddress: tokenIn.address,
           outputTokenAddress: tokenOut,
@@ -321,8 +245,8 @@ async function executePendleSwap(
           signature: txHash,
           walletAddress: wallet,
           tradeSide: side,
-          instrumentKey: `${PENDLE_CHAIN_SLUG}:${ptAddress.toLowerCase()}`,
-          settlementAssetKey: side === "buy" ? (tokenIn.isNative ? "ETH" : tokenIn.address) : tokenOut,
+          instrumentKey: `${chainSlug}:${ptAddress.toLowerCase()}`,
+          settlementAssetKey: side === "buy" ? (tokenIn.isNative ? chainEntry.nativeSymbol : tokenIn.address) : tokenOut,
           meta: {
             protocol: "pendle",
             side,
@@ -351,16 +275,24 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !amountInRaw) return fail("Missing required: chain, tokenIn (PT), amountIn");
   try {
-    requireEthereum(chain);
-    const ptAddress = requirePtAddress(tokenInRaw, "PT");
-    const market = await resolveMarketByPt(ptAddress);
+    const chainEntry = requirePendleChain(chain);
+    const chainId = chainEntry.chainId;
+    const chainSlug = chainEntry.slug;
+    // PT decimals read ON-CHAIN (unified with the swap input path) — NEVER from the
+    // global asset map: a cross-chain address collision there would feed parseUnits
+    // and corrupt a real broadcast amount. resolveInputToken reads decimals from the
+    // resolved chain's client (a PT is a plain ERC-20, never native).
+    const ptToken = await resolveInputToken(chainEntry, tokenInRaw);
+    const ptAddress = ptToken.address;
+    const ptDecimals = ptToken.decimals;
+    const market = await resolveMarketByPt(chainId, ptAddress);
     if (!market || !market.yt || !market.underlyingAsset) {
       return fail("No active Pendle market for this PT — cannot resolve YT/underlying for redeem.");
     }
     const expectedYt = getAddress(market.yt);
     const outputToken = getAddress(market.underlyingAsset);
-    const assetMapPre = await buildAssetMap();
-    const ptDecimals = assetMapPre.get(ptAddress.toLowerCase())?.decimals ?? 18;
+    // Asset map stays ONLY for USD valuation/symbols, chain-scoped.
+    const assetMapPre = await buildAssetMap(chainId);
     const amountWei = parseUnits(amountInRaw, ptDecimals);
 
     if (p.dryRun === true) {
@@ -375,7 +307,7 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
     }
     if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
     const wallet = getAddress(signer.address);
-    const { publicClient, walletClient } = getPendleEvmClients(signer.privateKey as Hex);
+    const { publicClient, walletClient } = getPendleEvmClients(chainId, signer.privateKey as Hex);
     const slippage = slippageFraction(num(p, "slippageBps"));
 
     let txHash: Hex;
@@ -388,7 +320,7 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
     // Primary path: Convert (action redeem-py) + full fund-safety validation.
     let response: PendleConvertResponse | null = null;
     try {
-      response = await getPendleClient().convert({
+      response = await getPendleClient().convert(chainId, {
         receiver: wallet,
         input: { token: ptAddress, amount: amountWei.toString() },
         outputToken,
@@ -422,7 +354,7 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
         data: route.tx.data as Hex,
         value: 0n,
       });
-      const assetMap = await buildAssetMap();
+      const assetMap = await buildAssetMap(chainId);
       outAmountRaw = route.outputs[0]?.amount ?? "0";
       const outDecimals = assetMap.get(outputToken.toLowerCase())?.decimals ?? null;
       outHuman = humanAmount(outAmountRaw, outDecimals);
@@ -456,7 +388,7 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
         txHash,
         _tradeCapture: {
           type: "swap",
-          chain: PENDLE_CHAIN_SLUG,
+          chain: chainSlug,
           status: "closed",
           inputToken: ptAddress,
           outputToken,
@@ -471,7 +403,7 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
           signature: txHash,
           walletAddress: wallet,
           tradeSide: "sell",
-          instrumentKey: `${PENDLE_CHAIN_SLUG}:${ptAddress.toLowerCase()}`,
+          instrumentKey: `${chainSlug}:${ptAddress.toLowerCase()}`,
           settlementAssetKey: outputToken,
           meta: {
             protocol: "pendle",

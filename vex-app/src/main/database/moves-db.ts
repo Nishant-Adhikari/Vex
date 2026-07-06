@@ -6,6 +6,7 @@
  * engine writes to, against:
  *
  *   proj_activity(id SERIAL, wallet_address TEXT, trade_side TEXT,
+ *                 product_type TEXT, namespace TEXT,
  *                 input_token TEXT, input_amount TEXT, output_token TEXT,
  *                 output_amount TEXT, value_usd NUMERIC, capture_status TEXT,
  *                 instrument_key TEXT, created_at TIMESTAMPTZ, ...)
@@ -128,6 +129,8 @@ async function withClient<T>(
 interface MoveRow {
   readonly id: number | string;
   readonly trade_side: string | null;
+  readonly product_type: string | null;
+  readonly venue: string | null;
   readonly input_token: string | null;
   readonly input_amount: string | null;
   readonly output_token: string | null;
@@ -214,6 +217,8 @@ export async function getMovesForSession(
       const result = await client.query<MoveRow>(
         `SELECT a.id,
                 a.trade_side,
+                a.product_type,
+                a.namespace AS venue,
                 a.input_token,
                 a.input_amount,
                 a.output_token,
@@ -237,6 +242,8 @@ export async function getMovesForSession(
       const moves: MovesDto = result.rows.map((row) => ({
         id: String(row.id),
         tradeSide: row.trade_side,
+        productType: row.product_type,
+        venue: row.venue,
         inputToken: row.input_token,
         inputAmount: row.input_amount,
         outputToken: row.output_token,

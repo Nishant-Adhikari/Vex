@@ -10,6 +10,9 @@
  *    (accent-hairline, S3) → mission.start.
  *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) → a
  *    "Renew mission" button → mission.renew (clones it into a fresh draft).
+ *  - NO ACTIVE RUN + a contract pending acceptance (any non-accepted-clean
+ *    draft) → a standing muted-warn notice: on-chain actions are blocked by
+ *    the runtime gate until the user accepts the contract and starts the run.
  *
  * The render gate keys off `runtime` ALONE — never the draft. A started
  * mission flips its row past `ready` (commit-start → `running`; terminal on
@@ -267,6 +270,12 @@ export function MissionControls({
     diff !== null &&
     diff.isAccepted &&
     !diff.isDirty;
+  // Contract pending acceptance (a draft exists that is not accepted-clean)
+  // with no active run: the runtime prequote gate fail-closes EVERY on-chain
+  // broadcast (reason `wallet_setup`), so surface that as a standing notice —
+  // the user must see the block deterministically, not via a paraphrased (and
+  // possibly confabulated) agent reply to a blocked tool call.
+  const pendingAcceptance = draft !== null && !canStart;
   if (canStart) {
     const missionId = draft.missionId;
     return (
@@ -295,6 +304,7 @@ export function MissionControls({
     const previousMissionId = renewSource.missionId;
     return (
       <div data-vex-area="mission-controls" className="mt-3">
+        {pendingAcceptance ? <AcceptancePendingNotice /> : null}
         <button
           type="button"
           disabled={disabled}
@@ -314,7 +324,36 @@ export function MissionControls({
     );
   }
 
+  // Contract pending acceptance with nothing else to show → the standing
+  // notice alone, so the block is visible for the whole setup phase.
+  if (pendingAcceptance) {
+    return (
+      <div data-vex-area="mission-controls" className="mt-3">
+        <AcceptancePendingNotice />
+      </div>
+    );
+  }
+
   return null;
+}
+
+/**
+ * Standing muted-warn notice while a mission session's contract is pending
+ * acceptance: mirrors the runtime prequote gate's `wallet_setup` fail-close
+ * (no active run → every swap/bridge/send broadcast is refused), so the block
+ * is visible in the UI regardless of how the agent narrates it.
+ */
+function AcceptancePendingNotice(): JSX.Element {
+  return (
+    <p
+      role="status"
+      data-vex-state="acceptance-pending"
+      className="mb-2 w-full text-xs text-warning"
+    >
+      Mission contract not accepted — on-chain actions (swaps, bridges, sends)
+      are blocked until you accept the contract and start the mission.
+    </p>
+  );
 }
 
 function ControlButton({

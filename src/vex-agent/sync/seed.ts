@@ -20,6 +20,11 @@ const SYNC_JOBS = [
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "kyberswap", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "polymarket", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
+  // Pendle trades can land on chains Khalani cannot scan; the post-mutation run
+  // derives the traded chain from _tradeCapture.chain and selectively refreshes
+  // it (enrich/seed) so PT balances appear immediately instead of at the next
+  // periodic _global cycle.
+  { namespace: "pendle", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
 ];
 
 /**

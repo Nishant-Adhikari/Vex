@@ -30,7 +30,15 @@ type PrequoteQuoteRegistration =
   // sell) OR a `redeem` prequote — decided at record-time from the Convert
   // `action` (Wave 5). The recorder dispatches on this `pendle` label, then
   // writes the appropriate DB kind. `family` is always eip155 (Ethereum v1).
-  | { readonly kind: "pendle"; readonly family: PrequoteFamily; readonly provider: string };
+  | { readonly kind: "pendle"; readonly family: PrequoteFamily; readonly provider: string }
+  // Pendle's PY quote records EITHER a `mint` prequote (direction "mint") OR a
+  // `redeem_py` prequote (direction "redeem"), decided from the echoed
+  // `direction` (P4). Each writes its dedicated DB kind + identity.
+  | { readonly kind: "pendle-py"; readonly family: PrequoteFamily; readonly provider: string }
+  // Pendle's LP quote records EITHER an `lp_add` prequote (direction "add") OR an
+  // `lp_remove` prequote (direction "remove"), decided from the echoed
+  // `direction` (P5). Each writes its dedicated DB kind + identity.
+  | { readonly kind: "pendle-lp"; readonly family: PrequoteFamily; readonly provider: string };
 
 export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   "kyberswap.swap.quote": { kind: "swap", family: "eip155", provider: "kyberswap" },
@@ -39,6 +47,15 @@ export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   "khalani.quote.get": { kind: "bridge", provider: "khalani" },
   "relay.quote.get": { kind: "bridge", provider: "relay" },
   "pendle.pt.quote": { kind: "pendle", family: "eip155", provider: "pendle" },
+  // YT is ALWAYS a swap (never redeem-py); the pendle recorder records it via the
+  // swap identity, so a YT quote authorizes only the matching YT buy/sell execute.
+  "pendle.yt.quote": { kind: "pendle", family: "eip155", provider: "pendle" },
+  // PY quote records a `mint` or `redeem_py` prequote (P4) — decided from the
+  // echoed `direction`.
+  "pendle.py.quote": { kind: "pendle-py", family: "eip155", provider: "pendle" },
+  // LP quote records an `lp_add` or `lp_remove` prequote (P5) — decided from the
+  // echoed `direction`.
+  "pendle.lp.quote": { kind: "pendle-lp", family: "eip155", provider: "pendle" },
 };
 
 /**
@@ -65,7 +82,15 @@ export type ExecuteGateRegistration =
   | { readonly kind: "bridge"; readonly provider: string }
   // Pendle PT redeem — its OWN kind, matched against a `redeem` prequote via the
   // dedicated redeem identity (Wave 5, G2#3). `family` is always eip155.
-  | { readonly kind: "redeem"; readonly family: PrequoteFamily; readonly provider: string };
+  | { readonly kind: "redeem"; readonly family: PrequoteFamily; readonly provider: string }
+  // Pendle PY mint / pre-expiry redeem — their OWN kinds, matched against a
+  // `mint` / `redeem_py` prequote via the dedicated PY identities (P4).
+  | { readonly kind: "mint"; readonly family: PrequoteFamily; readonly provider: string }
+  | { readonly kind: "redeem_py"; readonly family: PrequoteFamily; readonly provider: string }
+  // Pendle LP single-token add / remove — their OWN kinds, matched against an
+  // `lp_add` / `lp_remove` prequote via the dedicated LP identities (P5).
+  | { readonly kind: "lp_add"; readonly family: PrequoteFamily; readonly provider: string }
+  | { readonly kind: "lp_remove"; readonly family: PrequoteFamily; readonly provider: string };
 
 export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "kyberswap.swap.sell": { kind: "swap", family: "eip155", provider: "kyberswap" },
@@ -80,4 +105,17 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "pendle.pt.buy": { kind: "swap", family: "eip155", provider: "pendle" },
   "pendle.pt.sell": { kind: "swap", family: "eip155", provider: "pendle" },
   "pendle.pt.redeem": { kind: "redeem", family: "eip155", provider: "pendle" },
+  // Pendle YT buy / early-exit sell match a fresh `swap` prequote (the token legs
+  // are addresses — chain-scoped, collision-safe). `pendle.claim` is an income
+  // sweep with NOTHING quoted, so it has NO prequote entry (approval-gated only).
+  "pendle.yt.buy": { kind: "swap", family: "eip155", provider: "pendle" },
+  "pendle.yt.sell": { kind: "swap", family: "eip155", provider: "pendle" },
+  // Pendle PY mint / pre-expiry redeem match their dedicated `mint` / `redeem_py`
+  // prequotes (P4).
+  "pendle.py.mint": { kind: "mint", family: "eip155", provider: "pendle" },
+  "pendle.py.redeem": { kind: "redeem_py", family: "eip155", provider: "pendle" },
+  // Pendle LP single-token add / remove match their dedicated `lp_add` /
+  // `lp_remove` prequotes (P5).
+  "pendle.lp.add": { kind: "lp_add", family: "eip155", provider: "pendle" },
+  "pendle.lp.remove": { kind: "lp_remove", family: "eip155", provider: "pendle" },
 };
