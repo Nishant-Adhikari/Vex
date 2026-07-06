@@ -2,14 +2,19 @@
   // Shared compiler profile for the per-project configs (shared / main /
   // preload / renderer / e2e). S7 repaired the typecheck gate: the old
   // `tsc -p tsconfig.json` checked NOTHING (solution file, files: []).
-  // `lint:tsc` (wired into `lint`/CI) really checks the GREEN projects:
-  // shared + e2e. `lint:tsc:all` is the target state — main / preload /
-  // renderer still carry pre-existing errors under this strict profile
-  // (root ../src/tools tree was written without exactOptionalPropertyTypes /
-  // noUncheckedIndexedAccess; preload trips a dual-zod-install identity
-  // mismatch (root 4.3.6 vs vex-app 4.4.3); renderer has ~40 missing
-  // `import type { JSX } from "react"` + ~24 assorted errors). Burn those
-  // down, then fold each project into `lint:tsc`.
+  // `lint:tsc` (wired into `lint`/CI) hard-checks the GREEN projects: shared +
+  // e2e (+ preload, once the zod alignment lands). main + renderer are held by
+  // the baseline-and-ratchet gate (`scripts/check-type-baseline.mjs`, wired
+  // into `lint`) so no NEW type error can ship while the pre-existing debt is
+  // burned down. See docs/audit/type-safety-remediation-plan.md.
+  // DELIBERATE POSTURE (do not "helpfully" re-tighten): exactOptionalProperty
+  // Types is turned OFF per-project for main / preload / renderer — triage
+  // found 0 runtime bugs behind its ~243 errors and the flag never shaped that
+  // code; src/shared (the IPC contract, where present-vs-absent crosses the
+  // wire) keeps it strict here + in the shared project. noUncheckedIndexedAccess
+  // and noImplicitOverride STAY ON everywhere (wallet-relevant safety) and are
+  // burned down per-site. Endgame: fold each project into `lint:tsc` and delete
+  // the ratchet.
   // NOTE: composite/references/baseUrl/rootDir/outDir were removed in S7 —
   // illegal or meaningless for a noEmit-only gate under TypeScript 6
   // (TS6310/TS6305/TS5101/TS6059); Vite owns all real emit.

@@ -1,6 +1,10 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    // exactOptionalPropertyTypes deliberately OFF (see tsconfig.base.json header
+    // + docs/audit/type-safety-remediation-plan.md). src/shared keeps it strict
+    // via tsconfig.shared.json. noUncheckedIndexedAccess STAYS ON.
+    "exactOptionalPropertyTypes": false,
     "lib": ["ES2024", "DOM"],
     "types": ["node"],
     "verbatimModuleSyntax": false,

@@ -1,6 +1,12 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    // exactOptionalPropertyTypes is deliberately OFF for this project — see the
+    // tsconfig.base.json header + docs/audit/type-safety-remediation-plan.md.
+    // The triage found 0 runtime bugs behind its ~243 errors here; src/shared
+    // (the IPC contract) keeps the flag strict via tsconfig.shared.json.
+    // noUncheckedIndexedAccess STAYS ON (wallet-relevant index safety).
+    "exactOptionalPropertyTypes": false,
     "lib": ["ES2024"],
     "types": ["node"],
     "module": "NodeNext",
