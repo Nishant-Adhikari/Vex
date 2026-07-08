@@ -5,6 +5,17 @@ dist/
 .env.*
 !.env.example
 
+# Secrets / signing / notarization material — NEVER commit
+*.p12
+*.pfx
+*.p8
+AuthKey_*.p8
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.keystore
+*.jks
+
 # IDE / CLI tooling
 .idea/
 .vscode/
@@ -29,6 +40,9 @@ src/vex-agent/e2e/
 
 # Test coverage
 coverage/
+
+# Internal engineering audit / decomposition docs — kept local, not published
+audit/
 
 # Local collaboration / planning
 TEAM/
