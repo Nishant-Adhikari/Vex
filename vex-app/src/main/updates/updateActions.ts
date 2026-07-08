@@ -120,6 +120,13 @@ export async function startUpdateNow(
       currentVersion: currentVersion(),
       latestVersion: status.latestVersion,
       reason: gate.message,
+      blockedAction: "download",
+      severity: status.severity,
+      ...(status.releaseDate !== undefined
+        ? { releaseDate: status.releaseDate }
+        : {}),
+      ...(status.summary !== undefined ? { summary: status.summary } : {}),
+      wasDownloaded: false,
     });
     return err(
       publicUpdateError("update.apply_failed", correlationId, gate.message),
@@ -203,6 +210,13 @@ export async function restartAndInstallNow(
       currentVersion: currentVersion(),
       latestVersion: status.latestVersion,
       reason: gate.message,
+      blockedAction: "install",
+      // `downloaded` doesn't carry severity/releaseDate/summary (only
+      // `available` does), so there's nothing to preserve here beyond the
+      // default UX-normal severity — this is a UX convention, not a security
+      // signal (sanitize.ts).
+      severity: "normal",
+      wasDownloaded: true,
     });
     return err(
       publicUpdateError("update.apply_failed", correlationId, gate.message),
