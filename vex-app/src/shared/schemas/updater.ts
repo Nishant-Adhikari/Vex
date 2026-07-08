@@ -48,12 +48,24 @@ export const updateStatusSchema = z.discriminatedUnion("kind", [
     .strict(),
   // The user asked to update, but a safe-restart gate is blocking (e.g. a
   // Docker/DB operation or an active mission). `reason` is user-actionable.
+  // `blockedAction` records which step was blocked (download vs install) so
+  // the toast's "Try again" can re-invoke that SAME action, which re-checks
+  // the gate live — no polling, no auto-recovery timer. The remaining fields
+  // preserve context that would otherwise be discarded: `severity` /
+  // `releaseDate` / `summary` carry forward from `available` when the block
+  // happened on the download step; `wasDownloaded` tells the UI whether the
+  // update file is already on disk (true only when blocked on install).
   z
     .object({
       kind: z.literal("blockedByOperation"),
       currentVersion,
       latestVersion,
       reason: z.string().min(1),
+      blockedAction: z.enum(["download", "install"]),
+      severity: updateSeveritySchema,
+      releaseDate: z.string().min(1).optional(),
+      summary: z.string().optional(),
+      wasDownloaded: z.boolean(),
     })
     .strict(),
   // Download in progress after explicit consent. `percent` is bounded 0..100.

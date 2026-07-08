@@ -1,9 +1,12 @@
 /**
  * configureUpdater event wiring (M13). Verifies the two-step contract at the
- * event layer (`update-downloaded` sets `downloaded` only, never auto-restart)
- * and the restart-flag recovery (Codex final review #3 follow-up): an updater
+ * event layer (`update-downloaded` sets `downloaded` only, never auto-restart),
+ * the restart-flag recovery (Codex final review #3 follow-up): an updater
  * `error` raised while a restart is in progress clears the flag so
- * `restartAndInstallNow()` is not permanently idempotent after a failed install.
+ * `restartAndInstallNow()` is not permanently idempotent after a failed
+ * install, and the silent-check `available` clobber fix (updater redesign
+ * Part A item 4): a SILENT ambient check's `checking-for-update` must not
+ * flip a visible `available` status to the (non-rendering) `checking` state.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,9 +23,13 @@ vi.mock("electron-updater", () => ({ default: { autoUpdater } }));
 vi.mock("electron", () => ({ app: { isPackaged: true } }));
 
 const setStatus = vi.fn();
+let currentStatusForTest: { kind: string } = {
+  kind: "idle",
+};
 vi.mock("../statusCache.js", () => ({
   setStatus: (s: unknown) => setStatus(s),
   currentVersion: () => "1.0.0",
+  getCurrentStatus: () => currentStatusForTest,
 }));
 
 vi.mock("../sanitize.js", () => ({
@@ -64,6 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   restartInProgress = false;
   silentActive = false;
+  currentStatusForTest = { kind: "idle" };
   for (const key of Object.keys(listeners)) delete listeners[key];
   // Reset the module-level `configured` guard so each test re-registers.
   removeUpdaterEventListeners();
@@ -102,5 +110,35 @@ describe("configureUpdater event wiring", () => {
     // onError returns early: no status set, restart flag untouched.
     expect(setStatus).not.toHaveBeenCalled();
     expect(clearUpdateRestartInProgress).not.toHaveBeenCalled();
+  });
+
+  describe("checking-for-update vs a visible `available` status", () => {
+    it("does NOT clobber `available` while a silent check is active", () => {
+      configureUpdater();
+      silentActive = true;
+      currentStatusForTest = { kind: "available" };
+      listeners["checking-for-update"]?.();
+      expect(setStatus).not.toHaveBeenCalled();
+    });
+
+    it("still transitions to `checking` for a MANUAL (non-silent) check even from `available`", () => {
+      configureUpdater();
+      silentActive = false;
+      currentStatusForTest = { kind: "available" };
+      listeners["checking-for-update"]?.();
+      expect(setStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "checking" }),
+      );
+    });
+
+    it("still transitions to `checking` during a silent check when NOT `available`", () => {
+      configureUpdater();
+      silentActive = true;
+      currentStatusForTest = { kind: "idle" };
+      listeners["checking-for-update"]?.();
+      expect(setStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "checking" }),
+      );
+    });
   });
 });

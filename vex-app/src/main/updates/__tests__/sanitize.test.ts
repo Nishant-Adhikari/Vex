@@ -55,6 +55,31 @@ describe("availableStatus", () => {
     expect(JSON.stringify(status)).not.toContain("https://");
     expect(JSON.stringify(status)).not.toContain("/Users/");
   });
+
+  it("maps a [CRITICAL] release-title marker to severity (UX-only convention)", () => {
+    const info = {
+      version: "2.0.0",
+      releaseName: "[CRITICAL] Fix a key-safety regression",
+    } as unknown as UpdateInfo;
+    expect(availableStatus(info, "1.0.0")).toMatchObject({ severity: "critical" });
+  });
+
+  it("maps a [security] marker in releaseNotes (case-insensitive) to severity", () => {
+    const info = {
+      version: "2.0.0",
+      releaseName: "2.0.0",
+      releaseNotes: "This release contains a [security] fix.",
+    } as unknown as UpdateInfo;
+    expect(availableStatus(info, "1.0.0")).toMatchObject({ severity: "security" });
+  });
+
+  it("defaults to `normal` when no release marker is present (today's behavior)", () => {
+    const info = {
+      version: "2.0.0",
+      releaseName: "Routine improvements",
+    } as unknown as UpdateInfo;
+    expect(availableStatus(info, "1.0.0")).toMatchObject({ severity: "normal" });
+  });
 });
 
 describe("downloadingStatus", () => {

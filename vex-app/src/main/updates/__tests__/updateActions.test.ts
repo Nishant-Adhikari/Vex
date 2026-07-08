@@ -85,6 +85,14 @@ const AVAILABLE = {
   latestVersion: "1.1.0",
   severity: "normal",
 } as const;
+const AVAILABLE_CRITICAL_WITH_CONTEXT = {
+  kind: "available",
+  currentVersion: "1.0.0",
+  latestVersion: "1.2.0",
+  severity: "critical",
+  releaseDate: "2026-01-01",
+  summary: "Security fix",
+} as const;
 const DOWNLOADED = {
   kind: "downloaded",
   currentVersion: "1.0.0",
@@ -136,7 +144,29 @@ describe("startUpdateNow (step 1: download only)", () => {
     expect(r.ok).toBe(false);
     expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
     expect(setStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "blockedByOperation", reason: "busy" }),
+      expect.objectContaining({
+        kind: "blockedByOperation",
+        reason: "busy",
+        blockedAction: "download",
+        severity: "normal",
+        wasDownloaded: false,
+      }),
+    );
+  });
+
+  it("preserves severity/releaseDate/summary from `available` on a download block", async () => {
+    currentStatus = AVAILABLE_CRITICAL_WITH_CONTEXT;
+    canRestartForUpdate.mockResolvedValue({ ok: false, message: "busy" });
+    await actions.startUpdateNow("req");
+    expect(setStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "blockedByOperation",
+        blockedAction: "download",
+        severity: "critical",
+        releaseDate: "2026-01-01",
+        summary: "Security fix",
+        wasDownloaded: false,
+      }),
     );
   });
 
@@ -205,6 +235,9 @@ describe("restartAndInstallNow (step 2: explicit restart)", () => {
       expect.objectContaining({
         kind: "blockedByOperation",
         reason: "migration running",
+        blockedAction: "install",
+        severity: "normal",
+        wasDownloaded: true,
       }),
     );
   });

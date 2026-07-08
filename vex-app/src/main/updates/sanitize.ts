@@ -11,7 +11,7 @@
 
 import type { ProgressInfo, UpdateInfo } from "electron-updater";
 import type { VexError, VexErrorCode } from "@shared/ipc/result.js";
-import type { UpdateStatus } from "@shared/schemas/updater.js";
+import type { UpdateSeverity, UpdateStatus } from "@shared/schemas/updater.js";
 import { getCurrentStatus } from "./statusCache.js";
 import { log } from "../logger/index.js";
 
@@ -21,6 +21,28 @@ const SUMMARY_MAX = 200;
 function latestFromCacheOr(fallback: string): string {
   const prev = getCurrentStatus();
   return "latestVersion" in prev ? prev.latestVersion : fallback;
+}
+
+// A bracketed `[SECURITY]`/`[CRITICAL]` tag in the GitHub release title or
+// body is the release-marker convention this maps to `severity` — a UX-only
+// signal (stronger toast copy + non-dismissible in the critical case), NOT a
+// security policy or a verified authenticity signal. There is no real
+// signed-severity mechanism yet; absent a marker, severity is `normal`
+// (today's behavior).
+const SEVERITY_MARKER_RE = /\[(security|critical)\]/i;
+
+function detectSeverity(info: UpdateInfo): UpdateSeverity {
+  const sources = [
+    typeof info.releaseName === "string" ? info.releaseName : "",
+    typeof info.releaseNotes === "string" ? info.releaseNotes : "",
+  ];
+  for (const source of sources) {
+    const match = SEVERITY_MARKER_RE.exec(source);
+    const tag = match?.[1]?.toLowerCase();
+    if (tag === "critical") return "critical";
+    if (tag === "security") return "security";
+  }
+  return "normal";
 }
 
 export function availableStatus(
@@ -39,7 +61,7 @@ export function availableStatus(
     kind: "available",
     currentVersion,
     latestVersion,
-    severity: "normal",
+    severity: detectSeverity(info),
     ...(releaseDate.length > 0 ? { releaseDate } : {}),
     ...(releaseName.length > 0
       ? { summary: releaseName.slice(0, SUMMARY_MAX) }
