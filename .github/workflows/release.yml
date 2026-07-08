@@ -118,7 +118,12 @@ jobs:
     name: Build, sign, notarize & publish macOS (arm64 + x64)
     needs: create-release
     runs-on: macos-latest
-    timeout-minutes: 60
+    # 120 (not 60): Apple's FIRST notarization on a new account is held for
+    # "additional analysis", and notarytool --wait has no timeout — the initial
+    # v0.1.0 run hit the 60-min cap mid-notarization. Keep this a SINGLE job
+    # building both arches: a parallel per-arch matrix would last-writer-win
+    # latest-mac.yml and drop an arch (breaking auto-update).
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
 
