@@ -13,12 +13,13 @@
 # Windows is a deliberate SECOND release (needs an OV/EV cert) and is absent here.
 #
 # Secrets are read from the CI ENVIRONMENT ONLY — never stored in this repo:
-#   CSC_LINK                     Developer ID Application cert (.p12, base64)
-#   CSC_KEY_PASSWORD             password protecting that .p12
-#   APPLE_ID                     Apple ID email (notarytool)
-#   APPLE_APP_SPECIFIC_PASSWORD  app-specific password (notarytool)
-#   APPLE_TEAM_ID                10-char Apple Team ID (notarytool)
-#   GH_TOKEN                     GitHub Releases upload (CI: secrets.GITHUB_TOKEN)
+#   CSC_LINK           Developer ID Application cert (.p12, base64)
+#   CSC_KEY_PASSWORD   password protecting that .p12
+#   APPLE_API_KEY      path to the App Store Connect API key (.p8); the release
+#                      workflow decodes APPLE_API_KEY_B64 to a temp file and sets it
+#   APPLE_API_KEY_ID   App Store Connect API Key ID (notarytool)
+#   APPLE_API_ISSUER   App Store Connect Issuer ID (notarytool)
+#   GH_TOKEN           GitHub Releases upload (CI: secrets.GITHUB_TOKEN)
 
 # appId: permanent app-identity / auto-updater / userData contract. Locked to
 # ai.projectvex.app (reverse-DNS of app.projectvex.ai) by owner decision before
@@ -84,11 +85,12 @@ mac:
   # and keeping it tight is the right posture for a self-custodial wallet.
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
-  # electron-builder 26 takes `notarize` as a BOOLEAN and runs notarytool using
-  # APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID from the ENVIRONMENT
-  # (there is no config `teamId` in this version). NOTE: if those env vars are
-  # absent it SKIPS notarization with only a warning — the release workflow
-  # fails fast beforehand so an un-notarized build is never published.
+  # electron-builder 26 takes `notarize` as a BOOLEAN (boolean-only schema in this
+  # version). notarytool auth comes from the ENVIRONMENT: with APPLE_API_KEY (path
+  # to the .p8) + APPLE_API_KEY_ID + APPLE_API_ISSUER set, it uses the App Store
+  # Connect API key (Method B). NOTE: if those env vars are absent it SKIPS
+  # notarization with only a warning — the release workflow's preflight fails fast
+  # beforehand so an un-notarized build is never published.
   notarize: true
 
 linux:

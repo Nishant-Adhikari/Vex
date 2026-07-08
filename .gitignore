@@ -41,6 +41,9 @@ src/vex-agent/e2e/
 # Test coverage
 coverage/
 
+# Internal engineering audit / decomposition docs — kept local, not published
+audit/
+
 # Local collaboration / planning
 TEAM/
 agents_dm/
