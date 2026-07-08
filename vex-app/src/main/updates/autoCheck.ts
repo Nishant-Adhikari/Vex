@@ -8,9 +8,16 @@
  * Guards (Codex review):
  *  - feed gate: skip entirely unless a feed is resolvable (packaged app, or dev
  *    with VEX_UPDATER_DEV_FEED=1) — no error spam in plain dev;
- *  - quiet-state guard: only check from idle/current/error — never clobber an
- *    in-progress / actionable state (checking/available/downloading/
- *    downloaded/installing/blockedByOperation);
+ *  - safe-state guard: only check from idle/current/error/available — never
+ *    clobber an in-progress or blocked state (checking/downloading/
+ *    downloaded/installing/blockedByOperation). `available` is included
+ *    (correctness fix) so a NEWER release can still surface even while the
+ *    current one sits snoozed in the renderer's per-version "Later" state —
+ *    the renderer's snooze compares against `latestVersion`, so a fresh
+ *    `available` for a different version un-snoozes itself automatically.
+ *    `configureUpdater.ts`'s `checking-for-update` handler avoids the
+ *    resulting flicker by not clobbering a visible `available` toast with
+ *    the transient (non-rendering) `checking` state during a silent check;
  *  - focus debounce: short in-memory window so focus bursts don't hammer prefs;
  *  - success throttle: persisted `lastCheckedAt`, ≤ once per SUCCESS_THROTTLE;
  *  - failure backoff: in-memory, so a bad feed doesn't retry on every focus.
@@ -34,11 +41,21 @@ function feedConfigured(): boolean {
   return app.isPackaged || process.env.VEX_UPDATER_DEV_FEED === "1";
 }
 
-/** Only run an ambient check from a quiet state — never clobber an in-progress
- *  or user-actionable updater state. */
-function isQuiet(): boolean {
+/**
+ * Only run an ambient check from a state where re-checking is safe: the
+ * quiet states (idle/current/error) AND `available` (see the module
+ * docstring for why `available` is included). Never run from an in-progress
+ * or already-blocked state (checking/downloading/downloaded/installing/
+ * blockedByOperation) — an ambient re-check must not clobber those.
+ */
+function canRunAmbientCheck(): boolean {
   const kind = getCurrentStatus().kind;
-  return kind === "idle" || kind === "current" || kind === "error";
+  return (
+    kind === "idle" ||
+    kind === "current" ||
+    kind === "error" ||
+    kind === "available"
+  );
 }
 
 export async function maybeAutoCheck(
@@ -50,7 +67,7 @@ export async function maybeAutoCheck(
   if (now - lastAttemptAt < FOCUS_DEBOUNCE_MS) return;
   lastAttemptAt = now;
 
-  if (!isQuiet()) return;
+  if (!canRunAmbientCheck()) return;
   if (now - lastFailureAt < FAILURE_BACKOFF_MS) return;
 
   try {

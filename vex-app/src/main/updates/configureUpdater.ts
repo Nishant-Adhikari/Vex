@@ -27,7 +27,7 @@ import {
   clearUpdateRestartInProgress,
   isUpdateRestartInProgress,
 } from "./safeRestart.js";
-import { currentVersion, setStatus } from "./statusCache.js";
+import { currentVersion, getCurrentStatus, setStatus } from "./statusCache.js";
 
 const { autoUpdater } = electronUpdater;
 
@@ -54,6 +54,17 @@ export function configureUpdater(): void {
   }
 
   const onChecking = (): void => {
+    // A SILENT (ambient) check must never visually clobber an existing
+    // `available` status: autoCheck.ts now runs ambient checks from
+    // `available` too (so a newer release can surface), but the transient
+    // `checking` state renders no toast — flipping to it and back would
+    // flash the toast away and immediately back for no reason. A manual
+    // (non-silent) check always reflects the live "checking" state, and a
+    // silent check from any OTHER safe state (idle/current/error) still
+    // transitions normally.
+    if (isSilentCheckActive() && getCurrentStatus().kind === "available") {
+      return;
+    }
     setStatus({ kind: "checking", currentVersion: currentVersion() });
   };
   const onAvailable = (info: UpdateInfo): void => {

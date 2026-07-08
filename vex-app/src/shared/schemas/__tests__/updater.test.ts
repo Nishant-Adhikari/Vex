@@ -42,6 +42,20 @@ describe("updateStatusSchema", () => {
       currentVersion: "1.0.0",
       latestVersion: "1.1.0",
       reason: "An agent run is still in progress.",
+      blockedAction: "download",
+      severity: "normal",
+      wasDownloaded: false,
+    },
+    {
+      kind: "blockedByOperation",
+      currentVersion: "1.0.0",
+      latestVersion: "1.1.0",
+      reason: "A database migration is still running.",
+      blockedAction: "install",
+      severity: "critical",
+      releaseDate: "2026-01-01",
+      summary: "Security fix",
+      wasDownloaded: true,
     },
     {
       kind: "downloading",
@@ -104,6 +118,31 @@ describe("updateStatusSchema", () => {
         currentVersion: "1.0.0",
         latestVersion: "1.1.0",
         percent: 150,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects blockedByOperation missing the new recovery-context fields", () => {
+    expect(
+      updateStatusSchema.safeParse({
+        kind: "blockedByOperation",
+        currentVersion: "1.0.0",
+        latestVersion: "1.1.0",
+        reason: "busy",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an invalid blockedAction value", () => {
+    expect(
+      updateStatusSchema.safeParse({
+        kind: "blockedByOperation",
+        currentVersion: "1.0.0",
+        latestVersion: "1.1.0",
+        reason: "busy",
+        blockedAction: "boot",
+        severity: "normal",
+        wasDownloaded: false,
       }).success,
     ).toBe(false);
   });

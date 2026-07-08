@@ -2,6 +2,12 @@
   "name": "@vex/app",
   "version": "0.1.0",
   "description": "Vex Electron desktop app — local self-custodial wallet + autonomous on-chain agent GUI",
+  "homepage": "https://www.projectvex.ai/",
+  "author": "Project VEX",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vex-Foundation/Vex.git"
+  },
   "private": true,
   "type": "module",
   "main": "dist/main/index.js",

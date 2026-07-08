@@ -1,8 +1,14 @@
 /**
  * Ambient auto-check scheduler (M13 follow-up). Verifies the guards: feed gate,
- * quiet-state guard, persisted success throttle, focus debounce, and the
+ * safe-state guard, persisted success throttle, focus debounce, and the
  * in-memory failure backoff. Auto-check never downloads — this only governs
  * WHEN checkForUpdates runs.
+ *
+ * Updater redesign Part A item 3: the safe-state guard now also allows a
+ * check from `available` (previously idle/current/error only) so a NEWER
+ * release can surface even while the current one sits snoozed in the
+ * renderer's per-version "Later" state — see the guard preserved for the
+ * remaining in-progress/blocked states below.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,6 +76,30 @@ describe("maybeAutoCheck", () => {
     currentKind = "downloaded";
     await maybeAutoCheck("focus");
     expect(silentCheck).not.toHaveBeenCalled();
+  });
+
+  it("skips from installing (guard preserved)", async () => {
+    currentKind = "installing";
+    await maybeAutoCheck("focus");
+    expect(silentCheck).not.toHaveBeenCalled();
+  });
+
+  it("skips from blockedByOperation (guard preserved)", async () => {
+    currentKind = "blockedByOperation";
+    await maybeAutoCheck("focus");
+    expect(silentCheck).not.toHaveBeenCalled();
+  });
+
+  it("skips from downloading (guard preserved)", async () => {
+    currentKind = "downloading";
+    await maybeAutoCheck("focus");
+    expect(silentCheck).not.toHaveBeenCalled();
+  });
+
+  it("NOW also runs from available — a newer release must still surface while snoozed", async () => {
+    currentKind = "available";
+    await maybeAutoCheck("startup");
+    expect(silentCheck).toHaveBeenCalledTimes(1);
   });
 
   it("skips within the success throttle (recent lastCheckedAt)", async () => {
