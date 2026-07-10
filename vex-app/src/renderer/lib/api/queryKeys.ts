@@ -150,6 +150,13 @@ export const missionKeys = {
 export const approvalsKeys = {
   all: ["approvals"] as const,
   pending: (sessionId: string) => ["approvals", "pending", sessionId] as const,
+  /**
+   * App-wide pending inbox (DESK RULE global affordance). A distinct
+   * `"pendingAll"` segment so it never prefix-matches a per-session
+   * `pending`/`history` invalidation (and they never match it) — the two
+   * caches invalidate independently.
+   */
+  pendingAll: () => ["approvals", "pendingAll"] as const,
   detail: (id: string) => ["approvals", "detail", id] as const,
   history: (sessionId: string, limit: number) =>
     ["approvals", "history", sessionId, { limit }] as const,

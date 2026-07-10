@@ -6,7 +6,9 @@ import {
   approvalActionResultSchema,
   approvalGetHistoryInputSchema,
   approvalGetInputSchema,
+  approvalListPendingAllInputSchema,
   approvalListPendingInputSchema,
+  approvalPendingGlobalDtoSchema,
   approvalPermissionSchema,
   approvalStatusSchema,
   approvalSummaryDtoSchema,
@@ -14,6 +16,30 @@ import {
 
 const SESSION = "00000000-0000-4000-8000-000000000004";
 const ISO = "2026-05-21T10:00:00.000Z";
+
+/** A fully-populated global-inbox row (summary fields + sessionTitle). */
+function globalRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "approval-1",
+    sessionId: SESSION,
+    toolCallId: "tc-1",
+    toolName: "wallet:send",
+    status: "pending",
+    permissionAtEnqueue: "restricted",
+    createdAt: ISO,
+    resolvedAt: null,
+    reasoningPreview: "needs auth",
+    actionKind: null,
+    riskLevel: null,
+    preview: null,
+    expiresAt: null,
+    decision: null,
+    decisionReason: null,
+    executionStatus: null,
+    sessionTitle: "Send ETH to bridge",
+    ...over,
+  };
+}
 
 describe("approvals schemas", () => {
   it("approvalStatusSchema accepts pending/approved/rejected only", () => {
@@ -174,6 +200,57 @@ describe("approvals schemas", () => {
         runtimeOutcome: "resumed",
         message: "ok",
       }).success,
+    ).toBe(false);
+  });
+});
+
+describe("approvalPendingGlobalDtoSchema (app-wide inbox)", () => {
+  it("parses a row with a session title", () => {
+    expect(approvalPendingGlobalDtoSchema.safeParse(globalRow()).success).toBe(
+      true,
+    );
+  });
+
+  it("accepts a null sessionTitle (session-less / deleted-session row)", () => {
+    const parsed = approvalPendingGlobalDtoSchema.safeParse(
+      globalRow({ sessionId: null, sessionTitle: null }),
+    );
+    expect(parsed.success).toBe(true);
+  });
+
+  it("requires the sessionTitle key (missing → reject)", () => {
+    const { sessionTitle: _omit, ...withoutTitle } = globalRow();
+    expect(
+      approvalPendingGlobalDtoSchema.safeParse(withoutTitle).success,
+    ).toBe(false);
+  });
+
+  it("rejects a raw tool_call JSONB leak key (.strict on the extension)", () => {
+    // Pins Zod 4 `.extend(...).strict()` — the extended shape stays closed, so
+    // a smuggled raw-blob key can never ride along with the sanitized DTO.
+    const parsed = approvalPendingGlobalDtoSchema.safeParse(
+      globalRow({ tool_call: { command: "send", value: "secret-leak" } }),
+    );
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects any other unknown key", () => {
+    expect(
+      approvalPendingGlobalDtoSchema.safeParse(globalRow({ surprise: 1 }))
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("approvalListPendingAllInputSchema", () => {
+  it("accepts the empty object", () => {
+    expect(approvalListPendingAllInputSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("rejects any non-empty payload (.strict)", () => {
+    expect(
+      approvalListPendingAllInputSchema.safeParse({ sessionId: SESSION })
+        .success,
     ).toBe(false);
   });
 });

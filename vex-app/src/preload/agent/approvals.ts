@@ -3,12 +3,14 @@ import {
   approvalActionInputSchema,
   approvalGetHistoryInputSchema,
   approvalGetInputSchema,
+  approvalListPendingAllInputSchema,
   approvalListPendingInputSchema,
 } from "../../shared/schemas/approvals.js";
 import type {
   ApprovalActionInput,
   ApprovalGetHistoryInput,
   ApprovalGetInput,
+  ApprovalListPendingAllInput,
   ApprovalListPendingInput,
 } from "../../shared/schemas/approvals.js";
 import type { ApprovalsBridge } from "../../shared/types/bridge/agent/approvals.js";
@@ -20,6 +22,15 @@ export const approvals = {
       CH.approvals.listPending,
       input,
       approvalListPendingInputSchema
+    );
+  },
+  listPendingAll(input: ApprovalListPendingAllInput) {
+    // A6: pass the strict empty input schema explicitly so a malformed payload
+    // is rejected at the preload boundary, not just main-side.
+    return invokeWithSchema(
+      CH.approvals.listPendingAll,
+      input,
+      approvalListPendingAllInputSchema
     );
   },
   get(input: ApprovalGetInput) {

@@ -49,12 +49,20 @@ export interface ApprovalCardProps {
    * on least destructive" without stealing focus on every refetch.
    */
   readonly focusOnMount: boolean;
+  /**
+   * A3: when the SAME approval renders both inline (active session) and in the
+   * global header panel, the panel instance passes a variant so its
+   * `approval-card-<id>-title` element id stays unique (duplicate DOM ids break
+   * `aria-labelledby`). Omit for the canonical inline card.
+   */
+  readonly idVariant?: string;
 }
 
 export function ApprovalCard({
   summary,
   sessionId,
   focusOnMount,
+  idVariant,
 }: ApprovalCardProps): JSX.Element {
   const queryClient = useQueryClient();
   const approve = useApprove();
@@ -101,6 +109,11 @@ export function ApprovalCard({
     await Promise.all([
       queryClient.invalidateQueries({
         queryKey: approvalsKeys.pending(sessionId),
+      }),
+      // App-wide inbox badge: any decision (from the inline card OR the global
+      // panel) must refresh the DESK RULE count.
+      queryClient.invalidateQueries({
+        queryKey: approvalsKeys.pendingAll(),
       }),
       // history prefix (limit varies): match every history query for this session.
       queryClient.invalidateQueries({
@@ -169,7 +182,9 @@ export function ApprovalCard({
     fireReject();
   };
 
-  const titleId = `approval-card-${summary.id}-title`;
+  const titleId = `approval-card-${summary.id}${
+    idVariant ? `-${idVariant}` : ""
+  }-title`;
   const previewTool = summary.preview?.toolName ?? null;
   const namespace = summary.preview?.namespace ?? null;
   const toolName = previewTool ?? summary.toolName ?? "(unknown tool)";

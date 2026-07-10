@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   runResumeAfterDecision: vi.fn(),
   dispatchPreparedMission: vi.fn(),
   listPendingForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  listPendingAllApprovals: vi.fn().mockResolvedValue({ ok: true, data: [] }),
   getApprovalById: vi.fn().mockResolvedValue({ ok: true, data: null }),
   getHistoryForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
   log: {
@@ -105,6 +106,8 @@ vi.mock("../mission/_engine-dispatch.js", () => ({
 vi.mock("../../database/approvals-db.js", () => ({
   listPendingForSession: (...a: unknown[]) =>
     mocks.listPendingForSession(...a),
+  listPendingAllApprovals: (...a: unknown[]) =>
+    mocks.listPendingAllApprovals(...a),
   getApprovalById: (...a: unknown[]) => mocks.getApprovalById(...a),
   getHistoryForSession: (...a: unknown[]) =>
     mocks.getHistoryForSession(...a),

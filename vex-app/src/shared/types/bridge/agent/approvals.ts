@@ -4,7 +4,9 @@ import type {
   ApprovalActionResult,
   ApprovalGetHistoryInput,
   ApprovalGetInput,
+  ApprovalListPendingAllInput,
   ApprovalListPendingInput,
+  ApprovalPendingGlobalDto,
   ApprovalSummaryDto,
 } from "../../../schemas/approvals.js";
 
@@ -19,6 +21,14 @@ export interface ApprovalsBridge {
   readonly listPending: (
     input: ApprovalListPendingInput
   ) => Promise<Result<ReadonlyArray<ApprovalSummaryDto>>>;
+  /**
+   * App-wide pending approvals for the DESK RULE global inbox — no
+   * sessionId. Each row is the sanitized summary plus the joined session
+   * title (nullable for session-less / deleted-session approvals).
+   */
+  readonly listPendingAll: (
+    input: ApprovalListPendingAllInput
+  ) => Promise<Result<ReadonlyArray<ApprovalPendingGlobalDto>>>;
   readonly get: (
     input: ApprovalGetInput
   ) => Promise<Result<ApprovalSummaryDto | null>>;

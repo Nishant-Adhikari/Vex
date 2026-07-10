@@ -44,8 +44,12 @@ vi.mock("pg", () => {
 vi.mock("../db-config.js", () => ({ buildPoolConfig: mocks.buildPoolConfig }));
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
-const { getApprovalById, getHistoryForSession, listPendingForSession } =
-  await import("../approvals-db.js");
+const {
+  getApprovalById,
+  getHistoryForSession,
+  listPendingAllApprovals,
+  listPendingForSession,
+} = await import("../approvals-db.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000bbbb";
 const APPROVAL_ID = "approval-intent-001";
@@ -272,5 +276,53 @@ describe("SQL — every read path includes the LEFT JOIN approval_intents", () =
     await getHistoryForSession(SESSION, 10);
     const sql = mocks.query.mock.calls[0]![0] as string;
     expect(sql).toContain("LEFT JOIN approval_intents");
+  });
+
+  it("listPendingAllApprovals reuses the SAME companion LEFT JOIN (single sanitization seam)", async () => {
+    vi.mocked(mocks.query).mockResolvedValueOnce({ rows: [] });
+    await listPendingAllApprovals();
+    const sql = vi.mocked(mocks.query).mock.calls[0]![0] as string;
+    expect(sql).toContain("LEFT JOIN approval_intents");
+    expect(sql).toContain("ON i.approval_id = q.id");
+  });
+});
+
+// ── App-wide inbox reuses the companion projection unchanged ─────────────
+
+describe("listPendingAllApprovals — companion intent projection", () => {
+  // Re-type the shared `QueryFn` mock as a Mock (same instance) so the mock
+  // helpers are typed without adding to the type-error baseline.
+  const queryMock = vi.mocked(mocks.query);
+
+  it("surfaces the rich DTO fields via the shared toDto mapper", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{ ...rowWithIntent(), session_title: "Base swap", session_deleted_at: null }],
+    });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const dto = result.data[0]!;
+    expect(dto.actionKind).toBe("user_wallet_broadcast");
+    expect(dto.riskLevel).toBe("high");
+    expect(dto.preview).toEqual({
+      toolName: "kyberswap.swap.sell",
+      namespace: "kyberswap",
+      criticalArgs: { chain: "base", tokenIn: "ETH", tokenOut: "USDC", amountIn: "1.0" },
+    });
+    expect(dto.sessionTitle).toBe("Base swap");
+  });
+
+  it("back-compat row (no companion intent) yields null rich fields", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{ ...rowWithoutIntent(), session_title: null, session_deleted_at: null }],
+    });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const dto = result.data[0]!;
+    expect(dto.actionKind).toBeNull();
+    expect(dto.riskLevel).toBeNull();
+    expect(dto.preview).toBeNull();
+    expect(dto.sessionTitle).toBeNull();
   });
 });

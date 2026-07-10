@@ -44,8 +44,12 @@ vi.mock("../db-config.js", () => ({
 
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
-const { getApprovalById, getHistoryForSession, listPendingForSession } =
-  await import("../approvals-db.js");
+const {
+  getApprovalById,
+  getHistoryForSession,
+  listPendingAllApprovals,
+  listPendingForSession,
+} = await import("../approvals-db.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000bbbb";
 
@@ -182,5 +186,136 @@ describe("approvals-db mapper", () => {
     expect(mocks.query).toHaveBeenCalledTimes(1);
     const [, params] = mocks.query.mock.calls[0]!;
     expect(params).toEqual([SESSION, 7]);
+  });
+});
+
+// ── App-wide pending inbox (listPendingAllApprovals) ──────────────────────
+
+/**
+ * The mock returns whatever `session_title` a real Postgres COALESCE would have
+ * produced, so these fixtures set `session_title` directly. The COALESCE / btrim
+ * logic itself lives in SQL and is guarded by the SQL-inspection test below.
+ */
+function globalRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "g-approval-1",
+    status: "pending",
+    session_id: SESSION,
+    tool_call_id: "tc-1",
+    tool_call: {
+      namespace: "wallet",
+      command: "send",
+      args: { to: "0xLEAK", amount: "1000000000000000000" },
+      secretField: "do-not-leak",
+    },
+    reasoning: "Confirm wallet transfer",
+    permission_at_enqueue: "restricted",
+    created_at: "2026-05-21T10:00:00.000Z",
+    resolved_at: null,
+    intent_action_kind: null,
+    intent_risk_level: null,
+    intent_preview_json: null,
+    intent_expires_at: null,
+    intent_decision: null,
+    intent_decision_reason: null,
+    intent_execution_status: null,
+    session_title: "Bridge run",
+    session_deleted_at: null,
+    ...over,
+  };
+}
+
+describe("listPendingAllApprovals", () => {
+  // `vi.mocked` re-types the shared `mocks.query` (declared as a plain
+  // `QueryFn`) as a Mock so `.mockResolvedValueOnce` / `.mock` are typed —
+  // same underlying instance, so `vi.clearAllMocks()` still resets it.
+  const queryMock = vi.mocked(mocks.query);
+
+  it("never returns raw tool_call JSONB (allow-listed DTO only)", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [globalRow()] });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const dto = result.data[0]!;
+    expect(dto.toolName).toBe("wallet:send");
+    expect(dto).not.toHaveProperty("tool_call");
+    expect(dto).not.toHaveProperty("args");
+    expect(dto).not.toHaveProperty("secretField");
+    // The planted sensitive values must not appear anywhere in the DTO.
+    const serialized = JSON.stringify(dto);
+    expect(serialized).not.toContain("0xLEAK");
+    expect(serialized).not.toContain("do-not-leak");
+  });
+
+  it("maps session_title → sessionTitle", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [globalRow({ session_title: "My mission" })],
+    });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]!.sessionTitle).toBe("My mission");
+  });
+
+  it("A1: a legacy row whose SQL resolved the title to initial_goal surfaces the goal text", async () => {
+    // title was null so the COALESCE fell through to initial_goal (Postgres did
+    // that resolution — the mocked row carries the resolved value).
+    queryMock.mockResolvedValueOnce({
+      rows: [globalRow({ session_title: "swap 1 ETH for USDC" })],
+    });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]!.sessionTitle).toBe("swap 1 ETH for USDC");
+  });
+
+  it("null session → null sessionId + null sessionTitle (session-less approval)", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [globalRow({ session_id: null, session_title: null })],
+    });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]!.sessionId).toBeNull();
+    expect(result.data[0]!.sessionTitle).toBeNull();
+  });
+
+  it("A5: a deleted session renders session-less (sessionId + sessionTitle nulled)", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [
+        globalRow({
+          session_deleted_at: "2026-05-22T09:00:00.000Z",
+          session_title: "Deleted mission",
+        }),
+      ],
+    });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const dto = result.data[0]!;
+    expect(dto.sessionId).toBeNull();
+    expect(dto.sessionTitle).toBeNull();
+  });
+
+  it("empty result → ok([])", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    const result = await listPendingAllApprovals();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toEqual([]);
+  });
+
+  it("SQL filters status='pending', joins sessions with the COALESCE title, and caps at 100", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    await listPendingAllApprovals();
+    const sql = queryMock.mock.calls[0]![0] as string;
+    expect(sql).toContain("q.status = 'pending'");
+    expect(sql).toContain("LEFT JOIN sessions s ON s.id = q.session_id");
+    expect(sql).toContain("COALESCE(NULLIF(btrim(s.title), ''), NULLIF(btrim(s.initial_goal), ''))");
+    expect(sql).toContain("s.deleted_at");
+    expect(sql).toContain("ORDER BY q.created_at ASC");
+    expect(sql).toContain("LIMIT 100");
+    // The companion approval_intents JOIN is preserved (rich DTO fields).
+    expect(sql).toContain("LEFT JOIN approval_intents");
   });
 });

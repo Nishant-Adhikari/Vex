@@ -150,6 +150,35 @@ export const approvalSummaryDtoSchema = z
   .strict();
 export type ApprovalSummaryDto = z.infer<typeof approvalSummaryDtoSchema>;
 
+/**
+ * App-wide pending-approvals DTO. Extends the FULL sanitized summary (so the
+ * global inbox reuses `ApprovalCard` verbatim — dropping riskLevel/actionKind/
+ * preview would let a destructive action skip the two-step high-risk confirm)
+ * and adds the joined session display name. `sessionTitle` is nullable: the
+ * main-side query resolves `COALESCE(title, initial_goal)` and leaves null for
+ * session-less approvals or deleted sessions, which the renderer labels with a
+ * fallback. `.strict()` keeps the raw `tool_call` JSONB (or any unexpected key)
+ * from riding along.
+ */
+export const approvalPendingGlobalDtoSchema = approvalSummaryDtoSchema
+  .extend({
+    sessionTitle: z.string().nullable(),
+  })
+  .strict();
+export type ApprovalPendingGlobalDto = z.infer<
+  typeof approvalPendingGlobalDtoSchema
+>;
+
+/**
+ * Input for `approvals.listPendingAll` — the app-wide read takes no arguments.
+ * A strict empty object rejects any smuggled payload at both the preload gate
+ * and the main-side envelope parse.
+ */
+export const approvalListPendingAllInputSchema = z.object({}).strict();
+export type ApprovalListPendingAllInput = z.infer<
+  typeof approvalListPendingAllInputSchema
+>;
+
 export const approvalListPendingInputSchema = z
   .object({
     sessionId: z.string().uuid(),

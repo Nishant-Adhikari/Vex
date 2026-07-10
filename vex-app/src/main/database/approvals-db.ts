@@ -29,6 +29,7 @@ import {
   type ApprovalActionKind,
   type ApprovalDecision,
   type ApprovalExecutionStatus,
+  type ApprovalPendingGlobalDto,
   type ApprovalPermission,
   type ApprovalPreview,
   type ApprovalRiskLevel,
@@ -329,6 +330,66 @@ export async function getHistoryForSession(
       return ok(result.rows.map(toDto));
     } catch (cause) {
       return dbError("getHistoryForSession query failed", cause);
+    }
+  });
+}
+
+/**
+ * App-wide pending inbox — every `pending` approval across all sessions, plus
+ * the display title of the owning session. Reuses the SAME allow-listed
+ * `toDto` seam (raw `tool_call` JSONB never leaves this module) and the same
+ * companion `approval_intents` LEFT JOIN, then joins `sessions` for the title.
+ *
+ * A1: the title mirrors the sidebar's `getSessionTitle` fallback
+ * (`title` → `initial_goal`), resolved in SQL so a legacy row with no `title`
+ * still shows its goal text. A5: a soft-deleted session (defensive — pending
+ * approvals block delete) renders session-less.
+ *
+ * LIMIT 100 bounds the payload; the badge shows "99+" past that.
+ */
+const SESSION_TITLE_EXPR =
+  "COALESCE(NULLIF(btrim(s.title), ''), NULLIF(btrim(s.initial_goal), ''))";
+
+interface GlobalApprovalRow extends ApprovalRow {
+  readonly session_title: string | null;
+  readonly session_deleted_at: string | Date | null;
+}
+
+function toGlobalDto(row: GlobalApprovalRow): ApprovalPendingGlobalDto {
+  const base = toDto(row);
+  // A5: if a row ever references a soft-deleted session, drop it to the
+  // session-less presentation (fallback label, no "Open session") by nulling
+  // both fields the renderer keys off.
+  const sessionDeleted = row.session_deleted_at !== null;
+  const sessionTitle =
+    sessionDeleted || typeof row.session_title !== "string"
+      ? null
+      : row.session_title;
+  return {
+    ...base,
+    sessionId: sessionDeleted ? null : base.sessionId,
+    sessionTitle,
+  };
+}
+
+export async function listPendingAllApprovals(): Promise<
+  Result<ReadonlyArray<ApprovalPendingGlobalDto>, VexError>
+> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<GlobalApprovalRow>(
+        `SELECT ${APPROVAL_ROW_COLUMNS},
+                ${SESSION_TITLE_EXPR} AS session_title,
+                s.deleted_at AS session_deleted_at
+           ${APPROVAL_FROM_CLAUSE}
+           LEFT JOIN sessions s ON s.id = q.session_id
+          WHERE q.status = 'pending'
+          ORDER BY q.created_at ASC
+          LIMIT 100`,
+      );
+      return ok(result.rows.map(toGlobalDto));
+    } catch (cause) {
+      return dbError("listPendingAllApprovals query failed", cause);
     }
   });
 }

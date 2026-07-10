@@ -159,6 +159,10 @@ export const CH = {
   // continuation (puzzle 05 phase 3).
   approvals: {
     listPending: "vex:approvals:listPending",
+    // App-wide pending-approvals read (no sessionId) for the DESK RULE
+    // global inbox — returns the same sanitized DTO plus the joined session
+    // title. Session-scoped `listPending` stays the inline-card source.
+    listPendingAll: "vex:approvals:listPendingAll",
     get: "vex:approvals:get",
     approve: "vex:approvals:approve",
     reject: "vex:approvals:reject",
