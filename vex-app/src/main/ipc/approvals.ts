@@ -30,6 +30,7 @@
 import {
   registerGetHandler,
   registerGetHistoryHandler,
+  registerListPendingAllHandler,
   registerListPendingHandler,
 } from "./approvals/read.js";
 import {
@@ -43,6 +44,7 @@ const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 export function registerApprovalsHandlers(): ReadonlyArray<() => void> {
   const cleanups: Array<() => void> = [
     registerListPendingHandler(),
+    registerListPendingAllHandler(),
     registerGetHandler(),
     registerGetHistoryHandler(),
     registerApproveHandler(),

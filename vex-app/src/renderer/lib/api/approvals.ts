@@ -14,10 +14,12 @@
  * transcript).
  */
 
+import { useEffect } from "react";
 import {
   queryOptions,
   useMutation,
   useQuery,
+  useQueryClient,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
@@ -26,6 +28,7 @@ import {
   APPROVAL_HISTORY_DEFAULT_LIMIT,
   type ApprovalActionInput,
   type ApprovalActionResult,
+  type ApprovalPendingGlobalDto,
   type ApprovalSummaryDto,
 } from "@shared/schemas/approvals.js";
 import { approvalsKeys } from "./queryKeys.js";
@@ -73,6 +76,45 @@ export function usePendingApprovals(
     ...base,
     refetchInterval: options?.refetchInterval,
   });
+}
+
+/**
+ * App-wide pending inbox (DESK RULE global affordance). Mirrors
+ * `usePendingApprovals` but session-agnostic — the DTO carries the joined
+ * session title. `refetchInterval` is opt-in so the badge can poll faster
+ * while its panel is open (see `GlobalApprovals`); `useGlobalApprovalsLiveSync`
+ * accelerates it on control-state events.
+ */
+export function usePendingApprovalsAll(
+  options?: { readonly refetchInterval?: number },
+): UseQueryResult<Result<ReadonlyArray<ApprovalPendingGlobalDto>>> {
+  return useQuery({
+    queryKey: approvalsKeys.pendingAll(),
+    queryFn: () => window.vex.approvals.listPendingAll({}),
+    staleTime: STALE_MS,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+/**
+ * Push a global-inbox refresh on any committed control-state transition.
+ * Unlike the per-session `useControlStateLiveSync`, there is NO session
+ * filter — a pending approval can appear or clear in ANY session, so every
+ * `EV.engine.controlState` event invalidates the app-wide key. The event is
+ * post-commit and can be missed (dropped at the preload Zod gate, or fired
+ * before subscribe), so the poll in `GlobalApprovals` remains the primary
+ * freshness net; this is only an accelerator. Pure side effect — mount once.
+ */
+export function useGlobalApprovalsLiveSync(): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const off = window.vex.engine.onControlState(() => {
+      void queryClient.invalidateQueries({
+        queryKey: approvalsKeys.pendingAll(),
+      });
+    });
+    return off;
+  }, [queryClient]);
 }
 
 export function useApproval(

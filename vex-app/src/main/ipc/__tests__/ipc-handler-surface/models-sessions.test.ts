@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   getActiveRunForSession: vi.fn(),
   // approvals-db
   listPendingForSession: vi.fn(),
+  listPendingAllApprovals: vi.fn(),
   getApprovalById: vi.fn(),
   getHistoryForSession: vi.fn(),
   // missions-db
@@ -92,6 +93,7 @@ vi.mock("../../../database/mission-runs-db.js", () => ({
 
 vi.mock("../../../database/approvals-db.js", () => ({
   listPendingForSession: mocks.listPendingForSession,
+  listPendingAllApprovals: mocks.listPendingAllApprovals,
   getApprovalById: mocks.getApprovalById,
   getHistoryForSession: mocks.getHistoryForSession,
 }));

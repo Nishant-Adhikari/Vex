@@ -129,6 +129,7 @@ describe("preload bridge surface", () => {
       // Phase 7 — read-only resolver for /mission-renew lineage.
       "CH.mission.getRenewableSource",
       "CH.approvals.listPending",
+      "CH.approvals.listPendingAll",
       "CH.approvals.get",
       "CH.approvals.approve",
       "CH.approvals.reject",

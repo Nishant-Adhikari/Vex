@@ -10,13 +10,17 @@ import { type Result } from "@shared/ipc/result.js";
 import {
   approvalGetHistoryInputSchema,
   approvalGetInputSchema,
+  approvalListPendingAllInputSchema,
   approvalListPendingInputSchema,
+  approvalPendingGlobalDtoSchema,
   approvalSummaryDtoSchema,
+  type ApprovalPendingGlobalDto,
   type ApprovalSummaryDto,
 } from "@shared/schemas/approvals.js";
 import {
   getApprovalById,
   getHistoryForSession,
+  listPendingAllApprovals,
   listPendingForSession,
 } from "../../database/approvals-db.js";
 import { log } from "../../logger/index.js";
@@ -25,6 +29,9 @@ import { registerHandler } from "../register-handler.js";
 
 const approvalSummaryArraySchema = z.array(approvalSummaryDtoSchema);
 const approvalSummaryNullableSchema = approvalSummaryDtoSchema.nullable();
+const approvalPendingGlobalArraySchema = z.array(
+  approvalPendingGlobalDtoSchema,
+);
 
 // ── Read handlers (unchanged from puzzle 1) ─────────────────────────────
 
@@ -49,6 +56,40 @@ export function registerListPendingHandler(): () => void {
       }
       log.info(
         `[ipc:vex:approvals:listPending] errCode=${outcome.error.code} ` +
+          `correlationId=${ctx.requestId}`,
+      );
+      return outcome;
+    },
+  });
+}
+
+/**
+ * App-wide pending inbox (DESK RULE global affordance). Same allow-listed
+ * boundary as `listPending` but session-agnostic: takes the strict empty
+ * input and returns the global DTO (summary + session title). Logs count only
+ * — never the rows.
+ */
+export function registerListPendingAllHandler(): () => void {
+  return registerHandler({
+    channel: CH.approvals.listPendingAll,
+    domain: "approvals",
+    inputSchema: approvalListPendingAllInputSchema,
+    outputSchema: approvalPendingGlobalArraySchema,
+    handle: async (
+      _input,
+      ctx,
+    ): Promise<Result<ReadonlyArray<ApprovalPendingGlobalDto>>> => {
+      const outcome = await listPendingAllApprovals();
+      if (outcome.ok) {
+        log.info(
+          `[ipc:vex:approvals:listPendingAll] ok ` +
+            `count=${outcome.data.length} ` +
+            `correlationId=${ctx.requestId}`,
+        );
+        return { ok: true, data: [...outcome.data] };
+      }
+      log.info(
+        `[ipc:vex:approvals:listPendingAll] errCode=${outcome.error.code} ` +
           `correlationId=${ctx.requestId}`,
       );
       return outcome;

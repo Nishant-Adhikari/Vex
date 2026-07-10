@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   getActiveRunForSession: vi.fn(),
   // approvals-db
   listPendingForSession: vi.fn(),
+  listPendingAllApprovals: vi.fn(),
   getApprovalById: vi.fn(),
   getHistoryForSession: vi.fn(),
   // missions-db
@@ -96,6 +97,7 @@ vi.mock("../../../database/mission-runs-db.js", () => ({
 
 vi.mock("../../../database/approvals-db.js", () => ({
   listPendingForSession: mocks.listPendingForSession,
+  listPendingAllApprovals: mocks.listPendingAllApprovals,
   getApprovalById: mocks.getApprovalById,
   getHistoryForSession: mocks.getHistoryForSession,
 }));
@@ -179,6 +181,49 @@ describe("approvals handlers", () => {
     const result = await call(CH.approvals.listPending, { sessionId: SESSION });
     expect(result.ok).toBe(true);
     expect(result.data).toEqual([]);
+  });
+
+  it("listPendingAll handler is registered", () => {
+    expect(handlers.has(CH.approvals.listPendingAll)).toBe(true);
+  });
+
+  it("listPendingAll returns the global DTO array (with sessionTitle)", async () => {
+    const globalDto = {
+      id: "g1",
+      sessionId: SESSION,
+      toolCallId: null,
+      toolName: "wallet:send",
+      status: "pending",
+      permissionAtEnqueue: "restricted",
+      createdAt: "2026-05-28T10:00:00.000Z",
+      resolvedAt: null,
+      reasoningPreview: "confirm transfer",
+      actionKind: null,
+      riskLevel: null,
+      preview: null,
+      expiresAt: null,
+      decision: null,
+      decisionReason: null,
+      executionStatus: null,
+      sessionTitle: "My session",
+    };
+    mocks.listPendingAllApprovals.mockResolvedValueOnce({
+      ok: true,
+      data: [globalDto],
+    });
+    const result = await call(CH.approvals.listPendingAll, {});
+    expect(result.ok).toBe(true);
+    // The handler's output schema accepts the global DTO shape verbatim.
+    expect(result.data).toEqual([globalDto]);
+  });
+
+  it("listPendingAll rejects a non-empty payload (strict empty input)", async () => {
+    const result = await call(CH.approvals.listPendingAll, {
+      sessionId: SESSION,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error?.code).toBe("validation.invalid_input");
   });
 
   // Approve/reject fail-closed assertions moved out.

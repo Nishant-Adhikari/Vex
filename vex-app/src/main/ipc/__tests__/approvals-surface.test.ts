@@ -42,6 +42,7 @@ vi.mock("../mission/_engine-dispatch.js", () => ({
 
 vi.mock("../../database/approvals-db.js", () => ({
   listPendingForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  listPendingAllApprovals: vi.fn().mockResolvedValue({ ok: true, data: [] }),
   getApprovalById: vi.fn().mockResolvedValue({ ok: true, data: null }),
   getHistoryForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 }));

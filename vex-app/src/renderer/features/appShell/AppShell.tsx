@@ -43,6 +43,7 @@ import { SessionPanel } from "./SessionPanel.js";
 import { SessionsLibrary } from "./SessionsLibrary.js";
 import { SessionsList } from "./SessionsList.js";
 import { MemoryPanel } from "./MemoryPanel.js";
+import { GlobalApprovals } from "./GlobalApprovals.js";
 import { SignalSky } from "./SignalSky.js";
 
 /** Sky strength behind an active session transcript — dimmed so the tape
@@ -93,11 +94,13 @@ export function AppShell(): JSX.Element {
          * tick that heads the left-anchored transcript spine remains. Three
          * zones on a 1fr/auto/1fr grid (equal flanks keep the center truly
          * centered): live tape state (left), MISSION/PLAN badge cluster
-         * (center), and an intentionally-empty right flank (the BOOK toggle
-         * lives ONLY in BookPanel's collapse header since the single-toggle
-         * owner review — the empty cell keeps the center truly centered). The
-         * rule itself never moves; only the tape-state word and the cluster's
-         * badge states change. */}
+         * (center), and the right flank hosting the app-wide pending-approvals
+         * inbox (`GlobalApprovals`, owner-approved global visibility). The
+         * badge renders null at count 0, so the flank stays empty when idle —
+         * the center stays truly centered. The BOOK toggle still lives ONLY in
+         * BookPanel's collapse header (single-toggle owner review). The rule
+         * itself never moves; only the tape-state word, the cluster's badge
+         * states, and the approvals badge change. */}
         <header className="relative grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-6">
           <span
             aria-hidden
@@ -114,7 +117,9 @@ export function AppShell(): JSX.Element {
               <MissionRail activeSessionId={activeSessionId} />
             ) : null}
           </div>
-          <div aria-hidden className="flex items-center justify-end gap-3" />
+          <div className="flex items-center justify-end gap-3">
+            <GlobalApprovals />
+          </div>
         </header>
 
         <div className="min-h-0 flex-1">
