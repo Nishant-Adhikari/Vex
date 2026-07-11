@@ -18,7 +18,7 @@ import { parseUnits, formatUnits, getAddress, isAddress, type Address, type Hex 
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import { getUniswapPublicClient, getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import { readUniswapErc20Metadata } from "@tools/uniswap/erc20.js";
-import { ensureUniswapAllowanceExact } from "@tools/uniswap/erc20.js";
+import { ensureUniswapAllowanceExact, ensureUniswapSufficientBalance } from "@tools/uniswap/erc20.js";
 import { quoteBestRoute, applySlippage } from "@tools/uniswap/quote.js";
 import { buildSwapTx, sendUniswapTransaction, NATIVE_TOKEN_ADDRESS } from "@tools/uniswap/execute.js";
 import { checkRouteFactories, probeFotSignal, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
@@ -242,8 +242,13 @@ async function executeUniswapSwap(
   const { publicClient, walletClient } = getUniswapEvmClients(deployment, signer.privateKey as Hex);
   const router = routerFor(deployment, quoted.route);
 
-  // EXACT-amount allowance to an allowlisted router (native input needs none).
+  // Non-native input (a sell): guard balance BEFORE approving/swapping, then set
+  // the EXACT-amount allowance to the allowlisted router. Over-balance amounts
+  // otherwise revert at the router's transferFrom with an opaque STF /
+  // TRANSFER_FROM_FAILED that mimics a missing allowance. Native input needs
+  // neither (the tx value carries the ETH).
   if (!tokenIn.isNative) {
+    await ensureUniswapSufficientBalance(publicClient, tokenIn.address, getAddress(signer.address), amountIn, tokenIn.symbol, tokenIn.decimals);
     await ensureUniswapAllowanceExact(publicClient, walletClient, tokenIn.address, router, amountIn);
   }
 

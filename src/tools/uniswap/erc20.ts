@@ -9,6 +9,7 @@
 
 import {
   getAddress,
+  formatUnits,
   type Address,
   type Chain,
   type Hex,
@@ -52,6 +53,38 @@ export async function readUniswapErc20Metadata(
     logger.debug({ event: "uniswap.erc20.symbol_failed", address });
   }
   return { address, symbol, decimals, isNative: false };
+}
+
+/**
+ * Pre-flight: ensure `owner` holds at least `requiredAmount` of `token` BEFORE
+ * approving/swapping. A sell for more than the balance makes the router's
+ * `transferFrom` revert with an opaque `TRANSFER_FROM_FAILED` / `STF` that reads
+ * exactly like a missing allowance — so guard it here and fail with a clear,
+ * actionable INSUFFICIENT_BALANCE (have X, requested Y) instead of burning gas on
+ * a doomed swap. `decimals`/`symbol` are for the human-readable message only.
+ */
+export async function ensureUniswapSufficientBalance(
+  publicClient: PublicClient<Transport, Chain>,
+  token: Address,
+  owner: Address,
+  requiredAmount: bigint,
+  symbol: string,
+  decimals = 18,
+): Promise<void> {
+  const balance = (await publicClient.readContract({
+    address: token,
+    abi: UNISWAP_ERC20_ABI,
+    functionName: "balanceOf",
+    args: [owner],
+  })) as bigint;
+
+  if (balance < requiredAmount) {
+    throw new VexError(
+      ErrorCodes.INSUFFICIENT_BALANCE,
+      `Insufficient ${symbol} balance: have ${formatUnits(balance, decimals)}, requested ${formatUnits(requiredAmount, decimals)}.`,
+      "Reduce the amount to at most the wallet balance (or use the max/available balance) and retry.",
+    );
+  }
 }
 
 /** Verify a spender is an allowlisted Uniswap router. Throws otherwise. */
