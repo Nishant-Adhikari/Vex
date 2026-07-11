@@ -162,8 +162,16 @@ export async function ensureKyberAllowance(
         functionName: "approve",
         args: [spender, 0n],
       });
-      await publicClient.waitForTransactionReceipt({ hash: resetTxHash });
+      const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetTxHash });
+      if (resetReceipt.status !== "success") {
+        throw new VexError(
+          ErrorCodes.APPROVAL_FAILED,
+          `Allowance-reset transaction ${resetTxHash} reverted on-chain (status: ${resetReceipt.status}).`,
+          "The existing allowance was not cleared, so the follow-up approve would be blocked. Retry or check gas.",
+        );
+      }
     } catch (err) {
+      if (err instanceof VexError) throw err;
       throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to reset allowance: ${err instanceof Error ? err.message : err}`);
     }
   }
@@ -179,9 +187,21 @@ export async function ensureKyberAllowance(
       functionName: "approve",
       args: [spender, approveAmount],
     });
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    // viem's waitForTransactionReceipt RESOLVES on a reverted tx (status
+    // "reverted") — it does not throw. A reverted approve grants NO allowance, so
+    // treating it as success sends the swap into a transferFrom revert that masks
+    // the real cause. Fail loud on the approve.
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+      throw new VexError(
+        ErrorCodes.APPROVAL_FAILED,
+        `Approval transaction ${txHash} reverted on-chain (status: ${receipt.status}).`,
+        "The router was not granted an allowance; the swap would fail at transferFrom. Retry or check gas.",
+      );
+    }
     return { txHash, resetTxHash };
   } catch (err) {
+    if (err instanceof VexError) throw err;
     throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to approve: ${err instanceof Error ? err.message : err}`);
   }
 }
@@ -206,9 +226,19 @@ export async function sendKyberTransaction(
       value: params.value ?? 0n,
       chain: walletClient.chain,
     });
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
+    // waitForTransactionReceipt RESOLVES on a reverted tx — assert success so a
+    // reverted swap is never reported as executed.
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+      throw new VexError(
+        ErrorCodes.SWAP_FAILED,
+        `Transaction ${txHash} reverted on-chain (status: ${receipt.status}).`,
+        "No tokens were swapped. Common causes: slippage/min-out, insufficient allowance, or a fee-on-transfer token.",
+      );
+    }
     return txHash;
   } catch (err) {
+    if (err instanceof VexError) throw err;
     throw new VexError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
   }
 }
@@ -231,6 +261,13 @@ export async function sendKyberTransactionWithReceipt(
       chain: walletClient.chain,
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") {
+      throw new VexError(
+        ErrorCodes.SWAP_FAILED,
+        `Transaction ${hash} reverted on-chain (status: ${receipt.status}).`,
+        "The zap did not execute. Common causes: slippage/min-out, insufficient allowance, or a fee-on-transfer token.",
+      );
+    }
     return {
       hash,
       receipt: {
@@ -242,6 +279,7 @@ export async function sendKyberTransactionWithReceipt(
       },
     };
   } catch (err) {
+    if (err instanceof VexError) throw err;
     throw new VexError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
   }
 }

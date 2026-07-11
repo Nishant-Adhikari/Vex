@@ -187,9 +187,20 @@ export async function sendUniswapTransaction(
       data: tx.data,
       value: tx.value,
     });
-    await publicClient.waitForTransactionReceipt({ hash });
+    // viem's waitForTransactionReceipt RESOLVES on a reverted tx (status
+    // "reverted") — it does not throw. Reporting a reverted swap as executed
+    // would open a phantom lot in the trade capture, so assert success here.
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") {
+      throw new VexError(
+        ErrorCodes.SWAP_FAILED,
+        `Swap transaction ${hash} reverted on-chain (status: ${receipt.status}).`,
+        "No tokens were swapped. Common causes: slippage/min-out, insufficient allowance, or a fee-on-transfer token.",
+      );
+    }
     return hash;
   } catch (err) {
+    if (err instanceof VexError) throw err;
     throw new VexError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
