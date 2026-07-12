@@ -7,10 +7,13 @@
 import { describe, expect, it } from "vitest";
 import { EM_DASH } from "../missionHistoryModel.js";
 import {
+  formatBankrollRange,
   formatMetaLine,
   formatPnlEth,
   formatPnlPct,
+  formatPnlUsd,
   formatSettlement,
+  formatSettlementSignal,
   pnlToneClass,
   pnlUsdTitle,
 } from "../missionSummaryModel.js";
@@ -55,6 +58,40 @@ describe("formatMetaLine", () => {
   it("joins the trade count with the settlement clause", () => {
     expect(formatMetaLine(4, 0)).toBe("4 trades · ended flat ✅");
     expect(formatMetaLine(7, 2)).toBe("7 trades · 2 bags held ⚠");
+  });
+});
+
+describe("formatSettlementSignal", () => {
+  it("reads flat when no attributable bags remain", () => {
+    expect(formatSettlementSignal(0)).toBe("flat");
+  });
+
+  it("counts held bags without pluralising or framing", () => {
+    expect(formatSettlementSignal(1)).toBe("1 held");
+    expect(formatSettlementSignal(3)).toBe("3 held");
+  });
+});
+
+describe("formatBankrollRange", () => {
+  it("renders the start→end ETH range", () => {
+    expect(formatBankrollRange(0.0137, 0.0149)).toBe("0.0137 → 0.0149");
+  });
+
+  it("em-dashes each side independently when its snapshot is missing", () => {
+    expect(formatBankrollRange(null, 0.0149)).toBe("— → 0.0149");
+    expect(formatBankrollRange(0.0137, null)).toBe("0.0137 → —");
+  });
+});
+
+describe("formatPnlUsd", () => {
+  it("renders a signed USD figure at close", () => {
+    expect(formatPnlUsd(0.0012, 3000)).toBe("+$3.60");
+    expect(formatPnlUsd(-0.001, 3000)).toBe("-$3.00");
+  });
+
+  it("em-dashes when either input is missing", () => {
+    expect(formatPnlUsd(null, 3000)).toBe(EM_DASH);
+    expect(formatPnlUsd(0.0012, null)).toBe(EM_DASH);
   });
 });
 

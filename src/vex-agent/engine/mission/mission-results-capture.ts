@@ -84,11 +84,13 @@ export async function captureMissionStart(
     if (!mission) return;
     const wc = resolveWalletChain(mission);
     if (!wc) return;
-    // Snapshot the START bankroll on-chain (accurate basis) so start and end are
-    // measured the same way; fall back to the projection if the RPC read fails.
-    const bankroll =
-      (await deps.readBankrollOnChain(wc.wallet, wc.chainId)) ??
-      (await deps.readBankroll(wc.wallet, wc.chainId));
+    // START bankroll from a LIVE on-chain read (accurate basis) so start and end
+    // are measured the same way; fall back to the projection if the RPC read
+    // fails. The projection is read regardless for the start open-position bag
+    // list, which the on-chain read does not carry (it reports openPositions: []).
+    const onChain = await deps.readBankrollOnChain(wc.wallet, wc.chainId);
+    const projection = await deps.readBankroll(wc.wallet, wc.chainId);
+    const bankroll = onChain ?? projection;
     await deps.openResult({
       id: `mres-${randomUUID()}`,
       missionId: args.missionId,
@@ -99,6 +101,8 @@ export async function captureMissionStart(
       goalSnippet: mission.goal?.slice(0, GOAL_SNIPPET_MAX) ?? null,
       bankrollStartEth: bankroll?.bankrollEth ?? null,
       ethPriceUsdStart: bankroll?.ethPriceUsd ?? null,
+      // Bags held at START (pre-existing dust) so finalize counts only NEW ones.
+      startPositions: projection?.openPositions ?? null,
     });
   } catch (err) {
     logger.warn("mission.results.capture_start_failed", {

@@ -17,9 +17,11 @@ import type { MissionResultDto } from "@shared/schemas/mission.js";
 import { cn } from "../../lib/utils.js";
 import { EM_DASH, formatDurationS } from "./missionHistoryModel.js";
 import {
+  formatBankrollRange,
   formatMetaLine,
   formatPnlEth,
   formatPnlPct,
+  formatPnlUsd,
   pnlToneClass,
   pnlUsdTitle,
 } from "./missionSummaryModel.js";
@@ -33,6 +35,10 @@ export function MissionSummaryCard({
 }: MissionSummaryCardProps): JSX.Element {
   const pnlTitle = pnlUsdTitle(result.pnlEth, result.ethPriceUsdEnd);
   const pct = formatPnlPct(result.pnlPct);
+  const pnlUsdText =
+    result.ethPriceUsdEnd !== null
+      ? formatPnlUsd(result.pnlEth, result.ethPriceUsdEnd)
+      : null;
 
   return (
     <section
@@ -67,10 +73,26 @@ export function MissionSummaryCard({
           {pct.length > 0 ? (
             <span className="ml-2 text-[11px]">{pct}</span>
           ) : null}
+          {pnlUsdText !== null ? (
+            <span className="ml-2 text-[11px] text-[var(--vex-text-3)]">
+              ≈ {pnlUsdText}
+            </span>
+          ) : null}
         </span>
       </div>
 
-      {/* Line 3 — trades + settlement. */}
+      {/* Line 3 — bankroll start→end (the basis behind the PnL). */}
+      <div className="flex items-baseline gap-2 font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
+        <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+          Bankroll
+        </span>
+        <span>
+          {formatBankrollRange(result.bankrollStartEth, result.bankrollEndEth)}
+          <span className="ml-1 text-[var(--vex-text-3)]">ETH</span>
+        </span>
+      </div>
+
+      {/* Line 4 — trades + settlement. */}
       <p className="font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
         {formatMetaLine(result.trades, result.openPositionsCount)}
       </p>
