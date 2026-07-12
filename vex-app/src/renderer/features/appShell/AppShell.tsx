@@ -43,6 +43,7 @@ import { SessionPanel } from "./SessionPanel.js";
 import { SessionsLibrary } from "./SessionsLibrary.js";
 import { SessionsList } from "./SessionsList.js";
 import { MemoryPanel } from "./MemoryPanel.js";
+import { MissionHistory } from "./MissionHistory.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
 import { SignalSky } from "./SignalSky.js";
 
@@ -127,6 +128,8 @@ export function AppShell(): JSX.Element {
             <SessionsLibrary />
           ) : appShellView === "memory" ? (
             <MemoryPanel />
+          ) : appShellView === "missionHistory" ? (
+            <MissionHistory />
           ) : (
             <SessionPanel />
           )}
