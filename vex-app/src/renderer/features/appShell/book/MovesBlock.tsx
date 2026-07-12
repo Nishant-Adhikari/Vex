@@ -94,6 +94,19 @@ const KNOWN_MINTS: ReadonlyMap<string, string> = new Map([
   ["Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USDT"],
 ]);
 
+/**
+ * Wrapped-native EVM addresses → the native ticker. The base leg of every EVM
+ * spot trade routes as wrapped-native, and (unlike the traded token) it is not
+ * an ERC-20 balance row, so the server symbol-resolution can't catch it. Keyed
+ * LOWERCASE. Deliberately tiny — the chain base assets only, not a registry.
+ */
+const KNOWN_EVM_TOKENS: ReadonlyMap<string, string> = new Map([
+  ["0x0bd7d308f8e1639fab988df18a8011f41eacad73", "ETH"], // Robinhood WETH
+  ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "ETH"], // Ethereum WETH
+  ["0x4200000000000000000000000000000000000006", "ETH"], // Base / Optimism WETH
+  ["0x82af49447d8a07e3bd95bd0d56f35241523fbab1", "ETH"], // Arbitrum WETH
+]);
+
 /** Reads as a raw mint/address: one long unbroken alnum (base58/hex) run. */
 const ADDRESS_LIKE = /^[0-9a-zA-Z]{13,}$/;
 
@@ -115,6 +128,8 @@ function tokenDisplay(token: string | null): TokenDisplay {
   if (token === null || token.length === 0) return { text: "?", full: null };
   const ticker = KNOWN_MINTS.get(token);
   if (ticker !== undefined) return { text: ticker, full: token };
+  const evmTicker = KNOWN_EVM_TOKENS.get(token.toLowerCase());
+  if (evmTicker !== undefined) return { text: evmTicker, full: token };
   if (ADDRESS_LIKE.test(token)) {
     return { text: truncateAddress(token), full: token };
   }

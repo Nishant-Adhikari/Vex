@@ -100,11 +100,12 @@ export function BookPanel({
           {activeSessionId !== null ? (
             <>
               <PositionBlock activeSessionId={activeSessionId} hero />
-              <MovesBlock sessionId={activeSessionId} />
               <BookBlock title="Runtime & Cost">
                 <SessionRuntimeBar sessionId={activeSessionId} layout="stack" />
               </BookBlock>
               <SessionBlock sessionId={activeSessionId} />
+              {/* Moves last — the trade ledger reads as the running footer of the book. */}
+              <MovesBlock sessionId={activeSessionId} />
             </>
           ) : (
             // Global portfolio (no active session) — the configured inventory.
