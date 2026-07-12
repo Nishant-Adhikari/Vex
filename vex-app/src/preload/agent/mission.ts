@@ -16,6 +16,7 @@ import {
   missionGetDiffInputSchema,
   missionGetDraftInputSchema,
   missionGetRenewableSourceInputSchema,
+  missionListResultsInputSchema,
   missionRecoverInputSchema,
   missionRenewInputSchema,
   missionEditInputSchema,
@@ -31,6 +32,7 @@ import type {
   MissionGetDiffInput,
   MissionGetDraftInput,
   MissionGetRenewableSourceInput,
+  MissionListResultsInput,
   MissionRecoverInput,
   MissionRenewInput,
   MissionEditInput,
@@ -126,6 +128,13 @@ export const mission = {
       CH.mission.getRenewableSource,
       input,
       missionGetRenewableSourceInputSchema,
+    );
+  },
+  listResults(input: MissionListResultsInput) {
+    return invokeWithSchema(
+      CH.mission.listResults,
+      input,
+      missionListResultsInputSchema,
     );
   },
   setAutoRetry(input: MissionSetAutoRetryInput) {

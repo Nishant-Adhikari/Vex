@@ -145,6 +145,8 @@ export const missionKeys = {
    */
   renewableSource: (sessionId: string) =>
     ["mission", "renewableSource", sessionId] as const,
+  /** Mission results ledger (history) — per-wallet PNL records. */
+  results: () => ["mission", "results"] as const,
 };
 
 export const approvalsKeys = {

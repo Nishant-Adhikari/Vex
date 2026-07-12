@@ -149,6 +149,7 @@ export const CH = {
     edit: "vex:mission:edit",
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
+    listResults: "vex:mission:listResults",
     setAutoRetry: "vex:mission:setAutoRetry",
   },
 
