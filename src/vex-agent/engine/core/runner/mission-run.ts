@@ -36,7 +36,10 @@ import {
   type MissionRunContractSnapshot,
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
-import { computeHardDeadlineMs } from "../../mission/mission-deadline.js";
+import {
+  computeHardDeadlineMs,
+  resolveDurationMinutes,
+} from "../../mission/mission-deadline.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import {
@@ -138,11 +141,13 @@ export async function runPreparedMissionStart(
       }),
     );
 
-    // Hard time-box anchored to the run's IMMUTABLE started_at (correct across
-    // wakes/resumes). Enforced at the turn-loop boundary. Fail-open: an absent
-    // run / unparseable timestamp yields null (no box) rather than a false stop.
+    // Hard time-box: the mission's own durationMinutes (→ env → 60), anchored to
+    // the run's IMMUTABLE started_at so it holds across wakes/resumes. Enforced
+    // at the turn-loop boundary. Fail-open: an unparseable timestamp yields null
+    // (no box) rather than a false early stop.
     const missionDeadlineMs = computeHardDeadlineMs(
       (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
+      resolveDurationMinutes(hydrated.context.missionDurationMinutes),
     );
     // Show the agent the SAME hard deadline the loop enforces (via the Runtime
     // Clock), so it can flatten positions before the cutoff instead of being
@@ -269,11 +274,13 @@ export async function resumePreparedMissionRun(
       }),
     );
 
-    // Hard time-box anchored to the run's IMMUTABLE started_at (correct across
-    // wakes/resumes). Enforced at the turn-loop boundary. Fail-open: an absent
-    // run / unparseable timestamp yields null (no box) rather than a false stop.
+    // Hard time-box: the mission's own durationMinutes (→ env → 60), anchored to
+    // the run's IMMUTABLE started_at so it holds across wakes/resumes. Enforced
+    // at the turn-loop boundary. Fail-open: an unparseable timestamp yields null
+    // (no box) rather than a false early stop.
     const missionDeadlineMs = computeHardDeadlineMs(
       (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
+      resolveDurationMinutes(hydrated.context.missionDurationMinutes),
     );
     // Show the agent the SAME hard deadline the loop enforces (via the Runtime
     // Clock), so it can flatten positions before the cutoff instead of being
