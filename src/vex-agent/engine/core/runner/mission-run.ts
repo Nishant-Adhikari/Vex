@@ -36,6 +36,7 @@ import {
   type MissionRunContractSnapshot,
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
+import { computeHardDeadlineMs } from "../../mission/mission-deadline.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import {
@@ -137,10 +138,17 @@ export async function runPreparedMissionStart(
       }),
     );
 
+    // Hard time-box anchored to the run's IMMUTABLE started_at (correct across
+    // wakes/resumes). Enforced at the turn-loop boundary. Fail-open: an absent
+    // run / unparseable timestamp yields null (no box) rather than a false stop.
+    const missionDeadlineMs = computeHardDeadlineMs(
+      (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
+    );
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
+      missionDeadlineMs,
     };
 
     const result = await runTurnLoop(
@@ -255,10 +263,17 @@ export async function resumePreparedMissionRun(
       }),
     );
 
+    // Hard time-box anchored to the run's IMMUTABLE started_at (correct across
+    // wakes/resumes). Enforced at the turn-loop boundary. Fail-open: an absent
+    // run / unparseable timestamp yields null (no box) rather than a false stop.
+    const missionDeadlineMs = computeHardDeadlineMs(
+      (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
+    );
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
+      missionDeadlineMs,
     };
 
     const result = await runTurnLoop(
