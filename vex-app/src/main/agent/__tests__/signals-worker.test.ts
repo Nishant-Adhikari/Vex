@@ -10,6 +10,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SignalsIngestExecutorHandle } from "@vex-agent/signals/executor.js";
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -23,10 +24,11 @@ vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
 
 const { setupSignalsIngestWorker } = await import("../signals-worker.js");
 
-interface FakeHandle {
+// Intersection: assignable to the real handle type (so it satisfies the
+// startExecutor dep) while keeping `stop` typed as a Mock for assertions.
+function makeHandle(): SignalsIngestExecutorHandle & {
   readonly stop: ReturnType<typeof vi.fn>;
-}
-function makeHandle(): FakeHandle {
+} {
   return { stop: vi.fn(async () => {}) };
 }
 
