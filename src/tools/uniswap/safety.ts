@@ -143,5 +143,41 @@ export async function probeFotSignal(
   }
 }
 
+/**
+ * Pre-buy exit-safety decision. Given the results of the two keyless probes the
+ * swap handler runs before spending ETH on a token — does a reverse (token→ETH)
+ * sell route exist, and does the token show a fee-on-transfer signal — return a
+ * human-readable veto reason, or `null` to allow the buy.
+ *
+ * A token that can be bought but not sold is a honeypot (all-sell routes revert
+ * under a QuoterV2 simulation → no route). A fee-on-transfer token settles on
+ * balance deltas that break a plain swap's minimum-output guarantee and can trap
+ * or tax the exit. Either blocks the buy. The no-exit case is reported first
+ * since it is the more severe (funds unrecoverable, not merely taxed).
+ */
+export function exitSafetyVeto(input: {
+  readonly sellBackRouteExists: boolean;
+  readonly fotSuspected: boolean;
+  readonly tokenOutSymbol: string;
+  readonly tokenOutAddress: string;
+  readonly tokenInSymbol: string;
+}): string | null {
+  if (!input.sellBackRouteExists) {
+    return (
+      `Exit-safety veto: no sell route for ${input.tokenOutSymbol} ` +
+      `(${input.tokenOutAddress}) back to ${input.tokenInSymbol}. A token that ` +
+      `can be bought but not sold is a honeypot — buy blocked.`
+    );
+  }
+  if (input.fotSuspected) {
+    return (
+      `Exit-safety veto: ${input.tokenOutSymbol} (${input.tokenOutAddress}) ` +
+      `shows a fee-on-transfer / non-quotable-pool signal that can tax or trap ` +
+      `the exit — buy blocked.`
+    );
+  }
+  return null;
+}
+
 // Keep ZERO_ADDRESS referenced for clarity / future callers.
 export { ZERO_ADDRESS };

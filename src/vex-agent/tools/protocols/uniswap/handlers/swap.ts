@@ -21,7 +21,7 @@ import { readUniswapErc20Metadata } from "@tools/uniswap/erc20.js";
 import { ensureUniswapAllowanceExact, ensureUniswapSufficientBalance } from "@tools/uniswap/erc20.js";
 import { quoteBestRoute, applySlippage } from "@tools/uniswap/quote.js";
 import { buildSwapTx, sendUniswapTransaction, NATIVE_TOKEN_ADDRESS } from "@tools/uniswap/execute.js";
-import { checkRouteFactories, probeFotSignal, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
+import { checkRouteFactories, probeFotSignal, exitSafetyVeto, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken, UniswapRoute } from "@tools/uniswap/types.js";
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
@@ -228,6 +228,38 @@ async function executeUniswapSwap(
       minAmountOut: formatUnits(quoted.minAmountOut, tokenOut.decimals),
       router: routerFor(deployment, quoted.route),
     });
+  }
+
+  // Exit-safety veto (buys only): before spending ETH on a token, prove it can
+  // be sold back. Simulate the reverse leg (token→input) via QuoterV2 — a null
+  // route means every sell reverts (honeypot) — and probe the fee-on-transfer
+  // signal. Read-only + keyless, and BEFORE signer resolution so no key is
+  // decrypted for a doomed buy. Sells and native-out swaps are exits already.
+  if (side === "buy" && !tokenOut.isNative) {
+    const probeClient = getUniswapPublicClient(deployment);
+    const [sellBack, fotSuspected] = await Promise.all([
+      quoteBestRoute(probeClient, {
+        deployment,
+        tokenIn: tokenOut,
+        tokenOut: tokenIn,
+        amountIn: quoted.amountOut,
+      }),
+      probeFotSignal(probeClient, deployment, tokenOut.address),
+    ]);
+    const veto = exitSafetyVeto({
+      sellBackRouteExists: sellBack !== null,
+      fotSuspected,
+      tokenOutSymbol: tokenOut.symbol,
+      tokenOutAddress: tokenOut.address,
+      tokenInSymbol: tokenIn.symbol,
+    });
+    if (veto !== null) {
+      logger.info("uniswap.swap.exit_safety_veto", {
+        chain: deployment.key, token: tokenOut.address,
+        sellBackRoute: sellBack !== null, fotSuspected,
+      });
+      return fail(veto);
+    }
   }
 
   // Per-session signing wallet — resolved AFTER dryRun so a preview never decrypts a key.
