@@ -300,7 +300,14 @@ export function MissionControls({
   // into a fresh draft (the new contract must still be accepted before it runs,
   // so this is non-destructive and needs no confirm step).
   const renewSource = readRenewable(renewableQuery.data);
-  if (renewSource !== null) {
+  // `draft === null` guard mirrors MissionRail's load-bearing guard:
+  // `getRenewableSourceForSession` keeps returning the OLD terminal accepted
+  // mission even after `mission.renew` (or `edit`) inserts a fresh draft. Without
+  // this guard the Renew button LINGERS once a fresh draft exists — so a renew
+  // looks like it "does nothing", and each extra click clones ANOTHER duplicate
+  // draft. Gating on `draft === null` lets the fresh draft fall through to the
+  // acceptance-pending UI below (accept it, then Start).
+  if (renewSource !== null && draft === null) {
     const previousMissionId = renewSource.missionId;
     return (
       <div data-vex-area="mission-controls" className="mt-3">
