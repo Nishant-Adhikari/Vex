@@ -62,9 +62,13 @@ export async function runStopDispatch(
     ) {
       return ok({ outcome: "already_terminal", status });
     }
-    if (status === "running") {
-      // Graceful path: the live runner observes this queued stop_terminal
-      // request at its next iteration boundary and finalizes the run.
+    if (status === "running" && state.data.leaseActive) {
+      // Graceful path — ONLY when a live runner (active lease) is present: it
+      // observes this queued stop_terminal request at its next iteration
+      // boundary and finalizes the run. A `running` status alone is NOT enough:
+      // a run can be `running` with an expired/released lease (parked between
+      // autonomous slices), and then no runner would ever observe the request —
+      // it would strand the stop and leave the session un-stoppable/un-deletable.
       const { enqueueRequest } = await import(
         "@vex-agent/db/repos/runtime-control-requests.js"
       );
@@ -78,9 +82,11 @@ export async function runStopDispatch(
       await emitControlStateAfterChange(input.sessionId, ctx.requestId);
       return ok({ outcome: "queued", requestId: request.id });
     }
-    // Paused (approval/wake/error/user): no runner is observing, so a queued
-    // stop would never be applied. Abort directly — the engine finalizes the
-    // run to `cancelled` and rejects pending approvals + cancels wakes.
+    // No live runner is observing — either a paused run (approval/wake/error/
+    // user) OR a `running` run whose lease is not active (out-of-process /
+    // parked). A queued stop would never be applied, so abort directly: the
+    // engine finalizes the run to `cancelled` and rejects pending approvals +
+    // cancels wakes. (`abortMissionRun` already handles out-of-process running.)
     const { abortActiveMissionForSession } = await import(
       "@vex-agent/engine/index.js"
     );
