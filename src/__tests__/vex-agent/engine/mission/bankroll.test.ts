@@ -5,8 +5,12 @@
  * unsold bag never inflates PNL.
  */
 
-import { describe, it, expect } from "vitest";
-import { computeEthBankroll } from "@vex-agent/engine/mission/bankroll.js";
+import { describe, it, expect, vi } from "vitest";
+import {
+  computeEthBankroll,
+  readEthBankrollOnChain,
+  type OnChainBankrollDeps,
+} from "@vex-agent/engine/mission/bankroll.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances/types.js";
 
 const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
@@ -53,5 +57,47 @@ describe("computeEthBankroll", () => {
     const r = computeEthBankroll([]);
     expect(r.bankrollEth).toBe(0);
     expect(r.ethPriceUsd).toBeNull();
+  });
+});
+
+const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
+const WALLET = "0x9ed25bdedceB28Adf9E3C7fCa34511e78e47C77f";
+
+function onChainDeps(over: Partial<OnChainBankrollDeps> = {}): OnChainBankrollDeps {
+  return {
+    resolveDeployment: vi.fn(() => ({ weth: WETH } as never)),
+    // native 0.01 ETH (wei) + WETH 0.005 (wei) → bankroll 0.015
+    getPublicClient: vi.fn(() => ({
+      getBalance: vi.fn(async () => 10_000_000_000_000_000n),
+      readContract: vi.fn(async () => 5_000_000_000_000_000n),
+    }) as never),
+    ...over,
+  };
+}
+
+describe("readEthBankrollOnChain", () => {
+  it("sums live native ETH + WETH into the bankroll (no price/positions)", async () => {
+    const r = await readEthBankrollOnChain(WALLET, 4663, onChainDeps());
+    expect(r).not.toBeNull();
+    expect(r!.bankrollEth).toBeCloseTo(0.015, 12);
+    expect(r!.ethPriceUsd).toBeNull();
+    expect(r!.openPositions).toHaveLength(0);
+  });
+
+  it("returns null when the chain has no Uniswap deployment (unresolved)", async () => {
+    const r = await readEthBankrollOnChain(WALLET, 999999, onChainDeps({
+      resolveDeployment: vi.fn(() => undefined),
+    }));
+    expect(r).toBeNull();
+  });
+
+  it("is fail-soft — an RPC error yields null", async () => {
+    const r = await readEthBankrollOnChain(WALLET, 4663, onChainDeps({
+      getPublicClient: vi.fn(() => ({
+        getBalance: vi.fn(async () => { throw new Error("rpc down"); }),
+        readContract: vi.fn(async () => 0n),
+      }) as never),
+    }));
+    expect(r).toBeNull();
   });
 });

@@ -6,6 +6,7 @@
 
 import type { JSX, ReactNode } from "react";
 import { useSession } from "../../../lib/api/sessions.js";
+import { useMissionSessionResult } from "../../../lib/api/mission.js";
 import { cn } from "../../../lib/utils.js";
 import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
 import { BookBlock } from "./BookBlock.js";
@@ -27,6 +28,11 @@ function Row({ label, children }: { readonly label: string; readonly children: R
 export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
   const query = useSession(sessionId);
   const session = query.data?.ok ? query.data.data : null;
+  // The mission RUN's start/end (from the results ledger) — distinct from the
+  // session's creation time below. Null for sessions with no finalized-or-live
+  // mission run; a live run shows a start with a pending ("—") end.
+  const resultQuery = useMissionSessionResult(sessionId);
+  const missionResult = resultQuery.data?.ok ? resultQuery.data.data : null;
 
   if (session === null) {
     return (
@@ -53,6 +59,16 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
           </Row>
         ) : null}
         <Row label="Started">{formatSessionTime(session.startedAt)}</Row>
+        {missionResult !== null ? (
+          <>
+            <Row label="Mission start">{formatSessionTime(missionResult.startedAt)}</Row>
+            <Row label="Mission end">
+              {missionResult.endedAt !== null
+                ? formatSessionTime(missionResult.endedAt)
+                : "—"}
+            </Row>
+          </>
+        ) : null}
       </div>
     </BookBlock>
   );

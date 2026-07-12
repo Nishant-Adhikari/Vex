@@ -11,7 +11,7 @@
 import { randomUUID } from "node:crypto";
 import { getMission, type Mission } from "../../db/repos/missions.js";
 import { LOCAL_CHAIN_ALIASES } from "../../../tools/evm-chains/registry.js";
-import { readEthBankroll } from "./bankroll.js";
+import { readEthBankroll, readEthBankrollOnChain } from "./bankroll.js";
 import { countMissionTrades } from "./mission-metrics.js";
 import {
   openMissionResult,
@@ -25,6 +25,9 @@ const GOAL_SNIPPET_MAX = 240;
 
 export interface CaptureDeps {
   getMission: typeof getMission;
+  /** Live on-chain bankroll (accurate basis); null on RPC failure. */
+  readBankrollOnChain: typeof readEthBankrollOnChain;
+  /** `proj_balances` projection — fail-soft fallback + source of prices/open positions. */
   readBankroll: typeof readEthBankroll;
   openResult: typeof openMissionResult;
   closeResult: typeof closeMissionResult;
@@ -39,6 +42,7 @@ export interface CaptureDeps {
 function productionDeps(): CaptureDeps {
   return {
     getMission,
+    readBankrollOnChain: readEthBankrollOnChain,
     readBankroll: readEthBankroll,
     openResult: openMissionResult,
     closeResult: closeMissionResult,
@@ -80,7 +84,11 @@ export async function captureMissionStart(
     if (!mission) return;
     const wc = resolveWalletChain(mission);
     if (!wc) return;
-    const bankroll = await deps.readBankroll(wc.wallet, wc.chainId);
+    // Snapshot the START bankroll on-chain (accurate basis) so start and end are
+    // measured the same way; fall back to the projection if the RPC read fails.
+    const bankroll =
+      (await deps.readBankrollOnChain(wc.wallet, wc.chainId)) ??
+      (await deps.readBankroll(wc.wallet, wc.chainId));
     await deps.openResult({
       id: `mres-${randomUUID()}`,
       missionId: args.missionId,
@@ -116,8 +124,13 @@ export async function captureMissionFinal(
     if (!existing) return; // never opened → nothing to close
     const mission = await deps.getMission(args.missionId);
     const wc = mission ? resolveWalletChain(mission) : null;
-    const bankroll = wc ? await deps.readBankroll(wc.wallet, wc.chainId) : null;
-    const endEth = bankroll?.bankrollEth ?? null;
+    // END bankroll from a LIVE on-chain read (the projection lags trades and can
+    // report a false-zero PNL); fall back to the projection if the RPC read
+    // fails. The projection is read regardless for the price + open-position bag
+    // list, which the on-chain read does not carry.
+    const onChain = wc ? await deps.readBankrollOnChain(wc.wallet, wc.chainId) : null;
+    const projection = wc ? await deps.readBankroll(wc.wallet, wc.chainId) : null;
+    const endEth = (onChain ?? projection)?.bankrollEth ?? null;
     const { pnlEth, pnlPct } = computePnl(existing.bankrollStartEth, endEth);
     const trades = await deps.countTrades(
       args.sessionId,
@@ -128,7 +141,7 @@ export async function captureMissionFinal(
       missionRunId: args.runId,
       outcome: args.outcome,
       bankrollEndEth: endEth,
-      ethPriceUsdEnd: bankroll?.ethPriceUsd ?? null,
+      ethPriceUsdEnd: projection?.ethPriceUsd ?? onChain?.ethPriceUsd ?? null,
       pnlEth,
       pnlPct,
       trades,
@@ -136,7 +149,7 @@ export async function captureMissionFinal(
       losses: 0,
       rotations: 0,
       vetoes: 0,
-      openPositions: bankroll?.openPositions ?? null,
+      openPositions: projection?.openPositions ?? null,
     });
   } catch (err) {
     logger.warn("mission.results.capture_final_failed", {
