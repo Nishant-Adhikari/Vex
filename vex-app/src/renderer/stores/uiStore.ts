@@ -52,7 +52,9 @@ export type AppShellView =
   | "session"
   | "sessionsLibrary"
   // Read-only long-term + session-memory panel (stage 7-2a, S9 rewire).
-  | "memory";
+  | "memory"
+  // Read-only per-wallet ledger of finalized mission runs (mission-results-ledger).
+  | "missionHistory";
 
 export interface UiLogEntry {
   readonly id: string;

@@ -5,6 +5,7 @@
  * renderer-facing read for the history view.
  */
 
+import { randomUUID } from "node:crypto";
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
@@ -25,6 +26,9 @@ function dbUnavailable(): Result<never, VexError> {
     retryable: true,
     userActionable: true,
     redacted: true,
+    // The IPC wrapper (register-handler) overrides this with the request id;
+    // a self-generated id keeps the db-layer error well-formed on its own.
+    correlationId: randomUUID(),
   });
 }
 
@@ -143,6 +147,7 @@ export async function listMissionResults(
         retryable: true,
         userActionable: false,
         redacted: true,
+        correlationId: randomUUID(),
       });
     }
   });
