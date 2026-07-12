@@ -67,6 +67,25 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
                 ? formatSessionTime(missionResult.endedAt)
                 : "—"}
             </Row>
+            <Row label="Mission PnL">
+              {missionResult.pnlEth !== null ? (
+                <span
+                  className={
+                    missionResult.pnlEth >= 0
+                      ? "text-[var(--color-success)]"
+                      : "text-[var(--color-destructive)]"
+                  }
+                >
+                  {missionResult.pnlEth >= 0 ? "+" : ""}
+                  {missionResult.pnlEth.toFixed(4)} ETH
+                  {missionResult.pnlPct !== null
+                    ? ` (${missionResult.pnlPct >= 0 ? "+" : ""}${missionResult.pnlPct.toFixed(2)}%)`
+                    : ""}
+                </span>
+              ) : (
+                "—"
+              )}
+            </Row>
           </>
         ) : null}
       </div>
