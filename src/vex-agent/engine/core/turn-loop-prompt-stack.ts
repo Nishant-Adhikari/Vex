@@ -29,6 +29,7 @@ import { pressureFraction, type ContextUsageBand } from "./context-band.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
+import { buildSignalRadarBanner } from "../prompts/signal-radar-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
 import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
@@ -72,6 +73,13 @@ export async function buildTurnPromptStack(args: {
   // any fetch error yields "" so the banner is omitted and the turn is never
   // blocked. Throttled + cached at the client, so repeated turns hit cache.
   promptOptions.ownTokenBanner = await buildOwnTokenBanner();
+
+  // SIGNAL RADAR — ranked TrendRadar lead-list. Only for ACTIVE MISSION runs
+  // (irrelevant + noisy on ordinary chat turns). Fully fail-soft inside the
+  // builder: any DB error or empty window yields "" so the turn is never blocked.
+  if (args.baseVisibility?.missionRunActive === true) {
+    promptOptions.signalRadarBanner = await buildSignalRadarBanner();
+  }
 
   let nextPostCompactBridgeRemaining = args.postCompactBridgeRemaining;
   if (args.postCompactBridgeRemaining > 0) {
