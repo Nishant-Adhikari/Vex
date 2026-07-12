@@ -156,6 +156,8 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getActiveRunBySession: vi.fn().mockResolvedValue(null),
   getLatestFailedRunBySession: vi.fn().mockResolvedValue(null),
   updateStatus: vi.fn(),
+  // The deadline enforcer reads the run's started_at before building loopConfig.
+  getRun: vi.fn().mockResolvedValue({ startedAt: new Date().toISOString() }),
 }));
 
 vi.mock("@vex-agent/tools/registry.js", () => ({
