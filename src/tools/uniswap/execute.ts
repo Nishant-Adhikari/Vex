@@ -84,13 +84,18 @@ export function buildV2SwapTx(args: BuildSwapArgs): BuiltSwapTx {
       }),
     };
   }
+  // Token INPUT (a sell): use the fee-on-transfer-SUPPORTING variants. They
+  // settle on the ACTUAL balances received, so a FoT token (which delivers less
+  // than sent) does not revert `UniswapV2: K`. Identical output for non-FoT
+  // tokens, so this is safe to use unconditionally on the sell path. Callers must
+  // set `minAmountOut` with enough slippage to absorb the transfer fee.
   if (tokenOutIsNative) {
     return {
       to: router,
       value: 0n,
       data: encodeFunctionData({
         abi: UNISWAP_V2_ROUTER_ABI,
-        functionName: "swapExactTokensForETH",
+        functionName: "swapExactTokensForETHSupportingFeeOnTransferTokens",
         args: [amountIn, minAmountOut, path, recipient, deadline],
       }),
     };
@@ -100,7 +105,7 @@ export function buildV2SwapTx(args: BuildSwapArgs): BuiltSwapTx {
     value: 0n,
     data: encodeFunctionData({
       abi: UNISWAP_V2_ROUTER_ABI,
-      functionName: "swapExactTokensForTokens",
+      functionName: "swapExactTokensForTokensSupportingFeeOnTransferTokens",
       args: [amountIn, minAmountOut, path, recipient, deadline],
     }),
   };
