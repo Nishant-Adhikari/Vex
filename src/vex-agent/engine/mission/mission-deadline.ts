@@ -28,6 +28,27 @@ export function hardDeadlineMinutes(
 }
 
 /**
+ * Resolve the box duration for a specific mission: the mission's own
+ * `durationMinutes` (a structured contract field the agent sets — "5-minute box"
+ * → 5, "one hour" → 60) when present and valid, else the env override, else the
+ * 60-minute default. So each mission runs for as long as IT asked, and 60 is a
+ * true last-resort fallback rather than a one-size-fits-all box.
+ */
+export function resolveDurationMinutes(
+  missionMinutes?: number | null,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  if (
+    typeof missionMinutes === "number" &&
+    Number.isFinite(missionMinutes) &&
+    missionMinutes > 0
+  ) {
+    return Math.min(missionMinutes, MAX_MINUTES);
+  }
+  return hardDeadlineMinutes(env);
+}
+
+/**
  * The absolute hard-deadline epoch (ms) for a run: `started_at + duration`.
  * Returns null when `started_at` is unparseable — fail-open, so a bad timestamp
  * never manufactures a spurious deadline that kills a run early.

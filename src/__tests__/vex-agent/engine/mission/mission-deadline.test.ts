@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import {
   hardDeadlineMinutes,
+  resolveDurationMinutes,
   computeHardDeadlineMs,
 } from "@vex-agent/engine/mission/mission-deadline.js";
 
@@ -24,6 +25,25 @@ describe("hardDeadlineMinutes", () => {
   });
   it("clamps absurdly large values to a 24h ceiling", () => {
     expect(hardDeadlineMinutes({ VEX_MISSION_HARD_DEADLINE_MIN: "99999" })).toBe(1440);
+  });
+});
+
+describe("resolveDurationMinutes (per-mission > env > default)", () => {
+  it("uses the mission's own durationMinutes when set and valid", () => {
+    expect(resolveDurationMinutes(5, {})).toBe(5);
+    expect(resolveDurationMinutes(10, { VEX_MISSION_HARD_DEADLINE_MIN: "60" })).toBe(10);
+  });
+  it("clamps an absurd per-mission value to the 24h ceiling", () => {
+    expect(resolveDurationMinutes(99999, {})).toBe(1440);
+  });
+  it("falls back to the env override when the mission has no duration", () => {
+    expect(resolveDurationMinutes(null, { VEX_MISSION_HARD_DEADLINE_MIN: "2" })).toBe(2);
+    expect(resolveDurationMinutes(undefined, { VEX_MISSION_HARD_DEADLINE_MIN: "2" })).toBe(2);
+  });
+  it("falls back to 60 when neither mission nor env specifies one", () => {
+    expect(resolveDurationMinutes(null, {})).toBe(60);
+    expect(resolveDurationMinutes(0, {})).toBe(60);
+    expect(resolveDurationMinutes(-5, {})).toBe(60);
   });
 });
 
