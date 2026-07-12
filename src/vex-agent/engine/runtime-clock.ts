@@ -87,7 +87,7 @@ export function buildRuntimeClockPrompt(snapshot: RuntimeClockSnapshot): string 
     ));
   }
   if (snapshot.missionDeadline) {
-    lines.push(`Mission deadline: ${snapshot.missionDeadline} (${snapshot.missionDeadlineState ?? "unknown"})`);
+    lines.push(`Mission deadline (HARD): ${snapshot.missionDeadline} (${snapshot.missionDeadlineState ?? "unknown"})`);
   }
   lines.push(snapshot.pendingWakeDueAt
     ? `Pending wake: ${snapshot.pendingWakeDueAt} (${snapshot.pendingWakeState ?? "unknown"}; reason: ${snapshot.pendingWakeReason ?? "none"})`
@@ -98,6 +98,9 @@ export function buildRuntimeClockPrompt(snapshot: RuntimeClockSnapshot): string 
   lines.push("- You do not observe time while deferred; a wake means the executor resumed you after real time passed.");
   lines.push("- To wait when `loop_defer` is available in your current mode, call `loop_defer(after_ms, reason)` for relative waits or `loop_defer(wake_at, reason)` for an exact ISO time.");
   lines.push("- Before using deadline_reached or scheduling another wake, compare live state against this Runtime Clock.");
+  if (snapshot.missionDeadline) {
+    lines.push("- The Mission deadline is HARD: the run AUTO-TERMINATES then, regardless of what you are doing. SELL/close ALL open positions BEFORE it — anything still held when it fires is abandoned. Start flattening with enough buffer for swaps to settle; do NOT open new positions you cannot exit in time.");
+  }
 
   return lines.join("\n");
 }

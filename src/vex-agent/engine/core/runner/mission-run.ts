@@ -144,6 +144,11 @@ export async function runPreparedMissionStart(
     const missionDeadlineMs = computeHardDeadlineMs(
       (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
     );
+    // Show the agent the SAME hard deadline the loop enforces (via the Runtime
+    // Clock), so it can flatten positions before the cutoff instead of being
+    // stopped mid-trade with open bags.
+    const missionDeadlineIso =
+      missionDeadlineMs != null ? new Date(missionDeadlineMs).toISOString() : null;
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
@@ -156,6 +161,7 @@ export async function runPreparedMissionStart(
         ...hydrated.context,
         missionRunId: prepared.runId,
         sessionKind: "mission",
+        missionDeadline: missionDeadlineIso ?? hydrated.context.missionDeadline ?? null,
       },
       hydrated.messages,
       hydrated.summary,
@@ -269,6 +275,11 @@ export async function resumePreparedMissionRun(
     const missionDeadlineMs = computeHardDeadlineMs(
       (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
     );
+    // Show the agent the SAME hard deadline the loop enforces (via the Runtime
+    // Clock), so it can flatten positions before the cutoff instead of being
+    // stopped mid-trade with open bags.
+    const missionDeadlineIso =
+      missionDeadlineMs != null ? new Date(missionDeadlineMs).toISOString() : null;
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
@@ -281,6 +292,7 @@ export async function resumePreparedMissionRun(
         ...hydrated.context,
         missionRunId: prepared.runId,
         sessionKind: "mission",
+        missionDeadline: missionDeadlineIso ?? hydrated.context.missionDeadline ?? null,
       },
       hydrated.messages,
       hydrated.summary,
