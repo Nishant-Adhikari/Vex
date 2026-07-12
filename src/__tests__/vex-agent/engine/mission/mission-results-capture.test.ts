@@ -23,6 +23,8 @@ const MISSION = {
 function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
   return {
     getMission: vi.fn(async () => MISSION as never),
+    // Default: RPC unavailable → capture falls back to the projection read below.
+    readBankrollOnChain: vi.fn(async () => null),
     readBankroll: vi.fn(async () => ({ bankrollEth: 0.01, ethPriceUsd: 3000, openPositions: [] })),
     openResult: vi.fn(async () => {}),
     closeResult: vi.fn(async () => {}),
@@ -61,6 +63,25 @@ describe("captureMissionStart", () => {
     expect(arg.goalSnippet).toContain("grow ETH");
   });
 
+  it("snapshots the START bankroll on-chain when the live read succeeds", async () => {
+    const d = deps({
+      readBankrollOnChain: vi.fn(async () => ({ bankrollEth: 0.02, ethPriceUsd: null, openPositions: [] })),
+    });
+    await captureMissionStart({ missionId: "mission-1", runId: "run-1", sessionId: "s-1" }, d);
+    // on-chain wins over the projection (0.01), and the projection is never read
+    expect(d.readBankroll).not.toHaveBeenCalled();
+    const arg = (d.openResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(arg.bankrollStartEth).toBe(0.02);
+  });
+
+  it("falls back to the projection for the start bankroll when the on-chain read returns null", async () => {
+    const d = deps(); // readBankrollOnChain defaults to null
+    await captureMissionStart({ missionId: "mission-1", runId: "run-1", sessionId: "s-1" }, d);
+    expect(d.readBankroll).toHaveBeenCalledTimes(1);
+    const arg = (d.openResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(arg.bankrollStartEth).toBe(0.01);
+  });
+
   it("no-ops when the mission is missing (nothing to open)", async () => {
     const d = deps({ getMission: vi.fn(async () => null) });
     await captureMissionStart({ missionId: "x", runId: "r", sessionId: "s" }, d);
@@ -86,6 +107,37 @@ describe("captureMissionFinal", () => {
     expect(arg).toMatchObject({ missionRunId: "run-1", outcome: "completed", bankrollEndEth: 0.011, trades: 3 });
     expect(arg.pnlEth).toBeCloseTo(0.001, 9);
     expect(arg.openPositions).toHaveLength(1);
+  });
+
+  it("uses the LIVE on-chain END bankroll (not the stale projection) so a real round-trip yields nonzero PNL", async () => {
+    // The regression: projection lags trades and reports end == start → PNL 0.
+    // The on-chain read sees the real post-trade balance → nonzero PNL.
+    const d = deps({
+      getResult: vi.fn(async () => ({ startedAt: "2026-07-12T18:00:00Z", bankrollStartEth: 0.01367704 } as never)),
+      readBankrollOnChain: vi.fn(async () => ({ bankrollEth: 0.01512001, ethPriceUsd: null, openPositions: [] })),
+      // stale projection would have said end == start (the false-zero bug)
+      readBankroll: vi.fn(async () => ({ bankrollEth: 0.01367704, ethPriceUsd: 3100, openPositions: [{ symbol: "NOXA", address: "0x", amount: 1, valueUsd: 5 }] })),
+    });
+    await captureMissionFinal({ missionId: "mission-1", runId: "run-1", sessionId: "s-1", outcome: "completed" }, d);
+    const arg = (d.closeResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(arg.bankrollEndEth).toBe(0.01512001); // on-chain, not projection
+    expect(arg.pnlEth).toBeCloseTo(0.00144297, 9);
+    expect(arg.pnlEth).not.toBe(0);
+    // price + open-position bag still sourced from the projection read
+    expect(arg.ethPriceUsdEnd).toBe(3100);
+    expect(arg.openPositions).toHaveLength(1);
+  });
+
+  it("falls back to the projection END bankroll when the on-chain read returns null", async () => {
+    const d = deps({
+      getResult: vi.fn(async () => ({ startedAt: "2026-07-12T18:00:00Z", bankrollStartEth: 0.01 } as never)),
+      readBankrollOnChain: vi.fn(async () => null), // RPC failed
+      readBankroll: vi.fn(async () => ({ bankrollEth: 0.012, ethPriceUsd: 3100, openPositions: [] })),
+    });
+    await captureMissionFinal({ missionId: "mission-1", runId: "run-1", sessionId: "s-1", outcome: "completed" }, d);
+    const arg = (d.closeResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(arg.bankrollEndEth).toBe(0.012);
+    expect(arg.pnlEth).toBeCloseTo(0.002, 9);
   });
 
   it("no-ops when no ledger row was opened for the run", async () => {
