@@ -85,10 +85,10 @@ async function call(payload: unknown) {
   })) as { ok: boolean; data?: { outcome: string }; error?: { code: string } };
 }
 
-function activeState(status: string) {
+function activeState(status: string, leaseActive = true) {
   return {
     ok: true,
-    data: { hasActiveRun: true, missionRunId: "run-1", status },
+    data: { hasActiveRun: true, missionRunId: "run-1", status, leaseActive },
   };
 }
 
@@ -110,6 +110,22 @@ describe("mission.stop (runStopDispatch)", () => {
     expect(r.data?.outcome).toBe("queued");
     expect(mockEnqueueRequest).toHaveBeenCalledTimes(1);
     expect(mockAbortActiveMissionForSession).not.toHaveBeenCalled();
+  });
+
+  it("aborts a running run whose lease is NOT active — no live runner would observe a queued stop", async () => {
+    // Regression: a run can be status='running' with leaseActive=false (parked
+    // between autonomous slices, or an expired/released lease). Enqueue-only
+    // strands the stop forever, leaving the session un-stoppable/un-deletable.
+    mockGetActiveRunForSession.mockResolvedValueOnce(activeState("running", false));
+    mockAbortActiveMissionForSession.mockResolvedValueOnce({
+      aborted: true,
+      finalStatus: "cancelled",
+      rejectedApprovals: 0,
+    });
+    const r = await call({ sessionId: SESSION });
+    expect(r.data).toEqual({ outcome: "stopped" });
+    expect(mockAbortActiveMissionForSession).toHaveBeenCalledWith(SESSION);
+    expect(mockEnqueueRequest).not.toHaveBeenCalled();
   });
 
   it("aborts a paused_error run directly (stopped, no enqueue)", async () => {
