@@ -14,6 +14,7 @@ import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
+import type { HlPolicyResolution } from "../../../lib/hyperliquid-policy.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -26,7 +27,8 @@ export type ProtocolNamespace =
   | "polymarket"
   | "dexscreener"
   | "virtuals"
-  | "pendle";
+  | "pendle"
+  | "hyperliquid";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -130,6 +132,8 @@ export interface ProtocolExecutionContext {
    */
   walletResolution: WalletResolution;
   walletPolicy: WalletPolicy;
+  /** Fresh, main-owned Hyperliquid policy resolution for this execution. */
+  hyperliquidPolicy?: HlPolicyResolution;
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;
   /**

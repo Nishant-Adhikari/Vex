@@ -227,7 +227,11 @@ export function TranscriptMessage({
  */
 function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
   if (row.toolActs !== undefined) return row.toolActs;
-  return (row.toolCalls ?? []).map((call) => ({ ...call, output: null }));
+  return (row.toolCalls ?? []).map((call) => ({
+    ...call,
+    output: null,
+    toolDisplayBlock: null,
+  }));
 }
 
 /**

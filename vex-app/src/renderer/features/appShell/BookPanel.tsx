@@ -38,6 +38,8 @@ import { BookBlock } from "./book/BookBlock.js";
 import { MovesBlock } from "./book/MovesBlock.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionBlock } from "./book/SessionBlock.js";
+import { HyperliquidPositionsBlock } from "./book/HyperliquidPositionsBlock.js";
+import { HyperliquidRiskBlock } from "./book/HyperliquidRiskBlock.js";
 import { SidebarIconButton } from "./SessionRows.js";
 
 export function BookPanel({
@@ -100,6 +102,8 @@ export function BookPanel({
           {activeSessionId !== null ? (
             <>
               <PositionBlock activeSessionId={activeSessionId} hero />
+              <HyperliquidPositionsBlock sessionId={activeSessionId} />
+              <HyperliquidRiskBlock sessionId={activeSessionId} />
               <MovesBlock sessionId={activeSessionId} />
               <BookBlock title="Runtime & Cost">
                 <SessionRuntimeBar sessionId={activeSessionId} layout="stack" />
@@ -107,8 +111,12 @@ export function BookPanel({
               <SessionBlock sessionId={activeSessionId} />
             </>
           ) : (
-            // Global portfolio (no active session) — the configured inventory.
-            <PositionBlock activeSessionId={null} hero />
+            <>
+              {/* Global portfolio (no active session) — the configured inventory.
+                  No Hyperliquid block here by owner decree: the agent activates
+                  the mode and risk setup arrives as a confirmable card. */}
+              <PositionBlock activeSessionId={null} hero />
+            </>
           )}
         </div>
       ) : null}

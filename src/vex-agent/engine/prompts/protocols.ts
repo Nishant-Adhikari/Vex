@@ -16,6 +16,11 @@ import {
   getGroupedAdvertisedProtocolNavigation,
 } from "@vex-agent/tools/protocols/descriptions.js";
 import type { ProtocolNamespace, ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
+import {
+  HYPERVEXING_ALIAS_NAMES,
+  HYPERVEXING_ALIAS_TARGETS,
+} from "@vex-agent/tools/hypervexing-aliases.js";
+import { isHlWorkspaceModeActive } from "../../../lib/hyperliquid-workspace-mode.js";
 
 // ── Auto-generation from manifests ──────────────────────────────
 
@@ -62,8 +67,39 @@ function buildNamespaceSummaries(): Map<ProtocolNamespace, NamespaceSummary> {
 /** Cached result — built once per process. */
 let cached: string | null = null;
 
-export function buildProtocolsPrompt(): string {
-  if (cached) return cached;
+/**
+ * Session-mode suffix deliberately stays outside the cached protocol prompt.
+ * The main-owned workspace mode may change between turns, while the stable
+ * namespace guidance remains safe to cache.
+ */
+function buildHypervexingCompactIndex(): string {
+  const hotTargets: ReadonlySet<string> = new Set(Object.values(HYPERVEXING_ALIAS_TARGETS));
+  const lines = [
+    "## Hypervexing compact Hyperliquid index",
+    "",
+    `The focused workspace exposes these direct aliases: ${HYPERVEXING_ALIAS_NAMES.join(", ")}. For every other Hyperliquid capability, call execute_tool directly with its toolId; aliases do not bypass any gate. These aliases are for YOU, not the user — never list or tabulate them in a reply; after entering the workspace, orient the user in one sentence (account state or what you can now do) and ask what they want.`,
+  ];
+  for (const tool of PROTOCOL_TOOLS) {
+    if (tool.namespace !== "hyperliquid" || hotTargets.has(tool.toolId)) continue;
+    const required = tool.params.filter((param) => param.required).map((param) => param.key);
+    const optional = tool.params.filter((param) => !param.required).map((param) => param.key);
+    const keyParams = required.length === 0 && optional.length === 0
+      ? "no params"
+      : `required ${required.join(", ") || "none"}${optional.length > 0 ? `; optional ${optional.join(", ")}` : ""}`;
+    lines.push(`- ${tool.toolId} — ${tool.description} Key params: ${keyParams}.`);
+  }
+  return lines.join("\n");
+}
+
+function withHypervexingIndex(base: string, sessionId: string | undefined): string {
+  if (isHlWorkspaceModeActive(sessionId)) {
+    return `${base}\n\nHypervexing workspace: ACTIVE for this session.\n\n${buildHypervexingCompactIndex()}`;
+  }
+  return `${base}\n\nHypervexing workspace: not active. Offer \`hyperliquid_enter\` when the user wants to trade Hyperliquid perps; do not push it otherwise.`;
+}
+
+export function buildProtocolsPrompt(sessionId?: string): string {
+  if (cached) return withHypervexingIndex(cached, sessionId);
 
   const advertisedTools = PROTOCOL_TOOLS.filter((tool) =>
     PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace),
@@ -165,8 +201,19 @@ export function buildProtocolsPrompt(): string {
   lines.push("- Check liquidity before sizing — thin markets mean high price impact on exit. Always preview with `pendle.pt.quote` (or `pendle.yt.quote` for YT) first; PT/YT buy/sell/redeem require a fresh matching quote and are approval-gated.");
   lines.push("");
 
+  lines.push("## Hyperliquid Core Perpetuals");
+  lines.push("");
+  lines.push("`hyperliquid.*` signs exchange actions with the selected EVM master key; it never creates an agent wallet. Read markets, L2 depth, account margin, positions, orders, and funding before proposing a trade.");
+  lines.push("- With the default policy, every perp entry has an atomic reduce-only stop-loss child and later a server-side full-position stop. A stop loss is not a guaranteed fill: gaps, liquidation, and venue conditions can still cause losses.");
+  lines.push("- If the user explicitly disabled stop-loss protection in settings, warn them that the resulting entry is unprotected before using `perp.open`; the model cannot make or change that setting. A supplied stop always remains protected even under that opt-out.");
+  lines.push("- Treat leverage as liquidation risk, not buying power. Stay within the user policy and market maximum, account for funding, and do not cancel the sole protective stop. TWAP scale-ins need a standing full-position stop.");
+  lines.push("- When a Hyperliquid position reports `CONSOLIDATING`, use `perp.setTpsl` to consolidate its full-position stop before any other Hyperliquid action.");
+  lines.push("- If the user explicitly asks for Hypervexing mode (for example: ‘hypervexing’, ‘uruchom HL’, or ‘enter HL mode’), call `hyperliquid_enter` in THAT turn. Do not merely describe the mode or ask a confirmation question.");
+  lines.push("- Before any external Hyperliquid withdrawal or send, show the recipient and amount. First-entry acknowledgment discloses the 0.025% builder fee on filled notional; order flow seeks the venue allowance best-effort and omits the builder field if it is unavailable.");
+  lines.push("");
+
   cached = lines.join("\n");
-  return cached;
+  return withHypervexingIndex(cached, sessionId);
 }
 
 /** For testing — reset cached prompt. */

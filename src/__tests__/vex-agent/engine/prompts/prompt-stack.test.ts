@@ -70,6 +70,11 @@ describe("prompt-stack", () => {
           expect(joined).toContain("token logo as a Markdown image");
           expect(joined).toContain("never invent or guess an image URL");
           expect(joined).not.toContain("do not embed images");
+          // Tools-are-internal presentation law (user-ordered after the live
+          // hypervexing entry dumped an alias cheat-sheet at the user): tool
+          // names/aliases are never enumerated to the user, in any mode.
+          expect(joined).toContain("## Tools Are Internal Machinery");
+          expect(joined).toContain("never enumerate or tabulate them to the user");
 
           // Tool usage markers
           expect(joined).toContain("discover_tools");

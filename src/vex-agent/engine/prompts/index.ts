@@ -160,7 +160,7 @@ export function buildPromptStack(
   //    bridge routing) lands here, WITH the tools it describes. 2b ships
   //    awareness only (see `## Chain awareness` in identity.ts); no execution
   //    routing promises yet.
-  staticLayers.push(buildProtocolsPrompt());
+  staticLayers.push(buildProtocolsPrompt(context.sessionId));
 
   // 7. Memory & Learning — substrates + learning protocol (single home).
   staticLayers.push(buildMemoryPolicyPrompt());

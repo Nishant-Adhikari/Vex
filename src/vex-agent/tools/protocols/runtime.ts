@@ -24,6 +24,7 @@ import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution } from "./capture-validator.js";
+import { HYPERLIQUID_ATOMIC_OPEN_ENV, isHyperliquidAtomicOpenEnabled } from "@tools/hyperliquid/constants.js";
 import {
   PREQUOTE_QUOTE_TOOLS,
   recordPrequoteFromQuote,
@@ -35,6 +36,8 @@ import { summarizeProtocolError } from "./runtime/errors.js";
 import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/gates.js";
 import { captureExecution } from "./runtime/capture.js";
 import logger from "@utils/logger.js";
+import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
+import { evaluateHyperliquidCollateralGate, evaluateHyperliquidProtectionGate } from "./hyperliquid/protection-gate.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
 
@@ -101,6 +104,19 @@ export async function executeProtocolTool(
     ...context,
     walletResolution: context.walletResolution ?? { source: "default" },
     walletPolicy: context.walletPolicy ?? { kind: "none" },
+    // Fallback hydration ONLY for hyperliquid.* targets (mirrors the dispatcher
+    // gating) — other namespaces must never touch the HL policy provider.
+    // `evm != null` (loose) also rejects `undefined` from legacy/test callers.
+    ...(context.hyperliquidPolicy === undefined && request.toolId.startsWith("hyperliquid.")
+      ? {
+          hyperliquidPolicy: resolveHlPolicy({
+            ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
+            ...(context.walletResolution?.source === "session" && context.walletResolution.evm != null
+              ? { walletAddress: context.walletResolution.evm.address }
+              : {}),
+          }),
+        }
+      : {}),
   };
 
   // Per-session wallet scope (puzzle 5): the 5B hard-deny for user-wallet signing
@@ -144,6 +160,24 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
+  if (request.toolId === "hyperliquid.perp.open" && !isHyperliquidAtomicOpenEnabled()) {
+    return withActionKind({
+      success: false,
+      output: `${request.toolId} is release-gated until the supervised Hyperliquid atomic-open matrix passes (${HYPERLIQUID_ATOMIC_OPEN_ENV}=1).`,
+    }, effectiveActionKind);
+  }
+
+  const hyperliquidPolicy = scopedContext.hyperliquidPolicy ?? {
+    kind: "unavailable" as const,
+    reason: "provider_absent" as const,
+  };
+  if (manifest.namespace === "hyperliquid" && manifest.mutating && hyperliquidPolicy.kind === "unavailable") {
+    return withActionKind({
+      success: false,
+      output: `${request.toolId} is unavailable because Hyperliquid trading policy is not configured. Hyperliquid reads remain available.`,
+    }, effectiveActionKind);
+  }
+
   // Pressure-barrier guard for protocol tools — at band ≥ barrier, mutating
   // protocol calls are blocked unless they are preview/dryRun. The agent must
   // call `compact_now` first to clear the barrier. Same semantics as the
@@ -181,6 +215,17 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
+  // Business invariant: live HL state is checked after untrusted params are
+  // structurally valid and before any approval/signing decision.
+  const hyperliquidProtection = await evaluateHyperliquidProtectionGate(request.toolId, params, scopedContext);
+  if (hyperliquidProtection?.kind === "block") {
+    return withActionKind({ success: false, output: hyperliquidProtection.message }, effectiveActionKind);
+  }
+  const hyperliquidCollateral = await evaluateHyperliquidCollateralGate(request.toolId, params, scopedContext);
+  if (hyperliquidCollateral?.kind === "block") {
+    return withActionKind({ success: false, output: hyperliquidCollateral.message }, effectiveActionKind);
+  }
+
   // Find handler
   const handler = getProtocolHandler(request.toolId);
   if (!handler) {
@@ -215,7 +260,14 @@ export async function executeProtocolTool(
   // result (with the typed `prequote` carry) is built in
   // `evaluateApprovalGate` (./runtime/gates.ts).
   const pendingApproval = evaluateApprovalGate(
-    manifest, request, params, context, prequoteVerdict, prequoteFotTax, prequoteTermLock,
+    manifest, request, params, scopedContext, prequoteVerdict, prequoteFotTax, prequoteTermLock,
+    hyperliquidProtection === null ? undefined : {
+      stopLossVerdict: hyperliquidProtection.stopLossVerdict,
+      ...(hyperliquidProtection.notionalUsd ? { notionalUsd: hyperliquidProtection.notionalUsd } : {}),
+      ...(hyperliquidProtection.estimatedLiquidationPx ?? hyperliquidProtection.snapshot.liquidationPx
+        ? { estLiquidationPx: hyperliquidProtection.estimatedLiquidationPx ?? hyperliquidProtection.snapshot.liquidationPx ?? undefined }
+        : {}),
+    },
   );
   if (pendingApproval) {
     return withActionKind(pendingApproval, effectiveActionKind);

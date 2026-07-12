@@ -16,6 +16,7 @@ import type {
   SessionMessageDto,
   ToolCallDisplay,
 } from "@shared/schemas/messages.js";
+import type { HyperliquidDisplayBlock } from "@shared/schemas/hyperliquid.js";
 
 /** How a row is laid out + styled. */
 export type TranscriptRowVariant =
@@ -57,6 +58,8 @@ export interface TranscriptRowModel {
    * view entry. `null` when the engine wrote no correlation id.
    */
   readonly toolCallId?: string | null;
+  /** Main-validated protocol display data, never inferred from tool output text. */
+  readonly toolDisplayBlock?: HyperliquidDisplayBlock | null;
   /**
    * Tool CALL rows after the act-ledger post-pass (S5): one entry per
    * executed call, each carrying its merged output when the matching
@@ -190,6 +193,7 @@ export function toTranscriptRow(
         // Correlation id survives into the row model so the S5 post-pass can
         // pair this output with its call inside the same tool run.
         toolCallId: dto.toolCallId,
+        toolDisplayBlock: dto.toolDisplayBlock,
       };
     }
     // tool_call row: prose (content) + one disclosure per executed tool.
@@ -257,6 +261,7 @@ export interface ToolCallActView {
   readonly toolName: string;
   readonly toolArgs: string | null;
   readonly output: string | null;
+  readonly toolDisplayBlock?: HyperliquidDisplayBlock | null;
 }
 
 /** Aggregation entry replacing a run of ≥TOOL_GROUP_MIN_CALLS calls. */
@@ -311,6 +316,7 @@ interface MutableAct {
   readonly toolName: string;
   readonly toolArgs: string | null;
   output: string | null;
+  toolDisplayBlock?: HyperliquidDisplayBlock;
 }
 
 function transformToolRun(
@@ -346,6 +352,9 @@ function transformToolRun(
       const act = actByCallId.get(row.toolCallId);
       if (act !== undefined && act.output === null) {
         act.output = row.content;
+        if (row.toolDisplayBlock !== null && row.toolDisplayBlock !== undefined) {
+          act.toolDisplayBlock = row.toolDisplayBlock;
+        }
         consumedResultIds.add(row.id);
       }
     }

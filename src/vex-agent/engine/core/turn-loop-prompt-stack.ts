@@ -144,6 +144,7 @@ export async function buildTurnPromptStack(args: {
   // band + memory signal. Constructing it once is the single-source-of-truth
   // guarantee: catalog and tools array cannot drift.
   const base: ToolVisibilityBase = args.baseVisibility ?? {
+    sessionId: args.context.sessionId,
     permission: args.context.sessionPermission,
     role: args.context.isSubagent ? "subagent" : "parent",
     sessionKind: args.context.sessionKind,

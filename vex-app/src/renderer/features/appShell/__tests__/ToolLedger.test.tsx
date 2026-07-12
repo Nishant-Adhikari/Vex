@@ -118,6 +118,29 @@ describe("ToolActRow", () => {
     expect(screen.queryByText(/awaiting signature/i)).toBeNull();
   });
 
+  it("renders the Hyperliquid frame only from a typed display block", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "hyperliquid.perp.open",
+          toolDisplayBlock: {
+            namespace: "hyperliquid",
+            kind: "order_receipt",
+            coin: "BTC",
+            side: "long",
+            status: "accepted",
+            protectionState: "PROTECTED",
+          },
+        }),
+      }),
+    );
+    expect(container.querySelector('[data-hyperliquid-card="true"]')).not.toBeNull();
+    // The frame draws the serif "Hyperliquid" wordmark once, then the mono
+    // receipt detail beside it (design spec §4.5 protocol frame).
+    expect(screen.getByText("Hyperliquid")).not.toBeNull();
+    expect(screen.getByText(/BTC · accepted/)).not.toBeNull();
+  });
+
   it("Awaiting-signature stamp links to the approval card and focuses it", () => {
     render(
       createElement(

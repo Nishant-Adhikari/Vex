@@ -1,0 +1,343 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createTestWebContents, createTrustedSender, type TestIpcEvent } from "./test-sender.js";
+
+type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
+
+const handlers = vi.hoisted(() => new Map<string, Handler>());
+const mocks = vi.hoisted(() => ({
+  getSessionById: vi.fn(),
+  getSessionWalletScope: vi.fn(),
+  meta: vi.fn(),
+  metaAndAssetCtxs: vi.fn(),
+  l2Book: vi.fn(),
+  candleSnapshot: vi.fn(),
+  getHyperliquidPositions: vi.fn(),
+  listHyperliquidRiskProposals: vi.fn(),
+  createAdjustedHyperliquidRiskProposal: vi.fn(),
+  activateHyperliquidRiskProposal: vi.fn(),
+  preferencesLoad: vi.fn(),
+  preferencesUpdate: vi.fn(),
+  requestWorkspaceMode: vi.fn(),
+  resolveWorkspaceMode: vi.fn(),
+  getLiveFeed: vi.fn(),
+  liveWatch: vi.fn(),
+  liveUnwatch: vi.fn(),
+  liveReleaseOwner: vi.fn(),
+}));
+
+const liveController = {
+  watch: mocks.liveWatch,
+  unwatch: mocks.liveUnwatch,
+  releaseOwner: mocks.liveReleaseOwner,
+  stop: vi.fn(),
+};
+
+vi.mock("electron", () => ({
+  ipcMain: {
+    handle: (channel: string, handler: Handler) => handlers.set(channel, handler),
+    removeHandler: (channel: string) => handlers.delete(channel),
+  },
+}));
+vi.mock("@tools/hyperliquid/info.js", () => ({
+  HyperliquidInfoClient: class {
+    meta = mocks.meta;
+    metaAndAssetCtxs = mocks.metaAndAssetCtxs;
+    l2Book = mocks.l2Book;
+    candleSnapshot = mocks.candleSnapshot;
+  },
+}));
+vi.mock("../../database/sessions-db.js", () => ({
+  getSessionById: mocks.getSessionById,
+  getSessionWalletScope: mocks.getSessionWalletScope,
+}));
+vi.mock("../../database/hyperliquid-db.js", () => ({
+  getHyperliquidPositions: mocks.getHyperliquidPositions,
+  listHyperliquidRiskProposals: mocks.listHyperliquidRiskProposals,
+  createAdjustedHyperliquidRiskProposal: mocks.createAdjustedHyperliquidRiskProposal,
+  activateHyperliquidRiskProposal: mocks.activateHyperliquidRiskProposal,
+}));
+vi.mock("../../preferences/store.js", () => ({
+  preferencesStore: {
+    load: mocks.preferencesLoad,
+    update: mocks.preferencesUpdate,
+  },
+}));
+vi.mock("../../hyperliquid/policy-provider.js", () => ({
+  setActiveHyperliquidPolicyOverlay: vi.fn(),
+}));
+vi.mock("../../hyperliquid/workspace-mode.js", () => ({
+  requestHyperliquidWorkspaceMode: mocks.requestWorkspaceMode,
+  resolveHyperliquidWorkspaceMode: mocks.resolveWorkspaceMode,
+}));
+vi.mock("../../market/hyperliquid-live-feed-service.js", () => ({
+  getHyperliquidLiveFeed: mocks.getLiveFeed,
+  setupHyperliquidLiveFeedService: vi.fn(),
+}));
+vi.mock("../../lifecycle/broadcast.js", () => ({ broadcastToAllWindows: vi.fn() }));
+vi.mock("../../logger/index.js", () => ({
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+const { registerHyperliquidHandlers } = await import("../hyperliquid.js");
+const { CH } = await import("@shared/ipc/channels.js");
+
+const SESSION_ID = "00000000-0000-4000-8000-000000000001";
+const REQUEST_ID = "00000000-0000-4000-8000-000000000111";
+const WATCH_ID = "00000000-0000-4000-8000-0000000000aa";
+const sender = createTrustedSender({ sender: createTestWebContents() });
+
+async function call(channel: string, payload: unknown): Promise<{ readonly ok: boolean; readonly data?: unknown; readonly error?: { readonly code: string } }> {
+  const handler = handlers.get(channel);
+  if (handler === undefined) throw new Error(`Missing ${channel} handler.`);
+  return await handler(sender, { requestId: REQUEST_ID, payload }) as {
+    readonly ok: boolean;
+    readonly data?: unknown;
+    readonly error?: { readonly code: string };
+  };
+}
+
+beforeEach(() => {
+  handlers.clear();
+  vi.clearAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-07-12T12:00:00.000Z"));
+  mocks.getSessionById.mockResolvedValue({ ok: true, data: { id: SESSION_ID } });
+  mocks.preferencesLoad.mockResolvedValue({ hyperliquid: { riskAcknowledgedAt: "2026-07-11T12:00:00.000Z" } });
+  mocks.resolveWorkspaceMode.mockReturnValue("normal");
+  mocks.candleSnapshot.mockResolvedValue([{ t: 1_700_000_000_000, o: "100", h: "110", l: "90", c: "105", v: "12" }]);
+  mocks.getLiveFeed.mockReturnValue(liveController);
+  mocks.liveWatch.mockResolvedValue(WATCH_ID);
+  mocks.liveUnwatch.mockResolvedValue(true);
+  mocks.liveReleaseOwner.mockResolvedValue(undefined);
+  registerHyperliquidHandlers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  handlers.clear();
+});
+
+describe("Hyperliquid market-data IPC", () => {
+  it("maps one metaAndAssetCtxs response into safe market rows, including positive and negative 8h funding", async () => {
+    mocks.metaAndAssetCtxs.mockResolvedValueOnce([
+      {
+        universe: [
+          { name: "BTC", maxLeverage: 50, szDecimals: 5 },
+          { name: "ETH", maxLeverage: 25, szDecimals: 4 },
+        ],
+      },
+      [
+        { markPx: "105", prevDayPx: "100", openInterest: "1000", funding: "0.001", dayNtlVlm: "12345" },
+        { markPx: "200", prevDayPx: "250", openInterest: "50", funding: "-0.002", dayNtlVlm: "678" },
+      ],
+    ]);
+
+    const result = await call(CH.hyperliquid.getMarkets, { sessionId: SESSION_ID });
+
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        {
+          coin: "BTC",
+          maxLeverage: 50,
+          markPx: "105",
+          change24hPct: "5",
+          openInterestUsd: "105000",
+          fundingRate8hPct: "0.008",
+          dayNtlVlmUsd: "12345",
+          szDecimals: 5,
+        },
+        {
+          coin: "ETH",
+          maxLeverage: 25,
+          markPx: "200",
+          change24hPct: "-20",
+          openInterestUsd: "10000",
+          fundingRate8hPct: "-0.016",
+          dayNtlVlmUsd: "678",
+          szDecimals: 4,
+        },
+      ],
+    });
+    expect(mocks.metaAndAssetCtxs).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an order-book DTO with canonical prices and sizes", async () => {
+    mocks.l2Book.mockResolvedValueOnce({
+      levels: [
+        [{ px: "100.00", sz: "1.50", n: 2 }],
+        [{ px: "101.00", sz: "2.00", n: 1 }],
+      ],
+      time: 1_700_000_000_000,
+    });
+
+    const result = await call(CH.hyperliquid.getBook, { sessionId: SESSION_ID, coin: "btc" });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        levels: {
+          bids: [{ px: "100", sz: "1.5", n: 2 }],
+          asks: [{ px: "101", sz: "2", n: 1 }],
+        },
+        time: 1_700_000_000_000,
+      },
+    });
+    expect(mocks.l2Book).toHaveBeenCalledWith("BTC");
+  });
+
+  it("uses the specified short-lived main-process caches for markets and books", async () => {
+    vi.advanceTimersByTime(16_000);
+    mocks.metaAndAssetCtxs.mockResolvedValue([
+      { universe: [{ name: "BTC", maxLeverage: 50, szDecimals: 5 }] },
+      [{ markPx: "100", prevDayPx: "100", openInterest: "1", funding: "0", dayNtlVlm: "1" }],
+    ]);
+    mocks.l2Book.mockResolvedValue({ levels: [[], []], time: 1_700_000_000_000 });
+
+    await call(CH.hyperliquid.getMarkets, { sessionId: SESSION_ID });
+    await call(CH.hyperliquid.getMarkets, { sessionId: SESSION_ID });
+    await call(CH.hyperliquid.getBook, { sessionId: SESSION_ID, coin: "ETH" });
+    await call(CH.hyperliquid.getBook, { sessionId: SESSION_ID, coin: "ETH" });
+
+    expect(mocks.metaAndAssetCtxs).toHaveBeenCalledTimes(1);
+    expect(mocks.l2Book).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["1m", 6 * 60 * 60 * 1_000],
+    ["5m", 24 * 60 * 60 * 1_000],
+    ["15m", 3 * 24 * 60 * 60 * 1_000],
+    ["1h", 7 * 24 * 60 * 60 * 1_000],
+    ["4h", 30 * 24 * 60 * 60 * 1_000],
+    ["1d", 180 * 24 * 60 * 60 * 1_000],
+  ] as const)("uses the requested %s candle history window", async (interval, windowMs) => {
+    const now = Date.now();
+
+    const result = await call(CH.hyperliquid.getCandles, { sessionId: SESSION_ID, coin: "BTC", interval });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.candleSnapshot).toHaveBeenLastCalledWith({
+      coin: "BTC",
+      interval,
+      startTime: now - windowMs,
+      endTime: now,
+    });
+  });
+
+  it("reconciles workspace mode only for an existing session", async () => {
+    mocks.resolveWorkspaceMode.mockReturnValueOnce("hypervexing");
+
+    const result = await call(CH.hyperliquid.getWorkspaceMode, { sessionId: SESSION_ID });
+
+    expect(result).toEqual({ ok: true, data: { mode: "hypervexing", acknowledged: true } });
+  });
+
+  it.each([
+    [CH.hyperliquid.getCandles, { sessionId: SESSION_ID, coin: "BTC", interval: "1h" }],
+    [CH.hyperliquid.getMarkets, { sessionId: SESSION_ID }],
+    [CH.hyperliquid.getBook, { sessionId: SESSION_ID, coin: "BTC" }],
+    [CH.hyperliquid.getWorkspaceMode, { sessionId: SESSION_ID }],
+  ] as const)("fails closed when %s names a missing session", async (channel, payload) => {
+    mocks.getSessionById.mockResolvedValueOnce({ ok: true, data: null });
+
+    const result = await call(channel, payload);
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("validation.invalid_input");
+    expect(mocks.metaAndAssetCtxs).not.toHaveBeenCalled();
+    expect(mocks.l2Book).not.toHaveBeenCalled();
+    expect(mocks.candleSnapshot).not.toHaveBeenCalled();
+  });
+});
+
+describe("Hyperliquid live-feed watch control IPC", () => {
+  function liveSender(): {
+    readonly event: TestIpcEvent;
+    readonly fireDestroyed: () => void;
+  } {
+    const destroyedListeners: Array<() => void> = [];
+    const webContents = {
+      id: 55,
+      send: vi.fn(),
+      isDestroyed: () => false,
+      once: (event: string, listener: () => void) => {
+        if (event === "destroyed") destroyedListeners.push(listener);
+      },
+    };
+    return {
+      event: createTrustedSender({ sender: webContents }),
+      fireDestroyed: () => {
+        for (const listener of destroyedListeners) listener();
+      },
+    };
+  }
+
+  async function callLive(
+    event: TestIpcEvent,
+    channel: string,
+    payload: unknown,
+  ): Promise<{ readonly ok: boolean; readonly data?: unknown; readonly error?: { readonly code: string } }> {
+    const handler = handlers.get(channel);
+    if (handler === undefined) throw new Error(`Missing ${channel} handler.`);
+    return await handler(event, { requestId: REQUEST_ID, payload }) as {
+      readonly ok: boolean;
+      readonly data?: unknown;
+      readonly error?: { readonly code: string };
+    };
+  }
+
+  it("starts a refcounted watch for an existing session and returns the watch id", async () => {
+    const { event } = liveSender();
+
+    const result = await callLive(event, CH.hyperliquid.watchLive, {
+      sessionId: SESSION_ID,
+      coin: "BTC",
+      interval: "1h",
+    });
+
+    expect(result).toEqual({ ok: true, data: { watchId: WATCH_ID } });
+    expect(mocks.liveWatch).toHaveBeenCalledWith(55, "BTC", "1h");
+  });
+
+  it("rejects watchLive for a session that no longer exists", async () => {
+    mocks.getSessionById.mockResolvedValueOnce({ ok: true, data: null });
+    const { event } = liveSender();
+
+    const result = await callLive(event, CH.hyperliquid.watchLive, {
+      sessionId: SESSION_ID,
+      coin: "BTC",
+      interval: "1h",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("validation.invalid_input");
+    expect(mocks.liveWatch).not.toHaveBeenCalled();
+  });
+
+  it("auto-releases every watch when the owning webContents is destroyed", async () => {
+    const { event, fireDestroyed } = liveSender();
+
+    await callLive(event, CH.hyperliquid.watchLive, {
+      sessionId: SESSION_ID,
+      coin: "BTC",
+      interval: "1h",
+    });
+    expect(mocks.liveReleaseOwner).not.toHaveBeenCalled();
+
+    fireDestroyed();
+    expect(mocks.liveReleaseOwner).toHaveBeenCalledWith(55);
+  });
+
+  it("releases a watch by id through unwatchLive", async () => {
+    const { event } = liveSender();
+
+    const result = await callLive(event, CH.hyperliquid.unwatchLive, {
+      sessionId: SESSION_ID,
+      watchId: WATCH_ID,
+    });
+
+    expect(result).toEqual({ ok: true, data: { released: true } });
+    expect(mocks.liveUnwatch).toHaveBeenCalledWith(55, WATCH_ID);
+  });
+});

@@ -9,6 +9,8 @@ import {
   preferencesSchema,
   type Preferences,
 } from "@shared/schemas/preferences.js";
+import { hyperliquidSettingsUpdateInputSchema } from "@shared/schemas/hyperliquid.js";
+import { hyperliquidPolicySchema } from "@vex-lib/hyperliquid-policy.js";
 import { preferencesStore } from "../preferences/store.js";
 import {
   disableSentry,
@@ -38,6 +40,28 @@ export function registerSettingsHandlers(): Array<() => void> {
         return ok(preferencesSchema.parse(prefs));
       },
     })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.setHyperliquidPolicy,
+      domain: "settings",
+      inputSchema: hyperliquidSettingsUpdateInputSchema,
+      outputSchema: preferencesSchema,
+      handle: async (input): Promise<Result<Preferences>> => {
+        const current = await preferencesStore.load();
+        const next = await preferencesStore.update({
+          hyperliquid: {
+            ...current.hyperliquid,
+            policy: hyperliquidPolicySchema.parse({
+              ...current.hyperliquid.policy,
+              ...input.policy,
+            }),
+          },
+        });
+        return ok(preferencesSchema.parse(next));
+      },
+    }),
   );
 
   handlers.push(

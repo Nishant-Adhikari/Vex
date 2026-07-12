@@ -1,0 +1,84 @@
+import { CH, EV } from "../../shared/ipc/channels.js";
+import {
+  hyperliquidPositionsDtoSchema,
+  hyperliquidPositionsReadInputSchema,
+  hyperliquidCandlesReadInputSchema,
+  hyperliquidCandleUpdateEventSchema,
+  hyperliquidMarketsReadInputSchema,
+  hyperliquidMidsUpdateEventSchema,
+  hyperliquidBookReadInputSchema,
+  hyperliquidRiskAcknowledgementInputSchema,
+  hyperliquidRiskProposalConfirmInputSchema,
+  hyperliquidRiskProposalDtoSchema,
+  hyperliquidRiskProposalsDtoSchema,
+  hyperliquidRiskProposalsReadInputSchema,
+  hyperliquidWatchLiveInputSchema,
+  hyperliquidUnwatchLiveInputSchema,
+  hyperliquidWorkspaceExitInputSchema,
+  hyperliquidWorkspaceModeReadInputSchema,
+  hyperliquidWorkspaceModeEventSchema,
+  type HyperliquidPositionsReadInput,
+  type HyperliquidCandlesReadInput,
+  type HyperliquidMarketsReadInput,
+  type HyperliquidBookReadInput,
+  type HyperliquidRiskProposalConfirmInput,
+  type HyperliquidRiskProposalsReadInput,
+  type HyperliquidWatchLiveInput,
+  type HyperliquidUnwatchLiveInput,
+  type HyperliquidWorkspaceExitInput,
+  type HyperliquidWorkspaceModeReadInput,
+  type HyperliquidWorkspaceModeEvent,
+} from "../../shared/schemas/hyperliquid.js";
+import type { HyperliquidBridge } from "../../shared/types/bridge/agent/hyperliquid.js";
+import { invokeWithSchema, subscribe } from "../_dispatch.js";
+
+export const hyperliquid = {
+  getPositions(input: HyperliquidPositionsReadInput) {
+    return invokeWithSchema(CH.hyperliquid.getPositions, input, hyperliquidPositionsReadInputSchema);
+  },
+  getCandles(input: HyperliquidCandlesReadInput) {
+    return invokeWithSchema(CH.hyperliquid.getCandles, input, hyperliquidCandlesReadInputSchema);
+  },
+  getMarkets(input: HyperliquidMarketsReadInput) {
+    return invokeWithSchema(CH.hyperliquid.getMarkets, input, hyperliquidMarketsReadInputSchema);
+  },
+  getBook(input: HyperliquidBookReadInput) {
+    return invokeWithSchema(CH.hyperliquid.getBook, input, hyperliquidBookReadInputSchema);
+  },
+  getWorkspaceMode(input: HyperliquidWorkspaceModeReadInput) {
+    return invokeWithSchema(CH.hyperliquid.getWorkspaceMode, input, hyperliquidWorkspaceModeReadInputSchema);
+  },
+  listRiskProposals(input: HyperliquidRiskProposalsReadInput) {
+    return invokeWithSchema(CH.hyperliquid.listRiskProposals, input, hyperliquidRiskProposalsReadInputSchema);
+  },
+  confirmRiskProposal(input: HyperliquidRiskProposalConfirmInput) {
+    return invokeWithSchema(CH.hyperliquid.confirmRiskProposal, input, hyperliquidRiskProposalConfirmInputSchema);
+  },
+  acknowledgeRisk() {
+    return invokeWithSchema(CH.hyperliquid.acknowledgeRisk, { acknowledged: true }, hyperliquidRiskAcknowledgementInputSchema);
+  },
+  exitWorkspace(input: HyperliquidWorkspaceExitInput) {
+    return invokeWithSchema<HyperliquidWorkspaceModeEvent, HyperliquidWorkspaceExitInput>(CH.hyperliquid.exitWorkspace, input, hyperliquidWorkspaceExitInputSchema);
+  },
+  watchLive(input: HyperliquidWatchLiveInput) {
+    return invokeWithSchema(CH.hyperliquid.watchLive, input, hyperliquidWatchLiveInputSchema);
+  },
+  unwatchLive(input: HyperliquidUnwatchLiveInput) {
+    return invokeWithSchema(CH.hyperliquid.unwatchLive, input, hyperliquidUnwatchLiveInputSchema);
+  },
+  onPositionsUpdate(callback) {
+    return subscribe(EV.hyperliquid.positionsUpdate, hyperliquidPositionsDtoSchema, callback);
+  },
+  onRiskProposalUpdate(callback) {
+    return subscribe(EV.hyperliquid.riskProposalUpdate, hyperliquidRiskProposalDtoSchema, callback);
+  },
+  onWorkspaceMode(callback) {
+    return subscribe(EV.hyperliquid.workspaceMode, hyperliquidWorkspaceModeEventSchema, callback);
+  },
+  onCandleUpdate(callback) {
+    return subscribe(EV.hyperliquid.candleUpdate, hyperliquidCandleUpdateEventSchema, callback);
+  },
+  onMidsUpdate(callback) {
+    return subscribe(EV.hyperliquid.midsUpdate, hyperliquidMidsUpdateEventSchema, callback);
+  },
+} satisfies HyperliquidBridge;
