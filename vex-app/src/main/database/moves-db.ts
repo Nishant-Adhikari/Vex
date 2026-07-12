@@ -230,6 +230,12 @@ export async function getMovesForSession(
                       AND LOWER(b.token_address) = LOWER(a.input_token)
                       AND b.token_symbol IS NOT NULL
                     LIMIT 1),
+                  -- Fully-exited tokens leave no balance row; the signals feed
+                  -- still carries the symbol for anything the agent traded.
+                  (SELECT s.symbol FROM signals s
+                    WHERE LOWER(s.contract) = LOWER(a.input_token)
+                      AND s.symbol IS NOT NULL
+                    ORDER BY s.ingested_at DESC LIMIT 1),
                   a.input_token
                 ) AS input_token,
                 a.input_amount,
@@ -239,6 +245,10 @@ export async function getMovesForSession(
                       AND LOWER(b.token_address) = LOWER(a.output_token)
                       AND b.token_symbol IS NOT NULL
                     LIMIT 1),
+                  (SELECT s.symbol FROM signals s
+                    WHERE LOWER(s.contract) = LOWER(a.output_token)
+                      AND s.symbol IS NOT NULL
+                    ORDER BY s.ingested_at DESC LIMIT 1),
                   a.output_token
                 ) AS output_token,
                 a.output_amount,
