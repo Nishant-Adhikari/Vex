@@ -74,6 +74,9 @@ export function UnlockScreen(): JSX.Element {
   const [resetError, setResetError] = useState<string | null>(null);
   const returnView = useUiStore((s) => s.unlockReturnView);
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const [touchId, setTouchId] = useState<{ supported: boolean; enabled: boolean } | null>(null);
+  const [touchIdPending, setTouchIdPending] = useState(false);
+  const touchIdPromptedRef = useRef(false);
 
   // Tick once a second while a throttle window is active so the countdown
   // re-renders. Cleared on every state change — no leaked intervals.
@@ -151,6 +154,47 @@ export function UnlockScreen(): JSX.Element {
       setPending(false);
     }
   }
+
+  async function handleTouchIdUnlock(): Promise<void> {
+    if (touchIdPending || pending || throttleActive) return;
+    setTouchIdPending(true);
+    setError(null);
+    setErrorFromBridge(false);
+    try {
+      const result = await window.vex.secrets.touchIdUnlock();
+      if (result.ok && result.data.unlocked) {
+        setCurrentView(returnView);
+        return;
+      }
+      // A cancelled/failed fingerprint is NOT an error — fall back to the
+      // password field silently. Only a genuine bad stored secret is surfaced.
+      if (result.ok && result.data.reason === "bad_secret") {
+        setError("Touch ID couldn't unlock the vault — enter your password.");
+        setErrorFromBridge(false);
+      }
+    } finally {
+      setTouchIdPending(false);
+    }
+  }
+
+  // Fetch Touch ID availability once; when enrolled, auto-prompt (fingerprint
+  // instead of typing) AT MOST ONCE per mount — a cancel falls back to the
+  // password field without re-prompting.
+  useEffect(() => {
+    let cancelled = false;
+    void window.vex.secrets.touchIdStatus().then((r) => {
+      if (cancelled || !r.ok) return;
+      setTouchId(r.data);
+      if (r.data.supported && r.data.enabled && !touchIdPromptedRef.current) {
+        touchIdPromptedRef.current = true;
+        void handleTouchIdUnlock();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function setResetDialogOpen(open: boolean): void {
     if (resetPending || resetRestarting) return;
@@ -365,6 +409,19 @@ export function UnlockScreen(): JSX.Element {
             )}
           </Button>
         </form>
+
+        {touchId?.supported && touchId.enabled ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={inputsDisabled || touchIdPending}
+            onClick={() => void handleTouchIdUnlock()}
+            className="mt-3 w-full"
+            data-vex-touchid="unlock"
+          >
+            {touchIdPending ? "Waiting for Touch ID…" : "Unlock with Touch ID"}
+          </Button>
+        ) : null}
 
         <Button
           type="button"

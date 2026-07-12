@@ -36,6 +36,7 @@ import {
   type WizardStepId,
 } from "@shared/schemas/wizard.js";
 import { Button } from "../../../components/ui/button.js";
+import { TouchIdSetting } from "./keystore/TouchIdSetting.js";
 import { Label } from "../../../components/ui/label.js";
 import { PasswordField } from "../../../components/common/PasswordField.js";
 import { StrengthMeter } from "../../../components/common/StrengthMeter.js";
@@ -177,6 +178,9 @@ export function KeystoreStep({
             Settings panel. Wallet keystores are not re-encrypted
             automatically when the password changes.
           </p>
+          <div className="border-t border-[var(--vex-line)] pt-4">
+            <TouchIdSetting />
+          </div>
           {advanceError ? (
             <p className="text-sm text-[var(--color-danger)]" role="alert">
               {advanceError}

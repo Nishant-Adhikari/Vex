@@ -25,4 +25,16 @@ export const secrets = {
       resetToFreshVaultInputSchema,
     );
   },
+  touchIdStatus() {
+    return invokeWithSchema(CH.secrets.touchIdStatus, {});
+  },
+  touchIdEnable() {
+    return invokeWithSchema(CH.secrets.touchIdEnable, {});
+  },
+  touchIdDisable() {
+    return invokeWithSchema(CH.secrets.touchIdDisable, {});
+  },
+  touchIdUnlock() {
+    return invokeWithSchema(CH.secrets.touchIdUnlock, {});
+  },
 } satisfies SecretsBridge;

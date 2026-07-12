@@ -55,3 +55,27 @@ export const resetToFreshVaultResultSchema = z
   .object({ scheduled: z.literal(true) })
   .strict();
 export type ResetToFreshVaultResult = z.infer<typeof resetToFreshVaultResultSchema>;
+
+// ── Touch ID (opt-in unlock, macOS) ──────────────────────────────────────────
+
+export const touchIdEmptyInputSchema = z.object({}).strict();
+
+export const touchIdStatusSchema = z
+  .object({ supported: z.boolean(), enabled: z.boolean() })
+  .strict();
+export type TouchIdStatusDto = z.infer<typeof touchIdStatusSchema>;
+
+/** enable: `enabled:true` on success; `enabled:false` + reason otherwise. */
+export const touchIdEnableResultSchema = z
+  .object({ enabled: z.boolean(), reason: z.string().optional() })
+  .strict();
+export type TouchIdEnableResult = z.infer<typeof touchIdEnableResultSchema>;
+
+export const touchIdDisableResultSchema = z.object({ enabled: z.literal(false) }).strict();
+export type TouchIdDisableResult = z.infer<typeof touchIdDisableResultSchema>;
+
+/** unlock: a graceful outcome (a cancelled prompt is `unlocked:false`, not an error). */
+export const touchIdUnlockResultSchema = z
+  .object({ unlocked: z.boolean(), reason: z.string().optional() })
+  .strict();
+export type TouchIdUnlockDto = z.infer<typeof touchIdUnlockResultSchema>;

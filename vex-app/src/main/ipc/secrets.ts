@@ -14,6 +14,15 @@ import {
   resetToFreshVaultInputSchema,
   resetToFreshVaultResultSchema,
   type ResetToFreshVaultResult,
+  touchIdEmptyInputSchema,
+  touchIdStatusSchema,
+  touchIdEnableResultSchema,
+  touchIdDisableResultSchema,
+  touchIdUnlockResultSchema,
+  type TouchIdStatusDto,
+  type TouchIdEnableResult,
+  type TouchIdDisableResult,
+  type TouchIdUnlockDto,
 } from "@shared/schemas/secrets.js";
 import {
   getSecretSessionStatus,
@@ -193,6 +202,52 @@ export function registerSecretsHandlers(): Array<() => void> {
           );
         }
         return resetRequestFlight;
+      },
+    }),
+    registerHandler({
+      channel: CH.secrets.touchIdStatus,
+      domain: "wallet",
+      inputSchema: touchIdEmptyInputSchema,
+      outputSchema: touchIdStatusSchema,
+      handle: async (): Promise<Result<TouchIdStatusDto>> => {
+        const { getTouchIdStatus, productionTouchIdDeps } = await import("../secrets/touchid.js");
+        return { ok: true, data: await getTouchIdStatus(productionTouchIdDeps()) };
+      },
+    }),
+    registerHandler({
+      channel: CH.secrets.touchIdEnable,
+      domain: "wallet",
+      inputSchema: touchIdEmptyInputSchema,
+      outputSchema: touchIdEnableResultSchema,
+      handle: async (_input, ctx): Promise<Result<TouchIdEnableResult>> => {
+        const { enableTouchId, productionTouchIdDeps } = await import("../secrets/touchid.js");
+        const outcome = await enableTouchId(productionTouchIdDeps());
+        log.info(`[ipc:vex:secrets:touchIdEnable] enabled=${outcome.ok} correlationId=${ctx.requestId}`);
+        return { ok: true, data: outcome.ok ? { enabled: true } : { enabled: false, reason: outcome.reason } };
+      },
+    }),
+    registerHandler({
+      channel: CH.secrets.touchIdDisable,
+      domain: "wallet",
+      inputSchema: touchIdEmptyInputSchema,
+      outputSchema: touchIdDisableResultSchema,
+      handle: async (_input, ctx): Promise<Result<TouchIdDisableResult>> => {
+        const { disableTouchId, productionTouchIdDeps } = await import("../secrets/touchid.js");
+        await disableTouchId(productionTouchIdDeps());
+        log.info(`[ipc:vex:secrets:touchIdDisable] correlationId=${ctx.requestId}`);
+        return { ok: true, data: { enabled: false } };
+      },
+    }),
+    registerHandler({
+      channel: CH.secrets.touchIdUnlock,
+      domain: "wallet",
+      inputSchema: touchIdEmptyInputSchema,
+      outputSchema: touchIdUnlockResultSchema,
+      handle: async (_input, ctx): Promise<Result<TouchIdUnlockDto>> => {
+        const { unlockWithTouchId, productionTouchIdDeps } = await import("../secrets/touchid.js");
+        const outcome = await unlockWithTouchId(productionTouchIdDeps());
+        log.info(`[ipc:vex:secrets:touchIdUnlock] unlocked=${outcome.unlocked} reason=${outcome.reason ?? "-"} correlationId=${ctx.requestId}`);
+        return { ok: true, data: outcome };
       },
     }),
   ];

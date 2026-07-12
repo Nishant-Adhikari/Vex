@@ -43,6 +43,10 @@ export const CH = {
     unlock: "vex:secrets:unlock",
     lock: "vex:secrets:lock",
     resetToFreshVault: "vex:secrets:resetToFreshVault",
+    touchIdStatus: "vex:secrets:touchIdStatus",
+    touchIdEnable: "vex:secrets:touchIdEnable",
+    touchIdDisable: "vex:secrets:touchIdDisable",
+    touchIdUnlock: "vex:secrets:touchIdUnlock",
   },
 
   // Wallet — sudo-style ops on existing keystores (Phase 2 feature #6)
