@@ -31,6 +31,7 @@ import type {
   MissionGetDiffInput,
   MissionGetDiffResult,
   MissionGetDraftResult,
+  MissionGetSessionResultResult,
   MissionListResultsResult,
   MissionGetRenewableSourceResult,
   MissionRecoverInput,
@@ -82,6 +83,26 @@ export function useMissionResults(
       queryKey: missionKeys.results(),
       queryFn: () => window.vex.mission.listResults({ limit }),
       staleTime: STALE_MS,
+    }),
+  );
+}
+
+/**
+ * Latest finalized result for a session — the post-mission summary card
+ * source. Returns the newest `mission_results` row for the session (or null
+ * when none exists yet). Gated on a non-null sessionId so a fresh session
+ * fires no IPC.
+ */
+export function useMissionSessionResult(
+  sessionId: string | null,
+): UseQueryResult<Result<MissionGetSessionResultResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: missionKeys.sessionResult(sessionId ?? ""),
+      queryFn: () =>
+        window.vex.mission.getSessionResult({ sessionId: sessionId ?? "" }),
+      staleTime: STALE_MS,
+      enabled: !!sessionId,
     }),
   );
 }

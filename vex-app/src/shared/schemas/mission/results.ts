@@ -41,3 +41,17 @@ export type MissionListResultsInput = z.infer<typeof missionListResultsInputSche
 export const missionListResultsResultSchema = z.array(missionResultDtoSchema);
 
 export type MissionListResultsResult = z.infer<typeof missionListResultsResultSchema>;
+
+export const missionGetSessionResultInputSchema = z
+  .object({ sessionId: z.string() })
+  .strict();
+
+export type MissionGetSessionResultInput = z.infer<
+  typeof missionGetSessionResultInputSchema
+>;
+
+export const missionGetSessionResultResultSchema = missionResultDtoSchema.nullable();
+
+export type MissionGetSessionResultResult = z.infer<
+  typeof missionGetSessionResultResultSchema
+>;

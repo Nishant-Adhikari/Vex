@@ -11,6 +11,7 @@ import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
   MissionResultDto,
   MissionListResultsResult,
+  MissionGetSessionResultResult,
 } from "@shared/schemas/mission.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -144,6 +145,43 @@ export async function listMissionResults(
         code: "internal.unexpected",
         domain: "mission",
         message: "Unable to load mission history.",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+        correlationId: randomUUID(),
+      });
+    }
+  });
+}
+
+/** Latest finalized result for a session (newest first), or null. */
+export async function getSessionResult(
+  sessionId: string,
+): Promise<Result<MissionGetSessionResultResult, VexError>> {
+  return withClient(async (client) => {
+    try {
+      const result = await client.query<RawRow>(
+        `SELECT mission_run_id, seq_no, goal_snippet, wallet_address, chain_id,
+                started_at, ended_at, duration_s,
+                bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
+                eth_price_usd_start, eth_price_usd_end, trades, outcome,
+                CASE WHEN jsonb_typeof(open_positions_json) = 'array'
+                     THEN jsonb_array_length(open_positions_json) ELSE 0 END
+                  AS open_positions_count
+           FROM mission_results
+          WHERE session_id = $1
+          ORDER BY started_at DESC
+          LIMIT 1`,
+        [sessionId],
+      );
+      const row = result.rows[0];
+      return ok(row ? toDto(row) : null);
+    } catch (cause) {
+      log.warn("[mission-results-db] getSessionResult failed", cause);
+      return err({
+        code: "internal.unexpected",
+        domain: "mission",
+        message: "Unable to load mission result.",
         retryable: true,
         userActionable: false,
         redacted: true,

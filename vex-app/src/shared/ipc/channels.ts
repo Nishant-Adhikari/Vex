@@ -150,6 +150,7 @@ export const CH = {
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
     listResults: "vex:mission:listResults",
+    getSessionResult: "vex:mission:getSessionResult",
     setAutoRetry: "vex:mission:setAutoRetry",
   },
 
