@@ -186,6 +186,14 @@ export async function getDraftForSession(
  * with a newer active run on top does NOT qualify — only the truly
  * finished missions surface.
  *
+ * Pending-draft exclusion: a source is ALSO suppressed while the session
+ * still holds a `draft`/`ready` mission. Renewal clones a finished mission
+ * into a fresh draft, but the source keeps satisfying every predicate above,
+ * so without this the Renew control lingered and repeat clicks cloned
+ * duplicate drafts. While a draft is pending, `getDraft` surfaces it instead —
+ * the two resolvers are mutually exclusive, so a renderer that shows one never
+ * simultaneously shows the other.
+ *
  * Returns `null` when no eligible mission exists; the renderer maps
  * that to the friendly "No completed mission to renew" notice without
  * round-tripping through the engine's `previous_mission_not_found`
@@ -212,6 +220,20 @@ export async function getRenewableSourceForSession(
             AND m.accepted_contract_by IS NOT NULL
             AND m.contract_hash_version IS NOT NULL
             AND latest.status IN ('completed', 'failed', 'stopped', 'cancelled')
+            -- Suppress the source once a fresh draft already exists for the
+            -- session. Otherwise the OLD terminal accepted mission keeps
+            -- satisfying every predicate above even after mission.renew
+            -- clones a draft from it, so the Renew control lingers and each
+            -- extra click clones ANOTHER duplicate draft. A finished mission
+            -- is renewable only when nothing is pending: while a draft/ready
+            -- mission exists, getDraft surfaces it instead. Keeps the two
+            -- resolvers mutually exclusive at the source.
+            AND NOT EXISTS (
+              SELECT 1
+                FROM missions d
+               WHERE d.root_session_id = m.root_session_id
+                 AND d.status IN ('draft', 'ready')
+            )
           ORDER BY COALESCE(latest.ended_at, latest.started_at) DESC,
                    m.updated_at DESC
           LIMIT 1`,

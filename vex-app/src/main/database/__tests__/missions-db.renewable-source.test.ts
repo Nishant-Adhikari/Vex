@@ -135,6 +135,23 @@ describe("getRenewableSourceForSession", () => {
     );
   });
 
+  it("suppresses the source while the session still has an un-started draft/ready mission (no double-renew)", async () => {
+    // Root cause of the duplicate-draft storm: once `mission.renew` clones a
+    // fresh draft, the OLD terminal accepted mission still satisfies every
+    // renewable predicate above — so without this guard the resolver keeps
+    // reporting it as renewable, the Renew button lingers, and each extra
+    // click clones ANOTHER duplicate draft. A finished mission is only
+    // renewable when there is nothing pending to act on: suppress it whenever
+    // the session already holds a draft/ready mission (which `getDraft`
+    // surfaces instead). Makes `getDraft` and `getRenewableSource` mutually
+    // exclusive at the source, not just in each renderer consumer.
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    await getRenewableSourceForSession(SESSION);
+    const sql = normaliseSql(mocks.query.mock.calls[0]?.[0] ?? "");
+    expect(sql).toContain("NOT EXISTS");
+    expect(sql).toContain("d.status IN ('draft', 'ready')");
+  });
+
   it("orders results by latest run's end-or-start time (newest first)", async () => {
     // Tie-break still flips to mission updated_at when run timestamps
     // collide. The outer SQL must preserve "newest finished first" so
