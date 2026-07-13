@@ -9,7 +9,7 @@
 
 import { query, queryOne, execute } from "../client.js";
 
-export type TrackedTokenSource = "agent" | "swap" | "bridge";
+export type TrackedTokenSource = "agent" | "swap" | "bridge" | "discovery";
 
 export interface TrackedToken {
   walletAddress: string;

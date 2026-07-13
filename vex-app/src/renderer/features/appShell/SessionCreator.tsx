@@ -70,6 +70,13 @@ export function SessionCreator({
     availableWallets.data?.ok === true
       ? availableWallets.data.data
       : { evm: [], solana: [] };
+  // Vault (hold-only) wallets can't be a session's trading wallet — drop them
+  // from the picker so they can't be fat-fingered, and note which are hidden.
+  const evmSelectable = inventory.evm.filter((w) => !w.vault);
+  const solanaSelectable = inventory.solana.filter((w) => !w.vault);
+  const vaultLabels = [...inventory.evm, ...inventory.solana]
+    .filter((w) => w.vault)
+    .map((w) => w.label);
 
   // Auto-name for mission sessions: "RH Mission #N", N = highest existing
   // "RH Mission #k" title + 1 (so the operator never has to type a name).
@@ -234,8 +241,9 @@ export function SessionCreator({
             <WalletFieldset
               selectedEvmWalletId={selectedEvmWalletId}
               selectedSolanaWalletId={selectedSolanaWalletId}
-              evmOptions={inventory.evm}
-              solanaOptions={inventory.solana}
+              evmOptions={evmSelectable}
+              solanaOptions={solanaSelectable}
+              vaultLabels={vaultLabels}
               onEvmChange={setSelectedEvmWalletId}
               onSolanaChange={setSelectedSolanaWalletId}
             />

@@ -23,6 +23,11 @@ export interface WalletInventoryEntry {
   // under vex-app's exactOptionalPropertyTypes profile (root tsc treats
   // both spellings identically).
   legacy?: boolean | undefined;
+  // Vault wallet: a hold-only wallet that must NEVER be bound to a session for
+  // trading. The New Session dialog hides it from the picker and the create
+  // handler fails closed if one is somehow selected — so it can't be fat-fingered
+  // into a mission. It still shows in read-only portfolio views.
+  vault?: boolean | undefined;
 }
 
 const WALLET_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -49,6 +54,7 @@ const walletInventoryEntrySchema = z.object({
   label: z.string().max(120),
   createdAt: z.string(),
   legacy: z.boolean().optional(),
+  vault: z.boolean().optional(),
 });
 
 /** Deterministic timestamp for synthesized legacy entries (avoids per-load drift). */

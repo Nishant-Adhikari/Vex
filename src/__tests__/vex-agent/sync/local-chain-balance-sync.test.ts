@@ -29,9 +29,28 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   replaceBalancesForChain: (...a: unknown[]) => mockReplace(...a),
 }));
 
-const { syncLocalChainForWallet, resetLocalChainMetadataCache } = await import(
-  "../../../vex-agent/sync/local-chain-balance-sync.js"
-);
+const { syncLocalChainForWallet, resetLocalChainMetadataCache, parseBlockscoutTokenAddresses } =
+  await import("../../../vex-agent/sync/local-chain-balance-sync.js");
+
+describe("parseBlockscoutTokenAddresses", () => {
+  it("keeps held ERC-20 contract addresses, drops NFTs / zero balances / junk", () => {
+    const payload = [
+      { token: { address_hash: "0x8d4dFaaA4198b6486E0293Fec914C2B6a821D4DC", type: "ERC-20" }, value: "127544706676608595355506" },
+      { token: { address_hash: "0x0000000000000000000000000000000000000001", type: "ERC-20" }, value: "0" }, // zero balance → drop
+      { token: { address_hash: "0x0000000000000000000000000000000000000002", type: "ERC-721" }, value: "1" }, // NFT → drop
+      { token: { address_hash: "not-an-address", type: "ERC-20" }, value: "5" }, // malformed → drop
+      { value: "9" }, // no token → drop
+    ];
+    expect(parseBlockscoutTokenAddresses(payload)).toEqual([
+      "0x8d4dFaaA4198b6486E0293Fec914C2B6a821D4DC",
+    ]);
+  });
+
+  it("returns [] for a non-array payload (defensive against a bad response)", () => {
+    expect(parseBlockscoutTokenAddresses({ error: "rate limited" })).toEqual([]);
+    expect(parseBlockscoutTokenAddresses(null)).toEqual([]);
+  });
+});
 
 // ── Fixtures ────────────────────────────────────────────────────
 const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE".toLowerCase();

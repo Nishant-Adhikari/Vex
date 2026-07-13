@@ -68,6 +68,15 @@ export function hasMissionRunAbortController(runId: string): boolean {
   return controllers.has(runId);
 }
 
+/**
+ * Count of mission runs currently executing a turn loop in this process (each
+ * holds a registered abort controller). Used by the host to keep the machine
+ * awake while a mission is active. Paused/wake states hold no controller.
+ */
+export function activeMissionRunCount(): number {
+  return controllers.size;
+}
+
 export function consumeMissionRunAbortIntent(runId: string): "edit" | null {
   const intent = abortIntents.get(runId) ?? null;
   abortIntents.delete(runId);

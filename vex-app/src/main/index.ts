@@ -41,6 +41,7 @@ import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
 import { setupSignalsIngestWorker } from "./agent/signals-worker.js";
+import { setupKeepAwakeWorker } from "./agent/keep-awake-worker.js";
 import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
@@ -194,6 +195,12 @@ async function initializeMainRuntime(): Promise<void> {
   // feed; without it each tick just logs a fetch failure and retries.
   const stopSignalsIngestWorker = setupSignalsIngestWorker();
 
+  // 6a-keep-awake. Hold the machine awake (powerSaveBlocker) while a mission run
+  // is active or the operator has toggled "Stay awake" on, so long-running /
+  // overnight missions aren't suspended by system sleep. No schema/provider gate
+  // — it reads the in-process active-run count + the manual flag only.
+  const stopKeepAwakeWorker = setupKeepAwakeWorker();
+
   // 6a-memory. Own the engine memory_manager executor so enqueued memory_jobs
   // (consolidate sweeps from long_memory_suggest) actually curate candidates into
   // long-term knowledge — otherwise every suggestion sits pending forever. Like
@@ -246,6 +253,7 @@ async function initializeMainRuntime(): Promise<void> {
         stopWakeWorker(),
         stopSyncWorker(),
         stopSignalsIngestWorker(),
+        stopKeepAwakeWorker(),
         stopMemoryManagerWorker(),
         stopRegimeWorker(),
         stopToolEmbeddingReconcileWorker(),

@@ -80,6 +80,7 @@ function registerListAvailableHandler(): () => void {
           family,
           address: e.address,
           label: e.label,
+          vault: e.vault === true,
         }));
       log.info(`[ipc:vex:wallets:listAvailable] ok correlationId=${ctx.requestId}`);
       return ok({ evm: toDto("evm"), solana: toDto("solana") });

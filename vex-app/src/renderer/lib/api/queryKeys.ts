@@ -188,15 +188,16 @@ export const sessionModelKeys = {
 };
 
 /**
- * Portfolio (stage 3) — dual-scope POSITION portfolio. `scope` lives at
- * index 1 and `activeSessionId` at index 2 so a global read and a
- * per-session read stay distinct cache entries. The session key carries
- * the session id; the global key uses `null`.
+ * Portfolio (stage 3) — multi-scope POSITION portfolio. `scope` lives at
+ * index 1 and the scope discriminator at index 2 so a global read, a
+ * per-session read, and a per-wallet read stay distinct cache entries. The
+ * session key carries the session id, the wallet key carries the wallet
+ * address; the global key uses `null`.
  */
 export const portfolioKeys = {
   all: ["portfolio"] as const,
-  read: (scope: "global" | "session", activeSessionId: string | null) =>
-    ["portfolio", scope, activeSessionId] as const,
+  read: (scope: "global" | "session" | "wallet", key: string | null) =>
+    ["portfolio", scope, key] as const,
   /**
    * Value time-series (equity curve). Keyed by scope + range so each window
    * (1D/1W/1M/ALL) is a distinct cache entry. The renderer hook reads GLOBAL

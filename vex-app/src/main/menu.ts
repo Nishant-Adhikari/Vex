@@ -15,8 +15,29 @@
  * Must be called inside `app.whenReady()` before any BrowserWindow opens.
  */
 
-import { Menu, app } from "electron";
+import { Menu, app, type MenuItemConstructorOptions } from "electron";
 import { buildMacMenuTemplate } from "./menu-template.js";
+import { setKeepAwakeManual, getKeepAwakeState } from "./agent/keep-awake-worker.js";
+
+/**
+ * The one operator control we surface in the menu: a "Stay awake" checkbox.
+ * A mission run keeps the Mac awake on its own; this lets the operator also
+ * hold it awake WITHOUT a mission (e.g. overnight, waiting on the next feed).
+ * Electron persists the checkbox's checked state across clicks, so no rebuild.
+ */
+const stayAwakeMenu: MenuItemConstructorOptions = {
+  label: "Power",
+  submenu: [
+    {
+      label: "Keep this Mac awake",
+      type: "checkbox",
+      checked: getKeepAwakeState().manual,
+      click: (item) => {
+        setKeepAwakeManual(item.checked);
+      },
+    },
+  ],
+};
 
 export function installMinimalMenu(): void {
   const isMac = process.platform === "darwin";
@@ -24,7 +45,7 @@ export function installMinimalMenu(): void {
   if (isMac) {
     const template = buildMacMenuTemplate({ isMac, isDev });
     if (template === null) return;
-    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+    Menu.setApplicationMenu(Menu.buildFromTemplate([...template, stayAwakeMenu]));
     return;
   }
   Menu.setApplicationMenu(null);

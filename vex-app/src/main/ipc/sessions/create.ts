@@ -21,7 +21,12 @@ import {
 import { createSession } from "../../database/sessions-db.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
-import { invalidWalletSelectionError, resolveWalletRef } from "../_wallet-refs.js";
+import {
+  invalidWalletSelectionError,
+  isVaultWallet,
+  resolveWalletRef,
+  vaultWalletSelectionError,
+} from "../_wallet-refs.js";
 
 export function registerSessionsCreateHandler(): () => void {
   return registerHandler({
@@ -39,6 +44,18 @@ export function registerSessionsCreateHandler(): () => void {
           `[ipc:vex:sessions:create] invalid_wallet_selection correlationId=${ctx.requestId}`,
         );
         return err(invalidWalletSelectionError(ctx.requestId));
+      }
+      // Defense in depth: a vault (hold-only) wallet must never be bound to a
+      // session. The dialog already hides them; this fails closed if one is
+      // selected via any other path — no session/mission row is created.
+      if (
+        isVaultWallet("evm", input.selectedEvmWalletId) ||
+        isVaultWallet("solana", input.selectedSolanaWalletId)
+      ) {
+        log.info(
+          `[ipc:vex:sessions:create] vault_wallet_rejected correlationId=${ctx.requestId}`,
+        );
+        return err(vaultWalletSelectionError(ctx.requestId));
       }
       const outcome = await createSession(input, { evm, solana });
       if (outcome.ok) {
