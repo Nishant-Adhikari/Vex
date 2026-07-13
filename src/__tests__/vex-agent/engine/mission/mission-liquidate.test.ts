@@ -174,10 +174,14 @@ describe("liquidateMissionPositions", () => {
       chain: String(CHAIN_ID),
       tokenIn: MISSION_TOKEN_A,
       tokenOut: "native",
-      amountIn: "42.25",
       slippageBps: LIQUIDATE_SLIPPAGE_BPS,
       dryRun: false,
     });
+    // Sells just UNDER the full balance (safety margin so the float amount never
+    // round-trips above the real balance and gets the exit rejected).
+    const amt = Number(params.amountIn);
+    expect(amt).toBeGreaterThan(42.25 * 0.9999);
+    expect(amt).toBeLessThanOrEqual(42.25);
     // Exec context is reconstructed from the engine context (session wallet).
     const ctx = sell.mock.calls[0][1] as {
       walletResolution: { source: string; evm: { address: string } | null };

@@ -41,6 +41,15 @@ import logger from "@utils/logger.js";
  */
 export const LIQUIDATE_SLIPPAGE_BPS = 1000;
 
+/**
+ * Sell fractionally under the projection's (float) balance. That amount round-
+ * trips through `parseUnits`; if it landed even 1 wei ABOVE the real balance the
+ * sufficient-balance guard would REJECT the exit and strand the bag. A ~1e-6
+ * haircut is far larger than any float-precision error yet leaves sub-dust
+ * behind — so the exit always lands.
+ */
+export const LIQUIDATE_BALANCE_MARGIN = 0.999999;
+
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export interface LiquidateSummary {
@@ -213,7 +222,7 @@ export async function liquidateMissionPositions(
             chain: String(row.chainId),
             tokenIn: address,
             tokenOut: "native",
-            amountIn: formatAmount(holding.amount),
+            amountIn: formatAmount(holding.amount * LIQUIDATE_BALANCE_MARGIN),
             slippageBps: LIQUIDATE_SLIPPAGE_BPS,
             dryRun: false,
           },
