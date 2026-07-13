@@ -70,7 +70,7 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
       "Pause the current mission run until a wake time. " +
       "Use this when you have nothing productive to do right now but should resume later (waiting for a blockchain finality window, a price feed update, a scheduled check). " +
       "The user-facing explanation goes in the normal assistant message content; `reason` here is an internal resume hint for the wake banner. " +
-      "Specify exactly one of `after_ms` (relative) or `wake_at` (absolute ISO8601). Only one pending wake per session — calling again before the first fires is a no-op.",
+      "Specify exactly one of `after_ms` (relative) or `wake_at` (absolute ISO8601). You may attach up to four registered watch conditions; a match promotes this same pending wake without creating another row. Only one pending wake per session — calling again before the first fires is a no-op.",
     parameters: {
       type: "object",
       properties: {
@@ -88,6 +88,11 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
           type: "string",
           description:
             "Internal resume hint (≤ 500 chars). NOT shown to the user. Surfaces later as the wake banner and feeds the recall seed.",
+        },
+        watch: {
+          type: "array",
+          description: "Optional registered watch conditions, each with a type discriminator. Maximum 4.",
+          items: { type: "object", additionalProperties: true },
         },
       },
       required: ["reason"],

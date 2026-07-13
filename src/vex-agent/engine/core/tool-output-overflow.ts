@@ -1,4 +1,5 @@
 import type { MessageMetadata } from "@vex-agent/db/repos/messages.js";
+import type { ExplorerRef } from "@vex-agent/engine/core/explorer-refs.js";
 import { appendMessage } from "@vex-agent/engine/events/index.js";
 import * as toolOutputBlobsRepo from "@vex-agent/db/repos/tool-output-blobs.js";
 import type { ToolOutputShapeKind } from "@vex-agent/db/repos/tool-output-blobs.js";
@@ -69,15 +70,23 @@ export async function persistToolResultWithOverflow(
   toolName: string,
   output: string,
   success: boolean,
+  explorerRefs: readonly ExplorerRef[] = [],
 ): Promise<PersistedToolResult> {
   const bytes = Buffer.byteLength(output, "utf8");
+  // `metadata.payload` is the ONLY part of MessageMetadata that reaches the
+  // `messages.metadata` JSONB column (see db/repos/messages/write.ts), so
+  // `explorerRefs` lives under payload — the desktop app reads it as the
+  // column's top-level `metadata -> 'explorerRefs'`. Omitted entirely when
+  // empty so ref-less rows carry no extra JSONB.
+  const refsPayload: { explorerRefs?: readonly ExplorerRef[] } =
+    explorerRefs.length > 0 ? { explorerRefs } : {};
 
   if (bytes <= TOOL_OUTPUT_OVERFLOW_BYTES) {
     const metadata: MessageMetadata = {
       source: "tool",
       messageType: "tool_result",
       visibility: "internal",
-      payload: { success },
+      payload: { success, ...refsPayload },
     };
     await appendMessage(
       sessionId,
@@ -127,7 +136,7 @@ export async function persistToolResultWithOverflow(
       source: "tool",
       messageType: "tool_result",
       visibility: "internal",
-      payload: { success },
+      payload: { success, ...refsPayload },
     };
     await appendMessage(
       sessionId,
@@ -147,6 +156,7 @@ export async function persistToolResultWithOverflow(
       blobKey,
       sizeBytes: bytes,
       shapeKind,
+      ...refsPayload,
     },
   };
 
