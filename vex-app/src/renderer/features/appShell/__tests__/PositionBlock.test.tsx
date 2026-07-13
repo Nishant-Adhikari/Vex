@@ -27,13 +27,18 @@ import type {
 
 const mockUsePortfolio = vi.hoisted(() => vi.fn());
 const mockUseSessionWallets = vi.hoisted(() => vi.fn());
+const mockUseAvailableWallets = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../lib/api/portfolio.js", () => ({
   usePortfolio: mockUsePortfolio,
+  // The block now reads scoped portfolio data; `usePortfolio` delegates to
+  // `usePortfolioScoped` in real code, so one mock fn drives both.
+  usePortfolioScoped: mockUsePortfolio,
 }));
 
 vi.mock("../../../lib/api/session-wallets.js", () => ({
   useSessionWallets: mockUseSessionWallets,
+  useAvailableWallets: mockUseAvailableWallets,
 }));
 
 const { PositionBlock } = await import("../book/PositionBlock.js");
@@ -115,6 +120,13 @@ beforeEach(() => {
     isLoading: true,
     isError: false,
     data: undefined,
+  });
+  // GLOBAL Portfolio reads this for its per-wallet filter; an empty inventory
+  // keeps the filter inert so existing assertions are unaffected.
+  mockUseAvailableWallets.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: { ok: true, data: { evm: [], solana: [] } },
   });
 });
 
