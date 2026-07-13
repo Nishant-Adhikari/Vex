@@ -45,6 +45,7 @@ import { setupKeepAwakeWorker } from "./agent/keep-awake-worker.js";
 import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
+import { setupExitWatchWorker } from "./agent/exit-watch-wiring.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
@@ -230,6 +231,17 @@ async function initializeMainRuntime(): Promise<void> {
   // probe is just a retryable pass.
   const stopToolEmbeddingReconcileWorker = setupToolEmbeddingReconcileWorker();
 
+  // 6a-exit-watch. Own the exit engine's shadow watch loop (Phase C wiring) so
+  // an ACTIVE mission's mission-scoped open positions are evaluated against the
+  // take-profit / stop-loss / trailing / time-stop rules each poll. SHADOW/ALERT
+  // ONLY: it LOGS structured `[exit-watch]` decisions and NEVER sells, swaps, or
+  // mutates a wallet — execution is Phase D-exec (a stub today). Gated by
+  // `VEX_EXIT_ENGINE_MODE` (default "alert"). It stays idle until the engine DB
+  // url resolves (supervisor gate) and is a pure no-op whenever no mission run
+  // is active (getOpenPositions returns []). No provider/vault gate: it only
+  // reads already-synced projections.
+  const stopExitWatchWorker = setupExitWatchWorker();
+
   // 6a-market. Own the VEX market poller (T1) so the welcome-screen price
   // widget has a live snapshot to read + subscribe to. Broadcast-only (no DB,
   // no provider gate, no vault): it polls public DexScreener / GeckoTerminal /
@@ -257,6 +269,7 @@ async function initializeMainRuntime(): Promise<void> {
         stopMemoryManagerWorker(),
         stopRegimeWorker(),
         stopToolEmbeddingReconcileWorker(),
+        stopExitWatchWorker(),
       ]);
       for (const r of results) {
         if (r.status === "rejected") {

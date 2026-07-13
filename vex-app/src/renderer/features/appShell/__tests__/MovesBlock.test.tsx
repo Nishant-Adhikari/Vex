@@ -30,12 +30,19 @@ import { render, screen } from "@testing-library/react";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
 
 const mockUseMoves = vi.hoisted(() => vi.fn());
+const mockUseMissionSessionResult = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../lib/api/portfolio.js", () => ({
   useMoves: mockUseMoves,
 }));
 
-const { MovesBlock } = await import("../book/MovesBlock.js");
+vi.mock("../../../lib/api/mission.js", () => ({
+  useMissionSessionResult: mockUseMissionSessionResult,
+}));
+
+const { MovesBlock, computeDeployedEth, deployedPct } = await import(
+  "../book/MovesBlock.js"
+);
 
 const SESSION = "00000000-0000-4000-8000-00000000eeee";
 const SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -67,8 +74,19 @@ function mockMoves(data: readonly MoveItem[]): void {
   });
 }
 
+/** Default: no finalized mission result → no ETH seed source (Deployed alone). */
+function mockSeed(bankrollStartEth: number | null): void {
+  mockUseMissionSessionResult.mockReturnValue({
+    data:
+      bankrollStartEth === null
+        ? { ok: true, data: null }
+        : { ok: true, data: { bankrollStartEth } },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSeed(null);
 });
 
 describe("MovesBlock ledger display", () => {
@@ -226,5 +244,86 @@ describe("MovesBlock ledger display", () => {
     });
     render(<MovesBlock sessionId={SESSION} />);
     expect(screen.getByText(/Couldn’t load moves|Couldn't load moves/)).not.toBeNull();
+  });
+
+  it("keeps the ETH amount + symbol but DROPS the traded token's quantity", () => {
+    mockMoves([
+      move({
+        id: "1",
+        tradeSide: "buy",
+        inputToken: "ETH",
+        inputAmount: "0.01",
+        outputToken: "vena",
+        outputAmount: "31100.1",
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    // ETH leg keeps its amount; the traded token shows the SYMBOL only.
+    expect(screen.getByText("0.01 ETH")).not.toBeNull();
+    expect(screen.getByText("VENA")).not.toBeNull();
+    // The raw token quantity is gone.
+    expect(screen.queryByText(/31100/)).toBeNull();
+  });
+
+  it("tops the ledger with a Seed · Deployed summary when a seed exists", () => {
+    mockSeed(0.1);
+    mockMoves([
+      move({ id: "1", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.03" }),
+      move({ id: "2", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.01" }),
+      // Sells and non-ETH-funded buys don't count toward Deployed.
+      move({ id: "3", tradeSide: "sell", inputToken: "vena", inputAmount: "500.0" }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("Seed")).not.toBeNull();
+    // formatEth floors at 4 decimals: 0.1 → "0.1000", 0.04 → "0.0400".
+    expect(screen.getByText("0.1000 ETH")).not.toBeNull();
+    expect(screen.getByText("Deployed")).not.toBeNull();
+    // 0.03 + 0.01 = 0.04 deployed; 0.04 / 0.10 = 40%.
+    expect(screen.getByText("0.0400 ETH")).not.toBeNull();
+    expect(screen.getByText(/\(40%\)/)).not.toBeNull();
+  });
+
+  it("drops the Seed label + percent when there is no seed source", () => {
+    mockSeed(null);
+    mockMoves([
+      move({ id: "1", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.02" }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.queryByText("Seed")).toBeNull();
+    expect(screen.getByText("Deployed")).not.toBeNull();
+    // Deployed figure (formatEth floor): 0.02 → "0.0200".
+    expect(screen.getByText("0.0200 ETH")).not.toBeNull();
+    // No denominator → no parenthetical percent.
+    expect(screen.queryByText(/%\)/)).toBeNull();
+  });
+});
+
+describe("computeDeployedEth / deployedPct (pure)", () => {
+  it("sums the ETH input leg of BUYs only, skipping sells, non-ETH, and raw amounts", () => {
+    const moves = [
+      move({ id: "1", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.03" }),
+      move({ id: "2", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.01" }),
+      // Sell → ignored.
+      move({ id: "3", tradeSide: "sell", inputToken: "ETH", inputAmount: "0.05" }),
+      // Non-ETH-funded buy → ignored.
+      move({ id: "4", tradeSide: "buy", inputToken: "usdc", inputAmount: "10.0" }),
+      // Legacy raw base-unit integer (no dot) → ignored.
+      move({ id: "5", tradeSide: "buy", inputToken: "ETH", inputAmount: "1000000000" }),
+    ];
+    expect(computeDeployedEth(moves)).toBeCloseTo(0.04, 12);
+  });
+
+  it("returns 0 for no qualifying buys", () => {
+    expect(computeDeployedEth([])).toBe(0);
+    expect(
+      computeDeployedEth([move({ id: "1", tradeSide: "sell" })]),
+    ).toBe(0);
+  });
+
+  it("computes deployed / seed as a percent, null on a bad denominator", () => {
+    expect(deployedPct(0.04, 0.1)).toBeCloseTo(40, 12);
+    expect(deployedPct(0.04, 0)).toBeNull();
+    expect(deployedPct(0.04, null)).toBeNull();
+    expect(deployedPct(0.04, -1)).toBeNull();
   });
 });

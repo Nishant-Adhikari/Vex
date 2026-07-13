@@ -13,15 +13,18 @@
 import { useEffect } from "react";
 import {
   useInfiniteQuery,
+  useQuery,
   useQueryClient,
   type InfiniteData,
   type UseInfiniteQueryResult,
+  type UseQueryResult,
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
-import type {
-  MessageCursor,
-  MessagePage,
-  SessionMessageDto,
+import {
+  MESSAGES_TAIL_MAX_LIMIT,
+  type MessageCursor,
+  type MessagePage,
+  type SessionMessageDto,
 } from "@shared/schemas/messages.js";
 import { messagesKeys } from "./queryKeys.js";
 
@@ -86,6 +89,38 @@ export function useTranscriptInfinite(
     initialPageParam: null as MessageCursor | null,
     getNextPageParam: (lastPage, allPages) =>
       getTranscriptNextPageParam(lastPage, allPages.length),
+    staleTime: STALE_MS,
+    enabled: id.length > 0,
+  });
+}
+
+/**
+ * Read-only tail of a session's most-recent messages as a flat, oldest→newest
+ * list — a thin, single-page wrapper over the same `messages:list` channel the
+ * transcript uses (no new IPC, no live-sync, no pagination). It backs the
+ * mission-result Decision Journal, which only needs the assistant reasoning
+ * turns from a just-finalized (bounded) mission. `null` session → disabled.
+ *
+ * Bounded to the newest `MESSAGES_TAIL_MAX_LIMIT` rows: enough for a single
+ * mission's reasoning, and the same one-page read the tail already does. A very
+ * long mission whose earliest reasoning falls outside this window simply won't
+ * anchor its earliest trades (they degrade to "no rationale"), never wrong data.
+ */
+export function useSessionMessagesTail(
+  sessionId: string | null,
+  limit: number = MESSAGES_TAIL_MAX_LIMIT,
+): UseQueryResult<SessionMessageDto[]> {
+  const id = sessionId ?? "";
+  return useQuery({
+    queryKey: [...messagesKeys.forSession(id), "tail", { limit }] as const,
+    queryFn: async (): Promise<SessionMessageDto[]> => {
+      const page = await window.vex.messages.list({
+        sessionId: id,
+        cursor: null,
+        limit,
+      });
+      return page.ok ? page.data.items : [];
+    },
     staleTime: STALE_MS,
     enabled: id.length > 0,
   });

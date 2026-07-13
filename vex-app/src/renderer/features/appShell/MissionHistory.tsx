@@ -1,16 +1,19 @@
 /**
  * Dashboard — the operator's performance surface over the mission-results
- * ledger. Robinhood-shaped: a big account-value headline (seed + all-time PnL)
- * with a range-scoped P/L delta, a per-mission (or per-day) bar chart of wins
- * and losses, a stat register, then the newest-first mission table.
+ * ledger. Robinhood-shaped: a big cumulative-PnL headline (Σ each mission's own
+ * ETH result) with a capital-weighted return and range-scoped stats, a stat
+ * register (stake / win rate / best / worst), then the newest-first table.
  *
  * It mirrors the MemoryPanel shell grammar (`vex-eyebrow` section labels,
  * mono filter pills, hairline-separated blocks, `--vex-*` ink) so it reads as
- * one surface with the rest of the desk. All arithmetic lives in
- * `missionHistoryModel.ts`; this file is presentation over derived values. ETH
- * is the native unit; USD is a display-only tooltip/aside. The view is
- * deliberately additive — new blocks (seed funding, open bags, fees) slot in
- * as more sections without reshaping this shell.
+ * one surface with the rest of the desk. Arithmetic lives in the pure models:
+ * `missionStatsModel.ts` (capital-weighted return, current stake) and
+ * `missionHistoryModel.ts` (cumulative, win-rate, best/worst, formatting); this
+ * file is presentation over already-derived values. ETH is the source of truth;
+ * USD is a display-only aside, derived per-mission at each mission's own price
+ * (a single price is never divided across missions). The view is deliberately
+ * additive — new blocks (seed funding, open bags, fees) slot in as more
+ * sections without reshaping this shell.
  */
 
 import { useState, type JSX } from "react";
@@ -42,11 +45,13 @@ import {
   formatDurationS,
   formatEth,
   pnlUsd,
-  returnPct,
-  seedEth,
   sumPnlEth,
   type DashboardRange,
 } from "./missionHistoryModel.js";
+import {
+  capitalWeightedReturn,
+  currentStakeEth,
+} from "./missionStatsModel.js";
 
 const RANGES: readonly DashboardRange[] = ["1W", "1M", "3M", "ALL"];
 const RANGE_LABEL: Record<DashboardRange, string> = {
@@ -118,19 +123,22 @@ function Dashboard({
 }): JSX.Element {
   const [range, setRange] = useState<DashboardRange>("ALL");
 
-  // Seed + account value are ALL-TIME (the origin never changes with a filter);
-  // the delta + stats below are scoped to the selected range.
-  const seed = seedEth(results);
-  const cumulativeAll = sumPnlEth(results);
-  const accountEth = seed === null ? null : seed + cumulativeAll;
-  const latestPrice = latestEthPrice(results);
-  const accountUsd =
-    accountEth !== null && latestPrice !== null ? accountEth * latestPrice : null;
+  // The current stake (deployed capital) is ALL-TIME — the LATEST mission's
+  // starting bankroll, not the sum of every mission's seed (which double-counts
+  // capital reused across missions). The headline PnL, capital-weighted return
+  // and stats below are scoped to the selected range.
+  const stakeEth = currentStakeEth(results);
+  // Best-known current ETH price, used ONLY to derive display-side USD for a
+  // mission that lacks its own snapshot price. ETH stays the source of truth;
+  // a single price is never divided across missions' ETH totals.
+  const fallbackPrice = latestEthPrice(results);
+  const stakeUsd =
+    stakeEth !== null && fallbackPrice !== null ? stakeEth * fallbackPrice : null;
 
   const ranged = filterByRange(results, range, Date.now());
   const rangedPnl = sumPnlEth(ranged);
-  const rangedPct = returnPct(seed, rangedPnl);
-  const rangedUsd = sumUsd(ranged);
+  const rangedPct = capitalWeightedReturn(ranged);
+  const rangedUsd = sumUsd(ranged, fallbackPrice);
 
   const extremes = bestWorst(ranged);
   const winRate = computeWinRate(ranged);
@@ -146,34 +154,35 @@ function Dashboard({
         <div>
           <h2 className="vex-eyebrow">Mission performance</h2>
           <p className="mt-1 text-xs text-[var(--vex-text-2)]">
-            Realized PnL the missions produced — seed plus mission PnL. The
-            delta below is scoped to the selected range.
+            Realized PnL the missions produced — each mission&apos;s own ETH
+            result, summed. The return is capital-weighted over the seeds put to
+            work. Scoped to the selected range.
           </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
+          {/* ETH is the source of truth → it leads; USD is a derived aside. */}
           <div className="flex items-baseline gap-3">
-            <span className="font-mono text-[34px] font-medium leading-none tabular-nums text-foreground">
-              {accountUsd === null ? EM_DASH : formatUsd(accountUsd)}
+            <span
+              className={cn(
+                "font-mono text-[34px] font-medium leading-none tabular-nums",
+                pnlTone(rangedPnl),
+              )}
+            >
+              {formatEth(rangedPnl, { signed: true })} ETH
             </span>
-            {accountEth !== null ? (
+            {rangedUsd !== null ? (
               <span className="font-mono text-sm tabular-nums text-[var(--vex-text-3)]">
-                {formatEth(accountEth)} ETH
+                {usdText(rangedUsd, { signed: true })}
               </span>
             ) : null}
           </div>
           <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
-            <span className={pnlTone(rangedPnl)}>
-              {usdText(rangedUsd, { signed: true })}
-            </span>
             {rangedPct !== null ? (
               <span className={pnlTone(rangedPnl)}>
-                ({formatPercentDelta(rangedPct)})
+                {formatPercentDelta(rangedPct)}
               </span>
             ) : null}
-            <span className="text-[var(--vex-text-3)]">
-              {formatEth(rangedPnl, { signed: true })} ETH
-            </span>
             <span className="text-[var(--vex-text-3)]">· {RANGE_LABEL[range]}</span>
           </div>
         </div>
@@ -193,8 +202,9 @@ function Dashboard({
         <h2 className="vex-eyebrow">Mission stats</h2>
         <div className="grid grid-cols-2 gap-x-10 gap-y-4 sm:grid-cols-3">
           <Stat
-            label="Seed"
-            value={usdText(seed !== null && latestPrice !== null ? seed * latestPrice : null)}
+            label="Stake"
+            value={stakeEth === null ? EM_DASH : `${formatEth(stakeEth)} ETH`}
+            hint={stakeUsd === null ? undefined : `≈ ${formatUsd(stakeUsd)}`}
           />
           <Stat label="Missions" value={String(ranged.length)} />
           <Stat
@@ -203,18 +213,20 @@ function Dashboard({
           />
           <Stat
             label="Best"
-            value={usdText(
-              extremes !== null && latestPrice !== null ? extremes.best * latestPrice : null,
-              { signed: true },
-            )}
+            value={
+              extremes === null
+                ? EM_DASH
+                : `${formatEth(extremes.best, { signed: true })} ETH`
+            }
             tone={extremes === null ? undefined : pnlTone(extremes.best)}
           />
           <Stat
             label="Worst"
-            value={usdText(
-              extremes !== null && latestPrice !== null ? extremes.worst * latestPrice : null,
-              { signed: true },
-            )}
+            value={
+              extremes === null
+                ? EM_DASH
+                : `${formatEth(extremes.worst, { signed: true })} ETH`
+            }
             tone={extremes === null ? undefined : pnlTone(extremes.worst)}
           />
           <Stat label="Trades" value={String(totalTrades)} />
@@ -269,18 +281,25 @@ function PortfolioSection(): JSX.Element {
   const series = usePortfolioSeries(range, isAll ? null : selected);
 
   const live = portfolio.data?.ok ? portfolio.data.data : null;
-  const points = series.data?.ok ? series.data.data.points : [];
+  const seriesData = series.data?.ok ? series.data.data : null;
+  const points = seriesData?.points ?? [];
 
   const totalUsd = live?.liveTotalUsd ?? null;
   const walletCount = live?.walletCount ?? null;
 
   const first = points.length > 0 ? points[0]!.totalUsd : null;
   const last = points.length > 0 ? points[points.length - 1]!.totalUsd : null;
-  const change = first !== null && last !== null ? last - first : null;
-  const changePct =
-    change !== null && first !== null && first !== 0
-      ? (change / first) * 100
+  const rawChange = first !== null && last !== null ? last - first : null;
+  const rawChangePct =
+    rawChange !== null && first !== null && first !== 0
+      ? (rawChange / first) * 100
       : null;
+  // Prefer the FLOW-ADJUSTED (TWR) figures from the series DTO: they neutralise
+  // deposits/withdrawals so pulling cash out isn't shown as a loss (the EVM-3
+  // bug). Fall back to the raw curve delta when they're absent (< 2 points or
+  // an older payload).
+  const change = seriesData?.flowAdjustedChangeUsd ?? rawChange;
+  const changePct = seriesData?.changePctTwr ?? rawChangePct;
 
   const seriesFailed =
     series.isError || (series.data !== undefined && !series.data.ok);
@@ -412,16 +431,28 @@ function latestEthPrice(results: readonly MissionResultDto[]): number | null {
     if (r.ethPriceUsdEnd !== null && Number.isFinite(r.ethPriceUsdEnd)) {
       return r.ethPriceUsdEnd;
     }
+    if (r.ethPriceUsdStart !== null && Number.isFinite(r.ethPriceUsdStart)) {
+      return r.ethPriceUsdStart;
+    }
   }
   return null;
 }
 
-/** Sum of per-mission USD PnL (each valued at its own close price; nulls skip). */
-function sumUsd(results: readonly MissionResultDto[]): number | null {
+/**
+ * Sum of per-mission USD PnL, each valued at its OWN close price when present,
+ * else the `fallbackPrice` (best-known current ETH price). A single price is
+ * never divided across missions' ETH — this is display-only derivation over
+ * the native per-mission ETH pnl. `null` when nothing is computable.
+ */
+function sumUsd(
+  results: readonly MissionResultDto[],
+  fallbackPrice: number | null,
+): number | null {
   let sum = 0;
   let seen = false;
   for (const r of results) {
-    const usd = pnlUsd(r.pnlEth, r.ethPriceUsdEnd);
+    const price = r.ethPriceUsdEnd ?? r.ethPriceUsdStart ?? fallbackPrice;
+    const usd = pnlUsd(r.pnlEth, price);
     if (usd !== null) {
       sum += usd;
       seen = true;
@@ -460,10 +491,13 @@ function Stat({
   label,
   value,
   tone,
+  hint,
 }: {
   readonly label: string;
   readonly value: string;
   readonly tone?: string;
+  /** Optional derived USD aside, shown muted under the ETH-first value. */
+  readonly hint?: string;
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
@@ -473,6 +507,11 @@ function Stat({
       <span className={cn("font-mono text-lg tabular-nums", tone ?? "text-foreground")}>
         {value}
       </span>
+      {hint !== undefined ? (
+        <span className="font-mono text-[11px] tabular-nums text-[var(--vex-text-3)]">
+          {hint}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -37,6 +37,14 @@ import type {
 } from "@shared/schemas/portfolio.js";
 import { familyForChainId } from "@shared/chains/display.js";
 import { listWallets } from "@vex-lib/wallet.js";
+import { listLocalChains } from "@tools/evm-chains/registry.js";
+import { getNativeCashFlows } from "@vex-agent/analytics/native-cash-flows.js";
+import {
+  timeWeightedReturn,
+  netFlowAdjustedPnlUsd,
+  type Point,
+  type Flow,
+} from "@vex-agent/analytics/twr.js";
 import { getSessionWalletScope } from "./sessions-db.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -527,7 +535,7 @@ export async function getPortfolioSeries(
 
   // Fail closed: no wallets → empty series BEFORE any SQL.
   if (addresses.length === 0) {
-    return ok({ points: [] });
+    return ok({ points: [], changePctTwr: null, netFlowUsd: 0, flowAdjustedChangeUsd: null });
   }
 
   const addrParam = [...addresses];
@@ -558,15 +566,76 @@ export async function getPortfolioSeries(
           totalUsd: toNumber(row.total),
         }));
 
+      // Flow-adjusted return: the raw curve counts deposits/withdrawals as
+      // PnL, so the HEADLINE % must neutralise external cash flows (see the DTO
+      // doc). Fail-soft — a flow-detection failure degrades to the naive number.
+      const returns = await computeFlowAdjustedReturn(addresses, points);
+
       log.info(
         `[portfolio-db] getPortfolioSeries ok scope=${input.scope} ` +
           `range=${input.range} wallets=${addresses.length} ` +
-          `points=${points.length}`,
+          `points=${points.length} netFlow=${returns.netFlowUsd !== 0}`,
       );
 
-      return ok({ points });
+      return ok({ points, ...returns });
     } catch (cause) {
       return dbError("getPortfolioSeries query failed", cause);
     }
   });
+}
+
+/**
+ * Flow-adjusted return over the equity-curve `points` for the resolved wallet
+ * set. Detects each EVM wallet's native deposits/withdrawals on the local
+ * chains, keeps only the flows inside the curve's window, and computes the
+ * Time-Weighted Return + net-flow-adjusted PnL (the pure math in
+ * `@vex-agent/analytics/twr`).
+ *
+ * FAIL-SOFT: any detection error (or a chain with no explorer) yields no flows,
+ * so TWR collapses to the naive `last/first − 1` and the headline just matches
+ * the old behaviour instead of crashing. Solana wallets have no native-flow
+ * detection (documented follow-on) and are skipped.
+ */
+async function computeFlowAdjustedReturn(
+  addresses: readonly string[],
+  points: readonly { t: string; totalUsd: number }[],
+): Promise<{
+  changePctTwr: number | null;
+  netFlowUsd: number;
+  flowAdjustedChangeUsd: number | null;
+}> {
+  const NEUTRAL = { changePctTwr: null, netFlowUsd: 0, flowAdjustedChangeUsd: null };
+  if (points.length < 2) return NEUTRAL;
+
+  const curve: Point[] = points.map((pt) => ({
+    t: Date.parse(pt.t),
+    valueUsd: pt.totalUsd,
+  }));
+  const windowStart = curve[0]!.t;
+  const windowEnd = curve[curve.length - 1]!.t;
+
+  // Only EVM inventory wallets can carry native flows on a local chain.
+  const evmSet = new Set(listWallets("evm").map((e) => e.address));
+  const evmAddresses = addresses.filter((a) => evmSet.has(a));
+
+  const flows: Flow[] = [];
+  try {
+    for (const chain of listLocalChains("eip155")) {
+      for (const address of evmAddresses) {
+        const detected = await getNativeCashFlows(chain.id, address);
+        for (const flow of detected) {
+          if (flow.t >= windowStart && flow.t <= windowEnd) flows.push(flow);
+        }
+      }
+    }
+  } catch (cause) {
+    // Never let flow detection break the series read — degrade to naive.
+    log.warn("[portfolio-db] native flow detection failed; using naive return", cause);
+    return { changePctTwr: (curve[curve.length - 1]!.valueUsd / curve[0]!.valueUsd - 1) * 100, netFlowUsd: 0, flowAdjustedChangeUsd: curve[curve.length - 1]!.valueUsd - curve[0]!.valueUsd };
+  }
+
+  const twr = timeWeightedReturn(curve, flows);
+  const netFlowUsd = flows.reduce((acc, f) => acc + f.usd, 0);
+  const flowAdjustedChangeUsd = netFlowAdjustedPnlUsd(curve, flows);
+  return { changePctTwr: twr * 100, netFlowUsd, flowAdjustedChangeUsd };
 }

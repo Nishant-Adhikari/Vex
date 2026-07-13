@@ -191,10 +191,28 @@ export type PortfolioSeriesPointDto = z.infer<
  * Portfolio value time-series result — the ordered equity-curve points for
  * one scope + range. Bounded at 5000 points (defensive cap, never expected
  * to hit); an empty scope resolves to `{ points: [] }` before any SQL.
+ *
+ * FLOW-ADJUSTED RETURN (additive, back-compat defaults): the raw curve is real
+ * balances, but the HEADLINE return must neutralise external cash flows —
+ * naive `(last - first) / first` counts a withdrawal as a loss (the EVM-3 bug:
+ * a wallet that pulled ~2 ETH out and traded up still showed -44%). These
+ * fields carry the flow-aware figures the renderer displays:
+ *  - `changePctTwr`         — Time-Weighted Return over the window, as a PERCENT
+ *                             (e.g. 148.6 = +148.6%); `null` when < 2 points or
+ *                             the flow data was unavailable (renderer falls back
+ *                             to the naive percent it derives from `points`).
+ *  - `netFlowUsd`           — Σ external native cash flows inside the window
+ *                             (+deposit / −withdrawal), `0` when none/undetected.
+ *  - `flowAdjustedChangeUsd`— `end − start − netFlowUsd`, the USD PnL with cash
+ *                             flows removed; `null` when < 2 points.
+ * All default so pre-flow-aware payloads still parse.
  */
 export const portfolioSeriesDtoSchema = z
   .object({
     points: z.array(portfolioSeriesPointDtoSchema).max(5000),
+    changePctTwr: z.number().nullable().default(null),
+    netFlowUsd: z.number().default(0),
+    flowAdjustedChangeUsd: z.number().nullable().default(null),
   })
   .strict();
 export type PortfolioSeriesDto = z.infer<typeof portfolioSeriesDtoSchema>;

@@ -98,6 +98,15 @@ async function productionDeps(): Promise<LiquidateDeps> {
     "../../../tools/uniswap/chains.js"
   );
   const sellHandler = UNISWAP_SWAP_HANDLERS["uniswap.swap.sell"];
+  if (!sellHandler) {
+    // Registered at module load; if it were ever missing, the deadline
+    // force-liquidate would throw "sellHandler is not a function" mid-run.
+    // Fail fast with a clear message instead (and it narrows the type so the
+    // `sell` invocation below is not a possibly-undefined call — TS2722).
+    throw new Error(
+      "uniswap.swap.sell handler is not registered — cannot force-liquidate",
+    );
+  }
   return {
     getResult: getResultForRun,
     readHoldings: async (wallet, chainId) => {

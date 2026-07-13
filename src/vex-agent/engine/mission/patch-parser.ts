@@ -19,7 +19,15 @@ import type { MissionDraft, MissionPatch } from "../types.js";
 
 const ALLOWED_STRING_KEYS = new Set<keyof MissionDraft>([
   "title", "goal", "capitalSource", "startingCapital",
-  "riskProfile", "deadline", "durationMinutes",
+  "riskProfile", "deadline",
+]);
+
+// `durationMinutes` is a NUMBER — it drives the hard time-box. It used to sit in
+// ALLOWED_STRING_KEYS, so sanitizeString() rejected the numeric value and
+// silently dropped it: a "6-hour" mission (360) never persisted durationMinutes
+// and fell back to the default box. It gets its own numeric sanitizer.
+const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>([
+  "durationMinutes",
 ]);
 
 const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([
@@ -29,6 +37,7 @@ const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([
 
 const ALL_ALLOWED_KEYS = new Set<string>([
   ...ALLOWED_STRING_KEYS,
+  ...ALLOWED_NUMBER_KEYS,
   ...ALLOWED_ARRAY_KEYS,
 ]);
 
@@ -38,6 +47,8 @@ const MAX_STRING_LENGTH = 2000;
 const MAX_ARRAY_ITEMS = 50;
 /** Max string length per array item. */
 const MAX_ARRAY_ITEM_LENGTH = 500;
+/** Max time-box duration (minutes) — 24h ceiling, mirrors mission-deadline. */
+const MAX_DURATION_MINUTES = 1440;
 
 // ── Extract ─────────────────────────────────────────────────────
 
@@ -80,6 +91,11 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
+    } else if (ALLOWED_NUMBER_KEYS.has(key as keyof MissionDraft)) {
+      const sanitized = sanitizeNumber(value);
+      if (sanitized !== undefined) {
+        (result as Record<string, unknown>)[key] = sanitized;
+      }
     } else if (ALLOWED_ARRAY_KEYS.has(key as keyof MissionDraft)) {
       const sanitized = sanitizeStringArray(value);
       if (sanitized !== undefined) {
@@ -99,6 +115,26 @@ function sanitizeString(value: unknown): string | null | undefined {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
   return trimmed.slice(0, MAX_STRING_LENGTH);
+}
+
+/**
+ * Sanitize a numeric field (e.g. durationMinutes).
+ * - `null` → null (explicit clear);
+ * - a finite positive number, or a numeric string, → floored to a whole
+ *   number and clamped to MAX_DURATION_MINUTES;
+ * - anything else (0, negative, NaN, boolean, non-numeric string) → undefined
+ *   (dropped), matching the reject-wrong-type contract of sanitizeString.
+ * Booleans are rejected explicitly (Number(true) === 1 would otherwise slip
+ * through).
+ */
+function sanitizeNumber(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  let n: number;
+  if (typeof value === "number") n = value;
+  else if (typeof value === "string" && value.trim().length > 0) n = Number(value);
+  else return undefined; // reject wrong type (boolean, object, empty string, …)
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return Math.min(Math.floor(n), MAX_DURATION_MINUTES);
 }
 
 // ── Model output parser ─────────────────────────────────────────

@@ -329,7 +329,9 @@ export function MissionControls({
     const summary = readFinalizedResult(sessionResultQuery.data);
     return (
       <div data-vex-area="mission-controls" className="mt-3">
-        {summary !== null ? <MissionSummaryCard result={summary} /> : null}
+        {summary !== null ? (
+          <MissionSummaryCard result={summary} sessionId={sessionId} />
+        ) : null}
         {pendingAcceptance ? <AcceptancePendingNotice /> : null}
         <button
           type="button"

@@ -18,8 +18,17 @@
  * `So1111…1112` (full mint on the tooltip) and a deliberately tiny
  * well-known-mint map resolves the unmissable tickers. Short token strings
  * render as uppercase symbols. A leg carries its amount (`0.0017 ETH`) ONLY
- * when the recorded amount is a dotted decimal — raw base-unit integers from
- * legacy captures (wei/lamports) and nulls render nothing.
+ * when it is a base/native/quote UNIT (ETH/SOL/stable) AND the recorded amount
+ * is a dotted decimal — the TRADED token's raw quantity is deliberately
+ * dropped (`BUY 0.01 ETH → VENA`, not `→ 31100.1 VENA`; owner: "we don't care
+ * about qty — ETH is fine"); raw base-unit integers (wei/lamports) and nulls
+ * also render nothing.
+ *
+ * A SUMMARY header tops the ledger — `SEED 0.10 ETH · DEPLOYED 0.04 ETH (40%)`.
+ * Deployed sums the ETH leg of every fetched BUY (gross, ETH-denominated from
+ * the moves themselves — the portfolio DTO is USD-only); seed is the session's
+ * `bankrollStartEth` from its latest finalized mission result, dropping out
+ * (with its `%`) when no such ETH seed is available.
  *
  * The ledger shows the 10 newest fills (`MOVES_DISPLAY_CAP`); the header badge
  * still counts the FULL fetched result (server-capped at `MOVES_MAX`). A row
@@ -38,8 +47,10 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
+import { useMissionSessionResult } from "../../../lib/api/mission.js";
 import { moveExplorerUrl } from "../../../lib/explorer-links.js";
 import { formatClock, truncateAddress } from "../../../lib/format.js";
+import { formatEth } from "../missionHistoryModel.js";
 import { cn } from "../../../lib/utils.js";
 import { BookBlock } from "./BookBlock.js";
 
@@ -110,11 +121,32 @@ const KNOWN_EVM_TOKENS: ReadonlyMap<string, string> = new Map([
 /** Reads as a raw mint/address: one long unbroken alnum (base58/hex) run. */
 const ADDRESS_LIKE = /^[0-9a-zA-Z]{13,}$/;
 
+/**
+ * Resolved tickers that are a base / native / quote UNIT — the leg whose ETH
+ * (or SOL / stable) amount is the meaningful figure. Everything else is the
+ * TRADED token, whose raw quantity the ledger drops (owner: "we don't care
+ * about qty — ETH is fine"). Keyed on the RESOLVED ticker so both a bare
+ * symbol string (`ETH`) and a wrapped-native address (→ `ETH`) qualify.
+ * Deliberately tiny — base assets only, not a registry.
+ */
+const UNIT_SYMBOLS: ReadonlySet<string> = new Set([
+  "ETH",
+  "WETH",
+  "SOL",
+  "USDC",
+  "USDT",
+]);
+
 interface TokenDisplay {
   /** What the ledger prints. */
   readonly text: string;
   /** Full value for the tooltip when `text` is lossy, else `null`. */
   readonly full: string | null;
+  /**
+   * True when `text` is a base/native/quote unit (ETH/SOL/stable) — the leg
+   * that carries its amount. False for a traded token (its qty is dropped).
+   */
+  readonly isUnit: boolean;
 }
 
 /**
@@ -123,8 +155,15 @@ interface TokenDisplay {
  * uppercase symbols. Legs are nullable in the tolerant DTO → `?`.
  * Truncated/known forms carry the full mint on the tooltip; symbols are
  * uppercased in JS (not CSS) so base58 case in truncations stays intact.
+ * `isUnit` is derived from the RESOLVED ticker so the amount rule (below)
+ * is stable across mint / address / symbol inputs.
  */
 function tokenDisplay(token: string | null): TokenDisplay {
+  const base = resolveToken(token);
+  return { ...base, isUnit: UNIT_SYMBOLS.has(base.text) };
+}
+
+function resolveToken(token: string | null): Omit<TokenDisplay, "isUnit"> {
   if (token === null || token.length === 0) return { text: "?", full: null };
   const ticker = KNOWN_MINTS.get(token);
   if (ticker !== undefined) return { text: ticker, full: token };
@@ -143,19 +182,66 @@ const AMOUNT_FORMAT = new Intl.NumberFormat("en-US", {
 });
 
 /**
- * Compact leg amount. The engine records HUMAN-readable amounts only for
- * newer captures (relay bridge, uniswap spot); older captures store raw
- * base-unit integers (wei/lamports) that are meaningless to print. Tolerant
- * guard: render ONLY dotted-decimal strings that parse to a finite positive
- * number (a raw base-unit integer never carries a `.`); everything else —
- * null, integers, non-numeric — renders nothing, so legacy rows keep today's
- * amount-less legs.
+ * Tolerant parse of a recorded leg amount. The engine records HUMAN-readable
+ * amounts only for newer captures (relay bridge, uniswap spot); older captures
+ * store raw base-unit integers (wei/lamports) that are meaningless. Returns the
+ * number ONLY for a dotted-decimal string that parses to a finite positive
+ * value (a raw base-unit integer never carries a `.`); everything else — null,
+ * integers, non-numeric — returns `null`.
  */
-function amountDisplay(amount: string | null): string | null {
+function parseAmount(amount: string | null): number | null {
   if (amount === null || !amount.includes(".")) return null;
   const parsed = Number.parseFloat(amount);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return AMOUNT_FORMAT.format(parsed);
+  return parsed;
+}
+
+/** Compact leg amount for display; `null` (legacy/raw) renders nothing. */
+function amountDisplay(amount: string | null): string | null {
+  const parsed = parseAmount(amount);
+  return parsed === null ? null : AMOUNT_FORMAT.format(parsed);
+}
+
+/**
+ * Deployed ETH — the sum of the ETH staked into positions across the fetched
+ * moves. Sums the ETH-denominated leg of every BUY (a buy spends ETH on the
+ * input leg to acquire the traded token); sells and non-ETH-funded buys don't
+ * contribute. This is a GROSS figure (it does not net out later sells) and is
+ * bounded by the fetched move window (`MOVES_MAX`) — the pragmatic
+ * ETH-denominated source the renderer already has, since the portfolio DTO is
+ * USD-only. Pure + tolerant: unpriced/raw amounts are skipped, never throws.
+ */
+export function computeDeployedEth(moves: readonly MoveItem[]): number {
+  let total = 0;
+  for (const m of moves) {
+    if (m.tradeSide?.toLowerCase() !== "buy") continue;
+    if (tokenDisplay(m.inputToken).text !== "ETH") continue;
+    const eth = parseAmount(m.inputAmount);
+    if (eth !== null) total += eth;
+  }
+  return total;
+}
+
+/**
+ * Deployed as a percentage of the seed. `null` when the seed is missing, zero,
+ * or non-finite (no meaningful denominator) — the header then drops the `(N%)`.
+ */
+export function deployedPct(deployed: number, seed: number | null): number | null {
+  if (seed === null || !Number.isFinite(seed) || seed <= 0) return null;
+  if (!Number.isFinite(deployed)) return null;
+  return (deployed / seed) * 100;
+}
+
+/**
+ * One leg's printed text: `0.01 ETH` for a base/native/quote UNIT that carries
+ * a displayable amount, else the bare symbol (`VENA`). The traded token's raw
+ * quantity is intentionally dropped (owner: "we don't care about qty") — only
+ * the unit leg keeps its figure.
+ */
+function legText(display: TokenDisplay, amount: string | null): string {
+  return amount !== null && display.isUnit
+    ? `${amount} ${display.text}`
+    : display.text;
 }
 
 type SideTone = "buy" | "sell" | "neutral";
@@ -204,7 +290,27 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
   const query = useMoves(sessionId);
   const result = query.data;
   const allMoves = result?.ok ? result.data : [];
-  const moves = allMoves.slice(0, MOVES_DISPLAY_CAP);
+  // Take the most-recent window (server returns newest-first), then render it in
+  // ASCENDING timestamp order so the ledger reads oldest → newest top-to-bottom
+  // (the buy→sell story flows down the list). Sort a copy — never touch allMoves,
+  // which the Deployed sum below still reads over the full fetched set.
+  const moves = allMoves
+    .slice(0, MOVES_DISPLAY_CAP)
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+
+  // Seed = the session's starting bankroll in ETH, read from its latest
+  // finalized mission result (`bankrollStartEth`) — the one clean,
+  // ETH-denominated seed source the renderer already holds. `null` before the
+  // first finalization (no result row yet) or when the snapshot is missing;
+  // the summary then shows Deployed alone (no fabricated denominator).
+  const seedResult = useMissionSessionResult(sessionId).data;
+  const seedEth =
+    seedResult?.ok && seedResult.data !== null
+      ? seedResult.data.bankrollStartEth
+      : null;
+  // Deployed is summed over the FULL fetched window, not the display slice.
+  const deployedEth = computeDeployedEth(allMoves);
+  const pct = deployedPct(deployedEth, seedEth);
 
   let body: JSX.Element;
   if (query.isLoading) {
@@ -227,10 +333,13 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
     );
   } else {
     body = (
-      // Landing .ws-stat grammar: hairline-separated ledger rows, mono figures.
-      <ul className="flex flex-col">
-        {moves.map((m) => <MoveRow key={m.id} move={m} />)}
-      </ul>
+      <>
+        <MovesSummary seed={seedEth} deployed={deployedEth} pct={pct} />
+        {/* Landing .ws-stat grammar: hairline-separated ledger rows, mono figures. */}
+        <ul className="flex flex-col">
+          {moves.map((m) => <MoveRow key={m.id} move={m} />)}
+        </ul>
+      </>
     );
   }
 
@@ -251,6 +360,45 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
     >
       {body}
     </BookBlock>
+  );
+}
+
+/**
+ * Summary header at the top of the MOVES ledger: `SEED 0.10 ETH · DEPLOYED
+ * 0.04 ETH (40%)`. ETH is the unit throughout. Labels use the panel's eyebrow
+ * micro-label register (mono, uppercase, wide-tracked, text-3); figures sit in
+ * the text-2 register with `tabular-nums`, matching the ledger rows. Seed +
+ * its separator drop out when there's no ETH seed source, so the header
+ * degrades to Deployed alone rather than showing a fabricated denominator.
+ */
+function MovesSummary({
+  seed,
+  deployed,
+  pct,
+}: {
+  readonly seed: number | null;
+  readonly deployed: number;
+  readonly pct: number | null;
+}): JSX.Element {
+  return (
+    <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 font-mono text-[11px] tabular-nums">
+      {seed !== null ? (
+        <span className="text-[var(--vex-text-3)]">
+          <span className="text-[10px] uppercase tracking-[0.14em]">Seed</span>{" "}
+          <span className="text-[var(--vex-text-2)]">{formatEth(seed)} ETH</span>
+        </span>
+      ) : null}
+      {seed !== null ? (
+        <span aria-hidden className="text-[var(--vex-text-3)]">
+          ·
+        </span>
+      ) : null}
+      <span className="text-[var(--vex-text-3)]">
+        <span className="text-[10px] uppercase tracking-[0.14em]">Deployed</span>{" "}
+        <span className="text-[var(--vex-text-2)]">{formatEth(deployed)} ETH</span>
+        {pct !== null ? <span>{` (${Math.round(pct)}%)`}</span> : null}
+      </span>
+    </div>
   );
 }
 
@@ -287,13 +435,9 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
         {side.text}
       </span>
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
-        <span title={input.full ?? undefined}>
-          {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
-        </span>
+        <span title={input.full ?? undefined}>{legText(input, inputAmount)}</span>
         <span className="text-[var(--vex-text-3)]">{" → "}</span>
-        <span title={output.full ?? undefined}>
-          {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
-        </span>
+        <span title={output.full ?? undefined}>{legText(output, outputAmount)}</span>
       </span>
       {time !== null ? (
         <span className="shrink-0 text-right font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">

@@ -185,6 +185,46 @@ describe("patch-parser", () => {
     });
   });
 
+  // ── durationMinutes (numeric field) ─────────────────────────
+  // Regression: durationMinutes was mis-listed as a STRING key, so
+  // sanitizeString() rejected the number and silently dropped it — a
+  // "6-hour" mission (durationMinutes=360) fell back to the default box.
+  describe("durationMinutes (number field)", () => {
+    it("keeps a positive integer duration", () => {
+      const result = sanitizePatch({ durationMinutes: 360 });
+      expect(result.durationMinutes).toBe(360);
+    });
+
+    it("coerces a numeric string to a number", () => {
+      const result = sanitizePatch({ durationMinutes: "360" } as never);
+      expect(result.durationMinutes).toBe(360);
+    });
+
+    it("floors a fractional duration to a whole minute", () => {
+      const result = sanitizePatch({ durationMinutes: 360.9 });
+      expect(result.durationMinutes).toBe(360);
+    });
+
+    it("drops non-positive / non-numeric values", () => {
+      expect(sanitizePatch({ durationMinutes: 0 }).durationMinutes).toBeUndefined();
+      expect(sanitizePatch({ durationMinutes: -5 }).durationMinutes).toBeUndefined();
+      expect(sanitizePatch({ durationMinutes: "abc" } as never).durationMinutes).toBeUndefined();
+      expect(sanitizePatch({ durationMinutes: true } as never).durationMinutes).toBeUndefined();
+      expect(sanitizePatch({ durationMinutes: NaN }).durationMinutes).toBeUndefined();
+    });
+
+    it("clamps above the 24h (1440 min) ceiling", () => {
+      expect(sanitizePatch({ durationMinutes: 99999 }).durationMinutes).toBe(1440);
+    });
+
+    it("survives extract → sanitize as a number", () => {
+      const patch = extractMissionPatch({ durationMinutes: 360 });
+      expect(patch).not.toBeNull();
+      const sanitized = sanitizePatch(patch!);
+      expect(sanitized.durationMinutes).toBe(360);
+    });
+  });
+
   // ── Full pipeline ───────────────────────────────────────────
 
   describe("extract → sanitize pipeline", () => {
