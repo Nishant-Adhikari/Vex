@@ -69,6 +69,17 @@ describe("timeWeightedReturn", () => {
     expect(timeWeightedReturn(points, flows)).toBeCloseTo(0.5, 10);
   });
 
+  it("two flows between the SAME two snapshots aggregate into one base adjustment (~0%)", () => {
+    // The headline multi-flow bug: two deposits fall between the SAME adjacent
+    // snapshots (t=1 $100 and t=4 $200) with NO snapshot in between. The two
+    // +$50 deposits ($100 total) exactly explain the $100→$200 rise, so TWR is
+    // FLAT (0%). The buggy loop closed a sub-period per-flow against the stale
+    // $100 snapshot, multiplying an extra 100/150 factor → −11.11%.
+    const points = [p(1, 100), p(4, 200)];
+    const flows = [f(2, 50), f(3, 50)];
+    expect(timeWeightedReturn(points, flows)).toBeCloseTo(0, 10);
+  });
+
   it("handles multiple flows across the series", () => {
     // Sub 1: 100 -> 120 (growth 1.2), then deposit +80 -> base 200
     // Sub 2: 200 -> 240 (growth 1.2), then withdraw -40 -> base 200
