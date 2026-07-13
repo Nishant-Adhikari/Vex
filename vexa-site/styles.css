@@ -233,14 +233,26 @@ h3 { margin: 0; font-family: var(--sans); font-weight: 600; }
 [data-state="failed"] { --accent: var(--down); }
 [data-state="offline"] { --accent: var(--muted); }
 
-/* ---------- proof strip ---------- */
+/* ---------- proof strip (the trust spine) ---------- */
 .proof { border-block: 1px solid var(--line); background: var(--ink-deep); }
 .proof-row {
-  min-height: 62px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px 40px;
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-d);
+  min-height: 96px; padding-block: 26px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 20px clamp(28px, 4vw, 56px);
+  font-family: var(--mono); font-size: clamp(12px, 1vw, 14px); font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--paper);
 }
-.proof-row span { position: relative; padding-left: 18px; }
-.proof-row span::before { content: ""; position: absolute; left: 0; top: 50%; width: 6px; height: 6px; transform: translateY(-50%); border: 1px solid var(--blue); }
+.proof-row span {
+  position: relative; flex: 1 1 auto; display: flex; align-items: center; gap: 12px;
+  padding-left: 26px;
+}
+/* cobalt checkmark glyph */
+.proof-row span::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  width: 11px; height: 6px; margin-top: -3px;
+  border-left: 1.5px solid var(--blue); border-bottom: 1.5px solid var(--blue);
+  transform: translateY(-1px) rotate(-45deg); transform-origin: center;
+}
 
 /* ---------- sections ---------- */
 .section { padding-block: clamp(72px, 10vw, 128px); }
@@ -290,7 +302,7 @@ h3 { margin: 0; font-family: var(--sans); font-weight: 600; }
 .arch-node { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 26px 22px; background: var(--ink); }
 .arch-role { margin: 0; font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .arch-name { margin: 0; font-family: var(--serif); font-size: 26px; line-height: 1; }
-.arch-note { margin: 0; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--muted-d); }
+.arch-note { margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; line-height: 1.5; color: rgba(243, 244, 247, 0.74); }
 .arch-node-key { background: rgba(31, 68, 255, 0.08); }
 .arch-node-key .arch-name { color: var(--blue-300); }
 .arch-edge {
@@ -299,7 +311,7 @@ h3 { margin: 0; font-family: var(--sans); font-weight: 600; }
 }
 .arch-edge span {
   writing-mode: horizontal-tb;
-  font-family: var(--mono); font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(243, 244, 247, 0.72);
   text-align: center;
 }
 
