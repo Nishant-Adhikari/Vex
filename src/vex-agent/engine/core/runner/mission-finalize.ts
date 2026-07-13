@@ -98,10 +98,15 @@ export async function finalizeMissionRunStatus(
       : stopReason === "user_stopped"
         ? "cancelled"
         : "failed";
+    // Ledger outcome tracks the engine status EXCEPT for a hard-deadline exit:
+    // that is a clean time-box end, not an error, so the results UI reads
+    // "timed_out" instead of the alarming "failed". The run/mission status
+    // stays terminal (`failed`) — this only relabels the operator-facing record.
+    const outcome = stopReason === "deadline_reached" ? "timed_out" : status;
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     await emitFinalizeControlState(sessionId, runId);
-    await captureMissionFinal({ missionId, runId, sessionId, outcome: status });
+    await captureMissionFinal({ missionId, runId, sessionId, outcome });
     return status;
   }
 

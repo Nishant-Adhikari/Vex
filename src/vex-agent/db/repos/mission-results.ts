@@ -18,6 +18,9 @@ export type MissionOutcome =
   | "completed"
   | "cancelled"
   | "failed"
+  // Time-box end: the hard-deadline enforcer stopped the run (not an error).
+  // Distinct from "failed" so the results UI reads it as a clean deadline exit.
+  | "timed_out"
   | "stopped";
 
 export interface MissionResultRow {

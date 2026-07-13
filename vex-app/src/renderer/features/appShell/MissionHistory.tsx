@@ -312,9 +312,11 @@ function OutcomeBadge({ outcome }: { readonly outcome: string }): JSX.Element {
       ? "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-[var(--color-success)]"
       : outcome === "failed"
         ? "border-destructive/40 text-destructive"
-        : outcome === "running"
-          ? "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)]"
-          : "border-[var(--vex-line)] text-[var(--vex-text-2)]";
+        : outcome === "timed_out"
+          ? "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-[var(--color-warning)]"
+          : outcome === "running"
+            ? "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)]"
+            : "border-[var(--vex-line)] text-[var(--vex-text-2)]";
   return (
     <span
       className={cn(
@@ -322,7 +324,7 @@ function OutcomeBadge({ outcome }: { readonly outcome: string }): JSX.Element {
         tone,
       )}
     >
-      {outcome}
+      {outcome.replace(/_/g, " ")}
     </span>
   );
 }
