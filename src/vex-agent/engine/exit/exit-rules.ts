@@ -96,8 +96,12 @@ function consumedFraction(position: Position, config: ExitConfig): number {
     if (!Number.isInteger(idx) || idx < 0 || idx >= ladder.length || seen.has(idx)) {
       continue;
     }
+    const rung = ladder[idx];
+    if (rung === undefined) {
+      continue;
+    }
     seen.add(idx);
-    const frac = ladder[idx].sellFraction;
+    const frac = rung.sellFraction;
     if (Number.isFinite(frac) && frac > 0) {
       total += frac;
     }
