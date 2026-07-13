@@ -88,12 +88,14 @@ const PRIMARY_WALLET: AvailableWalletDto = {
   family: "evm",
   address: PRIMARY_ADDRESS,
   label: "Primary",
+  vault: false,
 };
 const SECOND_WALLET: AvailableWalletDto = {
   id: "evm_22222222-2222-2222-2222-222222222222",
   family: "evm",
   address: SECOND_ADDRESS,
   label: "Trading",
+  vault: false,
 };
 
 function newClient(): QueryClient {
@@ -191,6 +193,7 @@ beforeEach(() => {
       retryable: true,
       userActionable: true,
       redacted: true,
+      correlationId: "test-correlation-id",
     },
   });
 
@@ -440,6 +443,7 @@ describe("PolymarketAutoSetupSection modal flow", () => {
         retryable: true,
         userActionable: true,
         redacted: true,
+        correlationId: "test-correlation-id",
       },
     });
     const view = renderSection({ status: "missing" });

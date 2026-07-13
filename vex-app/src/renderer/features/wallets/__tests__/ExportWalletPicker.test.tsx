@@ -23,18 +23,21 @@ const EVM_A = {
   family: "evm" as const,
   address: "0xAAAA000000000000000000000000000000000000",
   label: "EVM A",
+  vault: false,
 };
 const EVM_B = {
   id: "evm_b",
   family: "evm" as const,
   address: "0xBBBB000000000000000000000000000000000000",
   label: "EVM B",
+  vault: false,
 };
 const SOL_A = {
   id: "sol_a",
   family: "solana" as const,
   address: "SoLAddrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   label: "SOL A",
+  vault: false,
 };
 
 function ok(

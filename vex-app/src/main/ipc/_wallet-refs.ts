@@ -53,7 +53,7 @@ export function vaultWalletSelectionError(correlationId: string): VexError {
     message: "That wallet is a vault (hold-only) wallet and can't be used for a session.",
     retryable: false,
     userActionable: true,
-    redacted: false,
+    redacted: true,
     correlationId,
   };
 }
