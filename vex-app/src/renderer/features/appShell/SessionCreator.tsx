@@ -15,7 +15,7 @@
  * ownership.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import {
   type SessionCreateInput,
@@ -32,7 +32,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog.js";
-import { useCreateSession } from "../../lib/api/sessions.js";
+import { useCreateSession, useSessionsList } from "../../lib/api/sessions.js";
+import type { SessionList } from "../../../shared/schemas/sessions.js";
 import { useAvailableWallets } from "../../lib/api/session-wallets.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { deriveSessionName } from "./SessionCreator/deriveSessionName.js";
@@ -65,6 +66,20 @@ export function SessionCreator({
     availableWallets.data?.ok === true
       ? availableWallets.data.data
       : { evm: [], solana: [] };
+
+  // Auto-name for mission sessions: "RH Mission #N", N = highest existing
+  // "RH Mission #k" title + 1 (so the operator never has to type a name).
+  const sessionsList = useSessionsList();
+  const nextMissionName = useMemo(() => {
+    const items: SessionList = sessionsList.data?.ok ? sessionsList.data.data : [];
+    let max = 0;
+    for (const s of items) {
+      const m = s.title?.match(/RH Mission\s*#?\s*(\d+)/i);
+      const n = m ? Number.parseInt(m[1] ?? "", 10) : NaN;
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    return `RH Mission #${max + 1}`;
+  }, [sessionsList.data]);
 
   const [name, setName] = useState<string>("");
   const [mode, setMode] = useState<SessionMode>("agent");
@@ -100,8 +115,26 @@ export function SessionCreator({
     return () => cancelAnimationFrame(id);
   }, [open]);
 
+  // Picking Mission mode with an empty name pre-fills "RH Mission #N" so the
+  // operator can submit without typing. Fires only on mode/open change (not per
+  // keystroke), so clearing the field afterward is respected.
+  useEffect(() => {
+    if (open && mode === "mission" && name.trim().length === 0) {
+      setName(nextMissionName);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, open]);
+
   const trimmedName = name.trim();
-  const nameInvalid = trimmedName.length === 0;
+  // Mission sessions fall back to the auto-generated "RH Mission #N" when blank;
+  // agent sessions still require a typed name.
+  const effectiveName =
+    trimmedName.length > 0
+      ? trimmedName
+      : mode === "mission"
+        ? nextMissionName
+        : "";
+  const nameInvalid = effectiveName.length === 0;
   const submitDisabled = nameInvalid || createMutation.isPending;
 
   const onSubmit = useCallback(
@@ -111,8 +144,8 @@ export function SessionCreator({
       setSubmitError(null);
       const input: SessionCreateInput =
         mode === "mission"
-          ? { mode: "mission", name: trimmedName, permission, selectedEvmWalletId, selectedSolanaWalletId }
-          : { mode: "agent", name: trimmedName, permission, selectedEvmWalletId, selectedSolanaWalletId };
+          ? { mode: "mission", name: effectiveName, permission, selectedEvmWalletId, selectedSolanaWalletId }
+          : { mode: "agent", name: effectiveName, permission, selectedEvmWalletId, selectedSolanaWalletId };
       // The sidebar's New-session key mirrors this mutation: ink loop while
       // in flight, one-shot glint on success (the glint's animationend
       // returns the state to idle). The try/catch exists only so an
