@@ -270,11 +270,13 @@ h3 { margin: 0; font-family: var(--sans); font-weight: 600; }
 }
 .state-button b { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--muted); }
 .state-button span strong { display: block; font-size: 15px; font-weight: 600; }
-.state-button span small { display: block; margin-top: 3px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--muted); }
+.state-button span small { display: block; margin-top: 4px; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.02em; line-height: 1.35; color: var(--muted-d); }
 .state-button:hover { background: rgba(243, 244, 247, 0.03); }
+.state-button:hover span small { color: rgba(243, 244, 247, 0.72); }
 .state-button.active { padding-left: 20px; background: rgba(31, 68, 255, 0.08); border-left: 2px solid var(--blue); }
 .state-button.active b { color: var(--blue-300); }
 .state-button.active span strong { color: var(--white); }
+.state-button.active span small { color: rgba(243, 244, 247, 0.8); }
 
 .demo-stage { min-height: 500px; display: grid; place-items: center; }
 .demo-kicker {
