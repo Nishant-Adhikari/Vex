@@ -91,6 +91,23 @@ export function formatBankrollRange(
 }
 
 /**
+ * Bankroll start→end range in USD at the close price: `$24.66 → $17.32`. Each
+ * side is em-dashed independently when its ETH snapshot is missing, and BOTH
+ * sides em-dash when there is no close price to value them (nothing fabricated).
+ */
+export function formatBankrollRangeUsd(
+  bankrollStartEth: number | null,
+  bankrollEndEth: number | null,
+  ethPriceUsdEnd: number | null,
+): string {
+  const side = (eth: number | null): string => {
+    const usd = pnlUsd(eth, ethPriceUsdEnd);
+    return usd === null ? EM_DASH : formatUsd(usd);
+  };
+  return `${side(bankrollStartEth)} → ${side(bankrollEndEth)}`;
+}
+
+/**
  * Signed USD value of the ETH PnL at close (`pnlEth * ethPriceUsdEnd`) for the
  * headline: `+$3.80`, `-$1.20`. Reuses `pnlUsd`; `null` (either input missing)
  * → em dash so nothing is fabricated.

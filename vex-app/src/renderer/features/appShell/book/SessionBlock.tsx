@@ -8,6 +8,8 @@ import type { JSX, ReactNode } from "react";
 import { useSession } from "../../../lib/api/sessions.js";
 import { useMissionSessionResult } from "../../../lib/api/mission.js";
 import { cn } from "../../../lib/utils.js";
+import { formatUsd } from "../../../lib/format.js";
+import { pnlUsd } from "../missionHistoryModel.js";
 import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
 import { BookBlock } from "./BookBlock.js";
 
@@ -70,14 +72,19 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
             <Row label="Mission PnL">
               {missionResult.pnlEth !== null ? (
                 <span
+                  title={`${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`}
                   className={
                     missionResult.pnlEth >= 0
                       ? "text-[var(--color-success)]"
                       : "text-[var(--color-destructive)]"
                   }
                 >
-                  {missionResult.pnlEth >= 0 ? "+" : ""}
-                  {missionResult.pnlEth.toFixed(4)} ETH
+                  {(() => {
+                    const usd = pnlUsd(missionResult.pnlEth, missionResult.ethPriceUsdEnd);
+                    return usd !== null
+                      ? `${usd >= 0 ? "+" : "-"}${formatUsd(Math.abs(usd))}`
+                      : `${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`;
+                  })()}
                   {missionResult.pnlPct !== null
                     ? ` (${missionResult.pnlPct >= 0 ? "+" : ""}${missionResult.pnlPct.toFixed(2)}%)`
                     : ""}

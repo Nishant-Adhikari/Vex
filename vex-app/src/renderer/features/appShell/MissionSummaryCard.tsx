@@ -17,13 +17,12 @@ import type { MissionResultDto } from "@shared/schemas/mission.js";
 import { cn } from "../../lib/utils.js";
 import { EM_DASH, formatDurationS } from "./missionHistoryModel.js";
 import {
-  formatBankrollRange,
+  formatBankrollRangeUsd,
   formatMetaLine,
   formatPnlEth,
   formatPnlPct,
   formatPnlUsd,
   pnlToneClass,
-  pnlUsdTitle,
 } from "./missionSummaryModel.js";
 
 export interface MissionSummaryCardProps {
@@ -33,12 +32,14 @@ export interface MissionSummaryCardProps {
 export function MissionSummaryCard({
   result,
 }: MissionSummaryCardProps): JSX.Element {
-  const pnlTitle = pnlUsdTitle(result.pnlEth, result.ethPriceUsdEnd);
   const pct = formatPnlPct(result.pnlPct);
+  const pnlEthText = formatPnlEth(result.pnlEth);
+  // USD leads the headline; ETH moves to a secondary aside + the hover title.
   const pnlUsdText =
     result.ethPriceUsdEnd !== null
       ? formatPnlUsd(result.pnlEth, result.ethPriceUsdEnd)
       : null;
+  const pnlTitle = pnlEthText === EM_DASH ? undefined : `${pnlEthText} at close`;
 
   return (
     <section
@@ -57,7 +58,7 @@ export function MissionSummaryCard({
         <span className="tabular-nums">{formatDurationS(result.durationS)}</span>
       </div>
 
-      {/* Line 2 — the signed ETH PnL headline (USD in the tooltip). */}
+      {/* Line 2 — the signed USD PnL headline (ETH aside + in the tooltip). */}
       <div className="flex items-baseline gap-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
           PnL
@@ -69,26 +70,29 @@ export function MissionSummaryCard({
             pnlToneClass(result.pnlEth),
           )}
         >
-          {formatPnlEth(result.pnlEth)}
+          {pnlUsdText ?? pnlEthText}
           {pct.length > 0 ? (
             <span className="ml-2 text-[11px]">{pct}</span>
           ) : null}
-          {pnlUsdText !== null ? (
+          {pnlUsdText !== null && pnlEthText !== EM_DASH ? (
             <span className="ml-2 text-[11px] text-[var(--vex-text-3)]">
-              ≈ {pnlUsdText}
+              ≈ {pnlEthText}
             </span>
           ) : null}
         </span>
       </div>
 
-      {/* Line 3 — bankroll start→end (the basis behind the PnL). */}
+      {/* Line 3 — bankroll start→end in USD (the basis behind the PnL). */}
       <div className="flex items-baseline gap-2 font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
         <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
           Bankroll
         </span>
         <span>
-          {formatBankrollRange(result.bankrollStartEth, result.bankrollEndEth)}
-          <span className="ml-1 text-[var(--vex-text-3)]">ETH</span>
+          {formatBankrollRangeUsd(
+            result.bankrollStartEth,
+            result.bankrollEndEth,
+            result.ethPriceUsdEnd,
+          )}
         </span>
       </div>
 

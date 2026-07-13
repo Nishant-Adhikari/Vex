@@ -22,11 +22,14 @@ import type {
   MissionListResultsResult,
   MissionResultDto,
 } from "@shared/schemas/mission.js";
+import type { PortfolioRange } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useMissionResults } from "../../lib/api/mission.js";
+import { usePortfolio, usePortfolioSeries } from "../../lib/api/portfolio.js";
 import { formatPercentDelta, formatUsd } from "../../lib/format.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
+import { PortfolioChart } from "./PortfolioChart.js";
 import {
   EM_DASH,
   bestWorst,
@@ -49,6 +52,14 @@ const RANGE_LABEL: Record<DashboardRange, string> = {
   "1W": "past week",
   "1M": "past month",
   "3M": "past 3 months",
+  ALL: "all time",
+};
+
+const PF_RANGES: readonly PortfolioRange[] = ["1D", "1W", "1M", "ALL"];
+const PF_RANGE_LABEL: Record<PortfolioRange, string> = {
+  "1D": "today",
+  "1W": "past week",
+  "1M": "past month",
   ALL: "all time",
 };
 
@@ -137,42 +148,42 @@ function Dashboard({
 
   return (
     <>
-      {/* ── Performance hero ─────────────────────────────────────── */}
-      <section className="flex flex-col gap-5">
+      {/* ── Portfolio equity curve (total value across all wallets) ── */}
+      <PortfolioSection />
+
+      {/* ── Mission performance ──────────────────────────────────── */}
+      <section className="flex flex-col gap-5 border-t border-[var(--vex-line)] pt-7">
         <div>
-          <h2 className="vex-eyebrow">Performance</h2>
+          <h2 className="vex-eyebrow">Mission performance</h2>
           <p className="mt-1 text-xs text-[var(--vex-text-2)]">
-            Account value is your seed plus realized PnL across every mission.
-            The delta below is scoped to the selected range.
+            Realized PnL the missions produced — seed plus mission PnL. The
+            delta below is scoped to the selected range.
           </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline gap-3">
             <span className="font-mono text-[34px] font-medium leading-none tabular-nums text-foreground">
-              {accountEth === null ? EM_DASH : formatEth(accountEth)}
+              {accountUsd === null ? EM_DASH : formatUsd(accountUsd)}
             </span>
-            <span className="font-mono text-sm text-[var(--vex-text-3)]">ETH</span>
-            {accountUsd !== null ? (
-              <span className="font-mono text-sm tabular-nums text-[var(--vex-text-2)]">
-                {formatUsd(accountUsd)}
+            {accountEth !== null ? (
+              <span className="font-mono text-sm tabular-nums text-[var(--vex-text-3)]">
+                {formatEth(accountEth)} ETH
               </span>
             ) : null}
           </div>
           <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
             <span className={pnlTone(rangedPnl)}>
-              {formatEth(rangedPnl, { signed: true })} ETH
+              {usdText(rangedUsd, { signed: true })}
             </span>
             {rangedPct !== null ? (
               <span className={pnlTone(rangedPnl)}>
                 ({formatPercentDelta(rangedPct)})
               </span>
             ) : null}
-            {rangedUsd !== null ? (
-              <span className="text-[var(--vex-text-3)]">
-                {formatUsd(rangedUsd)}
-              </span>
-            ) : null}
+            <span className="text-[var(--vex-text-3)]">
+              {formatEth(rangedPnl, { signed: true })} ETH
+            </span>
             <span className="text-[var(--vex-text-3)]">· {RANGE_LABEL[range]}</span>
           </div>
         </div>
@@ -206,7 +217,7 @@ function Dashboard({
         <div className="grid grid-cols-2 gap-x-10 gap-y-4 sm:grid-cols-3">
           <Stat
             label="Seed"
-            value={seed === null ? EM_DASH : `${formatEth(seed)} ETH`}
+            value={usdText(seed !== null && latestPrice !== null ? seed * latestPrice : null)}
           />
           <Stat label="Missions" value={String(ranged.length)} />
           <Stat
@@ -215,20 +226,18 @@ function Dashboard({
           />
           <Stat
             label="Best"
-            value={
-              extremes === null
-                ? EM_DASH
-                : `${formatEth(extremes.best, { signed: true })} ETH`
-            }
+            value={usdText(
+              extremes !== null && latestPrice !== null ? extremes.best * latestPrice : null,
+              { signed: true },
+            )}
             tone={extremes === null ? undefined : pnlTone(extremes.best)}
           />
           <Stat
             label="Worst"
-            value={
-              extremes === null
-                ? EM_DASH
-                : `${formatEth(extremes.worst, { signed: true })} ETH`
-            }
+            value={usdText(
+              extremes !== null && latestPrice !== null ? extremes.worst * latestPrice : null,
+              { signed: true },
+            )}
             tone={extremes === null ? undefined : pnlTone(extremes.worst)}
           />
           <Stat label="Trades" value={String(totalTrades)} />
@@ -247,6 +256,95 @@ function Dashboard({
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * Portfolio equity curve — total USD value across ALL wallets over time, the
+ * Robinhood-shaped headline. Live total from `usePortfolio` (global scope);
+ * the curve + range delta from the snapshot series. Independent of the mission
+ * range below — this is the money, not the missions.
+ */
+function PortfolioSection(): JSX.Element {
+  const [range, setRange] = useState<PortfolioRange>("1D");
+  const portfolio = usePortfolio(null);
+  const series = usePortfolioSeries(range);
+
+  const live = portfolio.data?.ok ? portfolio.data.data : null;
+  const points = series.data?.ok ? series.data.data.points : [];
+
+  const totalUsd = live?.liveTotalUsd ?? null;
+  const walletCount = live?.walletCount ?? null;
+
+  const first = points.length > 0 ? points[0]!.totalUsd : null;
+  const last = points.length > 0 ? points[points.length - 1]!.totalUsd : null;
+  const change = first !== null && last !== null ? last - first : null;
+  const changePct =
+    change !== null && first !== null && first !== 0
+      ? (change / first) * 100
+      : null;
+
+  const seriesFailed =
+    series.isError || (series.data !== undefined && !series.data.ok);
+
+  return (
+    <section className="flex flex-col gap-5">
+      <div>
+        <h2 className="vex-eyebrow">Portfolio</h2>
+        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+          Total value across all your wallets, live from on-chain balances.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline gap-3">
+          <span className="font-mono text-[34px] font-medium leading-none tabular-nums text-foreground">
+            {totalUsd === null ? EM_DASH : formatUsd(totalUsd)}
+          </span>
+          {walletCount !== null ? (
+            <span className="font-mono text-sm text-[var(--vex-text-3)]">
+              {walletCount} wallet{walletCount === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
+          {change === null ? (
+            <span className="text-[var(--vex-text-3)]">No change yet</span>
+          ) : (
+            <>
+              <span className={pnlTone(change)}>
+                {change >= 0 ? "+" : "-"}
+                {formatUsd(Math.abs(change))}
+              </span>
+              {changePct !== null ? (
+                <span className={pnlTone(change)}>
+                  ({formatPercentDelta(changePct)})
+                </span>
+              ) : null}
+            </>
+          )}
+          <span className="text-[var(--vex-text-3)]">
+            · {PF_RANGE_LABEL[range]}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {PF_RANGES.map((r) => (
+          <Pill key={r} active={range === r} onClick={() => setRange(r)}>
+            {r}
+          </Pill>
+        ))}
+      </div>
+
+      {seriesFailed ? (
+        <div className="flex h-[200px] items-center justify-center rounded-[6px] border border-dashed border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
+          Couldn&apos;t load the value history.
+        </div>
+      ) : (
+        <PortfolioChart points={points} />
+      )}
+    </section>
   );
 }
 
@@ -377,9 +475,14 @@ function BarChart({
             ? "var(--color-success)"
             : "var(--color-destructive)";
           const usd = price !== null ? item.valueEth * price : null;
+          // USD leads the label + tooltip; ETH is the parenthetical.
+          const valueLabel =
+            usd !== null
+              ? usdText(usd, { signed: true })
+              : `${formatEth(item.valueEth, { signed: true })} ETH`;
           const tip =
-            `${item.label}: ${formatEth(item.valueEth, { signed: true })} ETH` +
-            (usd !== null ? ` (${formatUsd(usd)})` : "") +
+            `${item.label}: ${valueLabel}` +
+            (usd !== null ? ` (${formatEth(item.valueEth, { signed: true })} ETH)` : "") +
             (item.sub ? ` — ${item.sub}` : "");
           return (
             <g key={item.key}>
@@ -401,7 +504,7 @@ function BarChart({
                   className="fill-[var(--vex-text-3)] font-mono"
                   fontSize={9}
                 >
-                  {formatEth(item.valueEth, { signed: true })}
+                  {valueLabel}
                 </text>
               ) : null}
               <text
@@ -502,7 +605,11 @@ function ResultRow({
   readonly result: MissionResultDto;
 }): JSX.Element {
   const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  const pnlTitle = usd === null ? undefined : `${formatUsd(usd)} at close`;
+  // USD leads; the ETH figure moves to the hover title.
+  const pnlTitle =
+    result.pnlEth === null
+      ? undefined
+      : `${formatEth(result.pnlEth, { signed: true })} ETH at close`;
 
   return (
     <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
@@ -528,7 +635,9 @@ function ResultRow({
           title={pnlTitle}
           className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}
         >
-          {formatEth(result.pnlEth, { signed: true })} ETH
+          {usd === null
+            ? `${formatEth(result.pnlEth, { signed: true })} ETH`
+            : usdText(usd, { signed: true })}
         </span>
         {result.pnlPct !== null ? (
           <span className="ml-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
@@ -590,4 +699,14 @@ function pnlTone(value: number | null): string {
   if (value > 0) return "text-[var(--color-success)]";
   if (value < 0) return "text-destructive";
   return "text-[var(--vex-text-2)]";
+}
+
+/** USD display — the primary unit everywhere. `signed` prefixes +/- for deltas. */
+function usdText(
+  usd: number | null | undefined,
+  opts: { readonly signed?: boolean } = {},
+): string {
+  if (usd === null || usd === undefined || !Number.isFinite(usd)) return EM_DASH;
+  if (!opts.signed) return formatUsd(usd);
+  return `${usd >= 0 ? "+" : "-"}${formatUsd(Math.abs(usd))}`;
 }

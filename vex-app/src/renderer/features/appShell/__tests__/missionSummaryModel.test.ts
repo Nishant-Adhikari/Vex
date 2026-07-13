@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { EM_DASH } from "../missionHistoryModel.js";
 import {
   formatBankrollRange,
+  formatBankrollRangeUsd,
   formatMetaLine,
   formatPnlEth,
   formatPnlPct,
@@ -80,6 +81,17 @@ describe("formatBankrollRange", () => {
   it("em-dashes each side independently when its snapshot is missing", () => {
     expect(formatBankrollRange(null, 0.0149)).toBe("— → 0.0149");
     expect(formatBankrollRange(0.0137, null)).toBe("0.0137 → —");
+  });
+});
+
+describe("formatBankrollRangeUsd", () => {
+  it("converts each side to USD at the close price", () => {
+    expect(formatBankrollRangeUsd(0.01, 0.005, 2000)).toBe("$20.00 → $10.00");
+  });
+
+  it("em-dashes a side missing its snapshot, or both when price is absent", () => {
+    expect(formatBankrollRangeUsd(null, 0.005, 2000)).toBe("— → $10.00");
+    expect(formatBankrollRangeUsd(0.01, 0.005, null)).toBe("— → —");
   });
 });
 
