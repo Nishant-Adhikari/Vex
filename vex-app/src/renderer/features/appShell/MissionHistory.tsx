@@ -284,13 +284,15 @@ function PortfolioSection(): JSX.Element {
           {change === null ? (
             <span className="text-[var(--vex-text-3)]">No change yet</span>
           ) : (
+            // Portfolio never shows red: green on a gain, neutral on a dip (so a
+            // loss still isn't dressed up as green).
             <>
-              <span className={pnlTone(change)}>
+              <span className={pfDeltaTone(change)}>
                 {change >= 0 ? "+" : "-"}
                 {formatUsd(Math.abs(change))}
               </span>
               {changePct !== null ? (
-                <span className={pnlTone(change)}>
+                <span className={pfDeltaTone(change)}>
                   ({formatPercentDelta(changePct)})
                 </span>
               ) : null}
@@ -520,6 +522,14 @@ function pnlTone(value: number | null): string {
   if (value > 0) return "text-[var(--color-success)]";
   if (value < 0) return "text-destructive";
   return "text-[var(--vex-text-2)]";
+}
+
+/**
+ * Portfolio delta colour — never red. Green on a gain (or flat); a dip stays
+ * neutral-muted rather than green, so a loss isn't mislabelled as a gain.
+ */
+function pfDeltaTone(change: number): string {
+  return change >= 0 ? "text-[var(--color-success)]" : "text-[var(--vex-text-2)]";
 }
 
 /** USD display — the primary unit everywhere. `signed` prefixes +/- for deltas. */

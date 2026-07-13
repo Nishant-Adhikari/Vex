@@ -73,10 +73,9 @@ export function PortfolioChart({
     );
   }
 
-  const first = points[0]!.totalUsd;
-  const last = points[points.length - 1]!.totalUsd;
-  const up = last >= first;
-  const stroke = up ? "var(--color-success)" : "var(--color-destructive)";
+  // The equity curve is always drawn green — the desk keeps the portfolio line
+  // on-brand (never red), regardless of whether the range closed up or down.
+  const stroke = "var(--color-success)";
 
   return (
     <svg
