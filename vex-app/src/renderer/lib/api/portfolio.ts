@@ -21,6 +21,7 @@ import type {
   PortfolioRange,
   PortfolioReadInput,
   PortfolioSeriesDto,
+  PortfolioSeriesInput,
 } from "@shared/schemas/portfolio.js";
 import type { MovesDto } from "@shared/schemas/portfolio-moves.js";
 import { portfolioKeys } from "./queryKeys.js";
@@ -80,16 +81,26 @@ export function usePortfolio(
 }
 
 /**
- * Portfolio value time-series (the dashboard equity curve). GLOBAL scope only
- * — the equity curve is the whole-inventory view; a per-session curve is a
- * separate concern if ever needed. Read-only; an empty inventory resolves to
- * `{ points: [] }`, never an error. Keyed by scope + range so each window is a
- * distinct cache entry.
+ * Portfolio value time-series (the dashboard equity curve). GLOBAL by default,
+ * or scoped to a single configured wallet when `walletAddress` is supplied (the
+ * per-wallet filter — the address is resolved server-side against the configured
+ * inventory, fail-closed, so this can never widen past the caller's wallets).
+ * Read-only; an empty inventory resolves to `{ points: [] }`, never an error.
+ * Keyed by scope + wallet + range so each (wallet, window) is a distinct cache
+ * entry.
  */
-function portfolioSeriesOptions(range: PortfolioRange) {
+function portfolioSeriesOptions(
+  range: PortfolioRange,
+  walletAddress: string | null,
+) {
+  const input: PortfolioSeriesInput =
+    walletAddress !== null
+      ? { scope: "wallet", walletAddress, range }
+      : { scope: "global", range };
+  const scopeKey = walletAddress !== null ? `wallet:${walletAddress}` : "global";
   return queryOptions({
-    queryKey: portfolioKeys.series("global", range),
-    queryFn: () => window.vex.portfolio.series({ scope: "global", range }),
+    queryKey: portfolioKeys.series(scopeKey, range),
+    queryFn: () => window.vex.portfolio.series(input),
     staleTime: STALE_MS,
     refetchInterval: REFETCH_MS,
   });
@@ -97,8 +108,9 @@ function portfolioSeriesOptions(range: PortfolioRange) {
 
 export function usePortfolioSeries(
   range: PortfolioRange,
+  walletAddress?: string | null,
 ): UseQueryResult<Result<PortfolioSeriesDto>> {
-  return useQuery(portfolioSeriesOptions(range));
+  return useQuery(portfolioSeriesOptions(range, walletAddress ?? null));
 }
 
 /**

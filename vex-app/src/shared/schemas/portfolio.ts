@@ -162,6 +162,13 @@ export const portfolioSeriesInputSchema = z.discriminatedUnion("scope", [
       range: portfolioRangeSchema,
     })
     .strict(),
+  z
+    .object({
+      scope: z.literal("wallet"),
+      walletAddress: z.string().min(1),
+      range: portfolioRangeSchema,
+    })
+    .strict(),
 ]);
 export type PortfolioSeriesInput = z.infer<typeof portfolioSeriesInputSchema>;
 

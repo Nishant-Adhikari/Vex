@@ -518,7 +518,9 @@ export async function getPortfolioSeries(
   const readInput: PortfolioReadInput =
     input.scope === "global"
       ? { scope: "global" }
-      : { scope: "session", sessionId: input.sessionId };
+      : input.scope === "wallet"
+        ? { scope: "wallet", walletAddress: input.walletAddress }
+        : { scope: "session", sessionId: input.sessionId };
   const resolved = await resolveAddresses(readInput);
   if (!resolved.ok) return resolved;
   const addresses = resolved.data;
