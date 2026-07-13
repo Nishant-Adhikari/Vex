@@ -45,6 +45,13 @@ export interface MissionResultRow {
   vetoes: number;
   outcome: MissionOutcome;
   openPositions: unknown;
+  /**
+   * Bags held at run START (pre-existing dust captured at open). Used by the
+   * deadline force-liquidator to attribute which current holdings the mission
+   * itself opened (current non-ETH holdings MINUS these) so it never sells a
+   * pre-existing position. Null when no start snapshot was recorded.
+   */
+  startPositions: unknown;
 }
 
 export interface OpenMissionResultInput {
@@ -80,7 +87,8 @@ const SELECT_COLUMNS = `
   goal_snippet, started_at, ended_at, duration_s,
   bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
   eth_price_usd_start, eth_price_usd_end,
-  trades, wins, losses, rotations, vetoes, outcome, open_positions_json`;
+  trades, wins, losses, rotations, vetoes, outcome, open_positions_json,
+  start_positions_json`;
 
 interface Raw {
   id: string;
@@ -107,6 +115,7 @@ interface Raw {
   vetoes: number;
   outcome: MissionOutcome;
   open_positions_json: unknown;
+  start_positions_json: unknown;
 }
 
 // pg returns NUMERIC as string to preserve precision; ETH/PNL fit safely in a
@@ -143,6 +152,7 @@ function toRow(r: Raw): MissionResultRow {
     vetoes: r.vetoes,
     outcome: r.outcome,
     openPositions: r.open_positions_json,
+    startPositions: r.start_positions_json,
   };
 }
 
