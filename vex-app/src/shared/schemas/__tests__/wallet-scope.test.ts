@@ -51,7 +51,9 @@ describe("availableWalletsDtoSchema", () => {
   it("accepts id/family/address/label", () => {
     expect(
       availableWalletsDtoSchema.safeParse({
-        evm: [{ id: "evm_1", family: "evm", address: "0xAbc", label: "Main" }],
+        evm: [
+          { id: "evm_1", family: "evm", address: "0xAbc", label: "Main", vault: false },
+        ],
         solana: [],
       }).success,
     ).toBe(true);
