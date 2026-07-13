@@ -4,24 +4,32 @@
  * Phase C's exit engine (`@vex-agent/engine/exit/*`) is pure and dependency-
  * injected: it computes exit *decisions* but touches nothing. This module
  * supplies the REAL side-effecting providers for the live desktop app and
- * supervises the poll loop, but stays strictly non-executing:
+ * supervises the poll loop, but stays strictly non-executing.
  *
- *   - `getOpenPositions` reads the engine DB (`proj_open_positions`), scoped to
- *     the ACTIVE mission run (its wallets + opened within the run window) so
- *     legacy bags from before the mission are excluded.
- *   - `priceOf` returns a live implied USD spot price per held token, derived
- *     from the same snapshot (`current_value_usd / contracts`).
- *   - `emitAlert` LOGS a structured line per actionable alert. It NEVER sells,
- *     swaps, or mutates a wallet. Execution is Phase D-exec, not this.
- *   - `savePeak` keeps an in-memory high-water map for the worker's lifetime.
+ * SPOT SOURCING (verified live): spot memecoin swaps do NOT create
+ * `proj_open_positions` rows (that table is perps/predictions only, and is
+ * empty). Spot holdings are re-derived from two live-synced projections:
+ *
+ *   - `proj_balances`  — current holdings + live `price_usd` per token.
+ *   - `proj_activity`  — swap ledger (`trade_side`, output_token, amounts,
+ *                        value_usd) used for cost basis + open time. It has NO
+ *                        session_id, so mission scoping is by wallet + created_at.
+ *
+ * A held token is a mission position only if it has ≥1 BUY in `proj_activity`
+ * for a mission wallet with `created_at >= run.startedAt` (bought DURING the
+ * mission). Held tokens with no in-window buy are legacy bags and are dropped.
+ *
+ *   - `priceOf`   — live USD spot from `proj_balances.price_usd`, snapshotted
+ *                   per read so it is consistent with that tick's positions.
+ *   - `emitAlert` — LOGS a structured line per actionable alert. It NEVER
+ *                   sells, swaps, or mutates a wallet. Execution is Phase
+ *                   D-exec, not this.
+ *   - `savePeak`  — in-memory token→peak high-water map for the worker's life.
  *
  * A mode flag (`VEX_EXIT_ENGINE_MODE`, default `"alert"`) selects alert vs
- * execute. Only the alert branch is implemented here; the execute branch is a
- * `// TODO Phase D-exec` stub that currently also only alerts.
- *
- * The worker is additive and safe: when no mission run is ACTIVE,
- * `getOpenPositions` returns `[]`, so the loop is a pure no-op (no alerts, no
- * side effects) — a stronger guarantee than start/stop toggling.
+ * execute. Only the alert branch is implemented; the execute branch is a
+ * `// TODO Phase D-exec` stub that currently also only alerts. When no mission
+ * run is ACTIVE, `getOpenPositions` returns `[]`, so the loop is a pure no-op.
  */
 
 import { randomUUID } from "node:crypto";
@@ -34,7 +42,6 @@ import {
 import type { WatchAlert, WatchInputPosition } from "@vex-agent/engine/exit/watch-cycle.js";
 import type { ExitConfig } from "@vex-agent/engine/exit/exit-rules.js";
 import { query } from "@vex-agent/db/client.js";
-import { getOpen, type Position as OpenPosition } from "@vex-agent/db/repos/open-positions.js";
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
 
@@ -74,80 +81,95 @@ export const DEFAULT_EXIT_CONFIG: ExitConfig = {
   timeStopFlatBandPct: 0.15,
 };
 
+// ── Source row shapes (mapped from snake_case in the loaders) ────
+
+/** A current holding from `proj_balances` (already numeric-coerced). */
+export interface BalanceRow {
+  readonly tokenAddress: string;
+  readonly tokenSymbol: string | null;
+  /** Raw on-chain integer balance (base units), as a decimal string. */
+  readonly balanceRaw: string;
+  readonly priceUsd: number | null;
+  readonly decimals: number | null;
+}
+
+/** A single BUY leg from `proj_activity` (already numeric-coerced). */
+export interface BuyRow {
+  readonly outputToken: string;
+  /** Tokens received, decimal string. */
+  readonly outputAmount: string | null;
+  readonly outputValueUsd: number | null;
+  readonly unitPriceUsd: number | null;
+  readonly valueUsd: number | null;
+  readonly createdAtMs: number;
+}
+
 // ── Pure provider helpers (unit-tested) ─────────────────────────
 
 /**
- * Stable per-position token identity, used both as the watch token and as the
- * peak-store / price-store key across cycles. Prefers the on-chain instrument
- * key, then the synthetic position/external ids, and finally the row id so the
- * result is always a non-empty string.
+ * Human token amount from a raw base-unit balance + decimals:
+ * `balance_raw / 10^decimals`. Returns `null` when the raw balance is missing /
+ * non-positive or decimals are absent / invalid (can't scale) — those rows are
+ * dropped. (Number precision is fine for a shadow watch.)
  */
-export function positionToken(pos: OpenPosition): string {
-  const candidates = [pos.instrumentKey, pos.positionKey, pos.externalId];
-  for (const c of candidates) {
-    if (typeof c === "string" && c.trim().length > 0) return c;
+export function heldAmount(balanceRaw: string, decimals: number | null): number | null {
+  const raw = Number(balanceRaw);
+  if (!Number.isFinite(raw) || raw <= 0) return null;
+  if (decimals === null || !Number.isFinite(decimals) || decimals < 0) return null;
+  const amount = raw / 10 ** decimals;
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+/**
+ * USD value of one BUY leg, preferring `output_value_usd`, then
+ * `unit_price_usd * amount`, then `value_usd`. `null` when none is usable.
+ */
+export function buyValueUsd(buy: BuyRow, amount: number): number | null {
+  if (buy.outputValueUsd !== null && Number.isFinite(buy.outputValueUsd)) {
+    return buy.outputValueUsd;
   }
-  return `pos:${pos.id}`;
+  if (buy.unitPriceUsd !== null && Number.isFinite(buy.unitPriceUsd)) {
+    return buy.unitPriceUsd * amount;
+  }
+  if (buy.valueUsd !== null && Number.isFinite(buy.valueUsd)) {
+    return buy.valueUsd;
+  }
+  return null;
 }
 
 /**
- * Implied live USD spot price per held token from the same synced snapshot the
- * portfolio reads: `current_value_usd / contracts` (MTM sets
- * `current_value_usd = contracts * markPrice`). Returns `null` on any missing /
- * non-finite / non-positive input, so the pure cycle degrades gracefully.
+ * Cost basis + open time for a held token from its in-window BUY legs:
+ * `entryPriceUsd = Σ(buy value) / Σ(amount)`, `openedAtMs = min(created_at)`.
+ * Only legs with a positive amount AND a usable USD value contribute. Returns
+ * `null` when nothing usable remains or the derived basis is non-finite / ≤ 0
+ * (the caller drops the position).
  */
-export function impliedPriceUsd(pos: OpenPosition): number | null {
-  const value = pos.currentValueUsd != null ? Number(pos.currentValueUsd) : NaN;
-  const amount = pos.contracts != null ? Number(pos.contracts) : NaN;
-  if (!Number.isFinite(value) || !Number.isFinite(amount) || amount <= 0) return null;
-  const price = value / amount;
-  return Number.isFinite(price) && price > 0 ? price : null;
-}
+export function costBasisFromBuys(
+  buys: readonly BuyRow[],
+): { entryPriceUsd: number; openedAtMs: number } | null {
+  let sumValue = 0;
+  let sumAmount = 0;
+  let openedAtMs = Number.POSITIVE_INFINITY;
+  let any = false;
 
-/**
- * True when a position opened within the active run window (`opened_at >=
- * runStartedAtMs`). A position with no / unparseable `opened_at` is EXCLUDED
- * (conservative: it cannot be proven to belong to this mission run) — this is
- * the mission-scoping that keeps legacy bags out of the shadow watch.
- */
-export function isWithinRunWindow(
-  openedAt: string | null,
-  runStartedAtMs: number,
-): boolean {
-  if (!openedAt || !Number.isFinite(runStartedAtMs)) return false;
-  const t = Date.parse(openedAt);
-  return Number.isFinite(t) && t >= runStartedAtMs;
-}
+  for (const buy of buys) {
+    const amount = buy.outputAmount !== null ? Number(buy.outputAmount) : NaN;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const value = buyValueUsd(buy, amount);
+    if (value === null || !Number.isFinite(value)) continue;
+    sumValue += value;
+    sumAmount += amount;
+    if (Number.isFinite(buy.createdAtMs) && buy.createdAtMs < openedAtMs) {
+      openedAtMs = buy.createdAtMs;
+    }
+    any = true;
+  }
 
-/**
- * Map an open-positions row to the engine's `WatchInputPosition`, or `null`
- * when the entry price is non-finite / ≤ 0 (the caller SKIPS those). Alert mode
- * assumes no rungs consumed. `priorPeak` comes from the in-memory peak store;
- * it defaults to (and can never sit below) the entry price when unseen.
- */
-export function toWatchInputPosition(
-  pos: OpenPosition,
-  priorPeak: number | undefined,
-): WatchInputPosition | null {
-  const entryPriceUsd = pos.entryPriceUsd != null ? Number(pos.entryPriceUsd) : NaN;
+  if (!any || sumAmount <= 0) return null;
+  const entryPriceUsd = sumValue / sumAmount;
   if (!Number.isFinite(entryPriceUsd) || entryPriceUsd <= 0) return null;
-
-  const amountRaw = pos.contracts != null ? Number(pos.contracts) : NaN;
-  const openedRaw = pos.openedAt ? Date.parse(pos.openedAt) : NaN;
-
-  const priorPeakPriceUsd =
-    priorPeak !== undefined && Number.isFinite(priorPeak) && priorPeak >= entryPriceUsd
-      ? priorPeak
-      : entryPriceUsd;
-
-  return {
-    token: positionToken(pos),
-    entryPriceUsd,
-    amountTokens: Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw : 0,
-    openedAtMs: Number.isFinite(openedRaw) ? openedRaw : 0,
-    consumedRungs: [],
-    priorPeakPriceUsd,
-  };
+  if (!Number.isFinite(openedAtMs)) return null;
+  return { entryPriceUsd, openedAtMs };
 }
 
 /**
@@ -216,6 +238,71 @@ export async function getActiveMissionRun(): Promise<ActiveMissionRun | null> {
   return { runId: row.id, missionId: row.mission_id, startedAtMs, wallets };
 }
 
+// ── Default DB loaders (engine repos pattern) ───────────────────
+
+function toMs(value: string | Date): number {
+  return value instanceof Date ? value.getTime() : Date.parse(value);
+}
+
+function numOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Current holdings (any balance) for the given wallets. */
+async function loadHeldBalancesDb(wallets: string[]): Promise<BalanceRow[]> {
+  if (wallets.length === 0) return [];
+  const rows = await query<{
+    token_address: string;
+    token_symbol: string | null;
+    balance_raw: string | null;
+    price_usd: string | number | null;
+    decimals: number | null;
+  }>(
+    `SELECT token_address, token_symbol, balance_raw, price_usd, decimals
+       FROM proj_balances
+      WHERE wallet_address = ANY($1::text[])`,
+    [wallets],
+  );
+  return rows.map((r) => ({
+    tokenAddress: r.token_address,
+    tokenSymbol: r.token_symbol,
+    balanceRaw: r.balance_raw ?? "0",
+    priceUsd: numOrNull(r.price_usd),
+    decimals: r.decimals,
+  }));
+}
+
+/** BUY legs for the given wallets that opened at/after the run start. */
+async function loadInWindowBuysDb(wallets: string[], sinceMs: number): Promise<BuyRow[]> {
+  if (wallets.length === 0 || !Number.isFinite(sinceMs)) return [];
+  const rows = await query<{
+    output_token: string;
+    output_amount: string | null;
+    output_value_usd: string | number | null;
+    unit_price_usd: string | number | null;
+    value_usd: string | number | null;
+    created_at: string | Date;
+  }>(
+    `SELECT output_token, output_amount, output_value_usd, unit_price_usd, value_usd, created_at
+       FROM proj_activity
+      WHERE trade_side = 'buy'
+        AND wallet_address = ANY($1::text[])
+        AND output_token IS NOT NULL
+        AND created_at >= $2`,
+    [wallets, new Date(sinceMs)],
+  );
+  return rows.map((r) => ({
+    outputToken: r.output_token,
+    outputAmount: r.output_amount,
+    outputValueUsd: numOrNull(r.output_value_usd),
+    unitPriceUsd: numOrNull(r.unit_price_usd),
+    valueUsd: numOrNull(r.value_usd),
+    createdAtMs: toMs(r.created_at),
+  }));
+}
+
 // ── Deps construction ───────────────────────────────────────────
 
 export interface ExitWatchWiringOptions {
@@ -223,13 +310,15 @@ export interface ExitWatchWiringOptions {
   readonly config?: ExitConfig;
   /** Test seam: source of the active mission run. */
   readonly loadActiveRun?: () => Promise<ActiveMissionRun | null>;
-  /** Test seam: wallet-scoped open-positions loader. */
-  readonly loadOpenPositions?: (wallets: string[] | undefined) => Promise<OpenPosition[]>;
+  /** Test seam: current holdings loader (`proj_balances`). */
+  readonly loadHeldBalances?: (wallets: string[]) => Promise<BalanceRow[]>;
+  /** Test seam: in-window BUY loader (`proj_activity`, created_at >= start). */
+  readonly loadInWindowBuys?: (wallets: string[], sinceMs: number) => Promise<BuyRow[]>;
 }
 
 /**
  * Build the real `ExitWatchWorkerDeps`. Holds two in-memory maps for the
- * worker's lifetime: a token→peak high-water store and a token→implied-price
+ * worker's lifetime: a token→peak high-water store and a token→live-price
  * snapshot refreshed each `getOpenPositions` call so `priceOf` stays consistent
  * with the positions returned that tick.
  */
@@ -239,8 +328,8 @@ export function createExitWatchDeps(
   const mode = options.mode ?? resolveExitEngineMode();
   const config = options.config ?? DEFAULT_EXIT_CONFIG;
   const loadActiveRun = options.loadActiveRun ?? getActiveMissionRun;
-  const loadOpenPositions =
-    options.loadOpenPositions ?? ((wallets) => getOpen(wallets));
+  const loadHeldBalances = options.loadHeldBalances ?? loadHeldBalancesDb;
+  const loadInWindowBuys = options.loadInWindowBuys ?? loadInWindowBuysDb;
 
   const peakStore = new Map<string, number>();
   const priceStore = new Map<string, number>();
@@ -248,26 +337,72 @@ export function createExitWatchDeps(
   const getOpenPositions = async (): Promise<WatchInputPosition[]> => {
     try {
       const run = await loadActiveRun();
-      if (!run) {
-        // No active mission → nothing to watch; keep the price snapshot clean.
+      // No active mission (or no mission wallets to scope by) → nothing to
+      // watch; keep the price snapshot clean.
+      if (!run || run.wallets.length === 0) {
         priceStore.clear();
         return [];
       }
 
-      // Wallet-scoped when the mission declares wallets; otherwise fall back to
-      // a global read narrowed by the run-window filter below (still excludes
-      // legacy bags via opened_at).
-      const rows = await loadOpenPositions(run.wallets.length > 0 ? run.wallets : undefined);
+      const [balances, buys] = await Promise.all([
+        loadHeldBalances(run.wallets),
+        loadInWindowBuys(run.wallets, run.startedAtMs),
+      ]);
+
+      // Group in-window BUY legs by output token — a token here was bought
+      // DURING this mission run, so it survives mission scoping.
+      const buysByToken = new Map<string, BuyRow[]>();
+      for (const buy of buys) {
+        if (!buy.outputToken) continue;
+        const list = buysByToken.get(buy.outputToken);
+        if (list) list.push(buy);
+        else buysByToken.set(buy.outputToken, [buy]);
+      }
+
+      // Aggregate current holdings by token (sum across wallets/chains; first
+      // finite positive price wins).
+      const heldByToken = new Map<string, { amount: number; price: number | null }>();
+      for (const bal of balances) {
+        const amount = heldAmount(bal.balanceRaw, bal.decimals);
+        if (amount === null) continue;
+        const entry = heldByToken.get(bal.tokenAddress) ?? { amount: 0, price: null };
+        entry.amount += amount;
+        if (
+          entry.price === null &&
+          bal.priceUsd !== null &&
+          Number.isFinite(bal.priceUsd) &&
+          bal.priceUsd > 0
+        ) {
+          entry.price = bal.priceUsd;
+        }
+        heldByToken.set(bal.tokenAddress, entry);
+      }
 
       priceStore.clear();
       const inputs: WatchInputPosition[] = [];
-      for (const pos of rows) {
-        if (!isWithinRunWindow(pos.openedAt, run.startedAtMs)) continue;
-        const input = toWatchInputPosition(pos, peakStore.get(positionToken(pos)));
-        if (!input) continue; // skipped: bad entry price
-        const price = impliedPriceUsd(pos);
-        if (price !== null) priceStore.set(input.token, price);
-        inputs.push(input);
+      for (const [token, held] of heldByToken) {
+        const tokenBuys = buysByToken.get(token);
+        if (!tokenBuys || tokenBuys.length === 0) continue; // legacy bag → drop
+        if (!(held.amount > 0)) continue;
+
+        const basis = costBasisFromBuys(tokenBuys);
+        if (basis === null) continue; // no usable cost basis → drop
+
+        const prior = peakStore.get(token);
+        const priorPeakPriceUsd =
+          prior !== undefined && Number.isFinite(prior) && prior >= basis.entryPriceUsd
+            ? prior
+            : basis.entryPriceUsd;
+
+        inputs.push({
+          token,
+          entryPriceUsd: basis.entryPriceUsd,
+          amountTokens: held.amount,
+          openedAtMs: basis.openedAtMs,
+          consumedRungs: [],
+          priorPeakPriceUsd,
+        });
+        if (held.price !== null) priceStore.set(token, held.price);
       }
       return inputs;
     } catch (err: unknown) {

@@ -1,17 +1,21 @@
 /**
  * exit-watch wiring tests — SHADOW/ALERT providers + supervisor lifecycle.
  *
- * Pure helpers (token identity, implied price, run-window scoping, row mapping,
- * alert formatting) are asserted directly. The deps factory is exercised with
- * injected `loadActiveRun` / `loadOpenPositions` seams (no DB). The supervisor
- * lifecycle mirrors the other worker supervisors: no start until the DB url
- * resolves, start EXACTLY ONCE, idempotent teardown.
+ * Spot positions are re-derived from `proj_balances` (holdings + live price)
+ * and `proj_activity` (BUY legs → cost basis + open time), NOT the empty
+ * `proj_open_positions` table. These tests inject `loadActiveRun` /
+ * `loadHeldBalances` / `loadInWindowBuys` seams (no DB) and assert the pure
+ * helpers, mission scoping (in-window buy kept, legacy bag dropped), averaged
+ * cost basis, price sourcing, and supervisor lifecycle.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Position as OpenPosition } from "@vex-agent/db/repos/open-positions.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WatchAlert } from "@vex-agent/engine/exit/watch-cycle.js";
-import type { ActiveMissionRun } from "../exit-watch-wiring.js";
+import type {
+  ActiveMissionRun,
+  BalanceRow,
+  BuyRow,
+} from "../exit-watch-wiring.js";
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -21,10 +25,9 @@ vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
 }));
 
 const {
-  positionToken,
-  impliedPriceUsd,
-  isWithinRunWindow,
-  toWatchInputPosition,
+  heldAmount,
+  buyValueUsd,
+  costBasisFromBuys,
   formatExitAlert,
   resolveExitEngineMode,
   DEFAULT_EXIT_CONFIG,
@@ -34,27 +37,34 @@ const {
 
 // ── Fixtures ────────────────────────────────────────────────────
 
-function makePos(overrides: Partial<OpenPosition> = {}): OpenPosition {
+const RUN_START = Date.parse("2026-07-13T09:00:00.000Z");
+
+const RUN: ActiveMissionRun = {
+  runId: "run-1",
+  missionId: "mission-1",
+  startedAtMs: RUN_START,
+  wallets: ["WALLET_A"],
+};
+
+function bal(overrides: Partial<BalanceRow> = {}): BalanceRow {
   return {
-    id: 1,
-    namespace: "default",
-    positionType: "spot",
-    chain: "solana",
-    externalId: null,
-    walletAddress: "WALLET_A",
-    instrumentKey: "TOKEN_MINT_A",
-    positionKey: null,
-    entryPriceUsd: "1",
-    currentValueUsd: "200",
-    unrealizedPnlUsd: null,
-    notionalUsd: "100",
-    feeUsd: null,
-    contracts: "100",
-    settlementAssetKey: null,
-    data: {},
-    status: "open",
-    openedAt: "2026-07-13T10:00:00.000Z",
-    closedAt: null,
+    tokenAddress: "TOKEN_A",
+    tokenSymbol: "AAA",
+    balanceRaw: "1000000000", // 1000 * 1e6
+    priceUsd: 3,
+    decimals: 6,
+    ...overrides,
+  };
+}
+
+function buy(overrides: Partial<BuyRow> = {}): BuyRow {
+  return {
+    outputToken: "TOKEN_A",
+    outputAmount: "1000",
+    outputValueUsd: 1000, // → unit cost 1.0
+    unitPriceUsd: 1,
+    valueUsd: 1000,
+    createdAtMs: Date.parse("2026-07-13T10:00:00.000Z"),
     ...overrides,
   };
 }
@@ -70,79 +80,70 @@ afterEach(() => {
 
 // ── Pure helpers ────────────────────────────────────────────────
 
-describe("positionToken", () => {
-  it("prefers instrumentKey, then positionKey, then externalId, then row id", () => {
-    expect(positionToken(makePos({ instrumentKey: "IK" }))).toBe("IK");
-    expect(positionToken(makePos({ instrumentKey: null, positionKey: "PK" }))).toBe("PK");
+describe("heldAmount", () => {
+  it("scales raw balance by decimals", () => {
+    expect(heldAmount("1000000000", 6)).toBe(1000);
+    expect(heldAmount("5", 0)).toBe(5);
+  });
+  it("returns null for non-positive / missing / invalid inputs", () => {
+    expect(heldAmount("0", 6)).toBeNull();
+    expect(heldAmount("-1", 6)).toBeNull();
+    expect(heldAmount("abc", 6)).toBeNull();
+    expect(heldAmount("1000", null)).toBeNull();
+    expect(heldAmount("1000", -1)).toBeNull();
+  });
+});
+
+describe("buyValueUsd", () => {
+  it("prefers output_value_usd", () => {
+    expect(buyValueUsd(buy({ outputValueUsd: 500 }), 1000)).toBe(500);
+  });
+  it("falls back to unit_price_usd * amount when output_value_usd is null", () => {
+    expect(buyValueUsd(buy({ outputValueUsd: null, unitPriceUsd: 2 }), 100)).toBe(200);
+  });
+  it("falls back to value_usd when output_value_usd and unit_price_usd are null", () => {
     expect(
-      positionToken(makePos({ instrumentKey: null, positionKey: null, externalId: "EX" })),
-    ).toBe("EX");
+      buyValueUsd(buy({ outputValueUsd: null, unitPriceUsd: null, valueUsd: 42 }), 100),
+    ).toBe(42);
+  });
+  it("returns null when nothing is usable", () => {
     expect(
-      positionToken(
-        makePos({ id: 42, instrumentKey: "  ", positionKey: null, externalId: null }),
-      ),
-    ).toBe("pos:42");
+      buyValueUsd(buy({ outputValueUsd: null, unitPriceUsd: null, valueUsd: null }), 100),
+    ).toBeNull();
   });
 });
 
-describe("impliedPriceUsd", () => {
-  it("is current_value_usd / contracts", () => {
-    expect(impliedPriceUsd(makePos({ currentValueUsd: "200", contracts: "100" }))).toBe(2);
+describe("costBasisFromBuys", () => {
+  it("averages Σ(value) / Σ(amount) across multiple buys and takes the first open time", () => {
+    const basis = costBasisFromBuys([
+      buy({ outputAmount: "100", outputValueUsd: 100, createdAtMs: Date.parse("2026-07-13T11:00:00.000Z") }),
+      buy({ outputAmount: "300", outputValueUsd: 900, createdAtMs: Date.parse("2026-07-13T10:00:00.000Z") }),
+    ]);
+    // (100 + 900) / (100 + 300) = 2.5
+    expect(basis?.entryPriceUsd).toBe(2.5);
+    expect(basis?.openedAtMs).toBe(Date.parse("2026-07-13T10:00:00.000Z"));
   });
-  it("returns null on missing / zero / non-finite inputs", () => {
-    expect(impliedPriceUsd(makePos({ currentValueUsd: null }))).toBeNull();
-    expect(impliedPriceUsd(makePos({ contracts: null }))).toBeNull();
-    expect(impliedPriceUsd(makePos({ contracts: "0" }))).toBeNull();
-    expect(impliedPriceUsd(makePos({ currentValueUsd: "abc" }))).toBeNull();
-    expect(impliedPriceUsd(makePos({ currentValueUsd: "-5" }))).toBeNull();
+  it("uses the unit_price fallback per leg", () => {
+    const basis = costBasisFromBuys([
+      buy({ outputAmount: "100", outputValueUsd: null, unitPriceUsd: 4, valueUsd: null }),
+    ]);
+    expect(basis?.entryPriceUsd).toBe(4);
   });
-});
-
-describe("isWithinRunWindow (mission-scoping)", () => {
-  const runStart = Date.parse("2026-07-13T09:00:00.000Z");
-  it("keeps positions opened at/after the run start", () => {
-    expect(isWithinRunWindow("2026-07-13T09:00:00.000Z", runStart)).toBe(true);
-    expect(isWithinRunWindow("2026-07-13T12:00:00.000Z", runStart)).toBe(true);
-  });
-  it("excludes legacy bags opened before the run start", () => {
-    expect(isWithinRunWindow("2026-07-13T08:59:59.000Z", runStart)).toBe(false);
-    expect(isWithinRunWindow("2020-01-01T00:00:00.000Z", runStart)).toBe(false);
-  });
-  it("excludes positions with missing / unparseable opened_at", () => {
-    expect(isWithinRunWindow(null, runStart)).toBe(false);
-    expect(isWithinRunWindow("not-a-date", runStart)).toBe(false);
-  });
-});
-
-describe("toWatchInputPosition", () => {
-  it("maps a healthy row and defaults the peak to entry when unseen", () => {
-    const input = toWatchInputPosition(makePos(), undefined);
-    expect(input).toEqual({
-      token: "TOKEN_MINT_A",
-      entryPriceUsd: 1,
-      amountTokens: 100,
-      openedAtMs: Date.parse("2026-07-13T10:00:00.000Z"),
-      consumedRungs: [],
-      priorPeakPriceUsd: 1,
-    });
-  });
-  it("carries a prior peak that is >= entry", () => {
-    expect(toWatchInputPosition(makePos(), 5)?.priorPeakPriceUsd).toBe(5);
-  });
-  it("never lets the carried peak sit below entry", () => {
-    expect(toWatchInputPosition(makePos({ entryPriceUsd: "2" }), 1)?.priorPeakPriceUsd).toBe(2);
-  });
-  it("skips rows with a non-finite / non-positive entry price", () => {
-    expect(toWatchInputPosition(makePos({ entryPriceUsd: null }), undefined)).toBeNull();
-    expect(toWatchInputPosition(makePos({ entryPriceUsd: "0" }), undefined)).toBeNull();
-    expect(toWatchInputPosition(makePos({ entryPriceUsd: "-1" }), undefined)).toBeNull();
+  it("returns null when no leg is usable", () => {
+    expect(costBasisFromBuys([])).toBeNull();
+    expect(costBasisFromBuys([buy({ outputAmount: "0" })])).toBeNull();
+    expect(
+      costBasisFromBuys([
+        buy({ outputAmount: "100", outputValueUsd: null, unitPriceUsd: null, valueUsd: null }),
+      ]),
+    ).toBeNull();
   });
 });
 
 describe("formatExitAlert", () => {
   it("renders decisions with kind, rung and sell fraction", () => {
     const alert: WatchAlert = {
-      token: "TOKEN_MINT_A",
+      token: "TOKEN_A",
       updatedPeakPriceUsd: 3,
       currentPriceUsd: 2,
       decisions: [
@@ -151,7 +152,7 @@ describe("formatExitAlert", () => {
       ],
     };
     const line = formatExitAlert(alert);
-    expect(line).toContain("token=TOKEN_MINT_A");
+    expect(line).toContain("token=TOKEN_A");
     expect(line).toContain("take_profit rung1 sell 50%");
     expect(line).toContain("stop_loss sell 100%");
   });
@@ -199,71 +200,119 @@ describe("DEFAULT_EXIT_CONFIG", () => {
 
 // ── Deps: getOpenPositions / priceOf ────────────────────────────
 
-const RUN: ActiveMissionRun = {
-  runId: "run-1",
-  missionId: "mission-1",
-  startedAtMs: Date.parse("2026-07-13T09:00:00.000Z"),
-  wallets: ["WALLET_A"],
-};
-
-describe("createExitWatchDeps.getOpenPositions", () => {
-  it("returns [] and asks for nothing when no mission is active", async () => {
-    const loadOpenPositions = vi.fn(async () => [makePos()]);
+describe("createExitWatchDeps.getOpenPositions (spot sourcing)", () => {
+  it("returns [] and loads nothing when no mission is active", async () => {
+    const loadHeldBalances = vi.fn(async () => [bal()]);
+    const loadInWindowBuys = vi.fn(async () => [buy()]);
     const deps = createExitWatchDeps({
       loadActiveRun: async () => null,
-      loadOpenPositions,
+      loadHeldBalances,
+      loadInWindowBuys,
     });
     expect(await deps.getOpenPositions()).toEqual([]);
-    expect(loadOpenPositions).not.toHaveBeenCalled();
+    expect(loadHeldBalances).not.toHaveBeenCalled();
+    expect(loadInWindowBuys).not.toHaveBeenCalled();
   });
 
-  it("passes the mission wallets to the loader and excludes legacy bags", async () => {
-    const loadOpenPositions = vi.fn(async () => [
-      makePos({ id: 1, instrumentKey: "IN", openedAt: "2026-07-13T10:00:00.000Z" }),
-      makePos({ id: 2, instrumentKey: "LEGACY", openedAt: "2026-07-01T00:00:00.000Z" }),
-    ]);
-    const deps = createExitWatchDeps({ loadActiveRun: async () => RUN, loadOpenPositions });
-    const inputs = await deps.getOpenPositions();
-    expect(loadOpenPositions).toHaveBeenCalledWith(["WALLET_A"]);
-    expect(inputs.map((i) => i.token)).toEqual(["IN"]);
-  });
-
-  it("falls back to a global read (undefined wallets) when the mission has none", async () => {
-    const loadOpenPositions = vi.fn(async () => [makePos()]);
+  it("returns [] when the mission declares no wallets", async () => {
+    const loadHeldBalances = vi.fn(async () => [bal()]);
     const deps = createExitWatchDeps({
       loadActiveRun: async () => ({ ...RUN, wallets: [] }),
-      loadOpenPositions,
-    });
-    await deps.getOpenPositions();
-    expect(loadOpenPositions).toHaveBeenCalledWith(undefined);
-  });
-
-  it("skips rows with a bad entry price", async () => {
-    const deps = createExitWatchDeps({
-      loadActiveRun: async () => RUN,
-      loadOpenPositions: async () => [makePos({ entryPriceUsd: null })],
+      loadHeldBalances,
+      loadInWindowBuys: async () => [buy()],
     });
     expect(await deps.getOpenPositions()).toEqual([]);
+    expect(loadHeldBalances).not.toHaveBeenCalled();
   });
 
-  it("exposes a consistent implied price via priceOf for the same snapshot", async () => {
+  it("keeps a held token bought DURING the run with a correct entryPriceUsd + amount + price", async () => {
     const deps = createExitWatchDeps({
       loadActiveRun: async () => RUN,
-      loadOpenPositions: async () => [
-        makePos({ instrumentKey: "IN", currentValueUsd: "300", contracts: "100" }),
+      loadHeldBalances: async () => [
+        bal({ tokenAddress: "TOKEN_A", balanceRaw: "1000000000", decimals: 6, priceUsd: 3 }),
+      ],
+      loadInWindowBuys: async () => [
+        buy({ outputToken: "TOKEN_A", outputAmount: "1000", outputValueUsd: 1000 }),
       ],
     });
-    await deps.getOpenPositions();
-    expect(deps.priceOf("IN")).toBe(3);
+    const inputs = await deps.getOpenPositions();
+    expect(inputs).toHaveLength(1);
+    const pos = inputs[0]!;
+    expect(pos.token).toBe("TOKEN_A");
+    expect(pos.entryPriceUsd).toBe(1); // 1000 usd / 1000 tokens
+    expect(pos.amountTokens).toBe(1000); // 1e9 / 1e6
+    expect(pos.openedAtMs).toBe(Date.parse("2026-07-13T10:00:00.000Z"));
+    expect(pos.priorPeakPriceUsd).toBe(1); // defaults to entry
+    // priceOf sources the LIVE proj_balances price, keyed by token address.
+    expect(deps.priceOf("TOKEN_A")).toBe(3);
     expect(deps.priceOf("MISSING")).toBeNull();
   });
 
-  it("fails soft to [] when the loader throws", async () => {
+  it("drops a legacy bag: held but with NO in-window buy", async () => {
     const deps = createExitWatchDeps({
       loadActiveRun: async () => RUN,
-      loadOpenPositions: async () => {
+      loadHeldBalances: async () => [
+        bal({ tokenAddress: "LEGACY", balanceRaw: "5000000000", decimals: 6, priceUsd: 9 }),
+        bal({ tokenAddress: "FRESH", balanceRaw: "1000000000", decimals: 6, priceUsd: 3 }),
+      ],
+      // only FRESH was bought during the run window
+      loadInWindowBuys: async () => [
+        buy({ outputToken: "FRESH", outputAmount: "1000", outputValueUsd: 1000 }),
+      ],
+    });
+    const inputs = await deps.getOpenPositions();
+    expect(inputs.map((i) => i.token)).toEqual(["FRESH"]);
+    // legacy token is not priced either
+    expect(deps.priceOf("LEGACY")).toBeNull();
+  });
+
+  it("passes the mission wallets and run-start to the loaders", async () => {
+    const loadHeldBalances = vi.fn(async () => [bal()]);
+    const loadInWindowBuys = vi.fn(async () => [buy()]);
+    const deps = createExitWatchDeps({
+      loadActiveRun: async () => RUN,
+      loadHeldBalances,
+      loadInWindowBuys,
+    });
+    await deps.getOpenPositions();
+    expect(loadHeldBalances).toHaveBeenCalledWith(["WALLET_A"]);
+    expect(loadInWindowBuys).toHaveBeenCalledWith(["WALLET_A"], RUN_START);
+  });
+
+  it("averages cost basis across multiple in-window buys of the same token", async () => {
+    const deps = createExitWatchDeps({
+      loadActiveRun: async () => RUN,
+      loadHeldBalances: async () => [
+        bal({ tokenAddress: "TOKEN_A", balanceRaw: "400000000", decimals: 6, priceUsd: 5 }),
+      ],
+      loadInWindowBuys: async () => [
+        buy({ outputToken: "TOKEN_A", outputAmount: "100", outputValueUsd: 100 }),
+        buy({ outputToken: "TOKEN_A", outputAmount: "300", outputValueUsd: 900 }),
+      ],
+    });
+    const inputs = await deps.getOpenPositions();
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.entryPriceUsd).toBe(2.5); // (100+900)/(100+300)
+  });
+
+  it("drops a position with an unusable cost basis or zero amount", async () => {
+    const deps = createExitWatchDeps({
+      loadActiveRun: async () => RUN,
+      loadHeldBalances: async () => [
+        bal({ tokenAddress: "TOKEN_A", balanceRaw: "0", decimals: 6 }), // zero held
+      ],
+      loadInWindowBuys: async () => [buy({ outputToken: "TOKEN_A" })],
+    });
+    expect(await deps.getOpenPositions()).toEqual([]);
+  });
+
+  it("fails soft to [] when a loader throws", async () => {
+    const deps = createExitWatchDeps({
+      loadActiveRun: async () => RUN,
+      loadHeldBalances: async () => {
         throw new Error("db down");
       },
+      loadInWindowBuys: async () => [buy()],
     });
     expect(await deps.getOpenPositions()).toEqual([]);
   });
