@@ -6,6 +6,8 @@
  * future `token_price` condition does not require scheduler-specific code.
  */
 
+import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+
 export type WakeWatchCondition = Readonly<Record<string, unknown>>;
 
 export interface WakeWatchSignal {
@@ -16,7 +18,7 @@ export interface WakeWatchSignal {
 export interface WakeWatchEvaluator {
   readonly type: string;
   /** Validate and canonicalize one condition before it is persisted. */
-  validate(condition: WakeWatchCondition, context: unknown): Promise<WakeWatchCondition>;
+  validate(condition: WakeWatchCondition, context: InternalToolContext): Promise<WakeWatchCondition>;
   /** Return whether a normalized signal promotes this pending wake. */
   isTriggered(condition: WakeWatchCondition, signal: WakeWatchSignal): boolean;
 }
@@ -35,7 +37,7 @@ export function registerWakeWatchEvaluator(evaluator: WakeWatchEvaluator): void 
 /** Dispatch generic envelopes to their owning validators. */
 export async function validateWakeWatchConditions(
   conditions: readonly WakeWatchCondition[],
-  context: unknown,
+  context: InternalToolContext,
 ): Promise<readonly WakeWatchCondition[]> {
   const normalized: WakeWatchCondition[] = [];
   for (const condition of conditions) {

@@ -45,7 +45,6 @@ import { HYPERLIQUID_TOOLS } from "./hyperliquid/manifest.js";
 import { HYPERLIQUID_HANDLERS } from "./hyperliquid/handlers.js";
 import { HYPERLIQUID_MARKET_ANALYSIS_HANDLERS } from "./hyperliquid/market-analysis-handlers.js";
 import { isHlMutationAvailable } from "../../../lib/hyperliquid-policy.js";
-import { isHyperliquidAtomicOpenEnabled } from "@tools/hyperliquid/constants.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -137,7 +136,6 @@ export function isProtocolToolAvailable(manifest: ProtocolToolManifest): boolean
   if (manifest.lifecycle !== "active") return false;
   if (manifest.requiresEnv && !process.env[manifest.requiresEnv]?.trim()) return false;
   if (manifest.namespace === "hyperliquid" && manifest.mutating && !isHlMutationAvailable()) return false;
-  if (manifest.toolId === "hyperliquid.perp.open" && !isHyperliquidAtomicOpenEnabled()) return false;
   return true;
 }
 

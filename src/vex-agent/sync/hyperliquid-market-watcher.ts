@@ -23,7 +23,6 @@ import {
   type WakeWatchCondition,
   type WakeWatchEvaluator,
 } from "@vex-agent/engine/wake/watch-registry.js";
-import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 import logger from "@utils/logger.js";
 
@@ -101,8 +100,7 @@ const evaluator: WakeWatchEvaluator = {
   type: HL_MARK_PRICE_TYPE,
   async validate(condition, context): Promise<WakeWatchCondition> {
     const parsed = parseHlMarkPriceWatchCondition(condition);
-    const toolContext = internalWatchContext(context);
-    const walletAddress = resolveSelectedAddress(toolContext.walletResolution, toolContext.walletPolicy, "eip155");
+    const walletAddress = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
     const info = new HyperliquidInfoClient({ network: resolveHyperliquidNetwork() });
     const [positions, orders, mids] = await Promise.all([
       getOpen([walletAddress], "hyperliquid"),
@@ -281,19 +279,9 @@ async function enqueueHyperliquidReconcile(): Promise<void> {
   if (job !== undefined) await syncRepo.enqueueRun(job.id);
 }
 
-function internalWatchContext(value: unknown): Pick<InternalToolContext, "walletResolution" | "walletPolicy"> {
-  if (!isRecord(value) || !("walletResolution" in value) || !("walletPolicy" in value)) {
-    throw new Error("Hyperliquid watch validation requires an active session wallet context.");
-  }
-  // This is trusted internal dispatcher context; the guarded fields are passed
-  // straight to the existing wallet resolver, which performs the full policy
-  // and selected-address validation.
-  return value as Pick<InternalToolContext, "walletResolution" | "walletPolicy">;
-}
 function markForCoin(mids: unknown, coin: string): string | null {
   try { return normalizeProviderDecimal(record(mids)?.[coin], `Mark price for ${coin}`); } catch { return null; }
 }
 function record(value: unknown): Record<string, unknown> | null { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null; }
 function array(value: unknown): readonly unknown[] { return Array.isArray(value) ? value : []; }
-function isRecord(value: unknown): value is Record<string, unknown> { return record(value) !== null; }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }

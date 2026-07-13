@@ -24,7 +24,6 @@ import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution } from "./capture-validator.js";
-import { HYPERLIQUID_ATOMIC_OPEN_ENV, isHyperliquidAtomicOpenEnabled } from "@tools/hyperliquid/constants.js";
 import {
   PREQUOTE_QUOTE_TOOLS,
   recordPrequoteFromQuote,
@@ -158,13 +157,6 @@ export async function executeProtocolTool(
     return withActionKind({
       success: false,
       output: `${request.toolId} requires ${manifest.requiresEnv} to be set in .env`,
-    }, effectiveActionKind);
-  }
-
-  if (request.toolId === "hyperliquid.perp.open" && !isHyperliquidAtomicOpenEnabled()) {
-    return withActionKind({
-      success: false,
-      output: `${request.toolId} is release-gated until the supervised Hyperliquid atomic-open matrix passes (${HYPERLIQUID_ATOMIC_OPEN_ENV}=1).`,
     }, effectiveActionKind);
   }
 
