@@ -75,6 +75,8 @@ export const availableWalletDtoSchema = z
     family: z.enum(["evm", "solana"]),
     address: z.string().max(128),
     label: z.string().max(120),
+    // Hold-only wallet — not selectable as a session's trading wallet.
+    vault: z.boolean(),
   })
   .strict();
 export type AvailableWalletDto = z.infer<typeof availableWalletDtoSchema>;

@@ -28,7 +28,11 @@ import type {
 import type { PortfolioRange } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useMissionResults } from "../../lib/api/mission.js";
-import { usePortfolio, usePortfolioSeries } from "../../lib/api/portfolio.js";
+import {
+  usePortfolioScoped,
+  usePortfolioSeries,
+} from "../../lib/api/portfolio.js";
+import { useAvailableWallets } from "../../lib/api/session-wallets.js";
 import { formatPercentDelta, formatUsd } from "../../lib/format.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
@@ -245,15 +249,36 @@ function Dashboard({
 }
 
 /**
- * Portfolio equity curve — total USD value across ALL wallets over time, the
- * Robinhood-shaped headline. Live total from `usePortfolio` (global scope);
- * the curve + range delta from the snapshot series. Independent of the mission
+ * Portfolio equity curve — total USD value over time, the Robinhood-shaped
+ * headline. Defaults to the PRIMARY wallet (mirrors the BOOK Portfolio panel's
+ * per-wallet filter): `null` override = Primary (first configured wallet),
+ * `"__all__"` = every wallet, else a specific address. Both the live total and
+ * the equity curve are scoped to the selection. Independent of the mission
  * range below — this is the money, not the missions.
  */
 function PortfolioSection(): JSX.Element {
   const [range, setRange] = useState<PortfolioRange>("1D");
-  const portfolio = usePortfolio(null);
-  const series = usePortfolioSeries(range);
+
+  // Per-wallet filter: build the option list from the configured inventory and
+  // default to Primary (the first wallet). `selected` resolves the override.
+  const availableWallets = useAvailableWallets();
+  const walletOptions: readonly { readonly label: string; readonly address: string }[] =
+    availableWallets.data?.ok
+      ? [...availableWallets.data.data.evm, ...availableWallets.data.data.solana]
+      : [];
+  const primaryAddress = walletOptions[0]?.address ?? null;
+  const [override, setOverride] = useState<string | null>(null);
+  const selected = override ?? primaryAddress;
+  const isAll = override === "__all__";
+
+  // Live total: global when "All" (or no wallets configured), else wallet-scoped.
+  const portfolio = usePortfolioScoped(
+    isAll || selected === null
+      ? { scope: "global" }
+      : { scope: "wallet", walletAddress: selected },
+  );
+  // Curve: null wallet → global; else scoped to the selected wallet.
+  const series = usePortfolioSeries(range, isAll ? null : selected);
 
   const live = portfolio.data?.ok ? portfolio.data.data : null;
   const seriesData = series.data?.ok ? series.data.data : null;
@@ -284,9 +309,19 @@ function PortfolioSection(): JSX.Element {
       <div>
         <h2 className="vex-eyebrow">Portfolio</h2>
         <p className="mt-1 text-xs text-[var(--vex-text-2)]">
-          Total value across all your wallets, live from on-chain balances.
+          {isAll
+            ? "Total value across all your wallets, live from on-chain balances."
+            : "Live from on-chain balances for the selected wallet."}
         </p>
       </div>
+
+      {walletOptions.length > 1 ? (
+        <WalletFilter
+          options={walletOptions}
+          active={override}
+          onSelect={setOverride}
+        />
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-baseline gap-3">
@@ -343,15 +378,54 @@ function PortfolioSection(): JSX.Element {
 }
 
 /**
- * Best-known current ETH/USD price from the ledger — the newest mission that
- * carries any finite price (close preferred, else open). Used ONLY as the
- * DISPLAY fallback for a mission whose own snapshot price is null; ETH remains
- * the source of truth. `null` when no mission carries a price at all.
- *
- * (When a live native-price IPC exists, swap this for it — the panel already
- * treats the price as a single "current" figure, never divided across ETH
- * totals.)
+ * Per-wallet pill row for the Portfolio section: "All" + one pill per configured
+ * wallet. `active` is the raw override state — `null` means the default (Primary,
+ * i.e. the first wallet), so the Primary pill carries `value: null` and matches.
+ * Mirrors the BOOK Portfolio panel's `WalletFilter`.
  */
+function WalletFilter({
+  options,
+  active,
+  onSelect,
+}: {
+  readonly options: readonly { readonly label: string; readonly address: string }[];
+  readonly active: string | null;
+  readonly onSelect: (value: string | null) => void;
+}): JSX.Element {
+  const items: {
+    readonly key: string;
+    readonly label: string;
+    readonly value: string | null;
+  }[] = [
+    { key: "__all__", label: "All", value: "__all__" },
+    ...options.map((wallet, index) => ({
+      key: wallet.address,
+      label: wallet.label,
+      value: index === 0 ? null : wallet.address,
+    })),
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => onSelect(item.value)}
+          className={cn(
+            "rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)]",
+            item.value === active
+              ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
+              : "text-[var(--vex-text-3)] hover:bg-white/[0.04] hover:text-foreground",
+          )}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Latest closing ETH price (newest-first input → first finite `ethPriceUsdEnd`). */
 function latestEthPrice(results: readonly MissionResultDto[]): number | null {
   for (const r of results) {
     if (r.ethPriceUsdEnd !== null && Number.isFinite(r.ethPriceUsdEnd)) {

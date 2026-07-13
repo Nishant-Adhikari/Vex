@@ -69,6 +69,30 @@ export async function syncLocalChainForWallet(
     return { chainId, tokensUpdated: 0, skipped: true };
   }
 
+  // Explorer DISCOVERY — pin every ERC-20 the wallet actually holds (per the
+  // chain's Blockscout API) so pre-existing holdings that were never seeded or
+  // traded here get scanned. Pins are idempotent; discovery is fail-soft — a
+  // slow/broken explorer must never block the balance sync.
+  try {
+    const held = await discoverHeldTokens(config, walletAddress);
+    await Promise.all(
+      held.map((tokenAddress) =>
+        trackedTokensRepo.pinTrackedToken({
+          walletAddress,
+          chainId: config.id,
+          tokenAddress,
+          source: "discovery",
+        }),
+      ),
+    );
+  } catch (err) {
+    logger.warn("sync.local_chain.discovery_failed", {
+      chainId,
+      address: walletAddress.slice(0, 10) + "...",
+      error: err instanceof Error ? err.name : "unknown",
+    });
+  }
+
   // DB READ — propagates. A failing pinned-token query is a local-DB fault the
   // operator must see, not a condition to paper over with a skipped chain.
   const tokenAddrs = await buildTokenScanSet(config, walletAddress);
@@ -132,6 +156,56 @@ export async function buildTokenScanSet(
   for (const address of pinned) add(address);
 
   return [...byLower.values()];
+}
+
+// ── Explorer token discovery ─────────────────────────────────────────
+
+/**
+ * Extract held ERC-20 token addresses from a Blockscout v2
+ * `/addresses/{addr}/token-balances` payload. Keeps only ERC-20 entries with a
+ * positive balance and a well-formed contract address; NFTs and zero balances
+ * are dropped. Pure + defensive (untrusted external JSON) so it is unit-tested.
+ */
+export function parseBlockscoutTokenAddresses(payload: unknown): string[] {
+  if (!Array.isArray(payload)) return [];
+  const out: string[] = [];
+  for (const entry of payload) {
+    const item = entry as { token?: unknown; value?: unknown } | null;
+    const token = item?.token as { address_hash?: unknown; type?: unknown } | undefined;
+    if (!token || token.type !== "ERC-20") continue;
+    const value = item?.value;
+    // Held only: a positive integer balance string ("0"/absent → skip).
+    if (typeof value !== "string" || !/^\d+$/.test(value) || value === "0") continue;
+    const address = token.address_hash;
+    if (typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address)) {
+      out.push(address);
+    }
+  }
+  return out;
+}
+
+const DISCOVERY_TIMEOUT_MS = 15_000;
+
+/**
+ * Ask the chain's Blockscout explorer which ERC-20s a wallet holds. Fail-soft:
+ * any transport/parse error resolves to `[]` so a slow explorer never blocks the
+ * balance sync. Only runs for chains that expose an `explorerUrl`.
+ */
+async function discoverHeldTokens(
+  config: LocalChainConfig,
+  walletAddress: string,
+): Promise<string[]> {
+  if (!config.explorerUrl) return [];
+  const base = config.explorerUrl.replace(/\/+$/, "");
+  const url = `${base}/api/v2/addresses/${walletAddress}/token-balances`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS) });
+    if (!res.ok) return [];
+    return parseBlockscoutTokenAddresses(await res.json());
+  } catch {
+    // Transport/parse/timeout — swallowed; the caller logs a bounded warning.
+    return [];
+  }
 }
 
 // ── Row assembly ────────────────────────────────────────────────────
