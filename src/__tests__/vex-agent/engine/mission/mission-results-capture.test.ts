@@ -68,10 +68,23 @@ describe("captureMissionStart", () => {
       readBankrollOnChain: vi.fn(async () => ({ bankrollEth: 0.02, ethPriceUsd: null, openPositions: [] })),
     });
     await captureMissionStart({ missionId: "mission-1", runId: "run-1", sessionId: "s-1" }, d);
-    // on-chain wins over the projection (0.01), and the projection is never read
-    expect(d.readBankroll).not.toHaveBeenCalled();
+    // on-chain wins over the projection (0.01) for the bankroll figure, but the
+    // projection is still read for the start open-position bag list.
+    expect(d.readBankroll).toHaveBeenCalledTimes(1);
     const arg = (d.openResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(arg.bankrollStartEth).toBe(0.02);
+  });
+
+  it("records the START open positions (pre-existing dust) from the projection", async () => {
+    const dust = [{ symbol: "OLDX", address: "0xdust", amount: 2, valueUsd: 4 }];
+    const d = deps({
+      readBankrollOnChain: vi.fn(async () => ({ bankrollEth: 0.02, ethPriceUsd: null, openPositions: [] })),
+      readBankroll: vi.fn(async () => ({ bankrollEth: 0.01, ethPriceUsd: 3000, openPositions: dust })),
+    });
+    await captureMissionStart({ missionId: "mission-1", runId: "run-1", sessionId: "s-1" }, d);
+    const arg = (d.openResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    // start bags come from the projection, not the on-chain read (which is empty)
+    expect(arg.startPositions).toEqual(dust);
   });
 
   it("falls back to the projection for the start bankroll when the on-chain read returns null", async () => {

@@ -10,7 +10,11 @@
  */
 
 import { EM_DASH, formatEth, pnlUsd } from "./missionHistoryModel.js";
-import { formatPercentDelta, formatUsd } from "../../lib/format.js";
+import {
+  formatPercentDelta,
+  formatUsd,
+  formatUsdDelta,
+} from "../../lib/format.js";
 
 /**
  * Headline PnL in ETH: `+0.0012 ETH`, `-0.0034 ETH`. `null`/non-finite → em
@@ -63,6 +67,40 @@ export function pnlUsdTitle(
 ): string | undefined {
   const usd = pnlUsd(pnlEth, ethPriceUsdEnd);
   return usd === null ? undefined : `${formatUsd(usd)} at close`;
+}
+
+/**
+ * Compact FLAT/HELD signal for the card headline: `flat` when no
+ * mission-attributable bags remain, else `N held`. Drives the same signal as
+ * `formatSettlement` but without the sentence framing/emoji, for a glance chip.
+ */
+export function formatSettlementSignal(openPositionsCount: number): string {
+  return openPositionsCount <= 0 ? "flat" : `${openPositionsCount} held`;
+}
+
+/**
+ * Bankroll start→end range in ETH: `0.0137 → 0.0149`. Each side is em-dashed
+ * independently when its snapshot is missing (`— → 0.0149`). No `ETH` suffix —
+ * the card prints the unit once beside the range.
+ */
+export function formatBankrollRange(
+  bankrollStartEth: number | null,
+  bankrollEndEth: number | null,
+): string {
+  return `${formatEth(bankrollStartEth)} → ${formatEth(bankrollEndEth)}`;
+}
+
+/**
+ * Signed USD value of the ETH PnL at close (`pnlEth * ethPriceUsdEnd`) for the
+ * headline: `+$3.80`, `-$1.20`. Reuses `pnlUsd`; `null` (either input missing)
+ * → em dash so nothing is fabricated.
+ */
+export function formatPnlUsd(
+  pnlEth: number | null,
+  ethPriceUsdEnd: number | null,
+): string {
+  const usd = pnlUsd(pnlEth, ethPriceUsdEnd);
+  return usd === null ? EM_DASH : formatUsdDelta(usd);
 }
 
 /**

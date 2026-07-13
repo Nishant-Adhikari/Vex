@@ -57,6 +57,7 @@ export interface OpenMissionResultInput {
   goalSnippet: string | null;
   bankrollStartEth: number | null;
   ethPriceUsdStart: number | null;
+  startPositions: unknown;
 }
 
 export interface CloseMissionResultInput {
@@ -156,11 +157,12 @@ export async function openMissionResult(
   const sql = `
     INSERT INTO mission_results (
       id, mission_id, mission_run_id, session_id, wallet_address, chain_id,
-      seq_no, goal_snippet, bankroll_start_eth, eth_price_usd_start, outcome
+      seq_no, goal_snippet, bankroll_start_eth, eth_price_usd_start,
+      start_positions_json, outcome
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
       (SELECT COUNT(*)+1 FROM mission_results WHERE LOWER(wallet_address) = LOWER($5)),
-      $7, $8, $9, 'running'
+      $7, $8, $9, $10, 'running'
     )
     ON CONFLICT (mission_run_id) DO NOTHING`;
   await execute(sql, [
@@ -173,6 +175,7 @@ export async function openMissionResult(
     input.goalSnippet,
     input.bankrollStartEth,
     input.ethPriceUsdStart,
+    nullableJsonb(input.startPositions),
   ]);
 }
 

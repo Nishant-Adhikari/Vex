@@ -130,8 +130,13 @@ export async function listMissionResults(
                 started_at, ended_at, duration_s,
                 bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
                 eth_price_usd_start, eth_price_usd_end, trades, outcome,
-                CASE WHEN jsonb_typeof(open_positions_json) = 'array'
-                     THEN jsonb_array_length(open_positions_json) ELSE 0 END
+                (SELECT count(*) FROM jsonb_array_elements(
+                   CASE WHEN jsonb_typeof(open_positions_json) = 'array'
+                        THEN open_positions_json ELSE '[]'::jsonb END) e
+                 WHERE lower(e->>'address') NOT IN (
+                   SELECT lower(s->>'address') FROM jsonb_array_elements(
+                     CASE WHEN jsonb_typeof(start_positions_json) = 'array'
+                          THEN start_positions_json ELSE '[]'::jsonb END) s))
                   AS open_positions_count
            FROM mission_results
           ORDER BY started_at DESC
@@ -165,8 +170,13 @@ export async function getSessionResult(
                 started_at, ended_at, duration_s,
                 bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
                 eth_price_usd_start, eth_price_usd_end, trades, outcome,
-                CASE WHEN jsonb_typeof(open_positions_json) = 'array'
-                     THEN jsonb_array_length(open_positions_json) ELSE 0 END
+                (SELECT count(*) FROM jsonb_array_elements(
+                   CASE WHEN jsonb_typeof(open_positions_json) = 'array'
+                        THEN open_positions_json ELSE '[]'::jsonb END) e
+                 WHERE lower(e->>'address') NOT IN (
+                   SELECT lower(s->>'address') FROM jsonb_array_elements(
+                     CASE WHEN jsonb_typeof(start_positions_json) = 'array'
+                          THEN start_positions_json ELSE '[]'::jsonb END) s))
                   AS open_positions_count
            FROM mission_results
           WHERE session_id = $1
