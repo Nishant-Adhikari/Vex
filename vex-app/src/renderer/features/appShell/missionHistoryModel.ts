@@ -147,6 +147,128 @@ export function sparklinePoints(
     .join(" ");
 }
 
+// ── Dashboard derivations ───────────────────────────────────────────────────
+
+/** Time-range windows for the dashboard chart + stats. `ALL` = unbounded. */
+export type DashboardRange = "1W" | "1M" | "3M" | "ALL";
+
+const DAY_MS = 86_400_000;
+const RANGE_WINDOW_MS: Record<Exclude<DashboardRange, "ALL">, number> = {
+  "1W": 7 * DAY_MS,
+  "1M": 30 * DAY_MS,
+  "3M": 90 * DAY_MS,
+};
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * The seed — the operator's initial stake. Derived from the OLDEST mission's
+ * starting bankroll (input is newest-first, so scan from the tail); an oldest
+ * row missing its snapshot is skipped for the next-oldest that has one. `null`
+ * when no row carries a bankroll snapshot. Total account value builds on top of
+ * this (`seed + cumulative pnl`).
+ */
+export function seedEth(results: readonly MissionResultDto[]): number | null {
+  for (let i = results.length - 1; i >= 0; i -= 1) {
+    const v = results[i]?.bankrollStartEth;
+    if (v !== null && v !== undefined && Number.isFinite(v)) return v;
+  }
+  return null;
+}
+
+/**
+ * Cumulative pnl as a percentage return on the seed. `null` when the seed is
+ * missing, zero, or non-finite (no meaningful denominator).
+ */
+export function returnPct(
+  seed: number | null,
+  cumulativeEth: number,
+): number | null {
+  if (seed === null || !Number.isFinite(seed) || seed === 0) return null;
+  return (cumulativeEth / seed) * 100;
+}
+
+/** Best (max) and worst (min) single-mission pnl. `null` when none computable. */
+export function bestWorst(
+  results: readonly MissionResultDto[],
+): { best: number; worst: number } | null {
+  let best = -Infinity;
+  let worst = Infinity;
+  let seen = false;
+  for (const r of results) {
+    if (r.pnlEth === null || !Number.isFinite(r.pnlEth)) continue;
+    seen = true;
+    if (r.pnlEth > best) best = r.pnlEth;
+    if (r.pnlEth < worst) worst = r.pnlEth;
+  }
+  return seen ? { best, worst } : null;
+}
+
+/**
+ * Keep only missions whose `startedAt` falls inside the range window (measured
+ * back from `nowMs`). `ALL` returns every row untouched; windowed ranges drop
+ * rows with an unparseable timestamp. Input order is preserved.
+ */
+export function filterByRange(
+  results: readonly MissionResultDto[],
+  range: DashboardRange,
+  nowMs: number,
+): MissionResultDto[] {
+  if (range === "ALL") return [...results];
+  const cutoff = nowMs - RANGE_WINDOW_MS[range];
+  return results.filter((r) => {
+    const t = Date.parse(r.startedAt);
+    return Number.isFinite(t) && t >= cutoff;
+  });
+}
+
+/** One consolidated bar per calendar day (UTC), oldest→newest. */
+export interface DayBucket {
+  /** `YYYY-MM-DD` (UTC) — stable sort + group key. */
+  readonly key: string;
+  /** Short display label, e.g. `Jul 11`. */
+  readonly label: string;
+  /** Net ETH pnl summed over the day (null-pnl missions skipped). */
+  readonly valueEth: number;
+  /** Missions that started on the day (includes null-pnl ones). */
+  readonly count: number;
+}
+
+/**
+ * Consolidate missions into one bucket per UTC day: net ETH pnl (null-pnl rows
+ * skipped from the sum but still counted) ordered oldest→newest. The UTC date
+ * is the leading `YYYY-MM-DD` of the ISO `startedAt`, so grouping is stable and
+ * independent of the viewer's timezone.
+ */
+export function dailyBuckets(results: readonly MissionResultDto[]): DayBucket[] {
+  const acc = new Map<string, { valueEth: number; count: number }>();
+  for (const r of results) {
+    const key = r.startedAt.slice(0, 10);
+    const bucket = acc.get(key) ?? { valueEth: 0, count: 0 };
+    bucket.count += 1;
+    if (r.pnlEth !== null && Number.isFinite(r.pnlEth)) bucket.valueEth += r.pnlEth;
+    acc.set(key, bucket);
+  }
+  return [...acc.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, { valueEth, count }]) => ({
+      key,
+      label: formatDayLabel(key),
+      valueEth,
+      count,
+    }));
+}
+
+/** `2026-07-11` → `Jul 11` (parsed from the string; no Date/timezone needed). */
+export function formatDayLabel(key: string): string {
+  const [, mm = "", dd = ""] = key.split("-");
+  const month = MONTHS[Number(mm) - 1] ?? mm;
+  return `${month} ${Number(dd)}`;
+}
+
 /**
  * USD value of a mission's ETH PnL at close (`pnlEth * ethPriceUsdEnd`) for the
  * PnL tooltip. `null` when either input is missing — the tooltip is omitted, not

@@ -28,14 +28,14 @@ export function MissionsButton({
       variant="ghost"
       size={compact ? "icon" : "sm"}
       onClick={onClick}
-      aria-label="Open mission history"
+      aria-label="Open dashboard"
       className={cn(
         "h-9 w-full rounded-none border-0 border-t border-[var(--vex-line)] bg-transparent text-[10px] tracking-[0.18em] text-[var(--vex-text-2)] hover:bg-white/[0.035] hover:text-foreground",
         compact ? "justify-center px-0" : "justify-start gap-2 px-4",
       )}
     >
       <HugeiconsIcon icon={AnalyticsUpIcon} size={15} aria-hidden />
-      {compact ? null : <span>Missions</span>}
+      {compact ? null : <span>Dashboard</span>}
     </Button>
   );
 }

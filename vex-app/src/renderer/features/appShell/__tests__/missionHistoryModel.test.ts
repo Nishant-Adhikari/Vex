@@ -8,11 +8,16 @@ import { describe, expect, it } from "vitest";
 import type { MissionResultDto } from "@shared/schemas/mission.js";
 import {
   EM_DASH,
+  bestWorst,
   computeWinRate,
   cumulativePnlSeries,
+  dailyBuckets,
+  filterByRange,
   formatDurationS,
   formatEth,
   pnlUsd,
+  returnPct,
+  seedEth,
   sparklinePoints,
   sumPnlEth,
 } from "../missionHistoryModel.js";
@@ -154,5 +159,116 @@ describe("pnlUsd", () => {
   it("returns null when either input is missing", () => {
     expect(pnlUsd(null, 3000)).toBeNull();
     expect(pnlUsd(0.01, null)).toBeNull();
+  });
+});
+
+describe("seedEth", () => {
+  it("takes the OLDEST mission's starting bankroll (input is newest-first)", () => {
+    const rows = [
+      result({ bankrollStartEth: 0.9 }), // newest
+      result({ bankrollStartEth: 0.95 }),
+      result({ bankrollStartEth: 1.2 }), // oldest → the seed
+    ];
+    expect(seedEth(rows)).toBe(1.2);
+  });
+
+  it("skips an oldest row missing its snapshot and takes the next oldest", () => {
+    const rows = [
+      result({ bankrollStartEth: 0.9 }),
+      result({ bankrollStartEth: 1.1 }), // next-oldest with a snapshot
+      result({ bankrollStartEth: null }), // oldest, no snapshot
+    ];
+    expect(seedEth(rows)).toBe(1.1);
+  });
+
+  it("returns null when no row carries a bankroll snapshot", () => {
+    expect(seedEth([result({ bankrollStartEth: null })])).toBeNull();
+    expect(seedEth([])).toBeNull();
+  });
+});
+
+describe("returnPct", () => {
+  it("expresses cumulative pnl as a percentage of the seed", () => {
+    expect(returnPct(2, 0.5)).toBeCloseTo(25, 10);
+    expect(returnPct(1, -0.3)).toBeCloseTo(-30, 10);
+  });
+
+  it("returns null when the seed is null, zero, or non-finite", () => {
+    expect(returnPct(null, 0.5)).toBeNull();
+    expect(returnPct(0, 0.5)).toBeNull();
+    expect(returnPct(Number.NaN, 0.5)).toBeNull();
+  });
+});
+
+describe("bestWorst", () => {
+  it("returns the max and min computable pnl", () => {
+    const rows = [
+      result({ pnlEth: 0.5 }),
+      result({ pnlEth: -0.2 }),
+      result({ pnlEth: null }),
+      result({ pnlEth: 0.1 }),
+    ];
+    expect(bestWorst(rows)).toEqual({ best: 0.5, worst: -0.2 });
+  });
+
+  it("returns null when no row has a computable pnl", () => {
+    expect(bestWorst([result({ pnlEth: null })])).toBeNull();
+    expect(bestWorst([])).toBeNull();
+  });
+});
+
+describe("filterByRange", () => {
+  const now = Date.parse("2026-07-30T00:00:00.000Z");
+  const rows = [
+    result({ missionRunId: "d3", startedAt: "2026-07-29T00:00:00.000Z" }), // 1d ago
+    result({ missionRunId: "d20", startedAt: "2026-07-10T00:00:00.000Z" }), // 20d ago
+    result({ missionRunId: "d80", startedAt: "2026-05-11T00:00:00.000Z" }), // 80d ago
+  ];
+
+  it("keeps only rows inside a 1-week window", () => {
+    const kept = filterByRange(rows, "1W", now).map((r) => r.missionRunId);
+    expect(kept).toEqual(["d3"]);
+  });
+
+  it("widens with the range", () => {
+    expect(filterByRange(rows, "1M", now).map((r) => r.missionRunId)).toEqual([
+      "d3",
+      "d20",
+    ]);
+    expect(filterByRange(rows, "3M", now).map((r) => r.missionRunId)).toEqual([
+      "d3",
+      "d20",
+      "d80",
+    ]);
+  });
+
+  it("ALL keeps everything", () => {
+    expect(filterByRange(rows, "ALL", now)).toHaveLength(3);
+  });
+});
+
+describe("dailyBuckets", () => {
+  it("consolidates missions on the same UTC day and orders oldest→newest", () => {
+    // newest-first input across two days.
+    const rows = [
+      result({ startedAt: "2026-07-12T20:00:00.000Z", pnlEth: 0.1 }),
+      result({ startedAt: "2026-07-12T09:00:00.000Z", pnlEth: -0.3 }),
+      result({ startedAt: "2026-07-11T10:00:00.000Z", pnlEth: 0.5 }),
+    ];
+    const buckets = dailyBuckets(rows);
+    expect(buckets.map((b) => b.key)).toEqual(["2026-07-11", "2026-07-12"]);
+    expect(buckets.map((b) => Number(b.valueEth.toFixed(2)))).toEqual([0.5, -0.2]);
+    expect(buckets.map((b) => b.count)).toEqual([1, 2]);
+  });
+
+  it("skips null-pnl rows in the daily sum but still counts the mission", () => {
+    const rows = [
+      result({ startedAt: "2026-07-11T12:00:00.000Z", pnlEth: null }),
+      result({ startedAt: "2026-07-11T10:00:00.000Z", pnlEth: 0.2 }),
+    ];
+    const buckets = dailyBuckets(rows);
+    expect(buckets).toHaveLength(1);
+    expect(Number(buckets[0]!.valueEth.toFixed(2))).toBe(0.2);
+    expect(buckets[0]!.count).toBe(2);
   });
 });

@@ -1,20 +1,19 @@
 /**
- * Mission History — a read-only AppShell sub-view (mission-results-ledger).
+ * Dashboard — the operator's performance surface over the mission-results
+ * ledger. Robinhood-shaped: a big account-value headline (seed + all-time PnL)
+ * with a range-scoped P/L delta, a per-mission (or per-day) bar chart of wins
+ * and losses, a stat register, then the newest-first mission table.
  *
- * The per-wallet ledger of finalized mission runs: a summary register (total
- * missions, win rate, cumulative ETH PnL) over a hand-rolled cumulative-PnL
- * sparkline, then one row per mission newest-first. It mirrors the MemoryPanel
- * shell grammar (h-12 register header + back key, hairline-separated ledger,
- * `--vex-*` ink) so it reads as one surface with the rest of the desk.
- *
- * Data comes from `useMissionResults` (already wired IPC) — the list arrives
- * newest-first, so rendering is a straight map; only the sparkline needs the
- * oldest→newest running sum (`cumulativePnlSeries`). All arithmetic + formatting
- * lives in `missionHistoryModel.ts`; this file is presentation over derived
- * values. PnL is coloured by sign (success/destructive), USD is a tooltip only.
+ * It mirrors the MemoryPanel shell grammar (`vex-eyebrow` section labels,
+ * mono filter pills, hairline-separated blocks, `--vex-*` ink) so it reads as
+ * one surface with the rest of the desk. All arithmetic lives in
+ * `missionHistoryModel.ts`; this file is presentation over derived values. ETH
+ * is the native unit; USD is a display-only tooltip/aside. The view is
+ * deliberately additive — new blocks (seed funding, open bags, fees) slot in
+ * as more sections without reshaping this shell.
  */
 
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
@@ -30,17 +29,37 @@ import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
 import {
   EM_DASH,
+  bestWorst,
   computeWinRate,
-  cumulativePnlSeries,
+  dailyBuckets,
+  filterByRange,
   formatDurationS,
   formatEth,
   pnlUsd,
-  sparklinePoints,
+  returnPct,
+  seedEth,
   sumPnlEth,
+  type DashboardRange,
 } from "./missionHistoryModel.js";
 
-const SPARK_W = 240;
-const SPARK_H = 44;
+type Grouping = "mission" | "day";
+
+const RANGES: readonly DashboardRange[] = ["1W", "1M", "3M", "ALL"];
+const RANGE_LABEL: Record<DashboardRange, string> = {
+  "1W": "past week",
+  "1M": "past month",
+  "3M": "past 3 months",
+  ALL: "all time",
+};
+
+/** A single bar in the chart — one mission or one consolidated day. */
+interface BarItem {
+  readonly key: string;
+  readonly label: string;
+  readonly valueEth: number;
+  /** Optional secondary line for the tooltip (mission count / goal). */
+  readonly sub?: string;
+}
 
 export function MissionHistory(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
@@ -48,11 +67,9 @@ export function MissionHistory(): JSX.Element {
 
   return (
     <div
-      data-vex-screen="missionHistory"
+      data-vex-screen="dashboard"
       className="flex h-full min-h-0 flex-col text-foreground"
     >
-      {/* Register header — same h-12 datum + quiet back key as the Memory
-       * panel; the affordance is an icon, never a chrome pill. */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--vex-line)] px-6">
         <button
           type="button"
@@ -63,12 +80,12 @@ export function MissionHistory(): JSX.Element {
           <HugeiconsIcon icon={ArrowLeft01Icon} size={17} aria-hidden />
         </button>
         <h1 className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-foreground">
-          Missions
+          Dashboard
         </h1>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
+        <div className="mx-auto flex w-full max-w-[820px] flex-col gap-8">
           <Body query={query} />
         </div>
       </div>
@@ -76,75 +93,357 @@ export function MissionHistory(): JSX.Element {
   );
 }
 
-/**
- * Query-state fork: pending → loading, thrown/transport error OR an `ok:false`
- * Result envelope → error, empty array → friendly empty state, else the ledger.
- * The `isPending`/`isError` guards narrow `query.data` to a defined `Result`.
- */
 function Body({
   query,
 }: {
   readonly query: UseQueryResult<Result<MissionListResultsResult>>;
 }): JSX.Element {
-  if (query.isPending) return <Loading label="Loading missions…" />;
+  if (query.isPending) return <Loading label="Loading dashboard…" />;
   if (query.isError) return <ErrorState message={query.error.message} />;
   const res = query.data;
   if (!res.ok) return <ErrorState message={res.error.message} />;
   if (res.data.length === 0) {
     return <Empty label="No missions yet — finish a mission to see it here." />;
   }
-  return <Ledger results={res.data} />;
+  return <Dashboard results={res.data} />;
 }
 
-function Ledger({
+function Dashboard({
   results,
 }: {
   readonly results: readonly MissionResultDto[];
 }): JSX.Element {
-  const winRate = computeWinRate(results);
-  const cumulative = sumPnlEth(results);
-  const series = cumulativePnlSeries(results);
+  const [range, setRange] = useState<DashboardRange>("ALL");
+  const [grouping, setGrouping] = useState<Grouping>("mission");
+
+  // Seed + account value are ALL-TIME (the origin never changes with a filter);
+  // the delta + register below are scoped to the selected range.
+  const seed = seedEth(results);
+  const cumulativeAll = sumPnlEth(results);
+  const accountEth = seed === null ? null : seed + cumulativeAll;
+  const latestPrice = latestEthPrice(results);
+  const accountUsd =
+    accountEth !== null && latestPrice !== null ? accountEth * latestPrice : null;
+
+  const ranged = filterByRange(results, range, Date.now());
+  const rangedPnl = sumPnlEth(ranged);
+  const rangedPct = returnPct(seed, rangedPnl);
+  const rangedUsd = sumUsd(ranged);
+
+  const bars = buildBars(ranged, grouping);
+  const extremes = bestWorst(ranged);
+  const winRate = computeWinRate(ranged);
+  const totalTrades = ranged.reduce((n, r) => n + r.trades, 0);
 
   return (
     <>
-      <SummaryHeader
-        total={results.length}
-        winRate={winRate}
-        cumulativeEth={cumulative}
-        series={series}
-      />
-      <ResultsTable results={results} />
+      {/* ── Performance hero ─────────────────────────────────────── */}
+      <section className="flex flex-col gap-5">
+        <div>
+          <h2 className="vex-eyebrow">Performance</h2>
+          <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+            Account value is your seed plus realized PnL across every mission.
+            The delta below is scoped to the selected range.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-[34px] font-medium leading-none tabular-nums text-foreground">
+              {accountEth === null ? EM_DASH : formatEth(accountEth)}
+            </span>
+            <span className="font-mono text-sm text-[var(--vex-text-3)]">ETH</span>
+            {accountUsd !== null ? (
+              <span className="font-mono text-sm tabular-nums text-[var(--vex-text-2)]">
+                {formatUsd(accountUsd)}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
+            <span className={pnlTone(rangedPnl)}>
+              {formatEth(rangedPnl, { signed: true })} ETH
+            </span>
+            {rangedPct !== null ? (
+              <span className={pnlTone(rangedPnl)}>
+                ({formatPercentDelta(rangedPct)})
+              </span>
+            ) : null}
+            {rangedUsd !== null ? (
+              <span className="text-[var(--vex-text-3)]">
+                {formatUsd(rangedUsd)}
+              </span>
+            ) : null}
+            <span className="text-[var(--vex-text-3)]">· {RANGE_LABEL[range]}</span>
+          </div>
+        </div>
+
+        {/* Controls — range pills (left) + grouping toggle (right). */}
+        <div className="flex flex-wrap items-center gap-2">
+          {RANGES.map((r) => (
+            <Pill key={r} active={range === r} onClick={() => setRange(r)}>
+              {r}
+            </Pill>
+          ))}
+          <div className="ml-auto flex items-center gap-2">
+            <Pill
+              active={grouping === "mission"}
+              onClick={() => setGrouping("mission")}
+            >
+              By mission
+            </Pill>
+            <Pill active={grouping === "day"} onClick={() => setGrouping("day")}>
+              By day
+            </Pill>
+          </div>
+        </div>
+
+        <BarChart items={bars} price={latestPrice} />
+      </section>
+
+      {/* ── Register ─────────────────────────────────────────────── */}
+      <section className="flex flex-col gap-4 border-t border-[var(--vex-line)] pt-6">
+        <h2 className="vex-eyebrow">Register</h2>
+        <div className="grid grid-cols-2 gap-x-10 gap-y-4 sm:grid-cols-3">
+          <Stat
+            label="Seed"
+            value={seed === null ? EM_DASH : `${formatEth(seed)} ETH`}
+          />
+          <Stat label="Missions" value={String(ranged.length)} />
+          <Stat
+            label="Win rate"
+            value={winRate === null ? EM_DASH : `${winRate.toFixed(0)}%`}
+          />
+          <Stat
+            label="Best"
+            value={
+              extremes === null
+                ? EM_DASH
+                : `${formatEth(extremes.best, { signed: true })} ETH`
+            }
+            tone={extremes === null ? undefined : pnlTone(extremes.best)}
+          />
+          <Stat
+            label="Worst"
+            value={
+              extremes === null
+                ? EM_DASH
+                : `${formatEth(extremes.worst, { signed: true })} ETH`
+            }
+            tone={extremes === null ? undefined : pnlTone(extremes.worst)}
+          />
+          <Stat label="Trades" value={String(totalTrades)} />
+        </div>
+      </section>
+
+      {/* ── Missions ledger ──────────────────────────────────────── */}
+      <section className="flex flex-col gap-4 border-t border-[var(--vex-line)] pt-6">
+        <h2 className="vex-eyebrow">Missions</h2>
+        {ranged.length === 0 ? (
+          <p className="text-xs text-[var(--vex-text-3)]">
+            No missions in the {RANGE_LABEL[range]}.
+          </p>
+        ) : (
+          <ResultsTable results={ranged} />
+        )}
+      </section>
     </>
   );
 }
 
-function SummaryHeader({
-  total,
-  winRate,
-  cumulativeEth,
-  series,
+/** Latest closing ETH price (newest-first input → first finite `ethPriceUsdEnd`). */
+function latestEthPrice(results: readonly MissionResultDto[]): number | null {
+  for (const r of results) {
+    if (r.ethPriceUsdEnd !== null && Number.isFinite(r.ethPriceUsdEnd)) {
+      return r.ethPriceUsdEnd;
+    }
+  }
+  return null;
+}
+
+/** Sum of per-mission USD PnL (each valued at its own close price; nulls skip). */
+function sumUsd(results: readonly MissionResultDto[]): number | null {
+  let sum = 0;
+  let seen = false;
+  for (const r of results) {
+    const usd = pnlUsd(r.pnlEth, r.ethPriceUsdEnd);
+    if (usd !== null) {
+      sum += usd;
+      seen = true;
+    }
+  }
+  return seen ? sum : null;
+}
+
+/**
+ * Chart items oldest→newest for the chosen grouping. "By mission" is one bar
+ * per run (null PnL → a flat 0 bar); "By day" consolidates via `dailyBuckets`.
+ * The input is newest-first, so the mission mapping reverses it.
+ */
+function buildBars(
+  results: readonly MissionResultDto[],
+  grouping: Grouping,
+): BarItem[] {
+  if (grouping === "day") {
+    return dailyBuckets(results).map((b) => ({
+      key: b.key,
+      label: b.label,
+      valueEth: b.valueEth,
+      sub: `${b.count} mission${b.count === 1 ? "" : "s"}`,
+    }));
+  }
+  const bars: BarItem[] = [];
+  for (let i = results.length - 1; i >= 0; i -= 1) {
+    const r = results[i]!;
+    bars.push({
+      key: r.missionRunId,
+      label: `#${r.seqNo}`,
+      valueEth: r.pnlEth ?? 0,
+      sub: r.goalSnippet ?? undefined,
+    });
+  }
+  return bars;
+}
+
+const CHART_H = 180;
+const PAD_TOP = 14;
+const PAD_BOTTOM = 26;
+const SLOT = 72;
+const MIN_W = 480;
+const BAR_MAX_W = 40;
+
+/**
+ * Hand-rolled zero-baseline bar chart (no chart lib, mirrors the ledger's
+ * sparkline approach): bars rise green above a dashed zero line and fall red
+ * below it, scaled to the data's own min/max. Wider than its column when there
+ * are many bars — the wrapper scrolls horizontally rather than crushing them.
+ */
+function BarChart({
+  items,
+  price,
 }: {
-  readonly total: number;
-  readonly winRate: number | null;
-  readonly cumulativeEth: number;
-  readonly series: readonly number[];
+  readonly items: readonly BarItem[];
+  readonly price: number | null;
+}): JSX.Element {
+  if (items.length === 0) {
+    return (
+      <div className="flex h-[140px] items-center justify-center rounded-[6px] border border-dashed border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
+        No missions in this range.
+      </div>
+    );
+  }
+
+  const values = items.map((i) => i.valueEth);
+  const max = Math.max(0, ...values);
+  const min = Math.min(0, ...values);
+  const span = max === min ? 1 : max - min;
+  const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
+  const yOf = (v: number): number =>
+    PAD_TOP + innerH * (1 - (v - min) / span);
+  const baselineY = yOf(0);
+
+  const n = items.length;
+  const width = Math.max(MIN_W, n * SLOT);
+  const slotW = width / n;
+  const barW = Math.min(slotW * 0.42, BAR_MAX_W);
+  const showValue = n <= 8;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${width} ${CHART_H}`}
+        width={width}
+        height={CHART_H}
+        role="img"
+        aria-label="Profit and loss per mission"
+        className="max-w-full"
+      >
+        {/* Zero baseline. */}
+        <line
+          x1={0}
+          y1={baselineY}
+          x2={width}
+          y2={baselineY}
+          stroke="var(--vex-line-strong)"
+          strokeWidth={1}
+          strokeDasharray="2 3"
+        />
+        {items.map((item, i) => {
+          const xCenter = slotW * (i + 0.5);
+          const yVal = yOf(item.valueEth);
+          const top = Math.min(baselineY, yVal);
+          const h = Math.max(1, Math.abs(baselineY - yVal));
+          const positive = item.valueEth >= 0;
+          const fill = positive
+            ? "var(--color-success)"
+            : "var(--color-destructive)";
+          const usd = price !== null ? item.valueEth * price : null;
+          const tip =
+            `${item.label}: ${formatEth(item.valueEth, { signed: true })} ETH` +
+            (usd !== null ? ` (${formatUsd(usd)})` : "") +
+            (item.sub ? ` — ${item.sub}` : "");
+          return (
+            <g key={item.key}>
+              <title>{tip}</title>
+              <rect
+                x={xCenter - barW / 2}
+                y={top}
+                width={barW}
+                height={h}
+                rx={2}
+                fill={fill}
+                opacity={0.9}
+              />
+              {showValue ? (
+                <text
+                  x={xCenter}
+                  y={positive ? top - 5 : top + h + 12}
+                  textAnchor="middle"
+                  className="fill-[var(--vex-text-3)] font-mono"
+                  fontSize={9}
+                >
+                  {formatEth(item.valueEth, { signed: true })}
+                </text>
+              ) : null}
+              <text
+                x={xCenter}
+                y={CHART_H - 8}
+                textAnchor="middle"
+                className="fill-[var(--vex-text-3)] font-mono"
+                fontSize={9}
+              >
+                {item.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function Pill({
+  active,
+  onClick,
+  children,
+}: {
+  readonly active: boolean;
+  readonly onClick: () => void;
+  readonly children: string;
 }): JSX.Element {
   return (
-    <section className="flex flex-col gap-4 border-b border-[var(--vex-line)] pb-6">
-      <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
-        <Stat label="Missions" value={String(total)} />
-        <Stat
-          label="Win rate"
-          value={winRate === null ? EM_DASH : `${winRate.toFixed(0)}%`}
-        />
-        <Stat
-          label="Cumulative PnL"
-          value={`${formatEth(cumulativeEth, { signed: true })} ETH`}
-          tone={pnlTone(cumulativeEth)}
-        />
-      </div>
-      <Sparkline series={series} />
-    </section>
+    <button
+      type="button"
+      onClick={onClick}
+      data-active={active}
+      className={cn(
+        "rounded-[3px] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+        active
+          ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
+          : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -162,72 +461,10 @@ function Stat({
       <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
         {label}
       </span>
-      <span
-        className={cn(
-          "font-mono text-lg tabular-nums",
-          tone ?? "text-foreground",
-        )}
-      >
+      <span className={cn("font-mono text-lg tabular-nums", tone ?? "text-foreground")}>
         {value}
       </span>
     </div>
-  );
-}
-
-/**
- * Hand-rolled cumulative-PnL sparkline (no chart lib): a single polyline over
- * the running total, plus a hairline zero baseline so a dip below break-even
- * reads at a glance. The stroke takes the sign of the final cumulative value.
- */
-function Sparkline({
-  series,
-}: {
-  readonly series: readonly number[];
-}): JSX.Element | null {
-  if (series.length === 0) return null;
-  const points = sparklinePoints(series, SPARK_W, SPARK_H, 3);
-  const last = series[series.length - 1] ?? 0;
-  const stroke =
-    last > 0
-      ? "var(--color-success)"
-      : last < 0
-        ? "var(--color-destructive)"
-        : "var(--vex-text-3)";
-  // Zero baseline in the same coordinate space as the polyline (a flat
-  // series maps every point to the vertical middle, so the line + baseline
-  // coincide — intentional).
-  const min = Math.min(...series, 0);
-  const max = Math.max(...series, 0);
-  const span = max === min ? 1 : max - min;
-  const zeroY = 3 + (SPARK_H - 6) * (1 - (0 - min) / span);
-
-  return (
-    <svg
-      viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
-      width={SPARK_W}
-      height={SPARK_H}
-      role="img"
-      aria-label="Cumulative profit and loss over the mission history"
-      className="max-w-full overflow-visible"
-    >
-      <line
-        x1={0}
-        y1={zeroY}
-        x2={SPARK_W}
-        y2={zeroY}
-        stroke="var(--vex-line)"
-        strokeWidth={1}
-        strokeDasharray="2 3"
-      />
-      <polyline
-        points={points}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 
@@ -265,8 +502,7 @@ function ResultRow({
   readonly result: MissionResultDto;
 }): JSX.Element {
   const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  const pnlTitle =
-    usd === null ? undefined : `${formatUsd(usd)} at close`;
+  const pnlTitle = usd === null ? undefined : `${formatUsd(usd)} at close`;
 
   return (
     <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
@@ -305,7 +541,7 @@ function ResultRow({
 }
 
 /** Outcome → small colour-toned stamp. `completed` = success, `failed` =
- * destructive, `running` = accent (still live), the rest stay muted. */
+ * destructive, `timed_out` = warning, `running` = accent, the rest muted. */
 function OutcomeBadge({ outcome }: { readonly outcome: string }): JSX.Element {
   const tone =
     outcome === "completed"
