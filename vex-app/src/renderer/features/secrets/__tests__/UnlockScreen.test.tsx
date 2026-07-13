@@ -93,6 +93,10 @@ beforeEach(() => {
       secrets: {
         unlock: mockUnlock,
         resetToFreshVault: mockResetToFreshVault,
+        // Touch ID unavailable by default → no auto-prompt, no button (keeps the
+        // existing password-flow assertions intact).
+        touchIdStatus: vi.fn(async () => ({ ok: true, data: { supported: false, enabled: false } })),
+        touchIdUnlock: vi.fn(async () => ({ ok: true, data: { unlocked: false } })),
       },
       support: { openLogsFolder: mockOpenLogsFolder },
     },

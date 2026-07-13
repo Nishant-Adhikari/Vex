@@ -18,10 +18,10 @@ import { parseUnits, formatUnits, getAddress, isAddress, type Address, type Hex 
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import { getUniswapPublicClient, getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import { readUniswapErc20Metadata } from "@tools/uniswap/erc20.js";
-import { ensureUniswapAllowanceExact } from "@tools/uniswap/erc20.js";
+import { ensureUniswapAllowanceExact, ensureUniswapSufficientBalance } from "@tools/uniswap/erc20.js";
 import { quoteBestRoute, applySlippage } from "@tools/uniswap/quote.js";
 import { buildSwapTx, sendUniswapTransaction, NATIVE_TOKEN_ADDRESS } from "@tools/uniswap/execute.js";
-import { checkRouteFactories, probeFotSignal, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
+import { checkRouteFactories, probeFotSignal, exitSafetyVeto, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken, UniswapRoute } from "@tools/uniswap/types.js";
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
@@ -230,6 +230,38 @@ async function executeUniswapSwap(
     });
   }
 
+  // Exit-safety veto (buys only): before spending ETH on a token, prove it can
+  // be sold back. Simulate the reverse leg (token→input) via QuoterV2 — a null
+  // route means every sell reverts (honeypot) — and probe the fee-on-transfer
+  // signal. Read-only + keyless, and BEFORE signer resolution so no key is
+  // decrypted for a doomed buy. Sells and native-out swaps are exits already.
+  if (side === "buy" && !tokenOut.isNative) {
+    const probeClient = getUniswapPublicClient(deployment);
+    const [sellBack, fotSuspected] = await Promise.all([
+      quoteBestRoute(probeClient, {
+        deployment,
+        tokenIn: tokenOut,
+        tokenOut: tokenIn,
+        amountIn: quoted.amountOut,
+      }),
+      probeFotSignal(probeClient, deployment, tokenOut.address),
+    ]);
+    const veto = exitSafetyVeto({
+      sellBackRouteExists: sellBack !== null,
+      fotSuspected,
+      tokenOutSymbol: tokenOut.symbol,
+      tokenOutAddress: tokenOut.address,
+      tokenInSymbol: tokenIn.symbol,
+    });
+    if (veto !== null) {
+      logger.info("uniswap.swap.exit_safety_veto", {
+        chain: deployment.key, token: tokenOut.address,
+        sellBackRoute: sellBack !== null, fotSuspected,
+      });
+      return fail(veto);
+    }
+  }
+
   // Per-session signing wallet — resolved AFTER dryRun so a preview never decrypts a key.
   let signer: ChainWallet;
   try {
@@ -242,8 +274,13 @@ async function executeUniswapSwap(
   const { publicClient, walletClient } = getUniswapEvmClients(deployment, signer.privateKey as Hex);
   const router = routerFor(deployment, quoted.route);
 
-  // EXACT-amount allowance to an allowlisted router (native input needs none).
+  // Non-native input (a sell): guard balance BEFORE approving/swapping, then set
+  // the EXACT-amount allowance to the allowlisted router. Over-balance amounts
+  // otherwise revert at the router's transferFrom with an opaque STF /
+  // TRANSFER_FROM_FAILED that mimics a missing allowance. Native input needs
+  // neither (the tx value carries the ETH).
   if (!tokenIn.isNative) {
+    await ensureUniswapSufficientBalance(publicClient, tokenIn.address, getAddress(signer.address), amountIn, tokenIn.symbol, tokenIn.decimals);
     await ensureUniswapAllowanceExact(publicClient, walletClient, tokenIn.address, router, amountIn);
   }
 

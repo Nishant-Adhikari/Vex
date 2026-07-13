@@ -145,6 +145,11 @@ export const missionKeys = {
    */
   renewableSource: (sessionId: string) =>
     ["mission", "renewableSource", sessionId] as const,
+  /** Mission results ledger (history) — per-wallet PNL records. */
+  results: () => ["mission", "results"] as const,
+  /** Latest finalized result for a session (post-mission summary card). */
+  sessionResult: (sessionId: string) =>
+    ["mission", "sessionResult", sessionId] as const,
 };
 
 export const approvalsKeys = {
@@ -192,6 +197,13 @@ export const portfolioKeys = {
   all: ["portfolio"] as const,
   read: (scope: "global" | "session", activeSessionId: string | null) =>
     ["portfolio", scope, activeSessionId] as const,
+  /**
+   * Value time-series (equity curve). Keyed by scope + range so each window
+   * (1D/1W/1M/ALL) is a distinct cache entry. The renderer hook reads GLOBAL
+   * scope only for now.
+   */
+  series: (scope: string, range: string) =>
+    ["portfolio", "series", scope, range] as const,
   /**
    * MOVES (move 0.3) — the session's executed-trade activity. Keyed by
    * `sessionId` so each session's feed is a distinct cache entry. A

@@ -30,6 +30,8 @@ import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
   PortfolioDto,
   PortfolioReadInput,
+  PortfolioSeriesDto,
+  PortfolioSeriesInput,
   PositionChainDto,
   PositionTokenDto,
 } from "@shared/schemas/portfolio.js";
@@ -118,6 +120,11 @@ interface TokenRow {
 }
 
 interface SnapshotRow {
+  readonly total: number | string | null;
+  readonly at: string | Date | null;
+}
+
+interface SeriesPointRow {
   readonly total: number | string | null;
   readonly at: string | Date | null;
 }
@@ -463,6 +470,89 @@ export async function getPortfolio(
       });
     } catch (cause) {
       return dbError("getPortfolio query failed", cause);
+    }
+  });
+}
+
+/**
+ * Range → Postgres INTERVAL literal. A FIXED map keyed by the
+ * `portfolioRangeSchema` enum — the interval string is interpolated into the
+ * query from THIS table ONLY, never from user input, so no free-form text can
+ * reach the SQL. `ALL` uses a 100-year window as a practical "no lower bound".
+ */
+const SERIES_RANGE_INTERVAL: Record<PortfolioSeriesInput["range"], string> = {
+  "1D": "24 hours",
+  "1W": "7 days",
+  "1M": "30 days",
+  ALL: "100 years",
+};
+
+/**
+ * Read the portfolio VALUE time-series (the dashboard equity curve) for the
+ * requested scope + range.
+ *
+ * Each point is one COMPLETE snapshot group — a group covering EXACTLY the
+ * resolved address set (`HAVING COUNT(DISTINCT wallet_address) = N`, the same
+ * invariant `getPortfolio` uses for its snapshot total). A partial group for a
+ * subset of the wallets is ignored, so the curve never mixes in an
+ * incomplete-cycle total. Points are ordered oldest → newest.
+ *
+ * Returns `{ points: [] }` (no SQL issued) when the resolved allow-list is
+ * empty. Fails closed.
+ */
+export async function getPortfolioSeries(
+  input: PortfolioSeriesInput,
+): Promise<Result<PortfolioSeriesDto, VexError>> {
+  const readInput: PortfolioReadInput =
+    input.scope === "global"
+      ? { scope: "global" }
+      : { scope: "session", sessionId: input.sessionId };
+  const resolved = await resolveAddresses(readInput);
+  if (!resolved.ok) return resolved;
+  const addresses = resolved.data;
+
+  // Fail closed: no wallets → empty series BEFORE any SQL.
+  if (addresses.length === 0) {
+    return ok({ points: [] });
+  }
+
+  const addrParam = [...addresses];
+  const interval = SERIES_RANGE_INTERVAL[input.range];
+
+  return withClient(async (client) => {
+    try {
+      // One row per COMPLETE snapshot group inside the window: total USD across
+      // the resolved set, at the group's capture time. HAVING COUNT(DISTINCT)=N
+      // drops partial cycles (mirrors getPortfolio's snapshot invariant). The
+      // INTERVAL is a fixed literal from SERIES_RANGE_INTERVAL — never user text.
+      const seriesResult = await client.query<SeriesPointRow>(
+        `SELECT SUM(total_usd)::float8 AS total, MIN(created_at) AS at
+           FROM proj_portfolio_snapshots
+          WHERE wallet_address = ANY($1::text[])
+            AND created_at > NOW() - INTERVAL '${interval}'
+          GROUP BY snapshot_group_id
+         HAVING COUNT(DISTINCT wallet_address) = $2
+          ORDER BY at ASC`,
+        [addrParam, addresses.length],
+      );
+      const points = seriesResult.rows
+        .filter((row): row is SeriesPointRow & { at: string | Date } =>
+          row.at !== null,
+        )
+        .map((row) => ({
+          t: toIso(row.at),
+          totalUsd: toNumber(row.total),
+        }));
+
+      log.info(
+        `[portfolio-db] getPortfolioSeries ok scope=${input.scope} ` +
+          `range=${input.range} wallets=${addresses.length} ` +
+          `points=${points.length}`,
+      );
+
+      return ok({ points });
+    } catch (cause) {
+      return dbError("getPortfolioSeries query failed", cause);
     }
   });
 }

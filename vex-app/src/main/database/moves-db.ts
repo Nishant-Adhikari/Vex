@@ -219,9 +219,38 @@ export async function getMovesForSession(
                 a.trade_side,
                 a.product_type,
                 a.namespace AS venue,
-                a.input_token,
+                -- Resolve the raw token ADDRESS stored on the fill to its symbol
+                -- via the wallet's own balance projection (on-chain-read symbols
+                -- like WEN / VEX / VIRTUAL). Falls back to the address (the
+                -- renderer truncates it) when no balance row carries the symbol —
+                -- e.g. a fully-exited token, or the wrapped-native leg.
+                COALESCE(
+                  (SELECT b.token_symbol FROM proj_balances b
+                    WHERE b.wallet_address = a.wallet_address
+                      AND LOWER(b.token_address) = LOWER(a.input_token)
+                      AND b.token_symbol IS NOT NULL
+                    LIMIT 1),
+                  -- Fully-exited tokens leave no balance row; the signals feed
+                  -- still carries the symbol for anything the agent traded.
+                  (SELECT s.symbol FROM signals s
+                    WHERE LOWER(s.contract) = LOWER(a.input_token)
+                      AND s.symbol IS NOT NULL
+                    ORDER BY s.ingested_at DESC LIMIT 1),
+                  a.input_token
+                ) AS input_token,
                 a.input_amount,
-                a.output_token,
+                COALESCE(
+                  (SELECT b.token_symbol FROM proj_balances b
+                    WHERE b.wallet_address = a.wallet_address
+                      AND LOWER(b.token_address) = LOWER(a.output_token)
+                      AND b.token_symbol IS NOT NULL
+                    LIMIT 1),
+                  (SELECT s.symbol FROM signals s
+                    WHERE LOWER(s.contract) = LOWER(a.output_token)
+                      AND s.symbol IS NOT NULL
+                    ORDER BY s.ingested_at DESC LIMIT 1),
+                  a.output_token
+                ) AS output_token,
                 a.output_amount,
                 a.value_usd,
                 a.capture_status,

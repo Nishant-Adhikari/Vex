@@ -101,6 +101,16 @@ export function getSecretSessionStatus(): SecretSessionStatus {
   };
 }
 
+/**
+ * The live in-memory master password while the vault is unlocked; `null` when
+ * locked. Used ONLY by Touch ID enrolment (secrets/touchid.ts) to capture the
+ * password the user already unlocked with — never logged, never returned to the
+ * renderer.
+ */
+export function getUnlockedMasterPassword(): string | null {
+  return unlockedMasterPassword;
+}
+
 export function initializeMasterPassword(
   password: string,
 ): Result<{ readonly kind: "set" | "unchanged" }> {

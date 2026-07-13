@@ -203,6 +203,9 @@ export interface MissionDraft {
   stopConditions: string[] | null;
   /** Optional — mission may have no deadline. */
   deadline: string | null;
+  /** Optional hard time-box in minutes; the enforcer stops the run at
+   * started_at + this. Absent → env override → 60-minute default. */
+  durationMinutes: number | null;
 }
 
 /**
@@ -265,6 +268,9 @@ export interface EngineContext {
   missionRunStartedAt?: string | null;
   /** Optional mission deadline from the frozen mission constraints. */
   missionDeadline?: string | null;
+  /** Optional hard time-box (minutes) from the mission constraints; the
+   * deadline enforcer resolves this → env → 60. */
+  missionDurationMinutes?: number | null;
   isSubagent: boolean;
   /** Per-session selected wallets (id + address), hydrated from the session row. */
   selectedEvmWallet: { id: string; address: string } | null;

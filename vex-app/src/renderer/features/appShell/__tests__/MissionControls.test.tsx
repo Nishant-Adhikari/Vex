@@ -315,6 +315,21 @@ describe("MissionControls", () => {
     expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
   });
 
+  it("hides Renew once a fresh draft exists (post-renew) — no duplicate-draft loop", async () => {
+    // After mission.renew, a fresh status='draft' mission exists, but
+    // getRenewableSource STILL returns the old terminal accepted mission. Renew
+    // must NOT linger — else it looks like it "did nothing" and each extra click
+    // clones another duplicate draft. The fresh draft's acceptance UI wins.
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok({ missionId: MISSION, status: "draft" }));
+    getDiffMock.mockResolvedValue(diffAccepted(false));
+    getRenewableMock.mockResolvedValue(ok({ missionId: "m-done" }));
+    renderControls();
+
+    await screen.findByText(/Mission contract not accepted/i);
+    expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
+  });
+
   it("surfaces a renew refusal (not_terminal_yet → notice)", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(ok(null));

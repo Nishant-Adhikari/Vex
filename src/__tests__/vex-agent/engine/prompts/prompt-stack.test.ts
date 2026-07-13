@@ -496,7 +496,7 @@ describe("prompt-stack", () => {
       expect(turnJoined).toContain("Current time UTC: 2026-05-03T08:39:18.126Z");
       expect(turnJoined).toContain("Session started: 2026-05-03T08:01:02.000Z (elapsed: 38m 16s)");
       expect(turnJoined).toContain("Mission run started: 2026-05-03T08:10:00.000Z (elapsed: 29m 18s)");
-      expect(turnJoined).toContain("Mission deadline: 2026-05-03T14:10:00.000Z (in 5h 30m)");
+      expect(turnJoined).toContain("Mission deadline (HARD): 2026-05-03T14:10:00.000Z (in 5h 30m)");
       expect(turnJoined).toContain("loop_defer(after_ms, reason)");
       // The volatile clock must never leak into the static prefix.
       expect(stack.staticLayers.join("\n")).not.toContain("# Runtime Clock");

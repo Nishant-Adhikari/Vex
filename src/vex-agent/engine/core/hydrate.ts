@@ -143,6 +143,7 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
       sessionStartedAt: session.startedAt,
       missionRunStartedAt: activeRun?.startedAt ?? null,
       missionDeadline: extractMissionDeadline(mission?.constraintsJson ?? null),
+      missionDurationMinutes: extractMissionDurationMinutes(mission?.constraintsJson ?? null),
       isSubagent,
       selectedEvmWallet: session.selectedEvmWallet,
       selectedSolanaWallet: session.selectedSolanaWallet,
@@ -164,4 +165,11 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
 function extractMissionDeadline(constraints: Record<string, unknown> | null): string | null {
   const raw = constraints?.deadline;
   return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
+}
+
+function extractMissionDurationMinutes(
+  constraints: Record<string, unknown> | null,
+): number | null {
+  const raw = constraints?.durationMinutes;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : null;
 }

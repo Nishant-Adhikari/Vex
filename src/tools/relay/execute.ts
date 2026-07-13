@@ -208,8 +208,19 @@ export async function executeRelayBridge(args: RelayExecuteArgs): Promise<RelayE
       data: tx.data,
       value: tx.value,
     });
-    await publicClient.waitForTransactionReceipt({ hash });
+    // viem's waitForTransactionReceipt RESOLVES on a reverted tx (status
+    // "reverted") — it does not throw. A reverted step (e.g. a reverted approve)
+    // must ABORT the bridge: broadcasting the next step against unmet on-chain
+    // preconditions is a fund-safety hazard.
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
     txHashes.push(hash);
+    if (receipt.status !== "success") {
+      throw new VexError(
+        ErrorCodes.RELAY_BRIDGE_FAILED,
+        `Relay step "${tx.stepId}" (tx ${hash}) reverted on-chain (status: ${receipt.status}); bridge aborted.`,
+        "No further steps were broadcast. Re-quote and retry; check gas and balances on the origin chain.",
+      );
+    }
     logger.info("relay.bridge.step_broadcast", { stepId: tx.stepId, chainId: tx.chainId });
   }
 

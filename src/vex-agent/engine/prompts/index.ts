@@ -84,6 +84,13 @@ export interface PromptStackOptions {
    */
   ownTokenBanner?: string;
   /**
+   * Pre-formatted `# SIGNAL RADAR` block from `buildSignalRadarBanner` — the
+   * mission agent's ranked TrendRadar lead-list. TURN-STATE (volatile live
+   * numbers); built async + fail-soft in `buildTurnPromptStack` and only for
+   * ACTIVE MISSION runs (noise on ordinary chat turns). Empty/undefined omits it.
+   */
+  signalRadarBanner?: string;
+  /**
    * Pre-formatted context-pressure banner from `buildContextPressureBanner`.
    * Empty string (band='normal') omits the section. Built by `runTurnLoop`
    * from the lagging token-count + context-limit before invoking `executeTurn`.
@@ -213,6 +220,13 @@ export function buildPromptStack(
   // so price moves never bust the KV-cache prefix.
   if (options.ownTokenBanner && options.ownTokenBanner.length > 0) {
     turnLayers.push(options.ownTokenBanner);
+  }
+
+  // SIGNAL RADAR — mission lead-list (turn-state). Volatile live numbers, so it
+  // sits in turnLayers (never busts the KV-cache prefix); empty "" omits it, and
+  // it is only built for active mission runs (see buildTurnPromptStack).
+  if (options.signalRadarBanner && options.signalRadarBanner.length > 0) {
+    turnLayers.push(options.signalRadarBanner);
   }
 
   // Pressure-state first (drives immediate tool behaviour), then the

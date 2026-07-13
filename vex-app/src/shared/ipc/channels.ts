@@ -43,6 +43,10 @@ export const CH = {
     unlock: "vex:secrets:unlock",
     lock: "vex:secrets:lock",
     resetToFreshVault: "vex:secrets:resetToFreshVault",
+    touchIdStatus: "vex:secrets:touchIdStatus",
+    touchIdEnable: "vex:secrets:touchIdEnable",
+    touchIdDisable: "vex:secrets:touchIdDisable",
+    touchIdUnlock: "vex:secrets:touchIdUnlock",
   },
 
   // Wallet — sudo-style ops on existing keystores (Phase 2 feature #6)
@@ -149,6 +153,8 @@ export const CH = {
     edit: "vex:mission:edit",
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
+    listResults: "vex:mission:listResults",
+    getSessionResult: "vex:mission:getSessionResult",
     setAutoRetry: "vex:mission:setAutoRetry",
   },
 
@@ -251,6 +257,7 @@ export const CH = {
   // resolved in main and never cross the boundary.
   portfolio: {
     read: "vex:portfolio:read",
+    series: "vex:portfolio:series",
     listMoves: "vex:portfolio:listMoves",
   },
 

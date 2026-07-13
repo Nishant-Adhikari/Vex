@@ -34,7 +34,9 @@ import type {
   MissionDraftDto,
   MissionGetDiffResult,
   MissionGetRenewableSourceResult,
+  MissionGetSessionResultResult,
   MissionRenewResult,
+  MissionResultDto,
 } from "@shared/schemas/mission.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import {
@@ -44,12 +46,14 @@ import {
   useMissionDraft,
   useMissionRenew,
   useMissionRetry,
+  useMissionSessionResult,
   useMissionStart,
   useMissionStop,
   useRenewableMissionSource,
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
+import { MissionSummaryCard } from "./MissionSummaryCard.js";
 
 /**
  * Primary mission action (Start/Renew) — the landing's solid cobalt CTA:
@@ -170,6 +174,15 @@ function readRenewable(
   return data && data.ok ? data.data : null;
 }
 
+/** The session's latest finalized ledger row, or null while it is still running / absent. */
+function readFinalizedResult(
+  data: Result<MissionGetSessionResultResult> | undefined,
+): MissionResultDto | null {
+  const result = data && data.ok ? data.data : null;
+  if (result === null || result.outcome === "running") return null;
+  return result;
+}
+
 export function MissionControls({
   sessionId,
 }: MissionControlsProps): JSX.Element | null {
@@ -178,6 +191,7 @@ export function MissionControls({
   const draft = readDraft(draftQuery.data);
   const diffQuery = useMissionDiff(sessionId, draft?.missionId ?? null);
   const renewableQuery = useRenewableMissionSource(sessionId);
+  const sessionResultQuery = useMissionSessionResult(sessionId);
 
   const start = useMissionStart();
   const cont = useMissionContinue();
@@ -300,10 +314,22 @@ export function MissionControls({
   // into a fresh draft (the new contract must still be accepted before it runs,
   // so this is non-destructive and needs no confirm step).
   const renewSource = readRenewable(renewableQuery.data);
-  if (renewSource !== null) {
+  // `draft === null` guard mirrors MissionRail's load-bearing guard:
+  // `getRenewableSourceForSession` keeps returning the OLD terminal accepted
+  // mission even after `mission.renew` (or `edit`) inserts a fresh draft. Without
+  // this guard the Renew button LINGERS once a fresh draft exists — so a renew
+  // looks like it "does nothing", and each extra click clones ANOTHER duplicate
+  // draft. Gating on `draft === null` lets the fresh draft fall through to the
+  // acceptance-pending UI below (accept it, then Start).
+  if (renewSource !== null && draft === null) {
     const previousMissionId = renewSource.missionId;
+    // A terminal accepted mission has a finalized ledger row — surface its
+    // structured summary (sourced from the ledger, not the agent's prose)
+    // above the Renew key.
+    const summary = readFinalizedResult(sessionResultQuery.data);
     return (
       <div data-vex-area="mission-controls" className="mt-3">
+        {summary !== null ? <MissionSummaryCard result={summary} /> : null}
         {pendingAcceptance ? <AcceptancePendingNotice /> : null}
         <button
           type="button"

@@ -6,7 +6,10 @@
 
 import type { JSX, ReactNode } from "react";
 import { useSession } from "../../../lib/api/sessions.js";
+import { useMissionSessionResult } from "../../../lib/api/mission.js";
 import { cn } from "../../../lib/utils.js";
+import { formatUsd } from "../../../lib/format.js";
+import { pnlUsd } from "../missionHistoryModel.js";
 import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
 import { BookBlock } from "./BookBlock.js";
 
@@ -27,6 +30,11 @@ function Row({ label, children }: { readonly label: string; readonly children: R
 export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
   const query = useSession(sessionId);
   const session = query.data?.ok ? query.data.data : null;
+  // The mission RUN's start/end (from the results ledger) — distinct from the
+  // session's creation time below. Null for sessions with no finalized-or-live
+  // mission run; a live run shows a start with a pending ("—") end.
+  const resultQuery = useMissionSessionResult(sessionId);
+  const missionResult = resultQuery.data?.ok ? resultQuery.data.data : null;
 
   if (session === null) {
     return (
@@ -53,6 +61,40 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
           </Row>
         ) : null}
         <Row label="Started">{formatSessionTime(session.startedAt)}</Row>
+        {missionResult !== null ? (
+          <>
+            <Row label="Mission start">{formatSessionTime(missionResult.startedAt)}</Row>
+            <Row label="Mission end">
+              {missionResult.endedAt !== null
+                ? formatSessionTime(missionResult.endedAt)
+                : "—"}
+            </Row>
+            <Row label="Mission PnL">
+              {missionResult.pnlEth !== null ? (
+                <span
+                  title={`${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`}
+                  className={
+                    missionResult.pnlEth >= 0
+                      ? "text-[var(--color-success)]"
+                      : "text-[var(--color-destructive)]"
+                  }
+                >
+                  {(() => {
+                    const usd = pnlUsd(missionResult.pnlEth, missionResult.ethPriceUsdEnd);
+                    return usd !== null
+                      ? `${usd >= 0 ? "+" : "-"}${formatUsd(Math.abs(usd))}`
+                      : `${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`;
+                  })()}
+                  {missionResult.pnlPct !== null
+                    ? ` (${missionResult.pnlPct >= 0 ? "+" : ""}${missionResult.pnlPct.toFixed(2)}%)`
+                    : ""}
+                </span>
+              ) : (
+                "—"
+              )}
+            </Row>
+          </>
+        ) : null}
       </div>
     </BookBlock>
   );

@@ -40,6 +40,7 @@ import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
+import { setupSignalsIngestWorker } from "./agent/signals-worker.js";
 import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
@@ -185,6 +186,14 @@ async function initializeMainRuntime(): Promise<void> {
   // material is touched).
   const stopSyncWorker = setupSyncWorker();
 
+  // 6a-signals. Own the engine's signals-ingest executor so TrendRadar's hourly
+  // alpha feed drains into the `signals` table that a mission's SIGNAL RADAR
+  // prompt block reads. Like the sync worker it makes no inference calls (public
+  // feed read + DB upsert) and stays idle until the `signals` table is ready
+  // (supervisor probe). Requires SIGNALS_FEED_TOKEN in env to read the private
+  // feed; without it each tick just logs a fetch failure and retries.
+  const stopSignalsIngestWorker = setupSignalsIngestWorker();
+
   // 6a-memory. Own the engine memory_manager executor so enqueued memory_jobs
   // (consolidate sweeps from long_memory_suggest) actually curate candidates into
   // long-term knowledge — otherwise every suggestion sits pending forever. Like
@@ -236,6 +245,7 @@ async function initializeMainRuntime(): Promise<void> {
         stopCompactWorker(),
         stopWakeWorker(),
         stopSyncWorker(),
+        stopSignalsIngestWorker(),
         stopMemoryManagerWorker(),
         stopRegimeWorker(),
         stopToolEmbeddingReconcileWorker(),

@@ -26,6 +26,10 @@ export function missionToDraft(m: Mission): MissionDraft {
     successCriteria: m.successCriteriaJson.length > 0 ? m.successCriteriaJson : null,
     stopConditions: m.stopConditionsJson.length > 0 ? m.stopConditionsJson : null,
     deadline: constraints?.deadline as string ?? null,
+    durationMinutes:
+      typeof constraints?.durationMinutes === "number"
+        ? (constraints.durationMinutes as number)
+        : null,
   };
 }
 
@@ -54,8 +58,13 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
   // `stopConditionsAccepted` — acceptance lives on
   // `missions.accepted_contract_hash` (mig 023) and is written by the
   // host-only acceptance path, never by the model/draft update flow.
-  if (draft.deadline !== undefined) {
-    row.constraints_json = { deadline: draft.deadline };
+  if (draft.deadline !== undefined || draft.durationMinutes !== undefined) {
+    row.constraints_json = {
+      ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
+      ...(draft.durationMinutes !== undefined
+        ? { durationMinutes: draft.durationMinutes }
+        : {}),
+    };
   }
 
   return row;
@@ -116,6 +125,7 @@ export function draftToPromptContext(m: Mission): string {
     for (const s of draft.stopConditions) lines.push(`- ${s}`);
   }
   if (draft.deadline) lines.push(`**Deadline:** ${draft.deadline}`);
+  if (draft.durationMinutes) lines.push(`**Hard time-box:** ${draft.durationMinutes} min (run auto-stops at start + this)`);
 
   return lines.join("\n");
 }

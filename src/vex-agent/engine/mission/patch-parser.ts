@@ -19,7 +19,7 @@ import type { MissionDraft, MissionPatch } from "../types.js";
 
 const ALLOWED_STRING_KEYS = new Set<keyof MissionDraft>([
   "title", "goal", "capitalSource", "startingCapital",
-  "riskProfile", "deadline",
+  "riskProfile", "deadline", "durationMinutes",
 ]);
 
 const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([

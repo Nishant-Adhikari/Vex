@@ -131,3 +131,57 @@ export const portfolioDtoSchema = z
   })
   .strict();
 export type PortfolioDto = z.infer<typeof portfolioDtoSchema>;
+
+/**
+ * Time window for the portfolio value time-series (the dashboard equity
+ * curve). A fixed enum — main maps each member to a bounded SQL interval
+ * literal, so the range never reaches a query as free-form user text.
+ */
+export const portfolioRangeSchema = z.enum(["1D", "1W", "1M", "ALL"]);
+export type PortfolioRange = z.infer<typeof portfolioRangeSchema>;
+
+/**
+ * IPC input for `vex.portfolio.series`. Mirrors `portfolioReadInputSchema`'s
+ * scope discrimination (the same server-side allow-list security boundary),
+ * but each member ALSO carries a `range`. `.strict()` on each member keeps a
+ * malformed session input from silently widening to global (and rejects a
+ * stray `sessionId` on a global request).
+ */
+export const portfolioSeriesInputSchema = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("global"), range: portfolioRangeSchema }).strict(),
+  z
+    .object({
+      scope: z.literal("session"),
+      sessionId: z.string().uuid(),
+      range: portfolioRangeSchema,
+    })
+    .strict(),
+]);
+export type PortfolioSeriesInput = z.infer<typeof portfolioSeriesInputSchema>;
+
+/**
+ * One point on the equity curve — a single COMPLETE snapshot group's total
+ * USD across the resolved address set at its capture time. `t` is an ISO
+ * timestamp (offset-bearing); `totalUsd` is the summed group total.
+ */
+export const portfolioSeriesPointDtoSchema = z
+  .object({
+    t: z.string().datetime({ offset: true }),
+    totalUsd: z.number(),
+  })
+  .strict();
+export type PortfolioSeriesPointDto = z.infer<
+  typeof portfolioSeriesPointDtoSchema
+>;
+
+/**
+ * Portfolio value time-series result — the ordered equity-curve points for
+ * one scope + range. Bounded at 5000 points (defensive cap, never expected
+ * to hit); an empty scope resolves to `{ points: [] }` before any SQL.
+ */
+export const portfolioSeriesDtoSchema = z
+  .object({
+    points: z.array(portfolioSeriesPointDtoSchema).max(5000),
+  })
+  .strict();
+export type PortfolioSeriesDto = z.infer<typeof portfolioSeriesDtoSchema>;

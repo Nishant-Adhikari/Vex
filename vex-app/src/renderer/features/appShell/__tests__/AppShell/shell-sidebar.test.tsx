@@ -49,6 +49,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   Fuel01Icon: "Fuel01Icon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   Brain01Icon: "Brain01Icon",
+  AnalyticsUpIcon: "AnalyticsUpIcon",
   MapPinIcon: "MapPinIcon",
   PanelLeftCloseIcon: "PanelLeftCloseIcon",
   PanelLeftOpenIcon: "PanelLeftOpenIcon",

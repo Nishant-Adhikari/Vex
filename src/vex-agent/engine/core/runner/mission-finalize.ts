@@ -20,6 +20,7 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
 import { consumeMissionRunAbortIntent } from "./abort.js";
+import { captureMissionFinal } from "../../mission/mission-results-capture.js";
 import {
   isContinuableRuntimeStop,
   scheduleRuntimeContinuation,
@@ -88,6 +89,7 @@ export async function finalizeMissionRunStatus(
       await missionsRepo.clearApprovedAt(missionId);
       await missionsRepo.setStatus(missionId, "draft");
       await emitFinalizeControlState(sessionId, runId);
+      await captureMissionFinal({ missionId, runId, sessionId, outcome: "stopped" });
       return "draft";
     }
 
@@ -96,9 +98,15 @@ export async function finalizeMissionRunStatus(
       : stopReason === "user_stopped"
         ? "cancelled"
         : "failed";
+    // Ledger outcome tracks the engine status EXCEPT for a hard-deadline exit:
+    // that is a clean time-box end, not an error, so the results UI reads
+    // "timed_out" instead of the alarming "failed". The run/mission status
+    // stays terminal (`failed`) — this only relabels the operator-facing record.
+    const outcome = stopReason === "deadline_reached" ? "timed_out" : status;
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     await emitFinalizeControlState(sessionId, runId);
+    await captureMissionFinal({ missionId, runId, sessionId, outcome });
     return status;
   }
 
@@ -123,6 +131,7 @@ export async function finalizeMissionRunStatus(
     await missionsRepo.setStatus(missionId, "failed");
     await missionRunsRepo.updateStatus(runId, "failed", stopReason);
     await emitFinalizeControlState(sessionId, runId);
+    await captureMissionFinal({ missionId, runId, sessionId, outcome: "failed" });
     // Phase 2 BUG-REPORTING emit (puzzle 03): terminal `system_error`
     // is a hard failure surface — record the mission state. Fail-
     // closed so a sink outage cannot mask the terminal flip.

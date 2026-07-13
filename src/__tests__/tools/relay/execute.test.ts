@@ -157,4 +157,27 @@ describe("executeRelayBridge — ordered broadcast (PHASE 2)", () => {
     expect(result.txHashes).toEqual(["0xaaa", "0xbbb"]);
     expect(result.finalStatus).toBe("pending"); // no requestId → no poll
   });
+
+  it("(c) a step that mines REVERTED aborts the bridge — no further steps broadcast", async () => {
+    // First step (approve) mines reverted; viem's waitForTransactionReceipt
+    // RESOLVES with status "reverted" rather than throwing. Treating it as
+    // success would broadcast the deposit step against an unapproved allowance —
+    // a fund-safety hazard. The bridge must abort on the reverted step.
+    sendTransaction.mockResolvedValueOnce("0xaaa").mockResolvedValueOnce("0xbbb");
+    waitForTransactionReceipt.mockReset();
+    waitForTransactionReceipt.mockResolvedValueOnce({ status: "reverted" });
+    const quote = {
+      steps: [
+        step("approve", ORIGIN, APPROVE_TO, "0", "0x"),
+        step("deposit", DESTINATION, DEPOSIT_TO, "1000", "0xabcd"),
+      ],
+    } as unknown as RelayQuoteResponse;
+
+    await expect(
+      executeRelayBridge({ quote, signer, originChainId: ORIGIN, destinationChainId: DESTINATION }),
+    ).rejects.toMatchObject({ code: "RELAY_BRIDGE_FAILED" });
+
+    // The deposit step must NOT have broadcast after the approve reverted.
+    expect(sendTransaction).toHaveBeenCalledTimes(1);
+  });
 });
