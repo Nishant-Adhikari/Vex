@@ -244,18 +244,25 @@ function PortfolioSection(): JSX.Element {
   const series = usePortfolioSeries(range);
 
   const live = portfolio.data?.ok ? portfolio.data.data : null;
-  const points = series.data?.ok ? series.data.data.points : [];
+  const seriesData = series.data?.ok ? series.data.data : null;
+  const points = seriesData?.points ?? [];
 
   const totalUsd = live?.liveTotalUsd ?? null;
   const walletCount = live?.walletCount ?? null;
 
   const first = points.length > 0 ? points[0]!.totalUsd : null;
   const last = points.length > 0 ? points[points.length - 1]!.totalUsd : null;
-  const change = first !== null && last !== null ? last - first : null;
-  const changePct =
-    change !== null && first !== null && first !== 0
-      ? (change / first) * 100
+  const rawChange = first !== null && last !== null ? last - first : null;
+  const rawChangePct =
+    rawChange !== null && first !== null && first !== 0
+      ? (rawChange / first) * 100
       : null;
+  // Prefer the FLOW-ADJUSTED (TWR) figures from the series DTO: they neutralise
+  // deposits/withdrawals so pulling cash out isn't shown as a loss (the EVM-3
+  // bug). Fall back to the raw curve delta when they're absent (< 2 points or
+  // an older payload).
+  const change = seriesData?.flowAdjustedChangeUsd ?? rawChange;
+  const changePct = seriesData?.changePctTwr ?? rawChangePct;
 
   const seriesFailed =
     series.isError || (series.data !== undefined && !series.data.ok);
