@@ -29,6 +29,11 @@ import { z } from "zod";
  *  - `global`  — no `sessionId`; aggregates the whole configured inventory.
  *  - `session` — requires a UUID `sessionId`; aggregates only that
  *    session's selected wallets.
+ *  - `wallet`  — a single configured inventory wallet (the per-wallet
+ *    filter). The `walletAddress` is a renderer-supplied HINT ONLY: main
+ *    resolves it against the configured inventory server-side and fails
+ *    closed (empty allow-list) if it is not a configured wallet, so the
+ *    renderer still can never widen the read past its own wallets.
  *
  * `.strict()` on each member rejects a stray `sessionId` on a global
  * request and a missing/invalid `sessionId` on a session request, so a
@@ -37,6 +42,7 @@ import { z } from "zod";
 export const portfolioReadInputSchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("global") }).strict(),
   z.object({ scope: z.literal("session"), sessionId: z.string().uuid() }).strict(),
+  z.object({ scope: z.literal("wallet"), walletAddress: z.string().min(1) }).strict(),
 ]);
 export type PortfolioReadInput = z.infer<typeof portfolioReadInputSchema>;
 
@@ -120,7 +126,7 @@ export type PositionChainDto = z.infer<typeof positionChainDtoSchema>;
  */
 export const portfolioDtoSchema = z
   .object({
-    scope: z.enum(["global", "session"]),
+    scope: z.enum(["global", "session", "wallet"]),
     walletCount: z.number().int().nonnegative(),
     liveTotalUsd: z.number(),
     snapshotTotalUsd: z.number().nullable(),

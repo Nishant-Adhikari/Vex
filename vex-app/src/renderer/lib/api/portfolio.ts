@@ -34,20 +34,49 @@ function portfolioInput(activeSessionId: string | null): PortfolioReadInput {
     : { scope: "session", sessionId: activeSessionId };
 }
 
-function portfolioOptions(activeSessionId: string | null) {
-  const input = portfolioInput(activeSessionId);
+/**
+ * Cache-key discriminator for a read input: the session id for `session`,
+ * the wallet address for `wallet`, `null` for `global`. Keeps each wallet's
+ * (and each session's) portfolio a distinct cache entry.
+ */
+function portfolioReadKey(input: PortfolioReadInput): string | null {
+  switch (input.scope) {
+    case "session":
+      return input.sessionId;
+    case "wallet":
+      return input.walletAddress;
+    default:
+      return null;
+  }
+}
+
+function portfolioScopedOptions(input: PortfolioReadInput) {
   return queryOptions({
-    queryKey: portfolioKeys.read(input.scope, activeSessionId),
+    queryKey: portfolioKeys.read(input.scope, portfolioReadKey(input)),
     queryFn: () => window.vex.portfolio.read(input),
     staleTime: STALE_MS,
     refetchInterval: REFETCH_MS,
   });
 }
 
+/**
+ * Read a POSITION portfolio for an EXPLICIT scope input — global, a session,
+ * or a single configured wallet (the per-wallet filter). The wallet address
+ * is resolved server-side against the configured inventory (fail-closed), so
+ * this hook cannot widen the read past the caller's own wallets. Keyed by
+ * scope + (sessionId | walletAddress | global) so each scope is a distinct
+ * cache entry.
+ */
+export function usePortfolioScoped(
+  input: PortfolioReadInput,
+): UseQueryResult<Result<PortfolioDto>> {
+  return useQuery(portfolioScopedOptions(input));
+}
+
 export function usePortfolio(
   activeSessionId: string | null,
 ): UseQueryResult<Result<PortfolioDto>> {
-  return useQuery(portfolioOptions(activeSessionId));
+  return usePortfolioScoped(portfolioInput(activeSessionId));
 }
 
 /**

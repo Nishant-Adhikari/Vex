@@ -308,6 +308,18 @@ async function resolveAddresses(
     // configured inventory would otherwise spuriously drop the snapshot total.
     return ok([...new Set(entries.map((e) => e.address))]);
   }
+  if (input.scope === "wallet") {
+    // Single-wallet scope (the per-wallet filter). The renderer-supplied
+    // `walletAddress` is a HINT, never trusted directly: resolve it against
+    // the SAME configured inventory `global` uses and return it ONLY IF it is
+    // an exact member of that set — otherwise fail closed (`[]` → empty DTO).
+    // Raw-string match, NO lowercasing (mirror global; the engine stores raw
+    // checksum/base58 addresses). This keeps the "renderer can never widen
+    // past its own wallets" invariant intact for the widened input schema.
+    const entries = [...listWallets("evm"), ...listWallets("solana")];
+    const inventory = new Set(entries.map((e) => e.address));
+    return ok(inventory.has(input.walletAddress) ? [input.walletAddress] : []);
+  }
   const scope = await getSessionWalletScope(input.sessionId);
   if (!scope.ok) return scope;
   const addrs = [scope.data.evm?.address, scope.data.solana?.address].filter(
