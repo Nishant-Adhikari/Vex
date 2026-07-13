@@ -22,6 +22,7 @@ import {
   useHyperliquidMarkets,
 } from "../../../lib/api/hyperliquid.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { useSubmitChat } from "../../../lib/api/chat.js";
 import { cn } from "../../../lib/utils.js";
 import { SelectMenu } from "../../../components/ui/select-menu.js";
 import { HyperliquidCoverageBadge } from "../book/HyperliquidCoverageBadge.js";
@@ -159,12 +160,87 @@ export function computeLivePnl(
   return { pnl, roePct };
 }
 
+/**
+ * Inline SL/TP editor (owner feature): the value doubles as a button; one
+ * click opens a tiny price input, confirm routes the change through the
+ * AGENT ("move my stop…") — the same policy/protection/approval path as any
+ * other mutation. The UI never signs.
+ */
+function EditableTrigger({
+  label,
+  coin,
+  value,
+  sessionId,
+  kind,
+}: {
+  readonly label: string;
+  readonly coin: string;
+  readonly value: string | null;
+  readonly sessionId: string | null;
+  readonly kind: "stop-loss" | "take-profit";
+}): JSX.Element {
+  const submit = useSubmitChat();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const send = (): void => {
+    const price = draft.trim();
+    if (sessionId === null || price.length === 0) return;
+    submit.mutate({
+      sessionId,
+      message: `Move my ${coin} ${kind} to ${price}. Keep it full-position and confirm the result.`,
+    });
+    setEditing(false);
+    setDraft("");
+  };
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="text-[var(--vex-text-3)]">{label}</span>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") send();
+            if (event.key === "Escape") setEditing(false);
+          }}
+          placeholder={value ?? "price"}
+          inputMode="decimal"
+          aria-label={`New ${coin} ${kind} price`}
+          className="w-[76px] rounded border border-[var(--vex-accent-border)] bg-[var(--vex-surface-down)] px-1 py-0.5 font-mono text-[11px] tabular-nums text-[var(--vex-text)] focus-visible:outline-none"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={submit.isPending}
+          className="font-mono text-[10px] uppercase text-[var(--vex-accent-text)] hover:underline disabled:opacity-40"
+        >
+          {submit.isPending ? "…" : "Set"}
+        </button>
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title={`Edit ${kind} via Vex`}
+      className="group/edit inline-flex items-baseline gap-1 rounded px-0.5 text-[var(--vex-text-3)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
+    >
+      {label} <span className="text-[var(--vex-text-2)]">{value ?? "—"}</span>
+      <span aria-hidden className="text-[9px] opacity-0 transition-opacity group-hover/edit:opacity-70">✎</span>
+    </button>
+  );
+}
+
 function PositionEconomicsStrip({
   position,
   liveMid,
+  sessionId,
 }: {
   readonly position: HyperliquidPositionDto;
   readonly liveMid: string | null;
+  readonly sessionId: string | null;
 }): JSX.Element {
   const economics = computeLivePnl(position, liveMid);
   const tone =
@@ -193,12 +269,8 @@ function PositionEconomicsStrip({
           ? "PnL —"
           : `PnL ${signedUsd(economics.pnl)}${economics.roePct === null ? "" : ` (${economics.roePct >= 0 ? "+" : ""}${economics.roePct.toFixed(2)}% est.)`}`}
       </span>
-      <span className="text-[var(--vex-text-3)]">
-        SL <span className="text-[var(--vex-text-2)]">{position.slPrice ?? "—"}</span>
-      </span>
-      <span className="text-[var(--vex-text-3)]">
-        TP <span className="text-[var(--vex-text-2)]">{position.tpPrice ?? "—"}</span>
-      </span>
+      <EditableTrigger label="SL" coin={position.coin} value={position.slPrice} sessionId={sessionId} kind="stop-loss" />
+      <EditableTrigger label="TP" coin={position.coin} value={position.tpPrice} sessionId={sessionId} kind="take-profit" />
       {position.liquidationPx !== null ? (
         <span className="text-[var(--vex-text-3)]">
           Liq <span className="text-[var(--vex-text-2)]">{position.liquidationPx}</span>
@@ -297,18 +369,22 @@ export function HypervexingChartPane({
           onClick={() => setPickerOpen((open) => !open)}
           aria-expanded={pickerOpen}
           aria-haspopup="dialog"
-          className="group flex items-baseline gap-2 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
+          className="group flex items-center gap-2 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
         >
           <span className="font-serif text-[26px] leading-none text-[var(--vex-text)]">
             {coin}
             <span className="text-[var(--vex-text-3)]">-USD</span>
           </span>
+          {/* Leverage chip — venue-fed (per-asset maxLeverage from markets, or
+           * the live position's leverage), optically CENTERED against the
+           * serif symbol (baseline alignment dropped the chip; owner fix) and
+           * carrying the app's sanctioned shimmer. */}
           {position?.leverage != null ? (
-            <span className="rounded-sm bg-[var(--vex-accent-fill-12)] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-[var(--vex-accent-text)]">
+            <span className="vex-badge--shimmer self-center rounded-sm bg-[var(--vex-accent-fill-12)] px-1.5 py-0.5 font-mono text-[10px] leading-none tabular-nums text-[var(--vex-accent-text)]">
               {position.leverage}x
             </span>
           ) : selectedMarket !== null ? (
-            <span className="rounded-sm bg-[var(--vex-surface-2)] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-[var(--vex-text-2)]">
+            <span className="vex-badge--shimmer self-center rounded-sm bg-[var(--vex-surface-2)] px-1.5 py-0.5 font-mono text-[10px] leading-none tabular-nums text-[var(--vex-text-2)]">
               {selectedMarket.maxLeverage}x
             </span>
           ) : null}
@@ -368,7 +444,7 @@ export function HypervexingChartPane({
       </div>
 
       {position !== null ? (
-        <PositionEconomicsStrip position={position} liveMid={liveMid} />
+        <PositionEconomicsStrip position={position} liveMid={liveMid} sessionId={sessionId} />
       ) : null}
 
       <div className="min-h-0 flex-1">

@@ -229,5 +229,6 @@ export const hyperliquidKeys = {
   book: (sessionId: string, coin: string) => ["hyperliquid", "book", sessionId, coin] as const,
   workspaceMode: (sessionId: string) => ["hyperliquid", "workspaceMode", sessionId] as const,
   riskProposals: (sessionId: string) => ["hyperliquid", "riskProposals", sessionId] as const,
+  sessionRiskPolicy: (sessionId: string) => ["hyperliquid", "sessionRiskPolicy", sessionId] as const,
   preferences: () => ["hyperliquid", "preferences"] as const,
 };

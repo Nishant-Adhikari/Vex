@@ -40,13 +40,15 @@ export const SKY_BRIGHT_HEX = "#1f44ff";
 /** Robinhood accent pair — a dim olive-lime rising to the neon #ccff00. */
 export const SKY_ROBINHOOD_DEEP_HEX = "#4d6300";
 export const SKY_ROBINHOOD_BRIGHT_HEX = "#ccff00";
-/** Hypervexing — the whole scene re-inks to Hyperliquid bottle-green: surface
- * bands #07211A/#0E3529 (--vex-surface-0/-2), a deep-sea accent band rising to
- * the mint #97FCE4 flecks. */
-export const SKY_HYPERVEXING_INK_HEX = "#07211a";
-export const SKY_HYPERVEXING_SOFT_HEX = "#0e3529";
-export const SKY_HYPERVEXING_DEEP_HEX = "#0e5e46";
-export const SKY_HYPERVEXING_BRIGHT_HEX = "#97fce4";
+/** Hypervexing — "ink first, mint as signal" (2026-07-13 re-ink): charcoal
+ * bands matched to --vex-surface-0/-2 (#0A0F11/#121C20), one deep-teal accent
+ * band as the brand whisper, rising to sparse turquoise flecks. The sky is
+ * the ONLY place the green identity breathes behind the glass — quiet by
+ * design, never wallpaper. */
+export const SKY_HYPERVEXING_INK_HEX = "#0a0f11";
+export const SKY_HYPERVEXING_SOFT_HEX = "#121c20";
+export const SKY_HYPERVEXING_DEEP_HEX = "#124b3d";
+export const SKY_HYPERVEXING_BRIGHT_HEX = "#4fd1c5";
 
 export type SkyTheme = "vex" | "robinhood" | "hypervexing";
 

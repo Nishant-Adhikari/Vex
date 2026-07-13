@@ -18,6 +18,8 @@ import type {
   HyperliquidRiskProposalConfirmInput,
   HyperliquidRiskProposalDto,
   HyperliquidRiskProposalsDto,
+  HyperliquidSessionRiskPolicyDto,
+  HyperliquidSessionRiskPolicySetInput,
   HyperliquidWorkspaceModeDto,
 } from "@shared/schemas/hyperliquid.js";
 import type { Preferences } from "@shared/schemas/preferences.js";
@@ -178,6 +180,53 @@ export function useHyperliquidRiskProposals(
     enabled: sessionId !== null,
     staleTime: Number.POSITIVE_INFINITY,
     retry: 0,
+  });
+}
+
+/** The session's ACTIVE risk policy + its origin (user / proposal / defaults). */
+export function useHyperliquidSessionRiskPolicy(
+  sessionId: string | null,
+): UseQueryResult<Result<HyperliquidSessionRiskPolicyDto>> {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (sessionId === null) return;
+    // Proposal confirmations and direct sets share one broadcast.
+    return window.vex.hyperliquid.onRiskProposalUpdate((proposal) => {
+      if (proposal.sessionId !== sessionId) return;
+      void queryClient.invalidateQueries({
+        queryKey: hyperliquidKeys.sessionRiskPolicy(sessionId),
+      });
+    });
+  }, [queryClient, sessionId]);
+  return useQuery({
+    queryKey: hyperliquidKeys.sessionRiskPolicy(sessionId ?? ""),
+    queryFn: () =>
+      window.vex.hyperliquid.getSessionRiskPolicy({ sessionId: sessionId ?? "" }),
+    enabled: sessionId !== null,
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: 0,
+  });
+}
+
+/** Direct user write of the session risk caps (the workspace panel). The
+ * handler returns the freshly ACTIVATED proposal-shaped row; the panel's
+ * read model refetches through its own query. */
+export function useSetHyperliquidSessionRiskPolicy(): UseMutationResult<
+  Result<HyperliquidRiskProposalDto>,
+  Error,
+  HyperliquidSessionRiskPolicySetInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.hyperliquid.setSessionRiskPolicy(input),
+    retry: false,
+    onSuccess: (result, input) => {
+      if (result.ok) {
+        void queryClient.invalidateQueries({
+          queryKey: hyperliquidKeys.sessionRiskPolicy(input.sessionId),
+        });
+      }
+    },
   });
 }
 

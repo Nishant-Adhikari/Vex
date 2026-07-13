@@ -312,7 +312,9 @@ describe("signalSkyShaders", () => {
     }
     // The Hypervexing entry MUST exist before the theme value can occur — the
     // sky indexes accents by theme, so a missing entry is a runtime crash.
-    expect(SKY_ACCENTS.hypervexing.bright).toEqual([151 / 255, 252 / 255, 228 / 255]);
+    // Ink-first re-ink (2026-07-13): the bright fleck band is the venue
+    // turquoise #4FD1C5, not the retired pastel mint.
+    expect(SKY_ACCENTS.hypervexing.bright).toEqual([79 / 255, 209 / 255, 197 / 255]);
     expect(Object.keys(SKY_ACCENTS).sort()).toEqual([
       "hypervexing",
       "robinhood",

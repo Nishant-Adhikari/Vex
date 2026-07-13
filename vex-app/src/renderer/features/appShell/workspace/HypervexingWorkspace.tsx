@@ -140,6 +140,7 @@ export function HypervexingWorkspace({
           account={account}
           upnl={upnl}
           sessionId={activeSessionId}
+          selectedCoin={effectiveCoin}
         />
       </HvZone>
       <HvZone area="chart" label="Market chart">

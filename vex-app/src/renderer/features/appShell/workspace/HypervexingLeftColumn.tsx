@@ -17,6 +17,7 @@ import { useSessionUsageTotals } from "../../../lib/api/usage.js";
 import { cn } from "../../../lib/utils.js";
 import { HyperliquidRiskProposalPanel } from "../book/HyperliquidRiskBlock.js";
 import { HlLiquidVeil } from "./HlLiquidVeil.js";
+import { HypervexingRiskSetup } from "./HypervexingRiskSetup.js";
 
 function SectionEyebrow({ children }: { readonly children: string }): JSX.Element {
   return (
@@ -136,11 +137,14 @@ export function HypervexingLeftColumn({
   account,
   upnl,
   sessionId,
+  selectedCoin,
 }: {
   readonly account: HyperliquidAccountDto | null;
   /** Venue-preferred unrealized PnL (topbar derivation, shared by caller). */
   readonly upnl: number | null;
   readonly sessionId: string | null;
+  /** Selected market — the risk panel names its per-asset leverage limit. */
+  readonly selectedCoin: string;
 }): JSX.Element {
   return (
     <aside className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -180,6 +184,11 @@ export function HypervexingLeftColumn({
         caption="Stake HYPE for protocol rewards."
         sessionId={sessionId}
       />
+
+      {/* The former empty band (owner order): the session risk controls. */}
+      <div className="pt-3">
+        <HypervexingRiskSetup sessionId={sessionId} selectedCoin={selectedCoin} />
+      </div>
 
       <div className="mt-auto pt-3">
         <UsageCard sessionId={sessionId} />
