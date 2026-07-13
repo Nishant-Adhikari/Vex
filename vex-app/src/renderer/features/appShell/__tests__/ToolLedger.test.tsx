@@ -157,6 +157,94 @@ describe("ToolActRow", () => {
       document.querySelector('[data-approval-id="appr-1"]'),
     );
   });
+
+  // ── Stage 2: explorer links ──
+  it("renders NO explorer link when the act has no refs", () => {
+    render(createElement(ToolActRow, { act: act() }));
+    expect(
+      screen.queryByRole("link", { name: /open transaction \d+ on .+ explorer/i }),
+    ).toBeNull();
+  });
+
+  it("renders a single `tx ↗` link resolving through explorerTxUrl", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({ explorerRefs: [{ chain: "hyperliquid", txRef: "0xabc" }] }),
+      }),
+    );
+    const link = screen.getByRole("link", {
+      name: /open transaction \d+ on .+ explorer/i,
+    });
+    expect(link.getAttribute("href")).toBe(
+      "https://app.hyperliquid.xyz/explorer/tx/0xabc",
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.textContent).toContain("tx");
+  });
+
+  it("numbers multiple resolvable refs (tx 1, tx 2)", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({
+          explorerRefs: [
+            { chain: "hyperliquid", txRef: "0xabc" },
+            { chain: "solana", txRef: "5sig" },
+          ],
+        }),
+      }),
+    );
+    const links = screen.getAllByRole("link", {
+      name: /open transaction \d+ on .+ explorer/i,
+    });
+    expect(links).toHaveLength(2);
+    expect(links[0]!.textContent).toContain("tx 1");
+    expect(links[1]!.textContent).toContain("tx 2");
+    expect(links[1]!.getAttribute("href")).toBe(
+      "https://explorer.solana.com/tx/5sig",
+    );
+    // A11y: each link carries a DISTINCT accessible name (index + chain), not
+    // one repeated generic label.
+    expect(links[0]!.getAttribute("aria-label")).toBe(
+      "Open transaction 1 on hyperliquid explorer",
+    );
+    expect(links[1]!.getAttribute("aria-label")).toBe(
+      "Open transaction 2 on solana explorer",
+    );
+  });
+
+  it("renders nothing for an unknown chain (inert)", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({ explorerRefs: [{ chain: "dogechain", txRef: "0xabc" }] }),
+      }),
+    );
+    expect(
+      screen.queryByRole("link", { name: /open transaction \d+ on .+ explorer/i }),
+    ).toBeNull();
+  });
+
+  it("drops only the unresolvable ref, keeping resolvable ones", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({
+          explorerRefs: [
+            { chain: "dogechain", txRef: "0xbad" },
+            { chain: "hyperliquid", txRef: "0xgood" },
+          ],
+        }),
+      }),
+    );
+    const links = screen.getAllByRole("link", {
+      name: /open transaction \d+ on .+ explorer/i,
+    });
+    expect(links).toHaveLength(1);
+    // Single resolvable ref → unnumbered `tx` label.
+    expect(links[0]!.textContent).toContain("tx");
+    expect(links[0]!.getAttribute("href")).toBe(
+      "https://app.hyperliquid.xyz/explorer/tx/0xgood",
+    );
+  });
 });
 
 describe("ToolGroupRow", () => {

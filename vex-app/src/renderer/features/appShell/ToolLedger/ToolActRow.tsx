@@ -20,6 +20,7 @@ import { cn } from "../../../lib/utils.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import type { HyperliquidDisplayBlock } from "@shared/schemas/hyperliquid.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
+import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
 import { toolGlyph } from "./toolGlyph.js";
 
 /** Section label inside the expanded well — mono microtype (10px floor). */
@@ -160,6 +161,10 @@ export function ToolActRow({
             )}
           />
         </button>
+        {/* Explorer links are SIBLINGS of the disclosure button — anchors must
+            never nest inside a button (invalid HTML). Rendered only when a
+            paired result deposited resolvable refs; inert otherwise. */}
+        <ExplorerRefLinks refs={act.explorerRefs} />
         {pendingApprovalId !== null ? (
           <ApprovalLinkStamp approvalId={pendingApprovalId} />
         ) : null}

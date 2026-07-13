@@ -11,6 +11,7 @@
  */
 
 import type {
+  ExplorerRef,
   MessageKind,
   MessageRole,
   SessionMessageDto,
@@ -60,6 +61,13 @@ export interface TranscriptRowModel {
   readonly toolCallId?: string | null;
   /** Main-validated protocol display data, never inferred from tool output text. */
   readonly toolDisplayBlock?: HyperliquidDisplayBlock | null;
+  /**
+   * Tool RESULT rows only: validated explorer refs from the DTO, carried so an
+   * ORPHAN result (no call paired in its run) can still render explorer links.
+   * Paired results instead deposit their refs onto the matching act during the
+   * S5 grouping pass. `null`/absent when the row has none.
+   */
+  readonly explorerRefs?: readonly ExplorerRef[] | null;
   /**
    * Tool CALL rows after the act-ledger post-pass (S5): one entry per
    * executed call, each carrying its merged output when the matching
@@ -194,6 +202,7 @@ export function toTranscriptRow(
         // pair this output with its call inside the same tool run.
         toolCallId: dto.toolCallId,
         toolDisplayBlock: dto.toolDisplayBlock,
+        explorerRefs: dto.explorerRefs,
       };
     }
     // tool_call row: prose (content) + one disclosure per executed tool.
@@ -262,6 +271,12 @@ export interface ToolCallActView {
   readonly toolArgs: string | null;
   readonly output: string | null;
   readonly toolDisplayBlock?: HyperliquidDisplayBlock | null;
+  /**
+   * Validated explorer refs merged from this act's paired `tool_result` row
+   * (S5). Absent/`null` until a result pairs, or when the result carried none —
+   * the act renderer then shows no link.
+   */
+  readonly explorerRefs?: readonly ExplorerRef[] | null;
 }
 
 /** Aggregation entry replacing a run of ≥TOOL_GROUP_MIN_CALLS calls. */
@@ -317,6 +332,7 @@ interface MutableAct {
   readonly toolArgs: string | null;
   output: string | null;
   toolDisplayBlock?: HyperliquidDisplayBlock;
+  explorerRefs?: readonly ExplorerRef[] | null;
 }
 
 function transformToolRun(
@@ -354,6 +370,9 @@ function transformToolRun(
         act.output = row.content;
         if (row.toolDisplayBlock !== null && row.toolDisplayBlock !== undefined) {
           act.toolDisplayBlock = row.toolDisplayBlock;
+        }
+        if (row.explorerRefs !== null && row.explorerRefs !== undefined) {
+          act.explorerRefs = row.explorerRefs;
         }
         consumedResultIds.add(row.id);
       }

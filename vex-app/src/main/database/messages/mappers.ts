@@ -4,11 +4,16 @@
  * `toDto` is the *only* place where `tool_calls` / `metadata` JSONB get
  * reduced to the allow-listed `SessionMessageDto`, and is the single mapper
  * shared by all three query paths (`getMessageTail`, `listMessages`,
- * `getMessageAround`). `metadata` JSONB is deliberately never selected; the
- * only discriminator read here is the top-level `message_type` column.
+ * `getMessageAround`). Raw `metadata` JSONB is deliberately never selected in
+ * full; the ONLY narrow projection off that column is the validated
+ * `metadata -> 'explorerRefs'` sub-key (see `MESSAGE_ROW_COLUMNS` +
+ * `extractExplorerRefs`). The `message_type` top-level column remains the
+ * discriminator for row kind.
  */
 
 import {
+  explorerRefsSchema,
+  type ExplorerRef,
   type MessageCursor,
   type MessageKind,
   type MessageRole,
@@ -31,16 +36,19 @@ export interface MessageRow {
   readonly created_at: string | Date;
   readonly source: string | null;
   readonly message_type: string | null;
+  /** ONLY the `explorerRefs` sub-key of `messages.metadata` (never raw metadata). */
+  readonly explorer_refs: unknown;
 }
 
-// `metadata` JSONB is deliberately NOT in the SELECT list. Puzzle 1
-// holds the strict "metadata completely omitted" decision — the
-// controlled metadata DTO union arrives in puzzle 02 (event spine +
-// transcript markers). Until then, the only discriminator we read is
-// the top-level `message_type` column (added in migration 002), which
-// is the engine's authoritative source for marker rows.
+// Raw `metadata` JSONB is still deliberately NOT selected in full — the strict
+// "metadata completely omitted" posture stands. `explorerRefs` is the FIRST
+// narrowly allow-listed projection off that column: the SELECT reaches ONLY the
+// `metadata -> 'explorerRefs'` sub-key (nothing else in `metadata` is exposed),
+// and the mapper zod-validates it before it reaches the DTO (JSONB is untrusted
+// at this boundary). The `message_type` column (migration 002) remains the
+// engine's authoritative marker discriminator.
 export const MESSAGE_ROW_COLUMNS =
-  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type";
+  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs";
 
 export function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -186,6 +194,20 @@ function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
   return "text";
 }
 
+/**
+ * Validate the `metadata -> 'explorerRefs'` JSONB projection at the DB boundary.
+ * ONLY tool-result rows carry refs; every other row → `null`. Malformed,
+ * oversize, or wrong-typed JSONB → `null` (never throws) so one bad row cannot
+ * poison the page. Empty arrays also collapse to `null` — the renderer treats
+ * "no refs" and "no valid refs" identically.
+ */
+function extractExplorerRefs(row: MessageRow): ExplorerRef[] | null {
+  if (row.role !== "tool") return null;
+  const parsed = explorerRefsSchema.safeParse(row.explorer_refs);
+  if (!parsed.success || parsed.data.length === 0) return null;
+  return parsed.data;
+}
+
 export function toDto(row: MessageRow): SessionMessageDto {
   // Extract the tool name once: it drives BOTH the recall-kind decision
   // and the DTO's `toolName` field.
@@ -205,6 +227,7 @@ export function toDto(row: MessageRow): SessionMessageDto {
     toolCalls: extractToolCalls(row.tool_calls),
     toolDisplayBlock:
       row.role === "tool" ? extractHyperliquidDisplayBlock(row.content) : null,
+    explorerRefs: extractExplorerRefs(row),
   };
 }
 
