@@ -18,8 +18,10 @@ import { parseUnits, formatUnits, getAddress, isAddress, type Address, type Hex 
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import { getUniswapPublicClient, getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import { readUniswapErc20Metadata } from "@tools/uniswap/erc20.js";
-import { ensureUniswapAllowanceExact, ensureUniswapSufficientBalance } from "@tools/uniswap/erc20.js";
+import { ensureUniswapAllowanceExact, ensureUniswapSufficientBalance, readUniswapErc20Balance } from "@tools/uniswap/erc20.js";
 import { quoteBestRoute, applySlippage } from "@tools/uniswap/quote.js";
+import { isImplausibleQuote } from "@tools/uniswap/plausibility.js";
+import { resolveSellAmount, usesLiveBalanceSell } from "@tools/uniswap/sell-amount.js";
 import { buildSwapTx, sendUniswapTransaction, NATIVE_TOKEN_ADDRESS } from "@tools/uniswap/execute.js";
 import { checkRouteFactories, probeFotSignal, exitSafetyVeto, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
@@ -29,7 +31,7 @@ import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { pinTrackedToken } from "@vex-agent/db/repos/tracked-tokens.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
-import { resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
@@ -181,6 +183,15 @@ async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult>
   ]);
   const safety: UniswapSafetyBlock = { factory, liquidity, fot: { suspected: fotSuspected } };
 
+  // Plausibility guard (LOCKED — ADDITIVE, advisory only): flag a quote whose
+  // amountIn is likely raw wei mistaken for human units, or whose price impact is
+  // extreme / pool-draining. NEVER blocks — a new optional `warning` field.
+  const warning = isImplausibleQuote({
+    amountInRaw,
+    tokenInDecimals: tokenIn.decimals,
+    priceImpact: quoted.priceImpact ?? null,
+  });
+
   return ok({
     chain: deployment.key,
     chainId: deployment.chainId,
@@ -199,6 +210,7 @@ async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult>
     router: routerFor(deployment, quoted.route),
     spender: tokenIn.isNative ? null : routerFor(deployment, quoted.route),
     safety,
+    ...(warning ? { warning } : {}),
   });
 }
 
@@ -215,8 +227,34 @@ async function executeUniswapSwap(
   const deployment = requireDeployment(chain);
   const tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
   const tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
-  const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
   const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
+  const sellFraction = num(p, "sellFraction");
+
+  // Sell-live-balance resolution (exit-guards Fix #2): the sentinel amountIn:"max"
+  // (or a sellFraction) sells the EXACT live on-chain balance, killing the drift/
+  // re-quote churn. Supported ONLY on the SELL path for a non-native tokenIn. The
+  // owner ADDRESS is resolved WITHOUT decrypting a key (mirrors the dryRun
+  // invariant), and the balance is read with the keyless public client — the same
+  // read `ensureUniswapSufficientBalance` uses below. A normal numeric amountIn is
+  // parsed exactly as before.
+  const wantsLiveBalance = usesLiveBalanceSell(amountInRaw, sellFraction);
+  let amountIn: bigint;
+  if (wantsLiveBalance) {
+    if (side !== "sell" || tokenIn.isNative) {
+      return fail('amountIn "max" / sellFraction is only supported when selling a non-native token (uniswap.swap.sell). Pass a numeric amountIn instead.');
+    }
+    let owner: string;
+    try {
+      owner = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+    const liveBalance = await readUniswapErc20Balance(getUniswapPublicClient(deployment), tokenIn.address, getAddress(owner));
+    amountIn = resolveSellAmount({ amountInRaw, tokenInDecimals: tokenIn.decimals, liveBalance, sellFraction });
+    if (amountIn <= 0n) return fail(`No ${tokenIn.symbol} balance to sell (live on-chain balance is 0).`);
+  } else {
+    amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+  }
 
   const quoted = await computeQuote(deployment, tokenIn, tokenOut, amountIn, slippageBps);
 
@@ -301,6 +339,9 @@ async function executeUniswapSwap(
 
   const txHash = await sendUniswapTransaction(publicClient, walletClient, tx);
   const amountOutHuman = formatUnits(quoted.amountOut, tokenOut.decimals);
+  // On the live-balance path amountInRaw is a sentinel ("max") — report the
+  // resolved human amount so the output + trade capture record the real figure.
+  const amountInHuman = wantsLiveBalance ? formatUnits(amountIn, tokenIn.decimals) : amountInRaw;
 
   logger.info("uniswap.swap.executed", { chain: deployment.key, version: quoted.route.version, side });
 
@@ -331,7 +372,7 @@ async function executeUniswapSwap(
     output: JSON.stringify({
       txHash, side, chain: deployment.key,
       tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
-      amountIn: amountInRaw, amountOut: amountOutHuman,
+      amountIn: amountInHuman, amountOut: amountOutHuman,
       route: { version: quoted.route.version, path: quoted.route.path },
     }, null, 2),
     data: {
@@ -344,7 +385,7 @@ async function executeUniswapSwap(
         outputToken: tokenOut.symbol,
         inputTokenAddress: tokenIn.address,
         outputTokenAddress: tokenOut.address,
-        inputAmount: amountInRaw,
+        inputAmount: amountInHuman,
         outputAmount: amountOutHuman,
         signature: txHash,
         walletAddress: signer.address,

@@ -56,6 +56,24 @@ export async function readUniswapErc20Metadata(
 }
 
 /**
+ * Read `owner`'s live on-chain balance of `token` (raw base units). The single
+ * balance read reused by the sell pre-flight guard AND the sell-live-balance
+ * resolver (exit-guards Fix #2) so both see the exact same number.
+ */
+export async function readUniswapErc20Balance(
+  publicClient: PublicClient<Transport, Chain>,
+  token: Address,
+  owner: Address,
+): Promise<bigint> {
+  return (await publicClient.readContract({
+    address: token,
+    abi: UNISWAP_ERC20_ABI,
+    functionName: "balanceOf",
+    args: [owner],
+  })) as bigint;
+}
+
+/**
  * Pre-flight: ensure `owner` holds at least `requiredAmount` of `token` BEFORE
  * approving/swapping. A sell for more than the balance makes the router's
  * `transferFrom` revert with an opaque `TRANSFER_FROM_FAILED` / `STF` that reads
@@ -71,12 +89,7 @@ export async function ensureUniswapSufficientBalance(
   symbol: string,
   decimals = 18,
 ): Promise<void> {
-  const balance = (await publicClient.readContract({
-    address: token,
-    abi: UNISWAP_ERC20_ABI,
-    functionName: "balanceOf",
-    args: [owner],
-  })) as bigint;
+  const balance = await readUniswapErc20Balance(publicClient, token, owner);
 
   if (balance < requiredAmount) {
     throw new VexError(
