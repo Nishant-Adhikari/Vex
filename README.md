@@ -7,7 +7,7 @@
 A self-custodial, autonomous on-chain crypto agent for the desktop. It holds
 *your* keys locally and acts on-chain on your terms, not a custodian's.
 
-[Website](https://www.projectvex.ai/) | [X / Twitter](https://x.com/ProjectVEXai) | [Releases](https://github.com/Vex-Foundation/Vex/releases)
+[Website](https://www.projectvex.ai/) | [VEXA Companion](https://nishant-adhikari.github.io/Vex/) | [X / Twitter](https://x.com/ProjectVEXai) | [Releases](https://github.com/Vex-Foundation/Vex/releases)
 
 </div>
 
@@ -47,6 +47,7 @@ Crypto is a target-rich environment for impersonators. Our only official
 channels are:
 
 - Website: https://www.projectvex.ai/
+- VEXA — VEX Mission Companion: https://nishant-adhikari.github.io/Vex/
 - X / Twitter: https://x.com/ProjectVEXai
 - Releases: https://github.com/Vex-Foundation/Vex/releases
 
