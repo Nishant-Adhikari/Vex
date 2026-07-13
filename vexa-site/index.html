@@ -3,179 +3,274 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Vexa is the glanceable, security-bound mood mirror for long-running VEX missions." />
-    <meta name="theme-color" content="#050816" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; font-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests" />
-    <title>Vexa — confidence at a glance</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23050b1c'/%3E%3Cpath d='M8 8h5l3 10 3-10h5l-6 17h-4z' fill='%235ef2d0'/%3E%3C/svg%3E" />
+    <meta name="description" content="VEX Mission Companion is the glanceable, security-bound status mirror for long-running VEX missions. It reads mission state and touches nothing else." />
+    <meta name="theme-color" content="#0a0d18" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests" />
+    <title>VEX Mission Companion — confidence at a glance</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0d18'/%3E%3Cpath d='M8 8h5l3 10 3-10h5l-6 17h-4z' fill='%231f44ff'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <header class="nav shell">
-      <a class="brand" href="#top" aria-label="Vexa home">
-        <span class="brand-mark" aria-hidden="true">V</span>
-        <span>VEXA</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#states">States</a>
-        <a href="#why">Why now</a>
-        <a href="#architecture">Architecture</a>
-        <a href="#security">Security</a>
-      </nav>
-      <a class="nav-cta" href="https://github.com/Nishant-Adhikari/Vex/tree/main/vexa-site">View site source</a>
+
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="#top" aria-label="VEX Mission Companion home">
+          <span class="brand-mark" aria-hidden="true">V</span>
+          <span class="brand-text">
+            <strong>VEX</strong>
+            <em>Mission Companion</em>
+          </span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#states">States</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#constitution">Trust</a>
+        </nav>
+        <a class="btn btn-ghost nav-cta" href="https://github.com/Nishant-Adhikari/Vex/tree/main/vexa-site">View source</a>
+      </div>
     </header>
 
     <main id="main">
-      <section class="hero shell" id="top">
-        <div class="hero-copy reveal">
-          <p class="eyebrow"><span></span> The peripheral interface for autonomous work</p>
-          <h1>She knows what<br />your mission is doing.</h1>
-          <p class="lede">Vexa turns long-running VEX missions into calm, glanceable body language—without touching keys, funds, approvals, or execution.</p>
-          <div class="hero-actions">
-            <a class="button primary" href="#states">Meet every mood</a>
-            <a class="button secondary" href="#architecture">See the boundary</a>
-          </div>
-          <dl class="hero-facts" aria-label="Product facts">
-            <div><dt>7</dt><dd>derived states</dd></div>
-            <div><dt>0</dt><dd>write access</dd></div>
-            <div><dt>1</dt><dd>human approval boundary</dd></div>
-          </dl>
-        </div>
-
-        <div class="hero-stage reveal" aria-label="Animated Vexa demonstration">
-          <div class="stage-orbit orbit-one"></div>
-          <div class="stage-orbit orbit-two"></div>
-          <div class="signal-card signal-running"><span></span>MISSION 42 · ACTIVE</div>
-          <div class="signal-card signal-local">LOCAL ONLY</div>
-          <div class="vexa-wrap">
-            <div class="profit-token" aria-hidden="true">V</div>
-            <div class="sprite sprite-hero" data-state-sprite aria-hidden="true"></div>
-          </div>
-          <div class="live-status">
-            <span class="status-dot"></span>
-            <div><strong data-live-label>Mission running</strong><small data-live-detail>Watching execution locally</small></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="proof-strip" aria-label="Core product promises">
-        <div class="shell proof-grid">
-          <span>READ-ONLY POSTGRES</span><i></i><span>APPROVAL STAYS IN VEX</span><i></i><span>LEDGER-SOURCED P&amp;L</span><i></i><span>ZERO CLOUD DEPENDENCY</span>
-        </div>
-      </section>
-
-      <section class="section shell" id="states">
-        <div class="section-heading reveal">
-          <p class="eyebrow"><span></span> One character, seven operational truths</p>
-          <h2>Status you can feel<br />before you read.</h2>
-          <p>Each mood is derived from VEX’s local runtime—not generated by a model and never guessed from account balances.</p>
-        </div>
-
-        <div class="state-demo reveal">
-          <div class="state-picker" role="list" aria-label="Vexa states">
-            <button class="state-button active" data-state="idle" type="button"><b>01</b><span><strong>Idle</strong><small>Ready and watching</small></span></button>
-            <button class="state-button" data-state="running" type="button"><b>02</b><span><strong>Running</strong><small>Mission in motion</small></span></button>
-            <button class="state-button" data-state="waiting_approval" type="button"><b>03</b><span><strong>Approval</strong><small>Your decision, inside VEX</small></span></button>
-            <button class="state-button" data-state="scheduled" type="button"><b>04</b><span><strong>Scheduled</strong><small>Next run in 42m</small></span></button>
-            <button class="state-button" data-state="success" type="button"><b>05</b><span><strong>Profitable</strong><small>One effortless token flip</small></span></button>
-            <button class="state-button" data-state="failed" type="button"><b>06</b><span><strong>Needs attention</strong><small>Clear, calm, actionable</small></span></button>
-            <button class="state-button" data-state="offline" type="button"><b>07</b><span><strong>Offline</strong><small>Vexa disappears</small></span></button>
-          </div>
-
-          <div class="demo-stage" data-demo-stage>
-            <div class="demo-grid"></div>
-            <p class="demo-kicker">LIVE STATE DEMO <span>SIMULATED</span></p>
-            <div class="demo-character">
-              <div class="profit-token demo-token" aria-hidden="true">V</div>
-              <div class="sprite sprite-demo" data-state-sprite aria-hidden="true"></div>
+      <section class="hero" id="top">
+        <div class="wrap hero-grid">
+          <div class="hero-copy reveal">
+            <p class="eyebrow"><span class="rule"></span>Peripheral companion for VEX missions</p>
+            <h1>Confidence at a glance.<br /><span class="ink-blue">Zero access to your funds.</span></h1>
+            <p class="lede">A mission can outlive the moment you started it. VEX Mission Companion reads that runtime and shows it back as calm body language — Vexa, a small character who knows what your mission is doing, and touches nothing else.</p>
+            <div class="cta-row">
+              <a class="btn btn-primary" href="#states">See the seven states</a>
+              <a class="btn btn-ghost" href="#constitution">Read the boundary</a>
             </div>
-            <div class="demo-copy">
-              <span class="status-dot"></span>
-              <div><strong data-live-label>Vexa is ready</strong><small data-live-detail>Watching VEX locally</small></div>
-            </div>
+            <dl class="facts" aria-label="Product facts">
+              <div><dt>7</dt><dd>Derived states</dd></div>
+              <div><dt>0</dt><dd>Write access</dd></div>
+              <div><dt>1</dt><dd>Approval boundary</dd></div>
+            </dl>
           </div>
+
+          <figure class="hero-stage reveal" aria-labelledby="hero-stage-cap">
+            <div class="stage-panel">
+              <span class="reg reg-tl" aria-hidden="true"></span>
+              <span class="reg reg-tr" aria-hidden="true"></span>
+              <span class="reg reg-bl" aria-hidden="true"></span>
+              <span class="reg reg-br" aria-hidden="true"></span>
+              <p class="stage-tag stage-tag-run"><i class="dot"></i>Mission 42 · Active</p>
+              <p class="stage-tag stage-tag-local">Local only</p>
+              <div class="character">
+                <div class="profit-token" aria-hidden="true">+</div>
+                <div class="sprite sprite-hero" data-state-sprite role="img" aria-label="Vexa, the VEX mission companion, animating its current mission state"></div>
+              </div>
+              <div class="readout">
+                <span class="status-dot" aria-hidden="true"></span>
+                <div class="readout-text">
+                  <strong data-live-label>Mission running</strong>
+                  <small data-live-detail>Watching execution locally</small>
+                </div>
+              </div>
+            </div>
+            <figcaption id="hero-stage-cap" class="stage-cap">Live state preview · simulated runtime, no live mission data</figcaption>
+          </figure>
         </div>
       </section>
 
-      <section class="section why-section" id="why">
-        <div class="shell">
-          <div class="section-heading reveal">
-            <p class="eyebrow"><span></span> Why long-running work needs a new surface</p>
-            <h2>Autonomy creates<br />an awareness gap.</h2>
-            <p>When a mission outlives the interaction that started it, a dashboard becomes somewhere you must remember to check. Vexa makes state ambient while preserving human authority.</p>
-          </div>
-          <div class="reason-grid">
-            <article class="reason-card reveal"><em>01</em><h3>Peripheral awareness</h3><p>Continuous motion says “still working” without demanding focus. Scheduled state adds the useful part: when work resumes.</p></article>
-            <article class="reason-card reveal"><em>02</em><h3>Calibrated trust</h3><p>Visible success, failure, and source boundaries help users understand capability without implying that the agent is infallible.</p></article>
-            <article class="reason-card reveal"><em>03</em><h3>Human attention routing</h3><p>Approval posture asks for attention, but the click only opens VEX. The consequential decision never moves into the companion.</p></article>
-            <article class="reason-card reveal"><em>04</em><h3>Outcome integrity</h3><p>Profit animation is earned only by a positive corrected-ledger result. No projected balances, reconstructed returns, or celebratory guessing.</p></article>
-          </div>
-          <div class="research-note reveal">
-            <p>Design grounding</p>
-            <div>
-              <a href="https://developer.apple.com/design/human-interface-guidelines/progress-indicators">Apple HIG <span>Lengthy operations need visible, accurate status in a consistent place.</span></a>
-              <a href="https://airc.nist.gov/airmf-resources/airmf/5-sec-core/">NIST AI RMF <span>Human oversight, monitoring, reliability, and accountability must remain explicit.</span></a>
-              <a href="https://pair.withgoogle.com/guidebook-v2/chapter/explainability-trust/">Google PAIR <span>Trust should be calibrated through clear capabilities, limits, and data sources.</span></a>
+      <section class="proof" aria-label="Core guarantees">
+        <div class="wrap proof-row">
+          <span>Read-only Postgres</span>
+          <span>Approval stays in VEX</span>
+          <span>Ledger-sourced P&amp;L</span>
+          <span>No cloud dependency</span>
+        </div>
+      </section>
+
+      <section class="section" id="states">
+        <div class="wrap">
+          <header class="head reveal">
+            <p class="eyebrow"><span class="rule"></span>One character · seven operational truths</p>
+            <h2>Status you can feel before you read it.</h2>
+            <p class="sub">Every mood is derived from VEX's local runtime — never invented by a model, never guessed from account balances. Choose a state to preview the readout.</p>
+          </header>
+
+          <div class="states reveal">
+            <div class="state-picker" role="list" aria-label="Mission states">
+              <button class="state-button active" data-state="idle" type="button" role="listitem"><b>01</b><span><strong>Idle</strong><small>Ready and watching</small></span></button>
+              <button class="state-button" data-state="running" type="button" role="listitem"><b>02</b><span><strong>Running</strong><small>Mission in motion</small></span></button>
+              <button class="state-button" data-state="waiting_approval" type="button" role="listitem"><b>03</b><span><strong>Approval</strong><small>Your decision, inside VEX</small></span></button>
+              <button class="state-button" data-state="scheduled" type="button" role="listitem"><b>04</b><span><strong>Scheduled</strong><small>Next run in 42m</small></span></button>
+              <button class="state-button" data-state="success" type="button" role="listitem"><b>05</b><span><strong>Profitable</strong><small>A verified, ledger-true flip</small></span></button>
+              <button class="state-button" data-state="failed" type="button" role="listitem"><b>06</b><span><strong>Needs attention</strong><small>Clear, calm, actionable</small></span></button>
+              <button class="state-button" data-state="offline" type="button" role="listitem"><b>07</b><span><strong>Offline</strong><small>Vexa disappears</small></span></button>
+            </div>
+
+            <div class="demo-stage" data-demo-stage>
+              <span class="reg reg-tl" aria-hidden="true"></span>
+              <span class="reg reg-tr" aria-hidden="true"></span>
+              <span class="reg reg-bl" aria-hidden="true"></span>
+              <span class="reg reg-br" aria-hidden="true"></span>
+              <p class="demo-kicker">State demo <span>Simulated</span></p>
+              <div class="character demo-character">
+                <div class="profit-token" aria-hidden="true">+</div>
+                <div class="sprite sprite-demo" data-state-sprite role="img" aria-label="Vexa animating the selected mission state"></div>
+              </div>
+              <div class="readout demo-readout">
+                <span class="status-dot" aria-hidden="true"></span>
+                <div class="readout-text">
+                  <strong data-live-label>Vexa is ready</strong>
+                  <small data-live-detail>Watching VEX locally</small>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="section shell" id="architecture">
-        <div class="section-heading reveal">
-          <p class="eyebrow"><span></span> Architecture by subtraction</p>
-          <h2>Close enough to know.<br />Separate enough to trust.</h2>
-          <p>Vexa is an independent Electron process. It observes a deliberately narrow local projection of VEX state and owns no execution capability.</p>
-        </div>
+      <section class="section band" id="why">
+        <div class="wrap">
+          <header class="head reveal">
+            <p class="eyebrow"><span class="rule"></span>Why long-running work needs a new surface</p>
+            <h2>Autonomy creates an awareness gap.</h2>
+            <p class="sub">When a mission outlives the interaction that started it, a dashboard becomes somewhere you must remember to open. The companion makes state ambient — while leaving every consequential decision exactly where it was.</p>
+          </header>
 
-        <div class="architecture reveal" aria-label="Vexa system architecture">
-          <div class="arch-node arch-vex"><small>AUTHORITY</small><strong>VEX Desktop</strong><span>Vault · approvals · execution</span></div>
-          <div class="arch-link link-db"><span>runtime writes</span></div>
-          <div class="arch-node arch-db"><small>LOCAL STATE</small><strong>Postgres</strong><span>Loopback · corrected ledger</span></div>
-          <div class="arch-link link-pet"><span>SELECT only</span></div>
-          <div class="arch-node arch-pet"><small>PERIPHERAL UI</small><strong>Vexa</strong><span>Tray · transparent window</span></div>
-          <div class="arch-link link-human"><span>status only</span></div>
-          <div class="arch-node arch-human"><small>DECISION MAKER</small><strong>You</strong><span>Click returns to VEX</span></div>
-        </div>
-
-        <div class="boundary-row reveal">
-          <div><span class="allow">✓</span><strong>Can</strong><p>Read seven derived states, show a countdown, animate verified outcomes, bring VEX forward.</p></div>
-          <div><span class="deny">×</span><strong>Cannot</strong><p>Unlock a vault, read keys, inspect funds, approve a tool call, place a trade, or write to the database.</p></div>
-        </div>
-      </section>
-
-      <section class="section security-section" id="security">
-        <div class="shell security-grid">
-          <div class="section-heading reveal">
-            <p class="eyebrow"><span></span> Security is the product</p>
-            <h2>A companion,<br />not a side door.</h2>
-            <p>The pitch site is also deliberately inert: static files, no analytics, no API calls, no wallet connection, and no access to a local VEX installation.</p>
-          </div>
-          <div class="security-list reveal">
-            <div><b>01</b><span><strong>Database-enforced read-only</strong><small>Every connection sets default_transaction_read_only and tight query timeouts.</small></span></div>
-            <div><b>02</b><span><strong>Localhost only</strong><small>The companion connects only to 127.0.0.1 and disappears when the local stack is unavailable.</small></span></div>
-            <div><b>03</b><span><strong>Approval remains authoritative</strong><small>Waiting-state clicks launch or focus VEX; no approval IPC exists.</small></span></div>
-            <div><b>04</b><span><strong>Renderer isolation</strong><small>Context isolation, sandboxing, denied navigation, and a restrictive content security policy.</small></span></div>
-            <div><b>05</b><span><strong>No sensitive surface</strong><small>No vault unlock, keystore, wallet, tool arguments, fund access, or trading code.</small></span></div>
+          <div class="reasons reveal">
+            <article class="reason">
+              <p class="num">01</p>
+              <h3>Peripheral awareness</h3>
+              <p>Continuous motion says <em>still working</em> without demanding focus. The scheduled state adds the useful part: when work resumes.</p>
+            </article>
+            <article class="reason">
+              <p class="num">02</p>
+              <h3>Calibrated trust</h3>
+              <p>Visible success, failure, and source boundaries help you read capability honestly — without implying the agent is infallible.</p>
+            </article>
+            <article class="reason">
+              <p class="num">03</p>
+              <h3>Attention routing</h3>
+              <p>Approval posture asks for a look, but the click only opens VEX. The decision itself never moves into the companion.</p>
+            </article>
+            <article class="reason">
+              <p class="num">04</p>
+              <h3>Outcome integrity</h3>
+              <p>The profit cue is earned only by a positive corrected-ledger result. No projected balances, no reconstructed returns, no celebratory guessing.</p>
+            </article>
           </div>
         </div>
       </section>
 
-      <section class="closing shell reveal">
-        <p class="eyebrow"><span></span> VEXA / MOOD MIRROR MVP</p>
-        <h2>Serious autonomy.<br /><i>Visible confidence.</i></h2>
-        <p>Vexa makes the invisible operational state of a long-running mission legible—without moving the security boundary by a single pixel.</p>
-        <div class="hero-actions">
-          <a class="button primary" href="https://github.com/Nishant-Adhikari/Vex/tree/main/vexa-site">Explore the public demo</a>
-          <a class="button secondary" href="#top">Back to top</a>
+      <section class="section" id="architecture">
+        <div class="wrap">
+          <header class="head reveal">
+            <p class="eyebrow"><span class="rule"></span>Architecture by subtraction</p>
+            <h2>Close enough to know. Separate enough to trust.</h2>
+            <p class="sub">The companion is an independent Electron process. It observes a deliberately narrow, local projection of VEX state and owns no execution capability of its own.</p>
+          </header>
+
+          <ol class="arch reveal" aria-label="Data flow, authority to companion">
+            <li class="arch-node">
+              <p class="arch-role">Authority</p>
+              <p class="arch-name">VEX Desktop</p>
+              <p class="arch-note">Vault · approvals · execution</p>
+            </li>
+            <li class="arch-edge" aria-hidden="true"><span>Runtime writes</span></li>
+            <li class="arch-node">
+              <p class="arch-role">Local state</p>
+              <p class="arch-name">Postgres</p>
+              <p class="arch-note">Loopback · corrected ledger</p>
+            </li>
+            <li class="arch-edge" aria-hidden="true"><span>SELECT only</span></li>
+            <li class="arch-node arch-node-key">
+              <p class="arch-role">Peripheral UI</p>
+              <p class="arch-name">Companion</p>
+              <p class="arch-note">Tray · transparent window</p>
+            </li>
+            <li class="arch-edge" aria-hidden="true"><span>Status only</span></li>
+            <li class="arch-node">
+              <p class="arch-role">Decision maker</p>
+              <p class="arch-name">You</p>
+              <p class="arch-note">Every click returns to VEX</p>
+            </li>
+          </ol>
+
+          <div class="matrix reveal" aria-label="Capability matrix">
+            <div class="matrix-col matrix-can">
+              <p class="matrix-head"><span class="mark mark-can" aria-hidden="true">Can</span>Capabilities</p>
+              <ul>
+                <li>Read seven derived states from local runtime</li>
+                <li>Show a countdown to the next scheduled run</li>
+                <li>Animate outcomes only after ledger verification</li>
+                <li>Bring VEX forward when you click</li>
+              </ul>
+            </div>
+            <div class="matrix-col matrix-cannot">
+              <p class="matrix-head"><span class="mark mark-cannot" aria-hidden="true">Cannot</span>Boundaries</p>
+              <ul>
+                <li>Unlock a vault or read a key</li>
+                <li>Inspect funds or read balances</li>
+                <li>Approve a tool call or place a trade</li>
+                <li>Write a single row to the database</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section band" id="constitution">
+        <div class="wrap">
+          <header class="head reveal">
+            <p class="eyebrow"><span class="rule"></span>The companion constitution</p>
+            <h2>Three articles the companion cannot amend.</h2>
+            <p class="sub">Security is not a feature bolted onto the surface — it is the surface. These are the standing rules, enforced below the UI.</p>
+          </header>
+
+          <ol class="articles reveal">
+            <li class="article">
+              <p class="article-num">Article I</p>
+              <div class="article-body">
+                <h3>The database is read-only.</h3>
+                <p>Every connection sets <code>default_transaction_read_only</code> with tight query timeouts. There is no write path — not for the companion, not for the person running it.</p>
+              </div>
+            </li>
+            <li class="article">
+              <p class="article-num">Article II</p>
+              <div class="article-body">
+                <h3>Authority stays with VEX.</h3>
+                <p>Waiting-state clicks launch or focus VEX. No approval IPC exists. The consequential decision is never delegated to, or reachable from, the companion.</p>
+              </div>
+            </li>
+            <li class="article">
+              <p class="article-num">Article III</p>
+              <div class="article-body">
+                <h3>The surface holds no secrets.</h3>
+                <p>Localhost only — 127.0.0.1, or nothing. No vault unlock, keystore, wallet, tool arguments, fund access, or trading code lives on this side of the line.</p>
+              </div>
+            </li>
+          </ol>
+
+          <ul class="hardening reveal" aria-label="Additional hardening">
+            <li><b>04</b><div><strong>Renderer isolation</strong><small>Context isolation, sandboxing, denied navigation, and a restrictive content security policy.</small></div></li>
+            <li><b>05</b><div><strong>Inert by design</strong><small>Even this pitch site is static — no analytics, no API calls, no wallet, no access to a local VEX install.</small></div></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="closing">
+        <div class="wrap closing-inner reveal">
+          <p class="eyebrow eyebrow-center"><span class="rule"></span>VEX Mission Companion</p>
+          <h2>Serious autonomy.<br /><span class="ink-blue">Visible confidence.</span></h2>
+          <p class="sub sub-center">Make the invisible state of a long-running mission legible — without moving the security boundary by a single pixel.</p>
+          <div class="cta-row cta-center">
+            <a class="btn btn-primary" href="https://github.com/Nishant-Adhikari/Vex/tree/main/vexa-site">Explore the public demo</a>
+            <a class="btn btn-ghost" href="#top">Back to top</a>
+          </div>
         </div>
       </section>
     </main>
 
-    <footer class="footer shell">
-      <span>VEXA · BUILT FOR VEX</span>
-      <span>STATIC PITCH DEMO · NO LIVE DATA</span>
+    <footer class="footer">
+      <div class="wrap footer-row">
+        <span>VEX Mission Companion · Vexa</span>
+        <span>Static pitch demo · no live data</span>
+      </div>
     </footer>
 
     <script src="./app.js" defer></script>

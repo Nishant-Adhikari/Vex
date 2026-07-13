@@ -17,4 +17,11 @@ await cp(
   path.join(outputDir, "assets/vexa-spritesheet.webp"),
 );
 
-console.log(`Vexa pitch site built at ${outputDir}`);
+// Self-hosted webfonts (Instrument Serif / Instrument Sans / JetBrains Mono).
+await cp(
+  path.join(siteDir, "assets/fonts"),
+  path.join(outputDir, "assets/fonts"),
+  { recursive: true },
+);
+
+console.log(`VEX Mission Companion pitch site built at ${outputDir}`);
