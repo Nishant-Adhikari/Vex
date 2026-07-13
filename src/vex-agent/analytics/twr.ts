@@ -89,6 +89,12 @@ export function timeWeightedReturn(
   let base = sortedPoints[0]!.valueUsd; // opening base of the current sub-period
   let latest = sortedPoints[0]!.valueUsd; // latest snapshot value seen so far
   let pointIdx = 1; // sortedPoints[0] is the opening value, already consumed
+  // A sub-period only exists once a NEW snapshot is observed. Multiple flows
+  // that fall between the SAME two adjacent snapshots must NOT each close a
+  // fresh growth factor against the stale opening value — they aggregate into a
+  // single base adjustment. This flag tracks whether a snapshot has been seen
+  // since the current base was opened.
+  let pointObservedSinceBase = false;
 
   const closeSubPeriod = (endValue: number): void => {
     // Guard divide-by-zero / negative base: contribute a neutral factor.
@@ -104,10 +110,20 @@ export function timeWeightedReturn(
     while (pointIdx < sortedPoints.length && sortedPoints[pointIdx]!.t <= flow.t) {
       latest = sortedPoints[pointIdx]!.valueUsd;
       pointIdx += 1;
+      pointObservedSinceBase = true;
     }
-    // Close the sub-period at the pre-flow value, then re-base past the flow.
-    closeSubPeriod(latest);
-    base = latest + flow.usd;
+    if (pointObservedSinceBase) {
+      // A new snapshot arrived since the base opened → close this sub-period at
+      // the pre-flow value, then re-base past the flow.
+      closeSubPeriod(latest);
+      base = latest + flow.usd;
+      pointObservedSinceBase = false;
+    } else {
+      // No new snapshot since the base opened: the value is unchanged from the
+      // base, so this flow only shifts the base for the next sub-period (growth
+      // would be a no-op 1×). Aggregate it — never multiply a stale factor.
+      base += flow.usd;
+    }
   }
 
   // Consume any remaining snapshots and close the final sub-period at the last.

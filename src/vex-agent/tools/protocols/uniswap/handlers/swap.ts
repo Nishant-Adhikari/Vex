@@ -237,24 +237,20 @@ async function executeUniswapSwap(
   // invariant), and the balance is read with the keyless public client — the same
   // read `ensureUniswapSufficientBalance` uses below. A normal numeric amountIn is
   // parsed exactly as before.
-  const wantsLiveBalance = usesLiveBalanceSell(amountInRaw, sellFraction);
-  let amountIn: bigint;
-  if (wantsLiveBalance) {
-    if (side !== "sell" || tokenIn.isNative) {
-      return fail('amountIn "max" / sellFraction is only supported when selling a non-native token (uniswap.swap.sell). Pass a numeric amountIn instead.');
-    }
-    let owner: string;
-    try {
-      owner = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
-    } catch (err) {
-      return walletScopeErrorToResult(err);
-    }
-    const liveBalance = await readUniswapErc20Balance(getUniswapPublicClient(deployment), tokenIn.address, getAddress(owner));
-    amountIn = resolveSellAmount({ amountInRaw, tokenInDecimals: tokenIn.decimals, liveBalance, sellFraction });
-    if (amountIn <= 0n) return fail(`No ${tokenIn.symbol} balance to sell (live on-chain balance is 0).`);
-  } else {
-    amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+  // SECURITY (Codex PR #3, P1 — money-binding). The "max" / sellFraction
+  // live-balance resolver overrode amountIn at execute time, but the prequote gate
+  // binds its identity on the QUOTED amountIn — so a quote for a small amount could
+  // authorize selling the ENTIRE live balance (far more than was previewed). Until
+  // the gate binds the RESOLVED amount, refuse the sentinels: callers pass an
+  // explicit numeric amountIn with a matching fresh quote.
+  // TODO(exit-engine, before execute-mode): bind resolveSellAmount's resolved
+  // amount into the prequote identity/hash, then re-enable "max"/sellFraction.
+  if (usesLiveBalanceSell(amountInRaw, sellFraction)) {
+    return fail(
+      'amountIn "max" / sellFraction is temporarily disabled pending prequote-gate binding (money-safety). Pass an explicit numeric amountIn with a fresh matching quote.',
+    );
   }
+  const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
 
   const quoted = await computeQuote(deployment, tokenIn, tokenOut, amountIn, slippageBps);
 
@@ -339,9 +335,9 @@ async function executeUniswapSwap(
 
   const txHash = await sendUniswapTransaction(publicClient, walletClient, tx);
   const amountOutHuman = formatUnits(quoted.amountOut, tokenOut.decimals);
-  // On the live-balance path amountInRaw is a sentinel ("max") — report the
-  // resolved human amount so the output + trade capture record the real figure.
-  const amountInHuman = wantsLiveBalance ? formatUnits(amountIn, tokenIn.decimals) : amountInRaw;
+  // amountInRaw is the caller's explicit human amount (the "max"/sellFraction
+  // sentinels are rejected earlier pending prequote-gate binding).
+  const amountInHuman = amountInRaw;
 
   logger.info("uniswap.swap.executed", { chain: deployment.key, version: quoted.route.version, side });
 
