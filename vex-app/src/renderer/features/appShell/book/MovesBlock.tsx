@@ -290,7 +290,13 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
   const query = useMoves(sessionId);
   const result = query.data;
   const allMoves = result?.ok ? result.data : [];
-  const moves = allMoves.slice(0, MOVES_DISPLAY_CAP);
+  // Take the most-recent window (server returns newest-first), then render it in
+  // ASCENDING timestamp order so the ledger reads oldest → newest top-to-bottom
+  // (the buy→sell story flows down the list). Sort a copy — never touch allMoves,
+  // which the Deployed sum below still reads over the full fetched set.
+  const moves = allMoves
+    .slice(0, MOVES_DISPLAY_CAP)
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 
   // Seed = the session's starting bankroll in ETH, read from its latest
   // finalized mission result (`bankrollStartEth`) — the one clean,
