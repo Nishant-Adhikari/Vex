@@ -34,7 +34,6 @@ import {
   EM_DASH,
   bestWorst,
   computeWinRate,
-  dailyBuckets,
   filterByRange,
   formatDurationS,
   formatEth,
@@ -44,8 +43,6 @@ import {
   sumPnlEth,
   type DashboardRange,
 } from "./missionHistoryModel.js";
-
-type Grouping = "mission" | "day";
 
 const RANGES: readonly DashboardRange[] = ["1W", "1M", "3M", "ALL"];
 const RANGE_LABEL: Record<DashboardRange, string> = {
@@ -62,15 +59,6 @@ const PF_RANGE_LABEL: Record<PortfolioRange, string> = {
   "1M": "past month",
   ALL: "all time",
 };
-
-/** A single bar in the chart — one mission or one consolidated day. */
-interface BarItem {
-  readonly key: string;
-  readonly label: string;
-  readonly valueEth: number;
-  /** Optional secondary line for the tooltip (mission count / goal). */
-  readonly sub?: string;
-}
 
 export function MissionHistory(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
@@ -125,10 +113,9 @@ function Dashboard({
   readonly results: readonly MissionResultDto[];
 }): JSX.Element {
   const [range, setRange] = useState<DashboardRange>("ALL");
-  const [grouping, setGrouping] = useState<Grouping>("mission");
 
   // Seed + account value are ALL-TIME (the origin never changes with a filter);
-  // the delta + register below are scoped to the selected range.
+  // the delta + stats below are scoped to the selected range.
   const seed = seedEth(results);
   const cumulativeAll = sumPnlEth(results);
   const accountEth = seed === null ? null : seed + cumulativeAll;
@@ -141,7 +128,6 @@ function Dashboard({
   const rangedPct = returnPct(seed, rangedPnl);
   const rangedUsd = sumUsd(ranged);
 
-  const bars = buildBars(ranged, grouping);
   const extremes = bestWorst(ranged);
   const winRate = computeWinRate(ranged);
   const totalTrades = ranged.reduce((n, r) => n + r.trades, 0);
@@ -188,32 +174,19 @@ function Dashboard({
           </div>
         </div>
 
-        {/* Controls — range pills (left) + grouping toggle (right). */}
+        {/* Range pills scope the delta + stats + table below. */}
         <div className="flex flex-wrap items-center gap-2">
           {RANGES.map((r) => (
             <Pill key={r} active={range === r} onClick={() => setRange(r)}>
               {r}
             </Pill>
           ))}
-          <div className="ml-auto flex items-center gap-2">
-            <Pill
-              active={grouping === "mission"}
-              onClick={() => setGrouping("mission")}
-            >
-              By mission
-            </Pill>
-            <Pill active={grouping === "day"} onClick={() => setGrouping("day")}>
-              By day
-            </Pill>
-          </div>
         </div>
-
-        <BarChart items={bars} price={latestPrice} />
       </section>
 
-      {/* ── Register ─────────────────────────────────────────────── */}
+      {/* ── Stats ────────────────────────────────────────────────── */}
       <section className="flex flex-col gap-4 border-t border-[var(--vex-line)] pt-6">
-        <h2 className="vex-eyebrow">Register</h2>
+        <h2 className="vex-eyebrow">Mission stats</h2>
         <div className="grid grid-cols-2 gap-x-10 gap-y-4 sm:grid-cols-3">
           <Stat
             label="Seed"
@@ -370,158 +343,6 @@ function sumUsd(results: readonly MissionResultDto[]): number | null {
     }
   }
   return seen ? sum : null;
-}
-
-/**
- * Chart items oldest→newest for the chosen grouping. "By mission" is one bar
- * per run (null PnL → a flat 0 bar); "By day" consolidates via `dailyBuckets`.
- * The input is newest-first, so the mission mapping reverses it.
- */
-function buildBars(
-  results: readonly MissionResultDto[],
-  grouping: Grouping,
-): BarItem[] {
-  if (grouping === "day") {
-    return dailyBuckets(results).map((b) => ({
-      key: b.key,
-      label: b.label,
-      valueEth: b.valueEth,
-      sub: `${b.count} mission${b.count === 1 ? "" : "s"}`,
-    }));
-  }
-  const bars: BarItem[] = [];
-  for (let i = results.length - 1; i >= 0; i -= 1) {
-    const r = results[i]!;
-    bars.push({
-      key: r.missionRunId,
-      label: `#${r.seqNo}`,
-      valueEth: r.pnlEth ?? 0,
-      sub: r.goalSnippet ?? undefined,
-    });
-  }
-  return bars;
-}
-
-const CHART_H = 180;
-const PAD_TOP = 14;
-const PAD_BOTTOM = 26;
-const SLOT = 72;
-const MIN_W = 480;
-const BAR_MAX_W = 40;
-
-/**
- * Hand-rolled zero-baseline bar chart (no chart lib, mirrors the ledger's
- * sparkline approach): bars rise green above a dashed zero line and fall red
- * below it, scaled to the data's own min/max. Wider than its column when there
- * are many bars — the wrapper scrolls horizontally rather than crushing them.
- */
-function BarChart({
-  items,
-  price,
-}: {
-  readonly items: readonly BarItem[];
-  readonly price: number | null;
-}): JSX.Element {
-  if (items.length === 0) {
-    return (
-      <div className="flex h-[140px] items-center justify-center rounded-[6px] border border-dashed border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
-        No missions in this range.
-      </div>
-    );
-  }
-
-  const values = items.map((i) => i.valueEth);
-  const max = Math.max(0, ...values);
-  const min = Math.min(0, ...values);
-  const span = max === min ? 1 : max - min;
-  const innerH = CHART_H - PAD_TOP - PAD_BOTTOM;
-  const yOf = (v: number): number =>
-    PAD_TOP + innerH * (1 - (v - min) / span);
-  const baselineY = yOf(0);
-
-  const n = items.length;
-  const width = Math.max(MIN_W, n * SLOT);
-  const slotW = width / n;
-  const barW = Math.min(slotW * 0.42, BAR_MAX_W);
-  const showValue = n <= 8;
-
-  return (
-    <div className="overflow-x-auto">
-      <svg
-        viewBox={`0 0 ${width} ${CHART_H}`}
-        width={width}
-        height={CHART_H}
-        role="img"
-        aria-label="Profit and loss per mission"
-        className="max-w-full"
-      >
-        {/* Zero baseline. */}
-        <line
-          x1={0}
-          y1={baselineY}
-          x2={width}
-          y2={baselineY}
-          stroke="var(--vex-line-strong)"
-          strokeWidth={1}
-          strokeDasharray="2 3"
-        />
-        {items.map((item, i) => {
-          const xCenter = slotW * (i + 0.5);
-          const yVal = yOf(item.valueEth);
-          const top = Math.min(baselineY, yVal);
-          const h = Math.max(1, Math.abs(baselineY - yVal));
-          const positive = item.valueEth >= 0;
-          const fill = positive
-            ? "var(--color-success)"
-            : "var(--color-destructive)";
-          const usd = price !== null ? item.valueEth * price : null;
-          // USD leads the label + tooltip; ETH is the parenthetical.
-          const valueLabel =
-            usd !== null
-              ? usdText(usd, { signed: true })
-              : `${formatEth(item.valueEth, { signed: true })} ETH`;
-          const tip =
-            `${item.label}: ${valueLabel}` +
-            (usd !== null ? ` (${formatEth(item.valueEth, { signed: true })} ETH)` : "") +
-            (item.sub ? ` — ${item.sub}` : "");
-          return (
-            <g key={item.key}>
-              <title>{tip}</title>
-              <rect
-                x={xCenter - barW / 2}
-                y={top}
-                width={barW}
-                height={h}
-                rx={2}
-                fill={fill}
-                opacity={0.9}
-              />
-              {showValue ? (
-                <text
-                  x={xCenter}
-                  y={positive ? top - 5 : top + h + 12}
-                  textAnchor="middle"
-                  className="fill-[var(--vex-text-3)] font-mono"
-                  fontSize={9}
-                >
-                  {valueLabel}
-                </text>
-              ) : null}
-              <text
-                x={xCenter}
-                y={CHART_H - 8}
-                textAnchor="middle"
-                className="fill-[var(--vex-text-3)] font-mono"
-                fontSize={9}
-              >
-                {item.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
 }
 
 function Pill({
