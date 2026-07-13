@@ -169,12 +169,14 @@ h3 { margin: 0; font-family: var(--sans); font-weight: 600; }
 /* ---------- stage (shared: hero + demo) ---------- */
 .stage-panel, .demo-stage {
   position: relative; overflow: hidden;
-  border: 1px solid var(--line); background: var(--ink-deep);
+  /* Light "paper" screen so the dark Vexa sprite + its motion read clearly
+     against it (the rest of the page stays dark navy). */
+  border: 1px solid var(--line); background: var(--paper);
 }
 .stage-panel {
   min-height: 460px; display: grid; place-items: center;
 }
-.reg { position: absolute; width: 9px; height: 9px; border: 1px solid var(--line); }
+.reg { position: absolute; width: 9px; height: 9px; border: 1px solid rgba(10, 13, 24, 0.22); }
 .reg-tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }
 .reg-tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; }
 .reg-bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; }
