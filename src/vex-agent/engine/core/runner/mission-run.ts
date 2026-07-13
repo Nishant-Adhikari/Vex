@@ -41,6 +41,7 @@ import {
   resolveDurationMinutes,
 } from "../../mission/mission-deadline.js";
 import { captureMissionStart } from "../../mission/mission-results-capture.js";
+import { forceLiquidateOnDeadline } from "./mission-liquidate-hook.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import {
@@ -187,6 +188,21 @@ export async function runPreparedMissionStart(
       controller.signal,
     );
 
+    // Hard-deadline exit: the enforcer can stop the run mid-position. Sell the
+    // tokens THIS mission opened back to ETH BEFORE finalizing so the run ends
+    // flat instead of stranded holding a bag. Fail-soft — never blocks finalize.
+    await forceLiquidateOnDeadline({
+      missionId: prepared.missionId,
+      runId: prepared.runId,
+      sessionId: prepared.sessionId,
+      stopReason: result.stopReason,
+      context: {
+        ...hydrated.context,
+        missionRunId: prepared.runId,
+        sessionKind: "mission",
+      },
+    });
+
     const missionStatus = await finalizeMissionRunStatus(
       prepared.missionId,
       prepared.runId,
@@ -319,6 +335,21 @@ export async function resumePreparedMissionRun(
       promptOptions,
       controller.signal,
     );
+
+    // Hard-deadline exit: the enforcer can stop the run mid-position. Sell the
+    // tokens THIS mission opened back to ETH BEFORE finalizing so the run ends
+    // flat instead of stranded holding a bag. Fail-soft — never blocks finalize.
+    await forceLiquidateOnDeadline({
+      missionId: prepared.run.missionId,
+      runId: prepared.runId,
+      sessionId: prepared.run.sessionId,
+      stopReason: result.stopReason,
+      context: {
+        ...hydrated.context,
+        missionRunId: prepared.runId,
+        sessionKind: "mission",
+      },
+    });
 
     const missionStatus = await finalizeMissionRunStatus(
       prepared.run.missionId,

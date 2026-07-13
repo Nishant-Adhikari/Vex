@@ -44,6 +44,7 @@ const OPEN = {
   goalSnippet: "grow ETH +8%",
   bankrollStartEth: 0.012,
   ethPriceUsdStart: 3000,
+  startPositions: null,
 };
 
 describe("openMissionResult", () => {
