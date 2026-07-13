@@ -18,7 +18,9 @@ import {
 import type { Result } from "@shared/ipc/result.js";
 import type {
   PortfolioDto,
+  PortfolioRange,
   PortfolioReadInput,
+  PortfolioSeriesDto,
 } from "@shared/schemas/portfolio.js";
 import type { MovesDto } from "@shared/schemas/portfolio-moves.js";
 import { portfolioKeys } from "./queryKeys.js";
@@ -46,6 +48,28 @@ export function usePortfolio(
   activeSessionId: string | null,
 ): UseQueryResult<Result<PortfolioDto>> {
   return useQuery(portfolioOptions(activeSessionId));
+}
+
+/**
+ * Portfolio value time-series (the dashboard equity curve). GLOBAL scope only
+ * — the equity curve is the whole-inventory view; a per-session curve is a
+ * separate concern if ever needed. Read-only; an empty inventory resolves to
+ * `{ points: [] }`, never an error. Keyed by scope + range so each window is a
+ * distinct cache entry.
+ */
+function portfolioSeriesOptions(range: PortfolioRange) {
+  return queryOptions({
+    queryKey: portfolioKeys.series("global", range),
+    queryFn: () => window.vex.portfolio.series({ scope: "global", range }),
+    staleTime: STALE_MS,
+    refetchInterval: REFETCH_MS,
+  });
+}
+
+export function usePortfolioSeries(
+  range: PortfolioRange,
+): UseQueryResult<Result<PortfolioSeriesDto>> {
+  return useQuery(portfolioSeriesOptions(range));
 }
 
 /**

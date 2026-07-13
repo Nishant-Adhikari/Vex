@@ -16,14 +16,17 @@ import type { Result } from "@shared/ipc/result.js";
 import {
   portfolioDtoSchema,
   portfolioReadInputSchema,
+  portfolioSeriesDtoSchema,
+  portfolioSeriesInputSchema,
   type PortfolioDto,
+  type PortfolioSeriesDto,
 } from "@shared/schemas/portfolio.js";
 import {
   movesDtoSchema,
   movesReadInputSchema,
   type MovesDto,
 } from "@shared/schemas/portfolio-moves.js";
-import { getPortfolio } from "../database/portfolio-db.js";
+import { getPortfolio, getPortfolioSeries } from "../database/portfolio-db.js";
 import { getMovesForSession } from "../database/moves-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
@@ -50,6 +53,42 @@ function registerPortfolioReadHandler(): () => void {
       log.info(
         `[ipc:vex:portfolio:read] errCode=${outcome.error.code} ` +
           `scope=${input.scope}${sessionPart} correlationId=${ctx.requestId}`,
+      );
+      return outcome;
+    },
+  });
+}
+
+/**
+ * SERIES read — the portfolio VALUE time-series for the dashboard equity
+ * curve. Backed by `portfolio-db.ts`; resolves the same server-side wallet
+ * allow-list as `read` and returns one point per COMPLETE snapshot group over
+ * the requested range (1D/1W/1M/ALL). Empty scopes resolve to `{ points: [] }`,
+ * never an error. Logging records `scope`, `range`, the point COUNT, and the
+ * `correlationId` ONLY — never addresses or USD figures.
+ */
+function registerPortfolioSeriesReadHandler(): () => void {
+  return registerHandler({
+    channel: CH.portfolio.series,
+    domain: "portfolio",
+    inputSchema: portfolioSeriesInputSchema,
+    outputSchema: portfolioSeriesDtoSchema,
+    handle: async (input, ctx): Promise<Result<PortfolioSeriesDto>> => {
+      const sessionPart =
+        input.scope === "session" ? ` sessionId=${input.sessionId}` : "";
+      const outcome = await getPortfolioSeries(input);
+      if (outcome.ok) {
+        log.info(
+          `[ipc:vex:portfolio:series] ok scope=${input.scope}${sessionPart} ` +
+            `range=${input.range} points=${outcome.data.points.length} ` +
+            `correlationId=${ctx.requestId}`,
+        );
+        return outcome;
+      }
+      log.info(
+        `[ipc:vex:portfolio:series] errCode=${outcome.error.code} ` +
+          `scope=${input.scope}${sessionPart} range=${input.range} ` +
+          `correlationId=${ctx.requestId}`,
       );
       return outcome;
     },
@@ -89,5 +128,9 @@ function registerPortfolioMovesReadHandler(): () => void {
 }
 
 export function registerPortfolioHandlers(): ReadonlyArray<() => void> {
-  return [registerPortfolioReadHandler(), registerPortfolioMovesReadHandler()];
+  return [
+    registerPortfolioReadHandler(),
+    registerPortfolioSeriesReadHandler(),
+    registerPortfolioMovesReadHandler(),
+  ];
 }

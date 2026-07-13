@@ -257,6 +257,7 @@ export const CH = {
   // resolved in main and never cross the boundary.
   portfolio: {
     read: "vex:portfolio:read",
+    series: "vex:portfolio:series",
     listMoves: "vex:portfolio:listMoves",
   },
 

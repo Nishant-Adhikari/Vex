@@ -2,6 +2,8 @@ import type { Result } from "../../../ipc/result.js";
 import type {
   PortfolioDto,
   PortfolioReadInput,
+  PortfolioSeriesDto,
+  PortfolioSeriesInput,
 } from "../../../schemas/portfolio.js";
 import type {
   MovesDto,
@@ -25,5 +27,8 @@ import type {
  */
 export interface PortfolioBridge {
   readonly read: (input: PortfolioReadInput) => Promise<Result<PortfolioDto>>;
+  readonly series: (
+    input: PortfolioSeriesInput,
+  ) => Promise<Result<PortfolioSeriesDto>>;
   readonly listMoves: (input: MovesReadInput) => Promise<Result<MovesDto>>;
 }
