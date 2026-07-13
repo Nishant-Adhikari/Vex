@@ -134,6 +134,8 @@ interface WalletFieldsetProps {
   readonly selectedSolanaWalletId: string | null;
   readonly evmOptions: ReadonlyArray<WalletSelectOption>;
   readonly solanaOptions: ReadonlyArray<WalletSelectOption>;
+  /** Labels of vault (hold-only) wallets excluded from the picker, for a note. */
+  readonly vaultLabels?: readonly string[];
   readonly onEvmChange: (id: string | null) => void;
   readonly onSolanaChange: (id: string | null) => void;
 }
@@ -143,6 +145,7 @@ export function WalletFieldset({
   selectedSolanaWalletId,
   evmOptions,
   solanaOptions,
+  vaultLabels = [],
   onEvmChange,
   onSolanaChange,
 }: WalletFieldsetProps): JSX.Element {
@@ -153,6 +156,13 @@ export function WalletFieldset({
         Optional — pick the EVM + Solana wallet this session may use. Locked
         once the session starts; leave empty for a chat-only session.
       </p>
+      {vaultLabels.length > 0 ? (
+        <p className="text-[11px] text-[var(--vex-text-3)]">
+          🔒 {vaultLabels.join(", ")}{" "}
+          {vaultLabels.length === 1 ? "is a vault wallet" : "are vault wallets"}{" "}
+          — hidden here so they can never be traded.
+        </p>
+      ) : null}
       <div className="grid grid-cols-2 gap-2">
         <WalletSelect
           label="EVM wallet"

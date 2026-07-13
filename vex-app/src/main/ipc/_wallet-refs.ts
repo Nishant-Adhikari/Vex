@@ -36,3 +36,24 @@ export function invalidWalletSelectionError(correlationId: string): VexError {
     correlationId,
   };
 }
+
+/** True when the wallet is flagged vault (hold-only, never a session wallet). */
+export function isVaultWallet(
+  family: "evm" | "solana",
+  walletId: string | null | undefined,
+): boolean {
+  if (!walletId) return false;
+  return getWalletById(family, walletId)?.vault === true;
+}
+
+export function vaultWalletSelectionError(correlationId: string): VexError {
+  return {
+    code: "wallets.invalid_selection",
+    domain: "wallets",
+    message: "That wallet is a vault (hold-only) wallet and can't be used for a session.",
+    retryable: false,
+    userActionable: true,
+    redacted: false,
+    correlationId,
+  };
+}
