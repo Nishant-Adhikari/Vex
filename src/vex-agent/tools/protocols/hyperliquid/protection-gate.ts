@@ -250,6 +250,19 @@ export function evaluateProtectionInvariant(toolId: string, params: Record<strin
     if (!slPrice) return { kind: "block", message: "A replacement full-position stop-loss price is required." };
     try { parseDecimalString(slPrice); } catch { return { kind: "block", message: "Stop-loss price must be a canonical positive decimal string." }; }
     if (stopIsBeyondLiquidation(snapshot, slPrice)) return { kind: "block", message: "Stop-loss is beyond the estimated liquidation price." };
+    const tpPrice = stringParam(params, "tpPrice");
+    if (tpPrice !== undefined) {
+      try { parseDecimalString(tpPrice); } catch { return { kind: "block", message: "Take-profit price must be a canonical positive decimal string." }; }
+      // Inverse of the open branch's stop-direction check: a take-profit is the
+      // profitable exit, so it sits above a long entry and below a short entry.
+      if (snapshot.entryPx === null) return { kind: "block", message: "Cannot validate the take-profit direction without a known position entry price." };
+      const positionSize = new Decimal(snapshot.positionSize);
+      const takeProfit = new Decimal(tpPrice);
+      const entry = new Decimal(snapshot.entryPx);
+      if ((positionSize.gt(0) && takeProfit.lte(entry)) || (positionSize.lt(0) && takeProfit.gte(entry))) {
+        return { kind: "block", message: "Take-profit must be above a long entry or below a short entry." };
+      }
+    }
   }
   if ((toolId === "hyperliquid.perp.setLeverage" || toolId === "hyperliquid.perp.adjustMargin") && snapshot.state !== "FLAT" && !hasStandingFullPositionStop(snapshot)) {
     return { kind: "block", message: "Leverage or margin cannot change until this open position has a full-position stop-loss." };

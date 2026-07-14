@@ -168,6 +168,16 @@ describe("Hypervexing mode-scoped aliases", () => {
     });
   });
 
+  it("forwards slPrice and tpPrice through the hl_set_stop alias unchanged (W16)", () => {
+    const def = getHypervexingAliasToolDef("hl_set_stop");
+    expect(def?.parameters.properties).toHaveProperty("slPrice");
+    expect(def?.parameters.properties).toHaveProperty("tpPrice");
+    expect(resolveHypervexingAlias("hl_set_stop", { coin: "BTC", slPrice: "59000", tpPrice: "65000" })).toEqual({
+      toolId: "hyperliquid.perp.setTpsl",
+      params: { coin: "BTC", slPrice: "59000", tpPrice: "65000" },
+    });
+  });
+
   it("keeps aliases outside the permanent registry and manifest census", () => {
     const permanentNames = new Set(getAllTools().map((tool) => tool.name));
     for (const alias of HYPERVEXING_ALIAS_NAMES) expect(permanentNames.has(alias)).toBe(false);

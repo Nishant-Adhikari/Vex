@@ -222,6 +222,20 @@ async function setTpsl(params: Record<string, unknown>, context: ProtocolExecuti
     containmentFailed = true;
     consolidation = { staleStopsCancelled: false, consolidationPending: true };
   }
+  // W16: optionally restore/replace the full-position take-profit in the same
+  // call. A take-profit is NOT protection, so its outcome never flips the
+  // stop-centric containment/protection verdict below; it is reported in its
+  // own fields so a failed re-apply is honest instead of silently dropped.
+  const takeProfitPrice = optionalDecimal(params, "tpPrice");
+  let takeProfit: { readonly takeProfitReplaced: boolean; readonly staleTakeProfitsCancelled: boolean } | undefined;
+  if (takeProfitPrice !== undefined) {
+    try {
+      takeProfit = await replaceFullPositionTakeProfit(orderExchange, asset.asset, snapshot, takeProfitPrice);
+    } catch (cause) {
+      logger.warn("hyperliquid.post_submit_containment_failed", { step: "set_tpsl_take_profit_replacement", cause });
+      takeProfit = { takeProfitReplaced: false, staleTakeProfitsCancelled: false };
+    }
+  }
   let failureMeta: Record<string, unknown> = {};
   if (consolidation.consolidationPending) {
     try {
@@ -239,6 +253,10 @@ async function setTpsl(params: Record<string, unknown>, context: ProtocolExecuti
     coin,
     staleStopsCancelled: consolidation.staleStopsCancelled,
     consolidationPending: consolidation.consolidationPending,
+    ...(takeProfit === undefined ? {} : {
+      takeProfitReplaced: takeProfit.takeProfitReplaced,
+      staleTakeProfitsCancelled: takeProfit.staleTakeProfitsCancelled,
+    }),
     ...(containmentFailed || consolidation.consolidationPending ? {
       protectionState: "unknown",
       actionableError: "Stop-loss replacement outcome is not fully verified. Verify the position and run perp.setTpsl before any other Hyperliquid action.",
@@ -259,6 +277,53 @@ export async function cancelStaleStopsAfterReplacement(
   const cancellation = await exchange.cancel({ cancels: staleStops.map((stop) => ({ a: asset, o: stop.oid })) });
   const staleStopsCancelled = exchangeOk(cancellation);
   return { staleStopsCancelled, consolidationPending: !staleStopsCancelled };
+}
+
+/**
+ * Place a full-position reduce-only take-profit trigger for the live position,
+ * then cancel any stale take-profit trigger — the take-profit analogue of the
+ * stop replacement's place-then-cancel-stale sequence. The take-profit mirrors
+ * the closing side and absolute live size of the stop and never touches the
+ * stop-loss. Cancellation runs only after the new trigger is accepted, so a
+ * failed placement leaves the prior take-profit intact.
+ */
+export async function replaceFullPositionTakeProfit(
+  exchange: Pick<HyperliquidExchangeClient, "setPositionTpsl" | "cancel">,
+  asset: number,
+  snapshot: PositionProtectionSnapshot,
+  takeProfitPrice: DecimalString,
+): Promise<{ readonly takeProfitReplaced: boolean; readonly staleTakeProfitsCancelled: boolean }> {
+  const replacement = await exchange.setPositionTpsl({
+    a: asset,
+    b: new Decimal(snapshot.positionSize).lt(0),
+    p: takeProfitPrice,
+    s: absolutePositionSize(snapshot.positionSize),
+    r: true,
+    t: { trigger: { isMarket: true, triggerPx: takeProfitPrice, tpsl: "tp" } },
+  });
+  if (!exchangeOk(replacement)) return { takeProfitReplaced: false, staleTakeProfitsCancelled: false };
+  const { staleTakeProfitsCancelled } = await cancelStaleTakeProfitsAfterReplacement(replacement, exchange, asset, snapshot);
+  return { takeProfitReplaced: true, staleTakeProfitsCancelled };
+}
+
+/**
+ * Cancel the standing full-position and fixed-size take-profit triggers once a
+ * replacement take-profit is confirmed accepted. Take-profit-only: it never
+ * includes stop-loss orders, so replacing the take-profit cannot orphan the
+ * stop. A missing stale trigger is a successful no-op.
+ */
+export async function cancelStaleTakeProfitsAfterReplacement(
+  replacement: HyperliquidExchangeResult,
+  exchange: Pick<HyperliquidExchangeClient, "cancel">,
+  asset: number,
+  snapshot: PositionProtectionSnapshot,
+): Promise<{ readonly staleTakeProfitsCancelled: boolean; readonly takeProfitPending: boolean }> {
+  if (!exchangeOk(replacement)) return { staleTakeProfitsCancelled: false, takeProfitPending: false };
+  const staleTakeProfits = [...snapshot.fullPositionTakeProfits, ...snapshot.fixedSizeTakeProfits];
+  if (staleTakeProfits.length === 0) return { staleTakeProfitsCancelled: true, takeProfitPending: false };
+  const cancellation = await exchange.cancel({ cancels: staleTakeProfits.map((takeProfit) => ({ a: asset, o: takeProfit.oid })) });
+  const staleTakeProfitsCancelled = exchangeOk(cancellation);
+  return { staleTakeProfitsCancelled, takeProfitPending: !staleTakeProfitsCancelled };
 }
 
 async function modifyOrder(params: Record<string, unknown>, context: ProtocolExecutionContext) {

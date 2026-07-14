@@ -208,7 +208,7 @@ export function buildProtocolsPrompt(): string {
   lines.push("- With the default policy, every perp entry has an atomic reduce-only stop-loss child and later a server-side full-position stop. A stop loss is not a guaranteed fill: gaps, liquidation, and venue conditions can still cause losses.");
   lines.push("- If the user explicitly disabled stop-loss protection in settings, warn them that the resulting entry is unprotected before using `perp.open`; the model cannot make or change that setting. A supplied stop always remains protected even under that opt-out.");
   lines.push("- Treat leverage as liquidation risk, not buying power. Stay within the user policy and market maximum, account for funding, and do not cancel the sole protective stop. TWAP scale-ins need a standing full-position stop.");
-  lines.push("- When a Hyperliquid position reports `CONSOLIDATING`, use `perp.setTpsl` to consolidate its full-position stop before any other Hyperliquid action.");
+  lines.push("- When a Hyperliquid position reports `CONSOLIDATING`, use `perp.setTpsl` to consolidate its full-position stop before any other Hyperliquid action; pass `tpPrice` in the same call to restore the intended take-profit when the entry specified one.");
   lines.push("- If the user explicitly asks for Hypervexing mode (for example: ‘hypervexing’, ‘uruchom HL’, or ‘enter HL mode’), call `hyperliquid_enter` in THAT turn. Do not merely describe the mode or ask a confirmation question.");
   lines.push("- Before any external Hyperliquid withdrawal or send, show the recipient and amount. First-entry acknowledgment discloses the 0.025% builder fee on filled notional; order flow seeks the venue allowance best-effort and omits the builder field if it is unavailable.");
   lines.push("");

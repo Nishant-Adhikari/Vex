@@ -43,11 +43,13 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "auditCapture",
   "builderForOrders",
   "cancelStaleStopsAfterReplacement",
+  "cancelStaleTakeProfitsAfterReplacement",
   "capturePerpSafely",
   "compensateRejectedStop",
   "consolidateConfirmedOpen",
   "hyperliquidDepositCapture",
   "preflightConfigureAndSubmitPerpOpen",
+  "replaceFullPositionTakeProfit",
   "requestHyperliquidWorkspaceMode",
   "resetBuilderFeeAllowanceMemoForTests",
 ] as const;

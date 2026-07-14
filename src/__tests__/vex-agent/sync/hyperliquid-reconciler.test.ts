@@ -324,14 +324,16 @@ describe("Hyperliquid reconciler — protection notice transition-gating", () =>
     expect(refs.appendEngineMessage).toHaveBeenCalledTimes(1);
   });
 
-  it("W13: the consolidation notice preserves an existing take-profit and does not overload setTpsl", async () => {
+  it("W16: the consolidation notice tells the agent to re-apply the take-profit via setTpsl tpPrice", async () => {
     const refs = makeRefs({ run: null, pending: null });
     await reconcileHyperliquid(depsFor(refs));
 
     const notice = refs.appendEngineMessage.mock.calls[0]?.[1] as string;
     expect(notice).toMatch(/perp\.setTpsl/);
     expect(notice).toMatch(/take-profit/i);
-    // Must not tell the agent to cancel the take-profit (the dropped-TP bug).
-    expect(notice).toMatch(/leave that take-profit trigger in place|do not cancel it/i);
+    // setTpsl can now restore the take-profit itself via its tpPrice param.
+    expect(notice).toMatch(/tpPrice/);
+    // Must not tell the agent to leave/cancel a separate take-profit trigger.
+    expect(notice).not.toMatch(/leave that take-profit trigger in place|do not cancel it/i);
   });
 });

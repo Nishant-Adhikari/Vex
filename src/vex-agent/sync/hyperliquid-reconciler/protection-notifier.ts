@@ -14,11 +14,11 @@ export interface HyperliquidProtectionNotifierDeps {
   readonly appendEngineMessage: typeof appendEngineMessage;
 }
 
-// W13: perp.setTpsl only replaces the STOP-LOSS (it takes slPrice, not tpPrice),
-// so the notice must not imply it re-applies a take-profit. If the entry set a
-// take-profit, the agent must keep that existing TP trigger and cancel ONLY the
-// transient fixed-size stop child — otherwise the TP is silently dropped.
-const CONSOLIDATION_NOTICE = "CONSOLIDATING protection detected. Use hyperliquid.perp.setTpsl to place a full-position stop, then cancel ONLY the transient fixed-size stop child before any other Hyperliquid action. If the original entry set a take-profit, leave that take-profit trigger in place — do not cancel it.";
+// W16: perp.setTpsl now takes an optional tpPrice, so it can restore/replace the
+// full-position take-profit in the SAME call that consolidates the stop. The
+// notice tells the agent to re-apply the intended take-profit via tpPrice when
+// the entry specified one, instead of hand-managing a separate TP trigger.
+const CONSOLIDATION_NOTICE = "CONSOLIDATING protection detected. Use hyperliquid.perp.setTpsl to place a full-position stop, then cancel ONLY the transient fixed-size stop child before any other Hyperliquid action. If the original entry specified a take-profit, re-apply it in the same call via perp.setTpsl's tpPrice.";
 const UNPROTECTED_NOTICE = "UNPROTECTED Hyperliquid position detected. Verify protection immediately; if it cannot be restored, propose a reduce-only close.";
 
 /**
