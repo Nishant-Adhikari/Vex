@@ -42,11 +42,20 @@ export async function persistBatchTranscript(args: {
   readonly executedResults: ExecutedResult[];
   /** MUTATED: pushed with assistant message + tool result messages. */
   readonly liveMessages: Message[];
+  /**
+   * True ONLY for the synthetic prepared-action follow-up call the engine
+   * dispatches itself (never model output — see
+   * `dispatchPreparedActionFollowUp`). Stamps transcript provenance so the
+   * assistant-role row is never mistaken for real model output.
+   */
+  readonly systemOriginated?: boolean;
 }): Promise<void> {
   const { sessionId, content, executedCalls, executedResults, liveMessages } = args;
 
   // ── DEFERRED SAVE: assistant message with canonical calls only ──
-  await saveAssistantMessage(sessionId, content, executedCalls);
+  await saveAssistantMessage(sessionId, content, executedCalls, {
+    systemOriginated: args.systemOriginated,
+  });
 
   liveMessages.push({
     role: "assistant",

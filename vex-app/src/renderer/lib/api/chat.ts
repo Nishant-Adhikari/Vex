@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import {
   useMutation,
+  useMutationState,
   useQueryClient,
   type UseMutationResult,
 } from "@tanstack/react-query";
@@ -9,7 +10,7 @@ import type {
   ChatSubmitInput,
   ChatSubmitResult,
 } from "@shared/schemas/chat.js";
-import { isUsageQueryForSession } from "./queryKeys.js";
+import { approvalsKeys, isUsageQueryForSession } from "./queryKeys.js";
 import { sessionKeys } from "./sessions.js";
 
 /**
@@ -37,12 +38,33 @@ export type UseSubmitChatResult = UseMutationResult<
   ChatSubmitInput
 > & { readonly stop: () => void };
 
+export const CHAT_SUBMIT_MUTATION_KEY = ["chat", "submit"] as const;
+
+/**
+ * Read the shared mutation cache instead of creating another submit observer.
+ * This keeps shell-level status indicators live for the entire IPC request,
+ * including quiet gaps between provider streams and tool execution.
+ */
+export function useIsChatSubmitting(sessionId: string | null): boolean {
+  const pendingSessionIds = useMutationState({
+    filters: {
+      mutationKey: CHAT_SUBMIT_MUTATION_KEY,
+      status: "pending",
+    },
+    select: (mutation) =>
+      (mutation.state.variables as ChatSubmitInput | undefined)?.sessionId ??
+      null,
+  });
+  return sessionId !== null && pendingSessionIds.includes(sessionId);
+}
+
 export function useSubmitChat(): UseSubmitChatResult {
   const queryClient = useQueryClient();
   const cancelRef = useRef<(() => void) | null>(null);
   const activeSubmitRef = useRef<symbol | null>(null);
 
   const mutation = useMutation({
+    mutationKey: CHAT_SUBMIT_MUTATION_KEY,
     mutationFn: (input: ChatSubmitInput) => {
       const invocation = window.vex.chat.submit(input);
       cancelRef.current = invocation.cancel;
@@ -62,6 +84,17 @@ export function useSubmitChat(): UseSubmitChatResult {
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.plan(variables.sessionId),
       });
+      // A restricted turn can enqueue an approval before chat.submit returns.
+      // Refresh both the inline card and the app-wide inbox immediately instead
+      // of waiting for their polling fallback.
+      if (result.data.pendingApprovals?.length > 0) {
+        void queryClient.invalidateQueries({
+          queryKey: approvalsKeys.pending(variables.sessionId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: approvalsKeys.pendingAll(),
+        });
+      }
       // A completed turn advances usage rows + the session token_count, so
       // refresh the runtime bar immediately (usage totals, last-turn, and
       // context window). The transcript-append live-sync is the backstop

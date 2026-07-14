@@ -183,7 +183,16 @@ export type MessageType =
   | "checkpoint"
   | "wake_due"
   | "subagent_relay"
-  | "tool_result";
+  | "tool_result"
+  /**
+   * A trusted prepare→execute handoff the engine synthesized itself (never
+   * model output — see `dispatchPreparedActionFollowUp`). Paired with
+   * `source: "engine"` on the same assistant-role row so an auditor reading
+   * `messages` directly can never mistake it for a real model-authored
+   * tool_call, even though the row keeps `role: "assistant"` for the
+   * provider transcript format.
+   */
+  | "prepared_action_follow_up";
 
 export type MessageVisibility = "user" | "internal";
 
