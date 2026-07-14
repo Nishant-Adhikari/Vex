@@ -191,6 +191,9 @@ describe("SessionContext header (slice C)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(exportMarkdown).not.toHaveBeenCalled();
-    expect(screen.queryByText("Export session as Markdown?")).toBeNull();
+    // The shared Dialog keeps children mounted and closes via the native
+    // <dialog> `open` attribute (see ReportIssueDialog.test.tsx) — assert
+    // closure through the attribute, not text presence.
+    expect(document.querySelector("dialog[open]")).toBeNull();
   });
 });
