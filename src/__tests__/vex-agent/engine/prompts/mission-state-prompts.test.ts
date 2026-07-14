@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// buildMissionRunPrompt reads `strategyDiscipline` fresh via loadConfig() at
+// build time. Stub it to the defaults (no strategyDiscipline) so these
+// prompt-string assertions stay hermetic — no real config file / fs touch.
+vi.mock("@config/store.js", async (importActual) => {
+  const actual = await importActual<typeof import("@config/store.js")>();
+  return { ...actual, loadConfig: () => actual.getDefaultConfig() };
+});
 
 import type { EngineContext } from "../../../../vex-agent/engine/types.js";
 import {
