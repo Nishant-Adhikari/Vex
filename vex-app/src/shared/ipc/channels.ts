@@ -88,6 +88,12 @@ export const CH = {
     setPinned: "vex:sessions:setPinned",
     delete: "vex:sessions:delete",
     /**
+     * Native, path-private Markdown transcript export. Main owns the save
+     * dialog and the destination path; the renderer receives only
+     * `saved | cancelled` (or a redacted error) — never the path.
+     */
+    exportMarkdown: "vex:sessions:exportMarkdown",
+    /**
      * Global runtime model resolution for a session. `getModel` is
      * read-only and reports the model the engine resolves from
      * `AGENT_PROVIDER`/`AGENT_MODEL` (source: global default vs.

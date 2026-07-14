@@ -10,11 +10,22 @@
  * Stage 4: the runtime bar (model/usage/context/compaction) moved OUT of this
  * header — it now lives solely in the BOOK panel's RUNTIME & COST block, so the
  * desk rule stays a single quiet title line.
+ *
+ * WP-K adds a quiet Markdown export control. Clicking it opens
+ * `SessionExportDialog` (the privacy-contract confirmation) rather than
+ * exporting immediately; the mutation only fires after that confirmation.
  */
 
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
+import {
+  CheckmarkCircle02Icon,
+  Download01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
+import { useExportSessionMarkdown } from "../../lib/api/sessions.js";
+import { SessionExportDialog } from "./SessionExportDialog.js";
 import { Stamp } from "./SessionRows/Stamp.js";
 import { getSessionTitle } from "./sessionListModel.js";
 
@@ -31,6 +42,42 @@ export function SessionContext({
   loading,
   error,
 }: SessionContextProps): JSX.Element | null {
+  const exportMutation = useExportSessionMarkdown();
+  const [exportStatus, setExportStatus] = useState<"idle" | "saved" | "error">(
+    "idle",
+  );
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (exportStatus === "idle") return;
+    const timeout = window.setTimeout(() => setExportStatus("idle"), 2_500);
+    return () => window.clearTimeout(timeout);
+  }, [exportStatus]);
+
+  function confirmExport(): void {
+    if (activeSession === null) return;
+    setExportStatus("idle");
+    exportMutation.mutate(
+      { id: activeSession.id },
+      {
+        onSuccess: (result) => {
+          setExportConfirmOpen(false);
+          if (result.ok && result.data.outcome === "saved") {
+            setExportStatus("saved");
+          } else if (!result.ok) {
+            setExportStatus("error");
+          }
+          // `result.ok && outcome === "cancelled"` (native dialog dismissed)
+          // stays idle and silent per the export's cancellation contract.
+        },
+        onError: () => {
+          setExportConfirmOpen(false);
+          setExportStatus("error");
+        },
+      },
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex h-9 items-center gap-2 font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
@@ -79,6 +126,37 @@ export function SessionContext({
         {/* Mission identity now reads from the MISSION RAIL's Mission badge —
             the small header "mission" stamp was removed to avoid double-
             signalling. The `restricted` exception stamp stays. */}
+        <span
+          aria-live="polite"
+          className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]"
+        >
+          {exportStatus === "saved"
+            ? "Exported"
+            : exportStatus === "error"
+              ? "Export failed"
+              : ""}
+        </span>
+        <button
+          type="button"
+          aria-label="Export session as Markdown"
+          title="Export session as Markdown"
+          disabled={exportMutation.isPending}
+          onClick={() => setExportConfirmOpen(true)}
+          className="grid size-7 shrink-0 place-items-center rounded-sm text-[var(--vex-text-3)] transition-colors hover:bg-[var(--vex-surface-2)] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)] disabled:cursor-wait disabled:opacity-50"
+        >
+          <HugeiconsIcon
+            icon={exportStatus === "saved" ? CheckmarkCircle02Icon : Download01Icon}
+            size={15}
+            aria-hidden
+            className={exportMutation.isPending ? "animate-pulse" : undefined}
+          />
+        </button>
+        <SessionExportDialog
+          session={exportConfirmOpen ? activeSession : null}
+          pending={exportMutation.isPending}
+          onCancel={() => setExportConfirmOpen(false)}
+          onConfirm={confirmExport}
+        />
       </div>
     );
   }
