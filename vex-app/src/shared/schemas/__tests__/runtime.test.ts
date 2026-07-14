@@ -77,7 +77,7 @@ describe("runtime schemas", () => {
 });
 
 describe("runtime per-action discriminated unions", () => {
-  it("requestPause accepts all 5 outcomes", () => {
+  it("requestPause accepts all 6 outcomes", () => {
     expect(
       runtimeRequestPauseResultSchema.safeParse({
         outcome: "queued",
@@ -105,6 +105,12 @@ describe("runtime per-action discriminated unions", () => {
         outcome: "terminal",
         status: "stopped",
       }).success,
+    ).toBe(true);
+    // WP-C: a `running` run with a dead lease is refused up front instead
+    // of being enqueued and stranded forever (issue #12's bug class).
+    expect(
+      runtimeRequestPauseResultSchema.safeParse({ outcome: "already_parked" })
+        .success,
     ).toBe(true);
   });
 

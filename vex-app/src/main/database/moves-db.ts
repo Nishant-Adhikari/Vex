@@ -39,11 +39,20 @@
  *  - join key is the raw ADDRESS string — DO NOT lowercase (the engine stores
  *    raw checksum/base58 addresses).
  *  - The SELECT projects ONLY bounded, renderer-safe columns. It NEVER selects
- *    `params`, `result`, `trade_capture`, `meta`, or the raw `external_refs`
- *    JSONB. The single sanctioned extraction from `external_refs` is the
- *    on-chain tx reference scalar (`->>'txHash'` for EVM, `->>'signature'`
- *    for Solana) — public on-chain data powering the renderer's
- *    block-explorer deep links; never the whole blob.
+ *    `params`, `result`, `meta`, or any raw JSONB blob. The sanctioned scalar
+ *    extractions are: the on-chain tx reference from `external_refs`
+ *    (`->>'txHash'` for EVM, `->>'signature'` for Solana — public on-chain
+ *    data powering the renderer's block-explorer deep links), and the
+ *    input/output token display symbols from the activity row's EXACT
+ *    capture item (`protocol_capture_items`, joined on `capture_item_id` AND
+ *    `execution_id`). Symbol extraction is string-type checked and
+ *    SQL-bounded to `MOVE_TOKEN_SYMBOL_MAX` chars, then re-validated in JS by
+ *    the shared `sanitizeTokenSymbol` (ASCII allowlist — rejects control
+ *    characters, bidi controls, zero-width characters, and Unicode
+ *    confusables in one pass). Captured symbols are UNTRUSTED display data —
+ *    the renderer must never let them override `input_token`/`output_token`
+ *    identity or claim a brand icon without independent corroboration.
+ *    Neither raw `trade_capture` nor raw `external_refs` crosses IPC.
  *  - `wallet_address` IS projected (`walletAddress`) so the renderer can build
  *    an account block-explorer link for rows without a tx ref (HyperCore). This
  *    is the session's OWN wallet, already server-side scoped by the wallet
@@ -57,8 +66,10 @@ import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   MOVES_MAX,
+  MOVE_TOKEN_SYMBOL_MAX,
   type MovesDto,
 } from "@shared/schemas/portfolio-moves.js";
+import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import { getSessionWalletScope } from "./sessions-db.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -137,8 +148,10 @@ interface MoveRow {
   readonly product_type: string | null;
   readonly venue: string | null;
   readonly input_token: string | null;
+  readonly input_token_symbol: string | null;
   readonly input_amount: string | null;
   readonly output_token: string | null;
+  readonly output_token_symbol: string | null;
   readonly output_amount: string | null;
   readonly value_usd: number | string | null;
   readonly capture_status: string | null;
@@ -220,14 +233,34 @@ export async function getMovesForSession(
       // The wallet_address filter is KEPT as defense-in-depth (never omitted).
       // Columns are qualified with the `a` alias because proj_activity and
       // protocol_executions share `id`, `created_at`, and `external_refs`.
+      // The LEFT JOIN to protocol_capture_items resolves the EXACT capture
+      // item for this activity row (batch captures produce N items per
+      // execution) — both `capture_item_id` AND `execution_id` must match,
+      // so a row can never pick up a sibling execution's capture item. The
+      // symbol CASE expressions extract ONLY string-typed, length-bounded
+      // scalars from `trade_capture`; the raw JSONB itself never leaves SQL.
       const result = await client.query<MoveRow>(
         `SELECT a.id,
                 a.trade_side,
                 a.product_type,
                 a.namespace AS venue,
                 a.input_token,
+                CASE
+                  WHEN jsonb_typeof(ci.trade_capture->'inputToken') = 'string'
+                   AND char_length(ci.trade_capture->>'inputToken')
+                       BETWEEN 1 AND ${MOVE_TOKEN_SYMBOL_MAX}
+                  THEN LEFT(ci.trade_capture->>'inputToken', ${MOVE_TOKEN_SYMBOL_MAX})
+                  ELSE NULL
+                END AS input_token_symbol,
                 a.input_amount,
                 a.output_token,
+                CASE
+                  WHEN jsonb_typeof(ci.trade_capture->'outputToken') = 'string'
+                   AND char_length(ci.trade_capture->>'outputToken')
+                       BETWEEN 1 AND ${MOVE_TOKEN_SYMBOL_MAX}
+                  THEN LEFT(ci.trade_capture->>'outputToken', ${MOVE_TOKEN_SYMBOL_MAX})
+                  ELSE NULL
+                END AS output_token_symbol,
                 a.output_amount,
                 a.value_usd,
                 a.capture_status,
@@ -239,6 +272,9 @@ export async function getMovesForSession(
                 a.created_at
            FROM proj_activity a
            JOIN protocol_executions e ON e.id = a.execution_id
+           LEFT JOIN protocol_capture_items ci
+             ON ci.id = a.capture_item_id
+            AND ci.execution_id = a.execution_id
           WHERE a.wallet_address = ANY($1::text[])
             AND e.session_id = $2
           ORDER BY a.created_at DESC, a.id DESC
@@ -252,8 +288,10 @@ export async function getMovesForSession(
         productType: row.product_type,
         venue: row.venue,
         inputToken: row.input_token,
+        inputTokenSymbol: sanitizeTokenSymbol(row.input_token_symbol),
         inputAmount: row.input_amount,
         outputToken: row.output_token,
+        outputTokenSymbol: sanitizeTokenSymbol(row.output_token_symbol),
         outputAmount: row.output_amount,
         valueUsd: toNumberOrNull(row.value_usd),
         captureStatus: row.capture_status,

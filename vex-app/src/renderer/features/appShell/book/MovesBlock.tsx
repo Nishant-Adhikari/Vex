@@ -14,12 +14,23 @@
  * status dot · stamp (mono 9px chip: BUY success-tone / SELL paper-tone /
  * SWAP muted; `productType` takes priority — `bridge` → BRIDGE·VENUE,
  * `send`/`transfer` → TRANSFER, both muted) · `IN → OUT` legs · HH:MM. Raw
- * mint addresses never print in full: address-like token strings truncate to
- * `So1111…1112` (full mint on the tooltip) and a deliberately tiny
- * well-known-mint map resolves the unmissable tickers. Short token strings
- * render as uppercase symbols. A leg carries its amount (`0.0017 ETH`) ONLY
- * when the recorded amount is a dotted decimal — raw base-unit integers from
- * legacy captures (wei/lamports) and nulls render nothing.
+ * mint addresses never print in full: a well-known-mint address ALWAYS wins
+ * (ticker + the app's offline brand mark), full mint kept on the tooltip.
+ * Only once no known mint matches does a bounded, sanitized display symbol
+ * from the activity's exact capture item get a turn — captured symbols are
+ * UNTRUSTED (any token can self-declare metadata claiming a brand ticker
+ * such as "SOL"), so brand-ticker claims are always dropped. The activity's
+ * raw token field can be populated from the same provider capture for
+ * bridge-style legs, so it cannot corroborate one either. A known mint
+ * address is the ONLY thing that authorizes a brand LOGO. Short raw token
+ * strings still render as uppercased plain TEXT (so a legacy `ETH`/`SOL` leg
+ * stays readable), but a brand-matching raw string is withheld from the icon
+ * so it never borrows the real asset's mark; non-brand strings may keep the
+ * neutral monogram (see `tokenDisplay` and
+ * `@shared/token-symbol-sanitizer.js`). Address-like fallbacks truncate to
+ * `So1111…1112`. A leg carries its amount (`0.0017 ETH`) ONLY when the
+ * recorded amount is a dotted decimal — raw base-unit integers from legacy
+ * captures (wei/lamports) and nulls render nothing.
  *
  * The ledger shows the 10 newest fills (`MOVES_DISPLAY_CAP`); the header badge
  * still counts the FULL fetched result (server-capped at `MOVES_MAX`). A row
@@ -45,6 +56,8 @@ import {
   explorerAccountUrl,
   explorerTxUrl,
 } from "@shared/explorer-links.js";
+import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
+import { BRAND_ICON_SYMBOLS, TokenIcon } from "../../../components/common/TokenIcon.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
 import { formatClock, truncateAddress } from "../../../lib/format.js";
 import { cn } from "../../../lib/utils.js";
@@ -109,23 +122,81 @@ interface TokenDisplay {
   readonly text: string;
   /** Full value for the tooltip when `text` is lossy, else `null`. */
   readonly full: string | null;
+  /** Safe symbol used by the app's offline token mark; null for raw addresses. */
+  readonly iconSymbol: string | null;
 }
 
 /**
- * Display rule for one swap leg: known mint → ticker, address-like → the
- * canonical `truncateAddress` shortening (`So1111…1112`), short strings →
- * uppercase symbols. Legs are nullable in the tolerant DTO → `?`.
- * Truncated/known forms carry the full mint on the tooltip; symbols are
- * uppercased in JS (not CSS) so base58 case in truncations stays intact.
+ * Display rule for one swap leg, in strict priority order. The GOVERNING
+ * invariant: a brand ticker + brand logo may be rendered ONLY when a
+ * `KNOWN_MINTS` address proves the identity; no untrusted string (captured
+ * symbol or the provider-populated raw `token`) may ever borrow a brand's
+ * name AND logo.
+ *
+ *  1. `token` resolves through the tiny `KNOWN_MINTS` map → canonical ticker
+ *     + brand mark. This is the ONLY brand path, and it is checked BEFORE the
+ *     captured symbol so a scam mint's capture metadata can never override a
+ *     genuinely recognized mint.
+ *  2. Captured symbol (`inputTokenSymbol`/`outputTokenSymbol`), sanitized: an
+ *     UNTRUSTED self-declared label. Allowed ONLY when it is NOT one of the
+ *     app's brand-marked tickers (`BRAND_ICON_SYMBOLS`, case-insensitive) — a
+ *     brand claim like "SOL" is ALWAYS dropped, with no corroboration
+ *     exception (bridge activity rows carry the same provider symbol in
+ *     `token`, so `token` cannot prove it). A permitted non-brand symbol is
+ *     absent from the brand-icon set, so `TokenIcon` renders a neutral
+ *     monogram, never a brand mark.
+ *  3. Address-like raw `token` → the canonical `truncateAddress` shortening
+ *     (`So1111…1112`), full value on the tooltip.
+ *  4. Short raw `token` string, sanitized → uppercased PLAIN TEXT. This
+ *     restores human-readable legacy legs like "ETH"/"SOL". A brand-matching
+ *     raw string is shown as text but its `iconSymbol` is withheld (null), so
+ *     it NEVER reaches `TokenIcon` — text without a borrowed logo. A non-brand
+ *     raw string may keep the neutral monogram. An invalid / Unicode-bearing /
+ *     null / empty raw string → `?`.
+ *
+ * Legs are nullable in the tolerant DTO → `?`. Truncated/known forms carry
+ * the full mint on the tooltip; symbols are uppercased in JS (not CSS) so
+ * base58 case in truncations stays intact.
  */
-function tokenDisplay(token: string | null): TokenDisplay {
-  if (token === null || token.length === 0) return { text: "?", full: null };
-  const ticker = KNOWN_MINTS.get(token);
-  if (ticker !== undefined) return { text: ticker, full: token };
-  if (ADDRESS_LIKE.test(token)) {
-    return { text: truncateAddress(token), full: token };
+function tokenDisplay(
+  token: string | null,
+  capturedSymbol: string | null,
+): TokenDisplay {
+  // Rule 1 — the ONLY brand path: a known mint address proves the identity.
+  const knownTicker = token !== null ? KNOWN_MINTS.get(token) : undefined;
+  if (knownTicker !== undefined) {
+    return { text: knownTicker, full: token, iconSymbol: knownTicker };
   }
-  return { text: token.toUpperCase(), full: null };
+
+  // Rule 2 — captured symbol: untrusted; non-brand only, brand claims dropped.
+  const symbol = sanitizeTokenSymbol(capturedSymbol);
+  if (symbol !== null && !BRAND_ICON_SYMBOLS.has(symbol.toLowerCase())) {
+    return {
+      text: symbol.toUpperCase(),
+      full:
+        token !== null && token.toUpperCase() !== symbol.toUpperCase()
+          ? token
+          : null,
+      iconSymbol: symbol,
+    };
+  }
+
+  // Rule 3 — address-like raw token: truncated-address fallback.
+  if (token !== null && ADDRESS_LIKE.test(token)) {
+    return { text: truncateAddress(token), full: token, iconSymbol: null };
+  }
+
+  // Rule 4 — short raw token string: uppercased plain text. Invalid/Unicode/
+  // null/empty → `?`; brand-matching raw strings render as text but withhold
+  // the icon so they never borrow a brand logo; non-brand keeps the monogram.
+  const safeToken = sanitizeTokenSymbol(token);
+  if (safeToken === null) {
+    return { text: "?", full: null, iconSymbol: null };
+  }
+  const iconSymbol = BRAND_ICON_SYMBOLS.has(safeToken.toLowerCase())
+    ? null
+    : safeToken;
+  return { text: safeToken.toUpperCase(), full: null, iconSymbol };
 }
 
 /** ≤6 significant digits, no grouping — mono-ledger compact figures. */
@@ -249,8 +320,8 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
 function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const state = moveState(move.captureStatus);
   const side = sideStamp(move);
-  const input = tokenDisplay(move.inputToken);
-  const output = tokenDisplay(move.outputToken);
+  const input = tokenDisplay(move.inputToken, move.inputTokenSymbol);
+  const output = tokenDisplay(move.outputToken, move.outputTokenSymbol);
   const inputAmount = amountDisplay(move.inputAmount);
   const outputAmount = amountDisplay(move.outputAmount);
   const time = formatClock(move.createdAt);
@@ -284,13 +355,29 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
       >
         {side.text}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
-        <span title={input.full ?? undefined}>
-          {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+      <span className="flex h-4 min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11px] leading-none text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
+        <span
+          title={input.full ?? undefined}
+          className="inline-flex min-w-0 items-center gap-1"
+        >
+          {input.iconSymbol !== null ? (
+            <TokenIcon symbol={input.iconSymbol} size={12} />
+          ) : null}
+          <span className="truncate">
+            {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+          </span>
         </span>
-        <span className="text-[var(--vex-text-3)]">{" → "}</span>
-        <span title={output.full ?? undefined}>
-          {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+        <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
+        <span
+          title={output.full ?? undefined}
+          className="inline-flex min-w-0 items-center gap-1"
+        >
+          {output.iconSymbol !== null ? (
+            <TokenIcon symbol={output.iconSymbol} size={12} />
+          ) : null}
+          <span className="truncate">
+            {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+          </span>
         </span>
       </span>
       {time !== null ? (

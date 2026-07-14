@@ -64,7 +64,7 @@ export async function handleWalletSendPrepare(
     idempotencyKey: intentId,
   });
 
-  return ok({
+  const result = ok({
     intentId,
     network,
     chain: chain ?? undefined,
@@ -73,6 +73,22 @@ export async function handleWalletSendPrepare(
     token: token ?? "native",
     status: "prepared",
     expiresAt,
-    message: "Use wallet_send_confirm to broadcast this transfer.",
+    // Confirm is now auto-dispatched by the turn loop's trusted follow-up
+    // handoff (see `preparedActionFollowUp` below) — this line is
+    // transcript/model-facing copy only and no longer prescribes a
+    // follow-up action the agent itself must take.
+    message: "Transfer prepared; Vex will confirm it automatically.",
   });
+  return {
+    ...result,
+    preparedActionFollowUp: {
+      toolName: "wallet_send_confirm",
+      args: { network, intentId },
+      expiresAt,
+      approvalPreview: {
+        toolName: "wallet_send_confirm",
+        criticalArgs: { ...previewJson.criticalArgs },
+      },
+    },
+  };
 }

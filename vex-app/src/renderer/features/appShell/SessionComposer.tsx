@@ -25,8 +25,9 @@
  * all live in `.vex-console` (globals.css) — token-only, so both themes
  * recolor from `--vex-accent`. The context strip is gone, so the two
  * transient states it carried survive as a tiny tag FLOATING above the pill:
- * amber "AWAITING SIGNATURE" while a run is parked for approval, muted
- * "Stopping…" while a stop settles (they cannot co-occur).
+ * amber "AWAITING SIGNATURE" while a run is parked for approval or muted
+ * "Stopping…" while a stop settles. Active work is shown on the agent avatar
+ * in the transcript instead of adding another label above the input.
  *
  * Pure helpers: gating reasons + placeholders in `composer-helpers.ts`.
  * Mission controls (start/continue/recover/stop/edit/renew) are buttons in
@@ -64,6 +65,7 @@ import {
   gatedReason,
   placeholderFor,
   readRunStatus,
+  submitFailureNotice,
   submitSuccessText,
 } from "./composer-helpers.js";
 import { ComposerQuickActions } from "./ComposerQuickActions.js";
@@ -241,6 +243,21 @@ export function SessionComposer({
           }
           return;
         }
+        const failure = submitFailureNotice(outcome.data);
+        if (failure !== null) {
+          const armRetry =
+            failure.retryable &&
+            activeSession?.id === targetSessionId &&
+            activeSession.mode === "agent";
+          setNotice({
+            tone: "error",
+            text: failure.text,
+            ...(armRetry && {
+              retry: { sessionId: targetSessionId, message },
+            }),
+          });
+          return;
+        }
         const successText = submitSuccessText(outcome.data);
         if (successText !== null) setNotice({ tone: "info", text: successText });
       } finally {
@@ -398,12 +415,10 @@ export function SessionComposer({
   return (
     <>
       <div className="relative mt-6">
-        {/* TRANSIENT SIGNAL TAG — floats above the pill's right side, carrying
-         * the two states the retired context strip held (they cannot co-occur:
-         * an approval pause freezes free-text submit, so nothing is in flight).
-         * amber "AWAITING SIGNATURE" while parked for a signature; muted
-         * "Stopping…" while a stop settles. Sibling of the form so the pill's
-         * rounded surface never owns this floating status layer. */}
+        {/* TRANSIENT SIGNAL TAG — floats above the pill's right side. An
+         * approval pause wins over a requested stop. The active-work signal
+         * lives on the agent avatar in the transcript, so the composer stays
+         * visually quiet while a turn is running. */}
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"

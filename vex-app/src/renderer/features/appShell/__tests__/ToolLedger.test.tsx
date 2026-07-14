@@ -116,6 +116,90 @@ describe("ToolActRow", () => {
   it("renders no stamp at rest (the persisted ledger row is quiet)", () => {
     render(createElement(ToolActRow, { act: act() }));
     expect(screen.queryByText(/awaiting signature/i)).toBeNull();
+    expect(screen.queryByRole("status", { name: /transaction confirmed/i })).toBeNull();
+  });
+
+  it("marks a confirmed wallet transfer with a visible check state", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "wallet_send_confirm",
+          output: JSON.stringify({
+            txHash: "solana-signature",
+            chain: "solana",
+            status: "confirmed",
+          }),
+        }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("status", { name: "Transaction confirmed" }),
+    ).not.toBeNull();
+    expect(screen.getByText("Confirmed")).not.toBeNull();
+    expect(
+      container.querySelector('[data-vex-transaction-status="confirmed"]'),
+    ).not.toBeNull();
+  });
+
+  it("does not infer confirmation from malformed, failed, or unrelated output", () => {
+    const cases = [
+      act({ toolName: "wallet_send_confirm", output: "not json" }),
+      act({
+        toolName: "wallet_send_confirm",
+        output: JSON.stringify({ txHash: "hash", status: "failed" }),
+      }),
+      act({
+        toolName: "wallet_send_confirm",
+        output: JSON.stringify({ status: "confirmed" }),
+      }),
+      act({
+        toolName: "wallet_balances",
+        output: JSON.stringify({ txHash: "hash", status: "confirmed" }),
+      }),
+    ];
+
+    for (const candidate of cases) {
+      const view = render(createElement(ToolActRow, { act: candidate }));
+      expect(
+        screen.queryByRole("status", { name: /transaction confirmed/i }),
+      ).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("shows the Confirmed stamp alongside the Hyperliquid frame and explorer links without hiding either", () => {
+    // WP-G port fix: current main already renders a Hyperliquid protocol
+    // frame + ExplorerRefLinks in this exact row region (Hyperliquid wave,
+    // merged after the reference PR was authored) — the Confirmed stamp
+    // must integrate with both, not clobber them.
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "wallet_send_confirm",
+          output: JSON.stringify({
+            txHash: "0xabc",
+            chain: "base",
+            status: "confirmed",
+          }),
+          explorerRefs: [{ chain: "base", txRef: "0xabc" }],
+          toolDisplayBlock: {
+            namespace: "hyperliquid",
+            kind: "order_receipt",
+            coin: "BTC",
+            side: "long",
+            status: "accepted",
+            protectionState: "PROTECTED",
+          },
+        }),
+      }),
+    );
+
+    expect(container.querySelector('[data-hyperliquid-card="true"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-vex-transaction-status="confirmed"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("a[href]")).not.toBeNull();
   });
 
   it("renders the Hyperliquid frame only from a typed display block", () => {

@@ -153,19 +153,35 @@ function toIntOrNull(value: number | string | null): number | null {
  * Unlike `getActiveRunForSession` (active/paused only), this lets the
  * `mission.retry` dispatcher distinguish a terminal run (→ blocked_terminal)
  * from a session that never had a run (→ no_active_run). `null` = no run ever.
+ *
+ * `leaseActive` (same `runner_leases` join as `getActiveRunForSession`) lets
+ * the retry dispatcher tell a genuinely `running` run apart from one whose
+ * lease expired/released while status stayed `running` — WITHOUT that, a
+ * dead lease reported `already_running` and stranded the operator with no
+ * way to recover it (issue #12's bug class).
  */
 export async function getLatestRunForSession(
   sessionId: string,
 ): Promise<
-  Result<{ missionRunId: string; status: MissionRunStatus } | null, VexError>
+  Result<
+    { missionRunId: string; status: MissionRunStatus; leaseActive: boolean } | null,
+    VexError
+  >
 > {
   return withClient(async (client) => {
     try {
-      const result = await client.query<{ id: string; status: string }>(
-        `SELECT id, status
-           FROM mission_runs
-          WHERE session_id = $1
-          ORDER BY started_at DESC
+      const result = await client.query<{
+        id: string;
+        status: string;
+        lease_active: boolean | null;
+      }>(
+        `SELECT m.id, m.status,
+                CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
+                     THEN TRUE ELSE FALSE END AS lease_active
+           FROM mission_runs m
+           LEFT JOIN runner_leases l ON l.session_id = m.session_id
+          WHERE m.session_id = $1
+          ORDER BY m.started_at DESC
           LIMIT 1`,
         [sessionId],
       );
@@ -177,7 +193,11 @@ export async function getLatestRunForSession(
           `getLatestRunForSession: unrecognized run status "${row.status}"`,
         );
       }
-      return ok({ missionRunId: row.id, status: parsed.data });
+      return ok({
+        missionRunId: row.id,
+        status: parsed.data,
+        leaseActive: Boolean(row.lease_active),
+      });
     } catch (cause) {
       return dbError("getLatestRunForSession query failed", cause);
     }

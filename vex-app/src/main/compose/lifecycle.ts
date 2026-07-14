@@ -47,6 +47,7 @@ import {
   composePull,
   composeUpDetached,
 } from "./up.js";
+import { recreateProjectNonDestructively } from "./recreate.js";
 import {
   COMPOSE_FILE_MISSING_RE,
   composeStop,
@@ -221,10 +222,36 @@ export async function composeUp(
       // wrong. A hard `compose up` failure (e.g. init script still
       // failing post-fix) surfaces via the embeddings probe message.
       if (reuseUp.code !== 0 && !reuseUp.timedOut) {
-        onLogLine?.(
-          "stderr",
-          `[reuse] compose up exited ${reuseUp.code ?? "?"}; falling through to health probes`
-        );
+        if (STALE_BIND_MOUNT_RE.test(reuseUp.stderr)) {
+          // Same stale Docker Desktop bind-mount cache symptom as the
+          // primary up path below — the signature match MUST be applied
+          // here too, BEFORE falling through to health probes, or the
+          // non-destructive recreate helper is unreachable on this branch
+          // (issue #26). One recreate attempt; if it still fails we fall
+          // through exactly like the generic failure below and let the
+          // health probes report the specific service that's unhealthy.
+          onLogLine?.(
+            "stdout",
+            "[reuse] Detected stale Docker Desktop bind-mount cache; attempting non-destructive recreate…"
+          );
+          const recreate = await recreateProjectNonDestructively({
+            composeDir,
+            installId: rendered.installId,
+            ...(signal !== undefined ? { signal } : {}),
+            ...(onLogLine !== undefined ? { onLogLine } : {}),
+          });
+          if (recreate.upResult.code !== 0 && !recreate.upResult.timedOut) {
+            onLogLine?.(
+              "stderr",
+              `[reuse] recreate retry exited ${recreate.upResult.code ?? "?"}; falling through to health probes`
+            );
+          }
+        } else {
+          onLogLine?.(
+            "stderr",
+            `[reuse] compose up exited ${reuseUp.code ?? "?"}; falling through to health probes`
+          );
+        }
       }
 
       const dbHealthy = await waitForHealth({
@@ -382,34 +409,56 @@ export async function composeUp(
       signal
     );
     if (!cleared.wiped) {
-      // Setup gate refused — return failure WITHOUT destructive
-      // instructions (codex round 3 RED #2). Telling the user to
-      // delete `local-infra/secrets/` would regenerate the Postgres
-      // password while the existing volume still holds the OLD
-      // password — `password authentication failed for user "vex"`
-      // locks them out of their own data. Recovery here is
-      // support-guided.
-      return {
-        kind: "failed",
-        composeOutPath: rendered.outPath,
+      // Setup gate refused the destructive wipe (codex round 3 RED #2) —
+      // try the NON-destructive recreate first (issue #26): project-scoped
+      // `compose down --remove-orphans` (no `--volumes`, secret file
+      // untouched) + ONE `up -d` retry. Recreating the containers rebuilds
+      // Docker Desktop's bind-mount cache for the unchanged secret, which
+      // clears the stale-hash symptom without touching user data.
+      onLogLine?.(
+        "stdout",
+        "[recovery] Destructive wipe refused (setup complete); attempting non-destructive recreate…"
+      );
+      const recreate = await recreateProjectNonDestructively({
+        composeDir,
         installId: rendered.installId,
-        message:
-          "Docker Desktop has a stale bind-mount cache pointing at this install's Postgres password secret, and your setup is already complete. Vex will NOT auto-wipe your data. Try fully quitting Docker Desktop and restarting it, then retry — if the issue persists, contact support before any further action so we can guide you through a recovery that preserves your wallet keys and long-term memory.",
-        pgPort,
-        embedPort: rendered.embedPort,
-        pgPasswordPath: rendered.pgPasswordComposePath,
-        embeddingsReadiness: null,
-        previousInstallHoldingPorts: false,
-        conflictPorts: [],
-      };
+        ...(signal !== undefined ? { signal } : {}),
+        ...(onLogLine !== undefined ? { onLogLine } : {}),
+      });
+      if (recreate.upResult.code === 0 && !recreate.upResult.timedOut) {
+        // Recovered — continue below with the SAME rendered/composeDir
+        // (the secret never changed, so no re-render is needed) and let
+        // the existing timedOut/code checks + health probes take over.
+        upResult = recreate.upResult;
+      } else {
+        // Non-destructive recreate ALSO failed — surface failure without
+        // destructive instructions and without the "contact support to
+        // recover your keys" phrasing (issue #26 secondary UX note: that
+        // reads like a phishing script). A safe automatic recovery was
+        // already attempted; support-guided recovery is the last resort.
+        return {
+          kind: "failed",
+          composeOutPath: rendered.outPath,
+          installId: rendered.installId,
+          message:
+            "Docker Desktop has a stale bind-mount cache pointing at this install's Postgres password secret. Vex automatically attempted a safe recovery (recreating the containers without touching your data or password), but it did not resolve the issue. Try fully quitting Docker Desktop and restarting it, then retry. If the issue persists, contact support — support will never ask you for your seed phrase or private key.",
+          pgPort,
+          embedPort: rendered.embedPort,
+          pgPasswordPath: rendered.pgPasswordComposePath,
+          embeddingsReadiness: null,
+          previousInstallHoldingPorts: false,
+          conflictPorts: [],
+        };
+      }
+    } else {
+      renderedAfterRecovery = await renderCompose(deps, renderOptions);
+      composeDirAfterRecovery = path.dirname(renderedAfterRecovery.outPath);
+      upResult = await composeUpDetached({
+        composeDir: composeDirAfterRecovery,
+        ...(signal !== undefined ? { signal } : {}),
+        ...(onLogLine !== undefined ? { onLogLine } : {}),
+      });
     }
-    renderedAfterRecovery = await renderCompose(deps, renderOptions);
-    composeDirAfterRecovery = path.dirname(renderedAfterRecovery.outPath);
-    upResult = await composeUpDetached({
-      composeDir: composeDirAfterRecovery,
-      ...(signal !== undefined ? { signal } : {}),
-      ...(onLogLine !== undefined ? { onLogLine } : {}),
-    });
   }
 
   if (upResult.timedOut) {

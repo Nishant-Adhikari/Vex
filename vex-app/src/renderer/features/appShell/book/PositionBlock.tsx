@@ -13,9 +13,12 @@
  * most recent snapshot total + PnL when present, and the resolved wallet
  * COUNT. SESSION scope then renders the redesigned register — copy-ready
  * deposit addresses (DepositAddresses) + the per-chain holdings switcher
- * (PositionChains); GLOBAL keeps the legacy flat top-holdings list (capped,
- * remainder noted). Loading / error / empty (no wallets) states are boxless
- * lines on the same register.
+ * (PositionChains); GLOBAL (the welcome/empty state) carries that same
+ * wallet-identity presentation via `GlobalWalletAddresses` — the primary
+ * EVM/Solana wallet from the config inventory shown by default, any
+ * additional configured wallets listed below — ahead of the legacy flat
+ * top-holdings list (capped, remainder noted). Loading / error / empty (no
+ * wallets) states are boxless lines on the same register.
  *
  * Token rows that would print `$0.00` (|USD| below formatUsd's 2-decimal
  * rounding threshold) are hidden — the cap and "+N more" count only rows
@@ -46,6 +49,7 @@ import {
 } from "../../../lib/format.js";
 import { BookBlock } from "./BookBlock.js";
 import { DepositAddresses } from "./DepositAddresses.js";
+import { GlobalWalletAddresses } from "./GlobalWalletAddresses.js";
 import { PositionChains } from "./PositionChains.js";
 
 /** Visible token rows before the "+N more" tail. */
@@ -195,6 +199,7 @@ function PositionBody({
         pnlVsPrev={pnlVsPrev}
         hero={hero}
       />
+      <GlobalWalletAddresses />
       {visible.length > 0 ? (
         // Landing .ws-stat rows: hairline-separated, key muted / value white.
         <ul className="flex flex-col">
