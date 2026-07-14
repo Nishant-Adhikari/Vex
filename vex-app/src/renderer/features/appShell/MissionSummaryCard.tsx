@@ -86,7 +86,7 @@ export function MissionSummaryCard({
     <section
       data-vex-area="mission-summary"
       aria-label="Mission summary"
-      className="mb-3 flex flex-col gap-2 rounded-[10px] border border-[var(--vex-line)] bg-white/[0.02] px-4 py-3"
+      className="mb-3 flex flex-col gap-3 rounded-[12px] border border-[var(--vex-line)] bg-white/[0.03] px-5 py-4"
     >
       {/* Line 1 — identity + outcome stamp + duration. */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-text-2)]">
@@ -107,13 +107,13 @@ export function MissionSummaryCard({
         <span
           title={pnlTitle}
           className={cn(
-            "font-mono text-lg tabular-nums",
+            "font-mono text-[32px] leading-none tabular-nums",
             pnlToneClass(result.pnlEth),
           )}
         >
           {pnlUsdText ?? pnlEthText}
           {pct.length > 0 ? (
-            <span className="ml-2 text-[11px]">{pct}</span>
+            <span className="ml-2 text-sm">{pct}</span>
           ) : null}
           {pnlUsdText !== null && pnlEthText !== EM_DASH ? (
             <span className="ml-2 text-[11px] text-[var(--vex-text-3)]">
@@ -176,9 +176,9 @@ function MissionNarrative({
   readonly summary: string;
 }): JSX.Element {
   return (
-    <div className="mt-1 border-t border-[var(--vex-line)] pt-2">
+    <div className="rounded-[8px] border border-[var(--vex-line)] bg-white/[0.03] px-3.5 py-3">
       <p className="vex-eyebrow mb-1.5">Mission summary</p>
-      <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-[var(--vex-text-2)]">
+      <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-foreground">
         {summary.trim()}
       </p>
     </div>
