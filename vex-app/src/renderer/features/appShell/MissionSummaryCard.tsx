@@ -152,9 +152,36 @@ export function MissionSummaryCard({
         </p>
       ) : null}
 
+      {/* Mission Summary — the agent's end-of-mission narrative (prose). Only
+          rendered when the run recorded a non-empty `stopSummary`. */}
+      {result.stopSummary !== null && result.stopSummary.trim().length > 0 ? (
+        <MissionNarrative summary={result.stopSummary} />
+      ) : null}
+
       {/* Decision Journal — per-trade "why", each expandable to full reasoning. */}
       {journal.length > 0 ? <DecisionJournal entries={journal} /> : null}
     </section>
+  );
+}
+
+/**
+ * The agent's own end-of-mission narrative, rendered as readable prose. Line
+ * breaks are preserved (`whitespace-pre-wrap`) so the agent's paragraphing
+ * carries through; ink + hairline separator match the Decision Journal so the
+ * two prose surfaces read as one register.
+ */
+function MissionNarrative({
+  summary,
+}: {
+  readonly summary: string;
+}): JSX.Element {
+  return (
+    <div className="mt-1 border-t border-[var(--vex-line)] pt-2">
+      <p className="vex-eyebrow mb-1.5">Mission summary</p>
+      <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-[var(--vex-text-2)]">
+        {summary.trim()}
+      </p>
+    </div>
   );
 }
 

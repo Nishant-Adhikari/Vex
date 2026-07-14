@@ -90,6 +90,7 @@ interface RawRow {
   trades: number;
   outcome: string;
   open_positions_count: number;
+  stop_summary: string | null;
 }
 
 const num = (v: string | number | null): number | null =>
@@ -116,6 +117,7 @@ function toDto(r: RawRow): MissionResultDto {
     trades: r.trades,
     outcome: r.outcome,
     openPositionsCount: Number(r.open_positions_count ?? 0),
+    stopSummary: r.stop_summary ?? null,
   };
 }
 
@@ -126,20 +128,22 @@ export async function listMissionResults(
   return withClient(async (client) => {
     try {
       const result = await client.query<RawRow>(
-        `SELECT mission_run_id, seq_no, goal_snippet, wallet_address, chain_id,
-                started_at, ended_at, duration_s,
-                bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
-                eth_price_usd_start, eth_price_usd_end, trades, outcome,
+        `SELECT r.mission_run_id, r.seq_no, r.goal_snippet, r.wallet_address, r.chain_id,
+                r.started_at, r.ended_at, r.duration_s,
+                r.bankroll_start_eth, r.bankroll_end_eth, r.pnl_eth, r.pnl_pct,
+                r.eth_price_usd_start, r.eth_price_usd_end, r.trades, r.outcome,
+                mr.stop_summary,
                 (SELECT count(*) FROM jsonb_array_elements(
-                   CASE WHEN jsonb_typeof(open_positions_json) = 'array'
-                        THEN open_positions_json ELSE '[]'::jsonb END) e
+                   CASE WHEN jsonb_typeof(r.open_positions_json) = 'array'
+                        THEN r.open_positions_json ELSE '[]'::jsonb END) e
                  WHERE lower(e->>'address') NOT IN (
                    SELECT lower(s->>'address') FROM jsonb_array_elements(
-                     CASE WHEN jsonb_typeof(start_positions_json) = 'array'
-                          THEN start_positions_json ELSE '[]'::jsonb END) s))
+                     CASE WHEN jsonb_typeof(r.start_positions_json) = 'array'
+                          THEN r.start_positions_json ELSE '[]'::jsonb END) s))
                   AS open_positions_count
-           FROM mission_results
-          ORDER BY started_at DESC
+           FROM mission_results r
+           LEFT JOIN mission_runs mr ON mr.id = r.mission_run_id
+          ORDER BY r.started_at DESC
           LIMIT $1`,
         [limit],
       );
@@ -166,21 +170,23 @@ export async function getSessionResult(
   return withClient(async (client) => {
     try {
       const result = await client.query<RawRow>(
-        `SELECT mission_run_id, seq_no, goal_snippet, wallet_address, chain_id,
-                started_at, ended_at, duration_s,
-                bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
-                eth_price_usd_start, eth_price_usd_end, trades, outcome,
+        `SELECT r.mission_run_id, r.seq_no, r.goal_snippet, r.wallet_address, r.chain_id,
+                r.started_at, r.ended_at, r.duration_s,
+                r.bankroll_start_eth, r.bankroll_end_eth, r.pnl_eth, r.pnl_pct,
+                r.eth_price_usd_start, r.eth_price_usd_end, r.trades, r.outcome,
+                mr.stop_summary,
                 (SELECT count(*) FROM jsonb_array_elements(
-                   CASE WHEN jsonb_typeof(open_positions_json) = 'array'
-                        THEN open_positions_json ELSE '[]'::jsonb END) e
+                   CASE WHEN jsonb_typeof(r.open_positions_json) = 'array'
+                        THEN r.open_positions_json ELSE '[]'::jsonb END) e
                  WHERE lower(e->>'address') NOT IN (
                    SELECT lower(s->>'address') FROM jsonb_array_elements(
-                     CASE WHEN jsonb_typeof(start_positions_json) = 'array'
-                          THEN start_positions_json ELSE '[]'::jsonb END) s))
+                     CASE WHEN jsonb_typeof(r.start_positions_json) = 'array'
+                          THEN r.start_positions_json ELSE '[]'::jsonb END) s))
                   AS open_positions_count
-           FROM mission_results
-          WHERE session_id = $1
-          ORDER BY started_at DESC
+           FROM mission_results r
+           LEFT JOIN mission_runs mr ON mr.id = r.mission_run_id
+          WHERE r.session_id = $1
+          ORDER BY r.started_at DESC
           LIMIT 1`,
         [sessionId],
       );
