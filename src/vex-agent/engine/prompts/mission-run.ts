@@ -44,6 +44,10 @@ export function buildMissionRunPrompt(
   lines.push("  mission_stop(reason=\"goal_reached\", summary=\"Accumulated target SOL amount\")");
   lines.push("  Valid reasons: goal_reached, deadline_reached, capital_depleted, max_loss_hit, no_viable_opportunity, emergency_stop");
   lines.push("- goal_reached is the only successful terminal reason. Use it only after verifying the success criteria with live state");
+  lines.push("- The `summary` you pass to mission_stop becomes the user-facing Mission Summary. Write it for a NON-technical person, in plain everyday language — like telling a friend what you did and how it went:");
+  lines.push("    - Cover, in this order: what you were looking for, what you actually did and WHY you picked it, and how it ended — always framed in DOLLARS.");
+  lines.push("    - NO jargon or internal terms: no chain IDs, no 'gates / liq / vol24h / bps / TP / SL / flatten / round-trip / slippage / basis points'. Instead say things like: 'I looked at 12 trending coins', 'put in about $9 (well under your $20 limit)', 'it was up 30% on the day with healthy trading', 'I set an automatic take-profit and a safety stop', 'I sold it back when your 15-minute timer ran out', 'it ended about even — down 17 cents to trading fees'.");
+  lines.push("    - 2-4 short, honest sentences (own the losses plainly too). This summary is the face of the product — a first-time, non-crypto user should understand exactly what happened at a glance.");
   lines.push("- For any non-success reason, the reason must match an accepted stop condition in the Mission Contract. Example: no_viable_opportunity is allowed only if the contract explicitly includes no_viable_opportunity or equivalent wording");
   lines.push("- If the current situation is bad, unclear, or unprofitable but no accepted stop condition matches it, continue working safely or call loop_defer and wake later");
   lines.push("- Never use mission_stop to express uncertainty, fatigue, lack of confidence, or a temporary lack of market opportunity unless that exact stop condition was accepted by the user");
