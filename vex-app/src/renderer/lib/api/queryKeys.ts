@@ -200,6 +200,14 @@ export const portfolioKeys = {
   read: (scope: "global" | "session", activeSessionId: string | null) =>
     ["portfolio", scope, activeSessionId] as const,
   /**
+   * WP-L2 — the welcome-screen per-wallet switcher: the GLOBAL scope
+   * narrowed to one inventory wallet. Keyed separately from `read` (distinct
+   * segment, not reusing the `scope`/`activeSessionId` shape) so a wallet
+   * drill-down never collides with the aggregate global cache entry.
+   */
+  readWallet: (walletAddress: string) =>
+    ["portfolio", "wallet", walletAddress] as const,
+  /**
    * MOVES (move 0.3) — the session's executed-trade activity. Keyed by
    * `sessionId` so each session's feed is a distinct cache entry. A
    * `null`/global view has no MOVES (it is session-scoped).

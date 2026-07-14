@@ -80,6 +80,18 @@ export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
  *                      must never let it override `inputToken`/`outputToken`
  *                      identity or claim a brand icon without independent
  *                      corroboration — see `token-symbol-sanitizer.ts`.
+ *  - `inputTokenLocalSymbol` / `outputTokenLocalSymbol` — a FALLBACK, bounded
+ *                      display symbol resolved from THIS WALLET's OWN
+ *                      `proj_balances` rows (the balance sync's `token_symbol`
+ *                      for that exact `token_address`), consulted ONLY when
+ *                      the capture item recorded no usable symbol (the legacy
+ *                      "raw contract address" rows). Defaults to `null` so
+ *                      pre-existing payloads still parse. EQUALLY UNTRUSTED —
+ *                      `proj_balances.token_symbol` is itself provider-
+ *                      supplied metadata, so this field is gated by the exact
+ *                      same brand-collision rule as the captured symbol (see
+ *                      `MovesBlock.tsx`'s `tokenDisplay`) and MUST NEVER grant
+ *                      a brand icon on its own.
  *  - `valueUsd`      — notional USD; `null` when the engine could not price it.
  *  - `captureStatus` — the trade-capture lifecycle status string (tolerant).
  *  - `instrumentKey` — opaque instrument identifier; `null` when absent.
@@ -107,9 +119,21 @@ export const moveItemSchema = z
     venue: z.string().nullable(),
     inputToken: z.string().nullable(),
     inputTokenSymbol: z.string().min(1).max(MOVE_TOKEN_SYMBOL_MAX).nullable(),
+    inputTokenLocalSymbol: z
+      .string()
+      .min(1)
+      .max(MOVE_TOKEN_SYMBOL_MAX)
+      .nullable()
+      .default(null),
     inputAmount: z.string().nullable(),
     outputToken: z.string().nullable(),
     outputTokenSymbol: z.string().min(1).max(MOVE_TOKEN_SYMBOL_MAX).nullable(),
+    outputTokenLocalSymbol: z
+      .string()
+      .min(1)
+      .max(MOVE_TOKEN_SYMBOL_MAX)
+      .nullable()
+      .default(null),
     outputAmount: z.string().nullable(),
     valueUsd: z.number().nullable(),
     captureStatus: z.string().nullable(),

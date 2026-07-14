@@ -155,6 +155,31 @@ describe("move item schema (tolerant)", () => {
     ).toBe(false);
   });
 
+  // ── local balances-derived symbol fallback (WP-L2 sibling change) ──────
+
+  it("defaults absent inputTokenLocalSymbol/outputTokenLocalSymbol to null (tolerant of pre-existing payloads)", () => {
+    const parsed = moveItemSchema.safeParse(itemFixture());
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.inputTokenLocalSymbol).toBeNull();
+      expect(parsed.data.outputTokenLocalSymbol).toBeNull();
+    }
+  });
+
+  it("accepts an explicit local symbol on either leg and bounds it like the captured symbol", () => {
+    const parsed = moveItemSchema.safeParse(
+      itemFixture({ inputTokenLocalSymbol: "WIF", outputTokenLocalSymbol: null }),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.inputTokenLocalSymbol).toBe("WIF");
+
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({ outputTokenLocalSymbol: "x".repeat(65) }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("rejects an unknown key (strict)", () => {
     expect(
       moveItemSchema.safeParse(itemFixture({ rawResult: "0xdeadbeef" })).success,

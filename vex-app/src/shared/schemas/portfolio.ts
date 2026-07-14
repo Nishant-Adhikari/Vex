@@ -2,11 +2,16 @@
  * Portfolio schemas — read-only dual-scope POSITION portfolio (stage 3).
  *
  * The renderer asks for either the GLOBAL inventory portfolio
- * (`{ scope: "global" }`) or a single session's wallet-scope portfolio
- * (`{ scope: "session", sessionId }`). It NEVER supplies a wallet address —
- * main resolves the concrete address allow-list server-side (config
- * inventory for global, the session's wallet scope for session) so the
- * renderer can never widen the read past its own wallets.
+ * (`{ scope: "global" }`), a single session's wallet-scope portfolio
+ * (`{ scope: "session", sessionId }`), or the GLOBAL inventory NARROWED to
+ * one of its own wallets (`{ scope: "global", walletAddress }` — the
+ * welcome-screen per-wallet switcher, WP-L2). Main resolves the concrete
+ * address allow-list server-side in every case: for a bare `global` request
+ * that is the full config inventory; for a `global` request WITH
+ * `walletAddress`, main validates the address against that SAME configured
+ * inventory and rejects (`wallets.invalid_selection`) anything outside it —
+ * a renderer-supplied address can only NARROW the read to one of the
+ * caller's own already-configured wallets, never widen or redirect it.
  *
  * The discriminated union is the security boundary: a `session` request
  * without a valid `sessionId` is rejected at the `.strict()` parse and
@@ -26,16 +31,28 @@ import { z } from "zod";
 
 /**
  * IPC input for `vex.portfolio.read`. Discriminated on `scope`:
- *  - `global`  — no `sessionId`; aggregates the whole configured inventory.
+ *  - `global`  — no `sessionId`; aggregates the whole configured inventory,
+ *    OR (WP-L2) an OPTIONAL `walletAddress` narrows the read to that ONE
+ *    inventory wallet — main validates it against the configured inventory
+ *    before querying (see `portfolio-db.ts`); an address outside the
+ *    inventory is rejected, never silently widened back to the aggregate.
  *  - `session` — requires a UUID `sessionId`; aggregates only that
  *    session's selected wallets.
  *
  * `.strict()` on each member rejects a stray `sessionId` on a global
  * request and a missing/invalid `sessionId` on a session request, so a
- * malformed session input can never silently widen to global.
+ * malformed session input can never silently widen to global. `walletAddress`
+ * is bounded only by length here — its real authorization is the server-side
+ * inventory-membership check, not a format regex (addresses come in both EVM
+ * hex and Solana base58 shapes).
  */
 export const portfolioReadInputSchema = z.discriminatedUnion("scope", [
-  z.object({ scope: z.literal("global") }).strict(),
+  z
+    .object({
+      scope: z.literal("global"),
+      walletAddress: z.string().min(1).max(128).optional(),
+    })
+    .strict(),
   z.object({ scope: z.literal("session"), sessionId: z.string().uuid() }).strict(),
 ]);
 export type PortfolioReadInput = z.infer<typeof portfolioReadInputSchema>;
