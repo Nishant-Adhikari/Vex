@@ -3,14 +3,21 @@
  *
  * Deliberately distinct from `runResumeDispatch`: that dispatcher owns
  * paused_user / paused_wake and refuses paused_error. This one claims +
- * resumes ONLY a `paused_error` run, and classifies every other state
- * explicitly so the dispatcher is total. Fire-and-forget like the resume
- * path: it claims the lease + flips status, kicks off `resumeMissionRun`
- * asynchronously, and returns a Result immediately.
+ * resumes ONLY a `paused_error` run (or a `running` run with a DEAD lease —
+ * see below), and classifies every other state explicitly so the dispatcher
+ * is total. Fire-and-forget like the resume path: it claims the lease +
+ * flips status, kicks off `resumeMissionRun` asynchronously, and returns a
+ * Result immediately.
  *
  * Duplicates ~60% of `runResumeDispatch` by intent (codex review): a shared
  * claim + fire-and-forget helper is only worth extracting once the stop-fix
  * slice proves the shape is stable.
+ *
+ * `status === 'running'` alone does NOT mean a runner is observing the
+ * session — the lease can be expired/released. `getLatestRunForSession` now
+ * loads lease state (it did not before) so this dispatcher can tell the two
+ * apart, same as `runResumeDispatch` and `runtime-stop-dispatch.ts` (issue
+ * #12's bug class, ported here per WP-C).
  */
 
 import { randomUUID } from "node:crypto";
@@ -21,6 +28,7 @@ import { log } from "../../logger/index.js";
 import { controlFailedError } from "../runtime/_errors.js";
 import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
 import { emitControlStateAfterChange } from "../runtime/_emit-control-state.js";
+import { classifyRunLeaseState } from "./lease-state.js";
 
 export interface RetryFlowInput {
   readonly sessionId: string;
@@ -59,7 +67,16 @@ export async function runRetryDispatch(
     const runId = latest.data.missionRunId;
     const status = latest.data.status;
     if (status === "running") {
-      return ok({ outcome: "already_running", runId });
+      if (classifyRunLeaseState(status, latest.data.leaseActive) === "live") {
+        return ok({ outcome: "already_running", runId });
+      }
+      // Dead lease: no runner is actually observing this session. Fall
+      // through to the SAME claim/reclaim path as paused_error below —
+      // `claimRunLeaseAndFlipToRunning` re-validates the lease is
+      // expired/absent under a row lock before reclaiming it, so this is
+      // race-safe. SKIP the paused_error-specific auto-retry-wake
+      // cancellation just below: a `running` row never has an
+      // error_retry wake pending.
     }
     if (status === "paused_approval") {
       return ok({ outcome: "blocked_approval", pendingApprovalId: runId });
@@ -77,16 +94,19 @@ export async function runRetryDispatch(
       return ok({ outcome: "not_recoverable", status });
     }
 
-    // status === "paused_error" — claim + flip + fire-and-forget resume.
-    // Phase 4d: a human Recover supersedes any scheduled auto-retry — cancel
-    // the pending error_retry wake so it can't fire later. A wake already
-    // CONSUMED by the executor can't be cancelled; there, claimRunForAutoRetry's
-    // atomic re-check (status/unsafe/attempt) is the authority and will skip.
-    const { cancelForSession } = await import(
-      "@vex-agent/db/repos/loop-wake.js"
-    );
-    await cancelForSession(input.sessionId, "superseded_by_manual_recover");
+    if (status === "paused_error") {
+      // Phase 4d: a human Recover supersedes any scheduled auto-retry — cancel
+      // the pending error_retry wake so it can't fire later. A wake already
+      // CONSUMED by the executor can't be cancelled; there, claimRunForAutoRetry's
+      // atomic re-check (status/unsafe/attempt) is the authority and will skip.
+      const { cancelForSession } = await import(
+        "@vex-agent/db/repos/loop-wake.js"
+      );
+      await cancelForSession(input.sessionId, "superseded_by_manual_recover");
+    }
 
+    // status === "paused_error", or "running" with a DEAD lease — claim +
+    // flip + fire-and-forget resume.
     const { enqueueRequest, markObserved, markCleared, markFailed } =
       await import("@vex-agent/db/repos/runtime-control-requests.js");
     const auditRequest = await enqueueRequest({
@@ -102,7 +122,10 @@ export async function runRetryDispatch(
     const claim = await claimRunLeaseAndFlipToRunning({
       sessionId: input.sessionId,
       missionRunId: runId,
-      fromStatuses: ["paused_error"],
+      // `[status]` — either `["paused_error"]` (the normal Recover path) or
+      // `["running"]` (the dead-lease reclaim path above). Never both: only
+      // one of the two branches above reaches here for a given call.
+      fromStatuses: [status],
       ownerId: `${RETRY_OWNER_PREFIX}${randomUUID()}`,
       processKind: "electron_main",
       ttlMs: LEASE_TTL_MS,

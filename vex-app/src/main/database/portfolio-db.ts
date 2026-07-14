@@ -17,8 +17,13 @@
  *    The filter is never omitted.
  *  - addresses.length === 0 → return the EMPTY DTO BEFORE issuing any SQL
  *    (no wallets configured, or empty session scope). Fail closed.
- *  - addresses are resolved SERVER-SIDE (config inventory / session scope);
- *    a renderer-supplied address is never accepted.
+ *  - addresses are resolved SERVER-SIDE (config inventory / session scope).
+ *    A renderer-supplied address is NEVER trusted as-is: the ONLY place one
+ *    can enter is the optional `walletAddress` on a `global` request
+ *    (WP-L2, the welcome-screen per-wallet switcher), and it is matched
+ *    against the SAME configured inventory before use — an address outside
+ *    the inventory fails closed with `wallets.invalid_selection` (no SQL
+ *    issued), it never widens or redirects the read.
  *  - join key between inventory and balances is the raw ADDRESS string —
  *    DO NOT lowercase (the engine stores raw checksum/base58 addresses).
  *  - logging records sessionId (if any) + wallet COUNT + token COUNT only;
@@ -281,9 +286,30 @@ function emptyPortfolio(scope: PortfolioReadInput["scope"]): PortfolioDto {
 }
 
 /**
+ * Selected wallet is not in the configured inventory (WP-L2). Mirrors
+ * `invalidWalletSelectionError` in `_wallet-refs.ts` (same code/semantics)
+ * but domain `portfolio` — this file's own error constructors intentionally
+ * omit `correlationId` too (`registerHandler` stamps it downstream).
+ */
+function invalidWalletSelection(): Result<never, VexError> {
+  return err({
+    code: "wallets.invalid_selection",
+    domain: "portfolio",
+    message: "Selected wallet is not in the configured inventory.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+  });
+}
+
+/**
  * Resolve the server-side wallet address allow-list for the requested scope.
  *
- *  - `global`  — the configured EVM + Solana inventory (≤6 addresses).
+ *  - `global`  — the configured EVM + Solana inventory (≤6 addresses); a
+ *    `walletAddress` on the request (WP-L2) narrows this to that ONE
+ *    address, but ONLY after matching it against the SAME inventory — an
+ *    address that is not a configured wallet fails closed with
+ *    `wallets.invalid_selection` (no SQL issued), never a silent aggregate.
  *  - `session` — the session's selected EVM/Solana wallets (≤2 addresses).
  *    A failed scope read propagates as an error (fail closed); an empty
  *    scope resolves to `[]` (→ empty DTO before SQL).
@@ -296,6 +322,11 @@ async function resolveAddresses(
 ): Promise<Result<readonly string[], VexError>> {
   if (input.scope === "global") {
     const entries = [...listWallets("evm"), ...listWallets("solana")];
+    if (input.walletAddress !== undefined) {
+      const match = entries.find((e) => e.address === input.walletAddress);
+      if (match === undefined) return invalidWalletSelection();
+      return ok([match.address]);
+    }
     // Dedupe: the snapshot-completeness guard compares COUNT(DISTINCT
     // wallet_address) against addresses.length, so a repeated address in the
     // configured inventory would otherwise spuriously drop the snapshot total.

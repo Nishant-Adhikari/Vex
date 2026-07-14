@@ -41,8 +41,10 @@ describe("move item schema (tolerant)", () => {
       productType: "spot",
       venue: "kyberswap",
       inputToken: "USDC",
+      inputTokenSymbol: "USDC",
       inputAmount: "100",
       outputToken: "ETH",
+      outputTokenSymbol: "ETH",
       outputAmount: "0.03",
       valueUsd: 100,
       captureStatus: "executed",
@@ -106,8 +108,10 @@ describe("move item schema (tolerant)", () => {
           productType: null,
           venue: null,
           inputToken: null,
+          inputTokenSymbol: null,
           inputAmount: null,
           outputToken: null,
+          outputTokenSymbol: null,
           outputAmount: null,
           valueUsd: null,
           captureStatus: null,
@@ -139,6 +143,43 @@ describe("move item schema (tolerant)", () => {
     expect(moveItemSchema.safeParse(withoutChain).success).toBe(false);
   });
 
+  it("accepts absent token symbols as null and bounds present symbols", () => {
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({ inputTokenSymbol: null, outputTokenSymbol: null }),
+      ).success,
+    ).toBe(true);
+    expect(
+      moveItemSchema.safeParse(itemFixture({ outputTokenSymbol: "x".repeat(65) }))
+        .success,
+    ).toBe(false);
+  });
+
+  // ── local balances-derived symbol fallback (WP-L2 sibling change) ──────
+
+  it("defaults absent inputTokenLocalSymbol/outputTokenLocalSymbol to null (tolerant of pre-existing payloads)", () => {
+    const parsed = moveItemSchema.safeParse(itemFixture());
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.inputTokenLocalSymbol).toBeNull();
+      expect(parsed.data.outputTokenLocalSymbol).toBeNull();
+    }
+  });
+
+  it("accepts an explicit local symbol on either leg and bounds it like the captured symbol", () => {
+    const parsed = moveItemSchema.safeParse(
+      itemFixture({ inputTokenLocalSymbol: "WIF", outputTokenLocalSymbol: null }),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.inputTokenLocalSymbol).toBe("WIF");
+
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({ outputTokenLocalSymbol: "x".repeat(65) }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("rejects an unknown key (strict)", () => {
     expect(
       moveItemSchema.safeParse(itemFixture({ rawResult: "0xdeadbeef" })).success,
@@ -159,8 +200,10 @@ describe("moves dto schema (array + cap)", () => {
     productType: null,
     venue: null,
     inputToken: "USDC",
+    inputTokenSymbol: null,
     inputAmount: "1",
     outputToken: "SOL",
+    outputTokenSymbol: null,
     outputAmount: "1",
     valueUsd: null,
     captureStatus: "filled",

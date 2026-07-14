@@ -183,7 +183,16 @@ export type MessageType =
   | "checkpoint"
   | "wake_due"
   | "subagent_relay"
-  | "tool_result";
+  | "tool_result"
+  /**
+   * A trusted prepare→execute handoff the engine synthesized itself (never
+   * model output — see `dispatchPreparedActionFollowUp`). Paired with
+   * `source: "engine"` on the same assistant-role row so an auditor reading
+   * `messages` directly can never mistake it for a real model-authored
+   * tool_call, even though the row keeps `role: "assistant"` for the
+   * provider transcript format.
+   */
+  | "prepared_action_follow_up";
 
 export type MessageVisibility = "user" | "internal";
 
@@ -203,6 +212,13 @@ export interface MissionDraft {
   stopConditions: string[] | null;
   /** Optional — mission may have no deadline. */
   deadline: string | null;
+  /**
+   * Optional hard time-box in whole minutes. The turn-loop deadline
+   * enforcer stops the run at `started_at + this` (see
+   * `engine/mission/mission-deadline.ts`). Absent -> env override -> 60min
+   * default. Distinct from `deadline` (free-text, informational only).
+   */
+  durationMinutes: number | null;
   /** Optional, host-accepted Hyperliquid envelope for an autonomous mission. */
   hyperliquidRisk?: import("../../lib/hyperliquid-policy.js").HyperliquidMissionRisk | null;
 }

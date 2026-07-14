@@ -146,6 +146,12 @@ export const missionKeys = {
    */
   renewableSource: (sessionId: string) =>
     ["mission", "renewableSource", sessionId] as const,
+  /** WP-J — per-wallet mission results ledger history, newest first. */
+  results: (walletAddress: string) =>
+    ["mission", "results", walletAddress] as const,
+  /** WP-J — single-run ledger read (e.g. the post-mission summary card). */
+  resultForRun: (missionRunId: string, walletAddress: string) =>
+    ["mission", "resultForRun", missionRunId, walletAddress] as const,
 };
 
 export const approvalsKeys = {
@@ -193,6 +199,14 @@ export const portfolioKeys = {
   all: ["portfolio"] as const,
   read: (scope: "global" | "session", activeSessionId: string | null) =>
     ["portfolio", scope, activeSessionId] as const,
+  /**
+   * WP-L2 — the welcome-screen per-wallet switcher: the GLOBAL scope
+   * narrowed to one inventory wallet. Keyed separately from `read` (distinct
+   * segment, not reusing the `scope`/`activeSessionId` shape) so a wallet
+   * drill-down never collides with the aggregate global cache entry.
+   */
+  readWallet: (walletAddress: string) =>
+    ["portfolio", "wallet", walletAddress] as const,
   /**
    * MOVES (move 0.3) — the session's executed-trade activity. Keyed by
    * `sessionId` so each session's feed is a distinct cache entry. A

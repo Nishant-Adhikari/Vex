@@ -85,10 +85,10 @@ async function call(payload: unknown) {
   })) as { ok: boolean; data?: { outcome: string }; error?: { code: string } };
 }
 
-function activeState(status: string) {
+function activeState(status: string, leaseActive = true) {
   return {
     ok: true,
-    data: { hasActiveRun: true, missionRunId: "run-1", status },
+    data: { hasActiveRun: true, missionRunId: "run-1", status, leaseActive },
   };
 }
 
@@ -101,8 +101,10 @@ beforeEach(() => {
 });
 
 describe("mission.stop (runStopDispatch)", () => {
-  it("enqueues a graceful stop for a running run (queued, no abort)", async () => {
-    mockGetActiveRunForSession.mockResolvedValueOnce(activeState("running"));
+  it("enqueues a graceful stop for a running run with a LIVE lease (queued, no abort)", async () => {
+    mockGetActiveRunForSession.mockResolvedValueOnce(
+      activeState("running", true),
+    );
     mockEnqueueRequest.mockResolvedValueOnce({
       id: "22222222-2222-4222-8222-222222222222",
     });
@@ -110,6 +112,25 @@ describe("mission.stop (runStopDispatch)", () => {
     expect(r.data?.outcome).toBe("queued");
     expect(mockEnqueueRequest).toHaveBeenCalledTimes(1);
     expect(mockAbortActiveMissionForSession).not.toHaveBeenCalled();
+  });
+
+  it("aborts a running run whose lease is NOT active — no live runner would observe a queued stop", async () => {
+    // Regression: a run can be status='running' with leaseActive=false
+    // (parked between autonomous mission slices, or an expired/released
+    // lease). Enqueue-only strands the stop forever, leaving the session
+    // un-stoppable/un-deletable (issue #12).
+    mockGetActiveRunForSession.mockResolvedValueOnce(
+      activeState("running", false),
+    );
+    mockAbortActiveMissionForSession.mockResolvedValueOnce({
+      aborted: true,
+      finalStatus: "cancelled",
+      rejectedApprovals: 0,
+    });
+    const r = await call({ sessionId: SESSION });
+    expect(r.data).toEqual({ outcome: "stopped" });
+    expect(mockAbortActiveMissionForSession).toHaveBeenCalledWith(SESSION);
+    expect(mockEnqueueRequest).not.toHaveBeenCalled();
   });
 
   it("aborts a paused_error run directly (stopped, no enqueue)", async () => {
