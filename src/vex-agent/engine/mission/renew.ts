@@ -45,6 +45,8 @@ import { withTransaction } from "../../db/client.js";
 import {
   type Mission,
   getMissionForUpdate,
+  getPendingDraftForSession,
+  lockSessionForRenew,
 } from "../../db/repos/missions.js";
 import * as missionRunsRepo from "../../db/repos/mission-runs.js";
 import { cloneMissionAsDraft } from "./renew-internals.js";
@@ -81,6 +83,16 @@ export type RenewMissionOutcome =
     readonly outcome: "session_has_active_run";
     readonly missionRunId: string;
     readonly runStatus: string;
+  }
+  | {
+    /**
+     * The session already holds an un-started (`draft`/`ready`) mission.
+     * Renewal clones a finished mission into a fresh draft; without this
+     * check, two renews racing before the first commits could both clone
+     * one (the duplicate-draft storm — see `lockSessionForRenew`).
+     */
+    readonly outcome: "session_has_pending_draft";
+    readonly missionId: string;
   };
 
 /** Clone an accepted + terminal mission into a fresh draft row. */
@@ -88,6 +100,13 @@ export async function renewMission(
   input: RenewMissionInput,
 ): Promise<RenewMissionOutcome> {
   return withTransaction(async (client): Promise<RenewMissionOutcome> => {
+    // 0. Session-scoped advisory lock, acquired FIRST so it serializes the
+    //    ENTIRE decision below (not just the source-mission row) against
+    //    any other concurrent renew for this session — including one
+    //    targeting a DIFFERENT previousMissionId. Xact-scoped; Postgres
+    //    releases it automatically at COMMIT/ROLLBACK.
+    await lockSessionForRenew(client, input.sessionId);
+
     // 1. Row-locked read of the source mission.
     const source: Mission | null = await getMissionForUpdate(
       client,
@@ -158,7 +177,25 @@ export async function renewMission(
       };
     }
 
-    // 6. Clone via dedicated repo helper. The clone:
+    // 6. Refuse if the session already holds a pending (un-started) draft
+    //    or ready mission. Runs INSIDE the session-locked transaction
+    //    (step 0), so a second concurrent renew racing before the first
+    //    commits cannot ALSO pass this check — closes the duplicate-draft
+    //    storm at its root. Not a schema unique index: production data
+    //    already contains duplicate drafts from before this fix, so an
+    //    index would fail to apply.
+    const pendingDraft = await getPendingDraftForSession(
+      client,
+      input.sessionId,
+    );
+    if (pendingDraft !== null) {
+      return {
+        outcome: "session_has_pending_draft",
+        missionId: pendingDraft.id,
+      };
+    }
+
+    // 7. Clone via dedicated repo helper. The clone:
     //      - copies every contract field
     //      - resets status to 'draft', acceptance + approved_at to NULL
     //      - stamps renewed_from_mission_id = source.id
