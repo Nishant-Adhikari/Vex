@@ -12,9 +12,14 @@ const mockGetMissionForUpdate = vi.fn();
 const mockGetActiveRun = vi.fn();
 const mockGetActiveRunBySession = vi.fn();
 const mockCloneMissionAsDraft = vi.fn();
+const mockLockSessionForRenew = vi.fn();
+const mockGetPendingDraftForSession = vi.fn();
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   getMissionForUpdate: (...a: unknown[]) => mockGetMissionForUpdate(...a),
+  lockSessionForRenew: (...a: unknown[]) => mockLockSessionForRenew(...a),
+  getPendingDraftForSession: (...a: unknown[]) =>
+    mockGetPendingDraftForSession(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -98,6 +103,8 @@ function makeMission(overrides: Record<string, unknown> = {}) {
 describe("renewMission", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLockSessionForRenew.mockResolvedValue(undefined);
+    mockGetPendingDraftForSession.mockResolvedValue(null);
   });
 
   it("returns previous_mission_not_found when source is missing", async () => {
@@ -191,6 +198,61 @@ describe("renewMission", () => {
     // (client, sourceMissionId, newMissionId, targetSessionId)
     expect(args[1]).toBe("mission-source");
     expect(args[3]).toBe("session-1");
+  });
+
+  it("acquires the session-scoped advisory lock before any precondition check", async () => {
+    mockGetMissionForUpdate.mockResolvedValueOnce(null);
+    await renewMission({
+      sessionId: "session-1",
+      previousMissionId: "mission-source",
+    });
+    expect(mockLockSessionForRenew).toHaveBeenCalledTimes(1);
+    const args = mockLockSessionForRenew.mock.calls[0]!;
+    expect(args[1]).toBe("session-1");
+    // Lock acquisition happened, but the source lookup still ran and failed
+    // first-precondition — proves the lock is taken up front, not gated
+    // behind other checks.
+    expect(mockGetMissionForUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns session_has_pending_draft when the session already holds a draft/ready mission, without cloning", async () => {
+    // WP-D: closes the duplicate-draft-storm race TRANSACTIONALLY (advisory
+    // lock + this check, both inside renewMission's transaction) rather than
+    // relying solely on the renderer/resolver suppressing the button.
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeMission());
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    mockGetActiveRunBySession.mockResolvedValueOnce(null);
+    mockGetPendingDraftForSession.mockResolvedValueOnce({
+      id: "mission-pending-draft",
+      status: "draft",
+    });
+
+    const outcome = await renewMission({
+      sessionId: "session-1",
+      previousMissionId: "mission-source",
+    });
+
+    expect(outcome.outcome).toBe("session_has_pending_draft");
+    if (outcome.outcome === "session_has_pending_draft") {
+      expect(outcome.missionId).toBe("mission-pending-draft");
+    }
+    expect(mockCloneMissionAsDraft).not.toHaveBeenCalled();
+  });
+
+  it("checks for a pending draft using the SAME tx client as the source-mission lock (same transaction)", async () => {
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeMission());
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    mockGetActiveRunBySession.mockResolvedValueOnce(null);
+
+    await renewMission({
+      sessionId: "session-1",
+      previousMissionId: "mission-source",
+    });
+
+    expect(mockGetPendingDraftForSession).toHaveBeenCalledTimes(1);
+    const lockClient = mockLockSessionForRenew.mock.calls[0]![0];
+    const draftCheckClient = mockGetPendingDraftForSession.mock.calls[0]![0];
+    expect(draftCheckClient).toBe(lockClient);
   });
 
   it("does not call the clone helper when any precondition fails", async () => {

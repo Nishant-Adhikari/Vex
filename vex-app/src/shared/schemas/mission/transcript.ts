@@ -58,6 +58,19 @@ export const missionRenewResultSchema = z.discriminatedUnion("outcome", [
       runStatus: z.string(),
     })
     .strict(),
+  /**
+   * The session already holds an un-started (`draft`/`ready`) mission.
+   * Closes the duplicate-draft-storm race transactionally (WP-D): the
+   * engine checks this INSIDE the same session-locked transaction as the
+   * clone, so two renews racing before the first commits cannot both
+   * succeed — the renderer/resolver-level guard alone was not sufficient.
+   */
+  z
+    .object({
+      outcome: z.literal("session_has_pending_draft"),
+      missionId: z.string(),
+    })
+    .strict(),
 ]);
 export type MissionRenewResult = z.infer<typeof missionRenewResultSchema>;
 
