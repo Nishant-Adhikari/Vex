@@ -44,6 +44,18 @@ const ICON_BY_SYMBOL: Readonly<Record<string, BrandIcon>> = {
   op: Optimism,
 };
 
+/**
+ * Lower-cased symbols that resolve to a real brand mark above. Callers that
+ * accept an UNTRUSTED display symbol (e.g. a captured/provider-supplied
+ * token symbol that can self-declare arbitrary metadata) use this set to
+ * decide whether a symbol claim needs independent verification before it is
+ * allowed to borrow a brand's identity — see
+ * `vex-app/src/shared/token-symbol-sanitizer.ts`.
+ */
+export const BRAND_ICON_SYMBOLS: ReadonlySet<string> = new Set(
+  Object.keys(ICON_BY_SYMBOL),
+);
+
 export function TokenIcon({
   symbol,
   size = 13,

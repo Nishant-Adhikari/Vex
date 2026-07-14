@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../../components/ui/dialog.js";
+import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import { ChainIcon } from "../../../components/common/ChainIcon.js";
 import { TokenIcon } from "../../../components/common/TokenIcon.js";
 import { formatTokenQuantity, formatUsd } from "../../../lib/format.js";
@@ -231,6 +232,14 @@ function ChainTotalFigure({
  * amount stay visible with a muted em dash for the missing valuation. An
  * empty (or all-sub-cent) list states the fact quietly instead of leaving
  * a gap: Ethereum stays the standing default even with nothing on it.
+ *
+ * `token.symbol` is provider-supplied and UNTRUSTED — any on-chain token can
+ * self-declare arbitrary metadata, including a symbol that impersonates a
+ * well-known asset. It is passed through the shared ASCII-allowlist
+ * `sanitizeTokenSymbol` (rejects control characters, bidi controls,
+ * zero-width characters, and Unicode confusables) BEFORE it reaches display
+ * text or `TokenIcon`'s symbol-keyed brand-mark lookup, so a spoofed symbol
+ * can render neither a deceptive label nor a borrowed brand logo.
  */
 function ChainTokenList({
   chainId,
@@ -253,19 +262,18 @@ function ChainTokenList({
   }
   return (
     <ul className="flex flex-col">
-      {displayable.map((token) => {
-        const quantity = formatTokenQuantity(token.amount, token.symbol);
+      {displayable.map((token, index) => {
+        const symbol = sanitizeTokenSymbol(token.symbol);
+        const quantity = formatTokenQuantity(token.amount, symbol);
         return (
           <li
-            key={`${chainId}:${token.symbol ?? "—"}`}
+            key={`${chainId}:${symbol ?? "—"}:${index}`}
             className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0"
           >
             <span className="flex min-w-0 flex-1 items-center gap-2">
-              <TokenIcon symbol={token.symbol} size={13} />
+              <TokenIcon symbol={symbol} size={13} />
               <span className="truncate font-mono text-[11px] text-[var(--vex-text-2)]">
-                {token.symbol !== null && token.symbol.length > 0
-                  ? token.symbol
-                  : "—"}
+                {symbol !== null && symbol.length > 0 ? symbol : "—"}
               </span>
             </span>
             <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
