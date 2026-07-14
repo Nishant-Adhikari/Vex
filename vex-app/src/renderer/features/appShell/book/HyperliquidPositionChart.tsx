@@ -121,7 +121,7 @@ function derivePriceFormat(snapshot: readonly HyperliquidCandleDto[]): PriceForm
     if (dot >= 0) decimals = Math.max(decimals, candle.close.length - dot - 1);
   }
   const precision = Math.min(Math.max(decimals, 2), 8);
-  return { type: "price", precision, minMove: 10 ** -precision };
+  return { type: "price", precision, minMove: 1 / 10 ** precision };
 }
 
 /** A semantic revision deliberately excludes `fetchedAt`. */
