@@ -22,13 +22,21 @@
  * such as "SOL"), so brand-ticker claims are always dropped. The activity's
  * raw token field can be populated from the same provider capture for
  * bridge-style legs, so it cannot corroborate one either. A known mint
- * address is the ONLY thing that authorizes a brand LOGO. Short raw token
- * strings still render as uppercased plain TEXT (so a legacy `ETH`/`SOL` leg
- * stays readable), but a brand-matching raw string is withheld from the icon
- * so it never borrows the real asset's mark; non-brand strings may keep the
- * neutral monogram (see `tokenDisplay` and
- * `@shared/token-symbol-sanitizer.js`). Address-like fallbacks truncate to
- * `So1111…1112`. A leg carries its amount (`0.0017 ETH`) ONLY when the
+ * address is the ONLY thing that authorizes a brand LOGO. When the capture
+ * item recorded NO usable symbol (legacy raw-address rows), a FALLBACK
+ * symbol resolved from this wallet's own `proj_balances` metadata
+ * (`inputTokenLocalSymbol`/`outputTokenLocalSymbol`) gets a turn next —
+ * EQUALLY UNTRUSTED provider-supplied data, gated by the exact same
+ * brand-collision rule, but PLAIN TEXT ONLY: unlike the captured symbol it
+ * never reaches `TokenIcon` even for a non-brand match, since its
+ * provenance is one step further removed from the actual fill (any balance
+ * the wallet currently/previously held at that address, not the trade
+ * capture itself). Short raw token strings still render as uppercased plain
+ * TEXT (so a legacy `ETH`/`SOL` leg stays readable), but a brand-matching
+ * raw string is withheld from the icon so it never borrows the real asset's
+ * mark; non-brand strings may keep the neutral monogram (see `tokenDisplay`
+ * and `@shared/token-symbol-sanitizer.js`). Address-like fallbacks truncate
+ * to `So1111…1112`. A leg carries its amount (`0.0017 ETH`) ONLY when the
  * recorded amount is a dotted decimal — raw base-unit integers from legacy
  * captures (wei/lamports) and nulls render nothing.
  *
@@ -130,8 +138,8 @@ interface TokenDisplay {
  * Display rule for one swap leg, in strict priority order. The GOVERNING
  * invariant: a brand ticker + brand logo may be rendered ONLY when a
  * `KNOWN_MINTS` address proves the identity; no untrusted string (captured
- * symbol or the provider-populated raw `token`) may ever borrow a brand's
- * name AND logo.
+ * symbol, the local balances-derived symbol, or the provider-populated raw
+ * `token`) may ever borrow a brand's name AND logo.
  *
  *  1. `token` resolves through the tiny `KNOWN_MINTS` map → canonical ticker
  *     + brand mark. This is the ONLY brand path, and it is checked BEFORE the
@@ -145,9 +153,19 @@ interface TokenDisplay {
  *     `token`, so `token` cannot prove it). A permitted non-brand symbol is
  *     absent from the brand-icon set, so `TokenIcon` renders a neutral
  *     monogram, never a brand mark.
- *  3. Address-like raw `token` → the canonical `truncateAddress` shortening
+ *  3. LOCAL SYMBOL FALLBACK (`inputTokenLocalSymbol`/`outputTokenLocalSymbol`,
+ *     WP-L2 sibling change): consulted ONLY once rule 2 yields nothing usable
+ *     (no captured symbol, or a captured brand claim just got dropped).
+ *     Resolved server-side from THIS WALLET's own `proj_balances` metadata —
+ *     EQUALLY UNTRUSTED, sanitized, and gated by the SAME brand-collision
+ *     check as rule 2 (a colliding local symbol is dropped outright, falling
+ *     through to the address truncation below — mirrors rule 2's precedent
+ *     exactly). Stricter than rule 2 even when it wins: `iconSymbol` is
+ *     ALWAYS withheld (plain text only, never even the neutral monogram) —
+ *     its provenance is a balance the wallet holds/held, not the fill itself.
+ *  4. Address-like raw `token` → the canonical `truncateAddress` shortening
  *     (`So1111…1112`), full value on the tooltip.
- *  4. Short raw `token` string, sanitized → uppercased PLAIN TEXT. This
+ *  5. Short raw `token` string, sanitized → uppercased PLAIN TEXT. This
  *     restores human-readable legacy legs like "ETH"/"SOL". A brand-matching
  *     raw string is shown as text but its `iconSymbol` is withheld (null), so
  *     it NEVER reaches `TokenIcon` — text without a borrowed logo. A non-brand
@@ -161,6 +179,7 @@ interface TokenDisplay {
 function tokenDisplay(
   token: string | null,
   capturedSymbol: string | null,
+  localSymbol: string | null,
 ): TokenDisplay {
   // Rule 1 — the ONLY brand path: a known mint address proves the identity.
   const knownTicker = token !== null ? KNOWN_MINTS.get(token) : undefined;
@@ -181,12 +200,26 @@ function tokenDisplay(
     };
   }
 
-  // Rule 3 — address-like raw token: truncated-address fallback.
+  // Rule 3 — local balances-derived symbol fallback: untrusted; non-brand
+  // only (same gate as rule 2), PLAIN TEXT ONLY — never grants an icon.
+  const local = sanitizeTokenSymbol(localSymbol);
+  if (local !== null && !BRAND_ICON_SYMBOLS.has(local.toLowerCase())) {
+    return {
+      text: local.toUpperCase(),
+      full:
+        token !== null && token.toUpperCase() !== local.toUpperCase()
+          ? token
+          : null,
+      iconSymbol: null,
+    };
+  }
+
+  // Rule 4 — address-like raw token: truncated-address fallback.
   if (token !== null && ADDRESS_LIKE.test(token)) {
     return { text: truncateAddress(token), full: token, iconSymbol: null };
   }
 
-  // Rule 4 — short raw token string: uppercased plain text. Invalid/Unicode/
+  // Rule 5 — short raw token string: uppercased plain text. Invalid/Unicode/
   // null/empty → `?`; brand-matching raw strings render as text but withhold
   // the icon so they never borrow a brand logo; non-brand keeps the monogram.
   const safeToken = sanitizeTokenSymbol(token);
@@ -320,8 +353,16 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
 function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const state = moveState(move.captureStatus);
   const side = sideStamp(move);
-  const input = tokenDisplay(move.inputToken, move.inputTokenSymbol);
-  const output = tokenDisplay(move.outputToken, move.outputTokenSymbol);
+  const input = tokenDisplay(
+    move.inputToken,
+    move.inputTokenSymbol,
+    move.inputTokenLocalSymbol,
+  );
+  const output = tokenDisplay(
+    move.outputToken,
+    move.outputTokenSymbol,
+    move.outputTokenLocalSymbol,
+  );
   const inputAmount = amountDisplay(move.inputAmount);
   const outputAmount = amountDisplay(move.outputAmount);
   const time = formatClock(move.createdAt);

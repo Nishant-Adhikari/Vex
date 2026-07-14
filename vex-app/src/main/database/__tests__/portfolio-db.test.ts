@@ -221,6 +221,57 @@ describe("portfolio-db getPortfolio — global scope", () => {
   });
 });
 
+describe("portfolio-db getPortfolio — global scope narrowed to one wallet (WP-L2)", () => {
+  beforeEach(() => {
+    mocks.listWallets.mockImplementation((family: string) =>
+      family === "evm"
+        ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }]
+        : [{ id: "2", address: SOL_ADDR, label: "", createdAt: "" }],
+    );
+  });
+
+  it("narrows every SELECT to exactly the requested inventory wallet", async () => {
+    scriptPortfolioQueries({
+      live: "500",
+      tokens: [{ chain_id: "1", token_symbol: "ETH", usd: "500" }],
+      snapshot: null,
+    });
+    const result = await getPortfolio({ scope: "global", walletAddress: WALLET_A });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.walletCount).toBe(1);
+
+    const bound = allBoundParams();
+    expect(bound).toContain(WALLET_A);
+    // The decisive isolation assertion: the OTHER inventory wallet is never bound.
+    expect(bound).not.toContain(SOL_ADDR);
+    for (const call of mocks.query.mock.calls) {
+      const arr = Array.isArray(call[1]) ? call[1][0] : undefined;
+      expect(arr).toEqual([WALLET_A]);
+    }
+  });
+
+  it("fails closed with wallets.invalid_selection for an address outside the inventory, no SQL issued", async () => {
+    const result = await getPortfolio({
+      scope: "global",
+      walletAddress: "0xNotConfigured0000000000000000000000000",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("wallets.invalid_selection");
+    expect(result.error.domain).toBe("portfolio");
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it("never logs the requested walletAddress", async () => {
+    scriptPortfolioQueries({ live: "1", tokens: [], snapshot: null });
+    await getPortfolio({ scope: "global", walletAddress: WALLET_A });
+    const logged = mocks.log.info.mock.calls.flat().join(" ");
+    expect(logged).not.toContain(WALLET_A);
+  });
+});
+
 describe("portfolio-db getPortfolio — session scope", () => {
   it("returns the empty DTO and issues NO SQL when the session scope is empty", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(null, null));

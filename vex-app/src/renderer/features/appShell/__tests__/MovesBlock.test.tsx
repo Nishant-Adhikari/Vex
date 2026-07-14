@@ -65,9 +65,11 @@ function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem 
     venue: null,
     inputToken: null,
     inputTokenSymbol: null,
+    inputTokenLocalSymbol: null,
     inputAmount: null,
     outputToken: null,
     outputTokenSymbol: null,
+    outputTokenLocalSymbol: null,
     outputAmount: null,
     valueUsd: null,
     captureStatus: "executed",
@@ -197,7 +199,69 @@ describe("MovesBlock ledger display", () => {
     expect(screen.getByText("ScamMi…2222")).not.toBeNull();
   });
 
-  it("renders a brand-matching RAW token as plain text WITHOUT the brand logo (rule 3 no-logo clause)", () => {
+  // ── local balances-derived symbol fallback (WP-L2 sibling change) ──────
+
+  it("address-with-local-symbol: renders the sanitized local symbol as plain text with NO brand logo (rule 3)", () => {
+    const LOCAL_MINT = "LocalSymMint111111111111111111111111111111";
+    mockMoves([
+      move({
+        id: "1",
+        inputToken: LOCAL_MINT,
+        inputTokenSymbol: null,
+        inputTokenLocalSymbol: "wif",
+        outputToken: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+
+    const wif = screen.getByText("WIF");
+    expect(wif.parentElement?.getAttribute("title")).toBe(LOCAL_MINT);
+    // Plain text only — the local-symbol fallback is stricter than the
+    // captured-symbol path and NEVER reaches TokenIcon, brand or neutral.
+    expect(wif.parentElement?.querySelector("svg")).toBeNull();
+    expect(wif.parentElement?.querySelector("span[aria-hidden]")).toBeNull();
+    // The raw mint never prints in full.
+    expect(screen.queryByText(LOCAL_MINT)).toBeNull();
+  });
+
+  it("address-without-any-symbol: keeps the truncateAddress fallback (no captured or local symbol)", () => {
+    const BARE_MINT = "BareMint11111111111111111111111111111111111";
+    mockMoves([
+      move({
+        id: "1",
+        inputToken: BARE_MINT,
+        inputTokenSymbol: null,
+        inputTokenLocalSymbol: null,
+        outputToken: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+
+    const truncated = screen.getByText("BareMi…1111");
+    expect(truncated.parentElement?.getAttribute("title")).toBe(BARE_MINT);
+    expect(screen.queryByText(BARE_MINT)).toBeNull();
+  });
+
+  it("drops a brand-colliding local symbol exactly like a brand-colliding captured symbol (falls back to the truncated address)", () => {
+    const SCAM_MINT = "ScamLocalMint1111111111111111111111111111111";
+    mockMoves([
+      move({
+        id: "1",
+        inputToken: SCAM_MINT,
+        inputTokenSymbol: null,
+        // Balances metadata claiming "SOL" for a mint that is NOT the real
+        // SOL address — mirrors the captured-symbol brand-collision test.
+        inputTokenLocalSymbol: "SOL",
+        outputToken: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+
+    expect(screen.queryByText("SOL")).toBeNull();
+    expect(screen.getByText("ScamLo…1111")).not.toBeNull();
+  });
+
+  it("renders a brand-matching RAW token as plain text WITHOUT the brand logo (rule 5 no-logo clause)", () => {
     // `inputToken` is the provider-populated activity field, NOT a known-mint
     // address — so "ETH" stays readable as text but must not borrow the
     // Ethereum brand mark (no known mint proves the identity).

@@ -49,6 +49,35 @@ export function usePortfolio(
 }
 
 /**
+ * WP-L2 — the welcome-screen per-wallet switcher. Reads the SAME `global`
+ * scope, narrowed server-side to one inventory wallet (main validates
+ * `walletAddress` against the configured inventory before querying — see
+ * `portfolio-db.ts`). `null` disables the query (the "All wallets" default
+ * needs no wallet-scoped read; `PositionBlock`'s own aggregate `usePortfolio`
+ * already covers it).
+ */
+function walletPortfolioOptions(walletAddress: string | null) {
+  return queryOptions({
+    queryKey: portfolioKeys.readWallet(walletAddress ?? ""),
+    queryFn: () =>
+      window.vex.portfolio.read(
+        walletAddress === null
+          ? { scope: "global" }
+          : { scope: "global", walletAddress },
+      ),
+    staleTime: STALE_MS,
+    refetchInterval: REFETCH_MS,
+    enabled: walletAddress !== null,
+  });
+}
+
+export function useWalletPortfolio(
+  walletAddress: string | null,
+): UseQueryResult<Result<PortfolioDto>> {
+  return useQuery(walletPortfolioOptions(walletAddress));
+}
+
+/**
  * MOVES (move 0.3) — the session's executed-trade activity from
  * `proj_activity`, scoped server-side to the session's wallets. Drives the
  * BOOK Moves block. Read-only; an empty scope resolves to `[]`, never an

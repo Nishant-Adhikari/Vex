@@ -42,16 +42,35 @@
  *    `params`, `result`, `meta`, or any raw JSONB blob. The sanctioned scalar
  *    extractions are: the on-chain tx reference from `external_refs`
  *    (`->>'txHash'` for EVM, `->>'signature'` for Solana — public on-chain
- *    data powering the renderer's block-explorer deep links), and the
+ *    data powering the renderer's block-explorer deep links), the
  *    input/output token display symbols from the activity row's EXACT
  *    capture item (`protocol_capture_items`, joined on `capture_item_id` AND
- *    `execution_id`). Symbol extraction is string-type checked and
- *    SQL-bounded to `MOVE_TOKEN_SYMBOL_MAX` chars, then re-validated in JS by
- *    the shared `sanitizeTokenSymbol` (ASCII allowlist — rejects control
- *    characters, bidi controls, zero-width characters, and Unicode
- *    confusables in one pass). Captured symbols are UNTRUSTED display data —
- *    the renderer must never let them override `input_token`/`output_token`
- *    identity or claim a brand icon without independent corroboration.
+ *    `execution_id`), and (LOCAL SYMBOL FALLBACK) a bounded scalar AGGREGATE
+ *    subquery against THIS WALLET's OWN `proj_balances` rows, matched on
+ *    `(wallet_address, token_address)`. A scalar subquery (not a JOIN) is
+ *    deliberate: `proj_balances` has no uniqueness guarantee on
+ *    `(wallet_address, token_address)` alone (the real unique key also
+ *    includes `chain_id` — a token contract address CAN collide across
+ *    chains), so a JOIN could fan out and duplicate `proj_activity` rows.
+ *    DETERMINISM (Codex review): the same `token_address` can be held on
+ *    MULTIPLE chains with DIFFERENT `token_symbol`s, and `proj_activity.chain`
+ *    is a free-text venue slug (`ethereum`, `solana`, `base`, …) that does
+ *    NOT map to `proj_balances.chain_id` (BIGINT) via any repo-native
+ *    function — so we cannot scope the lookup to the leg's own chain without
+ *    inventing a fragile name→id mapping. Rather than a nondeterministic
+ *    `LIMIT 1` guess, the subquery DECLINES ON AMBIGUITY: `MIN(token_symbol)`
+ *    guarded by `HAVING COUNT(DISTINCT token_symbol) = 1` returns the symbol
+ *    ONLY when the wallet holds exactly one distinct symbol for that address
+ *    across every chain (0 rows or >1 distinct symbols → NULL → the renderer
+ *    keeps its `truncateAddress` fallback). Honest over guessy. Symbol
+ *    extraction is string-type checked and SQL-bounded to
+ *    `MOVE_TOKEN_SYMBOL_MAX` chars, then re-validated in JS by the shared
+ *    `sanitizeTokenSymbol` (ASCII allowlist — rejects control characters,
+ *    bidi controls, zero-width characters, and Unicode confusables in one
+ *    pass). BOTH the captured symbol and the local balances-derived symbol
+ *    are UNTRUSTED display data (provider-supplied metadata) — the renderer
+ *    must never let either override `input_token`/`output_token` identity or
+ *    claim a brand icon without independent corroboration (`KNOWN_MINTS`).
  *    Neither raw `trade_capture` nor raw `external_refs` crosses IPC.
  *  - `wallet_address` IS projected (`walletAddress`) so the renderer can build
  *    an account block-explorer link for rows without a tx ref (HyperCore). This
@@ -149,9 +168,11 @@ interface MoveRow {
   readonly venue: string | null;
   readonly input_token: string | null;
   readonly input_token_symbol: string | null;
+  readonly input_token_local_symbol: string | null;
   readonly input_amount: string | null;
   readonly output_token: string | null;
   readonly output_token_symbol: string | null;
+  readonly output_token_local_symbol: string | null;
   readonly output_amount: string | null;
   readonly value_usd: number | string | null;
   readonly capture_status: string | null;
@@ -239,6 +260,13 @@ export async function getMovesForSession(
       // so a row can never pick up a sibling execution's capture item. The
       // symbol CASE expressions extract ONLY string-typed, length-bounded
       // scalars from `trade_capture`; the raw JSONB itself never leaves SQL.
+      // The two `input_token_local_symbol`/`output_token_local_symbol` scalar
+      // AGGREGATE subqueries resolve a FALLBACK display symbol from THIS
+      // WALLET's own `proj_balances` (used when the capture item recorded no
+      // symbol — legacy raw-address rows). Each is a single bounded value per
+      // row (no JOIN fan-out) AND deterministic: `MIN(...)` guarded by
+      // `HAVING COUNT(DISTINCT token_symbol) = 1` declines when the same
+      // address carries different symbols across chains — see the docblock.
       const result = await client.query<MoveRow>(
         `SELECT a.id,
                 a.trade_side,
@@ -252,6 +280,13 @@ export async function getMovesForSession(
                   THEN LEFT(ci.trade_capture->>'inputToken', ${MOVE_TOKEN_SYMBOL_MAX})
                   ELSE NULL
                 END AS input_token_symbol,
+                (SELECT LEFT(MIN(b.token_symbol), ${MOVE_TOKEN_SYMBOL_MAX})
+                   FROM proj_balances b
+                  WHERE b.wallet_address = a.wallet_address
+                    AND b.token_address = a.input_token
+                    AND b.token_symbol IS NOT NULL
+                 HAVING COUNT(DISTINCT b.token_symbol) = 1)
+                  AS input_token_local_symbol,
                 a.input_amount,
                 a.output_token,
                 CASE
@@ -261,6 +296,13 @@ export async function getMovesForSession(
                   THEN LEFT(ci.trade_capture->>'outputToken', ${MOVE_TOKEN_SYMBOL_MAX})
                   ELSE NULL
                 END AS output_token_symbol,
+                (SELECT LEFT(MIN(b.token_symbol), ${MOVE_TOKEN_SYMBOL_MAX})
+                   FROM proj_balances b
+                  WHERE b.wallet_address = a.wallet_address
+                    AND b.token_address = a.output_token
+                    AND b.token_symbol IS NOT NULL
+                 HAVING COUNT(DISTINCT b.token_symbol) = 1)
+                  AS output_token_local_symbol,
                 a.output_amount,
                 a.value_usd,
                 a.capture_status,
@@ -289,9 +331,11 @@ export async function getMovesForSession(
         venue: row.venue,
         inputToken: row.input_token,
         inputTokenSymbol: sanitizeTokenSymbol(row.input_token_symbol),
+        inputTokenLocalSymbol: sanitizeTokenSymbol(row.input_token_local_symbol),
         inputAmount: row.input_amount,
         outputToken: row.output_token,
         outputTokenSymbol: sanitizeTokenSymbol(row.output_token_symbol),
+        outputTokenLocalSymbol: sanitizeTokenSymbol(row.output_token_local_symbol),
         outputAmount: row.output_amount,
         valueUsd: toNumberOrNull(row.value_usd),
         captureStatus: row.capture_status,

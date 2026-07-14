@@ -51,6 +51,47 @@ describe("portfolio input schema", () => {
       false,
     );
   });
+
+  // ── WP-L2: global scope narrowed to one inventory wallet ───────────────
+
+  it("accepts a global scope with an optional walletAddress", () => {
+    const parsed = portfolioReadInputSchema.safeParse({
+      scope: "global",
+      walletAddress: "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success && parsed.data.scope === "global") {
+      expect(parsed.data.walletAddress).toBe(
+        "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa",
+      );
+    }
+  });
+
+  it("rejects an empty walletAddress", () => {
+    expect(
+      portfolioReadInputSchema.safeParse({ scope: "global", walletAddress: "" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("rejects a walletAddress longer than 128 characters", () => {
+    expect(
+      portfolioReadInputSchema.safeParse({
+        scope: "global",
+        walletAddress: "0x" + "a".repeat(128),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a walletAddress on a session request (strict, never mixes scopes)", () => {
+    expect(
+      portfolioReadInputSchema.safeParse({
+        scope: "session",
+        sessionId: SESSION,
+        walletAddress: "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("portfolio dto schema", () => {

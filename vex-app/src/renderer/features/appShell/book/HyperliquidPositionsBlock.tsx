@@ -1,7 +1,10 @@
 import type { JSX } from "react";
 
 import type { HyperliquidPositionDto } from "@shared/schemas/hyperliquid.js";
-import { useHyperliquidPositions } from "../../../lib/api/hyperliquid.js";
+import {
+  useHyperliquidPositions,
+  useHyperliquidWorkspaceModeRead,
+} from "../../../lib/api/hyperliquid.js";
 import { useSubmitChat } from "../../../lib/api/chat.js";
 import { cn } from "../../../lib/utils.js";
 import { BookBlock } from "./BookBlock.js";
@@ -114,8 +117,22 @@ export function HyperliquidPositionsBlock({
   sessionId,
 }: {
   readonly sessionId: string;
-}): JSX.Element {
+}): JSX.Element | null {
+  // Owner report: the "No open Hyperliquid perpetual positions." empty state
+  // was permanent noise on every normal-mode session, since this block used
+  // to render unconditionally. Main's workspace-mode read is the SAME
+  // "Hyperliquid is active" signal `HypervexingEnterButton` already gates
+  // on — the section (header + body) simply does not mount outside
+  // Hypervexing mode. Fails CLOSED (hidden) while the mode read is
+  // loading/erroring, matching that sibling's own fail-closed default — no
+  // flash of the empty state before the mode is confirmed. Both hooks are
+  // called unconditionally (rules of hooks) — the mode check gates the
+  // RETURN, not the `useHyperliquidPositions` call.
+  const modeRead = useHyperliquidWorkspaceModeRead(sessionId);
   const query = useHyperliquidPositions(sessionId);
+  const modeDto = modeRead.data?.ok ? modeRead.data.data : null;
+  if (modeDto === null || modeDto.mode !== "hypervexing") return null;
+
   const result = query.data;
   if (query.isLoading) {
     return <BookBlock title="Hyperliquid"><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">Loading positions…</p></BookBlock>;
