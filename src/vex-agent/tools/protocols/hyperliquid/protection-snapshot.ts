@@ -18,6 +18,11 @@ export interface PositionProtectionSnapshot {
   readonly state: ProtectionState;
   readonly fullPositionStops: readonly ProtectiveOrder[];
   readonly fixedSizeStops: readonly ProtectiveOrder[];
+  // Take-profit triggers are parsed alongside stops but never contribute to
+  // `state` (a take-profit is not protection). They exist so a full-position
+  // take-profit can be restored/replaced without dropping the standing one.
+  readonly fullPositionTakeProfits: readonly ProtectiveOrder[];
+  readonly fixedSizeTakeProfits: readonly ProtectiveOrder[];
 }
 
 type RecordValue = Record<string, unknown>;
@@ -95,6 +100,13 @@ export function buildPositionProtectionSnapshot(
     .filter((order): order is ProtectiveOrder => order !== null);
   const fullPositionStops = allStops.filter((order) => order.fullPosition);
   const fixedSizeStops = allStops.filter((order) => !order.fullPosition);
+  const allTakeProfits = coinOrders
+    .filter(isReduceOnlyTakeProfit)
+    .filter((order) => sideClosesPosition(order, positionSize))
+    .map(toProtectiveOrder)
+    .filter((order): order is ProtectiveOrder => order !== null);
+  const fullPositionTakeProfits = allTakeProfits.filter((order) => order.fullPosition);
+  const fixedSizeTakeProfits = allTakeProfits.filter((order) => !order.fullPosition);
 
   let state: ProtectionState = "FLAT";
   if (active) {
@@ -116,6 +128,8 @@ export function buildPositionProtectionSnapshot(
     state,
     fullPositionStops,
     fixedSizeStops,
+    fullPositionTakeProfits,
+    fixedSizeTakeProfits,
   };
 }
 
@@ -149,6 +163,12 @@ function isReduceOnlyStop(order: RecordValue): boolean {
   if (order.reduceOnly !== true) return false;
   if (order.isTrigger === true && /stop|sl/i.test(stringValue(order, "triggerCondition") ?? "")) return true;
   return /stop|sl/i.test(stringValue(order, "orderType") ?? "");
+}
+
+function isReduceOnlyTakeProfit(order: RecordValue): boolean {
+  if (order.reduceOnly !== true) return false;
+  if (order.isTrigger === true && /take.?profit|tp/i.test(stringValue(order, "triggerCondition") ?? "")) return true;
+  return /take.?profit|tp/i.test(stringValue(order, "orderType") ?? "");
 }
 
 function sideClosesPosition(order: RecordValue, positionSize: string): boolean {

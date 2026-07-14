@@ -68,6 +68,29 @@ describe("Hyperliquid protection invariant", () => {
     expect(evaluateProtectionInvariant("hyperliquid.perp.twap", { coin: "BTC" }, unprotected, true)).toMatchObject({ kind: "block" });
   });
 
+  it("W16: setTpsl accepts a valid stop plus take-profit and blocks a wrong-side take-profit", () => {
+    const longSnapshot = buildPositionProtectionSnapshot(longState, [fullStop], "BTC");
+    // Long: stop below entry (100), take-profit above entry.
+    expect(evaluateProtectionInvariant("hyperliquid.perp.setTpsl", { coin: "BTC", slPrice: "90", tpPrice: "120" }, longSnapshot, true))
+      .toMatchObject({ kind: "allow" });
+    expect(evaluateProtectionInvariant("hyperliquid.perp.setTpsl", { coin: "BTC", slPrice: "90", tpPrice: "95" }, longSnapshot, true))
+      .toMatchObject({ kind: "block", message: expect.stringMatching(/take-profit/i) });
+
+    const shortState = { assetPositions: [{ position: { coin: "BTC", szi: "-2", entryPx: "100", liquidationPx: "150", positionValue: "200" } }], marginSummary: { accountValue: "1000", totalMarginUsed: "100" } };
+    const shortSnapshot = buildPositionProtectionSnapshot(shortState, [], "BTC");
+    // Short: stop above entry, take-profit below entry.
+    expect(evaluateProtectionInvariant("hyperliquid.perp.setTpsl", { coin: "BTC", slPrice: "110", tpPrice: "80" }, shortSnapshot, true))
+      .toMatchObject({ kind: "allow" });
+    expect(evaluateProtectionInvariant("hyperliquid.perp.setTpsl", { coin: "BTC", slPrice: "110", tpPrice: "120" }, shortSnapshot, true))
+      .toMatchObject({ kind: "block", message: expect.stringMatching(/take-profit/i) });
+  });
+
+  it("W16: setTpsl still requires a stop-loss price even when a take-profit is supplied", () => {
+    const longSnapshot = buildPositionProtectionSnapshot(longState, [fullStop], "BTC");
+    expect(evaluateProtectionInvariant("hyperliquid.perp.setTpsl", { coin: "BTC", tpPrice: "120" }, longSnapshot, true))
+      .toMatchObject({ kind: "block", message: expect.stringMatching(/stop-loss price is required/i) });
+  });
+
   it.each([
     ["missing assetPositions", { marginSummary: { accountValue: "1000", totalMarginUsed: "100" } }],
     ["non-numeric position size", { ...longState, assetPositions: [{ position: { ...longState.assetPositions[0]!.position, szi: "not-a-number" } }] }],
@@ -140,6 +163,15 @@ describe("Hyperliquid registration surface", () => {
       actionKind: "local_write",
     });
     expect(HYPERLIQUID_HANDLERS["hyperliquid.risk.proposeSetup"]).toBeTypeOf("function");
+  });
+
+  it("W16: setTpsl manifest declares an optional tpPrice string param alongside the required slPrice", () => {
+    const setTpsl = HYPERLIQUID_TOOLS.find((tool) => tool.toolId === "hyperliquid.perp.setTpsl");
+    const slParam = setTpsl?.params.find((param) => param.key === "slPrice");
+    const tpParam = setTpsl?.params.find((param) => param.key === "tpPrice");
+    expect(slParam).toMatchObject({ type: "string", required: true });
+    expect(tpParam).toMatchObject({ type: "string" });
+    expect(tpParam?.required).toBeUndefined();
   });
 });
 

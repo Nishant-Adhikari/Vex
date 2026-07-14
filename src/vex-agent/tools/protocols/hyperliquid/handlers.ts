@@ -22,9 +22,11 @@ export {
 export {
   applyOpenLeverage,
   cancelStaleStopsAfterReplacement,
+  cancelStaleTakeProfitsAfterReplacement,
   compensateRejectedStop,
   consolidateConfirmedOpen,
   preflightConfigureAndSubmitPerpOpen,
+  replaceFullPositionTakeProfit,
   type OpenCompensationExchange,
   type OpenCompensationInfo,
 } from "./perp-handlers.js";
