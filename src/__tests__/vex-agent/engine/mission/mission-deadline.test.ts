@@ -9,6 +9,7 @@ import {
   hardDeadlineMinutes,
   resolveDurationMinutes,
   computeHardDeadlineMs,
+  resolveRunHardDeadlineMs,
 } from "@vex-agent/engine/mission/mission-deadline.js";
 
 describe("hardDeadlineMinutes", () => {
@@ -56,5 +57,64 @@ describe("computeHardDeadlineMs", () => {
   });
   it("returns null for an unparseable start (fail-open: no false deadline)", () => {
     expect(computeHardDeadlineMs("not-a-date", 60)).toBeNull();
+  });
+});
+
+describe("resolveRunHardDeadlineMs (run-row → deadline, agent-independent)", () => {
+  const start = "2026-07-12T19:00:00.000Z";
+  const startMs = Date.parse(start);
+
+  function runWith(
+    frozenDuration: number | null,
+    draftDuration: number | null = null,
+  ) {
+    return {
+      startedAt: start,
+      contractSnapshotJson: {
+        version: 1,
+        frozenMission: {
+          constraintsJson:
+            frozenDuration == null ? {} : { durationMinutes: frozenDuration },
+          draft: draftDuration == null ? {} : { durationMinutes: draftDuration },
+        },
+      } as Record<string, unknown>,
+    };
+  }
+
+  it("reads the FROZEN durationMinutes from the run's contract snapshot", () => {
+    expect(resolveRunHardDeadlineMs(runWith(5), {})).toBe(startMs + 5 * 60_000);
+  });
+
+  it("falls back to the frozen draft.durationMinutes when constraints omit it", () => {
+    expect(resolveRunHardDeadlineMs(runWith(null, 12), {})).toBe(
+      startMs + 12 * 60_000,
+    );
+  });
+
+  it("falls back to the env override, then 60, when the snapshot has no duration", () => {
+    expect(
+      resolveRunHardDeadlineMs(runWith(null), {
+        VEX_MISSION_HARD_DEADLINE_MIN: "2",
+      }),
+    ).toBe(startMs + 2 * 60_000);
+    expect(resolveRunHardDeadlineMs(runWith(null), {})).toBe(startMs + 60 * 60_000);
+  });
+
+  it("defaults to a 60-min box when there is no snapshot at all", () => {
+    expect(
+      resolveRunHardDeadlineMs(
+        { startedAt: start, contractSnapshotJson: null },
+        {},
+      ),
+    ).toBe(startMs + 60 * 60_000);
+  });
+
+  it("fail-open: returns null on an unparseable started_at (never a false deadline)", () => {
+    expect(
+      resolveRunHardDeadlineMs(
+        { startedAt: "not-a-date", contractSnapshotJson: null },
+        {},
+      ),
+    ).toBeNull();
   });
 });

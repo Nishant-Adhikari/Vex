@@ -15,6 +15,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 import * as executorFacade from "../../../../vex-agent/engine/wake/executor.js";
+import type { DeadlineWatchdogDeps } from "../../../../vex-agent/engine/wake/deadline-watchdog.js";
 
 // Value re-exports — pinned for runtime typeof below.
 import {
@@ -51,6 +52,25 @@ function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
     isProviderReady: vi.fn(() => true),
+    ...overrides,
+  };
+}
+
+// No-op deadline-watchdog deps so the scheduler tests stay hermetic (the sweep
+// piggybacks on the same timer as the wake tick; without a fake it would hit
+// the real DB via `buildProductionDeadlineWatchdogDeps`).
+function makeWatchdogDeps(
+  overrides: Partial<DeadlineWatchdogDeps> = {},
+): DeadlineWatchdogDeps {
+  return {
+    listCandidateRuns: vi.fn().mockResolvedValue([]),
+    resolveDeadlineMs: vi.fn().mockReturnValue(null),
+    getLease: vi.fn().mockResolvedValue(null),
+    casStopPastDeadline: vi.fn().mockResolvedValue(null),
+    rejectPendingApprovals: vi.fn().mockResolvedValue(0),
+    setMissionFailed: vi.fn().mockResolvedValue(undefined),
+    captureTimedOut: vi.fn().mockResolvedValue(undefined),
+    emitControlState: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -97,7 +117,12 @@ describe("startWakeExecutor — self-scheduling lifecycle (fake timers)", () => 
     const claimDue = vi.fn().mockReturnValueOnce(claimGate).mockResolvedValue([]);
     const deps = makeDeps({ claimDue });
 
-    const handle = startWakeExecutor({ intervalMs: 2000, batchSize: 5, deps });
+    const handle = startWakeExecutor({
+      intervalMs: 2000,
+      batchSize: 5,
+      deps,
+      deadlineWatchdogDeps: makeWatchdogDeps(),
+    });
 
     // Nothing runs until the initial timeout fires.
     expect(claimDue).not.toHaveBeenCalled();
@@ -132,5 +157,29 @@ describe("startWakeExecutor — self-scheduling lifecycle (fake timers)", () => 
     // if a timer had been armed, advancing time triggers no further ticks.
     await vi.advanceTimersByTimeAsync(10_000);
     expect(claimDue).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the deadline watchdog sweep on every scheduler pass, independent of the wake tick", async () => {
+    vi.useFakeTimers();
+    const listCandidateRuns = vi.fn().mockResolvedValue([]);
+    // Provider absent → wake `tick` early-returns without claiming, but the
+    // deadline sweep MUST still run (stopping a ghost needs no provider).
+    const deps = makeDeps({ isProviderReady: vi.fn(() => false) });
+    const watchdog = makeWatchdogDeps({ listCandidateRuns });
+
+    const handle = startWakeExecutor({
+      intervalMs: 1000,
+      deps,
+      deadlineWatchdogDeps: watchdog,
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listCandidateRuns).toHaveBeenCalledTimes(1);
+    expect(deps.claimDue).not.toHaveBeenCalled(); // provider gate held the tick
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listCandidateRuns).toHaveBeenCalledTimes(2);
+
+    await handle.stop();
   });
 });
