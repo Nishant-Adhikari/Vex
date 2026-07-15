@@ -43,7 +43,6 @@
  */
 
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
@@ -55,6 +54,7 @@ import { formatClock, truncateAddress } from "../../../lib/format.js";
 import { formatEth } from "../missionHistoryModel.js";
 import { cn } from "../../../lib/utils.js";
 import { BookBlock } from "./BookBlock.js";
+import { useUiStore, type MovesDisplayMode } from "../../../stores/uiStore.js";
 
 /** Rendered window: the 10 newest fills. The badge counts the fetched total. */
 const MOVES_DISPLAY_CAP = 10;
@@ -62,21 +62,10 @@ const MOVES_DISPLAY_CAP = 10;
 /**
  * Amount-unit the ledger renders in. USD is the default (the figure a trader
  * reasons about); ETH keeps the raw on-chain base-leg amount. Persisted per
- * user so the choice survives reloads.
+ * user (via the `uiStore` persist whitelist) so the choice survives reloads —
+ * the renderer must never touch `localStorage` directly (build-artifact gate).
  */
-type DisplayMode = "usd" | "eth";
-
-/** localStorage key for the MOVES display-mode preference. */
-const DISPLAY_MODE_KEY = "vex.moves.displayMode";
-
-/**
- * Read the persisted display mode, defaulting to `"usd"`. Electron renderer —
- * `window`/`localStorage` always exist; tampered/absent values coerce to the
- * default rather than throwing.
- */
-function readDisplayMode(): DisplayMode {
-  return window.localStorage.getItem(DISPLAY_MODE_KEY) === "eth" ? "eth" : "usd";
-}
+type DisplayMode = MovesDisplayMode;
 
 type MoveState = "pending" | "done" | "failed" | "cancelled" | "neutral";
 
@@ -419,12 +408,11 @@ const STAMP_TONE: Record<SideTone, string> = {
 };
 
 export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
-  // Display mode is read lazily from localStorage (default USD) and mirrored
-  // back on change so the choice survives reloads.
-  const [mode, setMode] = useState<DisplayMode>(readDisplayMode);
-  useEffect(() => {
-    window.localStorage.setItem(DISPLAY_MODE_KEY, mode);
-  }, [mode]);
+  // Display mode is sourced from the persisted uiStore (default USD); toggling
+  // writes back through the store's persist whitelist so the choice survives
+  // reloads — no direct localStorage access in the renderer (build-artifact gate).
+  const mode = useUiStore((s) => s.movesDisplayMode);
+  const toggleMode = useUiStore((s) => s.toggleMovesDisplayMode);
 
   const query = useMoves(sessionId);
   const result = query.data;
@@ -514,7 +502,7 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
           <span className="inline-flex items-center gap-2">
             <MovesModeToggle
               mode={mode}
-              onToggle={() => setMode((m) => (m === "usd" ? "eth" : "usd"))}
+              onToggle={toggleMode}
             />
             {/* Landing .ws-badge: accent fill, accent-contrast mono figure
              * (white on cobalt, ink on the Robinhood lime fill), rounded-[5px].

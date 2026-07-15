@@ -156,6 +156,7 @@ describe("uiStore", () => {
       theme: "vex",
       sidebarOpen: true,
       bookOpen: true,
+      movesDisplayMode: "usd",
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialMessage).toBeUndefined();
@@ -218,7 +219,7 @@ describe("uiStore", () => {
     expect(useUiStore.getState().logBuffer).toEqual([]);
   });
 
-  it("persists ONLY the UI prefs (sidebarOpen + bookOpen) to localStorage (never logBuffer / transient navigation state)", () => {
+  it("persists ONLY the UI prefs (theme + sidebarOpen + bookOpen + movesDisplayMode) to localStorage (never logBuffer / transient navigation state)", () => {
     useUiStore.getState().setSidebarOpen(false);
     useUiStore.getState().setCurrentView("systemCheck");
     useUiStore.getState().setSessionModeFilter("mission");
@@ -241,6 +242,7 @@ describe("uiStore", () => {
       theme: "vex",
       sidebarOpen: false,
       bookOpen: true,
+      movesDisplayMode: "usd",
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

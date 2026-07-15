@@ -29,6 +29,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
 const mockUseMoves = vi.hoisted(() => vi.fn());
 const mockUsePortfolioScoped = vi.hoisted(() => vi.fn());
@@ -126,6 +127,9 @@ beforeEach(() => {
   // exercise the portfolio-price path opt in via mockPortfolio([ethHolding(…)]).
   mockPortfolio([]);
   window.localStorage.clear();
+  // Reset the persisted MOVES display mode to its USD default between tests
+  // (the store is module-singleton, so state carries across cases otherwise).
+  useUiStore.setState({ movesDisplayMode: "usd" });
 });
 
 describe("MovesBlock ledger display", () => {
@@ -362,7 +366,7 @@ describe("MovesBlock USD ⇄ ETH display toggle", () => {
     ).not.toBeNull();
   });
 
-  it("toggles to ETH and back, persisting the choice to localStorage", () => {
+  it("toggles to ETH and back, persisting the choice to the uiStore", () => {
     mockMoves([pricedSwap()]);
     render(<MovesBlock sessionId={SESSION} />);
 
@@ -370,16 +374,16 @@ describe("MovesBlock USD ⇄ ETH display toggle", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show amounts in ETH" }));
     expect(screen.getByText("0.01 ETH")).not.toBeNull();
     expect(screen.queryByText("$19.90")).toBeNull();
-    expect(window.localStorage.getItem("vex.moves.displayMode")).toBe("eth");
+    expect(useUiStore.getState().movesDisplayMode).toBe("eth");
 
     // ETH → USD.
     fireEvent.click(screen.getByRole("button", { name: "Show amounts in USD" }));
     expect(screen.getByText("$19.90")).not.toBeNull();
-    expect(window.localStorage.getItem("vex.moves.displayMode")).toBe("usd");
+    expect(useUiStore.getState().movesDisplayMode).toBe("usd");
   });
 
   it("rehydrates the persisted ETH mode on mount", () => {
-    window.localStorage.setItem("vex.moves.displayMode", "eth");
+    useUiStore.setState({ movesDisplayMode: "eth" });
     mockMoves([pricedSwap()]);
     render(<MovesBlock sessionId={SESSION} />);
     expect(screen.getByText("0.01 ETH")).not.toBeNull();
