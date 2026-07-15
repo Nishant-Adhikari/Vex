@@ -96,9 +96,21 @@ function apiUnreachableHint(causeCode: string | null): string {
 
 // ── Provider ─────────────────────────────────────────────────────
 
+/**
+ * Per-instance overrides. Every field defaults to the resolved ENV config, so
+ * `new OpenRouterProvider()` is unchanged. The failover stack (issue #25)
+ * constructs a SECOND instance with an explicit `{ apiKey, model }` — the
+ * fallback provider — without mutating global ENV.
+ */
+export interface OpenRouterProviderInit {
+  apiKey?: string;
+  model?: string;
+  displayName?: string;
+}
+
 export class OpenRouterProvider implements InferenceProvider {
   readonly id = "openrouter";
-  readonly displayName = "OpenRouter";
+  readonly displayName: string;
 
   private readonly apiKey: string;
   private readonly model: string;
@@ -119,18 +131,22 @@ export class OpenRouterProvider implements InferenceProvider {
   private staleServeUntil = 0;
   private inFlight: Promise<InferenceConfig | null> | null = null;
 
-  constructor() {
+  constructor(init: OpenRouterProviderInit = {}) {
     const env = loadEnvConfig();
 
-    if (!env.openrouterApiKey) {
+    const apiKey = init.apiKey ?? env.openrouterApiKey;
+    const model = init.model ?? env.agentModel;
+
+    if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is required for OpenRouter provider");
     }
-    if (!env.agentModel) {
+    if (!model) {
       throw new Error("AGENT_MODEL is required for OpenRouter provider");
     }
 
-    this.apiKey = env.openrouterApiKey;
-    this.model = env.agentModel;
+    this.displayName = init.displayName ?? "OpenRouter";
+    this.apiKey = apiKey;
+    this.model = model;
     this.contextLimit = env.contextLimit;
     this.temperature = env.temperature ?? undefined;
     this.maxOutputTokens = env.maxOutputTokens;

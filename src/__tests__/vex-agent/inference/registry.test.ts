@@ -1,21 +1,30 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+// Record the init args each OpenRouterProvider is constructed with so the
+// fallback-wiring tests can assert the primary vs fallback key/model split.
+const constructed: Array<{ apiKey?: string; model?: string }> = [];
+
 vi.mock("../../../vex-agent/inference/openrouter.js", () => ({
   OpenRouterProvider: class {
     readonly id = "openrouter";
     readonly displayName = "OpenRouter";
+    constructor(init: { apiKey?: string; model?: string } = {}) {
+      constructed.push({ apiKey: init.apiKey, model: init.model });
+    }
   },
 }));
 
 const { resolveProvider, getActiveProvider, resetProvider, switchProvider } = await import(
   "../../../vex-agent/inference/registry.js"
 );
+const { FailoverProvider } = await import("../../../vex-agent/inference/failover.js");
 
 describe("registry", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
     resetProvider();
+    constructed.length = 0;
     for (const key of Object.keys(process.env)) {
       if (key.startsWith("AGENT_") || key.startsWith("OPENROUTER_")) {
         delete process.env[key];
@@ -52,6 +61,50 @@ describe("registry", () => {
   it("rejects invalid AGENT_PROVIDER early", async () => {
     process.env.AGENT_PROVIDER = "invalid-provider";
     await expect(resolveProvider()).rejects.toThrow("AGENT_PROVIDER");
+  });
+
+  it("wraps the single provider in a 1-deep FailoverProvider (backward compatible)", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-primary";
+    process.env.AGENT_MODEL = "openai/gpt-4o";
+
+    const provider = await resolveProvider();
+
+    expect(provider).toBeInstanceOf(FailoverProvider);
+    expect((provider as InstanceType<typeof FailoverProvider>).size).toBe(1);
+    expect(provider!.id).toBe("openrouter");
+    // Exactly the primary was constructed — no phantom fallback instance.
+    expect(constructed).toHaveLength(1);
+    expect(constructed[0]).toMatchObject({ apiKey: "sk-or-primary", model: "openai/gpt-4o" });
+  });
+
+  it("builds a 2-deep failover stack when a fallback key + model are configured", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-primary";
+    process.env.AGENT_MODEL = "openai/gpt-4o";
+    process.env.OPENROUTER_API_KEY_FALLBACK = "sk-or-fallback";
+    process.env.AGENT_MODEL_FALLBACK = "qwen/qwen-2.5-72b-instruct";
+
+    const provider = await resolveProvider();
+
+    expect(provider).toBeInstanceOf(FailoverProvider);
+    expect((provider as InstanceType<typeof FailoverProvider>).size).toBe(2);
+    expect(constructed).toHaveLength(2);
+    expect(constructed[0]).toMatchObject({ apiKey: "sk-or-primary", model: "openai/gpt-4o" });
+    expect(constructed[1]).toMatchObject({
+      apiKey: "sk-or-fallback",
+      model: "qwen/qwen-2.5-72b-instruct",
+    });
+  });
+
+  it("ignores a fallback key with no fallback model (stays single-provider)", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-primary";
+    process.env.AGENT_MODEL = "openai/gpt-4o";
+    process.env.OPENROUTER_API_KEY_FALLBACK = "sk-or-fallback";
+    // AGENT_MODEL_FALLBACK intentionally absent.
+
+    const provider = await resolveProvider();
+
+    expect((provider as InstanceType<typeof FailoverProvider>).size).toBe(1);
+    expect(constructed).toHaveLength(1);
   });
 
   it("switchProvider sets AGENT_PROVIDER and replaces cached instance", async () => {
