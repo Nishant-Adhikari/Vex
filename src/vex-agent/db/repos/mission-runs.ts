@@ -343,11 +343,12 @@ export async function casStopPastDeadline(
       "SELECT status FROM mission_runs WHERE id = $1 FOR UPDATE",
       [runId],
     );
-    if (lockRow.rowCount === 0) {
+    const locked = lockRow.rows[0];
+    if (!locked) {
       await client.query("ROLLBACK");
       return null;
     }
-    const prev = coerceStatus(lockRow.rows[0].status, runId);
+    const prev = coerceStatus(locked.status, runId);
     if (!fromStatuses.includes(prev)) {
       await client.query("ROLLBACK");
       return null;
