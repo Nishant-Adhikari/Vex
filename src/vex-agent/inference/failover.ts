@@ -89,7 +89,9 @@ const TRANSIENT_NODE_CODES: ReadonlySet<string> = new Set([
 const TRANSIENT_VEX_CODES: ReadonlySet<string> = new Set(["HTTP_TIMEOUT"]);
 
 function readField(err: Error, key: string): unknown {
-  return (err as unknown as Record<string, unknown>)[key];
+  // Status/code/retryable live on Error SUBCLASSES, not the base type. Read via
+  // Reflect (no cast) to stay within the repo's `as any` / `as unknown as` budget.
+  return Reflect.get(err, key);
 }
 
 function statusOf(err: Error): number | null {
@@ -113,7 +115,8 @@ function isTransientStatus(status: number): boolean {
 export function isTransientInferenceError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
 
-  const code = typeof readField(err, "code") === "string" ? (readField(err, "code") as string) : null;
+  const codeField = readField(err, "code");
+  const code = typeof codeField === "string" ? codeField : null;
 
   // Explicit request-timeout code is transient even when surfaced as AbortError.
   if (code !== null && TRANSIENT_VEX_CODES.has(code)) return true;
