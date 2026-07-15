@@ -302,6 +302,83 @@ export async function casFlipToRunning(
   }
 }
 
+/**
+ * All active-or-parked run rows — the candidate set for the agent-independent
+ * deadline watchdog (deadline sweep). Kept small in practice (a desktop agent
+ * has ~one live mission), so an unfiltered scan of the non-terminal rows is
+ * fine; the sweep filters by each run's frozen deadline in code.
+ */
+export async function listActiveOrPausedRuns(
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql = `SELECT * FROM mission_runs WHERE status IN (${ACTIVE_OR_PAUSED_SQL_IN})`;
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql)).rows
+    : (await getPool().query<Record<string, unknown>>(sql)).rows;
+  return rows.map(mapRow);
+}
+
+/**
+ * Atomically stop a past-deadline run — the concurrency-safe, idempotent claim
+ * for the deadline watchdog. Mirrors `casFlipToRunning`'s SELECT … FOR UPDATE
+ * pattern but flips the LOCKED row to terminal `failed` with a `deadline_reached`
+ * stop reason, only when the current status is still in `fromStatuses`.
+ *
+ * Returns the previous status on success, or `null` when the row already moved
+ * out of the allowed set (another watchdog pass, a resume, or the loop-boundary
+ * enforcer already handled it). The `null` return is what makes a second sweep a
+ * no-op, so the caller must NOT run the terminal side-effects when it sees null.
+ */
+export async function casStopPastDeadline(
+  runId: string,
+  fromStatuses: readonly MissionRunStatus[],
+  payload: { stopReason: "deadline_reached"; summary?: string; evidence?: Record<string, unknown> },
+): Promise<MissionRunStatus | null> {
+  if (fromStatuses.length === 0) return null;
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const lockRow = await client.query<{ status: string }>(
+      "SELECT status FROM mission_runs WHERE id = $1 FOR UPDATE",
+      [runId],
+    );
+    if (lockRow.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const prev = coerceStatus(lockRow.rows[0].status, runId);
+    if (!fromStatuses.includes(prev)) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      `UPDATE mission_runs
+       SET status = 'failed',
+           stop_reason = $2,
+           stop_summary = COALESCE($3, stop_summary),
+           stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+           ended_at = NOW()
+       WHERE id = $1`,
+      [
+        runId,
+        payload.stopReason,
+        payload.summary ?? null,
+        nullableJsonb(payload.evidence ?? null),
+      ],
+    );
+    await client.query("COMMIT");
+    return prev;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {
+      // ROLLBACK failures are non-actionable; the original error is what matters.
+    });
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function getRun(
   id: string,
   client?: PoolClient,

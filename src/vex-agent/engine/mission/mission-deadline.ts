@@ -61,3 +61,50 @@ export function computeHardDeadlineMs(
   if (Number.isNaN(startMs)) return null;
   return startMs + durationMin * 60_000;
 }
+
+/**
+ * The frozen box duration for a run, read from its IMMUTABLE contract snapshot
+ * (`contract_snapshot_json.frozenMission`). The snapshot is captured at start
+ * and never drifts, so it is the correct duration source for an agent-
+ * independent enforcement path (unlike the live mission row, which can move
+ * back to draft/edit). Prefers the raw `constraintsJson.durationMinutes`, then
+ * the projected `draft.durationMinutes`; returns null when neither is present.
+ */
+function frozenDurationMinutes(
+  contractSnapshotJson: Record<string, unknown> | null | undefined,
+): number | null {
+  const frozen = (contractSnapshotJson as { frozenMission?: unknown } | null | undefined)
+    ?.frozenMission as
+    | { constraintsJson?: Record<string, unknown>; draft?: Record<string, unknown> }
+    | undefined;
+  const fromConstraints = frozen?.constraintsJson?.durationMinutes;
+  if (typeof fromConstraints === "number" && Number.isFinite(fromConstraints) && fromConstraints > 0) {
+    return fromConstraints;
+  }
+  const fromDraft = frozen?.draft?.durationMinutes;
+  if (typeof fromDraft === "number" && Number.isFinite(fromDraft) && fromDraft > 0) {
+    return fromDraft;
+  }
+  return null;
+}
+
+/**
+ * Central resolver: the hard-deadline epoch (ms) for a run ROW — its immutable
+ * `startedAt` + the frozen box duration (→ env override → 60-min default). This
+ * is the single source of truth the agent-independent watchdog (deadline sweep)
+ * consults for a parked run, mirroring the loop-boundary computation but reading
+ * the duration from the run's frozen snapshot instead of a live hydrate.
+ *
+ * Fail-open: an unparseable `startedAt` yields null (no box) rather than a false
+ * early stop — the same contract as `computeHardDeadlineMs`.
+ */
+export function resolveRunHardDeadlineMs(
+  run: { startedAt: string; contractSnapshotJson: Record<string, unknown> | null },
+  env: Record<string, string | undefined> = process.env,
+): number | null {
+  const durationMin = resolveDurationMinutes(
+    frozenDurationMinutes(run.contractSnapshotJson),
+    env,
+  );
+  return computeHardDeadlineMs(run.startedAt, durationMin);
+}
