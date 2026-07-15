@@ -131,6 +131,65 @@ describe("providerPersist handler", () => {
     expect(mockWriter).toHaveBeenCalledTimes(1);
   });
 
+  it("verifies BOTH providers when a fallback is supplied, then writes once", async () => {
+    mockVerify.mockResolvedValue({ ok: true, data: { latencyMs: 120 } });
+    mockWriter.mockResolvedValue({
+      ok: true,
+      data: {
+        fieldsWritten: [
+          "OPENROUTER_API_KEY",
+          "AGENT_MODEL",
+          "AGENT_PROVIDER",
+          "OPENROUTER_API_KEY_FALLBACK",
+          "AGENT_MODEL_FALLBACK",
+        ],
+      },
+    });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    const result = (await fn(trustedSender, {
+      requestId: "req-fb",
+      payload: {
+        ...VALID_PAYLOAD,
+        fallback: { apiKey: "sk-or-fallback", model: "qwen/qwen-2.5-72b-instruct" },
+      },
+    })) as { ok: boolean };
+    expect(result.ok).toBe(true);
+    expect(mockVerify).toHaveBeenCalledTimes(2); // primary + fallback
+    expect(mockWriter).toHaveBeenCalledTimes(1);
+  });
+
+  it("fallback verify failure short-circuits — writer NEVER called", async () => {
+    // Primary ok, fallback rejected → whole persist blocked (atomic contract).
+    mockVerify
+      .mockResolvedValueOnce({ ok: true, data: { latencyMs: 80 } })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: "provider.invalid_api_key",
+          domain: "onboarding",
+          message: "Fallback API key rejected",
+          retryable: false,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-fbfail",
+        },
+      });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    const result = (await fn(trustedSender, {
+      requestId: "req-fbfail",
+      payload: {
+        ...VALID_PAYLOAD,
+        fallback: { apiKey: "sk-or-bad", model: "qwen/qwen-2.5-72b-instruct" },
+      },
+    })) as { ok: boolean; error?: { code: string } };
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("provider.invalid_api_key");
+    expect(mockVerify).toHaveBeenCalledTimes(2);
+    expect(mockWriter).not.toHaveBeenCalled();
+  });
+
   it("verify failure short-circuits — writer NEVER called", async () => {
     mockVerify.mockResolvedValue({
       ok: false,

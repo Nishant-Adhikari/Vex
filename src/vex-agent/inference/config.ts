@@ -37,6 +37,14 @@ export interface EnvConfig {
   openrouterApiKey: string | null;
   /** Model ID — required for OpenRouter */
   agentModel: string | null;
+  /**
+   * Optional SECONDARY (fallback) OpenRouter API key. When this AND
+   * `fallbackAgentModel` are both present the registry builds a two-deep
+   * failover stack (issue #25); absent ⇒ single-provider behavior, unchanged.
+   */
+  fallbackOpenrouterApiKey: string | null;
+  /** Optional secondary (fallback) model ID — paired with the fallback key. */
+  fallbackAgentModel: string | null;
   /** Sampling temperature — OpenRouter only */
   temperature: number | null;
   /** Max output tokens per response */
@@ -69,6 +77,11 @@ export function loadEnvConfig(): EnvConfig {
   const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() ?? null;
   const agentModel = process.env.AGENT_MODEL?.trim() ?? null;
 
+  // Optional secondary/fallback provider — strings, no numeric validation. Both
+  // must be non-empty for the pair to be honored (registry checks this too).
+  const fallbackOpenrouterApiKey = process.env.OPENROUTER_API_KEY_FALLBACK?.trim() || null;
+  const fallbackAgentModel = process.env.AGENT_MODEL_FALLBACK?.trim() || null;
+
   // AGENT_CONTEXT_LIMIT / AGENT_MAX_OUTPUT_TOKENS / AGENT_TEMPERATURE —
   // delegated to shared parser (returns collected ParseErrors so we
   // preserve the "throw all at once" engine contract).
@@ -95,6 +108,8 @@ export function loadEnvConfig(): EnvConfig {
     contextLimit: agentParse.value.contextLimit,
     openrouterApiKey,
     agentModel,
+    fallbackOpenrouterApiKey,
+    fallbackAgentModel,
     temperature: agentParse.value.temperature,
     maxOutputTokens: agentParse.value.maxOutputTokens,
   };

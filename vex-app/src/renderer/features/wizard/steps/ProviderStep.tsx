@@ -84,6 +84,13 @@ export function ProviderStep({
   const [showOverride, setShowOverride] = useState(false);
   const apiKeyRef = useRef<HTMLInputElement | null>(null);
 
+  // Optional secondary/fallback provider (issue #25). Collapsed by default;
+  // when enabled it takes its own model + key and the agent fails over to it on
+  // a transient primary failure instead of parking the mission.
+  const [showFallback, setShowFallback] = useState(false);
+  const [fallbackModel, setFallbackModel] = useState<string>("");
+  const fallbackKeyRef = useRef<HTMLInputElement | null>(null);
+
   const providerState =
     envQuery.data?.ok === true ? envQuery.data.data.provider : null;
   const configured = providerState?.configured ?? false;
@@ -136,14 +143,44 @@ export function ProviderStep({
         return;
       }
 
-      // Snapshot, clear ref SYNCHRONOUSLY before await (skill §14).
+      // Optional fallback provider. Only read/validate it when the user opened
+      // the section AND typed something — an empty, collapsed section stays the
+      // single-provider path (fully backward compatible).
+      const fallbackKeyRaw = fallbackKeyRef.current?.value ?? "";
+      const fallbackKey = fallbackKeyRaw.trim();
+      const fallbackModelTrim = fallbackModel.trim();
+      const fallbackTouched =
+        showFallback && (fallbackKey.length > 0 || fallbackModelTrim.length > 0);
+      if (fallbackTouched) {
+        if (fallbackKey.length === 0 || fallbackModelTrim.length === 0) {
+          setClientError(
+            "Fill in both the fallback API key and fallback model id, or leave the fallback section empty.",
+          );
+          return;
+        }
+        if (fallbackKey.length > 200 || fallbackModelTrim.length > 200) {
+          setClientError(
+            "Fallback API key and model id must each be shorter than 200 characters.",
+          );
+          return;
+        }
+      }
+
+      // Snapshot, clear refs SYNCHRONOUSLY before await (skill §14 — never park
+      // secrets in observer state).
       const payload: ProviderPersistInput = {
         provider: "openrouter",
         apiKey,
         model: modelTrim,
+        ...(fallbackTouched
+          ? { fallback: { apiKey: fallbackKey, model: fallbackModelTrim } }
+          : {}),
       };
       if (apiKeyRef.current) {
         apiKeyRef.current.value = "";
+      }
+      if (fallbackKeyRef.current) {
+        fallbackKeyRef.current.value = "";
       }
       setSubmitting(true);
       try {
@@ -171,7 +208,7 @@ export function ProviderStep({
         setSubmitting(false);
       }
     },
-    [advanceToReview, invalidateEnvState, model],
+    [advanceToReview, invalidateEnvState, model, showFallback, fallbackModel],
   );
 
   const meta = WIZARD_STEP_META.provider;
@@ -348,6 +385,67 @@ export function ProviderStep({
             </a>
             .
           </p>
+        </div>
+
+        {/* ── Optional fallback provider (issue #25) ────────────────── */}
+        <div className="flex flex-col gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+          {!showFallback ? (
+            <button
+              type="button"
+              data-vex-provider-add-fallback
+              onClick={() => setShowFallback(true)}
+              className="self-start text-sm text-[var(--vex-onboarding-accent)] underline-offset-2 hover:underline"
+            >
+              + Add a fallback provider (optional)
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                  Fallback provider
+                </span>
+                <button
+                  type="button"
+                  data-vex-provider-remove-fallback
+                  onClick={() => {
+                    setShowFallback(false);
+                    setFallbackModel("");
+                    if (fallbackKeyRef.current) fallbackKeyRef.current.value = "";
+                  }}
+                  className="text-xs text-[var(--color-text-muted)] underline-offset-2 hover:underline"
+                >
+                  Remove
+                </button>
+              </div>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                If the primary provider keeps failing (e.g. a 429 rate-limit),
+                the agent retries with backoff and then fails over to this
+                provider for that call instead of pausing the mission.
+              </p>
+              <Label htmlFor="vex-provider-fallback-key">Fallback API key</Label>
+              <PasswordField
+                id="vex-provider-fallback-key"
+                ref={fallbackKeyRef}
+                placeholder="sk-or-..."
+              />
+              <Label
+                htmlFor="vex-provider-fallback-model"
+                className="flex items-center gap-2"
+              >
+                <ModelBrandIcon modelId={fallbackModel} size={16} />
+                Fallback model id
+              </Label>
+              <Input
+                id="vex-provider-fallback-model"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="qwen/qwen-2.5-72b-instruct"
+                value={fallbackModel}
+                onChange={(e) => setFallbackModel(e.target.value)}
+              />
+            </>
+          )}
         </div>
 
         {clientError ? (

@@ -9,13 +9,50 @@
 
 import type { InferenceProvider } from "./types.js";
 import { loadEnvConfig } from "./config.js";
+import { FailoverProvider } from "./failover.js";
 import logger from "@utils/logger.js";
 
 // ── Lazy imports (avoid loading unused provider dependencies) ────
 
+/**
+ * Build the OpenRouter inference stack: the ENV-configured PRIMARY, optionally
+ * wrapped with a SECONDARY (fallback) provider when both
+ * `OPENROUTER_API_KEY_FALLBACK` and `AGENT_MODEL_FALLBACK` are set. The result
+ * is ALWAYS a {@link FailoverProvider} — even for a single provider — so the
+ * bounded retry/backoff on transient errors applies uniformly (issue #25). A
+ * lone provider stack re-throws its own normalized error unchanged, preserving
+ * the pre-existing mission-classifier contract.
+ */
 async function createOpenRouterProvider(): Promise<InferenceProvider> {
   const { OpenRouterProvider } = await import("./openrouter.js");
-  return new OpenRouterProvider();
+  const env = loadEnvConfig();
+
+  // Primary is constructed explicitly from the resolved ENV (equivalent to the
+  // legacy zero-arg constructor, which reads the same values) so both slots
+  // share one construction path.
+  const providers: InferenceProvider[] = [
+    new OpenRouterProvider({
+      apiKey: env.openrouterApiKey ?? undefined,
+      model: env.agentModel ?? undefined,
+      displayName: "OpenRouter",
+    }),
+  ];
+
+  if (env.fallbackOpenrouterApiKey && env.fallbackAgentModel) {
+    providers.push(
+      new OpenRouterProvider({
+        apiKey: env.fallbackOpenrouterApiKey,
+        model: env.fallbackAgentModel,
+        displayName: "OpenRouter (fallback)",
+      }),
+    );
+    logger.info("inference.registry.fallback_configured", {
+      // Never log key/model VALUES — only the fact that a fallback exists.
+      providerCount: providers.length,
+    });
+  }
+
+  return new FailoverProvider(providers);
 }
 
 const PROVIDER_FACTORIES: Record<string, () => Promise<InferenceProvider>> = {
