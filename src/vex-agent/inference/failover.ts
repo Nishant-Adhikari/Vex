@@ -153,7 +153,7 @@ export interface ProviderFailure {
  * already normalized/scrubbed upstream) — never the raw error objects.
  */
 export class AllProvidersFailedError extends Error {
-  readonly name = "AllProvidersFailedError";
+  override readonly name = "AllProvidersFailedError";
   /** Mission classifier reads this to keep the run recoverable. */
   readonly retryable = true;
   readonly failures: readonly ProviderFailure[];
@@ -182,20 +182,23 @@ export class FailoverProvider implements InferenceProvider {
   readonly displayName: string;
 
   private readonly providers: readonly InferenceProvider[];
+  private readonly primary: InferenceProvider;
   private readonly opts: FailoverOptions;
 
   constructor(providers: InferenceProvider[], options: Partial<FailoverOptions> = {}) {
-    if (providers.length === 0) {
+    const [primary, ...rest] = providers;
+    if (primary === undefined) {
       throw new Error("FailoverProvider requires at least one provider");
     }
-    this.providers = [...providers];
+    this.providers = [primary, ...rest];
+    this.primary = primary;
     // Identity mirrors the PRIMARY so existing call sites (`provider.id`)
     // see the same value whether or not a fallback is configured.
-    this.id = this.providers[0].id;
+    this.id = primary.id;
     this.displayName =
-      this.providers.length === 1
-        ? this.providers[0].displayName
-        : `${this.providers[0].displayName} (+${this.providers.length - 1} fallback)`;
+      rest.length === 0
+        ? primary.displayName
+        : `${primary.displayName} (+${rest.length} fallback)`;
     this.opts = {
       maxRetriesPerProvider: options.maxRetriesPerProvider ?? DEFAULT_MAX_RETRIES_PER_PROVIDER,
       baseDelayMs: options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
@@ -222,8 +225,7 @@ export class FailoverProvider implements InferenceProvider {
     const failures: ProviderFailure[] = [];
     const single = this.providers.length === 1;
 
-    for (let pIdx = 0; pIdx < this.providers.length; pIdx++) {
-      const provider = this.providers[pIdx];
+    for (const [pIdx, provider] of this.providers.entries()) {
       let lastErr: Error | undefined;
 
       for (let attempt = 0; attempt <= this.opts.maxRetriesPerProvider; attempt++) {
@@ -373,6 +375,6 @@ export class FailoverProvider implements InferenceProvider {
 
   /** Cost is a pure local computation — delegate to the primary. */
   calculateCost(usage: InferenceUsage, config: InferenceConfig): RequestCost {
-    return this.providers[0].calculateCost(usage, config);
+    return this.primary.calculateCost(usage, config);
   }
 }
