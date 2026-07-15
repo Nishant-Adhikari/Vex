@@ -44,6 +44,11 @@ import logger from "@utils/logger.js";
 
 import { tick } from "./executor/tick.js";
 import { buildProductionDeps, type WakeDeps } from "./executor/deps.js";
+import {
+  sweepMissionDeadlines,
+  type DeadlineWatchdogDeps,
+} from "./deadline-watchdog.js";
+import { buildProductionDeadlineWatchdogDeps } from "./deadline-watchdog-deps.js";
 
 export type { ClaimedWakeOutcome, ClaimedWake } from "./executor/tick.js";
 export { tick } from "./executor/tick.js";
@@ -62,6 +67,13 @@ export interface StartOptions {
   batchSize?: number;
   deps?: WakeDeps;
   now?: () => Date;
+  /**
+   * Injected deadline-watchdog deps (tests). Production builds them from the
+   * real repos. The watchdog sweep piggybacks on this scheduler's timer so a
+   * PARKED run past its hard deadline is stopped even though it never reaches
+   * the turn-loop boundary — see `deadline-watchdog.ts`.
+   */
+  deadlineWatchdogDeps?: DeadlineWatchdogDeps;
 }
 
 /**
@@ -78,14 +90,29 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const limit = options.batchSize ?? 10;
   const now = options.now ?? (() => new Date());
   const deps = options.deps ?? buildProductionDeps();
+  const deadlineWatchdogDeps =
+    options.deadlineWatchdogDeps ?? buildProductionDeadlineWatchdogDeps();
 
   let stopped = false;
   let inFlight: Promise<void> | null = null;
   let timer: NodeJS.Timeout | null = null;
 
   const runOne = async (): Promise<void> => {
+    const at = now();
+    // Deadline watchdog first, and independent of `tick`: stopping a past-
+    // deadline run needs NO inference provider (unlike a wake resume), so it
+    // must run even when `tick` early-returns on an absent provider — otherwise
+    // a parked run could ghost past its box until the key is loaded. Its own
+    // try/catch so a sweep failure never blocks the wake pass (and vice versa).
     try {
-      await tick(now(), limit, deps);
+      await sweepMissionDeadlines(at, deadlineWatchdogDeps);
+    } catch (err) {
+      logger.error("wake.executor.deadline_sweep_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    try {
+      await tick(at, limit, deps);
     } catch (err) {
       logger.error("wake.executor.tick_failed", {
         error: err instanceof Error ? err.message : String(err),
