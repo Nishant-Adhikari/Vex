@@ -293,6 +293,22 @@ export class FailoverProvider implements InferenceProvider {
     throw new AllProvidersFailedError(failures);
   }
 
+  /**
+   * Retarget the per-turn `config` to the ACTIVE provider's own model on a
+   * failover. The engine builds `config` from the PRIMARY (`failover.loadConfig`
+   * returns the primary's config), so a fallback with a different model must run
+   * against ITS model id — not the primary's. Per-turn fields (reasoningEffort,
+   * context/output limits, temperature) are preserved; only `model` is swapped,
+   * and only when the provider advertises a differing model. Provider-reported
+   * `usage.cost` (authoritative) keeps cost accounting correct regardless.
+   */
+  private configFor(provider: InferenceProvider, config: InferenceConfig): InferenceConfig {
+    if (provider.model && provider.model !== config.model) {
+      return { ...config, model: provider.model };
+    }
+    return config;
+  }
+
   private backoffDelay(attempt: number): number {
     const base = this.opts.baseDelayMs * Math.pow(2, attempt);
     const jitter = this.opts.jitter ? Math.random() * this.opts.baseDelayMs : 0;
@@ -326,14 +342,18 @@ export class FailoverProvider implements InferenceProvider {
     tools: ToolDefinition[],
     config: InferenceConfig,
   ): Promise<InferenceResponse> {
-    return this.run("chatCompletion", (p) => p.chatCompletion(messages, tools, config));
+    return this.run("chatCompletion", (p) =>
+      p.chatCompletion(messages, tools, this.configFor(p, config)),
+    );
   }
 
   chatCompletionSimple(
     messages: ProviderMessage[],
     config: InferenceConfig,
   ): Promise<{ content: string; usage: InferenceUsage }> {
-    return this.run("chatCompletionSimple", (p) => p.chatCompletionSimple(messages, config));
+    return this.run("chatCompletionSimple", (p) =>
+      p.chatCompletionSimple(messages, this.configFor(p, config)),
+    );
   }
 
   /**
@@ -350,7 +370,7 @@ export class FailoverProvider implements InferenceProvider {
     signal?: AbortSignal,
   ): AsyncGenerator<StreamChunk> {
     const generator = await this.run("chatCompletionStream.open", async (p) => {
-      const gen = p.chatCompletionStream(messages, tools, config, signal);
+      const gen = p.chatCompletionStream(messages, tools, this.configFor(p, config), signal);
       // Pull the first chunk INSIDE the retry/failover scope so a connect-time
       // transient error triggers backoff/failover instead of surfacing raw.
       const first = await gen.next();

@@ -113,7 +113,8 @@ export class OpenRouterProvider implements InferenceProvider {
   readonly displayName: string;
 
   private readonly apiKey: string;
-  private readonly model: string;
+  /** Public so the failover wrapper can retarget `config.model` on a failover. */
+  readonly model: string;
   private readonly contextLimit: number;
   private readonly temperature: number | undefined;
   private readonly maxOutputTokens: number;

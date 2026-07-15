@@ -64,17 +64,25 @@ const CONFIG: InferenceConfig = {
 function fakeProvider(
   id: string,
   behaviors: Array<Error | InferenceResponse>,
-): InferenceProvider & { calls: number } {
+  model?: string,
+): InferenceProvider & { calls: number; lastModel: string | null } {
   let i = 0;
   const p = {
     id,
     displayName: id,
+    model,
     calls: 0,
+    lastModel: null as string | null,
     async loadConfig() {
       return CONFIG;
     },
-    async chatCompletion(): Promise<InferenceResponse> {
+    async chatCompletion(
+      _m: unknown,
+      _t: unknown,
+      cfg: InferenceConfig,
+    ): Promise<InferenceResponse> {
       p.calls++;
+      p.lastModel = cfg.model;
       const behavior = behaviors[Math.min(i, behaviors.length - 1)];
       i++;
       if (behavior instanceof Error) throw behavior;
@@ -100,7 +108,7 @@ function fakeProvider(
         breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
       };
     },
-  } as unknown as InferenceProvider & { calls: number };
+  } as unknown as InferenceProvider & { calls: number; lastModel: string | null };
   return p;
 }
 
@@ -191,6 +199,27 @@ describe("FailoverProvider", () => {
     // a recoverable state (auto-retry budget) instead of a permanent halt.
     expect((err as AllProvidersFailedError).retryable).toBe(true);
     expect(classifyMissionRunError(err)).toBe("transient");
+  });
+
+  it("runs each provider against ITS OWN model on failover (not the primary's)", async () => {
+    // The engine builds `config` from the primary, so config.model is the
+    // primary's. A fallback with a different model must be invoked with its own.
+    const primary = fakeProvider("primary", [httpError(429)], "openai/gpt-4o");
+    const fallback = fakeProvider(
+      "fallback",
+      [OK_RESPONSE],
+      "qwen/qwen-2.5-72b-instruct",
+    );
+    const fp = new FailoverProvider([primary, fallback], {
+      maxRetriesPerProvider: 0,
+      sleep: noSleep,
+    });
+
+    // Caller passes the PRIMARY's config (model = openai/gpt-4o).
+    await fp.chatCompletion([], [], { ...CONFIG, model: "openai/gpt-4o" });
+
+    expect(primary.lastModel).toBe("openai/gpt-4o"); // unchanged for the primary
+    expect(fallback.lastModel).toBe("qwen/qwen-2.5-72b-instruct"); // retargeted
   });
 
   it("prefers the primary again on the next call after a failover", async () => {
