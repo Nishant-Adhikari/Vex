@@ -27,6 +27,9 @@ export const missionResultDtoSchema = z
     trades: z.number().int(),
     outcome: z.string(),
     openPositionsCount: z.number().int(),
+    // The agent's end-of-mission narrative (mission_runs.stop_summary), surfaced
+    // in the summary card as prose. Null when the run recorded no summary.
+    stopSummary: z.string().nullable(),
   })
   .strict();
 

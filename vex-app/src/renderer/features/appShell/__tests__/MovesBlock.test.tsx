@@ -26,23 +26,34 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
+import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
 const mockUseMoves = vi.hoisted(() => vi.fn());
+const mockUsePortfolioScoped = vi.hoisted(() => vi.fn());
 const mockUseMissionSessionResult = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../lib/api/portfolio.js", () => ({
   useMoves: mockUseMoves,
+  usePortfolioScoped: mockUsePortfolioScoped,
 }));
 
 vi.mock("../../../lib/api/mission.js", () => ({
   useMissionSessionResult: mockUseMissionSessionResult,
 }));
 
-const { MovesBlock, computeDeployedEth, deployedPct } = await import(
-  "../book/MovesBlock.js"
-);
+const {
+  MovesBlock,
+  computeDeployedEth,
+  computeDeployedUsd,
+  deployedPct,
+  deriveEthPriceUsd,
+  formatUsdCompact,
+  impliedEthPriceUsd,
+  moveUsd,
+} = await import("../book/MovesBlock.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000eeee";
 const SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -84,9 +95,41 @@ function mockSeed(bankrollStartEth: number | null): void {
   });
 }
 
+function portfolioDto(tokens: readonly PositionTokenDto[]): PortfolioDto {
+  return {
+    scope: "session",
+    walletCount: 1,
+    liveTotalUsd: 0,
+    snapshotTotalUsd: null,
+    pnlVsPrev: null,
+    snapshotAt: null,
+    tokens: [...tokens],
+    chains: [],
+  };
+}
+
+/** Mock the session portfolio read with an explicit token set. */
+function mockPortfolio(tokens: readonly PositionTokenDto[]): void {
+  mockUsePortfolioScoped.mockReturnValue({
+    data: { ok: true, data: portfolioDto(tokens) },
+  });
+}
+
+/** A single priced ETH holding → portfolio-derived spot of `price` USD/ETH. */
+function ethHolding(price: number): PositionTokenDto {
+  return { chainId: 1, symbol: "ETH", balanceUsd: price, amount: 1 };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockSeed(null);
+  // Default: an empty portfolio → no portfolio-derived ETH price. Tests that
+  // exercise the portfolio-price path opt in via mockPortfolio([ethHolding(…)]).
+  mockPortfolio([]);
+  window.localStorage.clear();
+  // Reset the persisted MOVES display mode to its USD default between tests
+  // (the store is module-singleton, so state carries across cases otherwise).
+  useUiStore.setState({ movesDisplayMode: "usd" });
 });
 
 describe("MovesBlock ledger display", () => {
@@ -298,6 +341,222 @@ describe("MovesBlock ledger display", () => {
   });
 });
 
+describe("MovesBlock USD ⇄ ETH display toggle", () => {
+  // A neutral swap (not a BUY) so its priced leg doesn't also land in the
+  // Deployed sum — keeps the `$…` leg figure unique in the DOM.
+  function pricedSwap(): MoveItem {
+    return move({
+      id: "1",
+      tradeSide: null,
+      inputToken: "ETH",
+      inputAmount: "0.01",
+      outputToken: "vena",
+      valueUsd: 19.9,
+    });
+  }
+
+  it("defaults to USD — the unit leg shows the compact USD notional, not ETH", () => {
+    mockMoves([pricedSwap()]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("$19.90")).not.toBeNull();
+    expect(screen.queryByText("0.01 ETH")).toBeNull();
+    // The switch advertises the ACTION it performs (flip to ETH).
+    expect(
+      screen.getByRole("button", { name: "Show amounts in ETH" }),
+    ).not.toBeNull();
+  });
+
+  it("toggles to ETH and back, persisting the choice to the uiStore", () => {
+    mockMoves([pricedSwap()]);
+    render(<MovesBlock sessionId={SESSION} />);
+
+    // USD → ETH.
+    fireEvent.click(screen.getByRole("button", { name: "Show amounts in ETH" }));
+    expect(screen.getByText("0.01 ETH")).not.toBeNull();
+    expect(screen.queryByText("$19.90")).toBeNull();
+    expect(useUiStore.getState().movesDisplayMode).toBe("eth");
+
+    // ETH → USD.
+    fireEvent.click(screen.getByRole("button", { name: "Show amounts in USD" }));
+    expect(screen.getByText("$19.90")).not.toBeNull();
+    expect(useUiStore.getState().movesDisplayMode).toBe("usd");
+  });
+
+  it("rehydrates the persisted ETH mode on mount", () => {
+    useUiStore.setState({ movesDisplayMode: "eth" });
+    mockMoves([pricedSwap()]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("0.01 ETH")).not.toBeNull();
+    expect(screen.queryByText("$19.90")).toBeNull();
+  });
+
+  it("in USD mode a priced move shows $…, an unpriced move falls back to ETH", () => {
+    mockMoves([
+      pricedSwap(),
+      // Unpriced (valueUsd null) → the leg keeps its ETH figure.
+      move({
+        id: "2",
+        tradeSide: null,
+        inputToken: "ETH",
+        inputAmount: "0.02",
+        outputToken: "wif",
+        valueUsd: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("$19.90")).not.toBeNull();
+    expect(screen.getByText("0.02 ETH")).not.toBeNull();
+  });
+
+  it("in USD mode SEED converts via the implied ETH price and DEPLOYED sums buys' valueUsd", () => {
+    mockSeed(0.1);
+    mockMoves([
+      // Priced BUY: 0.02 ETH ⇒ $38 → implied price $1900/ETH; adds to Deployed.
+      move({
+        id: "1",
+        tradeSide: "buy",
+        inputToken: "ETH",
+        inputAmount: "0.02",
+        outputToken: "vena",
+        valueUsd: 38,
+      }),
+      // Second priced BUY so Deployed ($57) differs from either leg figure.
+      move({
+        id: "2",
+        tradeSide: "buy",
+        inputToken: "ETH",
+        inputAmount: "0.01",
+        outputToken: "wif",
+        valueUsd: 19,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    // Seed 0.1 ETH × $1900 = $190.
+    expect(screen.getByText("$190.00")).not.toBeNull();
+    // Deployed = sum of the buys' valueUsd (38 + 19 = 57).
+    expect(screen.getByText("$57.00")).not.toBeNull();
+    // Per-leg USD figures render on each buy's unit leg.
+    expect(screen.getByText("$38.00")).not.toBeNull();
+    expect(screen.getByText("$19.00")).not.toBeNull();
+    // Percent stays the ETH-based ratio: (0.02 + 0.01) / 0.1 = 30%.
+    expect(screen.getByText(/\(30%\)/)).not.toBeNull();
+  });
+
+  it("in USD mode with nothing priced, SEED and DEPLOYED fall back to ETH", () => {
+    mockSeed(0.1);
+    mockMoves([
+      move({ id: "1", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.04" }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    // No priced move → implied price null → Seed/Deployed keep ETH figures.
+    expect(screen.getByText("0.1000 ETH")).not.toBeNull();
+    expect(screen.getByText("0.0400 ETH")).not.toBeNull();
+    expect(screen.queryByText("$NaN")).toBeNull();
+  });
+
+  it("in USD mode an unpriced move (valueUsd null) converts via the PORTFOLIO ETH price", () => {
+    // The Robinhood path: moves carry no valueUsd, but the portfolio holds a
+    // priced ETH line ($1800/ETH) → the ETH leg converts to USD.
+    mockPortfolio([ethHolding(1800)]);
+    mockMoves([
+      move({
+        id: "1",
+        tradeSide: null,
+        inputToken: "ETH",
+        inputAmount: "0.02",
+        outputToken: "vena",
+        valueUsd: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    // 0.02 ETH × $1800 = $36.00 — the row is no longer dead in USD mode.
+    expect(screen.getByText("$36.00")).not.toBeNull();
+    expect(screen.queryByText("0.02 ETH")).toBeNull();
+  });
+
+  it("in USD mode DEPLOYED converts the ETH sum via the PORTFOLIO price when buys are unpriced", () => {
+    mockSeed(0.1);
+    mockPortfolio([ethHolding(1800)]);
+    mockMoves([
+      // Unpriced buys (Robinhood) → deployedUsd sum is 0, so DEPLOYED converts
+      // the ETH-denominated sum (0.02 + 0.01 = 0.03 ETH) at the portfolio price.
+      move({ id: "1", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.02", valueUsd: null }),
+      move({ id: "2", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.01", valueUsd: null }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    // Seed 0.1 ETH × $1800 = $180.00.
+    expect(screen.getByText("$180.00")).not.toBeNull();
+    // Deployed 0.03 ETH × $1800 = $54.00.
+    expect(screen.getByText("$54.00")).not.toBeNull();
+    // Percent stays the ETH-based ratio: 0.03 / 0.1 = 30%.
+    expect(screen.getByText(/\(30%\)/)).not.toBeNull();
+  });
+
+  it("prefers the PORTFOLIO price over the implied price for per-move USD", () => {
+    // A priced move would imply $1990/ETH, but the portfolio's real spot
+    // ($1800) is authoritative for the unpriced sibling row.
+    mockPortfolio([ethHolding(1800)]);
+    mockMoves([
+      move({
+        id: "1",
+        tradeSide: null,
+        inputToken: "ETH",
+        inputAmount: "0.02",
+        outputToken: "wif",
+        valueUsd: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    // 0.02 × $1800 = $36.00 (portfolio spot), not an implied figure.
+    expect(screen.getByText("$36.00")).not.toBeNull();
+  });
+});
+
+describe("computeDeployedUsd / impliedEthPriceUsd / formatUsdCompact (pure)", () => {
+  it("sums the valueUsd of BUYs only, skipping sells and nulls", () => {
+    const moves = [
+      move({ id: "1", tradeSide: "buy", valueUsd: 19.9 }),
+      move({ id: "2", tradeSide: "buy", valueUsd: 38 }),
+      // Sell → ignored.
+      move({ id: "3", tradeSide: "sell", valueUsd: 100 }),
+      // Unpriced buy → skipped (not counted as 0-then-added, just skipped).
+      move({ id: "4", tradeSide: "buy", valueUsd: null }),
+    ];
+    expect(computeDeployedUsd(moves)).toBeCloseTo(57.9, 12);
+    expect(computeDeployedUsd([])).toBe(0);
+  });
+
+  it("derives the implied ETH→USD price from the first priced move with an ETH leg", () => {
+    const moves = [
+      // Unpriced → skipped.
+      move({ id: "1", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.01", valueUsd: null }),
+      // Priced BUY: 0.02 ETH in ⇒ $38 → $1900/ETH.
+      move({ id: "2", tradeSide: "buy", inputToken: "ETH", inputAmount: "0.02", valueUsd: 38 }),
+    ];
+    expect(impliedEthPriceUsd(moves)).toBeCloseTo(1900, 9);
+    // A SELL prices off its ETH OUTPUT leg too.
+    expect(
+      impliedEthPriceUsd([
+        move({ id: "1", tradeSide: "sell", inputToken: "vena", outputToken: "ETH", outputAmount: "0.05", valueUsd: 95 }),
+      ]),
+    ).toBeCloseTo(1900, 9);
+    // No priced move / no ETH leg → null.
+    expect(impliedEthPriceUsd([])).toBeNull();
+    expect(
+      impliedEthPriceUsd([move({ id: "1", tradeSide: "buy", inputToken: "usdc", inputAmount: "10.0", valueUsd: 10 })]),
+    ).toBeNull();
+  });
+
+  it("formats compact USD and returns null for non-finite input", () => {
+    expect(formatUsdCompact(19.9)).toBe("$19.90");
+    expect(formatUsdCompact(1200)).toBe("$1.2k");
+    expect(formatUsdCompact(3_400_000)).toBe("$3.4m");
+    expect(formatUsdCompact(0)).toBe("$0.00");
+    expect(formatUsdCompact(null)).toBeNull();
+    expect(formatUsdCompact(Number.NaN)).toBeNull();
+  });
+});
+
 describe("computeDeployedEth / deployedPct (pure)", () => {
   it("sums the ETH input leg of BUYs only, skipping sells, non-ETH, and raw amounts", () => {
     const moves = [
@@ -325,5 +584,93 @@ describe("computeDeployedEth / deployedPct (pure)", () => {
     expect(deployedPct(0.04, 0)).toBeNull();
     expect(deployedPct(0.04, null)).toBeNull();
     expect(deployedPct(0.04, -1)).toBeNull();
+  });
+});
+
+describe("deriveEthPriceUsd (pure)", () => {
+  function dto(tokens: readonly PositionTokenDto[]): PortfolioDto {
+    return {
+      scope: "session",
+      walletCount: 1,
+      liveTotalUsd: 0,
+      snapshotTotalUsd: null,
+      pnlVsPrev: null,
+      snapshotAt: null,
+      tokens: [...tokens],
+      chains: [],
+    };
+  }
+
+  it("derives the ETH spot from the ETH holding (balanceUsd / amount)", () => {
+    expect(
+      deriveEthPriceUsd(dto([{ chainId: 1, symbol: "ETH", balanceUsd: 178.4, amount: 0.1 }])),
+    ).toBeCloseTo(1784, 9);
+    // Case-insensitive symbol match; other tokens are ignored.
+    expect(
+      deriveEthPriceUsd(
+        dto([
+          { chainId: 1, symbol: "USDC", balanceUsd: 50, amount: 50 },
+          { chainId: 1, symbol: "eth", balanceUsd: 3600, amount: 2 },
+        ]),
+      ),
+    ).toBeCloseTo(1800, 9);
+  });
+
+  it("returns null when there is no usable ETH price", () => {
+    // No portfolio at all.
+    expect(deriveEthPriceUsd(null)).toBeNull();
+    // No ETH line.
+    expect(
+      deriveEthPriceUsd(dto([{ chainId: 1, symbol: "USDC", balanceUsd: 50, amount: 50 }])),
+    ).toBeNull();
+    // Unpriced ETH holding (balanceUsd null — the very bug on Robinhood moves).
+    expect(
+      deriveEthPriceUsd(dto([{ chainId: 1, symbol: "ETH", balanceUsd: null, amount: 1 }])),
+    ).toBeNull();
+    // Zero / null amount → no divisor.
+    expect(
+      deriveEthPriceUsd(dto([{ chainId: 1, symbol: "ETH", balanceUsd: 1800, amount: 0 }])),
+    ).toBeNull();
+    expect(
+      deriveEthPriceUsd(dto([{ chainId: 1, symbol: "ETH", balanceUsd: 1800, amount: null }])),
+    ).toBeNull();
+  });
+});
+
+describe("moveUsd (pure)", () => {
+  it("uses the move's own valueUsd when present", () => {
+    expect(moveUsd(move({ id: "1", valueUsd: 19.9 }), 1800)).toBeCloseTo(19.9, 12);
+    // valueUsd wins even when a price could convert the leg.
+    expect(
+      moveUsd(move({ id: "1", inputToken: "ETH", inputAmount: "0.02", valueUsd: 19.9 }), 1800),
+    ).toBeCloseTo(19.9, 12);
+  });
+
+  it("converts the ETH leg at the price when valueUsd is null", () => {
+    expect(
+      moveUsd(move({ id: "1", inputToken: "ETH", inputAmount: "0.02", valueUsd: null }), 1800),
+    ).toBeCloseTo(36, 12);
+    // SELL prices off the ETH OUTPUT leg.
+    expect(
+      moveUsd(
+        move({ id: "1", tradeSide: "sell", inputToken: "vena", outputToken: "ETH", outputAmount: "0.05", valueUsd: null }),
+        1800,
+      ),
+    ).toBeCloseTo(90, 12);
+  });
+
+  it("returns null (→ ETH fallback) when there is no valueUsd and no price / no ETH leg", () => {
+    // No price at all.
+    expect(
+      moveUsd(move({ id: "1", inputToken: "ETH", inputAmount: "0.02", valueUsd: null }), null),
+    ).toBeNull();
+    // Price present but no parseable ETH leg (raw wei).
+    expect(
+      moveUsd(move({ id: "1", inputToken: "ETH", inputAmount: "1000000000", valueUsd: null }), 1800),
+    ).toBeNull();
+    // Price present but the leg isn't ETH.
+    expect(
+      moveUsd(move({ id: "1", inputToken: "usdc", inputAmount: "10.0", valueUsd: null }), 1800),
+    ).toBeNull();
   });
 });

@@ -214,6 +214,39 @@ async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult>
   });
 }
 
+// ── Economic-side classification ──────────────────────────────────────────────
+
+/**
+ * Classify a swap by its ECONOMIC direction, independent of WHICH tool routed it.
+ * The agent buys a token by calling `uniswap.swap.sell(WETH → TOKEN)` (and vice
+ * versa), so the tool's own `side` mislabels those legs. Derive from the token
+ * legs instead: native-in → BUY (spending ETH), native-out → SELL (realizing ETH),
+ * and a token↔token swap (neither leg native) falls back to the tool's declared
+ * `side`. Used ONLY for classification/labeling, the exit-safety veto gate, and
+ * what gets RECORDED — never for routing/quoting/execution.
+ *
+ * A leg counts as native either when it is the `eth`/`native` sentinel
+ * (`isNative`) OR when the caller passed the chain's wrapped-native (WETH) ERC-20
+ * address directly — the manifest documents `tokenIn` as "CONTRACT ADDRESS or
+ * native ETH", so a WETH-funded buy arrives as a plain ERC-20 leg with
+ * `isNative:false`. Spending WETH is economically identical to spending ETH, so
+ * both forms must classify the same way; otherwise a WETH→TOKEN buy routed via
+ * `uniswap.swap.sell` is recorded as a sell and the buy-side veto is skipped.
+ */
+export function classifyEconomicSide(args: {
+  readonly tokenIn: { readonly address: string; readonly isNative: boolean };
+  readonly tokenOut: { readonly address: string; readonly isNative: boolean };
+  readonly wrappedNative: string;
+  readonly side: "buy" | "sell";
+}): "buy" | "sell" {
+  const eqAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const inNative = args.tokenIn.isNative || eqAddr(args.tokenIn.address, args.wrappedNative);
+  const outNative = args.tokenOut.isNative || eqAddr(args.tokenOut.address, args.wrappedNative);
+  if (inNative) return "buy";
+  if (outNative) return "sell";
+  return args.side;
+}
+
 // ── Execute (sell + buy share routing; differ only in trade side) ─────────────
 
 async function executeUniswapSwap(
@@ -227,6 +260,16 @@ async function executeUniswapSwap(
   const deployment = requireDeployment(chain);
   const tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
   const tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
+  // Economic direction of the trade (native-in → buy, native-out → sell, else the
+  // tool's `side`). The recorded side + the exit-safety veto key off THIS, not the
+  // tool name, so a `uniswap.swap.sell(WETH → TOKEN)` is correctly a BUY. Routing/
+  // quoting/execution below still key off `side`/the token legs, unchanged.
+  const economicSide = classifyEconomicSide({
+    tokenIn: { address: tokenIn.address, isNative: tokenIn.isNative },
+    tokenOut: { address: tokenOut.address, isNative: tokenOut.isNative },
+    wrappedNative: deployment.weth,
+    side,
+  });
   const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
   const sellFraction = num(p, "sellFraction");
 
@@ -256,7 +299,7 @@ async function executeUniswapSwap(
 
   if (p.dryRun === true) {
     return ok({
-      dryRun: true, side, chain: deployment.key,
+      dryRun: true, side: economicSide, chain: deployment.key,
       route: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null },
       amountOut: formatUnits(quoted.amountOut, tokenOut.decimals),
       minAmountOut: formatUnits(quoted.minAmountOut, tokenOut.decimals),
@@ -269,7 +312,9 @@ async function executeUniswapSwap(
   // route means every sell reverts (honeypot) — and probe the fee-on-transfer
   // signal. Read-only + keyless, and BEFORE signer resolution so no key is
   // decrypted for a doomed buy. Sells and native-out swaps are exits already.
-  if (side === "buy" && !tokenOut.isNative) {
+  // Keys off the ECONOMIC side so a native→token BUY routed via `uniswap.swap.sell`
+  // is still gated (the bug this fixes: the veto was skipped for such buys).
+  if (economicSide === "buy" && !tokenOut.isNative) {
     const probeClient = getUniswapPublicClient(deployment);
     const [sellBack, fotSuspected] = await Promise.all([
       quoteBestRoute(probeClient, {
@@ -339,7 +384,7 @@ async function executeUniswapSwap(
   // sentinels are rejected earlier pending prequote-gate binding).
   const amountInHuman = amountInRaw;
 
-  logger.info("uniswap.swap.executed", { chain: deployment.key, version: quoted.route.version, side });
+  logger.info("uniswap.swap.executed", { chain: deployment.key, version: quoted.route.version, side, economicSide });
 
   // Auto-pin (fail-soft): non-native legs of a swap on a LOCAL chain join the
   // tracked_tokens set (seed ∪ pins) so balance scans and the portfolio keep
@@ -366,7 +411,7 @@ async function executeUniswapSwap(
   return {
     success: true,
     output: JSON.stringify({
-      txHash, side, chain: deployment.key,
+      txHash, side: economicSide, chain: deployment.key,
       tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
       amountIn: amountInHuman, amountOut: amountOutHuman,
       route: { version: quoted.route.version, path: quoted.route.path },
@@ -385,11 +430,14 @@ async function executeUniswapSwap(
         outputAmount: amountOutHuman,
         signature: txHash,
         walletAddress: signer.address,
-        tradeSide: side,
-        instrumentKey: `${deployment.key}:${side === "buy" ? tokenOut.address : tokenIn.address}`,
+        // Recorded by ECONOMIC direction (native-in buy / native-out sell), so the
+        // exit engine's cost-basis + the MOVES label match reality regardless of
+        // which tool name (`uniswap.swap.buy`/`.sell`) routed the trade.
+        tradeSide: economicSide,
+        instrumentKey: `${deployment.key}:${economicSide === "buy" ? tokenOut.address : tokenIn.address}`,
         valuationSource: "none",
-        settlementAssetKey: side === "buy" ? tokenIn.symbol : tokenOut.symbol,
-        meta: { dex: "uniswap", version: quoted.route.version, side },
+        settlementAssetKey: economicSide === "buy" ? tokenIn.symbol : tokenOut.symbol,
+        meta: { dex: "uniswap", version: quoted.route.version, side: economicSide },
       },
     },
   };

@@ -28,6 +28,15 @@ export const MAX_RENDER_LOGS = 500;
  */
 export type VexTheme = "vex" | "robinhood";
 
+/**
+ * Amount-unit the MOVES ledger renders in. `usd` is the default (the figure a
+ * trader reasons about); `eth` keeps the raw on-chain base-leg amount. Persisted
+ * via the partialize whitelist below so the choice survives relaunch — the
+ * renderer must never touch `localStorage` directly (build-artifact gate), so
+ * this preference lives here rather than in a bespoke key.
+ */
+export type MovesDisplayMode = "usd" | "eth";
+
 export type View =
   | "splash"
   | "systemCheck"
@@ -86,6 +95,11 @@ interface UiState {
    * persisted so the user's choice survives relaunch.
    */
   readonly bookOpen: boolean;
+  /**
+   * MOVES ledger amount-unit (USD vs raw ETH). Defaults to `usd` and is
+   * persisted (partialize whitelist) so the trader's choice survives relaunch.
+   */
+  readonly movesDisplayMode: MovesDisplayMode;
   readonly currentView: View;
   readonly wizardEntryMode: WizardEntryMode;
   readonly unlockReturnView: UnlockReturnView;
@@ -125,6 +139,8 @@ interface UiState {
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
+  readonly setMovesDisplayMode: (value: MovesDisplayMode) => void;
+  readonly toggleMovesDisplayMode: () => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
   readonly openWizard: (mode: WizardEntryMode) => void;
@@ -152,6 +168,7 @@ export const useUiStore = create<UiState>()(
       theme: "vex",
       sidebarOpen: true,
       bookOpen: true,
+      movesDisplayMode: "usd",
       currentView: "splash",
       wizardEntryMode: "setup",
       unlockReturnView: "appShell",
@@ -170,6 +187,11 @@ export const useUiStore = create<UiState>()(
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
+      setMovesDisplayMode: (movesDisplayMode) => set({ movesDisplayMode }),
+      toggleMovesDisplayMode: () =>
+        set((state) => ({
+          movesDisplayMode: state.movesDisplayMode === "usd" ? "eth" : "usd",
+        })),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
       openWizard: (wizardEntryMode) =>
@@ -207,12 +229,13 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
+        movesDisplayMode: state.movesDisplayMode,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -220,6 +243,8 @@ export const useUiStore = create<UiState>()(
       //       persist normally).
       //   v3: `theme` added — seed the cobalt default so a pre-theme install
       //       hydrates into `vex`, not `undefined`.
+      //   v4: `movesDisplayMode` added — seed the `usd` default so a pre-toggle
+      //       install hydrates into USD, not `undefined`.
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -227,13 +252,17 @@ export const useUiStore = create<UiState>()(
         let next = persisted as Record<string, unknown>;
         if (version < 2) next = { ...next, bookOpen: true };
         if (version < 3 && !("theme" in next)) next = { ...next, theme: "vex" };
+        if (version < 4 && !("movesDisplayMode" in next)) {
+          next = { ...next, movesDisplayMode: "usd" };
+        }
         return next;
       },
       // localStorage is user-writable (untrusted input), and `migrate` only
       // runs on version hops — a hand-edited current-version payload skips it.
-      // Coerce on EVERY rehydrate: an off-union `theme` degrades to the cobalt
-      // default instead of reaching `data-vex-theme` / `SKY_ACCENTS[theme]`
-      // (SignalSky indexes accents by theme and would crash on `undefined`).
+      // Coerce on EVERY rehydrate: an off-union `theme`/`movesDisplayMode`
+      // degrades to its default instead of reaching `data-vex-theme` /
+      // `SKY_ACCENTS[theme]` (SignalSky indexes accents by theme and would crash
+      // on `undefined`) or the MOVES ledger's unit switch.
       merge: (persisted, current) => {
         const incoming =
           persisted !== null && typeof persisted === "object"
@@ -241,7 +270,9 @@ export const useUiStore = create<UiState>()(
             : undefined;
         const theme: VexTheme =
           incoming?.theme === "robinhood" ? "robinhood" : "vex";
-        return { ...current, ...incoming, theme };
+        const movesDisplayMode: MovesDisplayMode =
+          incoming?.movesDisplayMode === "eth" ? "eth" : "usd";
+        return { ...current, ...incoming, theme, movesDisplayMode };
       },
     }
   )
