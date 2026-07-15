@@ -67,6 +67,7 @@ function makeWatchdogDeps(
     resolveDeadlineMs: vi.fn().mockReturnValue(null),
     getLease: vi.fn().mockResolvedValue(null),
     casStopPastDeadline: vi.fn().mockResolvedValue(null),
+    rejectPendingApprovals: vi.fn().mockResolvedValue(0),
     setMissionFailed: vi.fn().mockResolvedValue(undefined),
     captureTimedOut: vi.fn().mockResolvedValue(undefined),
     emitControlState: vi.fn().mockResolvedValue(undefined),

@@ -17,6 +17,7 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as runnerLeasesRepo from "@vex-agent/db/repos/runner-leases.js";
 import { captureMissionFinal } from "../mission/mission-results-capture.js";
 import { resolveRunHardDeadlineMs } from "../mission/mission-deadline.js";
+import { rejectPendingApprovalsForSession } from "../core/runner/approvals-cleanup.js";
 import type { DeadlineWatchdogDeps } from "./deadline-watchdog.js";
 
 async function emitControlState(sessionId: string, runId: string): Promise<void> {
@@ -51,6 +52,7 @@ export function buildProductionDeadlineWatchdogDeps(): DeadlineWatchdogDeps {
     getLease: (sessionId) => runnerLeasesRepo.getLease(sessionId),
     casStopPastDeadline: (runId, fromStatuses, payload) =>
       missionRunsRepo.casStopPastDeadline(runId, fromStatuses, payload),
+    rejectPendingApprovals: (sessionId) => rejectPendingApprovalsForSession(sessionId),
     setMissionFailed: (missionId) => missionsRepo.setStatus(missionId, "failed"),
     captureTimedOut: (args) => captureMissionFinal({ ...args, outcome: "timed_out" }),
     emitControlState,

@@ -62,6 +62,7 @@ function makeDeps(overrides: Partial<DeadlineWatchdogDeps> = {}): DeadlineWatchd
       .fn<DeadlineWatchdogDeps["casStopPastDeadline"]>()
       // Default: claim succeeds, returning the previous (parked) status.
       .mockImplementation(async (_runId, fromStatuses) => fromStatuses[0]),
+    rejectPendingApprovals: vi.fn().mockResolvedValue(0),
     setMissionFailed: vi.fn().mockResolvedValue(undefined),
     captureTimedOut: vi.fn().mockResolvedValue(undefined),
     emitControlState: vi.fn().mockResolvedValue(undefined),
@@ -98,6 +99,9 @@ describe("sweepMissionDeadlines", () => {
       // Position CLOSING is deferred — the run is flagged, never auto-sold.
       expect(payload.evidence.enforcedWhileParked).toBe(true);
       expect(payload.evidence.positionCloseDeferred).toBe(true);
+      // Pending approvals for the session are resolved so a swept
+      // paused_approval run can't be resumed back out of its terminal state.
+      expect(deps.rejectPendingApprovals).toHaveBeenCalledWith("sess-1");
       // Same terminal side-effects as the loop-boundary finalize path.
       expect(deps.setMissionFailed).toHaveBeenCalledWith("mission-1");
       expect(deps.captureTimedOut).toHaveBeenCalledWith({
@@ -119,9 +123,27 @@ describe("sweepMissionDeadlines", () => {
     const outcomes = await sweepMissionDeadlines(NOW, deps);
 
     expect(outcomes).toEqual([{ kind: "skipped_already_terminal", runId: "run-1" }]);
+    expect(deps.rejectPendingApprovals).not.toHaveBeenCalled();
     expect(deps.setMissionFailed).not.toHaveBeenCalled();
     expect(deps.captureTimedOut).not.toHaveBeenCalled();
     expect(deps.emitControlState).not.toHaveBeenCalled();
+  });
+
+  it("resolves the pending approval when it stops a paused_approval run (no resume-back-to-error)", async () => {
+    const run = makeRun({ status: "paused_approval" });
+    const rejectPendingApprovals = vi.fn().mockResolvedValue(1);
+    const deps = makeDeps({
+      listCandidateRuns: vi.fn().mockResolvedValue([run]),
+      casStopPastDeadline: vi.fn().mockResolvedValue("paused_approval"),
+      rejectPendingApprovals,
+    });
+
+    const outcomes = await sweepMissionDeadlines(NOW, deps);
+
+    expect(outcomes).toEqual([
+      { kind: "stopped", runId: "run-1", previousStatus: "paused_approval" },
+    ]);
+    expect(rejectPendingApprovals).toHaveBeenCalledWith("sess-1");
   });
 
   it("leaves a not-yet-due parked run alone (no stop)", async () => {

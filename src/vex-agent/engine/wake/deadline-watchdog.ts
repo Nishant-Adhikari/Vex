@@ -62,6 +62,14 @@ export interface DeadlineWatchdogDeps {
       evidence?: Record<string, unknown>;
     },
   ): Promise<MissionRunStatus | null>;
+  /**
+   * Reject every still-pending approval for the run's session. A swept
+   * `paused_approval` run otherwise leaves its `approval_queue` row pending —
+   * the UI keeps listing it, and a later approve/reject would try to resume and
+   * flip the (now terminal) run back to `paused_error`. Same helper abort/rewind
+   * use. Returns the count rejected.
+   */
+  rejectPendingApprovals(sessionId: string): Promise<number>;
   /** Move the parent mission row to `failed` (mirrors finalize). */
   setMissionFailed(missionId: string): Promise<void>;
   /** Close the ledger row as `timed_out` (captures the open-position bag). */
@@ -172,6 +180,13 @@ async function stopPastDeadline(
     return { kind: "skipped_already_terminal", runId: run.id };
   }
 
+  // Resolve any pending approvals FIRST — a swept `paused_approval` run has a
+  // pending `approval_queue` row that would otherwise linger in the UI and let a
+  // later approve/reject resume + `flipRunToPausedError` this now-terminal run
+  // back to `paused_error`. Scoped to the run's session (approval_queue has no
+  // mission_run_id); the same helper abort/rewind use.
+  const rejectedApprovals = await deps.rejectPendingApprovals(run.sessionId);
+
   // Terminal side-effects — mirror `finalizeMissionRunStatus`'s deadline branch
   // (mission row → failed, ledger → timed_out which snapshots the open-position
   // bag, control-state broadcast). Sequential like finalize; the CAS above is
@@ -190,6 +205,7 @@ async function stopPastDeadline(
     deadlineMs,
     previousStatus,
     enforcedWhileParked: parked,
+    rejectedApprovals,
     path: "watchdog",
   });
 
