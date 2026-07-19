@@ -14,6 +14,12 @@
  * (framer `useReducedMotion` here + the global keyframe-collapse rule for the
  * CSS `vex-rise` stagger). Only clip-path / opacity / transform animate — no
  * layout props, no blur (guard-compliant).
+ *
+ * Focus handoff (in): this component only ever mounts while the mode is
+ * active, so "on mount" IS "on enter" — the root lands an explicit `region`
+ * landmark (`tabIndex={-1}`, focused on mount) so a keyboard/screen-reader
+ * user is placed inside the room instead of stranded on whatever the shell
+ * unmounted underneath it.
  */
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
@@ -142,9 +148,21 @@ export function HypervexingWorkspace({
   const motionProps = buildWorkspaceTransition(useReducedMotion() ?? false);
   const wideRoom = useWideRoom();
 
+  // Explicit focus handoff INTO the room on enter (a11y). This component
+  // mounts exactly when the mode activates, so a mount-only effect IS the
+  // "on enter" moment.
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    containerRef.current?.focus();
+  }, []);
+
   return (
     <motion.div
+      ref={containerRef}
       data-vex-hypervexing-workspace
+      role="region"
+      aria-label="Hypervexing trading room"
+      tabIndex={-1}
       className="absolute inset-0 z-10 grid gap-2.5 overflow-hidden p-2.5"
       style={wideRoom ? WIDE_GRID_STYLE : NARROW_GRID_STYLE}
       initial={motionProps.initial}

@@ -88,7 +88,11 @@ export function HypervexingTopBar({
   };
 
   return (
-    <header className="relative flex h-full items-center gap-4 px-4">
+    <header
+      aria-label="Hypervexing top bar"
+      aria-busy={exitPending}
+      className="relative flex h-full items-center gap-4 px-4"
+    >
       {/* The desk-rule accent tick, recolored to mint by token. */}
       <span
         aria-hidden

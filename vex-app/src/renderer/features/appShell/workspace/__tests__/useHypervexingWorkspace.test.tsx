@@ -154,6 +154,43 @@ describe("useHypervexingWorkspace", () => {
     await waitFor(() => expect(result.current.workspaceMode).toBe("hypervexing"));
   });
 
+  it("visualWorkspaceMode mirrors entry immediately", () => {
+    const { result } = renderHook(() => useHypervexingWorkspace(), { wrapper });
+    expect(result.current.visualWorkspaceMode).toBe("normal");
+    emit("hypervexing", true);
+    expect(result.current.workspaceMode).toBe("hypervexing");
+    expect(result.current.visualWorkspaceMode).toBe("hypervexing");
+  });
+
+  it("visualWorkspaceMode LAGS at hypervexing after exit until onExitAnimationComplete releases it", () => {
+    const { result } = renderHook(() => useHypervexingWorkspace(), { wrapper });
+    emit("hypervexing", true);
+    emit("normal", true);
+    // The logical flag already flipped (the store is exact truth for the
+    // AnimatePresence gate)...
+    expect(result.current.workspaceMode).toBe("normal");
+    // ...but the visual authority holds "hypervexing" until the shell reports
+    // the drain animation finished — this is what keeps the theme (and the
+    // single mounted chat surface) intact through the whole exit.
+    expect(result.current.visualWorkspaceMode).toBe("hypervexing");
+    act(() => {
+      result.current.onExitAnimationComplete();
+    });
+    expect(result.current.visualWorkspaceMode).toBe("normal");
+  });
+
+  it("re-entering before the drain completes cancels the lag immediately", () => {
+    const { result } = renderHook(() => useHypervexingWorkspace(), { wrapper });
+    emit("hypervexing", true);
+    emit("normal", true);
+    expect(result.current.visualWorkspaceMode).toBe("hypervexing");
+    // The agent asks back in before the previous exit's onExitAnimationComplete
+    // ever fires — visual stays (was already) hypervexing, no flicker.
+    emit("hypervexing", true);
+    expect(result.current.workspaceMode).toBe("hypervexing");
+    expect(result.current.visualWorkspaceMode).toBe("hypervexing");
+  });
+
   it("a late 'normal' mount read never overrides a fresher live push", async () => {
     let resolveRead: ((value: unknown) => void) | null = null;
     getWorkspaceMode.mockImplementation(
