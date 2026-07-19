@@ -118,17 +118,29 @@ export function MissionContractModal({
   }, [draft, diff]);
 
   const onAccept = (hash: string): void => {
-    accept.mutate({
-      sessionId,
-      missionId: draft?.missionId ?? "",
-      contractHash: hash,
-      // Unified accept (Approach A): echo the reviewed plan's `updatedAt` as a
-      // stale guard ONLY when an enabled, non-empty, unaccepted plan exists.
-      // Plan-mode off / no plan → omitted → default single-accept payload.
-      ...(planGate.kind === "ready"
-        ? { planUpdatedAt: planGate.planUpdatedAt }
-        : {}),
-    });
+    accept.mutate(
+      {
+        sessionId,
+        missionId: draft?.missionId ?? "",
+        contractHash: hash,
+        // Unified accept (Approach A): echo the reviewed plan's `updatedAt` as a
+        // stale guard ONLY when an enabled, non-empty, unaccepted plan exists.
+        // Plan-mode off / no plan → omitted → default single-accept payload.
+        ...(planGate.kind === "ready"
+          ? { planUpdatedAt: planGate.planUpdatedAt }
+          : {}),
+      },
+      {
+        // A successful accept closes the modal so the Start mission button it
+        // points at is actually reachable. Every non-`accepted` outcome (and
+        // any transport failure) keeps it open for the in-modal notice.
+        onSuccess: (result) => {
+          if (result.ok && result.data.outcome === "accepted") {
+            onOpenChange(false);
+          }
+        },
+      },
+    );
   };
 
   const acceptOutcome = readAcceptOutcome(accept.data);

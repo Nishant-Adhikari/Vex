@@ -132,13 +132,13 @@ function Wrapper(client: QueryClient) {
   };
 }
 
-function renderModal(): void {
+function renderModal(onOpenChange: (next: boolean) => void = () => {}): void {
   render(
     <MissionContractModal
       sessionId={SESSION}
       permission="full"
       open
-      onOpenChange={() => {}}
+      onOpenChange={onOpenChange}
     />,
     { wrapper: Wrapper(makeClient()) },
   );
@@ -175,6 +175,43 @@ describe("MissionContractModal", () => {
         contractHash: HASH,
       });
     });
+  });
+
+  it("closes the modal on a successful accept (Start mission is behind it)", async () => {
+    mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+    mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+    mockBridge.acceptContract.mockResolvedValue({
+      ok: true,
+      data: { outcome: "accepted" },
+    });
+    const onOpenChange = vi.fn();
+    renderModal(onOpenChange);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Accept contract$/i }),
+    );
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it("keeps the modal open on a non-accepted outcome (notice needs the surface)", async () => {
+    mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+    mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+    mockBridge.acceptContract.mockResolvedValue({
+      ok: true,
+      data: { outcome: "hash_mismatch", providedHash: "a", currentHash: "b" },
+    });
+    const onOpenChange = vi.fn();
+    renderModal(onOpenChange);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Accept contract$/i }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/changed since you reviewed/i),
+      ).not.toBeNull();
+    });
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 
   it("unified accept echoes the reviewed plan's updatedAt as planUpdatedAt", async () => {
