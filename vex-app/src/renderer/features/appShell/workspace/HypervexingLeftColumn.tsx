@@ -71,7 +71,11 @@ function EarnCard({
 }): JSX.Element {
   const submit = useSubmitChat();
   return (
-    <div className="relative mx-3 mb-2 overflow-hidden rounded-lg bg-[var(--vex-surface-2)] p-3 transition-colors duration-150 hover:bg-[var(--vex-surface-2-up,var(--vex-surface-2))]">
+    // `shrink-0`: without it, this flex-col column's default flex-shrink
+    // compresses the card below its content height once the room's height is
+    // constrained — clipping the "Ask Vex" action instead of letting the
+    // column scroll to it (the aside below is already `overflow-y-auto`).
+    <div className="relative mx-3 mb-2 shrink-0 overflow-hidden rounded-lg bg-[var(--vex-surface-2)] p-3 transition-colors duration-150 hover:bg-[var(--vex-surface-2-up,var(--vex-surface-2))]">
       <HlLiquidVeil />
       <p className="relative text-[13px] font-semibold tracking-[0.01em] text-[var(--vex-text)]">
         {title}

@@ -60,10 +60,19 @@ export interface SessionPanelProps {
    * dock passes the mission badge cluster here so the panel stays mode-unaware.
    */
   readonly headerTrailing?: ReactNode;
+  /**
+   * Forwarded to the composer unchanged — see `SessionComposer`'s
+   * `focusRequest` doc. This panel stays agnostic to WHY a focus handoff is
+   * requested (e.g. returning from Hypervexing); it only threads the signal.
+   */
+  readonly focusRequest?: boolean;
+  readonly onFocusRequestHandled?: () => void;
 }
 
 export function SessionPanel({
   headerTrailing,
+  focusRequest,
+  onFocusRequestHandled,
 }: SessionPanelProps = {}): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   // In the Hypervexing dock the composer is ALWAYS bottom-pinned (user
@@ -135,7 +144,13 @@ export function SessionPanel({
             live $VEX widget used to sit below the composer here; it moved to
             the sessions rail (SessionsList) to keep the welcome stage clean. */}
         <div className="vex-rise vex-rise-d2 relative z-10 mx-auto w-[min(680px,92%)] shrink-0">
-          <SessionComposer activeSession={null} activeSessionId={null} stage />
+          <SessionComposer
+            activeSession={null}
+            activeSessionId={null}
+            stage
+            focusRequest={focusRequest}
+            onFocusRequestHandled={onFocusRequestHandled}
+          />
         </div>
         {/* Trailing spacer — balances the hero zone above (vertical
             centering) and reserves the band the hero's absolute bottom row
@@ -221,6 +236,8 @@ export function SessionPanel({
             activeSession={activeSession}
             activeSessionId={activeSessionId}
             stage={isIdleSession}
+            focusRequest={focusRequest}
+            onFocusRequestHandled={onFocusRequestHandled}
           />
         </div>
         {/* Idle-stage trailing spacer — appears AFTER the composer wrapper so

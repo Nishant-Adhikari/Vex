@@ -109,12 +109,24 @@ export interface SessionComposerProps {
    * and gating are identical in both variants.
    */
   readonly stage?: boolean;
+  /**
+   * Focus handoff BACK from Hypervexing: true for the render immediately
+   * after the shell's exit drain completes and this composer is the return
+   * target. The parent owns the "why" (an exit just happened); this
+   * component only reacts to the transition and reports it consumed via
+   * `onFocusRequestHandled` so the parent can reset it — otherwise a later,
+   * unrelated mount of this composer would inherit a stale "focus me" flag.
+   */
+  readonly focusRequest?: boolean;
+  readonly onFocusRequestHandled?: () => void;
 }
 
 export function SessionComposer({
   activeSession,
   activeSessionId,
   stage = false,
+  focusRequest = false,
+  onFocusRequestHandled,
 }: SessionComposerProps): JSX.Element {
   // Submit/enable gate on the canonical selected id (uiStore), NOT the
   // detail-query object: the engine ingress loads its own session context,
@@ -196,6 +208,15 @@ export function SessionComposer({
   useEffect(() => {
     setNotice(null);
   }, [sessionId]);
+
+  // Focus handoff back from Hypervexing (see the prop doc): react to the
+  // transition rather than mount, since this same instance can receive the
+  // request without remounting.
+  useEffect(() => {
+    if (!focusRequest) return;
+    textareaRef.current?.focus();
+    onFocusRequestHandled?.();
+  }, [focusRequest, onFocusRequestHandled]);
 
   // Reset the stop acknowledgment when the turn settles (success, error, or
   // the retry path re-arming) so the next turn starts from a clean Stop key.
