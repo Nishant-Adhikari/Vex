@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chainTokenDtoSchema,
   portfolioDtoSchema,
   portfolioReadInputSchema,
   positionTokenDtoSchema,
@@ -290,6 +291,74 @@ describe("portfolio dto schema", () => {
       portfolioDtoSchema.safeParse(
         dtoFixture({ chains: [chainFixture({ family: "bitcoin" })] }),
       ).success,
+    ).toBe(false);
+  });
+
+  // ── tokenAddress: address-correct aggregation (position branding) ──────
+
+  it("accepts a valid EVM tokenAddress on a flat token line", () => {
+    const parsed = positionTokenDtoSchema.safeParse({
+      chainId: 1,
+      symbol: "ETH",
+      tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      balanceUsd: 1000,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.tokenAddress).toBe(
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      );
+    }
+  });
+
+  it("accepts a valid Solana base58 tokenAddress on a chain-breakdown token line", () => {
+    const parsed = chainTokenDtoSchema.safeParse({
+      symbol: "SOL",
+      tokenAddress: "So11111111111111111111111111111111111111112",
+      balanceUsd: 50,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts a null tokenAddress and tolerates a missing tokenAddress key entirely (additive, defensive default)", () => {
+    expect(
+      positionTokenDtoSchema.safeParse({
+        chainId: 1,
+        symbol: "ETH",
+        tokenAddress: null,
+        balanceUsd: 1,
+      }).success,
+    ).toBe(true);
+    const withoutKey = positionTokenDtoSchema.safeParse({
+      chainId: 1,
+      symbol: "ETH",
+      balanceUsd: 1,
+    });
+    expect(withoutKey.success).toBe(true);
+    if (withoutKey.success) {
+      expect(withoutKey.data.tokenAddress).toBeUndefined();
+    }
+  });
+
+  it("rejects a malformed tokenAddress (wrong shape)", () => {
+    expect(
+      positionTokenDtoSchema.safeParse({
+        chainId: 1,
+        symbol: "ETH",
+        tokenAddress: "not-an-address",
+        balanceUsd: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an oversized tokenAddress", () => {
+    expect(
+      positionTokenDtoSchema.safeParse({
+        chainId: 1,
+        symbol: "ETH",
+        tokenAddress: "0x" + "a".repeat(200),
+        balanceUsd: 1,
+      }).success,
     ).toBe(false);
   });
 });
