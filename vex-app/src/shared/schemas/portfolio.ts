@@ -24,10 +24,43 @@
  * (no value is fabricated — `null` when absent/unparseable). Token lines keep
  * `balanceUsd: null` for UNPRICED holdings (no price source — owner decision:
  * show the funds instead of hiding them) and carry `amount`, the human token
- * quantity derived per row from `balance_raw / 10^decimals`.
+ * quantity derived per row from `balance_raw / 10^decimals`. Token lines also
+ * carry `tokenAddress` (nullable, optional/additive) — aggregation keys on
+ * `(chain, normalized address)` server-side (symbol is display metadata,
+ * never an aggregation key), so a spoofed token sharing a legitimate symbol
+ * never coalesces into that token's line;
+ * the renderer uses the address (never the self-declared symbol) to decide
+ * whether a brand icon is authorized.
  */
 
 import { z } from "zod";
+
+/**
+ * Token contract/mint address — the identity key that disambiguates two
+ * DIFFERENT on-chain tokens sharing a self-declared symbol (the whole point
+ * of this field: aggregation groups by address, never by symbol alone, so a
+ * spoofed token cannot coalesce into a legitimate one's line). Bounded to
+ * either shape addresses actually take in `proj_balances.token_address`: EVM
+ * 0x-hex (40 hex chars) or Solana base58 (32-44 chars) — mirrors
+ * `wallets/base-chain.ts`'s `evmAddressSchema`/`solanaAddressSchema` patterns
+ * without importing them (this DTO field is chain-family-agnostic, unlike
+ * those per-family wallet schemas). `null`/absent means the renderer could
+ * not resolve an address for this line (older payload shape, or a
+ * left-join miss in the per-chain breakdown) — it falls back to symbol-only
+ * display with NO brand icon, never a fabricated address.
+ */
+const TOKEN_ADDRESS_MAX_LENGTH = 64;
+const EVM_TOKEN_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
+const SOLANA_TOKEN_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const tokenAddressSchema = z
+  .string()
+  .max(TOKEN_ADDRESS_MAX_LENGTH)
+  .refine(
+    (value) =>
+      EVM_TOKEN_ADDRESS_PATTERN.test(value) ||
+      SOLANA_TOKEN_ADDRESS_PATTERN.test(value),
+    { message: "Invalid token address." },
+  );
 
 /**
  * IPC input for `vex.portfolio.read`. Discriminated on `scope`:
@@ -58,19 +91,23 @@ export const portfolioReadInputSchema = z.discriminatedUnion("scope", [
 export type PortfolioReadInput = z.infer<typeof portfolioReadInputSchema>;
 
 /**
- * One aggregated position line — a single (chain, token) bucket summed
- * across every wallet in the resolved allow-list. `chainId` is `null` when
- * the DB chain id is absent or could not be coerced to a finite JS number;
- * `symbol` is `null` for rows without a token symbol. `balanceUsd` is `null`
- * for an UNPRICED holding (no price available); `amount` is the human token
- * quantity (per-row `balance_raw / 10^decimals`, summed AFTER the division so
- * mixed-decimals buckets stay correct), `null` when no row is computable.
- * `amount` defaults to `null` so pre-amount payloads still parse.
+ * One aggregated position line — a single (chain, token, address) bucket
+ * summed across every wallet in the resolved allow-list. `chainId` is `null`
+ * when the DB chain id is absent or could not be coerced to a finite JS
+ * number; `symbol` is `null` for rows without a token symbol. `balanceUsd` is
+ * `null` for an UNPRICED holding (no price available); `amount` is the human
+ * token quantity (per-row `balance_raw / 10^decimals`, summed AFTER the
+ * division so mixed-decimals buckets stay correct), `null` when no row is
+ * computable. `amount` defaults to `null` so pre-amount payloads still parse.
+ * `tokenAddress` is additive and OPTIONAL (not defaulted): an older payload
+ * missing the key entirely still parses, and the renderer treats a missing
+ * key the same as an explicit `null` (no brand icon, symbol-only display).
  */
 export const positionTokenDtoSchema = z
   .object({
     chainId: z.number().nullable(),
     symbol: z.string().max(64).nullable(),
+    tokenAddress: tokenAddressSchema.nullable().optional(),
     balanceUsd: z.number().nullable(),
     amount: z.number().nullable().default(null),
   })
@@ -81,11 +118,13 @@ export type PositionTokenDto = z.infer<typeof positionTokenDtoSchema>;
  * One token line inside a per-chain breakdown — like `positionTokenDtoSchema`
  * but WITHOUT `chainId` (the parent chain carries it). `balanceUsd` is
  * strictly positive when priced (the breakdown query drops priced-at-zero
- * lines) and `null` for an unpriced holding; `amount` mirrors the flat line.
+ * lines) and `null` for an unpriced holding; `amount`/`tokenAddress` mirror
+ * the flat line (see `positionTokenDtoSchema`).
  */
 export const chainTokenDtoSchema = z
   .object({
     symbol: z.string().max(64).nullable(),
+    tokenAddress: tokenAddressSchema.nullable().optional(),
     balanceUsd: z.number().positive().nullable(),
     amount: z.number().nullable().default(null),
   })

@@ -28,6 +28,11 @@
  *    DO NOT lowercase (the engine stores raw checksum/base58 addresses).
  *  - logging records sessionId (if any) + wallet COUNT + token COUNT only;
  *    NEVER raw addresses, balances, or USD figures.
+ *  - token aggregation groups by `(chain_id, NORMALIZED token_address)` —
+ *    never by symbol in any form. A spoof token that self-declares a
+ *    legitimate token's symbol has a DIFFERENT `token_address`, so it can
+ *    never coalesce into that token's line before the renderer's trust gate
+ *    (address-verified brand icon) can act on it.
  */
 
 import { Client, type ClientConfig } from "pg";
@@ -117,6 +122,7 @@ interface LiveTotalRow {
 
 interface TokenRow {
   readonly chain_id: number | string | null;
+  readonly token_address: string;
   readonly token_symbol: string | null;
   readonly usd: number | string | null;
   readonly amount: number | string | null;
@@ -130,6 +136,7 @@ interface SnapshotRow {
 interface ChainBreakdownRow {
   readonly chain_id: number | string;
   readonly chain_total: number | string;
+  readonly token_address: string | null;
   readonly token_symbol: string | null;
   readonly token_usd: number | string | null;
   readonly token_amount: number | string | null;
@@ -157,6 +164,17 @@ const AMOUNT_SUM_SQL = `SUM(
  */
 const MAX_TOKEN_LINES = 500;
 
+// Semantic token identity for aggregation: one contract must aggregate into
+// ONE line even when different wallets' rows carry different address casing
+// (EVM addresses are case-insensitive hex; checksum/casing variants are the
+// same contract) or stale symbols from earlier syncs. EVM (0x…) addresses
+// normalize to lowercase; Solana mints are case-SENSITIVE base58 and must be
+// preserved verbatim. The displayed symbol is the deterministic latest one
+// (freshest `synced_at` wins; symbol text breaks exact ties) — never one
+// arbitrary row's stale label.
+const NORMALIZED_TOKEN_ADDRESS_SQL = `CASE WHEN token_address ~* '^0x' THEN lower(token_address) ELSE token_address END`;
+const LATEST_TOKEN_SYMBOL_SQL = `(array_agg(token_symbol ORDER BY synced_at DESC NULLS LAST, token_symbol ASC NULLS LAST))[1]`;
+
 /**
  * Caps for the per-chain breakdown — mirror `portfolioDtoSchema.chains`
  * (`.max(64)` chains, `.max(3)` tokens each). The SQL emits at most
@@ -183,7 +201,12 @@ function buildChainBreakdown(
   let current: {
     chainId: number;
     totalUsd: number;
-    tokens: { symbol: string | null; balanceUsd: number | null; amount: number | null }[];
+    tokens: {
+      symbol: string | null;
+      tokenAddress: string | null;
+      balanceUsd: number | null;
+      amount: number | null;
+    }[];
   } | null = null;
   for (const row of rows) {
     const chainId = toChainId(row.chain_id);
@@ -219,6 +242,7 @@ function buildChainBreakdown(
     ) {
       current.tokens.push({
         symbol: row.token_symbol,
+        tokenAddress: row.token_address,
         balanceUsd: tokenUsd,
         amount: tokenAmount,
       });
@@ -380,12 +404,13 @@ export async function getPortfolio(
       // `amount` is the human token quantity (see AMOUNT_SUM_SQL).
       const tokensResult = await client.query<TokenRow>(
         `SELECT chain_id,
-                token_symbol,
+                ${NORMALIZED_TOKEN_ADDRESS_SQL} AS token_address,
+                ${LATEST_TOKEN_SYMBOL_SQL} AS token_symbol,
                 SUM(balance_usd)::float8 AS usd,
                 ${AMOUNT_SUM_SQL} AS amount
            FROM proj_balances
           WHERE wallet_address = ANY($1::text[])
-          GROUP BY chain_id, token_symbol
+          GROUP BY chain_id, ${NORMALIZED_TOKEN_ADDRESS_SQL}
           ORDER BY usd DESC NULLS LAST
           LIMIT ${MAX_TOKEN_LINES}`,
         [addrParam],
@@ -395,6 +420,7 @@ export async function getPortfolio(
         .map((row) => ({
           chainId: toChainId(row.chain_id),
           symbol: row.token_symbol,
+          tokenAddress: row.token_address,
           balanceUsd: toNumberOrNull(row.usd),
           amount: toNumberOrNull(row.amount),
         }));
@@ -412,16 +438,17 @@ export async function getPortfolio(
       const breakdownResult = await client.query<ChainBreakdownRow>(
         `WITH lines AS (
            SELECT chain_id,
-                  token_symbol,
+                  ${NORMALIZED_TOKEN_ADDRESS_SQL} AS token_address,
+                  ${LATEST_TOKEN_SYMBOL_SQL} AS token_symbol,
                   SUM(balance_usd)::float8 AS usd,
                   ${AMOUNT_SUM_SQL} AS amount
              FROM proj_balances
             WHERE wallet_address = ANY($1::text[])
               AND chain_id IS NOT NULL
-            GROUP BY chain_id, token_symbol
+            GROUP BY chain_id, ${NORMALIZED_TOKEN_ADDRESS_SQL}
          ),
          ranked AS (
-           SELECT chain_id, token_symbol, usd, amount,
+           SELECT chain_id, token_address, token_symbol, usd, amount,
                   ROW_NUMBER() OVER (
                     PARTITION BY chain_id ORDER BY usd DESC NULLS LAST
                   ) AS rn
@@ -437,6 +464,7 @@ export async function getPortfolio(
          )
          SELECT t.chain_id,
                 t.chain_total,
+                r.token_address,
                 r.token_symbol,
                 r.usd AS token_usd,
                 r.amount AS token_amount

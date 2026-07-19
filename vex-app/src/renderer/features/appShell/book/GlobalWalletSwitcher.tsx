@@ -29,6 +29,7 @@ import { useState, type JSX } from "react";
 import type { AvailableWalletDto } from "@shared/schemas/wallets.js";
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { ETHEREUM_CHAIN_ID, SOLANA_CHAIN_ID } from "@shared/chains/display.js";
+import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import { useAvailableWallets } from "../../../lib/api/wallet-inventory.js";
 import { useWalletPortfolio } from "../../../lib/api/portfolio.js";
 import { formatTokenQuantity, formatUsd, truncateAddress } from "../../../lib/format.js";
@@ -60,12 +61,13 @@ function hasDisplayableBalance(token: PositionTokenDto): boolean {
 }
 
 /**
- * Stable React key for a (chain, token) bucket. `chainId`/`symbol` can both
- * be `null`; the composite stays unique per aggregated line (the SQL groups
- * by `(chain_id, token_symbol)`, so no two rows share both).
+ * Stable React key for a (chain, token, address) bucket. `chainId`/`symbol`/
+ * `tokenAddress` can each be `null` (or, for `tokenAddress`, absent); the
+ * composite stays unique per aggregated line (the SQL groups by
+ * `(chain_id, token_address, token_symbol)`, so no two rows share all three).
  */
 function tokenKey(token: PositionTokenDto): string {
-  return `${token.chainId ?? "x"}:${token.symbol ?? "x"}`;
+  return `${token.chainId ?? "x"}:${token.tokenAddress ?? "x"}:${token.symbol ?? "x"}`;
 }
 
 export function GlobalWalletSwitcher({
@@ -208,18 +210,25 @@ function DefaultHoldings({
   );
 }
 
+/**
+ * `token.symbol` is provider-supplied and UNTRUSTED — sanitize it through the
+ * shared ASCII-allowlist (`sanitizeTokenSymbol`: rejects control characters,
+ * bidi controls, zero-width characters, Unicode confusables, and anything
+ * over the length cap) before it becomes display text; a rejected symbol
+ * falls back to the existing em-dash placeholder. This row never renders a
+ * brand icon (flat aggregate list, text only), so there is no icon-borrowing
+ * risk to gate — just the raw-string display risk sanitization covers.
+ */
 function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element {
-  const symbol = token.symbol !== null && token.symbol.length > 0
-    ? token.symbol
-    : "—";
+  const symbol = sanitizeTokenSymbol(token.symbol);
   // Quantity is the muted secondary figure; the USD value keeps the white
   // register when priced and drops to a muted em dash when UNPRICED (null —
   // never a fabricated $0.00).
-  const quantity = formatTokenQuantity(token.amount, token.symbol);
+  const quantity = formatTokenQuantity(token.amount, symbol);
   return (
     <li className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0">
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)]">
-        {symbol}
+        {symbol ?? "—"}
       </span>
       <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
         {quantity !== null ? (

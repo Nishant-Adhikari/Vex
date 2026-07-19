@@ -109,6 +109,51 @@ describe("GlobalWalletSwitcher — default 'All wallets' body", () => {
   });
 });
 
+describe("GlobalWalletSwitcher — token-symbol trust boundary (no branding by symbol)", () => {
+  it("drops a symbol carrying control/zero-width spoofing characters, falling back to the em dash", () => {
+    mockWallets([EVM_1, EVM_2], []);
+    // Zero-width space (U+200B) spliced into "ETH".
+    const spoofed = "E​TH";
+    render(
+      <GlobalWalletSwitcher
+        portfolio={portfolio({
+          tokens: [{ chainId: 1, symbol: spoofed, balanceUsd: 100, amount: null }],
+        })}
+      />,
+    );
+    expect(screen.queryByText("ETH")).toBeNull();
+    expect(screen.queryByText(spoofed)).toBeNull();
+    expect(screen.getByText("—")).not.toBeNull();
+  });
+
+  it("drops an over-length symbol (length-capped)", () => {
+    mockWallets([EVM_1, EVM_2], []);
+    render(
+      <GlobalWalletSwitcher
+        portfolio={portfolio({
+          tokens: [
+            { chainId: 1, symbol: "A".repeat(65), balanceUsd: 100, amount: null },
+          ],
+        })}
+      />,
+    );
+    expect(screen.queryByText("A".repeat(65))).toBeNull();
+    expect(screen.getByText("—")).not.toBeNull();
+  });
+
+  it("renders a legitimate ASCII symbol unchanged", () => {
+    mockWallets([EVM_1, EVM_2], []);
+    render(
+      <GlobalWalletSwitcher
+        portfolio={portfolio({
+          tokens: [{ chainId: 1, symbol: "USDC", balanceUsd: 100, amount: null }],
+        })}
+      />,
+    );
+    expect(screen.getByText("USDC")).not.toBeNull();
+  });
+});
+
 describe("GlobalWalletSwitcher — per-wallet drill-down", () => {
   it("selecting a wallet swaps in the wallet-scoped, chain-grouped view with its own total", () => {
     mockWallets([EVM_1, EVM_2], []);
