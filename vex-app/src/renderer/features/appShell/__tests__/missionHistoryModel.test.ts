@@ -32,6 +32,8 @@ function result(over: Partial<MissionResultDto> = {}): MissionResultDto {
     pnlPct: 10,
     ethPriceUsdEnd: 3000,
     trades: 2,
+    // Prose is irrelevant to this mapper — it only ever reads the numbers.
+    stopSummary: null,
     outcome: "completed",
     stopReason: "goal_reached",
     openPositionsCount: 0,
