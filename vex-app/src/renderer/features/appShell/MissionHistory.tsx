@@ -18,7 +18,7 @@
 import type { JSX } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import type { Result } from "@shared/ipc/result.js";
 import type { MissionListResultsResult, MissionResultDto } from "@shared/schemas/mission.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -100,14 +100,49 @@ function Body({
   return <Ledger results={res.data} />;
 }
 
+/**
+ * Dismissal is a VIEW filter, deliberately applied here and nowhere else.
+ *
+ * The register totals below are computed over `results` — every finished
+ * run, including the dismissed ones. Hiding a card the operator has already
+ * read must not quietly restate their win rate or cumulative PnL: the
+ * numbers are an audit trail of real-money trades, and dismissing a card
+ * changes what is on screen, never what is true.
+ */
 function Ledger({ results }: { readonly results: readonly MissionResultDto[] }): JSX.Element {
+  const dismissed = useUiStore((s) => s.dismissedMissionRunIds);
+  const restore = useUiStore((s) => s.restoreDismissedMissionRuns);
+
+  // Totals over ALL results — see the note above.
   const winRate = computeWinRate(results);
   const cumulative = sumPnlEth(results);
+
+  const visible = results.filter((r) => !dismissed.includes(r.missionRunId));
+  const hiddenCount = results.length - visible.length;
 
   return (
     <>
       <SummaryHeader total={results.length} winRate={winRate} cumulativeEth={cumulative} />
-      <ResultsLedger results={results} />
+      {visible.length === 0 && hiddenCount > 0 ? (
+        <Empty label="Every mission is hidden — nothing has been deleted." />
+      ) : (
+        <ResultsLedger results={visible} />
+      )}
+      {hiddenCount > 0 ? (
+        // Sits under the list as a quiet footer rather than as a row inside
+        // it: a hidden card is not a ledger entry, and the list is now a
+        // stack of cards with no row grammar to borrow.
+        <div className="flex items-center gap-3 border-t border-[var(--vex-line)] pt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
+          <span>{hiddenCount} hidden — still counted above</span>
+          <button
+            type="button"
+            onClick={restore}
+            className="rounded-[4px] px-1.5 py-0.5 underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          >
+            Show hidden
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -184,6 +219,7 @@ function ResultsLedger({
  * figure the user sees stays right regardless.
  */
 function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Element {
+  const dismiss = useUiStore((s) => s.dismissMissionRun);
   const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
   const beats = parseSummaryBullets(result.stopSummary);
 
@@ -202,15 +238,30 @@ function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Eleme
           </span>
         </div>
 
-        {/* Authoritative money, straight off the ledger row. */}
-        <div className={cn("flex shrink-0 flex-col items-end gap-0.5", pnlTone(result.pnlEth))}>
-          <span className="font-mono text-base tabular-nums">
-            {usd === null ? EM_DASH : formatUsdDelta(usd)}
-          </span>
-          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-            {formatEth(result.pnlEth, { signed: true })} ETH
-            {result.pnlPct !== null ? ` · ${formatPercentDelta(result.pnlPct)}` : ""}
-          </span>
+        <div className="flex shrink-0 items-start gap-3">
+          {/* Authoritative money, straight off the ledger row. */}
+          <div className={cn("flex flex-col items-end gap-0.5", pnlTone(result.pnlEth))}>
+            <span className="font-mono text-base tabular-nums">
+              {usd === null ? EM_DASH : formatUsdDelta(usd)}
+            </span>
+            <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+              {formatEth(result.pnlEth, { signed: true })} ETH
+              {result.pnlPct !== null ? ` · ${formatPercentDelta(result.pnlPct)}` : ""}
+            </span>
+          </div>
+
+          {/* No confirm dialog: nothing is destroyed, so a confirm would be
+            * pure friction. The label carries the whole meaning instead —
+            * "Hide", never "Delete", because the record survives. */}
+          <button
+            type="button"
+            onClick={() => dismiss(result.missionRunId)}
+            aria-label={`Hide mission #${result.seqNo} from this list`}
+            title="Hide from this list (the mission record is kept)"
+            className="flex h-6 w-6 items-center justify-center rounded-[6px] text-[var(--vex-text-3)] transition-colors hover:bg-white/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={13} aria-hidden />
+          </button>
         </div>
       </div>
 
