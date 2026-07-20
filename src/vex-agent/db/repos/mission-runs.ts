@@ -353,11 +353,14 @@ export async function casStopPastDeadline(
       "SELECT status FROM mission_runs WHERE id = $1 FOR UPDATE",
       [runId],
     );
-    if (lockRow.rowCount === 0) {
+    // Destructure rather than index — `rows[0]` is `T | undefined` under the
+    // app's stricter `noUncheckedIndexedAccess` tsconfig.
+    const locked = lockRow.rows[0];
+    if (locked === undefined) {
       await client.query("ROLLBACK");
       return null;
     }
-    const prev = coerceStatus(lockRow.rows[0].status, runId);
+    const prev = coerceStatus(locked.status, runId);
     if (!fromStatuses.includes(prev)) {
       await client.query("ROLLBACK");
       return null;
