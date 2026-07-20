@@ -146,10 +146,13 @@ describe("evaluateExit — trailing stop", () => {
     expect(decisions).toEqual([]);
   });
 
+  // Price 2.5 is chosen so the two rules cannot be confused: it is at/below the
+  // trail (peak 4 − 25% = 3) but below the 3x take-profit rung, so only the
+  // trailing stop can explain a decision here.
   it("exits the remainder once armed and price falls the trail distance from peak", () => {
     const decisions = evaluateExit(
       position({ consumedRungs: [0], peakPriceUsd: 4 }),
-      3,
+      2.5,
       OPENED_AT,
       CONFIG,
     );
@@ -166,7 +169,7 @@ describe("evaluateExit — trailing stop", () => {
 
     const decisions = evaluateExit(
       position({ consumedRungs: [0], peakPriceUsd: 4 }),
-      3,
+      2.5,
       OPENED_AT,
       noTrail,
     );

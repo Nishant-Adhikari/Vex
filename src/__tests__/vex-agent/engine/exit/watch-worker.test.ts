@@ -192,6 +192,9 @@ describe("setupExitWatchWorker", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(getOpenPositions).toHaveBeenCalledTimes(2);
 
+    // Release tick 2 as well: teardown awaits the in-flight tick, so leaving it
+    // pending would hang stop() forever.
+    release?.();
     await stop();
   });
 
