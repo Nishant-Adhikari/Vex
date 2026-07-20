@@ -50,6 +50,26 @@ export interface MissionResultRow {
    * numeric fields above are the sole source of truth for money.
    */
   stopSummary: string | null;
+  /**
+   * THE OPERATOR'S OWN WORDS, COMPLETE. `missions.goal` verbatim — NOT the
+   * 240-char `goal_snippet` above, which is a display slice minted at
+   * ledger-open (`mission-results-capture.ts`) and silently loses the tail of
+   * a long prompt. The card clamps for reading but copies THIS, so "copy the
+   * mission prompt" yields exactly what was typed. Null for a goal-less draft.
+   */
+  goalFull: string | null;
+  /** `missions.title` — the operator/setup-authored short label, if any. */
+  missionTitle: string | null;
+  /**
+   * `missions.constraints_json` raw. Structured operator-set limits
+   * (maxSpendUsd, deadlineAt, maxIterations, …). Deterministic: these were
+   * WRITTEN by the contract, never inferred from prose at read time.
+   */
+  constraints: unknown;
+  /** `missions.allowed_chains` — the venue allowlist as accepted. */
+  allowedChains: readonly string[];
+  /** `missions.allowed_protocols` — the protocol allowlist as accepted. */
+  allowedProtocols: readonly string[];
 }
 
 export interface OpenMissionResultInput {
@@ -91,11 +111,25 @@ const SELECT_COLUMNS = `
   r.bankroll_start_eth, r.bankroll_end_eth, r.pnl_eth, r.pnl_pct,
   r.eth_price_usd_start, r.eth_price_usd_end,
   r.trades, r.outcome, r.stop_reason, r.open_positions_json,
-  run.stop_summary`;
+  run.stop_summary,
+  m.goal AS mission_goal, m.title AS mission_title,
+  m.constraints_json, m.allowed_chains, m.allowed_protocols`;
 
-/** Reads join the run row for its agent-authored prose (see SELECT_COLUMNS). */
+/**
+ * Reads join the run row for its agent-authored prose, and the mission row
+ * for the ACCEPTED CONTRACT FACTS (see SELECT_COLUMNS).
+ *
+ * Three authors, three sources, deliberately kept apart:
+ *   - `mission_results r` — the NUMBERS (bankroll, PnL, trades). Engine-computed.
+ *   - `mission_runs run`  — the PROSE. Agent-authored, never parsed for money.
+ *   - `missions m`        — the ASK. Operator-authored and frozen at accept.
+ *
+ * The mission join is INNER: `mission_results.mission_id` is NOT NULL and
+ * references `missions(id)`, so it can never drop a ledger row.
+ */
 const RESULTS_FROM = `mission_results r
-       JOIN mission_runs run ON run.id = r.mission_run_id`;
+       JOIN mission_runs run ON run.id = r.mission_run_id
+       JOIN missions m ON m.id = r.mission_id`;
 
 interface Raw {
   id: string;
@@ -120,7 +154,20 @@ interface Raw {
   stop_reason: string | null;
   open_positions_json: unknown;
   stop_summary: string | null;
+  mission_goal: string | null;
+  mission_title: string | null;
+  constraints_json: unknown;
+  allowed_chains: string[] | null;
+  allowed_protocols: string[] | null;
 }
+
+/**
+ * `TEXT[]` comes back as a JS array, but the column is nullable and legacy
+ * rows predate the `DEFAULT '{}'`. Normalise to a real array of strings so
+ * the renderer never has to null-check an allowlist.
+ */
+const strList = (v: string[] | null): readonly string[] =>
+  Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
 
 // pg returns NUMERIC as string to preserve precision; ETH/PnL fit safely in
 // a JS number for display.
@@ -152,6 +199,11 @@ function toRow(r: Raw): MissionResultRow {
     stopReason: r.stop_reason,
     openPositions: r.open_positions_json,
     stopSummary: r.stop_summary,
+    goalFull: r.mission_goal,
+    missionTitle: r.mission_title,
+    constraints: r.constraints_json,
+    allowedChains: strList(r.allowed_chains),
+    allowedProtocols: strList(r.allowed_protocols),
   };
 }
 
