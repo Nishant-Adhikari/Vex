@@ -139,12 +139,9 @@ export const UNISWAP_V2_ROUTER_ABI = [
     ],
     outputs: [{ name: "amounts", type: "uint256[]" }],
   },
-  // Fee-on-transfer-SAFE sell variants. Settle against ACTUAL received balances
-  // (no amounts[] return), so a FoT token whose transfer delivers less than sent
-  // does not trip `UniswapV2: K`. Behaviourally identical for non-FoT tokens.
   {
     type: "function",
-    name: "swapExactTokensForETHSupportingFeeOnTransferTokens",
+    name: "swapExactTokensForTokensSupportingFeeOnTransferTokens",
     stateMutability: "nonpayable",
     inputs: [
       { name: "amountIn", type: "uint256" },
@@ -157,7 +154,7 @@ export const UNISWAP_V2_ROUTER_ABI = [
   },
   {
     type: "function",
-    name: "swapExactTokensForTokensSupportingFeeOnTransferTokens",
+    name: "swapExactTokensForETHSupportingFeeOnTransferTokens",
     stateMutability: "nonpayable",
     inputs: [
       { name: "amountIn", type: "uint256" },

@@ -70,6 +70,12 @@ export type VexDomain =
    */
   | "portfolio"
   /**
+   * Main-owned Hyperliquid position reads, user risk acknowledgement, and
+   * durable risk-proposal confirmation. Exchange/signing authority never
+   * crosses this renderer IPC domain.
+   */
+  | "hyperliquid"
+  /**
    * T1 — read-only VEX market snapshot for the welcome-screen price widget
    * (`market.getVexSnapshot`). Main owns the external poll (DexScreener /
    * GeckoTerminal / Virtuals) and broadcasts sanitized snapshots on
@@ -115,6 +121,34 @@ export type VexErrorCode =
   | "wallet.keystore_corrupt"
   | "wallet.keystore_missing"
   | "wallet.password_invalid"
+  /**
+   * Vault unlock error classification (fund-loss-adjacent fix): the
+   * encrypted secret vault (`secrets.vault.json` — API secrets, NOT wallet
+   * signing keys) is structurally invalid — a bad envelope/KDF block caught
+   * BEFORE any crypto runs, or an unreadable plaintext AFTER the auth tag
+   * passed. Distinct from `wallet.keystore_corrupt` (wallet signing
+   * keystore) so the user is never told their WALLET is broken when it is
+   * the separate secrets vault. `retryable: false, userActionable: true`.
+   * Never advances the unlock throttle.
+   */
+  | "wallet.vault_corrupt"
+  /**
+   * Crypto-runtime failure while unlocking the secrets vault (scrypt or
+   * cipher setup, or a post-authentication decode) — the vault file may be
+   * perfectly intact, so this is RETRYABLE and must never suggest restoring
+   * from a backup. Distinct from `wallet.vault_corrupt` (structurally bad
+   * file) and never advances the unlock throttle.
+   */
+  | "wallet.vault_unavailable"
+  /**
+   * Vault unlock error classification: the vault was written by a newer
+   * build — either the OUTER envelope version (detected BEFORE decryption,
+   * so the password is NOT necessarily verified) or the decrypted contents
+   * version (after auth passed). Either way the correct fix is updating
+   * Vex, not retrying the password or wiping the vault. `retryable: false,
+   * userActionable: true`. Never advances the unlock throttle.
+   */
+  | "wallet.vault_incompatible"
   | "wallet.vault_not_configured"
   | "wallet.cap_reached"
   | "wallet.address_exists"

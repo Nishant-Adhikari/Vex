@@ -10,9 +10,27 @@
  *    (accent-hairline, S3) → mission.start.
  *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) → a
  *    "Renew mission" button → mission.renew (clones it into a fresh draft).
+ *  - NO ACTIVE RUN + a ready, unaccepted draft (the "MISSION READY" state) →
+ *    a full-width accent-OUTLINED "Review & accept contract" bar (vs the
+ *    solid Start key above) in the same slot, opening the mission dialog via
+ *    `uiStore.reviewModal` (owned/rendered by `MissionRail`, a sibling
+ *    component in the header cluster). Previously this state surfaced only
+ *    the passive notice below with no visible control — the shimmering
+ *    MISSION READY badge was the only path to the accept dialog. Reveal is
+ *    gated on `useIsChatSubmitting` settling so the bar can't flash open
+ *    mid-turn during a tool-call gap (the draft can flip to `ready` before
+ *    the turn's final text response); a cancelled/failed turn also settles
+ *    `chatSubmitting` back to false, so the bar can never wedge shut. Only
+ *    one next-step surface shows at a time: while reviewable-and-settled,
+ *    this bar REPLACES the standing notice below, never stacks with it.
  *  - NO ACTIVE RUN + a contract pending acceptance (any non-accepted-clean
- *    draft) → a standing muted-warn notice: on-chain actions are blocked by
- *    the runtime gate until the user accepts the contract and starts the run.
+ *    draft, still in setup or mid-turn) → a standing muted-warn notice:
+ *    on-chain actions are blocked by the runtime gate until the user accepts
+ *    the contract and starts the run.
+ *
+ * `useMissionLiveSync` is mounted here (event-driven + 30s-fallback refresh
+ * of the draft/diff queries) so a dropped `transcriptAppend` event can never
+ * strand the review bar invisible for a session the user never blurs.
  *
  * The render gate keys off `runtime` ALONE — never the draft. A started
  * mission flips its row past `ready` (commit-start → `running`; terminal on
@@ -39,11 +57,13 @@ import type {
   MissionResultDto,
 } from "@shared/schemas/mission.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
+import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import {
   useEditMission,
   useMissionContinue,
   useMissionDiff,
   useMissionDraft,
+  useMissionLiveSync,
   useMissionRenew,
   useMissionRetry,
   useMissionSessionResult,
@@ -53,7 +73,9 @@ import {
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
-import { MissionSummaryCard } from "./MissionSummaryCard.js";
+import { useUiStore } from "../../stores/uiStore.js";
+import { useSessionPlan } from "../../lib/api/sessions.js";
+import { planMissing } from "./MissionRail.js";
 
 /**
  * Primary mission action (Start/Renew) — the landing's solid cobalt CTA:
@@ -62,6 +84,18 @@ import { MissionSummaryCard } from "./MissionSummaryCard.js";
  */
 const PRIMARY_KEY =
   "flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-contrast)] transition-colors hover:bg-[var(--vex-accent-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+
+/**
+ * Review-&-accept bar — the pre-accept counterpart of `PRIMARY_KEY`: an
+ * accent-OUTLINED full-width pill (vs. the solid commitment key above),
+ * reusing the same `--vex-accent-border-strong`/`--vex-accent-fill-8`/
+ * `--vex-accent-text` tokens the rest of the shell already uses for an
+ * "outlined, accent-toned" affordance (`PlanSwitch`, `ReasoningSwitch`), so
+ * it re-tints correctly across themes (incl. hypervexing) alongside the
+ * solid key.
+ */
+const REVIEW_KEY =
+  "flex h-10 w-full items-center justify-center gap-2 rounded-full border border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-12)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
 
 export interface MissionControlsProps {
   readonly sessionId: string;
@@ -143,6 +177,8 @@ function renewNoticeFor(r: Result<MissionRenewResult>): string | null {
       return `The source mission isn't finished yet (status ${r.data.runStatus}). Wait for it to finish first.`;
     case "session_has_active_run":
       return `A mission run is already active (status ${r.data.runStatus}). Stop it before renewing.`;
+    case "session_has_pending_draft":
+      return "A draft mission already exists for this session — accept or discard it before renewing again.";
     default:
       return assertNever(r.data);
   }
@@ -190,6 +226,13 @@ export function MissionControls({
   const draftQuery = useMissionDraft(sessionId);
   const draft = readDraft(draftQuery.data);
   const diffQuery = useMissionDiff(sessionId, draft?.missionId ?? null);
+  const planQuery = useSessionPlan(sessionId);
+  // Readiness requires a SUCCESSFUL plan read: while the query is pending or
+  // failed the plan state is UNKNOWN, and unknown must read as not-ready —
+  // collapsing it to null would make planMissing(null) vacuously false and
+  // let the review bar flash during loading or survive a plan.get failure.
+  const planKnown = planQuery.data?.ok === true;
+  const plan = planQuery.data?.ok === true ? planQuery.data.data : null;
   const renewableQuery = useRenewableMissionSource(sessionId);
   const sessionResultQuery = useMissionSessionResult(sessionId);
 
@@ -199,6 +242,13 @@ export function MissionControls({
   const edit = useEditMission();
   const stop = useMissionStop();
   const renew = useMissionRenew();
+
+  // Keep the draft/diff queries fresh (event-driven + 30s fallback poll) so
+  // the review bar below can never be stranded by a dropped transcript event.
+  useMissionLiveSync(sessionId);
+  // Turn-gate for the review bar's reveal — see the file header comment.
+  const chatSubmitting = useIsChatSubmitting(sessionId);
+  const setReviewModal = useUiStore((s) => s.setReviewModal);
 
   const [notice, setNotice] = useState<ControlNotice>(null);
 
@@ -243,35 +293,42 @@ export function MissionControls({
     const canRecover = status === "paused_error";
     const canEdit = status !== "paused_approval";
     return (
-      <div
-        data-vex-area="mission-controls"
-        role="group"
-        aria-label="Mission controls"
-        className="mt-3 flex flex-wrap items-center gap-2"
-      >
-        <ControlButton
-          label="Continue"
-          disabled={disabled || !canContinue}
-          onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
-        />
-        <ControlButton
-          label="Recover"
-          disabled={disabled || !canRecover}
-          onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
-        />
-        <ControlButton
-          label="Edit"
-          disabled={disabled || !canEdit}
-          onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
-        />
-        <ControlButton
-          label="Stop"
-          tone="danger"
-          disabled={disabled}
-          onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
-        />
-        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
-      </div>
+      <>
+        {canRecover ? (
+          <MissionErrorAlert stopReason={runtime.stopReason} />
+        ) : null}
+        <div
+          data-vex-area="mission-controls"
+          role="group"
+          aria-label="Mission controls"
+          className="mt-3 flex flex-wrap items-center gap-2"
+        >
+          <ControlButton
+            label="Continue"
+            disabled={disabled || !canContinue}
+            onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
+          />
+          <ControlButton
+            label={recover.isPending ? "Recovering…" : "Recover"}
+            ariaLabel="Recover mission"
+            ariaBusy={recover.isPending}
+            disabled={disabled || !canRecover}
+            onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
+          />
+          <ControlButton
+            label="Edit"
+            disabled={disabled || !canEdit}
+            onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
+          />
+          <ControlButton
+            label="Stop"
+            tone="danger"
+            disabled={disabled}
+            onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
+          />
+          {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+        </div>
+      </>
     );
   }
 
@@ -306,6 +363,33 @@ export function MissionControls({
           Start mission
         </button>
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+      </div>
+    );
+  }
+
+  // Reviewable: a ready draft awaiting acceptance — the "MISSION READY" state.
+  // Gated on the turn settling (never on the draft/diff data alone) so the
+  // bar can't flash open mid-turn during a tool-call gap; a cancelled/failed
+  // turn also settles `chatSubmitting` back to false, so a stuck turn can
+  // never wedge the bar shut. When not yet settled (or not reviewable), fall
+  // through to the pre-existing affordances below unchanged — the standing
+  // notice already covers this state, so nothing regresses mid-turn.
+  // `planMissing` is MissionRail's exported readiness gate: with plan-mode on
+  // and no plan body, the rail says Preparing — the bar must agree, not lead.
+  const reviewable =
+    draft !== null && draft.status === "ready" && diff !== null && !diff.isAccepted &&
+    planKnown && !planMissing(plan);
+  if (reviewable && !chatSubmitting) {
+    return (
+      <div data-vex-area="mission-controls" className="mt-3">
+        <button
+          type="button"
+          onClick={() => setReviewModal("mission")}
+          aria-label="Review & accept contract"
+          className={REVIEW_KEY}
+        >
+          Review &amp; accept contract
+        </button>
       </div>
     );
   }
@@ -384,23 +468,70 @@ function AcceptancePendingNotice(): JSX.Element {
   );
 }
 
+/**
+ * Standing paused_error alert (issue #42): while the recover-eligible pause
+ * persists, the mission is silently NOT monitoring the market or positions —
+ * that has to be visible, not inferred from an agent reply. Persistent,
+ * state-driven UI: no timers, no dismissal. If a recovery settles and the
+ * refetched runtime is still paused_error, this simply stays/reappears — the
+ * visible-failure signal the operator needs.
+ */
+function MissionErrorAlert({
+  stopReason,
+}: {
+  readonly stopReason: string | null;
+}): JSX.Element {
+  // `provider_error` names the stop reason, not the cause — it covers both
+  // inference and runtime errors, so the copy must not claim a connection
+  // failure. The state is recoverable via the Recover button, so never say
+  // "unrecoverable".
+  const body =
+    stopReason === "provider_error"
+      ? "The mission paused after an inference or runtime error."
+      : "The mission paused after an unexpected error.";
+  return (
+    <div
+      role="alert"
+      data-vex-area="mission-error-alert"
+      className="mb-2 w-full rounded-lg border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-3 py-2"
+    >
+      <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-destructive">
+        Mission paused — error
+      </p>
+      <p className="mt-1 text-xs text-destructive">{body}</p>
+      <p className="mt-1 text-xs text-destructive">
+        The mission is not monitoring the market or your positions until you
+        recover it.
+      </p>
+    </div>
+  );
+}
+
 function ControlButton({
   label,
   onClick,
   disabled,
   tone,
+  ariaLabel,
+  ariaBusy,
 }: {
   readonly label: string;
   readonly onClick: () => void;
   readonly disabled: boolean;
   readonly tone?: "danger";
+  /** Overrides the derived `${label} mission` accessible name — used where
+   * the visible label changes (e.g. "Recovering…") but the accessible name
+   * must stay stable for assistive tech and tests. */
+  readonly ariaLabel?: string;
+  readonly ariaBusy?: boolean;
 }): JSX.Element {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      aria-label={`${label} mission`}
+      aria-label={ariaLabel ?? `${label} mission`}
+      aria-busy={ariaBusy}
       className={cn(
         // Toolbar keys: quiet mono-uppercase hairline pills; Stop keeps the
         // destructive tone with the one sanctioned danger fill (/10).

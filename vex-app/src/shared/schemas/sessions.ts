@@ -210,6 +210,30 @@ export const sessionDeleteResultSchema = z
   .strict();
 export type SessionDeleteResult = z.infer<typeof sessionDeleteResultSchema>;
 
+/**
+ * Native Markdown export. Main owns both the save dialog and the destination
+ * path; the renderer supplies only the session id and receives back only
+ * `saved | cancelled` — never the path.
+ */
+export const sessionExportMarkdownInputSchema = sessionGetInputSchema;
+export type SessionExportMarkdownInput = z.infer<
+  typeof sessionExportMarkdownInputSchema
+>;
+
+export const sessionExportMarkdownOutcomeSchema = z.enum(["saved", "cancelled"]);
+export type SessionExportMarkdownOutcome = z.infer<
+  typeof sessionExportMarkdownOutcomeSchema
+>;
+
+export const sessionExportMarkdownResultSchema = z
+  .object({
+    outcome: sessionExportMarkdownOutcomeSchema,
+  })
+  .strict();
+export type SessionExportMarkdownResult = z.infer<
+  typeof sessionExportMarkdownResultSchema
+>;
+
 // ── Global runtime model resolution ──────────────────────────────────────
 //
 // Vex uses a single global model for every session, resolved by the

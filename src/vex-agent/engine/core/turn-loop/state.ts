@@ -24,8 +24,10 @@ export interface TurnLoopConfig {
   /**
    * Hard mission time-box as an absolute epoch (ms). When set, the turn loop
    * stops with `deadline_reached` the moment `Date.now() >= missionDeadlineMs`,
-   * independent of the agent. Computed from the run's immutable `started_at` +
-   * the configured duration (see mission-deadline.ts). Null/undefined = no box.
+   * independent of the agent — checked first each iteration, before another
+   * inference call is spent. Computed from the run's immutable `started_at` +
+   * the configured duration (see `engine/mission/mission-deadline.ts`).
+   * Null/undefined = no box.
    */
   missionDeadlineMs?: number | null;
 }

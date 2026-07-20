@@ -14,7 +14,15 @@ import {
   sendKyberTransaction,
   verifyRouterAddress,
 } from "@tools/kyberswap/evm-utils.js";
-import { META_AGGREGATION_ROUTER_V2, NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
+import {
+  META_AGGREGATION_ROUTER_V2,
+  NATIVE_TOKEN_ADDRESS,
+  KYBERSWAP_FEE_BPS,
+  KYBERSWAP_FEE_CHARGE_BY,
+  KYBERSWAP_FEE_RECEIVER,
+} from "@tools/kyberswap/constants.js";
+import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
+import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import { resolveTokenMetadataStrict, requireFeature, resolveChainWithId } from "@tools/kyberswap/helpers.js";
 import { formatRouteSummary } from "../helpers.js";
 import logger from "@utils/logger.js";
@@ -22,6 +30,7 @@ import { isRecord } from "@utils/validation-helpers.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
+import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
@@ -115,6 +124,95 @@ async function resolveQuoteSafetyLeg(
   }
 }
 
+/**
+ * Vex integrator fee fields for GET /routes. Sourced ONLY from the
+ * product-owner-reviewed venue constants (never from tool/model params) and
+ * spread IDENTICALLY into the quote and the execute re-quote, so the route the
+ * user was shown and the route that broadcasts carry the same fee line. Kyber
+ * echoes these back inside `routeSummary.extraFee`, which POST /route/build
+ * consumes verbatim — we never mutate the summary.
+ */
+const VEX_INTEGRATOR_FEE_ROUTE_PARAMS = {
+  feeAmount: String(KYBERSWAP_FEE_BPS),
+  isInBps: true,
+  chargeFeeBy: KYBERSWAP_FEE_CHARGE_BY,
+  feeReceiver: KYBERSWAP_FEE_RECEIVER,
+} as const;
+
+/**
+ * Classify the ECONOMIC direction of a swap from the native leg, independent of
+ * which tool (`kyberswap.swap.buy` vs `kyberswap.swap.sell`) was invoked. A
+ * token can legitimately be bought via the sell-tool (native-in) or sold via
+ * the buy-tool, so the tool name alone is not a reliable accounting label.
+ *
+ * Spending native to acquire a token is a BUY; selling a token back to native
+ * is a SELL. Token↔token has no native anchor, so we fall back to the tool's
+ * declared side. Used ONLY for what is recorded/reported — never for routing,
+ * quoting, or execution. Mirrors uniswap's `classifyEconomicSide` (same bug
+ * class, same fix shape; kept local per protocol per the repo's "3+ = extract"
+ * convention — two occurrences do not yet warrant a shared helper). Kyberswap's
+ * inputs are hardened beyond uniswap's via `isEconomicallyNativeLeg` below —
+ * uniswap's booleans are still sentinel-only (tracked separately, PR #39).
+ */
+export function classifyEconomicSide(args: {
+  readonly tokenInIsNative: boolean;
+  readonly tokenOutIsNative: boolean;
+  readonly side: "buy" | "sell";
+}): "buy" | "sell" {
+  if (args.tokenInIsNative) return "buy";
+  if (args.tokenOutIsNative) return "sell";
+  return args.side;
+}
+
+/**
+ * True when a resolved swap leg is economically native: the aggregator
+ * sentinel address, OR the chain's wrapped-native ERC-20 contract address
+ * (case-insensitive address compare — NEVER a symbol match, see
+ * `wrapped-native.ts`: several chains have an unrelated bridged token
+ * literally named "WETH" that must not classify as that chain's native).
+ *
+ * RECORDING/classification path ONLY. `leg.isNative` (sentinel-only, from
+ * `resolveTokenMetadataStrict`) is what drives allowance, routing,
+ * `transactionValue`, and execution elsewhere in this file — a wrapped-native
+ * leg stays an ordinary ERC-20 there. This predicate only widens what counts
+ * as "native" for the trade-side/benchmark/settlement bookkeeping below.
+ */
+export function isEconomicallyNativeLeg(
+  chain: KyberChainSlug,
+  leg: { readonly address: Address; readonly isNative: boolean },
+): boolean {
+  if (leg.isNative) return true;
+  return leg.address.toLowerCase() === getKyberWrappedNativeAddress(chain).toLowerCase();
+}
+
+/**
+ * The single recorded-trade-side decision for a kyberswap swap. Composes the
+ * widened per-leg nativeness with one disambiguation `classifyEconomicSide`
+ * cannot make: a native↔wrapped-native trade (ETH↔WETH, BNB↔WBNB, …) marks
+ * BOTH legs economically native, and the classifier's in-leg-first rule would
+ * record every such trade as a buy. In that case the raw sentinel roles
+ * decide: spending the sentinel to acquire the wrapper records as a BUY of
+ * the wrapper; spending the wrapper back into the sentinel records as a SELL
+ * of it. (Same-address legs cannot occur — the venue rejects identical
+ * tokenIn/tokenOut — so exactly one leg carries the sentinel here; the
+ * declared side remains the defensive fallback.)
+ */
+export function resolveRecordedTradeSide(
+  chain: KyberChainSlug,
+  tokenIn: { readonly address: Address; readonly isNative: boolean },
+  tokenOut: { readonly address: Address; readonly isNative: boolean },
+  side: "buy" | "sell",
+): "buy" | "sell" {
+  const tokenInIsNative = isEconomicallyNativeLeg(chain, tokenIn);
+  const tokenOutIsNative = isEconomicallyNativeLeg(chain, tokenOut);
+  if (tokenInIsNative && tokenOutIsNative) {
+    if (tokenIn.isNative) return "buy";
+    if (tokenOut.isNative) return "sell";
+    return side;
+  }
+  return classifyEconomicSide({ tokenInIsNative, tokenOutIsNative, side });
+}
+
 // ── Shared swap execution (sell + buy use same routing, differ in trade_side) ──
 
 async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell", context: ProtocolExecutionContext): Promise<ToolResult> {
@@ -161,12 +259,21 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
     tokenIn: tokenIn.address,
     tokenOut: tokenOut.address,
     amountIn: amountIn.toString(),
+    ...VEX_INTEGRATOR_FEE_ROUTE_PARAMS,
   });
   const { routeSummary, routerAddress } = routeResp.data;
   verifyRouterAddress(routerAddress, META_AGGREGATION_ROUTER_V2);
 
+  // Economic direction for RECORDING/reporting — derived from the native leg
+  // (sentinel OR that chain's wrapped-native contract address), not the tool
+  // name (`side`) and not the raw sentinel-only `isNative` flag that still
+  // drives routing/allowance/execution below.
+  const tokenInIsNative = isEconomicallyNativeLeg(slug, tokenIn);
+  const tokenOutIsNative = isEconomicallyNativeLeg(slug, tokenOut);
+  const economicSide = resolveRecordedTradeSide(slug, tokenIn, tokenOut, side);
+
   if (p.dryRun === true) {
-    return ok({ dryRun: true, side, chain: slug, routeSummary: formatRouteSummary(routeSummary), routerAddress });
+    return ok({ dryRun: true, side: economicSide, chain: slug, routeSummary: formatRouteSummary(routeSummary), routerAddress });
   }
 
   // Per-session signing wallet (puzzle 5 phase 5D-protocols) — resolved AFTER the
@@ -181,7 +288,14 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
 
   const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
   if (tokenIn.address.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
-    await ensureKyberAllowance(publicClient, walletClient, tokenIn.address, routerAddress, amountIn, p.approveExact === true);
+    await ensureErc20Balance(publicClient, {
+      token: tokenIn.address,
+      owner: getAddress(signer.address),
+      required: amountIn,
+      decimals: tokenIn.decimals,
+      label: tokenIn.symbol,
+    });
+    await ensureKyberAllowance(publicClient, walletClient, tokenIn.address, routerAddress, amountIn);
   }
 
   const slippage = num(p, "slippageBps") ?? 50;
@@ -192,15 +306,28 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
     slippageTolerance: slippage,
   });
 
+  // Verify the BUILD-response router before broadcasting: the tx is sent to
+  // buildResp.data.routerAddress (and approvals were granted to the router), so
+  // an attacker-controlled build router is a direct theft vector. Fail closed
+  // on mismatch — the route-response check above only guards the approval step.
+  verifyRouterAddress(buildResp.data.routerAddress, META_AGGREGATION_ROUTER_V2);
+
   const txHash = await sendKyberTransaction(publicClient, walletClient, {
     to: getAddress(buildResp.data.routerAddress),
     data: buildResp.data.data as Hex,
     value: BigInt(buildResp.data.transactionValue),
   });
 
-  const inputIsNative = tokenIn.address.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase();
-  const outputIsNative = tokenOut.address.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase();
-  const hasNativeLeg = inputIsNative || outputIsNative;
+  // Audit of the four RECORDING-only spots below — all reuse the hardened
+  // tokenInIsNative/tokenOutIsNative (sentinel OR wrapped-native address)
+  // computed above, not a fresh sentinel-only compare:
+  //  - benchmarkAssetKey: benchmark-vs-native PnL is exactly as meaningful for
+  //    a wrapped-native leg (1 wrapped = 1 native by the wrap contract).
+  //  - settlementAssetKey: inherits the hardened `economicSide` automatically.
+  //  - inputValueNative/outputValueNative: feed proj_pnl_lots' cost/proceeds
+  //    "native" columns (benchmark-PnL accounting only, never a balance
+  //    mutation), so the wrapped-native leg's value is equally valid here.
+  const hasNativeLeg = tokenInIsNative || tokenOutIsNative;
 
   // Benchmark: only when native token is one leg
   const { resolveChainBenchmark } = await import("@vex-agent/sync/benchmark.js");
@@ -208,21 +335,21 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
 
   return {
     success: true,
-    output: JSON.stringify({ txHash, side, chain: slug, tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol, amountIn: buildResp.data.amountIn, amountOut: buildResp.data.amountOut, amountInUsd: buildResp.data.amountInUsd, amountOutUsd: buildResp.data.amountOutUsd }, null, 2),
+    output: JSON.stringify({ txHash, side: economicSide, chain: slug, tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol, amountIn: buildResp.data.amountIn, amountOut: buildResp.data.amountOut, amountInUsd: buildResp.data.amountInUsd, amountOutUsd: buildResp.data.amountOutUsd }, null, 2),
     data: { txHash, _tradeCapture: {
       type: "swap", chain: slug, status: "executed",
       inputToken: tokenIn.symbol, outputToken: tokenOut.symbol,
       inputTokenAddress: tokenIn.address, outputTokenAddress: tokenOut.address,
       inputAmount: buildResp.data.amountIn, outputAmount: buildResp.data.amountOut,
-      signature: txHash, walletAddress: signer.address, tradeSide: side,
-      instrumentKey: `${slug}:${side === "buy" ? tokenOut.address : tokenIn.address}`,
+      signature: txHash, walletAddress: signer.address, tradeSide: economicSide,
+      instrumentKey: `${slug}:${economicSide === "buy" ? tokenOut.address : tokenIn.address}`,
       inputValueUsd: buildResp.data.amountInUsd, outputValueUsd: buildResp.data.amountOutUsd,
       feeValueUsd: buildResp.data.gasUsd, valuationSource: "kyberswap_exact",
       benchmarkAssetKey: benchmarkAssetKey ?? undefined,
-      settlementAssetKey: side === "buy" ? tokenIn.symbol : tokenOut.symbol,
-      inputValueNative: inputIsNative ? formatUnits(amountIn, tokenIn.decimals) : undefined,
-      outputValueNative: outputIsNative ? formatUnits(BigInt(buildResp.data.amountOut), tokenOut.decimals) : undefined,
-      meta: { dex: "kyberswap", side },
+      settlementAssetKey: economicSide === "buy" ? tokenIn.symbol : tokenOut.symbol,
+      inputValueNative: tokenInIsNative ? formatUnits(amountIn, tokenIn.decimals) : undefined,
+      outputValueNative: tokenOutIsNative ? formatUnits(BigInt(buildResp.data.amountOut), tokenOut.decimals) : undefined,
+      meta: { dex: "kyberswap", side: economicSide },
     } },
   };
 }
@@ -267,6 +394,7 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
         tokenIn: tokenIn.address,
         tokenOut: tokenOut.address,
         amountIn,
+        ...VEX_INTEGRATOR_FEE_ROUTE_PARAMS,
       }),
       resolveQuoteSafetyLeg(chainId, tokenIn),
       resolveQuoteSafetyLeg(chainId, tokenOut),

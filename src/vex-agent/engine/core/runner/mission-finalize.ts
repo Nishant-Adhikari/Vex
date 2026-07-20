@@ -21,6 +21,7 @@ import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
 import { consumeMissionRunAbortIntent } from "./abort.js";
 import { captureMissionFinal } from "../../mission/mission-results-capture.js";
+import { reconcileDraftReadiness } from "../../mission/draft-readiness.js";
 import {
   isContinuableRuntimeStop,
   scheduleRuntimeContinuation,
@@ -29,6 +30,7 @@ import {
   enqueueAutoRetryWake,
   persistErrorPauseWithMaybeAutoRetry,
 } from "./mission-auto-retry.js";
+import { readMissionErrorSignal } from "./mission-error-signal.js";
 
 const ERROR_MESSAGE_LIMIT = 4096;
 
@@ -88,9 +90,14 @@ export async function finalizeMissionRunStatus(
       await missionRunsRepo.updateStatus(runId, "stopped", stopReason, stopPayload);
       await missionsRepo.clearApprovedAt(missionId);
       await missionsRepo.setStatus(missionId, "draft");
+      // The async finalizer runs AFTER `stopMissionRunForEdit` already
+      // reconciled once (abort.ts) — this demote-then-finalize sequence is
+      // exactly the timing window issue #41 needs closed at every write
+      // site, not just the first one.
+      const reconciled = await reconcileDraftReadiness(missionId);
       await emitFinalizeControlState(sessionId, runId);
-      await captureMissionFinal({ missionId, runId, sessionId, outcome: "stopped" });
-      return "draft";
+      await captureMissionFinal({ missionId, runId, sessionId, outcome: "stopped", stopReason });
+      return reconciled.promoted ? "ready" : "draft";
     }
 
     const status: MissionStatus = stopReason === "goal_reached"
@@ -106,7 +113,7 @@ export async function finalizeMissionRunStatus(
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     await emitFinalizeControlState(sessionId, runId);
-    await captureMissionFinal({ missionId, runId, sessionId, outcome });
+    await captureMissionFinal({ missionId, runId, sessionId, outcome: status, stopReason });
     return status;
   }
 
@@ -131,7 +138,7 @@ export async function finalizeMissionRunStatus(
     await missionsRepo.setStatus(missionId, "failed");
     await missionRunsRepo.updateStatus(runId, "failed", stopReason);
     await emitFinalizeControlState(sessionId, runId);
-    await captureMissionFinal({ missionId, runId, sessionId, outcome: "failed" });
+    await captureMissionFinal({ missionId, runId, sessionId, outcome: "failed", stopReason });
     // Phase 2 BUG-REPORTING emit (puzzle 03): terminal `system_error`
     // is a hard failure surface — record the mission state. Fail-
     // closed so a sink outage cannot mask the terminal flip.
@@ -199,6 +206,9 @@ export async function finalizeMissionRunError(
 ): Promise<void> {
   const errorMessage = formatErrorMessage(err);
   const errorClass = err instanceof Error ? err.constructor.name : typeof err;
+  // Errno-shaped transport signal (own-property, never message text) — fed
+  // into both the persisted evidence below AND the bug-report `context`.
+  const causeCode = readMissionErrorSignal(err).causeCode;
   // Log first — even if the DB write below fails, the failure stays visible.
   logger.error("engine.mission.runtime_throw", {
     runId,
@@ -219,6 +229,7 @@ export async function finalizeMissionRunError(
         evidenceBase: {
           errorMessage,
           errorClass,
+          causeCode,
           occurredAt: new Date().toISOString(),
           missionId,
           runId,
@@ -268,6 +279,13 @@ export async function finalizeMissionRunError(
           missionId,
           missionRunId: runId,
         },
+        // `context` itself is `z.record(z.string(), z.unknown())` (unbounded;
+        // `bug-report-schema.ts`) — redaction happens later in the bug-report
+        // service. The VALUE stored under `causeCode` here is shape-validated
+        // (errno-shaped, own-property-read — see `mission-error-signal.ts`),
+        // never raw message text beyond what already flows through
+        // `description`.
+        context: { causeCode },
         agentContext: {
           stopReason: "provider_error",
           runtimeStatus: "paused_error",

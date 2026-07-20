@@ -1,83 +1,56 @@
 /**
- * Dashboard — the operator's performance surface over the mission-results
- * ledger. Robinhood-shaped: a big cumulative-PnL headline (Σ each mission's own
- * ETH result) with a capital-weighted return and range-scoped stats, a stat
- * register (stake / win rate / best / worst), then the newest-first table.
+ * Mission History — a read-only AppShell sub-view (mission-results-ledger,
+ * WP-J). Per-wallet ledger of finalized mission runs: a summary register
+ * (total missions, win rate, cumulative ETH PnL) then one row per mission,
+ * newest first. Mirrors the MemoryPanel shell grammar (h-12 register header
+ * + back key, hairline-separated ledger, `--vex-*` ink) so it reads as one
+ * surface with the rest of the desk.
  *
- * It mirrors the MemoryPanel shell grammar (`vex-eyebrow` section labels,
- * mono filter pills, hairline-separated blocks, `--vex-*` ink) so it reads as
- * one surface with the rest of the desk. Arithmetic lives in the pure models:
- * `missionStatsModel.ts` (capital-weighted return, current stake) and
- * `missionHistoryModel.ts` (cumulative, win-rate, best/worst, formatting); this
- * file is presentation over already-derived values. ETH is the source of truth;
- * USD is a display-only aside, derived per-mission at each mission's own price
- * (a single price is never divided across missions). The view is deliberately
- * additive — new blocks (seed funding, open bags, fees) slot in as more
- * sections without reshaping this shell.
+ * The ledger is EVM/ETH-specific (bankroll = native ETH + WETH), so this
+ * reads the PRIMARY EVM wallet from the inventory — never every wallet.
+ *
+ * All arithmetic + formatting lives in `missionHistoryModel.ts`; this file
+ * is presentation over derived values. Naming: "mission result (ETH)" —
+ * never "performance".
  */
 
-import { useState, type JSX } from "react";
+import type { JSX } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import type { Result } from "@shared/ipc/result.js";
-import type {
-  MissionListResultsResult,
-  MissionResultDto,
-} from "@shared/schemas/mission.js";
-import type { PortfolioRange } from "@shared/schemas/portfolio.js";
+import type { MissionListResultsResult, MissionResultDto } from "@shared/schemas/mission.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useMissionResults } from "../../lib/api/mission.js";
-import {
-  usePortfolioScoped,
-  usePortfolioSeries,
-} from "../../lib/api/portfolio.js";
-import { useAvailableWallets } from "../../lib/api/session-wallets.js";
+import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
 import { formatPercentDelta, formatUsd } from "../../lib/format.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
-import { PortfolioChart } from "./PortfolioChart.js";
+import { OutcomeBadge } from "./OutcomeBadge.js";
 import {
   EM_DASH,
-  bestWorst,
   computeWinRate,
-  filterByRange,
   formatDurationS,
   formatEth,
+  missionDisplayOutcome,
   pnlUsd,
   sumPnlEth,
-  type DashboardRange,
 } from "./missionHistoryModel.js";
-import {
-  capitalWeightedReturn,
-  currentStakeEth,
-} from "./missionStatsModel.js";
-
-const RANGES: readonly DashboardRange[] = ["1W", "1M", "3M", "ALL"];
-const RANGE_LABEL: Record<DashboardRange, string> = {
-  "1W": "past week",
-  "1M": "past month",
-  "3M": "past 3 months",
-  ALL: "all time",
-};
-
-const PF_RANGES: readonly PortfolioRange[] = ["1D", "1W", "1M", "ALL"];
-const PF_RANGE_LABEL: Record<PortfolioRange, string> = {
-  "1D": "today",
-  "1W": "past week",
-  "1M": "past month",
-  ALL: "all time",
-};
 
 export function MissionHistory(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
-  const query = useMissionResults();
+  const walletsQuery = useAvailableWallets();
+  const primaryWallet =
+    walletsQuery.data && walletsQuery.data.ok ? (walletsQuery.data.data.evm[0] ?? null) : null;
+  const resultsQuery = useMissionResults(primaryWallet?.address ?? null);
 
   return (
     <div
-      data-vex-screen="dashboard"
+      data-vex-screen="missionHistory"
       className="flex h-full min-h-0 flex-col text-foreground"
     >
+      {/* Register header — same h-12 datum + quiet back key as the Memory
+       * panel; the affordance is an icon, never a chrome pill. */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--vex-line)] px-6">
         <button
           type="button"
@@ -88,402 +61,74 @@ export function MissionHistory(): JSX.Element {
           <HugeiconsIcon icon={ArrowLeft01Icon} size={17} aria-hidden />
         </button>
         <h1 className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-foreground">
-          Dashboard
+          Missions
         </h1>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto flex w-full max-w-[820px] flex-col gap-8">
-          <Body query={query} />
+        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
+          {primaryWallet === null ? (
+            <Empty label="No wallet available — add a wallet to see mission history." />
+          ) : (
+            <Body query={resultsQuery} />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
+/**
+ * Query-state fork: pending -> loading, thrown/transport error OR an
+ * `ok:false` Result envelope -> error, empty array -> friendly empty state,
+ * else the ledger.
+ */
 function Body({
   query,
 }: {
   readonly query: UseQueryResult<Result<MissionListResultsResult>>;
 }): JSX.Element {
-  if (query.isPending) return <Loading label="Loading dashboard…" />;
+  if (query.isPending) return <Loading label="Loading missions…" />;
   if (query.isError) return <ErrorState message={query.error.message} />;
   const res = query.data;
   if (!res.ok) return <ErrorState message={res.error.message} />;
   if (res.data.length === 0) {
     return <Empty label="No missions yet — finish a mission to see it here." />;
   }
-  return <Dashboard results={res.data} />;
+  return <Ledger results={res.data} />;
 }
 
-function Dashboard({
-  results,
-}: {
-  readonly results: readonly MissionResultDto[];
-}): JSX.Element {
-  const [range, setRange] = useState<DashboardRange>("ALL");
-
-  // The current stake (deployed capital) is ALL-TIME — the LATEST mission's
-  // starting bankroll, not the sum of every mission's seed (which double-counts
-  // capital reused across missions). The headline PnL, capital-weighted return
-  // and stats below are scoped to the selected range.
-  const stakeEth = currentStakeEth(results);
-  // Best-known current ETH price, used ONLY to derive display-side USD for a
-  // mission that lacks its own snapshot price. ETH stays the source of truth;
-  // a single price is never divided across missions' ETH totals.
-  const fallbackPrice = latestEthPrice(results);
-  const stakeUsd =
-    stakeEth !== null && fallbackPrice !== null ? stakeEth * fallbackPrice : null;
-
-  const ranged = filterByRange(results, range, Date.now());
-  const rangedPnl = sumPnlEth(ranged);
-  const rangedPct = capitalWeightedReturn(ranged);
-  const rangedUsd = sumUsd(ranged, fallbackPrice);
-
-  const extremes = bestWorst(ranged);
-  const winRate = computeWinRate(ranged);
-  const totalTrades = ranged.reduce((n, r) => n + r.trades, 0);
+function Ledger({ results }: { readonly results: readonly MissionResultDto[] }): JSX.Element {
+  const winRate = computeWinRate(results);
+  const cumulative = sumPnlEth(results);
 
   return (
     <>
-      {/* ── Portfolio equity curve (total value across all wallets) ── */}
-      <PortfolioSection />
-
-      {/* ── Mission performance ──────────────────────────────────── */}
-      <section className="flex flex-col gap-5 border-t border-[var(--vex-line)] pt-7">
-        <div>
-          <h2 className="vex-eyebrow">Mission performance</h2>
-          <p className="mt-1 text-xs text-[var(--vex-text-2)]">
-            Realized PnL the missions produced — each mission&apos;s own ETH
-            result, summed. The return is capital-weighted over the seeds put to
-            work. Scoped to the selected range.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          {/* ETH is the source of truth → it leads; USD is a derived aside. */}
-          <div className="flex items-baseline gap-3">
-            <span
-              className={cn(
-                "font-mono text-[34px] font-medium leading-none tabular-nums",
-                pnlTone(rangedPnl),
-              )}
-            >
-              {formatEth(rangedPnl, { signed: true })} ETH
-            </span>
-            {rangedUsd !== null ? (
-              <span className="font-mono text-sm tabular-nums text-[var(--vex-text-3)]">
-                {usdText(rangedUsd, { signed: true })}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
-            {rangedPct !== null ? (
-              <span className={pnlTone(rangedPnl)}>
-                {formatPercentDelta(rangedPct)}
-              </span>
-            ) : null}
-            <span className="text-[var(--vex-text-3)]">· {RANGE_LABEL[range]}</span>
-          </div>
-        </div>
-
-        {/* Range pills scope the delta + stats + table below. */}
-        <div className="flex flex-wrap items-center gap-2">
-          {RANGES.map((r) => (
-            <Pill key={r} active={range === r} onClick={() => setRange(r)}>
-              {r}
-            </Pill>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Stats ────────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-4 border-t border-[var(--vex-line)] pt-6">
-        <h2 className="vex-eyebrow">Mission stats</h2>
-        <div className="grid grid-cols-2 gap-x-10 gap-y-4 sm:grid-cols-3">
-          <Stat
-            label="Stake"
-            value={stakeEth === null ? EM_DASH : `${formatEth(stakeEth)} ETH`}
-            hint={stakeUsd === null ? undefined : `≈ ${formatUsd(stakeUsd)}`}
-          />
-          <Stat label="Missions" value={String(ranged.length)} />
-          <Stat
-            label="Win rate"
-            value={winRate === null ? EM_DASH : `${winRate.toFixed(0)}%`}
-          />
-          <Stat
-            label="Best"
-            value={
-              extremes === null
-                ? EM_DASH
-                : `${formatEth(extremes.best, { signed: true })} ETH`
-            }
-            tone={extremes === null ? undefined : pnlTone(extremes.best)}
-          />
-          <Stat
-            label="Worst"
-            value={
-              extremes === null
-                ? EM_DASH
-                : `${formatEth(extremes.worst, { signed: true })} ETH`
-            }
-            tone={extremes === null ? undefined : pnlTone(extremes.worst)}
-          />
-          <Stat label="Trades" value={String(totalTrades)} />
-        </div>
-      </section>
-
-      {/* ── Missions ledger ──────────────────────────────────────── */}
-      <section className="flex flex-col gap-4 border-t border-[var(--vex-line)] pt-6">
-        <h2 className="vex-eyebrow">Missions</h2>
-        {ranged.length === 0 ? (
-          <p className="text-xs text-[var(--vex-text-3)]">
-            No missions in the {RANGE_LABEL[range]}.
-          </p>
-        ) : (
-          <ResultsTable results={ranged} />
-        )}
-      </section>
+      <SummaryHeader total={results.length} winRate={winRate} cumulativeEth={cumulative} />
+      <ResultsTable results={results} />
     </>
   );
 }
 
-/**
- * Portfolio equity curve — total USD value over time, the Robinhood-shaped
- * headline. Defaults to the PRIMARY wallet (mirrors the BOOK Portfolio panel's
- * per-wallet filter): `null` override = Primary (first configured wallet),
- * `"__all__"` = every wallet, else a specific address. Both the live total and
- * the equity curve are scoped to the selection. Independent of the mission
- * range below — this is the money, not the missions.
- */
-function PortfolioSection(): JSX.Element {
-  const [range, setRange] = useState<PortfolioRange>("1D");
-
-  // Per-wallet filter: build the option list from the configured inventory and
-  // default to Primary (the first wallet). `selected` resolves the override.
-  const availableWallets = useAvailableWallets();
-  const walletOptions: readonly { readonly label: string; readonly address: string }[] =
-    availableWallets.data?.ok
-      ? [...availableWallets.data.data.evm, ...availableWallets.data.data.solana]
-      : [];
-  const primaryAddress = walletOptions[0]?.address ?? null;
-  const [override, setOverride] = useState<string | null>(null);
-  const selected = override ?? primaryAddress;
-  const isAll = override === "__all__";
-
-  // Live total: global when "All" (or no wallets configured), else wallet-scoped.
-  const portfolio = usePortfolioScoped(
-    isAll || selected === null
-      ? { scope: "global" }
-      : { scope: "wallet", walletAddress: selected },
-  );
-  // Curve: null wallet → global; else scoped to the selected wallet.
-  const series = usePortfolioSeries(range, isAll ? null : selected);
-
-  const live = portfolio.data?.ok ? portfolio.data.data : null;
-  const seriesData = series.data?.ok ? series.data.data : null;
-  const points = seriesData?.points ?? [];
-
-  const totalUsd = live?.liveTotalUsd ?? null;
-  const walletCount = live?.walletCount ?? null;
-
-  const first = points.length > 0 ? points[0]!.totalUsd : null;
-  const last = points.length > 0 ? points[points.length - 1]!.totalUsd : null;
-  const rawChange = first !== null && last !== null ? last - first : null;
-  const rawChangePct =
-    rawChange !== null && first !== null && first !== 0
-      ? (rawChange / first) * 100
-      : null;
-  // Prefer the FLOW-ADJUSTED (TWR) figures from the series DTO: they neutralise
-  // deposits/withdrawals so pulling cash out isn't shown as a loss (the EVM-3
-  // bug). Fall back to the raw curve delta when they're absent (< 2 points or
-  // an older payload).
-  const change = seriesData?.flowAdjustedChangeUsd ?? rawChange;
-  const changePct = seriesData?.changePctTwr ?? rawChangePct;
-
-  const seriesFailed =
-    series.isError || (series.data !== undefined && !series.data.ok);
-
+function SummaryHeader({
+  total,
+  winRate,
+  cumulativeEth,
+}: {
+  readonly total: number;
+  readonly winRate: number | null;
+  readonly cumulativeEth: number;
+}): JSX.Element {
   return (
-    <section className="flex flex-col gap-5">
-      <div>
-        <h2 className="vex-eyebrow">Portfolio</h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
-          {isAll
-            ? "Total value across all your wallets, live from on-chain balances."
-            : "Live from on-chain balances for the selected wallet."}
-        </p>
-      </div>
-
-      {walletOptions.length > 1 ? (
-        <WalletFilter
-          options={walletOptions}
-          active={override}
-          onSelect={setOverride}
-        />
-      ) : null}
-
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono text-[34px] font-medium leading-none tabular-nums text-foreground">
-            {totalUsd === null ? EM_DASH : formatUsd(totalUsd)}
-          </span>
-          {walletCount !== null ? (
-            <span className="font-mono text-sm text-[var(--vex-text-3)]">
-              {walletCount} wallet{walletCount === 1 ? "" : "s"}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
-          {change === null ? (
-            <span className="text-[var(--vex-text-3)]">No change yet</span>
-          ) : (
-            // Portfolio never shows red: green on a gain, neutral on a dip (so a
-            // loss still isn't dressed up as green).
-            <>
-              <span className={pfDeltaTone(change)}>
-                {change >= 0 ? "+" : "-"}
-                {formatUsd(Math.abs(change))}
-              </span>
-              {changePct !== null ? (
-                <span className={pfDeltaTone(change)}>
-                  ({formatPercentDelta(changePct)})
-                </span>
-              ) : null}
-            </>
-          )}
-          <span className="text-[var(--vex-text-3)]">
-            · {PF_RANGE_LABEL[range]}
-          </span>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {PF_RANGES.map((r) => (
-          <Pill key={r} active={range === r} onClick={() => setRange(r)}>
-            {r}
-          </Pill>
-        ))}
-      </div>
-
-      {seriesFailed ? (
-        <div className="flex h-[200px] items-center justify-center rounded-[6px] border border-dashed border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
-          Couldn&apos;t load the value history.
-        </div>
-      ) : (
-        <PortfolioChart points={points} />
-      )}
+    <section className="flex flex-wrap items-end gap-x-10 gap-y-4 border-b border-[var(--vex-line)] pb-6">
+      <Stat label="Missions" value={String(total)} />
+      <Stat label="Win rate" value={winRate === null ? EM_DASH : `${winRate.toFixed(0)}%`} />
+      <Stat
+        label="Cumulative PnL"
+        value={`${formatEth(cumulativeEth, { signed: true })} ETH`}
+        tone={pnlTone(cumulativeEth)}
+      />
     </section>
-  );
-}
-
-/**
- * Per-wallet pill row for the Portfolio section: "All" + one pill per configured
- * wallet. `active` is the raw override state — `null` means the default (Primary,
- * i.e. the first wallet), so the Primary pill carries `value: null` and matches.
- * Mirrors the BOOK Portfolio panel's `WalletFilter`.
- */
-function WalletFilter({
-  options,
-  active,
-  onSelect,
-}: {
-  readonly options: readonly { readonly label: string; readonly address: string }[];
-  readonly active: string | null;
-  readonly onSelect: (value: string | null) => void;
-}): JSX.Element {
-  const items: {
-    readonly key: string;
-    readonly label: string;
-    readonly value: string | null;
-  }[] = [
-    { key: "__all__", label: "All", value: "__all__" },
-    ...options.map((wallet, index) => ({
-      key: wallet.address,
-      label: wallet.label,
-      value: index === 0 ? null : wallet.address,
-    })),
-  ];
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {items.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          onClick={() => onSelect(item.value)}
-          className={cn(
-            "rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)]",
-            item.value === active
-              ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-              : "text-[var(--vex-text-3)] hover:bg-white/[0.04] hover:text-foreground",
-          )}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Latest closing ETH price (newest-first input → first finite `ethPriceUsdEnd`). */
-function latestEthPrice(results: readonly MissionResultDto[]): number | null {
-  for (const r of results) {
-    if (r.ethPriceUsdEnd !== null && Number.isFinite(r.ethPriceUsdEnd)) {
-      return r.ethPriceUsdEnd;
-    }
-    if (r.ethPriceUsdStart !== null && Number.isFinite(r.ethPriceUsdStart)) {
-      return r.ethPriceUsdStart;
-    }
-  }
-  return null;
-}
-
-/**
- * Sum of per-mission USD PnL, each valued at its OWN close price when present,
- * else the `fallbackPrice` (best-known current ETH price). A single price is
- * never divided across missions' ETH — this is display-only derivation over
- * the native per-mission ETH pnl. `null` when nothing is computable.
- */
-function sumUsd(
-  results: readonly MissionResultDto[],
-  fallbackPrice: number | null,
-): number | null {
-  let sum = 0;
-  let seen = false;
-  for (const r of results) {
-    const price = r.ethPriceUsdEnd ?? r.ethPriceUsdStart ?? fallbackPrice;
-    const usd = pnlUsd(r.pnlEth, price);
-    if (usd !== null) {
-      sum += usd;
-      seen = true;
-    }
-  }
-  return seen ? sum : null;
-}
-
-function Pill({
-  active,
-  onClick,
-  children,
-}: {
-  readonly active: boolean;
-  readonly onClick: () => void;
-  readonly children: string;
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      data-active={active}
-      className={cn(
-        "rounded-[3px] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-        active
-          ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-          : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -491,13 +136,10 @@ function Stat({
   label,
   value,
   tone,
-  hint,
 }: {
   readonly label: string;
   readonly value: string;
   readonly tone?: string;
-  /** Optional derived USD aside, shown muted under the ETH-first value. */
-  readonly hint?: string;
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
@@ -507,11 +149,6 @@ function Stat({
       <span className={cn("font-mono text-lg tabular-nums", tone ?? "text-foreground")}>
         {value}
       </span>
-      {hint !== undefined ? (
-        <span className="font-mono text-[11px] tabular-nums text-[var(--vex-text-3)]">
-          {hint}
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -531,7 +168,7 @@ function ResultsTable({
             <Th>Outcome</Th>
             <Th align="right">Duration</Th>
             <Th align="right">Trades</Th>
-            <Th align="right">PnL</Th>
+            <Th align="right">PnL (ETH)</Th>
           </tr>
         </thead>
         <tbody>
@@ -544,17 +181,9 @@ function ResultsTable({
   );
 }
 
-function ResultRow({
-  result,
-}: {
-  readonly result: MissionResultDto;
-}): JSX.Element {
+function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Element {
   const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  // USD leads; the ETH figure moves to the hover title.
-  const pnlTitle =
-    result.pnlEth === null
-      ? undefined
-      : `${formatEth(result.pnlEth, { signed: true })} ETH at close`;
+  const pnlTitle = usd === null ? undefined : `${formatUsd(usd)} at close`;
 
   return (
     <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
@@ -562,12 +191,10 @@ function ResultRow({
         #{result.seqNo}
       </td>
       <td className="max-w-[220px] truncate py-2.5 pr-3 text-foreground">
-        <span title={result.goalSnippet ?? undefined}>
-          {result.goalSnippet ?? EM_DASH}
-        </span>
+        <span title={result.goalSnippet ?? undefined}>{result.goalSnippet ?? EM_DASH}</span>
       </td>
       <td className="py-2.5 pr-3">
-        <OutcomeBadge outcome={result.outcome} />
+        <OutcomeBadge outcome={missionDisplayOutcome(result)} />
       </td>
       <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
         {formatDurationS(result.durationS)}
@@ -576,13 +203,8 @@ function ResultRow({
         {result.trades}
       </td>
       <td className="py-2.5 text-right">
-        <span
-          title={pnlTitle}
-          className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}
-        >
-          {usd === null
-            ? `${formatEth(result.pnlEth, { signed: true })} ETH`
-            : usdText(usd, { signed: true })}
+        <span title={pnlTitle} className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}>
+          {formatEth(result.pnlEth, { signed: true })}
         </span>
         {result.pnlPct !== null ? (
           <span className="ml-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
@@ -594,31 +216,6 @@ function ResultRow({
   );
 }
 
-/** Outcome → small colour-toned stamp. `completed` = success, `failed` =
- * destructive, `timed_out` = warning, `running` = accent, the rest muted. */
-function OutcomeBadge({ outcome }: { readonly outcome: string }): JSX.Element {
-  const tone =
-    outcome === "completed"
-      ? "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-[var(--color-success)]"
-      : outcome === "failed"
-        ? "border-destructive/40 text-destructive"
-        : outcome === "timed_out"
-          ? "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-[var(--color-warning)]"
-          : outcome === "running"
-            ? "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)]"
-            : "border-[var(--vex-line)] text-[var(--vex-text-2)]";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em]",
-        tone,
-      )}
-    >
-      {outcome.replace(/_/g, " ")}
-    </span>
-  );
-}
-
 function Th({
   children,
   align,
@@ -627,39 +224,16 @@ function Th({
   readonly align?: "right";
 }): JSX.Element {
   return (
-    <th
-      className={cn(
-        "py-2 pr-3 font-normal",
-        align === "right" ? "text-right" : "text-left",
-      )}
-    >
+    <th className={cn("py-2 pr-3 font-normal", align === "right" ? "text-right" : "text-left")}>
       {children}
     </th>
   );
 }
 
-/** Sign → PnL colour class: positive success, negative destructive, flat muted. */
+/** Sign -> PnL colour class: positive success, negative destructive, flat/unknown muted. */
 function pnlTone(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "text-[var(--vex-text-3)]";
   if (value > 0) return "text-[var(--color-success)]";
   if (value < 0) return "text-destructive";
   return "text-[var(--vex-text-2)]";
-}
-
-/**
- * Portfolio delta colour — never red. Green on a gain (or flat); a dip stays
- * neutral-muted rather than green, so a loss isn't mislabelled as a gain.
- */
-function pfDeltaTone(change: number): string {
-  return change >= 0 ? "text-[var(--color-success)]" : "text-[var(--vex-text-2)]";
-}
-
-/** USD display — the primary unit everywhere. `signed` prefixes +/- for deltas. */
-function usdText(
-  usd: number | null | undefined,
-  opts: { readonly signed?: boolean } = {},
-): string {
-  if (usd === null || usd === undefined || !Number.isFinite(usd)) return EM_DASH;
-  if (!opts.signed) return formatUsd(usd);
-  return `${usd >= 0 ? "+" : "-"}${formatUsd(Math.abs(usd))}`;
 }

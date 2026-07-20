@@ -26,6 +26,8 @@ import type {
   SessionCreateResult,
   SessionDeleteInput,
   SessionDeleteResult,
+  SessionExportMarkdownInput,
+  SessionExportMarkdownResult,
   SessionList,
   SessionListItem,
   SessionModelDto,
@@ -175,6 +177,24 @@ export function useDeleteSession(): UseMutationResult<
         useUiStore.getState().setActiveSessionId(null);
       }
     },
+  });
+}
+
+/**
+ * Export the session as a Markdown transcript. Main owns the native save
+ * dialog and the destination path — this hook never sees or caches a path,
+ * only the `saved | cancelled` outcome. No cache invalidation: the export
+ * does not change any session state the sidebar/detail queries depend on.
+ */
+export function useExportSessionMarkdown(): UseMutationResult<
+  Result<SessionExportMarkdownResult>,
+  Error,
+  SessionExportMarkdownInput
+> {
+  return useMutation({
+    mutationFn: (input: SessionExportMarkdownInput) =>
+      window.vex.sessions.exportMarkdown(input),
+    retry: false,
   });
 }
 

@@ -36,10 +36,7 @@ import {
   type MissionRunContractSnapshot,
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
-import {
-  computeHardDeadlineMs,
-  resolveDurationMinutes,
-} from "../../mission/mission-deadline.js";
+import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
 import { captureMissionStart } from "../../mission/mission-results-capture.js";
 import { forceLiquidateOnDeadline } from "./mission-liquidate-hook.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
@@ -71,6 +68,11 @@ type Provider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>;
 type ProviderConfig = NonNullable<
   Awaited<ReturnType<Provider["loadConfig"]>>
 >;
+
+/** Epoch ms -> ISO string for the agent-facing Runtime Clock, or null. */
+function deadlineMsToIso(deadlineMs: number | null | undefined): string | null {
+  return deadlineMs != null ? new Date(deadlineMs).toISOString() : null;
+}
 
 // ── runPreparedMissionStart ─────────────────────────────────────
 
@@ -134,6 +136,7 @@ export async function runPreparedMissionStart(
     };
 
     const baseVisibility: ToolVisibilityBase = {
+      sessionId: prepared.sessionId,
       permission: prepared.permission,
       role: "parent",
       sessionKind: "mission",
@@ -154,20 +157,16 @@ export async function runPreparedMissionStart(
     // the run's IMMUTABLE started_at so it holds across wakes/resumes. Enforced
     // at the turn-loop boundary. Fail-open: an unparseable timestamp yields null
     // (no box) rather than a false early stop.
-    const missionDeadlineMs = computeHardDeadlineMs(
-      (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
-      resolveDurationMinutes(hydrated.context.missionDurationMinutes),
-    );
-    // Show the agent the SAME hard deadline the loop enforces (via the Runtime
-    // Clock), so it can flatten positions before the cutoff instead of being
-    // stopped mid-trade with open bags.
-    const missionDeadlineIso =
-      missionDeadlineMs != null ? new Date(missionDeadlineMs).toISOString() : null;
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
-      missionDeadlineMs,
+      // Deadline from FROZEN inputs (run started_at + snapshot durationMinutes),
+      // never the live mission row — see mission-deadline.ts.
+      missionDeadlineMs: resolveFrozenDeadlineMs(
+        hydrated.context.missionRunStartedAt,
+        prepared.contractSnapshot,
+      ),
     };
 
     const result = await runTurnLoop(
@@ -175,7 +174,7 @@ export async function runPreparedMissionStart(
         ...hydrated.context,
         missionRunId: prepared.runId,
         sessionKind: "mission",
-        missionDeadline: missionDeadlineIso ?? hydrated.context.missionDeadline ?? null,
+        missionDeadline: deadlineMsToIso(loopConfig.missionDeadlineMs) ?? hydrated.context.missionDeadline ?? null,
       },
       hydrated.messages,
       hydrated.summary,
@@ -282,6 +281,7 @@ export async function resumePreparedMissionRun(
     };
 
     const baseVisibility: ToolVisibilityBase = {
+      sessionId: prepared.run.sessionId,
       permission,
       role: "parent",
       sessionKind: "mission",
@@ -302,20 +302,17 @@ export async function resumePreparedMissionRun(
     // the run's IMMUTABLE started_at so it holds across wakes/resumes. Enforced
     // at the turn-loop boundary. Fail-open: an unparseable timestamp yields null
     // (no box) rather than a false early stop.
-    const missionDeadlineMs = computeHardDeadlineMs(
-      (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
-      resolveDurationMinutes(hydrated.context.missionDurationMinutes),
-    );
-    // Show the agent the SAME hard deadline the loop enforces (via the Runtime
-    // Clock), so it can flatten positions before the cutoff instead of being
-    // stopped mid-trade with open bags.
-    const missionDeadlineIso =
-      missionDeadlineMs != null ? new Date(missionDeadlineMs).toISOString() : null;
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
-      missionDeadlineMs,
+      // Deadline from FROZEN inputs (run started_at + the SAME snapshot the run
+      // was committed with), so a wake/resume re-derives the identical box —
+      // never the live mission row. See mission-deadline.ts.
+      missionDeadlineMs: resolveFrozenDeadlineMs(
+        hydrated.context.missionRunStartedAt,
+        prepared.run.contractSnapshotJson,
+      ),
     };
 
     const result = await runTurnLoop(
@@ -323,7 +320,7 @@ export async function resumePreparedMissionRun(
         ...hydrated.context,
         missionRunId: prepared.runId,
         sessionKind: "mission",
-        missionDeadline: missionDeadlineIso ?? hydrated.context.missionDeadline ?? null,
+        missionDeadline: deadlineMsToIso(loopConfig.missionDeadlineMs) ?? hydrated.context.missionDeadline ?? null,
       },
       hydrated.messages,
       hydrated.summary,

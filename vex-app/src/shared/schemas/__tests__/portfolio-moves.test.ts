@@ -41,14 +41,17 @@ describe("move item schema (tolerant)", () => {
       productType: "spot",
       venue: "kyberswap",
       inputToken: "USDC",
+      inputTokenSymbol: "USDC",
       inputAmount: "100",
       outputToken: "ETH",
+      outputTokenSymbol: "ETH",
       outputAmount: "0.03",
       valueUsd: 100,
       captureStatus: "executed",
       instrumentKey: "eth-usdc",
       chain: "ethereum",
       txRef: "0xabc123",
+      walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
       createdAt: ISO,
       ...overrides,
     };
@@ -105,8 +108,10 @@ describe("move item schema (tolerant)", () => {
           productType: null,
           venue: null,
           inputToken: null,
+          inputTokenSymbol: null,
           inputAmount: null,
           outputToken: null,
+          outputTokenSymbol: null,
           outputAmount: null,
           valueUsd: null,
           captureStatus: null,
@@ -122,9 +127,57 @@ describe("move item schema (tolerant)", () => {
     ).toBe(true);
   });
 
+  it("accepts a null walletAddress (tolerant)", () => {
+    expect(
+      moveItemSchema.safeParse(itemFixture({ walletAddress: null })).success,
+    ).toBe(true);
+  });
+
+  it("rejects a missing walletAddress (required, nullable)", () => {
+    const { walletAddress: _w, ...withoutWallet } = itemFixture();
+    expect(moveItemSchema.safeParse(withoutWallet).success).toBe(false);
+  });
+
   it("rejects a missing chain (NOT NULL in the DDL)", () => {
     const { chain: _chain, ...withoutChain } = itemFixture();
     expect(moveItemSchema.safeParse(withoutChain).success).toBe(false);
+  });
+
+  it("accepts absent token symbols as null and bounds present symbols", () => {
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({ inputTokenSymbol: null, outputTokenSymbol: null }),
+      ).success,
+    ).toBe(true);
+    expect(
+      moveItemSchema.safeParse(itemFixture({ outputTokenSymbol: "x".repeat(65) }))
+        .success,
+    ).toBe(false);
+  });
+
+  // ── local balances-derived symbol fallback (WP-L2 sibling change) ──────
+
+  it("defaults absent inputTokenLocalSymbol/outputTokenLocalSymbol to null (tolerant of pre-existing payloads)", () => {
+    const parsed = moveItemSchema.safeParse(itemFixture());
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.inputTokenLocalSymbol).toBeNull();
+      expect(parsed.data.outputTokenLocalSymbol).toBeNull();
+    }
+  });
+
+  it("accepts an explicit local symbol on either leg and bounds it like the captured symbol", () => {
+    const parsed = moveItemSchema.safeParse(
+      itemFixture({ inputTokenLocalSymbol: "WIF", outputTokenLocalSymbol: null }),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.inputTokenLocalSymbol).toBe("WIF");
+
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({ outputTokenLocalSymbol: "x".repeat(65) }),
+      ).success,
+    ).toBe(false);
   });
 
   it("rejects an unknown key (strict)", () => {
@@ -147,14 +200,17 @@ describe("moves dto schema (array + cap)", () => {
     productType: null,
     venue: null,
     inputToken: "USDC",
+    inputTokenSymbol: null,
     inputAmount: "1",
     outputToken: "SOL",
+    outputTokenSymbol: null,
     outputAmount: "1",
     valueUsd: null,
     captureStatus: "filled",
     instrumentKey: null,
     chain: "solana",
     txRef: null,
+    walletAddress: null,
     createdAt: ISO,
   };
 

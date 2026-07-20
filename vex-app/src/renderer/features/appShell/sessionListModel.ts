@@ -48,6 +48,22 @@ export function filterSessionsByMode(
   return rows.filter((row) => row.mode === filter);
 }
 
+/**
+ * Case-insensitive title search for the sessions register. Search the same
+ * resolved title the row renders so legacy missions (which fall back to their
+ * initial goal) remain discoverable without exposing a second naming rule.
+ */
+export function filterSessionsByTitle(
+  rows: readonly SessionListItem[],
+  search: string,
+): readonly SessionListItem[] {
+  const needle = search.trim().toLowerCase();
+  if (needle.length === 0) return rows;
+  return rows.filter((row) =>
+    resolveSessionTitle(row).toLowerCase().includes(needle),
+  );
+}
+
 export function groupSessions(rows: readonly SessionListItem[]): readonly SessionGroup[] {
   // Pinned rows live in their own bucket and are excluded from the time
   // buckets — a pinned row should not appear twice. Within the bucket we
@@ -101,13 +117,17 @@ const SESSION_TITLE_DISPLAY_MAX = 48;
  * keeps tooltips / aria-labels predictable.
  */
 export function getSessionTitle(row: SessionListItem): string {
+  return truncateForDisplay(resolveSessionTitle(row));
+}
+
+function resolveSessionTitle(row: SessionListItem): string {
   if (row.title !== null) {
     const trimmed = row.title.trim();
-    if (trimmed.length > 0) return truncateForDisplay(trimmed);
+    if (trimmed.length > 0) return trimmed;
   }
   if (row.initialGoal !== null) {
     const trimmed = row.initialGoal.trim();
-    if (trimmed.length > 0) return truncateForDisplay(trimmed);
+    if (trimmed.length > 0) return trimmed;
   }
   return row.mode === "mission" ? "Mission setup" : "Agent session";
 }

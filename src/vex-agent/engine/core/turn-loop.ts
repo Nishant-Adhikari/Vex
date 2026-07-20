@@ -130,10 +130,11 @@ export async function runTurnLoop(
   }
 
   for (let iteration = 0; iteration < loopConfig.maxIterations; iteration++) {
-    // Hard mission deadline — the agent-independent time-box. Checked FIRST each
-    // iteration so an expired run stops with `deadline_reached` no matter what
-    // the agent would otherwise do (it has, historically, both blown past the
-    // box by hours and false-stopped early). Finalize maps it to a terminal run.
+    // Hard mission deadline — the agent-independent time-box. Checked FIRST
+    // each iteration, before any other guard or inference call, so an
+    // expired run stops with `deadline_reached` no matter what the agent is
+    // doing. finalizeMissionRunStatus maps it to the existing terminal
+    // status taxonomy (no new status) via the standard business-stop path.
     if (
       loopConfig.missionDeadlineMs != null &&
       Date.now() >= loopConfig.missionDeadlineMs

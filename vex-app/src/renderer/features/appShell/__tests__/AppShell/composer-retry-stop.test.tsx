@@ -24,6 +24,8 @@ vi.mock("@hugeicons/react", () => ({
 
 vi.mock("@hugeicons/core-free-icons", () => ({
   Add01Icon: "Add01Icon",
+  AnalyticsUpIcon: "AnalyticsUpIcon",
+  Download01Icon: "Download01Icon",
   AiChat01Icon: "AiChat01Icon",
   // S5 act ledger — ToolLedger/toolGlyph.ts imports these four.
   AiWebBrowsingIcon: "AiWebBrowsingIcon",
@@ -45,8 +47,8 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   Clock03Icon: "Clock03Icon",
   DatabaseLightningIcon: "DatabaseLightningIcon",
   Delete02Icon: "Delete02Icon",
-  Exchange01Icon: "Exchange01Icon",
-  Fuel01Icon: "Fuel01Icon",
+  FireIcon: "FireIcon",
+  ChartLineData01Icon: "ChartLineData01Icon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   Brain01Icon: "Brain01Icon",
   AnalyticsUpIcon: "AnalyticsUpIcon",
@@ -62,7 +64,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   StarIcon: "StarIcon",
   StopCircleIcon: "StopCircleIcon",
   Target02Icon: "Target02Icon",
-  Wallet01Icon: "Wallet01Icon",
+  PercentSquareIcon: "PercentSquareIcon",
   ZapIcon: "ZapIcon",
 }));
 
@@ -259,6 +261,19 @@ beforeEach(() => {
       messages: {
         list: messagesListMock,
       },
+      // HL Phase 4a: AppShell mounts the Hyperliquid positions live-sync hook
+      // (`useHyperliquidPositions`), which subscribes via window.vex.hyperliquid.
+      // No-op stubs keep shell tests independent of the HL bridge surface.
+      hyperliquid: {
+        getPositions: vi.fn().mockResolvedValue({ ok: true, data: { sessionId: "", positions: [] } }),
+        getCandles: vi.fn().mockResolvedValue({ ok: true, data: { coin: "", interval: "1h", candles: [] } }),
+        listRiskProposals: vi.fn().mockResolvedValue({ ok: true, data: { sessionId: "", proposals: [] } }),
+        confirmRiskProposal: vi.fn(),
+        onPositionsUpdate: () => () => {},
+        onRiskProposalUpdate: () => () => {},
+        onWorkspaceMode: () => () => {},
+        exitWorkspace: vi.fn(),
+      },
       // Agent integration puzzle 2/09 + F5: SessionPanel mounts
       // `useTranscriptLiveSync` + `useStreamPreviewSync` +
       // `useControlStateLiveSync`, which subscribe to the engine bridge. Stubs
@@ -281,6 +296,42 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
+  it("surfaces a timed-out turn after tool activity without offering a blind Retry", async () => {
+    const row = makeAgentRow("Timed-out chat");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: {
+          text: null,
+          toolCallsMade: 3,
+          pendingApprovals: [],
+          stopReason: "timeout",
+          missionStatus: null,
+          treatedAsInitialGoal: false,
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("Timed-out chat");
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "bridge in one shot" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await screen.findByText(
+      "Vex stopped before completing the task because this turn timed out. Review the transcript before trying again; earlier steps may have completed.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Retry sending the message" }),
+    ).toBeNull();
+    expect(draft.value).toBe("");
+    expect(chatSubmitMock).toHaveBeenCalledTimes(1);
+  });
+
   it("arms an inline Retry on a retryable provider error and re-sends the same message", async () => {
     const row = makeAgentRow("Retry chat");
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
@@ -511,7 +562,7 @@ describe("AppShell", () => {
       cancel,
     });
 
-    renderShell();
+    const { container } = renderShell();
     await screen.findByText("Stoppable chat");
 
     const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
@@ -519,6 +570,12 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     const stopBtn = await screen.findByRole("button", { name: "Stop generating" });
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-vex-tape-state="live"]'),
+      ).not.toBeNull(),
+    );
+    expect(screen.queryByText("Working…")).toBeNull();
     // Pins the fix: a submit-typed Stop would re-run onSubmit (re-sending the
     // draft) instead of only cancelling the turn.
     expect(stopBtn.getAttribute("type")).toBe("button");
@@ -592,7 +649,9 @@ describe("AppShell", () => {
     // activeSessionId is set but the detail (activeSession) is still unresolved
     // → quick-action chips stay hidden even though the transcript query
     // succeeded empty (gated on a resolved activeSession, no flicker).
-    expect(screen.queryByRole("button", { name: /wallet balances/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /hunt trending memecoins/i }),
+    ).toBeNull();
   });
 
   it("enables Send when the detail query errors (bug A)", async () => {
@@ -625,7 +684,9 @@ describe("AppShell", () => {
       }),
     );
     // Errored detail → activeSession null → chips hidden (no flicker).
-    expect(screen.queryByRole("button", { name: /wallet balances/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /hunt trending memecoins/i }),
+    ).toBeNull();
   });
 
 });

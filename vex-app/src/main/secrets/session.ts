@@ -32,6 +32,15 @@ import { log } from "../logger/index.js";
 let unlockedMasterPassword: string | null = null;
 
 /**
+ * Placeholder correlation id for session-layer errors built outside an IPC
+ * handler (this module has no `requestId` of its own). `registerHandler`
+ * rewrites `correlationId` to the request's real id whenever it detects a
+ * mismatch (see `register-handler.ts`), so this value never reaches the
+ * renderer — it only needs to be a non-empty string to satisfy `VexError`.
+ */
+const SESSION_LOCAL_CORRELATION_ID = "secrets-session";
+
+/**
  * Stable provider handed to the root keystore-password chokepoint (`@utils/env`).
  * Reads `unlockedMasterPassword` LIVE at decrypt time, so in-process signing
  * (chat / mission / approval / protocol handlers) can decrypt the wallet key
@@ -60,6 +69,58 @@ function toPublicError(cause: unknown): Result<never> {
       retryable: true,
       userActionable: true,
       redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
+    });
+  }
+
+  // The vault was written by a newer build — either the OUTER envelope
+  // (detected before decryption, so the password is NOT necessarily
+  // verified) or the decrypted contents version (after auth passed).
+  // Distinct from `invalid_password` so the unlock throttle never advances
+  // and the user is told to update Vex, not to retype the password.
+  if (cause instanceof LocalSecretVaultError && cause.code === "incompatible") {
+    return err({
+      code: "wallet.vault_incompatible",
+      domain: "wallet",
+      message: "This vault was created by a newer version of Vex. Update Vex to open it.",
+      retryable: false,
+      userActionable: true,
+      redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
+    });
+  }
+
+  // Envelope/KDF-params/plaintext structurally invalid. Distinct from
+  // `wallet.keystore_corrupt` (the separate wallet SIGNING keystore) so the
+  // user is never told their wallet is broken when it is the API-secrets
+  // vault. Never advances the unlock throttle — a corrupt file is not an
+  // attacker/typo signal.
+  // Crypto-runtime/allocation failure — the vault may be perfectly intact.
+  // RETRYABLE, and never "restore from a backup": that guidance is for a
+  // genuinely corrupt file, not a transient system error. Never advances
+  // the unlock throttle (the gate keys on wallet.password_invalid only).
+  if (cause instanceof LocalSecretVaultError && cause.code === "unavailable") {
+    return err({
+      code: "wallet.vault_unavailable",
+      domain: "wallet",
+      message: "Unlocking failed due to a system error. Try again.",
+      retryable: true,
+      userActionable: true,
+      redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
+    });
+  }
+
+  if (cause instanceof LocalSecretVaultError && cause.code === "corrupt") {
+    return err({
+      code: "wallet.vault_corrupt",
+      domain: "wallet",
+      message:
+        "The secret vault file is unreadable. Restore it from a backup — do not wipe your wallet keystores.",
+      retryable: false,
+      userActionable: true,
+      redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
     });
   }
 
@@ -71,6 +132,7 @@ function toPublicError(cause: unknown): Result<never> {
       retryable: false,
       userActionable: true,
       redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
     });
   }
 
@@ -82,6 +144,7 @@ function toPublicError(cause: unknown): Result<never> {
     retryable: true,
     userActionable: true,
     redacted: true,
+    correlationId: SESSION_LOCAL_CORRELATION_ID,
   });
 }
 
@@ -224,6 +287,7 @@ export function requireUnlockedMasterPassword(): Result<string> {
     retryable: false,
     userActionable: true,
     redacted: true,
+    correlationId: SESSION_LOCAL_CORRELATION_ID,
   });
 }
 

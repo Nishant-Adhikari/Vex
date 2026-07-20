@@ -24,6 +24,8 @@ vi.mock("@hugeicons/react", () => ({
 
 vi.mock("@hugeicons/core-free-icons", () => ({
   Add01Icon: "Add01Icon",
+  AnalyticsUpIcon: "AnalyticsUpIcon",
+  Download01Icon: "Download01Icon",
   AiChat01Icon: "AiChat01Icon",
   // S5 act ledger — ToolLedger/toolGlyph.ts imports these four.
   AiWebBrowsingIcon: "AiWebBrowsingIcon",
@@ -45,8 +47,8 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   Clock03Icon: "Clock03Icon",
   DatabaseLightningIcon: "DatabaseLightningIcon",
   Delete02Icon: "Delete02Icon",
-  Exchange01Icon: "Exchange01Icon",
-  Fuel01Icon: "Fuel01Icon",
+  FireIcon: "FireIcon",
+  ChartLineData01Icon: "ChartLineData01Icon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   Brain01Icon: "Brain01Icon",
   AnalyticsUpIcon: "AnalyticsUpIcon",
@@ -62,7 +64,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   StarIcon: "StarIcon",
   StopCircleIcon: "StopCircleIcon",
   Target02Icon: "Target02Icon",
-  Wallet01Icon: "Wallet01Icon",
+  PercentSquareIcon: "PercentSquareIcon",
   ZapIcon: "ZapIcon",
 }));
 
@@ -258,6 +260,19 @@ beforeEach(() => {
       // which pages through window.vex.messages.list. Default = empty page.
       messages: {
         list: messagesListMock,
+      },
+      // HL Phase 4a: AppShell mounts the Hyperliquid positions live-sync hook
+      // (`useHyperliquidPositions`), which subscribes via window.vex.hyperliquid.
+      // No-op stubs keep shell tests independent of the HL bridge surface.
+      hyperliquid: {
+        getPositions: vi.fn().mockResolvedValue({ ok: true, data: { sessionId: "", positions: [] } }),
+        getCandles: vi.fn().mockResolvedValue({ ok: true, data: { coin: "", interval: "1h", candles: [] } }),
+        listRiskProposals: vi.fn().mockResolvedValue({ ok: true, data: { sessionId: "", proposals: [] } }),
+        confirmRiskProposal: vi.fn(),
+        onPositionsUpdate: () => () => {},
+        onRiskProposalUpdate: () => () => {},
+        onWorkspaceMode: () => () => {},
+        exitWorkspace: vi.fn(),
       },
       // Agent integration puzzle 2/09 + F5: SessionPanel mounts
       // `useTranscriptLiveSync` + `useStreamPreviewSync` +

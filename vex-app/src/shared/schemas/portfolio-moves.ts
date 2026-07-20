@@ -26,6 +26,7 @@
  */
 
 import { z } from "zod";
+import { TOKEN_SYMBOL_MAX_LENGTH } from "../token-symbol-sanitizer.js";
 
 /**
  * Fixed server-side row cap. Shared by BOTH the SQL `LIMIT` and the DTO
@@ -34,6 +35,14 @@ import { z } from "zod";
  * validation). The renderer displays its own, smaller window by slicing.
  */
 export const MOVES_MAX = 50;
+
+/**
+ * Maximum display-symbol length extracted from a capture item. Re-exports
+ * the shared sanitizer's bound so the SQL `LEFT(...)` clamp, the JS-side
+ * `sanitizeTokenSymbol` check, and this IPC schema's `.max(...)` can never
+ * drift apart.
+ */
+export const MOVE_TOKEN_SYMBOL_MAX = TOKEN_SYMBOL_MAX_LENGTH;
 
 /**
  * IPC input for `vex.portfolio.listMoves`. `.strict()` rejects any extra key;
@@ -63,6 +72,26 @@ export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
  *                      tolerance even though the DDL is NOT NULL.
  *  - `inputToken` / `inputAmount` / `outputToken` / `outputAmount` — the swap
  *                      legs as the engine recorded them (all nullable).
+ *  - `inputTokenSymbol` / `outputTokenSymbol` — bounded, display-only symbols
+ *                      recovered from the activity row's exact capture item
+ *                      (`protocol_capture_items.trade_capture`); nullable for
+ *                      historical/incomplete captures. UNTRUSTED: any on-chain
+ *                      token can self-declare this metadata, so the renderer
+ *                      must never let it override `inputToken`/`outputToken`
+ *                      identity or claim a brand icon without independent
+ *                      corroboration — see `token-symbol-sanitizer.ts`.
+ *  - `inputTokenLocalSymbol` / `outputTokenLocalSymbol` — a FALLBACK, bounded
+ *                      display symbol resolved from THIS WALLET's OWN
+ *                      `proj_balances` rows (the balance sync's `token_symbol`
+ *                      for that exact `token_address`), consulted ONLY when
+ *                      the capture item recorded no usable symbol (the legacy
+ *                      "raw contract address" rows). Defaults to `null` so
+ *                      pre-existing payloads still parse. EQUALLY UNTRUSTED —
+ *                      `proj_balances.token_symbol` is itself provider-
+ *                      supplied metadata, so this field is gated by the exact
+ *                      same brand-collision rule as the captured symbol (see
+ *                      `MovesBlock.tsx`'s `tokenDisplay`) and MUST NEVER grant
+ *                      a brand icon on its own.
  *  - `valueUsd`      — notional USD; `null` when the engine could not price it.
  *  - `captureStatus` — the trade-capture lifecycle status string (tolerant).
  *  - `instrumentKey` — opaque instrument identifier; `null` when absent.
@@ -75,6 +104,11 @@ export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
  *                      (`txHash` for EVM, `signature` for Solana); `null` when
  *                      the capture recorded neither. The raw `external_refs`
  *                      JSONB is still never shipped to the renderer.
+ *  - `walletAddress` — `proj_activity.wallet_address`: the session's OWN wallet
+ *                      that executed the move (already server-side scoped to the
+ *                      session — never renderer-supplied). Powers the account
+ *                      block-explorer link for rows that carry no `txRef` (e.g.
+ *                      HyperCore fills). Nullable for tolerance.
  *  - `createdAt`     — activity timestamp (offset ISO; NOT NULL in the DDL).
  */
 export const moveItemSchema = z
@@ -84,14 +118,29 @@ export const moveItemSchema = z
     productType: z.string().nullable(),
     venue: z.string().nullable(),
     inputToken: z.string().nullable(),
+    inputTokenSymbol: z.string().min(1).max(MOVE_TOKEN_SYMBOL_MAX).nullable(),
+    inputTokenLocalSymbol: z
+      .string()
+      .min(1)
+      .max(MOVE_TOKEN_SYMBOL_MAX)
+      .nullable()
+      .default(null),
     inputAmount: z.string().nullable(),
     outputToken: z.string().nullable(),
+    outputTokenSymbol: z.string().min(1).max(MOVE_TOKEN_SYMBOL_MAX).nullable(),
+    outputTokenLocalSymbol: z
+      .string()
+      .min(1)
+      .max(MOVE_TOKEN_SYMBOL_MAX)
+      .nullable()
+      .default(null),
     outputAmount: z.string().nullable(),
     valueUsd: z.number().nullable(),
     captureStatus: z.string().nullable(),
     instrumentKey: z.string().nullable(),
     chain: z.string(),
     txRef: z.string().nullable(),
+    walletAddress: z.string().nullable(),
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();

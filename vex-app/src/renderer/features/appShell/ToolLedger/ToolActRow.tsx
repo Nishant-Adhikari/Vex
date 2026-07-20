@@ -1,10 +1,10 @@
 /**
  * THE ACT LEDGER — one registered act (S5): a tool call plus its merged
- * output. The transcript shows REGISTERED FACTS: the DTO carries no per-call
- * status or duration, so the row is quiet — name + Args (+ Output when a
- * result paired in the same run). The only stamp the data supports is
- * "Awaiting signature": a pending approval whose `toolCallId` matches this
- * act (rendered as a sibling link, see `ApprovalLinkStamp`).
+ * output. The transcript shows REGISTERED FACTS: most rows stay quiet — name
+ * + Args (+ Output when a result paired in the same run). Two deterministic
+ * stamps are supported: "Awaiting signature" from the approval queue, and
+ * "Confirmed" when a `wallet_send_confirm` result carries the tool's strict
+ * `{ status: "confirmed", txHash }` output contract.
  *
  * Collapsed by default (today's disclosure contract). The expanded body is a
  * recessed well; args/output are sanitized strings rendered as TEXT (`<pre>`
@@ -15,11 +15,53 @@
 
 import { useId, useState, type JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowRight01Icon,
+  CheckmarkCircle01Icon,
+} from "@hugeicons/core-free-icons";
 import { cn } from "../../../lib/utils.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
+import type { HyperliquidDisplayBlock } from "@shared/schemas/hyperliquid.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
+import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
 import { toolGlyph } from "./toolGlyph.js";
+
+/**
+ * Recognise only the successful wallet-confirm output contract. Tool output
+ * is still treated as untrusted text: malformed JSON, lookalike tools, a
+ * missing hash, or any non-confirmed status all fail closed to no stamp.
+ */
+function isConfirmedWalletTransfer(act: ToolCallActView): boolean {
+  if (act.toolName !== "wallet_send_confirm" || act.output === null) return false;
+  try {
+    const parsed: unknown = JSON.parse(act.output);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+    const record = parsed as Record<string, unknown>;
+    return (
+      record["status"] === "confirmed" &&
+      typeof record["txHash"] === "string" &&
+      record["txHash"].length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+function ConfirmedStamp(): JSX.Element {
+  return (
+    <span
+      role="status"
+      aria-label="Transaction confirmed"
+      data-vex-transaction-status="confirmed"
+      className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
+    >
+      <HugeiconsIcon icon={CheckmarkCircle01Icon} size={12} aria-hidden />
+      Confirmed
+    </span>
+  );
+}
 
 /** Section label inside the expanded well — mono microtype (10px floor). */
 function SectionHeading({
@@ -63,6 +105,29 @@ function SectionBody({
   );
 }
 
+/** The receipt detail (coin/status/etc.) — the brand wordmark is drawn once in
+ * the frame header, so this is the mono, scannable remainder only. */
+function hyperliquidDetail(block: HyperliquidDisplayBlock): string {
+  switch (block.kind) {
+    case "order_receipt":
+      return `${block.coin} · ${block.status}`;
+    case "position_summary":
+      return `${block.side} ${block.size} ${block.coin} · ${block.protectionState}`;
+    case "risk_proposal":
+      return `risk proposal · ${block.proposal.coin} · ${block.proposal.policy.leverageCapDefault}x cap`;
+    case "workspace_mode_request":
+      // The agent-emitted request that drives the Hypervexing workspace; the
+      // transcript states plainly which way it asked to move.
+      return block.mode === "hypervexing"
+        ? "open Hypervexing workspace"
+        : "close Hypervexing workspace";
+    default: {
+      const exhaustive: never = block;
+      throw new Error(`Unhandled Hyperliquid display block: ${String(exhaustive)}`);
+    }
+  }
+}
+
 export function ToolActRow({
   act,
   pendingApprovalId = null,
@@ -73,12 +138,42 @@ export function ToolActRow({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
+  const hyperliquidDisplay = act.toolDisplayBlock ?? null;
+  const confirmed = isConfirmedWalletTransfer(act);
   return (
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
-      className="rounded-[6px] border border-[var(--vex-line)] bg-white/[0.02]"
+      data-hyperliquid-card={hyperliquidDisplay === null ? undefined : "true"}
+      className={cn(
+        // The Hyperliquid frame wears a 2px accent LEFT SPINE (design spec
+        // §4.5) + a hairline elsewhere; plain acts keep the full hairline.
+        "overflow-hidden rounded-[6px] border bg-white/[0.02]",
+        hyperliquidDisplay === null
+          ? "border-[var(--vex-line)]"
+          : "border-[var(--vex-line)] border-l-2 border-l-[var(--vex-accent)]",
+      )}
     >
+      {hyperliquidDisplay !== null ? (
+        // Protocol frame header: the HL logomark (full color — the mark is its
+        // own brand punctuation) + the serif "Hyperliquid" wordmark accent,
+        // then the mono, scannable receipt detail.
+        <div className="flex items-center gap-2 border-b border-[var(--vex-line)] px-2.5 py-1.5">
+          <img
+            src="/protocols/hl.png"
+            alt=""
+            aria-hidden
+            draggable={false}
+            className="h-4 w-4 shrink-0 rounded-full object-cover"
+          />
+          <span className="shrink-0 font-serif text-[14px] italic leading-none text-[var(--vex-accent-text)]">
+            Hyperliquid
+          </span>
+          <span className="min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]">
+            {hyperliquidDetail(hyperliquidDisplay)}
+          </span>
+        </div>
+      ) : null}
       <div className="flex items-center gap-2 pr-2">
         <button
           type="button"
@@ -107,7 +202,13 @@ export function ToolActRow({
             )}
           />
         </button>
-        {pendingApprovalId !== null ? (
+        {/* Explorer links are SIBLINGS of the disclosure button — anchors must
+            never nest inside a button (invalid HTML). Rendered only when a
+            paired result deposited resolvable refs; inert otherwise. */}
+        <ExplorerRefLinks refs={act.explorerRefs} />
+        {confirmed ? (
+          <ConfirmedStamp />
+        ) : pendingApprovalId !== null ? (
           <ApprovalLinkStamp approvalId={pendingApprovalId} />
         ) : null}
       </div>

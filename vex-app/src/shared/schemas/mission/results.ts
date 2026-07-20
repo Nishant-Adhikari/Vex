@@ -1,57 +1,98 @@
+/**
+ * Mission results ledger — read-only transport schemas for
+ * `mission.listResults` / `mission.getResultForRun`.
+ *
+ * The ledger is written by the engine (migration 041 + capture hooks in
+ * `engine/mission/mission-results-capture.ts`); these are the renderer-
+ * facing reads for the Mission History view and the post-mission summary
+ * card. Both queries are PER-WALLET — there is no "list every wallet's
+ * missions" read.
+ *
+ * Naming: "mission result (ETH)", never "performance" — the number is an
+ * honest ETH-denominated PnL record, not a guarantee of future results.
+ * `stopReason` is the raw engine `StopReason` (mirrors
+ * `src/vex-agent/engine/types.ts`); mapping it to a display outcome (e.g. a
+ * reached time-box is not a failure) is a pure function in the renderer
+ * model, never in this schema or in SQL.
+ */
+
 import { z } from "zod";
 
-/**
- * Mission results ledger — read DTO + `mission.listResults` contract.
- *
- * One row per finalized mission run (see engine migration 038). PNL is in ETH
- * (native + WETH bankroll delta, netting gas/fees); USD prices are display-only.
- * `openPositionsCount` is the number of non-ETH bags still held at close (kept
- * out of the PNL figure).
- */
+const MAX_RESULTS_LIMIT = 100;
+const DEFAULT_RESULTS_LIMIT = 50;
+
+/** Mirrors `mission_results.outcome` (migration 041) — the RAW run-level outcome. */
+export const missionResultOutcomeSchema = z.enum([
+  "running",
+  "completed",
+  "cancelled",
+  "failed",
+  "stopped",
+]);
+export type MissionResultOutcome = z.infer<typeof missionResultOutcomeSchema>;
+
 export const missionResultDtoSchema = z
   .object({
-    missionRunId: z.string(),
-    seqNo: z.number().int(),
+    missionRunId: z.string().min(1),
+    seqNo: z.number().int().positive(),
     goalSnippet: z.string().nullable(),
-    walletAddress: z.string(),
-    chainId: z.number().int(),
-    startedAt: z.string(),
-    endedAt: z.string().nullable(),
-    durationS: z.number().nullable(),
+    startedAt: z.string().datetime({ offset: true }),
+    endedAt: z.string().datetime({ offset: true }).nullable(),
+    durationS: z.number().int().nullable(),
     bankrollStartEth: z.number().nullable(),
     bankrollEndEth: z.number().nullable(),
     pnlEth: z.number().nullable(),
     pnlPct: z.number().nullable(),
-    ethPriceUsdStart: z.number().nullable(),
     ethPriceUsdEnd: z.number().nullable(),
-    trades: z.number().int(),
-    outcome: z.string(),
-    openPositionsCount: z.number().int(),
+    trades: z.number().int().nonnegative(),
+    outcome: missionResultOutcomeSchema,
+    /** Raw engine StopReason (e.g. "goal_reached", "deadline_reached"), or null. */
+    stopReason: z.string().nullable(),
+    openPositionsCount: z.number().int().nonnegative(),
   })
   .strict();
-
 export type MissionResultDto = z.infer<typeof missionResultDtoSchema>;
 
-export const missionListResultsInputSchema = z
-  .object({ limit: z.number().int().min(1).max(200).optional() })
-  .strict();
+// ── listResults (per-wallet history, newest first) ──────────────
 
+export const missionListResultsInputSchema = z
+  .object({
+    walletAddress: z.string().min(1),
+    limit: z.number().int().min(1).max(MAX_RESULTS_LIMIT).optional(),
+  })
+  .strict();
 export type MissionListResultsInput = z.infer<typeof missionListResultsInputSchema>;
 
 export const missionListResultsResultSchema = z.array(missionResultDtoSchema);
-
 export type MissionListResultsResult = z.infer<typeof missionListResultsResultSchema>;
 
-export const missionGetSessionResultInputSchema = z
-  .object({ sessionId: z.string() })
-  .strict();
+export const DEFAULT_MISSION_RESULTS_LIMIT = DEFAULT_RESULTS_LIMIT;
 
-export type MissionGetSessionResultInput = z.infer<
-  typeof missionGetSessionResultInputSchema
->;
+// ── getResultForRun (single run, e.g. the post-mission summary card) ────
+
+export const missionGetResultForRunInputSchema = z
+  .object({
+    missionRunId: z.string().min(1),
+    walletAddress: z.string().min(1),
+  })
+  .strict();
+export type MissionGetResultForRunInput = z.infer<typeof missionGetResultForRunInputSchema>;
+
+export const missionGetResultForRunResultSchema = missionResultDtoSchema.nullable();
+export type MissionGetResultForRunResult = z.infer<typeof missionGetResultForRunResultSchema>;
+
+// ── getSessionResult (fork-only: latest finalized result for a SESSION) ──
+//
+// Upstream's `getResultForRun` is keyed on (missionRunId, walletAddress).
+// This fork additionally surfaces a post-mission summary card keyed on the
+// SESSION, which is what the renderer has in hand at that point (a session
+// maps 1:1 to a mission run, but the run id is not in the card's props).
+// Kept alongside — not instead of — upstream's run-keyed read.
+
+export const missionGetSessionResultInputSchema = z
+  .object({ sessionId: z.string().min(1) })
+  .strict();
+export type MissionGetSessionResultInput = z.infer<typeof missionGetSessionResultInputSchema>;
 
 export const missionGetSessionResultResultSchema = missionResultDtoSchema.nullable();
-
-export type MissionGetSessionResultResult = z.infer<
-  typeof missionGetSessionResultResultSchema
->;
+export type MissionGetSessionResultResult = z.infer<typeof missionGetSessionResultResultSchema>;

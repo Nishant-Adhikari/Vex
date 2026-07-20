@@ -55,9 +55,9 @@ export function SessionCreator({
   onOpenChange,
 }: SessionCreatorProps): JSX.Element {
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
-  // The sidebar's active mode filter (ALL/AGENT/MISSION). When the operator is
-  // already filtered to MISSION and opens "New session", default the dialog to
-  // Mission mode so they don't have to flip it by hand (saves the one click).
+  // The sidebar's active mode filter (all/agent/mission). When the operator is
+  // already filtered to Mission and opens "New session", default the dialog to
+  // Mission mode so they don't have to flip it by hand.
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
   const createSessionInitialMessage = useUiStore(
     (s) => s.createSessionInitialMessage,

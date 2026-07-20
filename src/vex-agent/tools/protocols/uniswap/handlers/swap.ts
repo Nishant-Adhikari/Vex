@@ -28,6 +28,7 @@ import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken, UniswapRoute } from "@tools/uniswap/types.js";
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
+import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import { pinTrackedToken } from "@vex-agent/db/repos/tracked-tokens.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
@@ -51,6 +52,39 @@ function nativeSymbolFor(chainId: number): string {
 function isNativeInput(input: string): boolean {
   const lower = input.toLowerCase();
   return lower === "native" || lower === "eth" || lower === NATIVE_TOKEN_ADDRESS.toLowerCase();
+}
+
+/**
+ * Classify the ECONOMIC direction of a swap from the native leg, independent of
+ * which tool (`uniswap.swap.buy` vs `uniswap.swap.sell`) was invoked. A token
+ * can legitimately be bought via the sell-tool (native-in) or sold via the
+ * buy-tool, so the tool name is not a reliable label for accounting.
+ *
+ * Spending native to acquire a token is a BUY; selling a token back to native
+ * is a SELL. Token↔token has no native anchor, so we fall back to the tool's
+ * declared side. This is used ONLY for what is recorded/reported — never for
+ * routing, quoting, or execution.
+ *
+ * A leg counts as native either when it is the `eth`/`native` sentinel
+ * (`isNative`) OR when the caller funded it with the chain's wrapped-native
+ * (WETH) ERC-20 address directly — the manifest documents `tokenIn` as
+ * "CONTRACT ADDRESS or native ETH", so a WETH-funded buy arrives as a plain
+ * ERC-20 leg with `isNative:false`. Spending WETH is economically identical to
+ * spending ETH, so both forms must classify the same way; otherwise a
+ * WETH→TOKEN buy routed via `uniswap.swap.sell` is recorded as a sell and the
+ * buy-side veto is skipped. The address compare is case-insensitive.
+ */
+export function classifyEconomicSide(args: {
+  readonly tokenIn: { readonly address: string; readonly isNative: boolean };
+  readonly tokenOut: { readonly address: string; readonly isNative: boolean };
+  readonly wrappedNative: string;
+  readonly side: "buy" | "sell";
+}): "buy" | "sell" {
+  const isNativeLeg = (leg: { address: string; isNative: boolean }) =>
+    leg.isNative || leg.address.toLowerCase() === args.wrappedNative.toLowerCase();
+  if (isNativeLeg(args.tokenIn)) return "buy"; // spending native/WETH to acquire a token = BUY
+  if (isNativeLeg(args.tokenOut)) return "sell"; // selling a token back to native/WETH = SELL
+  return args.side; // token↔token: fall back to the tool's side
 }
 
 /**
@@ -82,7 +116,7 @@ function requireDeployment(chain: string): UniswapDeployment {
     throw new VexError(
       ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
       `Uniswap has no verified deployment for chain "${chain}".`,
-      "Uniswap is available on Robinhood Chain and the major EVM chains; use kyberswap where it is supported.",
+      "Uniswap is a fallback venue on Robinhood Chain and the major EVM chains; prefer kyberswap, which is primary wherever it is supported.",
     );
   }
   return deployment;
@@ -252,11 +286,20 @@ async function executeUniswapSwap(
   }
   const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
 
+  // Economic direction for RECORDING/reporting — derived from the native leg,
+  // not the tool name (`side`). `side` still drives routing/execution below.
+  const economicSide = classifyEconomicSide({
+    tokenIn: { address: tokenIn.address, isNative: tokenIn.isNative },
+    tokenOut: { address: tokenOut.address, isNative: tokenOut.isNative },
+    wrappedNative: deployment.weth,
+    side,
+  });
+
   const quoted = await computeQuote(deployment, tokenIn, tokenOut, amountIn, slippageBps);
 
   if (p.dryRun === true) {
     return ok({
-      dryRun: true, side, chain: deployment.key,
+      dryRun: true, side: economicSide, chain: deployment.key,
       route: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null },
       amountOut: formatUnits(quoted.amountOut, tokenOut.decimals),
       minAmountOut: formatUnits(quoted.minAmountOut, tokenOut.decimals),
@@ -308,13 +351,15 @@ async function executeUniswapSwap(
   const { publicClient, walletClient } = getUniswapEvmClients(deployment, signer.privateKey as Hex);
   const router = routerFor(deployment, quoted.route);
 
-  // Non-native input (a sell): guard balance BEFORE approving/swapping, then set
-  // the EXACT-amount allowance to the allowlisted router. Over-balance amounts
-  // otherwise revert at the router's transferFrom with an opaque STF /
-  // TRANSFER_FROM_FAILED that mimics a missing allowance. Native input needs
-  // neither (the tx value carries the ETH).
+  // Guard the ERC-20 input balance before changing allowance or broadcasting.
   if (!tokenIn.isNative) {
-    await ensureUniswapSufficientBalance(publicClient, tokenIn.address, getAddress(signer.address), amountIn, tokenIn.symbol, tokenIn.decimals);
+    await ensureErc20Balance(publicClient, {
+      token: tokenIn.address,
+      owner: getAddress(signer.address),
+      required: amountIn,
+      decimals: tokenIn.decimals,
+      label: tokenIn.symbol,
+    });
     await ensureUniswapAllowanceExact(publicClient, walletClient, tokenIn.address, router, amountIn);
   }
 
@@ -366,7 +411,7 @@ async function executeUniswapSwap(
   return {
     success: true,
     output: JSON.stringify({
-      txHash, side, chain: deployment.key,
+      txHash, side: economicSide, chain: deployment.key,
       tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
       amountIn: amountInHuman, amountOut: amountOutHuman,
       route: { version: quoted.route.version, path: quoted.route.path },
@@ -381,15 +426,17 @@ async function executeUniswapSwap(
         outputToken: tokenOut.symbol,
         inputTokenAddress: tokenIn.address,
         outputTokenAddress: tokenOut.address,
-        inputAmount: amountInHuman,
+        inputAmount: amountInRaw,
+        // Quote-derived output can overstate an FoT recipient amount; receipt-log
+        // or balance-delta settlement measurement is tracked separately.
         outputAmount: amountOutHuman,
         signature: txHash,
         walletAddress: signer.address,
-        tradeSide: side,
-        instrumentKey: `${deployment.key}:${side === "buy" ? tokenOut.address : tokenIn.address}`,
+        tradeSide: economicSide,
+        instrumentKey: `${deployment.key}:${economicSide === "buy" ? tokenOut.address : tokenIn.address}`,
         valuationSource: "none",
-        settlementAssetKey: side === "buy" ? tokenIn.symbol : tokenOut.symbol,
-        meta: { dex: "uniswap", version: quoted.route.version, side },
+        settlementAssetKey: economicSide === "buy" ? tokenIn.symbol : tokenOut.symbol,
+        meta: { dex: "uniswap", version: quoted.route.version, side: economicSide },
       },
     },
   };
