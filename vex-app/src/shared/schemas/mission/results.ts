@@ -89,3 +89,21 @@ export type MissionGetResultForRunInput = z.infer<typeof missionGetResultForRunI
 
 export const missionGetResultForRunResultSchema = missionResultDtoSchema.nullable();
 export type MissionGetResultForRunResult = z.infer<typeof missionGetResultForRunResultSchema>;
+
+// ── getSessionResult (the session's newest run, for the in-session card) ──
+
+/**
+ * Session-scoped read powering the post-mission summary card in the session
+ * view. The session view knows its session id and not a wallet address, so
+ * this is deliberately NOT wallet-scoped like the two reads above — it
+ * answers "what did the run in THIS session end up doing".
+ */
+export const missionGetSessionResultInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+  })
+  .strict();
+export type MissionGetSessionResultInput = z.infer<typeof missionGetSessionResultInputSchema>;
+
+export const missionGetSessionResultResultSchema = missionResultDtoSchema.nullable();
+export type MissionGetSessionResultResult = z.infer<typeof missionGetSessionResultResultSchema>;

@@ -250,6 +250,31 @@ export async function listResultsForWallet(
   return rows.map(toRow);
 }
 
+/**
+ * The newest ledger row for a session (null when the session never opened a
+ * run). Session-scoped rather than wallet-scoped because the session view
+ * shows the run that just finished IN THIS SESSION — it has a session id in
+ * hand and no wallet address, and the newest row for the session is exactly
+ * the run whose summary belongs on screen.
+ *
+ * Ordered by `started_at DESC` (not `seq_no`): `seq_no` is minted per WALLET,
+ * so it does not order a single session's runs if the session ever switched
+ * wallets.
+ */
+export async function getLatestResultForSession(
+  sessionId: string,
+): Promise<MissionResultRow | null> {
+  const row = await queryOne<Raw>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM ${RESULTS_FROM}
+      WHERE r.session_id = $1
+      ORDER BY r.started_at DESC
+      LIMIT 1`,
+    [sessionId],
+  );
+  return row ? toRow(row) : null;
+}
+
 /** The ledger row for a single run and wallet (null if never opened or not owned by that wallet). */
 export async function getResultForRun(
   missionRunId: string,
