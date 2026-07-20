@@ -85,6 +85,7 @@ const LEDGER_ROW = {
   outcome: "completed" as const,
   stopReason: "goal_reached",
   openPositions: [{ symbol: "NOXA" }],
+  stopSummary: "- Looked at 12 trending coins\n- Bought NOXA because it was climbing",
 };
 
 beforeEach(() => {
@@ -109,6 +110,8 @@ describe("mission.listResults", () => {
       outcome: "completed",
       stopReason: "goal_reached",
       openPositionsCount: 1,
+      // The agent's prose rides along from the JOINed mission_runs row.
+      stopSummary: "- Looked at 12 trending coins\n- Bought NOXA because it was climbing",
     });
     // The DTO never echoes the wallet address or raw open-position payload.
     expect(data[0]).not.toHaveProperty("walletAddress");
