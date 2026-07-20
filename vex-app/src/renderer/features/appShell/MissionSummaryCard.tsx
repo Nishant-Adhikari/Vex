@@ -1,300 +1,182 @@
 /**
- * MissionSummaryCard — the post-mission summary readout (mission-results-ledger).
+ * MissionSummaryCard — THE mission summary. One component, both surfaces.
  *
- * When a mission finalizes, its `mission_results` ledger row becomes the source
- * of a crisp, structured card (NOT the agent's prose): outcome + duration, the
- * signed ETH PnL headline, a trades/settlement meta line, and the goal snippet.
- * It renders inline above the "Renew mission" branch in `MissionControls`.
+ * A finished mission is reported in two places: the session view, right after
+ * the run ends (`MissionControls`), and the Missions ledger list
+ * (`MissionHistory`). Those were two different designs saying the same thing,
+ * which is one design too many — an operator who learned to read the post-run
+ * card had to learn the ledger row separately. This is the single card both
+ * surfaces render; `density` scales it, and scales NOTHING else. Same
+ * elements, same order, same sources, same dismiss affordance, larger or
+ * smaller type.
  *
- * Presentation over derived values only — every string is formatted in
- * `missionSummaryModel.ts` (pure + unit-tested); the `--vex-*`/`--color-*` ink
- * matches the Mission History ledger so the two surfaces read as one register.
- * PnL is coloured by sign (success/destructive), USD is a tooltip only.
+ * READING ORDER, deliberate: the money figure, then what the run was for,
+ * then the agent's own account of it, then the raw counters. The prose is
+ * what a non-technical operator actually reads, so it is body text in the
+ * middle of the card — never a tooltip, never a column.
+ *
+ * THE TWO HALVES HAVE DIFFERENT AUTHORS AND MUST NOT BE CONFUSED. Every money
+ * value is derived HERE from the ledger's `pnlEth`/`ethPriceUsdEnd` via
+ * `missionSummaryModel.ts`. The prose is rendered verbatim and is never
+ * parsed for numbers. An agent that contradicts the ledger is a prompt bug
+ * (see `engine/prompts/mission-run.ts`); the figure the user sees stays right
+ * regardless. Nothing is gated on the outcome either — a `failed` run that
+ * wrote a summary still shows it, because that is precisely the run whose
+ * account the operator most needs.
  */
 
-import { useId, useState, type JSX } from "react";
+import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import type { MissionResultDto } from "@shared/schemas/mission.js";
+import { useUiStore } from "../../stores/uiStore.js";
 import { cn } from "../../lib/utils.js";
-import { useMoves } from "../../lib/api/portfolio.js";
-import { useSessionMessagesTail } from "../../lib/api/messages.js";
-import { formatClock } from "../../lib/format.js";
-import { EM_DASH, formatDurationS } from "./missionHistoryModel.js";
+import { OutcomeBadge } from "./OutcomeBadge.js";
+import { parseSummaryBullets } from "./missionSummaryProse.js";
+import { EM_DASH, formatDurationS, missionDisplayOutcome } from "./missionHistoryModel.js";
 import {
-  formatBankrollRangeUsd,
-  formatMetaLine,
   formatPnlEth,
   formatPnlPct,
   formatPnlUsd,
+  formatTrades,
   pnlToneClass,
+  type MissionSummaryDensity,
 } from "./missionSummaryModel.js";
-import {
-  buildJournal,
-  countMissionBagsHeld,
-  type JournalEntry,
-} from "./missionJournalModel.js";
+
+/**
+ * Density → type/space scale. Only sizes live here: any element that exists
+ * at one density exists at the other, so the two surfaces cannot drift into
+ * separate designs by accident.
+ */
+const SCALE: Record<
+  MissionSummaryDensity,
+  {
+    readonly shell: string;
+    readonly pnl: string;
+    readonly pnlAside: string;
+    readonly goal: string;
+    readonly prose: string;
+  }
+> = {
+  hero: {
+    shell: "gap-3 px-5 py-4",
+    pnl: "text-[32px]",
+    pnlAside: "text-xs",
+    goal: "text-sm",
+    prose: "text-[13.5px]",
+  },
+  compact: {
+    shell: "gap-2 px-4 py-3",
+    pnl: "text-[20px]",
+    pnlAside: "text-[11px]",
+    goal: "text-xs",
+    prose: "text-[13px]",
+  },
+};
 
 export interface MissionSummaryCardProps {
   readonly result: MissionResultDto;
-  /**
-   * Owning session — powers the Decision Journal's moves + reasoning reads. When
-   * omitted the card renders the structured summary alone (no journal), so the
-   * component stays usable in contexts without a session id.
-   */
-  readonly sessionId?: string;
+  /** Defaults to the ledger-list scale; the session view asks for `hero`. */
+  readonly density?: MissionSummaryDensity;
 }
 
 export function MissionSummaryCard({
   result,
-  sessionId,
+  density = "compact",
 }: MissionSummaryCardProps): JSX.Element {
+  // Dismissal is view state and nothing else: it writes one id into the
+  // persisted UI store. No IPC, no mutation, no ledger write. The
+  // `mission_results` row and the `mission_runs` record are an audit trail of
+  // real-money trades and survive untouched — which is why the affordance
+  // says "hide" and never "delete".
+  const dismiss = useUiStore((s) => s.dismissMissionRun);
+  const scale = SCALE[density];
+  const beats = parseSummaryBullets(result.stopSummary);
   const pct = formatPnlPct(result.pnlPct);
   const pnlEthText = formatPnlEth(result.pnlEth);
-  // USD leads the headline; ETH moves to a secondary aside + the hover title.
-  const pnlUsdText =
-    result.ethPriceUsdEnd !== null
-      ? formatPnlUsd(result.pnlEth, result.ethPriceUsdEnd)
-      : null;
-  const pnlTitle = pnlEthText === EM_DASH ? undefined : `${pnlEthText} at close`;
-
-  // Decision Journal + mission-scoped bag count both derive from the session's
-  // executed moves; the journal additionally reads the assistant reasoning tail.
-  // Hooks run unconditionally (empty id → disabled query, `[]` data).
-  const movesQuery = useMoves(sessionId ?? "");
-  const messagesQuery = useSessionMessagesTail(sessionId ?? null);
-  const movesResult = movesQuery.data;
-  const moves = movesResult?.ok ? movesResult.data : [];
-  const messages = messagesQuery.data ?? [];
-  const journal = buildJournal(
-    moves,
-    messages,
-    result.startedAt,
-    result.endedAt,
-  );
-  // Prefer the mission-scoped held count (moves within the run window that were
-  // bought and not sold) over the ledger's `openPositionsCount`, which conflates
-  // the wallet's pre-existing legacy holdings. Only override when the moves feed
-  // actually loaded — a failed/pending read falls back to the ledger figure
-  // rather than falsely claiming "flat".
-  const bagsHeld =
-    movesResult?.ok === true
-      ? countMissionBagsHeld(moves, result.startedAt, result.endedAt)
-      : result.openPositionsCount;
 
   return (
     <section
       data-vex-area="mission-summary"
-      aria-label="Mission summary"
-      className="mb-3 flex flex-col gap-2 rounded-[10px] border border-[var(--vex-line)] bg-white/[0.02] px-4 py-3"
-    >
-      {/* Line 1 — identity + outcome stamp + duration. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-text-2)]">
-        <span className="tabular-nums text-foreground">
-          Mission #{result.seqNo}
-        </span>
-        <span className="text-[var(--vex-text-3)]">·</span>
-        <OutcomeBadge outcome={result.outcome} />
-        <span className="text-[var(--vex-text-3)]">·</span>
-        <span className="tabular-nums">{formatDurationS(result.durationS)}</span>
-      </div>
-
-      {/* Line 2 — the signed USD PnL headline (ETH aside + in the tooltip). */}
-      <div className="flex items-baseline gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
-          PnL
-        </span>
-        <span
-          title={pnlTitle}
-          className={cn(
-            "font-mono text-lg tabular-nums",
-            pnlToneClass(result.pnlEth),
-          )}
-        >
-          {pnlUsdText ?? pnlEthText}
-          {pct.length > 0 ? (
-            <span className="ml-2 text-[11px]">{pct}</span>
-          ) : null}
-          {pnlUsdText !== null && pnlEthText !== EM_DASH ? (
-            <span className="ml-2 text-[11px] text-[var(--vex-text-3)]">
-              ≈ {pnlEthText}
-            </span>
-          ) : null}
-        </span>
-      </div>
-
-      {/* Line 3 — bankroll start→end in USD (the basis behind the PnL). */}
-      <div className="flex items-baseline gap-2 font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
-        <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
-          Bankroll
-        </span>
-        <span>
-          {formatBankrollRangeUsd(
-            result.bankrollStartEth,
-            result.bankrollEndEth,
-            result.ethPriceUsdEnd,
-          )}
-        </span>
-      </div>
-
-      {/* Line 4 — trades + settlement (mission-scoped bag count). */}
-      <p className="font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
-        {formatMetaLine(result.trades, bagsHeld)}
-      </p>
-
-      {/* Goal caption — truncated, only when present. */}
-      {result.goalSnippet !== null ? (
-        <p
-          title={result.goalSnippet}
-          className="truncate text-xs text-[var(--vex-text-3)]"
-        >
-          {result.goalSnippet}
-        </p>
-      ) : null}
-
-      {/* Decision Journal — per-trade "why", each expandable to full reasoning. */}
-      {journal.length > 0 ? <DecisionJournal entries={journal} /> : null}
-    </section>
-  );
-}
-
-/**
- * Chronological, trade-anchored journal. Each row is a BUY/SELL chip + traded
- * token + a distilled one-line rationale, expandable to the agent's untouched
- * reasoning. Mirrors the card/MOVES grammar: mono figures, `.vex-eyebrow` micro
- * label, hairline separators. One row open at a time.
- */
-function DecisionJournal({
-  entries,
-}: {
-  readonly entries: readonly JournalEntry[];
-}): JSX.Element {
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  return (
-    <div className="mt-1 border-t border-[var(--vex-line)] pt-2">
-      <p className="vex-eyebrow mb-1.5">Decision journal</p>
-      <ul className="flex flex-col">
-        {entries.map((entry) => (
-          <JournalRow
-            key={entry.key}
-            entry={entry}
-            open={openKey === entry.key}
-            onToggle={() =>
-              setOpenKey((prev) => (prev === entry.key ? null : entry.key))
-            }
-          />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** SIDE chip tones — hairline chips, ink on the text (mirrors MovesBlock). */
-const JOURNAL_SIDE_TONE: Record<JournalEntry["side"], string> = {
-  buy: "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success",
-  sell: "border-[var(--vex-line-strong)] text-[var(--vex-text-2)]",
-  swap: "border-[var(--vex-line)] text-[var(--vex-text-3)]",
-  other: "border-[var(--vex-line)] text-[var(--vex-text-3)]",
-};
-
-function JournalRow({
-  entry,
-  open,
-  onToggle,
-}: {
-  readonly entry: JournalEntry;
-  readonly open: boolean;
-  readonly onToggle: () => void;
-}): JSX.Element {
-  const bodyId = useId();
-  const time = formatClock(entry.createdAt);
-  const hasReasoning = entry.rationaleFull !== null;
-  const line =
-    entry.rationaleLine !== null && entry.rationaleLine.length > 0
-      ? entry.rationaleLine
-      : "No recorded rationale for this trade.";
-  return (
-    <li className="border-b border-[var(--vex-line)] py-1 last:border-b-0">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={bodyId}
-        disabled={!hasReasoning}
-        className={cn(
-          "group flex w-full items-start gap-2 rounded-[3px] py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-          hasReasoning ? "cursor-pointer" : "cursor-default",
-        )}
-      >
-        <HugeiconsIcon
-          icon={ArrowRight01Icon}
-          size={11}
-          aria-hidden
-          className={cn(
-            "mt-[3px] shrink-0 text-[var(--vex-text-3)] transition-transform",
-            open && "rotate-90",
-            !hasReasoning && "opacity-0",
-          )}
-        />
-        <span
-          className={cn(
-            "mt-px inline-flex h-4 min-w-[36px] shrink-0 items-center justify-center rounded-[3px] border px-1 font-mono text-[9px] uppercase tracking-[0.14em]",
-            JOURNAL_SIDE_TONE[entry.side],
-          )}
-        >
-          {entry.sideLabel}
-        </span>
-        <span
-          title={entry.tokenFull ?? undefined}
-          className="mt-px shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--vex-text-2)]"
-        >
-          {entry.token}
-        </span>
-        <span className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--vex-text-3)] transition-colors group-hover:text-[var(--vex-text-2)]">
-          {line}
-        </span>
-        {time !== null ? (
-          <span className="mt-px shrink-0 text-right font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-            {time}
-          </span>
-        ) : null}
-      </button>
-      {open && hasReasoning ? (
-        <div
-          id={bodyId}
-          className="mt-1 rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-2.5 py-1.5"
-        >
-          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--vex-text-2)]">
-            {entry.rationaleFull}
-          </pre>
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
-/** Outcome → small colour-toned stamp. Mirrors `MissionHistory`'s badge tones:
- * `completed` = success, `failed` = destructive, `running` = accent, the rest
- * stay muted. */
-function OutcomeBadge({ outcome }: { readonly outcome: string }): JSX.Element {
-  const tone =
-    outcome === "completed"
-      ? "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-[var(--color-success)]"
-      : outcome === "failed"
-        ? "border-destructive/40 text-destructive"
-        : outcome === "timed_out"
-          ? "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-[var(--color-warning)]"
-          : outcome === "running"
-            ? "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)]"
-            : "border-[var(--vex-line)] text-[var(--vex-text-2)]";
-  return (
-    <span
+      data-vex-density={density}
+      aria-label={`Mission #${result.seqNo} summary`}
       className={cn(
-        "inline-flex items-center rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em]",
-        tone,
+        "flex flex-col rounded-[12px] border border-[var(--vex-line)] bg-white/[0.03]",
+        scale.shell,
       )}
     >
-      {(outcome || EM_DASH).replace(/_/g, " ")}
-    </span>
+      {/* Identity strip — who this was, how it ended, how long it took. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+        <span className="tabular-nums text-[var(--vex-text-2)]">#{result.seqNo}</span>
+        <OutcomeBadge outcome={missionDisplayOutcome(result)} />
+        <span aria-hidden>·</span>
+        <span className="tabular-nums">{formatDurationS(result.durationS)}</span>
+        <span aria-hidden>·</span>
+        <span className="tabular-nums">{formatTrades(result.trades)}</span>
+      </div>
+
+      {/* The focal point: authoritative money, straight off the ledger row,
+        * with the dismiss key grouped alongside it at the card's top-right. */}
+      <div className="flex items-start justify-between gap-4">
+        <div className={cn("flex min-w-0 flex-col gap-0.5", pnlToneClass(result.pnlEth))}>
+          <span className={cn("font-mono leading-none tabular-nums", scale.pnl)}>
+            {formatPnlUsd(result.pnlEth, result.ethPriceUsdEnd)}
+          </span>
+          <span
+            className={cn(
+              "font-mono tabular-nums text-[var(--vex-text-3)]",
+              scale.pnlAside,
+            )}
+          >
+            {pnlEthText}
+            {pct.length > 0 ? ` · ${pct}` : ""}
+          </span>
+        </div>
+
+        {/* No confirm dialog: nothing is destroyed, so a confirm would be
+          * pure friction. The label carries the whole meaning instead —
+          * "Hide", never "Delete", because the record survives. */}
+        <button
+          type="button"
+          onClick={() => dismiss(result.missionRunId)}
+          aria-label={`Hide mission #${result.seqNo} from this list`}
+          title="Hide from this list (the mission record is kept)"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-[var(--vex-text-3)] transition-colors hover:bg-white/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={13} aria-hidden />
+        </button>
+      </div>
+
+      {/* What the run was for. */}
+      <p
+        className={cn("truncate text-[var(--vex-text-2)]", scale.goal)}
+        title={result.goalSnippet ?? undefined}
+      >
+        {result.goalSnippet ?? EM_DASH}
+      </p>
+
+      {/* The agent's own account, verbatim. Rendered whenever it exists —
+        * never gated on the outcome. */}
+      {beats.length > 0 ? (
+        <ul
+          className={cn(
+            "flex flex-col gap-1.5 leading-relaxed text-foreground",
+            scale.prose,
+          )}
+        >
+          {beats.map((beat, i) => (
+            // Beats are positional prose with no stable id; the list is
+            // re-rendered wholesale whenever the summary changes.
+            // eslint-disable-next-line react/no-array-index-key
+            <li key={i} className="flex gap-2 break-words">
+              <span aria-hidden className="shrink-0 select-none text-[var(--vex-text-3)]">
+                —
+              </span>
+              <span className="min-w-0 flex-1">{beat}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }

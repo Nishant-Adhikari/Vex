@@ -2,10 +2,14 @@
  * Mission History — a read-only AppShell sub-view (mission-results-ledger,
  * WP-J). Per-wallet ledger of finalized mission runs: a summary register
  * (total missions, win rate, cumulative ETH PnL) then one card per mission,
- * newest first. Each card leads with the ledger's PnL and the agent's own
- * plain-language account of the run; the raw counters sit underneath. Mirrors the MemoryPanel shell grammar (h-12 register header
- * + back key, hairline-separated ledger, `--vex-*` ink) so it reads as one
- * surface with the rest of the desk.
+ * newest first. Mirrors the MemoryPanel shell grammar (h-12 register header
+ * + back key, `--vex-*` ink) so it reads as one surface with the rest of the
+ * desk.
+ *
+ * The cards themselves are `MissionSummaryCard` — the SAME component the
+ * session view renders after a run ends, at `compact` density. This file owns
+ * the register, the query states, and the dismissal view-filter; it owns no
+ * card layout of its own, so the two surfaces cannot drift apart.
  *
  * The ledger is EVM/ETH-specific (bankroll = native ETH + WETH), so this
  * reads the PRIMARY EVM wallet from the inventory — never every wallet.
@@ -18,26 +22,17 @@
 import type { JSX } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import type { Result } from "@shared/ipc/result.js";
 import type { MissionListResultsResult, MissionResultDto } from "@shared/schemas/mission.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useMissionResults } from "../../lib/api/mission.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
-import { formatPercentDelta, formatUsdDelta } from "../../lib/format.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
-import { OutcomeBadge } from "./OutcomeBadge.js";
-import { parseSummaryBullets } from "./missionSummaryProse.js";
-import {
-  EM_DASH,
-  computeWinRate,
-  formatDurationS,
-  formatEth,
-  missionDisplayOutcome,
-  pnlUsd,
-  sumPnlEth,
-} from "./missionHistoryModel.js";
+import { MissionSummaryCard } from "./MissionSummaryCard.js";
+import { pnlToneClass } from "./missionSummaryModel.js";
+import { EM_DASH, computeWinRate, formatEth, sumPnlEth } from "./missionHistoryModel.js";
 
 export function MissionHistory(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
@@ -163,7 +158,7 @@ function SummaryHeader({
       <Stat
         label="Cumulative PnL"
         value={`${formatEth(cumulativeEth, { signed: true })} ETH`}
-        tone={pnlTone(cumulativeEth)}
+        tone={pnlToneClass(cumulativeEth)}
       />
     </section>
   );
@@ -190,112 +185,23 @@ function Stat({
   );
 }
 
+/**
+ * The ledger is a stack of the SAME card the session view shows after a run
+ * ends — at `compact` density, which scales the type and padding and changes
+ * nothing else. There is no second design for a mission summary.
+ */
 function ResultsLedger({
   results,
 }: {
   readonly results: readonly MissionResultDto[];
 }): JSX.Element {
   return (
-    <ul className="flex flex-col">
+    <ul className="flex flex-col gap-3">
       {results.map((r) => (
-        <ResultRow key={r.missionRunId} result={r} />
+        <li key={r.missionRunId}>
+          <MissionSummaryCard result={r} density="compact" />
+        </li>
       ))}
     </ul>
   );
-}
-
-/**
- * One mission, as a card.
- *
- * Reading order is deliberate: the money figure, then the agent's own
- * account of the run, then the raw counters. The prose is what a
- * non-technical operator actually reads, so it is body text in the middle
- * of the card — not a tooltip and not a sixth column.
- *
- * The two halves have different authors and must not be confused. The PnL
- * line is computed HERE from the ledger's `pnlEth`/`ethPriceUsdEnd`; the
- * prose is rendered verbatim and is never parsed for numbers. An agent that
- * contradicts the ledger is a prompt bug (see `mission-run.ts`), and the
- * figure the user sees stays right regardless.
- */
-function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Element {
-  const dismiss = useUiStore((s) => s.dismissMissionRun);
-  const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  const beats = parseSummaryBullets(result.stopSummary);
-
-  return (
-    <li className="flex flex-col gap-3 border-b border-[var(--vex-line)] py-4 last:border-b-0">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-              #{result.seqNo}
-            </span>
-            <OutcomeBadge outcome={missionDisplayOutcome(result)} />
-          </div>
-          <span className="truncate text-xs text-[var(--vex-text-2)]" title={result.goalSnippet ?? undefined}>
-            {result.goalSnippet ?? EM_DASH}
-          </span>
-        </div>
-
-        <div className="flex shrink-0 items-start gap-3">
-          {/* Authoritative money, straight off the ledger row. */}
-          <div className={cn("flex flex-col items-end gap-0.5", pnlTone(result.pnlEth))}>
-            <span className="font-mono text-base tabular-nums">
-              {usd === null ? EM_DASH : formatUsdDelta(usd)}
-            </span>
-            <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-              {formatEth(result.pnlEth, { signed: true })} ETH
-              {result.pnlPct !== null ? ` · ${formatPercentDelta(result.pnlPct)}` : ""}
-            </span>
-          </div>
-
-          {/* No confirm dialog: nothing is destroyed, so a confirm would be
-            * pure friction. The label carries the whole meaning instead —
-            * "Hide", never "Delete", because the record survives. */}
-          <button
-            type="button"
-            onClick={() => dismiss(result.missionRunId)}
-            aria-label={`Hide mission #${result.seqNo} from this list`}
-            title="Hide from this list (the mission record is kept)"
-            className="flex h-6 w-6 items-center justify-center rounded-[6px] text-[var(--vex-text-3)] transition-colors hover:bg-white/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
-          >
-            <HugeiconsIcon icon={Cancel01Icon} size={13} aria-hidden />
-          </button>
-        </div>
-      </div>
-
-      {beats.length > 0 ? (
-        <ul className="flex flex-col gap-1.5 text-[13px] leading-relaxed text-foreground">
-          {beats.map((beat, i) => (
-            // Beats are positional prose with no stable id; the list is
-            // re-rendered wholesale whenever the summary changes.
-            // eslint-disable-next-line react/no-array-index-key
-            <li key={i} className="flex gap-2">
-              <span aria-hidden className="select-none text-[var(--vex-text-3)]">
-                —
-              </span>
-              <span>{beat}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      {/* Raw counters, demoted below the account of what happened. */}
-      <div className="flex gap-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
-        <span>{formatDurationS(result.durationS)}</span>
-        <span>
-          {result.trades} {result.trades === 1 ? "trade" : "trades"}
-        </span>
-      </div>
-    </li>
-  );
-}
-
-/** Sign -> PnL colour class: positive success, negative destructive, flat/unknown muted. */
-function pnlTone(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "text-[var(--vex-text-3)]";
-  if (value > 0) return "text-[var(--color-success)]";
-  if (value < 0) return "text-destructive";
-  return "text-[var(--vex-text-2)]";
 }
