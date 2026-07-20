@@ -17,12 +17,17 @@ import {
   pnlUsd,
   sumPnlEth,
 } from "../missionHistoryModel.js";
+import { NO_CONSTRAINTS } from "./_missionResultFixture.js";
 
 function result(over: Partial<MissionResultDto> = {}): MissionResultDto {
   return {
     missionRunId: "run-1",
+    sessionId: "00000000-0000-4000-8000-000000000001",
     seqNo: 1,
     goalSnippet: "grow ETH",
+    goalFull: "grow ETH",
+    missionTitle: null,
+    constraints: NO_CONSTRAINTS,
     startedAt: "2026-07-12T18:00:00.000Z",
     endedAt: "2026-07-12T19:00:00.000Z",
     durationS: 3600,
