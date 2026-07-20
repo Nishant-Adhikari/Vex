@@ -6,10 +6,19 @@
  * in trader shorthand ("flattened TP1, -17bps round-trip"), which is
  * unreadable for the non-technical operator the mission UI is built for.
  *
- * These assertions pin the contract of that guidance: bulleted, dollar-
- * denominated, jargon-free. They are deliberately behavioural (what the
- * instruction must require) rather than a snapshot of the exact wording, so
- * copy edits stay cheap.
+ * These assertions pin the contract of that guidance: bulleted, jargon-free,
+ * and — critically — SILENT on the run's gain or loss.
+ *
+ * That last rule is not a style preference. A fork build rendered Mission #9
+ * with a ledger PnL of -$0.57 above the agent's own bullet claiming it
+ * "ended down about 33 cents — basically flat". The model had netted the
+ * trade legs but not the gas, understating a real loss by ~42%. Prose that
+ * confidently misreports the user's money is worse than the raw metrics it
+ * replaces, so the division of labour is absolute: NUMBERS COME FROM THE
+ * LEDGER, PROSE COMES FROM THE AGENT.
+ *
+ * They are deliberately behavioural (what the instruction must require)
+ * rather than a snapshot of the exact wording, so copy edits stay cheap.
  */
 
 import { describe, expect, it } from "vitest";
@@ -49,18 +58,56 @@ describe("mission-run prompt — mission_stop summary guidance", () => {
     const prompt = buildMissionRunPrompt(missionContext());
 
     // what you looked for -> what you bought and why -> how much (vs the cap)
-    // -> the plan in plain words -> how it ended, in dollars.
+    // -> the plan in plain words -> how the run ended.
     expect(prompt).toContain("what you were looking for");
     expect(prompt).toContain("what you actually bought and WHY you picked it");
     expect(prompt).toContain("how that compares to the cap");
     expect(prompt).toContain("automatic sell levels");
-    expect(prompt).toContain("net gain or loss");
+    expect(prompt).toContain("how the run ENDED");
   });
 
-  it("frames outcomes in dollars, not the bankroll's native unit", () => {
+  it("forbids the agent from stating any gain-or-loss figure", () => {
     const prompt = buildMissionRunPrompt(missionContext());
 
-    expect(prompt).toContain("DOLLARS");
+    expect(prompt).toContain("NEVER state how much the mission made or lost");
+    // Every denomination is closed off, or the model just switches units.
+    expect(prompt).toContain("not in dollars, not in ETH, not as a percentage");
+    // ...including the qualitative dodge that produced the Mission #9 defect.
+    expect(prompt).toContain("about even");
+    expect(prompt).toContain("break-even");
+  });
+
+  it("tells the agent WHY it cannot compute PnL — gas settles after it stops", () => {
+    const prompt = buildMissionRunPrompt(missionContext());
+
+    // A bare prohibition invites rationalisation; the reason is what makes it
+    // stick. Gas is precisely what the Mission #9 summary omitted.
+    expect(prompt).toContain("gas and fees settle after you stop");
+    expect(prompt).toContain("anything you compute here will be wrong");
+  });
+
+  it("points the agent at the ledger figure as the authoritative one", () => {
+    const prompt = buildMissionRunPrompt(missionContext());
+
+    expect(prompt).toContain("the exact figure from the ledger");
+    expect(prompt).toContain("leave every gain-or-loss number to the system");
+  });
+
+  it("never invites a model-computed net PnL anywhere in the guidance", () => {
+    const prompt = buildMissionRunPrompt(missionContext());
+
+    // Regression guard on the ORIGINAL wording of this guidance, which asked
+    // for outcomes "always framed in DOLLARS, with the net gain or loss" and
+    // exemplified "- Ended about even — down 17 cents to trading fees". That
+    // instruction is what produced the -$0.57-reported-as-33-cents defect.
+    for (const invitation of [
+      "net gain or loss",
+      "with the net gain",
+      "down 17 cents to trading fees",
+      "framed in DOLLARS",
+    ]) {
+      expect(prompt).not.toContain(invitation);
+    }
   });
 
   it("bans the internal trading jargon that leaks into raw model prose", () => {
@@ -79,14 +126,17 @@ describe("mission-run prompt — mission_stop summary guidance", () => {
     expect(prompt).toContain("Looked at 12 trending coins");
     expect(prompt).toContain("well under your $20 limit");
     expect(prompt).toContain("Set an automatic take-profit and a safety stop");
-    expect(prompt).toContain("down 17 cents to trading fees");
+    expect(prompt).toContain("Sold it back when your 15-minute timer ran out");
   });
 
-  it("requires one short, honest line per bullet — losses owned plainly", () => {
+  it("owns an unprofitable run in words, without quantifying it", () => {
     const prompt = buildMissionRunPrompt(missionContext());
 
     expect(prompt).toContain("one short, honest line");
-    expect(prompt).toContain("own the losses plainly");
+    expect(prompt).toContain("Own an unprofitable run plainly");
+    expect(prompt).toContain("never quantify it");
+    // The sanctioned way to describe a loss: cause, not amount.
+    expect(prompt).toContain("the safety stop sold it");
   });
 
   it("keeps the guidance attached to the mission_stop rule block", () => {
