@@ -90,16 +90,18 @@ export type MissionGetResultForRunInput = z.infer<typeof missionGetResultForRunI
 export const missionGetResultForRunResultSchema = missionResultDtoSchema.nullable();
 export type MissionGetResultForRunResult = z.infer<typeof missionGetResultForRunResultSchema>;
 
-// ── getSessionResult (fork-only: latest finalized result for a SESSION) ──
-//
-// Upstream's `getResultForRun` is keyed on (missionRunId, walletAddress).
-// This fork additionally surfaces a post-mission summary card keyed on the
-// SESSION, which is what the renderer has in hand at that point (a session
-// maps 1:1 to a mission run, but the run id is not in the card's props).
-// Kept alongside — not instead of — upstream's run-keyed read.
+// ── getSessionResult (the session's newest run, for the in-session card) ──
 
+/**
+ * Session-scoped read powering the post-mission summary card in the session
+ * view. The session view knows its session id and not a wallet address, so
+ * this is deliberately NOT wallet-scoped like the two reads above — it
+ * answers "what did the run in THIS session end up doing".
+ */
 export const missionGetSessionResultInputSchema = z
-  .object({ sessionId: z.string().min(1) })
+  .object({
+    sessionId: z.string().min(1),
+  })
   .strict();
 export type MissionGetSessionResultInput = z.infer<typeof missionGetSessionResultInputSchema>;
 

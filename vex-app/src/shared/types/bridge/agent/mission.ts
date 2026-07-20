@@ -14,6 +14,8 @@ import type {
   MissionGetSessionResultInput,
   MissionGetSessionResultResult,
   MissionGetResultForRunResult,
+  MissionGetSessionResultInput,
+  MissionGetSessionResultResult,
   MissionListResultsInput,
   MissionListResultsResult,
   MissionRecoverInput,
@@ -92,4 +94,11 @@ export interface MissionBridge {
   readonly getResultForRun: (
     input: MissionGetResultForRunInput,
   ) => Promise<Result<MissionGetResultForRunResult>>;
+  /**
+   * The session's newest ledger row — the post-mission summary card rendered
+   * in the session view, which holds a session id rather than a wallet.
+   */
+  readonly getSessionResult: (
+    input: MissionGetSessionResultInput,
+  ) => Promise<Result<MissionGetSessionResultResult>>;
 }

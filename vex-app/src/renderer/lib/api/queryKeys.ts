@@ -160,6 +160,14 @@ export const missionKeys = {
   /** WP-J — single-run ledger read (e.g. the post-mission summary card). */
   resultForRun: (missionRunId: string, walletAddress: string) =>
     ["mission", "resultForRun", missionRunId, walletAddress] as const,
+  /**
+   * The session's newest ledger row — the post-mission summary card in the
+   * session view. Session-scoped (the session view has no wallet address),
+   * and invalidated alongside the draft/diff queries so a run that finalizes
+   * swaps the controls over to its summary without a manual refresh.
+   */
+  sessionResult: (sessionId: string) =>
+    ["mission", "sessionResult", sessionId] as const,
 };
 
 export const approvalsKeys = {
