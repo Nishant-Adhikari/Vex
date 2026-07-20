@@ -24,5 +24,6 @@ export function toMissionResultDto(row: MissionResultRow): MissionResultDto {
     outcome: row.outcome,
     stopReason: row.stopReason,
     openPositionsCount: Array.isArray(row.openPositions) ? row.openPositions.length : 0,
+    stopSummary: row.stopSummary,
   };
 }

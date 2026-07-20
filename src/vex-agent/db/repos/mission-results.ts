@@ -43,6 +43,13 @@ export interface MissionResultRow {
   outcome: MissionResultOutcome;
   stopReason: string | null;
   openPositions: unknown;
+  /**
+   * The agent's own plain-language account of the run, from
+   * `mission_runs.stop_summary`. Null when the run never called
+   * `mission_stop`. Prose ONLY — it must never carry a PnL figure; the
+   * numeric fields above are the sole source of truth for money.
+   */
+  stopSummary: string | null;
 }
 
 export interface OpenMissionResultInput {
@@ -69,12 +76,26 @@ export interface CloseMissionResultInput {
   openPositions: unknown;
 }
 
+/**
+ * Reads are `mission_results r JOIN mission_runs run`, so every column is
+ * table-qualified (both tables carry `id`/`mission_id`/`session_id`).
+ *
+ * `stop_summary` is the agent-authored prose and lives on `mission_runs`;
+ * the ledger deliberately does NOT copy it. One source of truth, and no
+ * migration needed to surface it. Note the asymmetry this encodes: the
+ * PROSE comes from the run row, the NUMBERS come from the ledger row.
+ */
 const SELECT_COLUMNS = `
-  id, mission_id, mission_run_id, session_id, wallet_address, chain_id, seq_no,
-  goal_snippet, started_at, ended_at, duration_s,
-  bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
-  eth_price_usd_start, eth_price_usd_end,
-  trades, outcome, stop_reason, open_positions_json`;
+  r.id, r.mission_id, r.mission_run_id, r.session_id, r.wallet_address, r.chain_id, r.seq_no,
+  r.goal_snippet, r.started_at, r.ended_at, r.duration_s,
+  r.bankroll_start_eth, r.bankroll_end_eth, r.pnl_eth, r.pnl_pct,
+  r.eth_price_usd_start, r.eth_price_usd_end,
+  r.trades, r.outcome, r.stop_reason, r.open_positions_json,
+  run.stop_summary`;
+
+/** Reads join the run row for its agent-authored prose (see SELECT_COLUMNS). */
+const RESULTS_FROM = `mission_results r
+       JOIN mission_runs run ON run.id = r.mission_run_id`;
 
 interface Raw {
   id: string;
@@ -98,6 +119,7 @@ interface Raw {
   outcome: MissionResultOutcome;
   stop_reason: string | null;
   open_positions_json: unknown;
+  stop_summary: string | null;
 }
 
 // pg returns NUMERIC as string to preserve precision; ETH/PnL fit safely in
@@ -129,6 +151,7 @@ function toRow(r: Raw): MissionResultRow {
     outcome: r.outcome,
     stopReason: r.stop_reason,
     openPositions: r.open_positions_json,
+    stopSummary: r.stop_summary,
   };
 }
 
@@ -218,9 +241,9 @@ export async function listResultsForWallet(
 ): Promise<MissionResultRow[]> {
   const rows = await query<Raw>(
     `SELECT ${SELECT_COLUMNS}
-       FROM mission_results
-      WHERE LOWER(wallet_address) = LOWER($1)
-      ORDER BY seq_no DESC
+       FROM ${RESULTS_FROM}
+      WHERE LOWER(r.wallet_address) = LOWER($1)
+      ORDER BY r.seq_no DESC
       LIMIT $2`,
     [walletAddress, limit],
   );
@@ -234,9 +257,9 @@ export async function getResultForRun(
 ): Promise<MissionResultRow | null> {
   const row = await queryOne<Raw>(
     `SELECT ${SELECT_COLUMNS}
-       FROM mission_results
-      WHERE mission_run_id = $1
-        AND LOWER(wallet_address) = LOWER($2)`,
+       FROM ${RESULTS_FROM}
+      WHERE r.mission_run_id = $1
+        AND LOWER(r.wallet_address) = LOWER($2)`,
     [missionRunId, walletAddress],
   );
   return row ? toRow(row) : null;

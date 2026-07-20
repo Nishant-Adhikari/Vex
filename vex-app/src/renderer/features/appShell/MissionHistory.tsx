@@ -1,8 +1,9 @@
 /**
  * Mission History — a read-only AppShell sub-view (mission-results-ledger,
  * WP-J). Per-wallet ledger of finalized mission runs: a summary register
- * (total missions, win rate, cumulative ETH PnL) then one row per mission,
- * newest first. Mirrors the MemoryPanel shell grammar (h-12 register header
+ * (total missions, win rate, cumulative ETH PnL) then one card per mission,
+ * newest first. Each card leads with the ledger's PnL and the agent's own
+ * plain-language account of the run; the raw counters sit underneath. Mirrors the MemoryPanel shell grammar (h-12 register header
  * + back key, hairline-separated ledger, `--vex-*` ink) so it reads as one
  * surface with the rest of the desk.
  *
@@ -23,10 +24,11 @@ import type { MissionListResultsResult, MissionResultDto } from "@shared/schemas
 import { useUiStore } from "../../stores/uiStore.js";
 import { useMissionResults } from "../../lib/api/mission.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
-import { formatPercentDelta, formatUsd } from "../../lib/format.js";
+import { formatPercentDelta, formatUsdDelta } from "../../lib/format.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
 import { OutcomeBadge } from "./OutcomeBadge.js";
+import { parseSummaryBullets } from "./missionSummaryProse.js";
 import {
   EM_DASH,
   computeWinRate,
@@ -105,7 +107,7 @@ function Ledger({ results }: { readonly results: readonly MissionResultDto[] }):
   return (
     <>
       <SummaryHeader total={results.length} winRate={winRate} cumulativeEth={cumulative} />
-      <ResultsTable results={results} />
+      <ResultsLedger results={results} />
     </>
   );
 }
@@ -153,80 +155,89 @@ function Stat({
   );
 }
 
-function ResultsTable({
+function ResultsLedger({
   results,
 }: {
   readonly results: readonly MissionResultDto[];
 }): JSX.Element {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left text-xs">
-        <thead>
-          <tr className="border-b border-[var(--vex-line)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
-            <Th>#</Th>
-            <Th>Goal</Th>
-            <Th>Outcome</Th>
-            <Th align="right">Duration</Th>
-            <Th align="right">Trades</Th>
-            <Th align="right">PnL (ETH)</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r) => (
-            <ResultRow key={r.missionRunId} result={r} />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ul className="flex flex-col">
+      {results.map((r) => (
+        <ResultRow key={r.missionRunId} result={r} />
+      ))}
+    </ul>
   );
 }
 
+/**
+ * One mission, as a card.
+ *
+ * Reading order is deliberate: the money figure, then the agent's own
+ * account of the run, then the raw counters. The prose is what a
+ * non-technical operator actually reads, so it is body text in the middle
+ * of the card — not a tooltip and not a sixth column.
+ *
+ * The two halves have different authors and must not be confused. The PnL
+ * line is computed HERE from the ledger's `pnlEth`/`ethPriceUsdEnd`; the
+ * prose is rendered verbatim and is never parsed for numbers. An agent that
+ * contradicts the ledger is a prompt bug (see `mission-run.ts`), and the
+ * figure the user sees stays right regardless.
+ */
 function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Element {
   const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  const pnlTitle = usd === null ? undefined : `${formatUsd(usd)} at close`;
+  const beats = parseSummaryBullets(result.stopSummary);
 
   return (
-    <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
-      <td className="py-2.5 pr-3 font-mono tabular-nums text-[var(--vex-text-2)]">
-        #{result.seqNo}
-      </td>
-      <td className="max-w-[220px] truncate py-2.5 pr-3 text-foreground">
-        <span title={result.goalSnippet ?? undefined}>{result.goalSnippet ?? EM_DASH}</span>
-      </td>
-      <td className="py-2.5 pr-3">
-        <OutcomeBadge outcome={missionDisplayOutcome(result)} />
-      </td>
-      <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
-        {formatDurationS(result.durationS)}
-      </td>
-      <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
-        {result.trades}
-      </td>
-      <td className="py-2.5 text-right">
-        <span title={pnlTitle} className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}>
-          {formatEth(result.pnlEth, { signed: true })}
-        </span>
-        {result.pnlPct !== null ? (
-          <span className="ml-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-            {formatPercentDelta(result.pnlPct)}
+    <li className="flex flex-col gap-3 border-b border-[var(--vex-line)] py-4 last:border-b-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+              #{result.seqNo}
+            </span>
+            <OutcomeBadge outcome={missionDisplayOutcome(result)} />
+          </div>
+          <span className="truncate text-xs text-[var(--vex-text-2)]" title={result.goalSnippet ?? undefined}>
+            {result.goalSnippet ?? EM_DASH}
           </span>
-        ) : null}
-      </td>
-    </tr>
-  );
-}
+        </div>
 
-function Th({
-  children,
-  align,
-}: {
-  readonly children: string;
-  readonly align?: "right";
-}): JSX.Element {
-  return (
-    <th className={cn("py-2 pr-3 font-normal", align === "right" ? "text-right" : "text-left")}>
-      {children}
-    </th>
+        {/* Authoritative money, straight off the ledger row. */}
+        <div className={cn("flex shrink-0 flex-col items-end gap-0.5", pnlTone(result.pnlEth))}>
+          <span className="font-mono text-base tabular-nums">
+            {usd === null ? EM_DASH : formatUsdDelta(usd)}
+          </span>
+          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+            {formatEth(result.pnlEth, { signed: true })} ETH
+            {result.pnlPct !== null ? ` · ${formatPercentDelta(result.pnlPct)}` : ""}
+          </span>
+        </div>
+      </div>
+
+      {beats.length > 0 ? (
+        <ul className="flex flex-col gap-1.5 text-[13px] leading-relaxed text-foreground">
+          {beats.map((beat, i) => (
+            // Beats are positional prose with no stable id; the list is
+            // re-rendered wholesale whenever the summary changes.
+            // eslint-disable-next-line react/no-array-index-key
+            <li key={i} className="flex gap-2">
+              <span aria-hidden className="select-none text-[var(--vex-text-3)]">
+                —
+              </span>
+              <span>{beat}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {/* Raw counters, demoted below the account of what happened. */}
+      <div className="flex gap-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
+        <span>{formatDurationS(result.durationS)}</span>
+        <span>
+          {result.trades} {result.trades === 1 ? "trade" : "trades"}
+        </span>
+      </div>
+    </li>
   );
 }
 
