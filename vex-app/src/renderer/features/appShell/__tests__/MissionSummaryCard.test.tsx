@@ -24,6 +24,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
 import type { MissionResultDto } from "@shared/schemas/mission.js";
+import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
 import {
   useEditMission,
   useMissionContinue,
@@ -43,8 +44,10 @@ import { useRuntimeState } from "../../../lib/api/runtime.js";
 import { useIsChatSubmitting } from "../../../lib/api/chat.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { useMovesForRun } from "../../../lib/api/portfolio.js";
 import { MissionHistory } from "../MissionHistory.js";
 import { MissionControls } from "../MissionControls.js";
+import { NO_CONSTRAINTS } from "./_missionResultFixture.js";
 
 vi.mock("../../../lib/api/mission.js", () => ({
   useMissionResults: vi.fn(),
@@ -64,8 +67,55 @@ vi.mock("../../../lib/api/wallet-inventory.js", () => ({ useAvailableWallets: vi
 vi.mock("../../../lib/api/runtime.js", () => ({ useRuntimeState: vi.fn() }));
 vi.mock("../../../lib/api/chat.js", () => ({ useIsChatSubmitting: vi.fn() }));
 vi.mock("../../../lib/api/sessions.js", () => ({ useSessionPlan: vi.fn() }));
+vi.mock("../../../lib/api/portfolio.js", () => ({ useMovesForRun: vi.fn() }));
 
 const SESSION = "00000000-0000-4000-8000-0000000000d1";
+
+/**
+ * A prompt long enough that a single line cannot hold it. The display clamps
+ * it; the clipboard must not. The trailing clause is what a truncating build
+ * would eat, so assertions quote the WHOLE string rather than a prefix.
+ */
+const LONG_GOAL =
+  "Buy the strongest Virtuals-ecosystem token you can find on Robinhood with " +
+  "at most $5, hold it while it keeps climbing, and sell before the hour is " +
+  "up — only trade things with real volume, never a thin book.";
+
+/** Executed fills as `proj_activity` records them, via the MOVES DTO. */
+function move(over: Partial<MoveItem> = {}): MoveItem {
+  return {
+    id: "1",
+    tradeSide: "buy",
+    productType: "spot",
+    venue: "uniswap",
+    inputToken: "0x0000000000000000000000000000000000000000",
+    inputTokenSymbol: "ETH",
+    inputTokenLocalSymbol: null,
+    inputAmount: "0.0028",
+    outputToken: "0xDiH00000000000000000000000000000000000dd",
+    outputTokenSymbol: "DIH",
+    outputTokenLocalSymbol: null,
+    outputAmount: "1234.5",
+    // The Robinhood path records NO usd price. Null is the honest value and
+    // the card must render no dollar figure at all rather than `$0.00`.
+    valueUsd: null,
+    captureStatus: "executed",
+    instrumentKey: "robinhood:0xDiH",
+    chain: "robinhood",
+    txRef: "0xdeadbeefcafe",
+    walletAddress: "0xAbCdEf0123456789",
+    createdAt: "2026-01-01T00:05:00.000Z",
+    ...over,
+  };
+}
+
+/** Point the card's trade read at a fixed set of fills. */
+function withMoves(moves: readonly MoveItem[]): void {
+  vi.mocked(useMovesForRun).mockReturnValue({
+    isPending: false,
+    data: { ok: true, data: moves },
+  } as never);
+}
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -80,8 +130,12 @@ function wrapper({ children }: { children: ReactNode }) {
 function missionNine(overrides: Partial<MissionResultDto> = {}): MissionResultDto {
   return {
     missionRunId: "run-9",
+    sessionId: SESSION,
     seqNo: 9,
-    goalSnippet: "grow ETH on Base",
+    goalSnippet: LONG_GOAL,
+    goalFull: LONG_GOAL,
+    missionTitle: null,
+    constraints: NO_CONSTRAINTS,
     startedAt: "2026-01-01T00:00:00.000Z",
     endedAt: "2026-01-01T00:15:00.000Z",
     durationS: 900,
@@ -158,6 +212,7 @@ const card = () => cards()[0] as HTMLElement;
 beforeEach(() => {
   vi.clearAllMocks();
   useUiStore.setState({ dismissedMissionRunIds: [] });
+  withMoves([]);
 });
 
 afterEach(() => {
@@ -329,6 +384,196 @@ describe("dismissal mutates no mission or ledger record", () => {
     const stat = screen.getByText("Missions", { selector: "span" });
     expect(stat.parentElement?.textContent).toContain("2");
     expect(screen.getByText(/hidden — still counted above/)).toBeTruthy();
+  });
+});
+
+describe("zone 1 — the ask", () => {
+  it.each(["hero", "ledger"] as const)("labels both zones (%s)", (surface) => {
+    if (surface === "hero") renderSessionView(missionNine());
+    else renderLedger([missionNine()]);
+
+    const el = card();
+    expect(within(el).getByText("Mission")).toBeTruthy();
+    expect(within(el).getByText("Vex Agent Summary")).toBeTruthy();
+    expect(within(el).getByText("Trades")).toBeTruthy();
+    // The zones are structurally distinct, not just visually spaced.
+    for (const zone of ["mission", "agent-summary", "trades"]) {
+      expect(el.querySelector(`[data-vex-zone="${zone}"]`)).toBeTruthy();
+    }
+  });
+
+  it.each(["hero", "ledger"] as const)(
+    "signs the agent zone with the brand mark (%s)",
+    (surface) => {
+      if (surface === "hero") renderSessionView(missionNine());
+      else renderLedger([missionNine()]);
+
+      const agentZone = card().querySelector('[data-vex-zone="agent-summary"]');
+      expect(agentZone?.querySelector("[data-vex-brand-mark]")).toBeTruthy();
+    },
+  );
+
+  it.each(["hero", "ledger"] as const)(
+    "chips the constraints the record carries (%s)",
+    (surface) => {
+      const capped = missionNine({
+        constraints: {
+          maxSpendUsd: 5,
+          maxLossUsd: null,
+          maxIterations: null,
+          // 5 minutes past the run's start.
+          deadlineAt: "2026-01-01T00:05:00.000Z",
+          allowedChains: ["robinhood"],
+          allowedProtocols: [],
+        },
+      });
+      if (surface === "hero") renderSessionView(capped);
+      else renderLedger([capped]);
+
+      const el = card();
+      expect(within(el).getByText("5m")).toBeTruthy();
+      expect(within(el).getByText("$5 cap")).toBeTruthy();
+      expect(within(el).getByText("Robinhood")).toBeTruthy();
+    },
+  );
+
+  it("omits a chip the record does not carry rather than inventing one", () => {
+    // MUST SURVIVE. A displayed cap has to mean a cap was really set.
+    renderLedger([missionNine({ constraints: NO_CONSTRAINTS })]);
+
+    const el = card();
+    expect(within(el).queryByText(/cap/)).toBeNull();
+    expect(within(el).queryByText(/max loss/)).toBeNull();
+    expect(within(el).queryByText(/steps/)).toBeNull();
+  });
+
+  it("prefers a contract-authored title over the raw prompt", () => {
+    renderLedger([missionNine({ missionTitle: "Virtuals momentum scalp" })]);
+
+    expect(within(card()).getByText("Virtuals momentum scalp")).toBeTruthy();
+  });
+});
+
+describe("the goal is clamped for reading but never for truth", () => {
+  it.each(["hero", "ledger"] as const)(
+    "clamps with CSS, leaving the whole string in the DOM (%s)",
+    (surface) => {
+      if (surface === "hero") renderSessionView(missionNine());
+      else renderLedger([missionNine()]);
+
+      const goal = card().querySelector("[data-vex-mission-goal]");
+      // CSS-only clamping: the text node is intact, so nothing can land
+      // mid-word the way a JS slice did ("...real volu").
+      expect(goal?.className).toContain("line-clamp-2");
+      expect(goal?.textContent).toBe(LONG_GOAL);
+      expect(goal?.textContent).not.toContain("…");
+    },
+  );
+
+  it.each(["hero", "ledger"] as const)(
+    "copies the COMPLETE original prompt, byte for byte (%s)",
+    async (surface) => {
+      // MUST SURVIVE. This is the assertion that keeps prompt fidelity alive
+      // no matter how the display changes: the clamp is presentation, the
+      // clipboard is the contract.
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText },
+        configurable: true,
+      });
+
+      if (surface === "hero") renderSessionView(missionNine());
+      else renderLedger([missionNine()]);
+
+      fireEvent.click(
+        within(card()).getByRole("button", { name: /Copy the full mission #9 prompt/ }),
+      );
+      await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+
+      expect(writeText).toHaveBeenCalledWith(LONG_GOAL);
+      // Not a prefix, not a normalisation — the exact string.
+      expect(writeText.mock.calls[0]?.[0]).toBe(LONG_GOAL);
+    },
+  );
+
+  it("copies the full goal even when a short title is what is displayed", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    renderLedger([missionNine({ missionTitle: "Virtuals momentum scalp" })]);
+
+    fireEvent.click(
+      within(card()).getByRole("button", { name: /Copy the full mission #9 prompt/ }),
+    );
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(LONG_GOAL));
+  });
+});
+
+describe("zone 3 — the receipts", () => {
+  it.each(["hero", "ledger"] as const)(
+    "renders symbol, recorded side and amount from the trade record (%s)",
+    (surface) => {
+      withMoves([move()]);
+      if (surface === "hero") renderSessionView(missionNine());
+      else renderLedger([missionNine()]);
+
+      const zone = card().querySelector('[data-vex-zone="trades"]') as HTMLElement;
+      expect(within(zone).getByText("bought")).toBeTruthy();
+      expect(within(zone).getByText("DIH")).toBeTruthy();
+      expect(zone.textContent).toContain("1234.5");
+    },
+  );
+
+  it("takes the ECONOMIC side from the record, not from the token legs", () => {
+    // A native-IN swap the tool called `sell` is economically a BUY, and the
+    // engine already persisted that judgement. The card must not re-derive.
+    withMoves([move({ tradeSide: "sell", inputAmount: "500", inputTokenSymbol: "DIH" })]);
+    renderLedger([missionNine()]);
+
+    const zone = card().querySelector('[data-vex-zone="trades"]') as HTMLElement;
+    expect(within(zone).getByText("sold")).toBeTruthy();
+    expect(zone.textContent).toContain("DIH");
+  });
+
+  it("renders no dollar figure at all when the chain recorded no price", () => {
+    // MUST SURVIVE. `$0.00` beside a real trade is the exact misreport this
+    // card exists to stop — absent price means omit, never zero.
+    withMoves([move({ valueUsd: null })]);
+    renderLedger([missionNine()]);
+
+    const zone = card().querySelector('[data-vex-zone="trades"]') as HTMLElement;
+    expect(zone.textContent).not.toContain("$0.00");
+    expect(zone.textContent).not.toContain("$0");
+    expect(zone.textContent).not.toContain("$");
+  });
+
+  it("says so plainly when a mission deliberately traded nothing", () => {
+    withMoves([]);
+    renderLedger([missionNine({ trades: 0 })]);
+
+    const zone = card().querySelector('[data-vex-zone="trades"]') as HTMLElement;
+    expect(within(zone).getByText("No trades")).toBeTruthy();
+  });
+
+  it("leaks no wallet address and no transaction hash", () => {
+    // The card is meant to be shareable; these are the fields that leak.
+    withMoves([move()]);
+    renderLedger([missionNine()]);
+
+    const text = card().textContent ?? "";
+    const html = card().innerHTML;
+    for (const secret of [
+      "0xAbCdEf0123456789",
+      "0xdeadbeefcafe",
+      "0xDiH00000000000000000000000000000000000dd",
+      "0x0000000000000000000000000000000000000000",
+    ]) {
+      expect(text).not.toContain(secret);
+      expect(html).not.toContain(secret);
+    }
   });
 });
 

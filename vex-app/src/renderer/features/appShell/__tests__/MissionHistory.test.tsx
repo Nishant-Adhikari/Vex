@@ -24,6 +24,7 @@ import type { MissionResultDto } from "@shared/schemas/mission.js";
 import { useMissionResults } from "../../../lib/api/mission.js";
 import { useAvailableWallets } from "../../../lib/api/wallet-inventory.js";
 import { MissionHistory } from "../MissionHistory.js";
+import { NO_CONSTRAINTS } from "./_missionResultFixture.js";
 
 vi.mock("../../../lib/api/mission.js", () => ({ useMissionResults: vi.fn() }));
 vi.mock("../../../lib/api/wallet-inventory.js", () => ({ useAvailableWallets: vi.fn() }));
@@ -37,8 +38,12 @@ function wrapper({ children }: { children: ReactNode }) {
 function missionNine(overrides: Partial<MissionResultDto> = {}): MissionResultDto {
   return {
     missionRunId: "run-9",
+    sessionId: "00000000-0000-4000-8000-0000000000d9",
     seqNo: 9,
     goalSnippet: "grow ETH on Base",
+    goalFull: "grow ETH on Base",
+    missionTitle: null,
+    constraints: NO_CONSTRAINTS,
     startedAt: "2026-01-01T00:00:00.000Z",
     endedAt: "2026-01-01T00:15:00.000Z",
     durationS: 900,
