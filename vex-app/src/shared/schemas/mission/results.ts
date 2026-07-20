@@ -49,6 +49,15 @@ export const missionResultDtoSchema = z
     /** Raw engine StopReason (e.g. "goal_reached", "deadline_reached"), or null. */
     stopReason: z.string().nullable(),
     openPositionsCount: z.number().int().nonnegative(),
+    /**
+     * The agent's own plain-language account of the run (`mission_stop`'s
+     * `summary`), or null when it never stopped cleanly.
+     *
+     * PROSE ONLY. Every money figure the card shows is derived from the
+     * numeric fields above — never parsed out of this string. See
+     * `missionSummaryProse.ts`.
+     */
+    stopSummary: z.string().nullable(),
   })
   .strict();
 export type MissionResultDto = z.infer<typeof missionResultDtoSchema>;
