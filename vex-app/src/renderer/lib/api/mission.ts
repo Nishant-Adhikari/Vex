@@ -38,7 +38,6 @@ import type {
   MissionGetDiffResult,
   MissionGetDraftResult,
   MissionGetSessionResultResult,
-  MissionListResultsResult,
   MissionGetRenewableSourceResult,
   MissionGetResultForRunResult,
   MissionListResultsResult,
@@ -79,18 +78,6 @@ export function useMissionDraft(
   sessionId: string | null,
 ): UseQueryResult<Result<MissionGetDraftResult>> {
   return useQuery(draftOptions(sessionId ?? ""));
-}
-
-export function useMissionResults(
-  limit = 50,
-): UseQueryResult<Result<MissionListResultsResult>> {
-  return useQuery(
-    queryOptions({
-      queryKey: missionKeys.results(),
-      queryFn: () => window.vex.mission.listResults({ limit }),
-      staleTime: STALE_MS,
-    }),
-  );
 }
 
 /**

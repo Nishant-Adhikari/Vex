@@ -160,6 +160,13 @@ export const missionKeys = {
   /** WP-J — single-run ledger read (e.g. the post-mission summary card). */
   resultForRun: (missionRunId: string, walletAddress: string) =>
     ["mission", "resultForRun", missionRunId, walletAddress] as const,
+  /**
+   * Fork-only — latest finalized result for a SESSION (the post-mission
+   * summary card keyed on the session the renderer has in hand). Distinct
+   * from `resultForRun`, which is keyed on (missionRunId, walletAddress).
+   */
+  sessionResult: (sessionId: string) =>
+    ["mission", "sessionResult", sessionId] as const,
 };
 
 export const approvalsKeys = {

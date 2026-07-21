@@ -15,8 +15,9 @@ function wallet(
   family: "evm" | "solana",
   address: string,
   label = "",
+  vault = false,
 ): AvailableWalletDto {
-  return { id, family, address, label };
+  return { id, family, address, label, vault };
 }
 
 describe("groupWalletsByPrimary", () => {

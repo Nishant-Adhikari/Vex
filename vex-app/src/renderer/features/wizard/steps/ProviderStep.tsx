@@ -42,6 +42,7 @@ import { useCallback, useRef, useState, type JSX } from "react";
 import { type ProviderPersistInput } from "@shared/schemas/provider.js";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
 import { Button } from "../../../components/ui/button.js";
+import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
 import { PasswordField } from "../../../components/common/PasswordField.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";

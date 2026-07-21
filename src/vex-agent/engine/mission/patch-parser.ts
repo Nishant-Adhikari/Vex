@@ -36,20 +36,10 @@ const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([
   "successCriteria", "stopConditions",
 ]);
 
-/**
- * `durationMinutes` is model-set NUMERIC data (a whole-minute time-box), not
- * a string — it must not go through `ALLOWED_STRING_KEYS`/`sanitizeString`,
- * which rejects any non-string typeof and would silently drop every numeric
- * value (the run then falls back to the 60-minute default with no signal to
- * the model or the operator).
- */
-const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>(["durationMinutes"]);
-
 const ALL_ALLOWED_KEYS = new Set<string>([
   ...ALLOWED_STRING_KEYS,
   ...ALLOWED_NUMBER_KEYS,
   ...ALLOWED_ARRAY_KEYS,
-  ...ALLOWED_NUMBER_KEYS,
   "hyperliquidRisk",
 ]);
 
@@ -104,17 +94,12 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
         (result as Record<string, unknown>)[key] = sanitized;
       }
     } else if (ALLOWED_NUMBER_KEYS.has(key as keyof MissionDraft)) {
-      const sanitized = sanitizeNumber(value);
+      const sanitized = sanitizeDurationMinutes(value);
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
     } else if (ALLOWED_ARRAY_KEYS.has(key as keyof MissionDraft)) {
       const sanitized = sanitizeStringArray(value);
-      if (sanitized !== undefined) {
-        (result as Record<string, unknown>)[key] = sanitized;
-      }
-    } else if (ALLOWED_NUMBER_KEYS.has(key as keyof MissionDraft)) {
-      const sanitized = sanitizeDurationMinutes(value);
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
