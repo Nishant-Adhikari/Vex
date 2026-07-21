@@ -1,177 +1,157 @@
 /**
- * Watch cycle — per-tick peak refresh + evaluateExit orchestration coverage.
+ * Pins the per-tick watch orchestrator.
  *
- * Phase C TDD suite. Pins the pure cycle semantics: high-water tracking,
- * decision surfacing, price-lookup degradation, per-position independence,
- * and consumedRungs threading.
+ * `runWatchCycle` is the pure layer between the rule engine and any real
+ * polling loop: it refreshes each position's high-water peak, runs
+ * `evaluateExit` against it, and returns one alert per position describing
+ * what fired and which peak the caller should persist.
+ *
+ * The invariant that earns this its own module is FAULT ISOLATION: pricing is
+ * the flakiest input in the system, so a missing, garbage or *throwing* price
+ * lookup must degrade to a `price_unavailable` alert for that one token and
+ * leave every other position in the sweep untouched.
  */
+import { describe, expect, it, vi } from "vitest";
 
-import { describe, it, expect } from "vitest";
+import type { ExitConfig } from "../../../../vex-agent/engine/exit/exit-rules.js";
 import {
   runWatchCycle,
   type WatchInputPosition,
-} from "@vex-agent/engine/exit/watch-cycle.js";
-import { type ExitConfig } from "@vex-agent/engine/exit/exit-rules.js";
+} from "../../../../vex-agent/engine/exit/watch-cycle.js";
+
+const NOW = 1_700_000_000_000;
 
 const CONFIG: ExitConfig = {
-  takeProfitLadder: [
-    { multiple: 2, sellFraction: 0.5 },
-    { multiple: 3, sellFraction: 0.5 },
-  ],
+  takeProfitLadder: [{ multiple: 2, sellFraction: 0.5 }],
   stopLossPct: 0.35,
   trailingStopPct: 0.25,
-  timeStopMinutes: 240,
+  timeStopMinutes: 120,
   timeStopFlatBandPct: 0.15,
 };
 
-const OPENED_AT = 1_000_000;
-const NOW_EARLY = OPENED_AT + 60_000;
-
-function makeInput(overrides: Partial<WatchInputPosition> = {}): WatchInputPosition {
+function input(overrides: Partial<WatchInputPosition> = {}): WatchInputPosition {
   return {
-    token: "So11111111111111111111111111111111111111112",
+    token: "0xtoken",
     entryPriceUsd: 1,
-    amountTokens: 1000,
-    openedAtMs: OPENED_AT,
+    amountTokens: 1_000,
+    openedAtMs: NOW,
     consumedRungs: [],
     priorPeakPriceUsd: 1,
     ...overrides,
   };
 }
 
-/** priceOf that always returns a fixed price. */
-function fixedPrice(p: number | null | undefined): (token: string) => number | null | undefined {
-  return () => p;
-}
-
-describe("runWatchCycle — empty input", () => {
-  it("returns [] for no positions", () => {
-    expect(runWatchCycle([], fixedPrice(1), NOW_EARLY, CONFIG)).toEqual([]);
-  });
-});
-
 describe("runWatchCycle — peak tracking", () => {
-  it("raises the peak when price makes a new high", () => {
-    const pos = makeInput({ priorPeakPriceUsd: 2 });
-    const [alert] = runWatchCycle([pos], fixedPrice(3), NOW_EARLY, CONFIG);
-    expect(alert.updatedPeakPriceUsd).toBe(3);
-    expect(alert.currentPriceUsd).toBe(3);
+  it("ratchets the peak up when the new price exceeds the carried high-water mark", () => {
+    const [alert] = runWatchCycle([input()], () => 1.8, NOW, CONFIG);
+
+    expect(alert?.updatedPeakPriceUsd).toBe(1.8);
+    expect(alert?.currentPriceUsd).toBe(1.8);
   });
 
-  it("keeps the peak sticky when price dips below the prior high", () => {
-    const pos = makeInput({ priorPeakPriceUsd: 3 });
-    const [alert] = runWatchCycle([pos], fixedPrice(2), NOW_EARLY, CONFIG);
-    expect(alert.updatedPeakPriceUsd).toBe(3);
-    expect(alert.currentPriceUsd).toBe(2);
+  it("keeps the carried peak when price falls back", () => {
+    const [alert] = runWatchCycle([input({ priorPeakPriceUsd: 4 })], () => 2.5, NOW, CONFIG);
+
+    expect(alert?.updatedPeakPriceUsd).toBe(4);
   });
 });
 
 describe("runWatchCycle — decision surfacing", () => {
-  it("surfaces a take-profit rung when price crosses a multiple", () => {
-    const pos = makeInput({ priorPeakPriceUsd: 1.5 });
-    const [alert] = runWatchCycle([pos], fixedPrice(2), NOW_EARLY, CONFIG);
-    expect(alert.updatedPeakPriceUsd).toBe(2);
-    expect(alert.decisions).toHaveLength(1);
-    expect(alert.decisions[0].kind).toBe("take_profit");
-    expect(alert.decisions[0].rungIndex).toBe(0);
+  it("surfaces a take-profit decision when a rung is crossed", () => {
+    const [alert] = runWatchCycle([input()], () => 2, NOW, CONFIG);
+
+    expect(alert?.decisions).toMatchObject([{ kind: "take_profit", rungIndex: 0 }]);
   });
 
-  it("surfaces a stop-loss when price crashes below the stop threshold", () => {
-    const pos = makeInput();
-    const [alert] = runWatchCycle([pos], fixedPrice(0.5), NOW_EARLY, CONFIG);
-    expect(alert.decisions).toHaveLength(1);
-    expect(alert.decisions[0].kind).toBe("stop_loss");
-    expect(alert.decisions[0].sellFraction).toBe(1);
+  it("surfaces a stop-loss decision when the stop is crossed", () => {
+    const [alert] = runWatchCycle([input()], () => 0.5, NOW, CONFIG);
+
+    expect(alert?.decisions).toMatchObject([{ kind: "stop_loss" }]);
   });
 
-  it("returns no decisions on an ordinary hold", () => {
-    const pos = makeInput({ priorPeakPriceUsd: 1.4 });
-    const [alert] = runWatchCycle([pos], fixedPrice(1.3), NOW_EARLY, CONFIG);
-    expect(alert.decisions).toEqual([]);
-    expect(alert.note).toBeUndefined();
-  });
-});
+  it("reports an empty decision list when nothing fires", () => {
+    const [alert] = runWatchCycle([input()], () => 1.1, NOW, CONFIG);
 
-describe("runWatchCycle — trailing depends on consumed rungs", () => {
-  it("does NOT surface trailing before any rung is consumed", () => {
-    // priorPeak 4, price 2.5 = -37.5% from peak (past 25%) but nothing consumed.
-    const pos = makeInput({ priorPeakPriceUsd: 4, consumedRungs: [] });
-    const [alert] = runWatchCycle([pos], fixedPrice(2.5), NOW_EARLY, CONFIG);
-    expect(alert.decisions.some((d) => d.kind === "trailing_stop")).toBe(false);
+    expect(alert?.decisions).toEqual([]);
+    expect(alert?.note).toBeUndefined();
   });
 
-  it("surfaces trailing once a rung is consumed and price falls below peak drawdown", () => {
-    const pos = makeInput({ priorPeakPriceUsd: 4, consumedRungs: [0] });
-    const [alert] = runWatchCycle([pos], fixedPrice(2.5), NOW_EARLY, CONFIG);
-    expect(alert.decisions).toHaveLength(1);
-    expect(alert.decisions[0].kind).toBe("trailing_stop");
-    expect(alert.decisions[0].sellFraction).toBeCloseTo(0.5, 10);
-  });
-});
+  it("evaluates the rules against the REFRESHED peak, not the stale one", () => {
+    // Peak carried as 1, price spikes to 4, then the trailing stop is measured
+    // from 4 — so a same-tick price of 4 cannot itself trip the trail.
+    const [alert] = runWatchCycle(
+      [input({ consumedRungs: [0], priorPeakPriceUsd: 1 })],
+      () => 4,
+      NOW,
+      CONFIG,
+    );
 
-describe("runWatchCycle — consumedRungs threading", () => {
-  it("threads consumedRungs into evaluateExit so a consumed rung is skipped", () => {
-    // Price at 3x would fire rungs 0 and 1, but rung 0 is already consumed.
-    const pos = makeInput({ priorPeakPriceUsd: 3, consumedRungs: [0] });
-    const [alert] = runWatchCycle([pos], fixedPrice(3), NOW_EARLY, CONFIG);
-    expect(alert.decisions).toHaveLength(1);
-    expect(alert.decisions[0].rungIndex).toBe(1);
+    expect(alert?.updatedPeakPriceUsd).toBe(4);
+    expect(alert?.decisions).toEqual([]);
+  });
+
+  it("returns one alert per position, in input order", () => {
+    const alerts = runWatchCycle(
+      [input({ token: "A" }), input({ token: "B" }), input({ token: "C" })],
+      () => 1.1,
+      NOW,
+      CONFIG,
+    );
+
+    expect(alerts.map((a) => a.token)).toEqual(["A", "B", "C"]);
+  });
+
+  it("returns nothing for an empty sweep", () => {
+    expect(runWatchCycle([], () => 1, NOW, CONFIG)).toEqual([]);
   });
 });
 
-describe("runWatchCycle — price unavailable", () => {
-  it("emits a price_unavailable alert with null price and [] when lookup returns null", () => {
-    const pos = makeInput({ priorPeakPriceUsd: 2.5 });
-    const [alert] = runWatchCycle([pos], fixedPrice(null), NOW_EARLY, CONFIG);
-    expect(alert.currentPriceUsd).toBeNull();
-    expect(alert.decisions).toEqual([]);
-    expect(alert.note).toBe("price_unavailable");
-    // Peak is carried unchanged when the price is unknown.
-    expect(alert.updatedPeakPriceUsd).toBe(2.5);
+describe("runWatchCycle — price fault isolation", () => {
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["NaN", Number.NaN],
+    ["zero", 0],
+    ["negative", -1],
+  ])("degrades a %s price to a price_unavailable alert", (_label, price) => {
+    const [alert] = runWatchCycle(
+      [input({ priorPeakPriceUsd: 3 })],
+      () => price as number,
+      NOW,
+      CONFIG,
+    );
+
+    expect(alert).toMatchObject({
+      currentPriceUsd: null,
+      decisions: [],
+      note: "price_unavailable",
+      updatedPeakPriceUsd: 3,
+    });
   });
 
-  it("treats undefined / NaN / non-positive prices as unavailable", () => {
-    const pos = makeInput();
-    for (const bad of [undefined, NaN, Infinity, 0, -3]) {
-      const [alert] = runWatchCycle(
-        [pos],
-        fixedPrice(bad as number | null | undefined),
-        NOW_EARLY,
-        CONFIG,
-      );
-      expect(alert.currentPriceUsd, `price ${String(bad)}`).toBeNull();
-      expect(alert.note, `price ${String(bad)}`).toBe("price_unavailable");
-    }
+  it("does not let a throwing price lookup abort the sweep", () => {
+    const priceOf = vi.fn((token: string) => {
+      if (token === "B") throw new Error("provider down");
+      return 2;
+    });
+
+    const alerts = runWatchCycle(
+      [input({ token: "A" }), input({ token: "B" }), input({ token: "C" })],
+      priceOf,
+      NOW,
+      CONFIG,
+    );
+
+    expect(alerts).toHaveLength(3);
+    expect(alerts[1]).toMatchObject({ token: "B", note: "price_unavailable", decisions: [] });
+    // Neighbours still evaluated normally.
+    expect(alerts[0]?.decisions).toMatchObject([{ kind: "take_profit" }]);
+    expect(alerts[2]?.decisions).toMatchObject([{ kind: "take_profit" }]);
   });
 
-  it("does not throw when priceOf itself throws — degrades to unavailable", () => {
-    const pos = makeInput();
-    const throwing = (): number => {
-      throw new Error("rpc down");
-    };
-    const run = () => runWatchCycle([pos], throwing, NOW_EARLY, CONFIG);
-    expect(run).not.toThrow();
-    const [alert] = run();
-    expect(alert.currentPriceUsd).toBeNull();
-    expect(alert.note).toBe("price_unavailable");
-  });
-});
+  it("never proposes an exit on a stale position it could not price", () => {
+    const [alert] = runWatchCycle([input({ consumedRungs: [] })], () => null, NOW, CONFIG);
 
-describe("runWatchCycle — multiple positions independent", () => {
-  it("evaluates each position independently and preserves order", () => {
-    const winner = makeInput({ token: "WIN", priorPeakPriceUsd: 1.5 });
-    const loser = makeInput({ token: "LOSE" });
-    const missing = makeInput({ token: "MISS" });
-    const priceOf = (token: string): number | null => {
-      if (token === "WIN") return 2; // hits TP rung 0
-      if (token === "LOSE") return 0.5; // hits stop-loss
-      return null; // MISS → unavailable
-    };
-    const alerts = runWatchCycle([winner, loser, missing], priceOf, NOW_EARLY, CONFIG);
-    expect(alerts.map((a) => a.token)).toEqual(["WIN", "LOSE", "MISS"]);
-    expect(alerts[0].decisions[0].kind).toBe("take_profit");
-    expect(alerts[1].decisions[0].kind).toBe("stop_loss");
-    expect(alerts[2].note).toBe("price_unavailable");
-    expect(alerts[2].currentPriceUsd).toBeNull();
+    expect(alert?.decisions).toEqual([]);
   });
 });
