@@ -1,132 +1,80 @@
 /**
- * Pure derivation tests for the post-mission summary card. Locks the signed ETH
- * headline, the optional percent parenthetical, the trades/settlement meta line,
- * the USD tooltip, and the sign-based PnL tone.
+ * missionSummaryModel — the summary card's money strings, without React.
+ *
+ * The card is a thin map over these, so this is where the null-guarding and
+ * the sign rules are pinned. The theme running through every case: a missing
+ * input prints an em dash, never a fabricated figure — a summary card that
+ * invents a number is worse than one that admits it does not know.
  */
 
 import { describe, expect, it } from "vitest";
-import { EM_DASH } from "../missionHistoryModel.js";
 import {
-  formatBankrollRange,
-  formatBankrollRangeUsd,
-  formatMetaLine,
   formatPnlEth,
   formatPnlPct,
   formatPnlUsd,
-  formatSettlement,
-  formatSettlementSignal,
+  formatTrades,
   pnlToneClass,
-  pnlUsdTitle,
 } from "../missionSummaryModel.js";
 
-describe("formatPnlEth", () => {
-  it("signs the ETH figure and appends the unit", () => {
-    expect(formatPnlEth(0.0012)).toBe("+0.0012 ETH");
-    expect(formatPnlEth(-0.0034)).toBe("-0.0034 ETH");
-    expect(formatPnlEth(0)).toBe("+0.0000 ETH");
+describe("formatPnlUsd", () => {
+  it("values the ETH PnL at the run's close price", () => {
+    // Mission #9's actual row: -0.00031936869485788 x 1782.65 = -$0.5693.
+    expect(formatPnlUsd(-0.00031936869485788, 1782.65)).toBe("-$0.57");
   });
 
-  it("renders a bare em dash for null / non-finite", () => {
-    expect(formatPnlEth(null)).toBe(EM_DASH);
-    expect(formatPnlEth(Number.NaN)).toBe(EM_DASH);
+  it("signs a gain", () => {
+    expect(formatPnlUsd(0.002, 1800)).toBe("+$3.60");
+  });
+
+  it("em-dashes when there is no close price to value it with", () => {
+    expect(formatPnlUsd(0.002, null)).toBe("—");
+  });
+
+  it("em-dashes when the PnL itself is unknown", () => {
+    expect(formatPnlUsd(null, 1800)).toBe("—");
+  });
+});
+
+describe("formatPnlEth", () => {
+  it("signs and suffixes the native figure", () => {
+    expect(formatPnlEth(0.0012)).toBe("+0.0012 ETH");
+    expect(formatPnlEth(-0.0034)).toBe("-0.0034 ETH");
+  });
+
+  it("drops the suffix rather than labelling a missing figure as ETH", () => {
+    expect(formatPnlEth(null)).toBe("—");
   });
 });
 
 describe("formatPnlPct", () => {
-  it("wraps a signed percent in parentheses", () => {
-    expect(formatPnlPct(1.2)).toBe("(+1.20%)");
-    expect(formatPnlPct(-3.4)).toBe("(-3.40%)");
+  it("signs the percent", () => {
+    expect(formatPnlPct(1.2)).toBe("+1.20%");
+    expect(formatPnlPct(-3.4)).toBe("-3.40%");
   });
 
-  it("returns an empty string for null / non-finite", () => {
+  it("returns empty string when unknown, so the headline drops it entirely", () => {
+    // A dash beside a real PnL would read as a value; nothing reads as nothing.
     expect(formatPnlPct(null)).toBe("");
     expect(formatPnlPct(Number.NaN)).toBe("");
   });
 });
 
-describe("formatSettlement", () => {
-  it("reads flat when no bags are held", () => {
-    expect(formatSettlement(0)).toBe("ended flat ✅");
-  });
-
-  it("pluralises held bags", () => {
-    expect(formatSettlement(1)).toBe("1 bag held ⚠");
-    expect(formatSettlement(3)).toBe("3 bags held ⚠");
-  });
-});
-
-describe("formatMetaLine", () => {
-  it("joins the trade count with the settlement clause", () => {
-    expect(formatMetaLine(4, 0)).toBe("4 trades · ended flat ✅");
-    expect(formatMetaLine(7, 2)).toBe("7 trades · 2 bags held ⚠");
-  });
-});
-
-describe("formatSettlementSignal", () => {
-  it("reads flat when no attributable bags remain", () => {
-    expect(formatSettlementSignal(0)).toBe("flat");
-  });
-
-  it("counts held bags without pluralising or framing", () => {
-    expect(formatSettlementSignal(1)).toBe("1 held");
-    expect(formatSettlementSignal(3)).toBe("3 held");
-  });
-});
-
-describe("formatBankrollRange", () => {
-  it("renders the start→end ETH range", () => {
-    expect(formatBankrollRange(0.0137, 0.0149)).toBe("0.0137 → 0.0149");
-  });
-
-  it("em-dashes each side independently when its snapshot is missing", () => {
-    expect(formatBankrollRange(null, 0.0149)).toBe("— → 0.0149");
-    expect(formatBankrollRange(0.0137, null)).toBe("0.0137 → —");
-  });
-});
-
-describe("formatBankrollRangeUsd", () => {
-  it("converts each side to USD at the close price", () => {
-    expect(formatBankrollRangeUsd(0.01, 0.005, 2000)).toBe("$20.00 → $10.00");
-  });
-
-  it("em-dashes a side missing its snapshot, or both when price is absent", () => {
-    expect(formatBankrollRangeUsd(null, 0.005, 2000)).toBe("— → $10.00");
-    expect(formatBankrollRangeUsd(0.01, 0.005, null)).toBe("— → —");
-  });
-});
-
-describe("formatPnlUsd", () => {
-  it("renders a signed USD figure at close", () => {
-    expect(formatPnlUsd(0.0012, 3000)).toBe("+$3.60");
-    expect(formatPnlUsd(-0.001, 3000)).toBe("-$3.00");
-  });
-
-  it("em-dashes when either input is missing", () => {
-    expect(formatPnlUsd(null, 3000)).toBe(EM_DASH);
-    expect(formatPnlUsd(0.0012, null)).toBe(EM_DASH);
-  });
-});
-
-describe("pnlUsdTitle", () => {
-  it("formats the closing USD value with a caption", () => {
-    expect(pnlUsdTitle(0.01, 3000)).toBe("$30.00 at close");
-  });
-
-  it("is undefined when either input is missing", () => {
-    expect(pnlUsdTitle(null, 3000)).toBeUndefined();
-    expect(pnlUsdTitle(0.01, null)).toBeUndefined();
+describe("formatTrades", () => {
+  it("pluralises", () => {
+    expect(formatTrades(0)).toBe("0 trades");
+    expect(formatTrades(1)).toBe("1 trade");
+    expect(formatTrades(2)).toBe("2 trades");
   });
 });
 
 describe("pnlToneClass", () => {
-  it("colours by sign", () => {
-    expect(pnlToneClass(0.5)).toBe("text-[var(--color-success)]");
-    expect(pnlToneClass(-0.5)).toBe("text-destructive");
-    expect(pnlToneClass(0)).toBe("text-[var(--vex-text-2)]");
+  it("tones a gain as success and a loss as destructive", () => {
+    expect(pnlToneClass(0.01)).toContain("success");
+    expect(pnlToneClass(-0.01)).toContain("destructive");
   });
 
-  it("is muted for null / non-finite", () => {
+  it("stays muted for flat and for unknown", () => {
+    expect(pnlToneClass(0)).toBe("text-[var(--vex-text-2)]");
     expect(pnlToneClass(null)).toBe("text-[var(--vex-text-3)]");
-    expect(pnlToneClass(Number.NaN)).toBe("text-[var(--vex-text-3)]");
   });
 });

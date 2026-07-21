@@ -24,11 +24,16 @@ const MISSION = {
 function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
   return {
     getMission: vi.fn(async () => MISSION as never),
+    // Fork-specific: finalize reads the LIVE on-chain bankroll first, then
+    // falls back to the projection. Return null so the projection stays the
+    // source of the end bankroll/price/open-positions the assertions expect.
+    readBankrollOnChain: vi.fn(async () => null) as never,
     readBankroll: vi.fn(async () => ({ bankrollEth: 0.01, ethPriceUsd: 3000, openPositions: [] })),
     openResult: vi.fn(async () => {}),
     closeResult: vi.fn(async () => {}),
     getResult: vi.fn(async () => null),
     countTrades: vi.fn(async () => 3),
+    setStopSummaryIfAbsent: vi.fn(async () => true),
     ...over,
   };
 }

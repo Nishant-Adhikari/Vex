@@ -8,6 +8,11 @@
  * Start and finalize run in different turns, so nothing is held in memory —
  * the row is keyed on `mission_run_id` and re-addressed at close.
  *
+ * Finalize also backfills a system-generated `stop_summary` for a run that
+ * reached a terminal state without ever calling `mission_stop` (provider
+ * error, park, timeout). See `system-summary.ts` for the honesty rules;
+ * the write is guarded in SQL so agent-authored prose always wins.
+ *
  * Naming: this produces a "mission result (ETH)" — an honest, ETH-
  * denominated PnL record. Never call it "performance" here or in any
  * consumer (agent behavior is directional and carries risk; a single
@@ -28,6 +33,8 @@ import {
   getResultForRun,
   type MissionResultOutcome,
 } from "../../db/repos/mission-results.js";
+import { setStopSummaryIfAbsent } from "../../db/repos/mission-runs.js";
+import { buildSystemSummary } from "./system-summary.js";
 import logger from "@utils/logger.js";
 
 const GOAL_SNIPPET_MAX = 240;
@@ -42,6 +49,11 @@ export interface CaptureDeps {
   closeResult: typeof closeMissionResult;
   getResult: typeof getResultForRun;
   countTrades: typeof countMissionTrades;
+  /**
+   * Writes the fallback prose for a run that never called `mission_stop`.
+   * No-ops when the agent already wrote one (guarded in SQL).
+   */
+  setStopSummaryIfAbsent: typeof setStopSummaryIfAbsent;
 }
 
 // Built lazily (inside each function's try) rather than at module load: some
@@ -57,6 +69,7 @@ function productionDeps(): CaptureDeps {
     closeResult: closeMissionResult,
     getResult: getResultForRun,
     countTrades: countMissionTrades,
+    setStopSummaryIfAbsent,
   };
 }
 
@@ -155,6 +168,7 @@ export async function captureMissionFinal(
       existing.startedAt,
       new Date().toISOString(),
     );
+    const openPositions = projection?.openPositions ?? null;
     await deps.closeResult({
       missionRunId: args.runId,
       outcome: args.outcome,
@@ -168,8 +182,35 @@ export async function captureMissionFinal(
       losses: 0,
       rotations: 0,
       vetoes: 0,
-      openPositions: projection?.openPositions ?? null,
+      openPositions,
     });
+
+    // A run that died without calling `mission_stop` leaves no prose at
+    // all, so the card falls back to raw metrics exactly when the operator
+    // most needs an explanation — and says nothing about a position left
+    // open. Backfill an honest, clearly-labelled account from the facts we
+    // just wrote. The repo guards on `stop_summary IS NULL`, so a real
+    // agent-authored summary is never overwritten.
+    const wrote = await deps.setStopSummaryIfAbsent(
+      args.runId,
+      buildSystemSummary({
+        outcome: args.outcome,
+        stopReason: args.stopReason,
+        trades,
+        pnlEth,
+        ethPriceUsd: projection?.ethPriceUsd ?? onChain?.ethPriceUsd ?? null,
+        openPositionSymbols: (openPositions ?? [])
+          .map((p) => p.symbol)
+          .filter((sym): sym is string => typeof sym === "string" && sym.length > 0),
+      }),
+    );
+    if (wrote) {
+      logger.info("mission.results.system_summary_written", {
+        runId: args.runId,
+        stopReason: args.stopReason,
+        openPositions: (openPositions ?? []).length,
+      });
+    }
   } catch (err) {
     logger.warn("mission.results.capture_final_failed", {
       runId: args.runId,
