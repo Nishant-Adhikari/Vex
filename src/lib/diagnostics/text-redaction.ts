@@ -29,7 +29,25 @@
  * Counts of redactions per tier are reported alongside the redacted text so
  * callers can decide whether the payload retains enough signal to embed /
  * persist / surface, and whether to flag a high-redaction-count event.
+ *
+ * The Tier 1 / Tier 2 shape patterns below are the canonical source for
+ * `./secret-detectors.ts`'s shared low-level regexes — this module imports
+ * them back so there is exactly one definition of each shape. This is a
+ * move-only extraction: the regex sources and application order here are
+ * unchanged, so this module's behavior (and its existing test suite) is
+ * unaffected.
  */
+
+import {
+  API_KEY_PREFIX_RE,
+  BIP39_HEURISTIC_RE,
+  EVM_ADDRESS_RE,
+  JWT_RE,
+  PRIVATE_KEY_LABELLED_RE,
+  RAW_HEX_KEY_RE,
+  SOLANA_ADDRESS_RE,
+  TX_HASH_HEX_RE,
+} from "./secret-detectors.js";
 
 export interface RedactionResult {
   text: string;
@@ -38,44 +56,6 @@ export interface RedactionResult {
 }
 
 const HARD_PLACEHOLDER = "[REDACTED:";
-
-// ── Tier 1 patterns ─────────────────────────────────────────────
-
-// Ethereum private key shape: 0x + 64 hex chars. NOTE: tx hashes also match
-// this length; we treat 0x + 64 hex as a tx hash (Tier 2 mask) by default to
-// avoid losing semantic shape, and rely on context-prefix detection below
-// for explicit private-key labelling.
-const PRIVATE_KEY_LABELLED_RE = /(private[_\s-]?key|seed[_\s-]?key|wallet[_\s-]?key|secret[_\s-]?key)\s*[:=]\s*['"`]?(0x)?[a-fA-F0-9]{40,128}['"`]?/gi;
-
-// Bare 64-hex without 0x prefix following a key-ish label.
-const RAW_HEX_KEY_RE = /(private[_\s-]?key|seed[_\s-]?key)\s*[:=]\s*[a-fA-F0-9]{64}/gi;
-
-// Known API key prefixes.
-const API_KEY_PREFIX_RE = /\b(sk-[a-zA-Z0-9_-]{20,}|sk_live_[a-zA-Z0-9_-]{20,}|sk_test_[a-zA-Z0-9_-]{20,}|pk_live_[a-zA-Z0-9_-]{20,}|pk_test_[a-zA-Z0-9_-]{20,}|sk-or-[a-zA-Z0-9_-]{20,}|sk-ant-[a-zA-Z0-9_-]{20,})\b/g;
-
-// JWT: three base64url segments separated by dots, leading segment encodes JSON header.
-const JWT_RE = /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g;
-
-// BIP39 mnemonic: requires the dictionary; here we use a heuristic — a sequence
-// of 12/15/18/21/24 lowercase words separated by single spaces, where each word
-// is 3-8 chars. Real BIP39 detection would need the wordlist; we err on the side
-// of false positives (better to redact innocent text than leak a real phrase).
-const BIP39_HEURISTIC_RE = /\b(?:[a-z]{3,8}\s){11,23}[a-z]{3,8}\b/g;
-
-// ── Tier 2 patterns ─────────────────────────────────────────────
-
-// Ethereum/EVM address: 0x + 40 hex. Word-bounded.
-const EVM_ADDRESS_RE = /\b0x[a-fA-F0-9]{40}\b/g;
-
-// Transaction hash: 0x + 64 hex. Word-bounded.
-// Caveat: also matches private keys in raw hex form; the PRIVATE_KEY_LABELLED_RE
-// runs first so labelled keys are hard-redacted before this mask applies.
-const TX_HASH_HEX_RE = /\b0x[a-fA-F0-9]{64}\b/g;
-
-// Solana address: base58 32-44 chars. Heuristic — base58 alphabet excludes 0OIl.
-// We bound to 32-44 chars to match Solana pubkey length and exclude shorter
-// random strings (which would over-match).
-const SOLANA_ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
 
 // ── Public API ──────────────────────────────────────────────────
 

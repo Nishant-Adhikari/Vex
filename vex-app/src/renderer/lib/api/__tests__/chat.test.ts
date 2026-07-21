@@ -18,11 +18,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 
-import { useSubmitChat } from "../chat.js";
+import { useIsChatSubmitting, useSubmitChat } from "../chat.js";
 import { sessionKeys } from "../sessions.js";
-import { usageKeys } from "../queryKeys.js";
+import { approvalsKeys, usageKeys } from "../queryKeys.js";
 
 const SESSION = "00000000-0000-4000-8000-0000000000c2";
+const OTHER_SESSION = "00000000-0000-4000-8000-0000000000c3";
 const submitMock = vi.fn();
 
 beforeEach(() => {
@@ -109,6 +110,54 @@ describe("useSubmitChat onSuccess invalidation", () => {
 
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
+
+  it("immediately refreshes inline and global approvals when the turn enqueues one", async () => {
+    submitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: { text: null, pendingApprovals: ["approval-1"] },
+      }),
+      cancel: vi.fn(),
+    });
+    const client = new QueryClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useSubmitChat(), {
+      wrapper: makeWrapper(client),
+    });
+
+    await result.current.mutateAsync({ sessionId: SESSION, message: "send it" });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: approvalsKeys.pending(SESSION),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: approvalsKeys.pendingAll(),
+    });
+  });
+
+  it("does not refresh approvals when the turn enqueues none", async () => {
+    submitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: { text: null, pendingApprovals: [] },
+      }),
+      cancel: vi.fn(),
+    });
+    const client = new QueryClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useSubmitChat(), {
+      wrapper: makeWrapper(client),
+    });
+
+    await result.current.mutateAsync({ sessionId: SESSION, message: "hello" });
+
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: approvalsKeys.pending(SESSION),
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: approvalsKeys.pendingAll(),
+    });
+  });
 });
 
 describe("useSubmitChat stop / cancel ownership (9-5b)", () => {
@@ -181,5 +230,62 @@ describe("useSubmitChat stop / cancel ownership (9-5b)", () => {
       settle2({ ok: true, data: { text: null } });
       await Promise.resolve();
     });
+  });
+});
+
+describe("useIsChatSubmitting session isolation (stale-session spinner guard)", () => {
+  // The working-avatar spinner (agentActivity.ts / SessionTranscript) reads
+  // this hook per-session. A submit still in flight for a session the user
+  // has since navigated AWAY from must never make the newly active session
+  // read as submitting — the mutation-cache lookup keys strictly on
+  // `mutation.state.variables.sessionId`, never on "most recent mutation".
+  it("keeps a pending submit's status scoped to its own sessionId, not a session navigated to afterward", async () => {
+    let settle!: (r: { ok: true; data: { text: null } }) => void;
+    submitMock.mockReturnValue({
+      promise: new Promise<{ ok: true; data: { text: null } }>((res) => {
+        settle = res;
+      }),
+      cancel: vi.fn(),
+    });
+    const client = new QueryClient();
+    const wrapper = makeWrapper(client);
+
+    const submitHook = renderHook(() => useSubmitChat(), { wrapper });
+    void submitHook.result.current.mutate({ sessionId: SESSION, message: "hi" });
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+
+    // Reading a DIFFERENT (freshly navigated-to) session must stay false —
+    // the in-flight mutation belongs to SESSION, not OTHER_SESSION.
+    const otherSessionHook = renderHook(
+      () => useIsChatSubmitting(OTHER_SESSION),
+      { wrapper },
+    );
+    expect(otherSessionHook.result.current).toBe(false);
+
+    // The original session correctly reads true while its own submit is
+    // still pending.
+    const originalSessionHook = renderHook(() => useIsChatSubmitting(SESSION), {
+      wrapper,
+    });
+    expect(originalSessionHook.result.current).toBe(true);
+
+    await act(async () => {
+      settle({ ok: true, data: { text: null } });
+      await Promise.resolve();
+    });
+
+    // Once the turn settles, both sessions read false again.
+    otherSessionHook.rerender();
+    originalSessionHook.rerender();
+    await waitFor(() => expect(originalSessionHook.result.current).toBe(false));
+    expect(otherSessionHook.result.current).toBe(false);
+  });
+
+  it("returns false for a null sessionId (welcome / no active session)", () => {
+    const client = new QueryClient();
+    const { result } = renderHook(() => useIsChatSubmitting(null), {
+      wrapper: makeWrapper(client),
+    });
+    expect(result.current).toBe(false);
   });
 });

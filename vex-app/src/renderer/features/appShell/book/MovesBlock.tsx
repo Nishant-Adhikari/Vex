@@ -14,27 +14,41 @@
  * status dot · stamp (mono 9px chip: BUY success-tone / SELL paper-tone /
  * SWAP muted; `productType` takes priority — `bridge` → BRIDGE·VENUE,
  * `send`/`transfer` → TRANSFER, both muted) · `IN → OUT` legs · HH:MM. Raw
- * mint addresses never print in full: address-like token strings truncate to
- * `So1111…1112` (full mint on the tooltip) and a deliberately tiny
- * well-known-mint map resolves the unmissable tickers. Short token strings
- * render as uppercase symbols. A leg carries its amount (`0.0017 ETH`) ONLY
- * when it is a base/native/quote UNIT (ETH/SOL/stable) AND the recorded amount
- * is a dotted decimal — the TRADED token's raw quantity is deliberately
- * dropped (`BUY 0.01 ETH → VENA`, not `→ 31100.1 VENA`; owner: "we don't care
- * about qty — ETH is fine"); raw base-unit integers (wei/lamports) and nulls
- * also render nothing.
- *
- * A SUMMARY header tops the ledger — `SEED 0.10 ETH · DEPLOYED 0.04 ETH (40%)`.
- * Deployed sums the ETH leg of every fetched BUY (gross, ETH-denominated from
- * the moves themselves — the portfolio DTO is USD-only); seed is the session's
- * `bankrollStartEth` from its latest finalized mission result, dropping out
- * (with its `%`) when no such ETH seed is available.
+ * mint addresses never print in full: a well-known-mint address ALWAYS wins
+ * (ticker + the app's offline brand mark), full mint kept on the tooltip.
+ * Only once no known mint matches does a bounded, sanitized display symbol
+ * from the activity's exact capture item get a turn — captured symbols are
+ * UNTRUSTED (any token can self-declare metadata claiming a brand ticker
+ * such as "SOL"), so brand-ticker claims are always dropped. The activity's
+ * raw token field can be populated from the same provider capture for
+ * bridge-style legs, so it cannot corroborate one either. A known mint
+ * address is the ONLY thing that authorizes a brand LOGO. When the capture
+ * item recorded NO usable symbol (legacy raw-address rows), a FALLBACK
+ * symbol resolved from this wallet's own `proj_balances` metadata
+ * (`inputTokenLocalSymbol`/`outputTokenLocalSymbol`) gets a turn next —
+ * EQUALLY UNTRUSTED provider-supplied data, gated by the exact same
+ * brand-collision rule, but PLAIN TEXT ONLY: unlike the captured symbol it
+ * never reaches `TokenIcon` even for a non-brand match, since its
+ * provenance is one step further removed from the actual fill (any balance
+ * the wallet currently/previously held at that address, not the trade
+ * capture itself). Short raw token strings still render as uppercased plain
+ * TEXT (so a legacy `ETH`/`SOL` leg stays readable), but a brand-matching
+ * raw string is withheld from the icon so it never borrows the real asset's
+ * mark; non-brand strings may keep the neutral monogram (see `tokenDisplay`
+ * and `@shared/token-symbol-sanitizer.js`). Address-like fallbacks truncate
+ * to `So1111…1112`. A leg carries its amount (`0.0017 ETH`) ONLY when the
+ * recorded amount is a dotted decimal — raw base-unit integers from legacy
+ * captures (wei/lamports) and nulls render nothing.
  *
  * The ledger shows the 10 newest fills (`MOVES_DISPLAY_CAP`); the header badge
  * still counts the FULL fetched result (server-capped at `MOVES_MAX`). A row
- * whose `chain`+`txRef` resolve through `moveExplorerUrl` renders as an
- * external link (target=_blank → main's `shell.openExternal` allowlist) with a
- * hover-revealed ↗ affordance; unresolvable rows stay non-interactive.
+ * whose `chain`+`txRef` resolve through `explorerTxUrl` renders as an external
+ * link (target=_blank → main's `shell.openExternal` allowlist) with a
+ * hover-revealed ↗ affordance. A row with NO `txRef` whose `chain`+
+ * `walletAddress` resolve through `explorerAccountUrl` (e.g. HyperCore) keeps a
+ * non-linked row but appends a distinct, labelled `View account ↗` link — the
+ * row itself is NOT an anchor. Rows that resolve to neither stay
+ * non-interactive.
  *
  * Dot colour is a PURE client-side derivation over the tolerant `captureStatus`
  * string (executed/filled/closed/claimed → done; open/pending → pending;
@@ -46,9 +60,13 @@ import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
+import {
+  explorerAccountUrl,
+  explorerTxUrl,
+} from "@shared/explorer-links.js";
+import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
+import { BRAND_ICON_SYMBOLS, TokenIcon } from "../../../components/common/TokenIcon.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
-import { useMissionSessionResult } from "../../../lib/api/mission.js";
-import { moveExplorerUrl } from "../../../lib/explorer-links.js";
 import { formatClock, truncateAddress } from "../../../lib/format.js";
 import { formatEth } from "../missionHistoryModel.js";
 import { cn } from "../../../lib/utils.js";
@@ -142,37 +160,106 @@ interface TokenDisplay {
   readonly text: string;
   /** Full value for the tooltip when `text` is lossy, else `null`. */
   readonly full: string | null;
-  /**
-   * True when `text` is a base/native/quote unit (ETH/SOL/stable) — the leg
-   * that carries its amount. False for a traded token (its qty is dropped).
-   */
-  readonly isUnit: boolean;
+  /** Safe symbol used by the app's offline token mark; null for raw addresses. */
+  readonly iconSymbol: string | null;
 }
 
 /**
- * Display rule for one swap leg: known mint → ticker, address-like → the
- * canonical `truncateAddress` shortening (`So1111…1112`), short strings →
- * uppercase symbols. Legs are nullable in the tolerant DTO → `?`.
- * Truncated/known forms carry the full mint on the tooltip; symbols are
- * uppercased in JS (not CSS) so base58 case in truncations stays intact.
- * `isUnit` is derived from the RESOLVED ticker so the amount rule (below)
- * is stable across mint / address / symbol inputs.
+ * Display rule for one swap leg, in strict priority order. The GOVERNING
+ * invariant: a brand ticker + brand logo may be rendered ONLY when a
+ * `KNOWN_MINTS` address proves the identity; no untrusted string (captured
+ * symbol, the local balances-derived symbol, or the provider-populated raw
+ * `token`) may ever borrow a brand's name AND logo.
+ *
+ *  1. `token` resolves through the tiny `KNOWN_MINTS` map → canonical ticker
+ *     + brand mark. This is the ONLY brand path, and it is checked BEFORE the
+ *     captured symbol so a scam mint's capture metadata can never override a
+ *     genuinely recognized mint.
+ *  2. Captured symbol (`inputTokenSymbol`/`outputTokenSymbol`), sanitized: an
+ *     UNTRUSTED self-declared label. Allowed ONLY when it is NOT one of the
+ *     app's brand-marked tickers (`BRAND_ICON_SYMBOLS`, case-insensitive) — a
+ *     brand claim like "SOL" is ALWAYS dropped, with no corroboration
+ *     exception (bridge activity rows carry the same provider symbol in
+ *     `token`, so `token` cannot prove it). A permitted non-brand symbol is
+ *     absent from the brand-icon set, so `TokenIcon` renders a neutral
+ *     monogram, never a brand mark.
+ *  3. LOCAL SYMBOL FALLBACK (`inputTokenLocalSymbol`/`outputTokenLocalSymbol`,
+ *     WP-L2 sibling change): consulted ONLY once rule 2 yields nothing usable
+ *     (no captured symbol, or a captured brand claim just got dropped).
+ *     Resolved server-side from THIS WALLET's own `proj_balances` metadata —
+ *     EQUALLY UNTRUSTED, sanitized, and gated by the SAME brand-collision
+ *     check as rule 2 (a colliding local symbol is dropped outright, falling
+ *     through to the address truncation below — mirrors rule 2's precedent
+ *     exactly). Stricter than rule 2 even when it wins: `iconSymbol` is
+ *     ALWAYS withheld (plain text only, never even the neutral monogram) —
+ *     its provenance is a balance the wallet holds/held, not the fill itself.
+ *  4. Address-like raw `token` → the canonical `truncateAddress` shortening
+ *     (`So1111…1112`), full value on the tooltip.
+ *  5. Short raw `token` string, sanitized → uppercased PLAIN TEXT. This
+ *     restores human-readable legacy legs like "ETH"/"SOL". A brand-matching
+ *     raw string is shown as text but its `iconSymbol` is withheld (null), so
+ *     it NEVER reaches `TokenIcon` — text without a borrowed logo. A non-brand
+ *     raw string may keep the neutral monogram. An invalid / Unicode-bearing /
+ *     null / empty raw string → `?`.
+ *
+ * Legs are nullable in the tolerant DTO → `?`. Truncated/known forms carry
+ * the full mint on the tooltip; symbols are uppercased in JS (not CSS) so
+ * base58 case in truncations stays intact.
  */
-function tokenDisplay(token: string | null): TokenDisplay {
-  const base = resolveToken(token);
-  return { ...base, isUnit: UNIT_SYMBOLS.has(base.text) };
-}
-
-function resolveToken(token: string | null): Omit<TokenDisplay, "isUnit"> {
-  if (token === null || token.length === 0) return { text: "?", full: null };
-  const ticker = KNOWN_MINTS.get(token);
-  if (ticker !== undefined) return { text: ticker, full: token };
-  const evmTicker = KNOWN_EVM_TOKENS.get(token.toLowerCase());
-  if (evmTicker !== undefined) return { text: evmTicker, full: token };
-  if (ADDRESS_LIKE.test(token)) {
-    return { text: truncateAddress(token), full: token };
+function tokenDisplay(
+  token: string | null,
+  capturedSymbol: string | null,
+  localSymbol: string | null,
+): TokenDisplay {
+  // Rule 1 — the ONLY brand path: a known mint address proves the identity.
+  const knownTicker = token !== null ? KNOWN_MINTS.get(token) : undefined;
+  if (knownTicker !== undefined) {
+    return { text: knownTicker, full: token, iconSymbol: knownTicker };
   }
-  return { text: token.toUpperCase(), full: null };
+
+  // Rule 2 — captured symbol: untrusted; non-brand only, brand claims dropped.
+  const symbol = sanitizeTokenSymbol(capturedSymbol);
+  if (symbol !== null && !BRAND_ICON_SYMBOLS.has(symbol.toLowerCase())) {
+    return {
+      text: symbol.toUpperCase(),
+      full:
+        token !== null && token.toUpperCase() !== symbol.toUpperCase()
+          ? token
+          : null,
+      iconSymbol: symbol,
+    };
+  }
+
+  // Rule 3 — local balances-derived symbol fallback: untrusted; non-brand
+  // only (same gate as rule 2), PLAIN TEXT ONLY — never grants an icon.
+  const local = sanitizeTokenSymbol(localSymbol);
+  if (local !== null && !BRAND_ICON_SYMBOLS.has(local.toLowerCase())) {
+    return {
+      text: local.toUpperCase(),
+      full:
+        token !== null && token.toUpperCase() !== local.toUpperCase()
+          ? token
+          : null,
+      iconSymbol: null,
+    };
+  }
+
+  // Rule 4 — address-like raw token: truncated-address fallback.
+  if (token !== null && ADDRESS_LIKE.test(token)) {
+    return { text: truncateAddress(token), full: token, iconSymbol: null };
+  }
+
+  // Rule 5 — short raw token string: uppercased plain text. Invalid/Unicode/
+  // null/empty → `?`; brand-matching raw strings render as text but withhold
+  // the icon so they never borrow a brand logo; non-brand keeps the monogram.
+  const safeToken = sanitizeTokenSymbol(token);
+  if (safeToken === null) {
+    return { text: "?", full: null, iconSymbol: null };
+  }
+  const iconSymbol = BRAND_ICON_SYMBOLS.has(safeToken.toLowerCase())
+    ? null
+    : safeToken;
+  return { text: safeToken.toUpperCase(), full: null, iconSymbol };
 }
 
 /** ≤6 significant digits, no grouping — mono-ledger compact figures. */
@@ -405,12 +492,26 @@ function MovesSummary({
 function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const state = moveState(move.captureStatus);
   const side = sideStamp(move);
-  const input = tokenDisplay(move.inputToken);
-  const output = tokenDisplay(move.outputToken);
+  const input = tokenDisplay(
+    move.inputToken,
+    move.inputTokenSymbol,
+    move.inputTokenLocalSymbol,
+  );
+  const output = tokenDisplay(
+    move.outputToken,
+    move.outputTokenSymbol,
+    move.outputTokenLocalSymbol,
+  );
   const inputAmount = amountDisplay(move.inputAmount);
   const outputAmount = amountDisplay(move.outputAmount);
   const time = formatClock(move.createdAt);
-  const explorerUrl = moveExplorerUrl(move.chain, move.txRef);
+  const explorerUrl = explorerTxUrl(move.chain, move.txRef);
+  // No tx ref (e.g. a HyperCore fill) → offer a distinct account link instead
+  // of a whole-row link. Only consulted when there is no tx URL to prefer.
+  const accountUrl =
+    explorerUrl === null
+      ? explorerAccountUrl(move.chain, move.walletAddress)
+      : null;
 
   // Shared row cells. The `group` sits on the hoverable wrapper (anchor for
   // linked rows, <li> for plain rows) so legs lighten on row hover in both.
@@ -434,10 +535,30 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
       >
         {side.text}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
-        <span title={input.full ?? undefined}>{legText(input, inputAmount)}</span>
-        <span className="text-[var(--vex-text-3)]">{" → "}</span>
-        <span title={output.full ?? undefined}>{legText(output, outputAmount)}</span>
+      <span className="flex h-4 min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11px] leading-none text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
+        <span
+          title={input.full ?? undefined}
+          className="inline-flex min-w-0 items-center gap-1"
+        >
+          {input.iconSymbol !== null ? (
+            <TokenIcon symbol={input.iconSymbol} size={12} />
+          ) : null}
+          <span className="truncate">
+            {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+          </span>
+        </span>
+        <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
+        <span
+          title={output.full ?? undefined}
+          className="inline-flex min-w-0 items-center gap-1"
+        >
+          {output.iconSymbol !== null ? (
+            <TokenIcon symbol={output.iconSymbol} size={12} />
+          ) : null}
+          <span className="truncate">
+            {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+          </span>
+        </span>
       </span>
       {time !== null ? (
         <span className="shrink-0 text-right font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
@@ -482,6 +603,21 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
       className="group flex items-center gap-2 border-b border-[var(--vex-line)] py-1.5 last:border-b-0"
     >
       {cells}
+      {accountUrl !== null ? (
+        // No tx hash on this row (HyperCore) — link to the account page, NOT
+        // the whole row. target=_blank routes through main's
+        // setWindowOpenHandler → shell.openExternal allowlist.
+        <a
+          href={accountUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open account on block explorer"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        >
+          View account
+          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} aria-hidden />
+        </a>
+      ) : null}
     </li>
   );
 }

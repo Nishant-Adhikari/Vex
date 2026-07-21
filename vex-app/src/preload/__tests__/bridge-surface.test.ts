@@ -139,6 +139,7 @@ describe("preload bridge surface", () => {
       "CH.wallets.getPreparedIntent",
       "CH.wallets.cancelPreparedIntent",
       "CH.models.listAvailable",
+      "CH.onboarding.providerListModels",
       "CH.usage.getSessionTotals",
       "CH.usage.getLastTurn",
       "CH.usage.getContextWindow",
@@ -157,6 +158,7 @@ describe("preload bridge surface", () => {
       // Move 0.3 — read-only per-session executed-trade activity (MOVES).
       "CH.portfolio.listMoves",
       "CH.sessions.getModel",
+      "CH.sessions.exportMarkdown",
       // Error-diagnostics phase (D-FOLDER) — "Open logs folder".
       "CH.support.openLogsFolder",
       // Updater (M13) — user-triggered in-app update bridge.
@@ -168,6 +170,24 @@ describe("preload bridge surface", () => {
       "CH.updater.openReleaseNotes",
       // T1 — read-only live VEX market snapshot bridge.
       "CH.market.getVexSnapshot",
+      // Hyperliquid — renderer-safe positions and user-confirmed session risk.
+      "CH.hyperliquid.getPositions",
+      "CH.hyperliquid.listRiskProposals",
+      "CH.hyperliquid.confirmRiskProposal",
+      "CH.hyperliquid.setSessionRiskPolicy",
+      "CH.hyperliquid.getSessionRiskPolicy",
+      "CH.hyperliquid.acknowledgeRisk",
+      "CH.hyperliquid.getCandles",
+      "CH.hyperliquid.getMarkets",
+      "CH.hyperliquid.getBook",
+      "CH.hyperliquid.getWorkspaceMode",
+      "CH.hyperliquid.enterWorkspace",
+      "CH.hyperliquid.exitWorkspace",
+      // Live WebSocket feed — session-gated watch control.
+      "CH.hyperliquid.watchLive",
+      "CH.hyperliquid.unwatchLive",
+      // User-owned global Hyperliquid settings stay on the settings bridge.
+      "CH.settings.setHyperliquidPolicy",
     ];
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     for (const channel of expected) {
@@ -217,5 +237,47 @@ describe("preload bridge surface", () => {
       corpus,
       "onVexUpdate not exposed by the preload composer",
     ).toContain("onVexUpdate");
+  });
+
+  it("exposes typed Hyperliquid position and risk-proposal events", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus, "EV.hyperliquid.positionsUpdate not referenced in preload").toContain(
+      "EV.hyperliquid.positionsUpdate",
+    );
+    expect(corpus, "EV.hyperliquid.riskProposalUpdate not referenced in preload").toContain(
+      "EV.hyperliquid.riskProposalUpdate",
+    );
+    expect(corpus, "Hyperliquid position subscription not exposed").toContain(
+      "onPositionsUpdate",
+    );
+    expect(corpus, "Hyperliquid proposal subscription not exposed").toContain(
+      "onRiskProposalUpdate",
+    );
+    expect(corpus, "EV.hyperliquid.workspaceMode not referenced in preload").toContain(
+      "EV.hyperliquid.workspaceMode",
+    );
+    expect(corpus, "Hyperliquid workspace subscription not exposed").toContain(
+      "onWorkspaceMode",
+    );
+    expect(corpus, "Manual Hyperliquid workspace exit not exposed").toContain(
+      "exitWorkspace",
+    );
+    expect(corpus, "Manual Hyperliquid workspace re-entry not exposed").toContain(
+      "enterWorkspace",
+    );
+  });
+
+  it("exposes the Hyperliquid live-feed watch control and candle/mids events", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus, "EV.hyperliquid.candleUpdate not referenced in preload").toContain(
+      "EV.hyperliquid.candleUpdate",
+    );
+    expect(corpus, "EV.hyperliquid.midsUpdate not referenced in preload").toContain(
+      "EV.hyperliquid.midsUpdate",
+    );
+    expect(corpus, "Hyperliquid live watch not exposed").toContain("watchLive");
+    expect(corpus, "Hyperliquid live unwatch not exposed").toContain("unwatchLive");
+    expect(corpus, "Hyperliquid candle subscription not exposed").toContain("onCandleUpdate");
+    expect(corpus, "Hyperliquid mids subscription not exposed").toContain("onMidsUpdate");
   });
 });

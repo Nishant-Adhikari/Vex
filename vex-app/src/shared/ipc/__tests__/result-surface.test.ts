@@ -59,6 +59,9 @@ describe("result barrel surface", () => {
       "wallet.keystore_corrupt",
       "wallet.keystore_missing",
       "wallet.password_invalid",
+      "wallet.vault_corrupt",
+  "wallet.vault_unavailable",
+      "wallet.vault_incompatible",
       "wallet.vault_not_configured",
       "wallet.cap_reached",
       "wallet.address_exists",
@@ -127,6 +130,8 @@ describe("result barrel surface", () => {
       "compaction",
       "memory",
       "portfolio",
+      // Hyperliquid adds a dedicated main-owned IPC error domain.
+      "hyperliquid",
       "market",
       "sessions",
       "preload",

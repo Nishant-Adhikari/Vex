@@ -101,8 +101,10 @@ beforeEach(() => {
 });
 
 describe("mission.stop (runStopDispatch)", () => {
-  it("enqueues a graceful stop for a running run (queued, no abort)", async () => {
-    mockGetActiveRunForSession.mockResolvedValueOnce(activeState("running"));
+  it("enqueues a graceful stop for a running run with a LIVE lease (queued, no abort)", async () => {
+    mockGetActiveRunForSession.mockResolvedValueOnce(
+      activeState("running", true),
+    );
     mockEnqueueRequest.mockResolvedValueOnce({
       id: "22222222-2222-4222-8222-222222222222",
     });
@@ -113,10 +115,13 @@ describe("mission.stop (runStopDispatch)", () => {
   });
 
   it("aborts a running run whose lease is NOT active — no live runner would observe a queued stop", async () => {
-    // Regression: a run can be status='running' with leaseActive=false (parked
-    // between autonomous slices, or an expired/released lease). Enqueue-only
-    // strands the stop forever, leaving the session un-stoppable/un-deletable.
-    mockGetActiveRunForSession.mockResolvedValueOnce(activeState("running", false));
+    // Regression: a run can be status='running' with leaseActive=false
+    // (parked between autonomous mission slices, or an expired/released
+    // lease). Enqueue-only strands the stop forever, leaving the session
+    // un-stoppable/un-deletable (issue #12).
+    mockGetActiveRunForSession.mockResolvedValueOnce(
+      activeState("running", false),
+    );
     mockAbortActiveMissionForSession.mockResolvedValueOnce({
       aborted: true,
       finalStatus: "cancelled",

@@ -90,6 +90,22 @@ export const runtimeRequestPauseResultSchema = z.discriminatedUnion("outcome", [
       status: missionRunStatusSchema,
     })
     .strict(),
+  /**
+   * `status === 'running'` but the lease is NOT active — no runner is
+   * observing, so enqueueing `pause_after_step` would be unobservable (it
+   * would sit pending forever, same bug class as issue #12's stop dead-end).
+   * The run is effectively already parked/idle; the safe next actions are
+   * Resume/Retry (reclaim) or Stop (end).
+   *
+   * IPC-LEVEL CONTRACT, no renderer consumer yet: `runtime.requestPause` has
+   * no call-site in the renderer today (`useRequestPause` is defined but
+   * unused, and there is no Pause control in the UI). Like the sibling
+   * `already_paused` outcome, this is a total-classification result the
+   * handler must return; when a Pause control is added, map it to a neutral
+   * "run is already parked — nothing to pause" notice, NOT an error. This
+   * comment intentionally does NOT claim any current UI mapping.
+   */
+  z.object({ outcome: z.literal("already_parked") }).strict(),
 ]);
 export type RuntimeRequestPauseResult = z.infer<typeof runtimeRequestPauseResultSchema>;
 

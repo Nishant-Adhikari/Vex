@@ -92,6 +92,12 @@ export const CH = {
     setPinned: "vex:sessions:setPinned",
     delete: "vex:sessions:delete",
     /**
+     * Native, path-private Markdown transcript export. Main owns the save
+     * dialog and the destination path; the renderer receives only
+     * `saved | cancelled` (or a redacted error) — never the path.
+     */
+    exportMarkdown: "vex:sessions:exportMarkdown",
+    /**
      * Global runtime model resolution for a session. `getModel` is
      * read-only and reports the model the engine resolves from
      * `AGENT_PROVIDER`/`AGENT_MODEL` (source: global default vs.
@@ -153,9 +159,10 @@ export const CH = {
     edit: "vex:mission:edit",
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
-    listResults: "vex:mission:listResults",
     getSessionResult: "vex:mission:getSessionResult",
     setAutoRetry: "vex:mission:setAutoRetry",
+    listResults: "vex:mission:listResults",
+    getResultForRun: "vex:mission:getResultForRun",
   },
 
   // Approvals — queue browsing + decisions. Pending/get/history are
@@ -269,10 +276,40 @@ export const CH = {
     getVexSnapshot: "vex:market:getVexSnapshot",
   },
 
+  // Hyperliquid — main-owned policy acknowledgement/settings, durable
+  // user-confirmed risk proposals, and renderer-safe open-position reads.
+  hyperliquid: {
+    getPositions: "vex:hyperliquid:getPositions",
+    listRiskProposals: "vex:hyperliquid:listRiskProposals",
+    confirmRiskProposal: "vex:hyperliquid:confirmRiskProposal",
+    setSessionRiskPolicy: "vex:hyperliquid:setSessionRiskPolicy",
+    getSessionRiskPolicy: "vex:hyperliquid:getSessionRiskPolicy",
+    acknowledgeRisk: "vex:hyperliquid:acknowledgeRisk",
+    getCandles: "vex:hyperliquid:getCandles",
+    getMarkets: "vex:hyperliquid:getMarkets",
+    getBook: "vex:hyperliquid:getBook",
+    getWorkspaceMode: "vex:hyperliquid:getWorkspaceMode",
+    // Read-only account registers — main resolves the session's selected EVM
+    // wallet and validates every venue response before mapping to a DTO.
+    getOpenOrders: "vex:hyperliquid:getOpenOrders",
+    getTwapHistory: "vex:hyperliquid:getTwapHistory",
+    getTradeHistory: "vex:hyperliquid:getTradeHistory",
+    getFundingHistory: "vex:hyperliquid:getFundingHistory",
+    getOrderHistory: "vex:hyperliquid:getOrderHistory",
+    enterWorkspace: "vex:hyperliquid:enterWorkspace",
+    exitWorkspace: "vex:hyperliquid:exitWorkspace",
+    // Live WebSocket feed — session-gated watch control over main's shared
+    // SDK transport. Refcounted per (coin, interval); auto-released when the
+    // owning webContents is destroyed.
+    watchLive: "vex:hyperliquid:watchLive",
+    unwatchLive: "vex:hyperliquid:unwatchLive",
+  },
+
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)
   settings: {
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
+    setHyperliquidPolicy: "vex:settings:setHyperliquidPolicy",
   },
 
   // Updater — user-triggered in-app update flow (M13). `check` may run on
@@ -329,6 +366,16 @@ export const EV = {
    */
   market: {
     vex: "vex:event:market:vex",
+  },
+  hyperliquid: {
+    positionsUpdate: "vex:event:hyperliquid:positionsUpdate",
+    riskProposalUpdate: "vex:event:hyperliquid:riskProposalUpdate",
+    workspaceMode: "vex:event:hyperliquid:workspaceMode",
+    // Live feed pushes from main's shared SDK WebSocket transport. `candleUpdate`
+    // fires per tick for each watched (coin, interval); `midsUpdate` is the
+    // coalesced allMids stream filtered to watched coins (never the full map).
+    candleUpdate: "vex:event:hyperliquid:candleUpdate",
+    midsUpdate: "vex:event:hyperliquid:midsUpdate",
   },
   updater: {
     // Full `UpdateStatus` discriminated union pushed on every updater state

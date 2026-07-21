@@ -380,6 +380,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
       >
         <MissionsButton compact={!sidebarOpen} />
         <MemoryButton compact={!sidebarOpen} />
+        <MissionsButton compact={!sidebarOpen} />
         <SettingsButton compact={!sidebarOpen} />
         {/* Report issue intentionally hidden for now; ReportIssueButton/Dialog retained for re-enable. */}
         <RuntimeLedger sidebarOpen={sidebarOpen} />

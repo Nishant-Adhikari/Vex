@@ -26,6 +26,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type JSX } fr
 import type { Result } from "@shared/ipc/result.js";
 import type { MessagePage, SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
+import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import {
   flattenTranscriptPages,
   useTranscriptInfinite,
@@ -36,9 +37,12 @@ import { useStreamPreview } from "../../stores/streamStore.js";
 import { StreamingBubble } from "./StreamingBubble.js";
 import { TranscriptMessage } from "./TranscriptMessage.js";
 import {
+  findWorkingAgentEntryKey,
+  transcriptEntryKey as entryKey,
+} from "./agentActivity.js";
+import {
   groupTranscriptRows,
   toTranscriptRows,
-  type TranscriptEntry,
 } from "./transcriptRowModel.js";
 
 const PINNED_THRESHOLD_PX = 48;
@@ -46,19 +50,6 @@ const LOAD_OLDER_THRESHOLD_PX = 64;
 // Same cadence as ApprovalsRegion — both observers share one query, so this
 // adds no IPC load; it only keeps the act-ledger stamps as fresh as the cards.
 const PENDING_APPROVALS_REFETCH_MS = 5_000;
-
-/**
- * React key for a transcript entry. One source DTO id can now appear on up to
- * three entries: a `tool_call` row with prose splits into a standalone
- * assistant-text row PLUS the (prose-less) tool row, and a grouped tool run
- * reuses its first call row's id for the `tool_group` entry. Prefixing the
- * tool / tool_group variants keeps all three keys distinct under one id.
- */
-function entryKey(entry: TranscriptEntry): string {
-  if (entry.variant === "tool_group") return `tg-${entry.id}`;
-  if (entry.variant === "tool") return `t-${entry.id}`;
-  return String(entry.id);
-}
 
 /**
  * Ids that must NOT animate: everything visible at the session's first
@@ -110,6 +101,7 @@ export function SessionTranscript({
 }): JSX.Element {
   const query = useTranscriptInfinite(sessionId);
   const preview = useStreamPreview(sessionId);
+  const chatSubmitting = useIsChatSubmitting(sessionId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorSpacerRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -133,6 +125,7 @@ export function SessionTranscript({
     () => groupTranscriptRows(toTranscriptRows(items)),
     [items],
   );
+  const workingAgentEntryKey = findWorkingAgentEntryKey(rows, chatSubmitting);
 
   // S5 — pending approvals drive two quiet signals: per-act "Awaiting
   // signature" stamps (matched by toolCallId) and the working strip's
@@ -232,6 +225,22 @@ export function SessionTranscript({
     if (previewSig === null) return;
     const el = scrollRef.current;
     if (el !== null && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [previewSig]);
+
+  // Turn settled (stream → null): retire the anchor run-out. The spacer's job
+  // was to guarantee scroll range WHILE the reply streamed below the anchored
+  // user message; once the turn is complete, "scrolled to bottom" must mean
+  // the last message sits flush with the bottom edge — no dead space (owner
+  // order). If the viewport was inside the removed range the browser clamps
+  // scrollTop, which lands exactly on that flush state; a reader anchored
+  // above a long reply sees no movement at all.
+  const hadPreview = useRef(false);
+  useEffect(() => {
+    const had = hadPreview.current;
+    hadPreview.current = previewSig !== null;
+    if (!had || previewSig !== null) return;
+    const spacer = anchorSpacerRef.current;
+    if (spacer !== null) spacer.style.height = "0px";
   }, [previewSig]);
 
   // After an intentional older-page fetch settles, hold the viewport if a page
@@ -367,7 +376,11 @@ export function SessionTranscript({
               settledIds !== null && !settledIds.has(row.id) && "vex-entry-settle",
             )}
           >
-            <TranscriptMessage row={row} pendingApprovals={pendingApprovals} />
+            <TranscriptMessage
+              row={row}
+              pendingApprovals={pendingApprovals}
+              agentWorking={workingAgentEntryKey === entryKey(row)}
+            />
           </div>
         ))}
         {preview !== null ? (

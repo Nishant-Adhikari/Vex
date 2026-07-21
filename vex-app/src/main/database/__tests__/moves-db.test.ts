@@ -24,7 +24,11 @@
  *  - the tolerant mapper passes through a row with `trade_side = null`,
  *    `capture_status = 'filled'`, and `value_usd = null`;
  *  - a failed session-scope read propagates (fail closed);
- *  - the SELECT projects ONLY bounded columns (never params/result/trade_capture).
+ *  - the SELECT projects ONLY bounded columns: never params/result or raw
+ *    JSONB; token symbols are type-checked, length-bounded scalar
+ *    extractions from the exact capture item, then re-validated in JS by the
+ *    shared ASCII-allowlist sanitizer (trims whitespace, drops control
+ *    characters/bidi controls/zero-width characters/Unicode confusables).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -182,14 +186,21 @@ describe("moves-db getMovesForSession — scoping + binding", () => {
     expect(bound).not.toContain(WALLET_A.toLowerCase());
   });
 
-  it("projects ONLY bounded columns (never params/result/trade_capture)", async () => {
+  it("projects ONLY bounded columns and bounded capture-item symbol scalars", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
     mocks.query.mockResolvedValueOnce({ rows: [] });
     await getMovesForSession(SESSION);
     const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
     expect(sql).not.toContain("params");
     expect(sql).not.toContain("result");
-    expect(sql).not.toContain("trade_capture");
+    expect(sql).not.toContain("SELECT ci.trade_capture");
+    expect(sql).toContain("jsonb_typeof(ci.trade_capture->'inputToken')");
+    expect(sql).toContain("LEFT(ci.trade_capture->>'inputToken', 64)");
+    expect(sql).toContain("jsonb_typeof(ci.trade_capture->'outputToken')");
+    expect(sql).toContain("LEFT(ci.trade_capture->>'outputToken', 64)");
+    expect(sql).toContain("LEFT JOIN protocol_capture_items ci");
+    expect(sql).toContain("ci.id = a.capture_item_id");
+    expect(sql).toContain("ci.execution_id = a.execution_id");
     expect(sql).toContain("LIMIT 50");
   });
 });
@@ -207,7 +218,7 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
 
     const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
     expect(sql).toContain("JOIN protocol_executions");
-    expect(sql).not.toContain("LEFT JOIN");
+    expect(sql).not.toContain("LEFT JOIN protocol_executions");
     expect(sql).toContain("a.execution_id");
   });
 
@@ -252,14 +263,17 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
           product_type: "spot",
           venue: "uniswap",
           input_token: "USDC",
+          input_token_symbol: "USDC",
           input_amount: "50",
           output_token: "ETH",
+          output_token_symbol: "ETH",
           output_amount: "0.02",
           value_usd: "50",
           capture_status: "executed",
           instrument_key: "eth-usdc",
           chain: "ethereum",
           tx_ref: "0xfeed",
+          wallet_address: WALLET_A,
           created_at: "2026-06-01T12:00:00.000Z",
         },
       ],
@@ -272,8 +286,11 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
     expect(result.data[0]?.id).toBe("42");
     expect(result.data[0]?.chain).toBe("ethereum");
     expect(result.data[0]?.txRef).toBe("0xfeed");
+    expect(result.data[0]?.walletAddress).toBe(WALLET_A);
     expect(result.data[0]?.productType).toBe("spot");
     expect(result.data[0]?.venue).toBe("uniswap");
+    expect(result.data[0]?.inputTokenSymbol).toBe("USDC");
+    expect(result.data[0]?.outputTokenSymbol).toBe("ETH");
   });
 
   it("selects product_type and namespace-as-venue for the chip derivation", async () => {
@@ -284,9 +301,193 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
     expect(sql).toContain("a.product_type");
     expect(sql).toContain("a.namespace AS venue");
   });
+
+  it("selects wallet_address for the account block-explorer link", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    await getMovesForSession(SESSION);
+    const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
+    expect(sql).toContain("a.wallet_address");
+  });
+
+  it("resolves a local symbol fallback via a bounded scalar subquery against proj_balances (not a JOIN)", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    await getMovesForSession(SESSION);
+    const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
+    expect(sql).toContain("FROM proj_balances b");
+    expect(sql).toContain("b.wallet_address = a.wallet_address");
+    expect(sql).toContain("b.token_address = a.input_token");
+    expect(sql).toContain("b.token_address = a.output_token");
+    expect(sql).toContain("b.token_symbol IS NOT NULL");
+    // Bounded like every other symbol scalar; a scalar subquery, never a JOIN
+    // that could fan out proj_activity rows.
+    expect(sql).toContain(`LEFT(MIN(b.token_symbol), ${64})`);
+    expect(sql).not.toContain("JOIN proj_balances");
+  });
+
+  it("DECLINES ON AMBIGUITY: guards each local-symbol subquery with HAVING COUNT(DISTINCT)=1 and NO nondeterministic LIMIT 1", async () => {
+    // The same token_address can be held on multiple chains with different
+    // symbols; proj_activity.chain (free-text venue slug) does not map to
+    // proj_balances.chain_id, so the lookup cannot be chain-scoped. It must
+    // therefore resolve ONLY when the wallet holds exactly one distinct symbol
+    // for that address (else NULL → the renderer's truncateAddress fallback).
+    // pg is mocked here, so — like the JOIN-isolation tests in this suite —
+    // the determinism is asserted STRUCTURALLY on the query text.
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    await getMovesForSession(SESSION);
+    const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
+    const havingCount = (
+      sql.match(/HAVING COUNT\(DISTINCT b\.token_symbol\) = 1/g) ?? []
+    ).length;
+    // Exactly the two local-symbol subqueries carry the ambiguity guard…
+    expect(havingCount).toBe(2);
+    // …and no nondeterministic single-row pick survives anywhere in the query.
+    expect(sql).not.toContain("LIMIT 1");
+  });
+});
+
+describe("moves-db getMovesForSession — local symbol fallback mapping", () => {
+  it("maps and sanitizes a resolved local symbol on either leg", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 11,
+          trade_side: "buy",
+          product_type: "spot",
+          venue: "jupiter",
+          input_token: "7jk8UbH339rCgnohpBvqiss4a7bXWmicMPCUCFmDrmYK",
+          input_token_symbol: null,
+          input_token_local_symbol: "  wif  ",
+          input_amount: "100",
+          output_token: "AnotherMint1111111111111111111111111111111",
+          output_token_symbol: null,
+          output_token_local_symbol: null,
+          output_amount: "1",
+          value_usd: null,
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "solana",
+          tx_ref: null,
+          wallet_address: WALLET_A,
+          created_at: "2026-05-21T10:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Sanitized (trimmed) — the raw column value itself is never echoed.
+    expect(result.data[0]?.inputTokenLocalSymbol).toBe("wif");
+    // Absent local symbol (no proj_balances row matched) → null, not "".
+    expect(result.data[0]?.outputTokenLocalSymbol).toBeNull();
+  });
+
+  it("drops a local symbol carrying Unicode confusables (same sanitizer as the captured symbol)", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 12,
+          trade_side: "buy",
+          product_type: "spot",
+          venue: "jupiter",
+          input_token: "ScamMint111111111111111111111111111111111",
+          input_token_symbol: null,
+          // Cyrillic Es (U+0405) standing in for Latin S.
+          input_token_local_symbol: "ЅOL",
+          input_amount: "1",
+          output_token: null,
+          output_token_symbol: null,
+          output_token_local_symbol: null,
+          output_amount: null,
+          value_usd: null,
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "solana",
+          tx_ref: null,
+          wallet_address: WALLET_A,
+          created_at: "2026-05-21T10:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]?.inputTokenLocalSymbol).toBeNull();
+  });
 });
 
 describe("moves-db getMovesForSession — tolerant mapping", () => {
+  it("trims valid capture symbols and drops symbols containing control characters", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 6,
+          trade_side: "buy",
+          product_type: "spot",
+          venue: "jupiter",
+          input_token: SOL_ADDR,
+          input_token_symbol: "  SOL  ",
+          input_amount: "100",
+          output_token: "7jk8UbH339rCgnohpBvqiss4a7bXWmicMPCUCFmDrmYK",
+          output_token_symbol: "BAD\nSYMBOL",
+          output_amount: "1",
+          value_usd: null,
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "solana",
+          tx_ref: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]?.inputTokenSymbol).toBe("SOL");
+    expect(result.data[0]?.outputTokenSymbol).toBeNull();
+  });
+
+  it("drops a captured symbol containing Unicode confusables (e.g. a fake SOL claim)", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 10,
+          trade_side: "buy",
+          product_type: "spot",
+          venue: "jupiter",
+          input_token: "ScamMint111111111111111111111111111111111",
+          // Cyrillic Es (U+0405) standing in for Latin S — never surfaces as "SOL".
+          input_token_symbol: "ЅOL",
+          input_amount: "1",
+          output_token: SOL_ADDR,
+          output_token_symbol: "SOL",
+          output_amount: "1",
+          value_usd: null,
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "solana",
+          tx_ref: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]?.inputTokenSymbol).toBeNull();
+    expect(result.data[0]?.outputTokenSymbol).toBe("SOL");
+  });
+
   it("maps a tolerant row (trade_side=null, capture_status='filled', value_usd=null)", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
     mocks.query.mockResolvedValueOnce({
@@ -297,14 +498,17 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
           product_type: null,
           venue: null,
           input_token: "USDC",
+          input_token_symbol: null,
           input_amount: "100",
           output_token: "SOL",
+          output_token_symbol: null,
           output_amount: "1.2",
           value_usd: null,
           capture_status: "filled",
           instrument_key: null,
           chain: "solana",
           tx_ref: null,
+          wallet_address: SOL_ADDR,
           created_at: "2026-05-21T10:00:00.000Z",
         },
       ],
@@ -320,14 +524,19 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         productType: null,
         venue: null,
         inputToken: "USDC",
+        inputTokenSymbol: null,
+        inputTokenLocalSymbol: null,
         inputAmount: "100",
         outputToken: "SOL",
+        outputTokenSymbol: null,
+        outputTokenLocalSymbol: null,
         outputAmount: "1.2",
         valueUsd: null,
         captureStatus: "filled",
         instrumentKey: null,
         chain: "solana",
         txRef: null,
+        walletAddress: SOL_ADDR,
         createdAt: "2026-05-21T10:00:00.000Z",
       },
     ]);
@@ -343,8 +552,10 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
           product_type: "bridge",
           venue: "relay",
           input_token: "ETH",
+          input_token_symbol: "ETH",
           input_amount: "0.001714",
           output_token: "ETH",
+          output_token_symbol: "ETH",
           output_amount: "0.001693",
           value_usd: null,
           capture_status: "executed",
@@ -363,6 +574,7 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
     expect(row?.productType).toBe("bridge");
     expect(row?.venue).toBe("relay");
     expect(row?.inputToken).toBe("ETH");
+    expect(row?.inputTokenSymbol).toBe("ETH");
     expect(row?.inputAmount).toBe("0.001714");
     expect(row?.outputAmount).toBe("0.001693");
   });

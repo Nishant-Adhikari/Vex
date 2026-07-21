@@ -13,16 +13,19 @@
  * most recent snapshot total + PnL when present, and the resolved wallet
  * COUNT. SESSION scope then renders the redesigned register — copy-ready
  * deposit addresses (DepositAddresses) + the per-chain holdings switcher
- * (PositionChains); GLOBAL keeps the legacy flat top-holdings list (capped,
- * remainder noted). Loading / error / empty (no wallets) states are boxless
- * lines on the same register.
+ * (PositionChains); GLOBAL (the welcome/empty state) delegates to
+ * `GlobalWalletSwitcher` (WP-L2), which owns the wallet-identity
+ * presentation (`GlobalWalletAddresses`) + the legacy flat top-holdings list
+ * as the "All wallets" default, AND — when more than one wallet is
+ * configured — a per-wallet chip switcher that swaps in the SAME
+ * chain-grouped `PositionChains` presentation the session view uses, scoped
+ * to just that one wallet. Loading / error / empty (no wallets) states are
+ * boxless lines on the same register.
  *
- * Token rows that would print `$0.00` (|USD| below formatUsd's 2-decimal
- * rounding threshold) are hidden — the cap and "+N more" count only rows
- * worth showing. UNPRICED rows (`balanceUsd: null`, no price source) with a
- * positive amount stay VISIBLE — owner decision: show held funds as
- * `amount + symbol` with a muted em dash instead of hiding them or faking
- * $0.00. Total/snapshot/PnL still reflect the FULL portfolio.
+ * The hero Total above `GlobalWalletSwitcher` (this component's `TotalRow`)
+ * ALWAYS stays the full cross-wallet aggregate — selecting one wallet in the
+ * switcher never changes it; the wallet-scoped body shows that wallet's own
+ * total separately (session-style), per owner decision.
  *
  * `hero` = the BOOK column's single dominant section. The de-boxed column has
  * no tile chrome to strengthen, so hero presence lives in CONTENT: the total
@@ -32,48 +35,15 @@
  * total, semantic up/down on the PnL; `tabular-nums` on every figure.
  */
 
-import { useState, type JSX } from "react";
-import type {
-  PortfolioDto,
-  PortfolioReadInput,
-  PositionTokenDto,
-} from "@shared/schemas/portfolio.js";
-import { usePortfolioScoped } from "../../../lib/api/portfolio.js";
-import {
-  useAvailableWallets,
-  useSessionWallets,
-} from "../../../lib/api/session-wallets.js";
-import {
-  formatTokenQuantity,
-  formatUsd,
-  formatUsdDelta,
-} from "../../../lib/format.js";
-import { cn } from "../../../lib/utils.js";
+import type { JSX } from "react";
+import type { PortfolioDto } from "@shared/schemas/portfolio.js";
+import { usePortfolio } from "../../../lib/api/portfolio.js";
+import { useSessionWallets } from "../../../lib/api/session-wallets.js";
+import { formatUsd, formatUsdDelta } from "../../../lib/format.js";
 import { BookBlock } from "./BookBlock.js";
 import { DepositAddresses } from "./DepositAddresses.js";
+import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
 import { PositionChains } from "./PositionChains.js";
-
-/** Visible token rows before the "+N more" tail. */
-const TOKENS_VISIBLE = 8;
-
-/**
- * Smallest |USD| that `formatUsd` still renders as a non-zero figure:
- * `(0.005).toFixed(2) === "0.01"` while anything smaller rounds to `"0.00"`.
- * Rows below this would print a meaningless `$0.00` line, so they are hidden.
- */
-const MIN_DISPLAY_USD = 0.005;
-
-/**
- * True when the row is worth a line: a priced row whose USD figure renders
- * as something other than $0.00, or an UNPRICED row (`balanceUsd: null`)
- * with a positive token amount to show instead.
- */
-function hasDisplayableBalance(token: PositionTokenDto): boolean {
-  if (token.balanceUsd === null) {
-    return token.amount !== null && token.amount > 0;
-  }
-  return Math.abs(token.balanceUsd) >= MIN_DISPLAY_USD;
-}
 
 export function PositionBlock({
   activeSessionId,
@@ -260,12 +230,7 @@ function PositionBody({
   readonly portfolio: PortfolioDto;
   readonly hero: boolean;
 }): JSX.Element {
-  const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev, tokens } = portfolio;
-  // Cap and "+N more" count only displayable rows; totals keep the full set.
-  const displayable = tokens.filter(hasDisplayableBalance);
-  const visible = displayable.slice(0, TOKENS_VISIBLE);
-  const remainder = displayable.length - visible.length;
-
+  const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev } = portfolio;
   return (
     <div className="flex flex-col gap-2.5">
       <TotalRow
@@ -274,29 +239,7 @@ function PositionBody({
         pnlVsPrev={pnlVsPrev}
         hero={hero}
       />
-      {visible.length > 0 ? (
-        // Landing .ws-stat rows: hairline-separated, key muted / value white.
-        <ul className="flex flex-col">
-          {visible.map((token) => (
-            <TokenRow key={tokenKey(token)} token={token} />
-          ))}
-        </ul>
-      ) : tokens.length > 0 ? (
-        // Wallet HAS tokens but every row rounds to $0.00 — say so instead
-        // of leaving an unexplained gap under the total.
-        <p className="font-mono text-[11px] text-[var(--vex-text-3)]">
-          No priced balances.
-        </p>
-      ) : (
-        <p className="text-[11px] text-[var(--vex-text-3)]">
-          No token balances.
-        </p>
-      )}
-      {remainder > 0 ? (
-        <p className="font-mono text-[10px] tracking-[0.14em] text-[var(--vex-text-3)]">
-          +{remainder} more
-        </p>
-      ) : null}
+      <GlobalWalletSwitcher portfolio={portfolio} />
     </div>
   );
 }
@@ -346,49 +289,9 @@ function TotalRow({
   );
 }
 
-function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element {
-  const symbol = token.symbol !== null && token.symbol.length > 0
-    ? token.symbol
-    : "—";
-  // Quantity is the muted secondary figure; the USD value keeps the white
-  // register when priced and drops to a muted em dash when UNPRICED (null —
-  // never a fabricated $0.00).
-  const quantity = formatTokenQuantity(token.amount, token.symbol);
-  return (
-    <li className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0">
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)]">
-        {symbol}
-      </span>
-      <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
-        {quantity !== null ? (
-          <span className="text-[var(--vex-text-3)]">{quantity}</span>
-        ) : null}
-        <span
-          className={
-            token.balanceUsd === null
-              ? "text-[var(--vex-text-3)]"
-              : "text-[var(--vex-text)]"
-          }
-        >
-          {formatUsd(token.balanceUsd)}
-        </span>
-      </span>
-    </li>
-  );
-}
-
 /** Up = success, down = warn, flat/zero = muted. No glow, token colours only. */
 function pnlToneClass(pnl: number): string {
   if (pnl > 0) return "text-[var(--color-success)]";
   if (pnl < 0) return "text-[var(--vex-warn-text)]";
   return "text-[var(--vex-text-3)]";
-}
-
-/**
- * Stable React key for a (chain, token) bucket. `chainId`/`symbol` can both
- * be `null`; the composite stays unique per aggregated line (the SQL groups
- * by `(chain_id, token_symbol)`, so no two rows share both).
- */
-function tokenKey(token: PositionTokenDto): string {
-  return `${token.chainId ?? "x"}:${token.symbol ?? "x"}`;
 }

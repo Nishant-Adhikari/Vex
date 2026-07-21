@@ -15,6 +15,7 @@ import { registerCompactionHandlers } from "./compaction.js";
 import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
+import { registerHyperliquidHandlers } from "./hyperliquid.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
 import { registerDockerHandlers } from "./docker.js";
@@ -30,10 +31,12 @@ import { registerFinalizeHandler } from "./onboarding/finalize.js";
 import { registerPolymarketConfiguredAddressesHandler } from "./onboarding/polymarket-configured-addresses.js";
 import { registerPolymarketSetupHandler } from "./onboarding/polymarket-setup.js";
 import { registerProviderHandler } from "./onboarding/provider.js";
+import { registerProviderModelsHandler } from "./onboarding/provider-models.js";
 import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerRuntimeHandlers } from "./runtime.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
 import { registerSessionsDeleteHandler } from "./sessions/delete.js";
+import { registerSessionsExportMarkdownHandler } from "./sessions/export-markdown.js";
 import { registerSessionsGetHandler } from "./sessions/get.js";
 import { registerSessionsGetModelHandler } from "./sessions/get-model.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
@@ -67,12 +70,14 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerEmbeddingHandler());
   teardowns.push(registerAgentCoreHandler());
   teardowns.push(registerProviderHandler());
+  teardowns.push(registerProviderModelsHandler());
   teardowns.push(registerFinalizeHandler());
   teardowns.push(registerSessionsCreateHandler());
   teardowns.push(registerSessionsListHandler());
   teardowns.push(registerSessionsGetHandler());
   teardowns.push(registerSessionsSetPinnedHandler());
   teardowns.push(registerSessionsDeleteHandler());
+  teardowns.push(registerSessionsExportMarkdownHandler());
   teardowns.push(...registerSessionPlanHandlers());
   // Agent integration puzzle 1: typed bridge surface for the chat panel,
   // runtime control, mission contract/commands, approvals, wallet scope,
@@ -90,6 +95,7 @@ export function registerAllIpcHandlers(): void {
   // handler serves main's in-memory cache; the external poll + EV.market.vex
   // broadcast are owned by the market service, started in index.ts.
   teardowns.push(...registerMarketHandlers());
+  teardowns.push(...registerHyperliquidHandlers());
   // Agent integration stage 7-1: read-only Track-2 compaction status for the
   // runtime bar. The Track-2 executor itself is owned by main and started in
   // `index.ts` (see `setupCompactWorker`), not here. Stage 7-2a extends this

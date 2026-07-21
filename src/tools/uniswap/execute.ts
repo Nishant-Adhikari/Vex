@@ -26,6 +26,7 @@ import {
 } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
+import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import {
   UNISWAP_V2_ROUTER_ABI,
   UNISWAP_V3_SWAP_ROUTER_02_ABI,
@@ -84,11 +85,12 @@ export function buildV2SwapTx(args: BuildSwapArgs): BuiltSwapTx {
       }),
     };
   }
-  // Token INPUT (a sell): use the fee-on-transfer-SUPPORTING variants. They
-  // settle on the ACTUAL balances received, so a FoT token (which delivers less
-  // than sent) does not revert `UniswapV2: K`. Identical output for non-FoT
-  // tokens, so this is safe to use unconditionally on the sell path. Callers must
-  // set `minAmountOut` with enough slippage to absorb the transfer fee.
+
+  // Token-input V2 swaps use Router02's fee-on-transfer-supporting variants.
+  // For non-FoT tokens they preserve the equivalent token-transfer outcome and
+  // amountOutMin enforcement against the recipient's actual received balance.
+  // These variants return no amounts[] (unused in this repository) and differ
+  // slightly in gas. Callers must budget slippage for any FoT input transfer tax.
   if (tokenOutIsNative) {
     return {
       to: router,
@@ -192,17 +194,11 @@ export async function sendUniswapTransaction(
       data: tx.data,
       value: tx.value,
     });
-    // viem's waitForTransactionReceipt RESOLVES on a reverted tx (status
-    // "reverted") — it does not throw. Reporting a reverted swap as executed
-    // would open a phantom lot in the trade capture, so assert success here.
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") {
-      throw new VexError(
-        ErrorCodes.SWAP_FAILED,
-        `Swap transaction ${hash} reverted on-chain (status: ${receipt.status}).`,
-        "No tokens were swapped. Common causes: slippage/min-out, insufficient allowance, or a fee-on-transfer token.",
-      );
-    }
+    await waitForSuccessfulReceipt(publicClient, hash, {
+      code: ErrorCodes.SWAP_FAILED,
+      what: "Swap transaction",
+      hint: "No tokens were swapped. Check the transaction hash before re-quoting or retrying.",
+    });
     return hash;
   } catch (err) {
     if (err instanceof VexError) throw err;

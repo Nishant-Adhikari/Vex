@@ -20,7 +20,7 @@ const mockResetProvider = vi.fn();
 class LocalSecretVaultErrorMock extends Error {
   constructor(
     message: string,
-    readonly code: "missing" | "invalid_password" | "corrupt" | "io",
+    readonly code: "missing" | "invalid_password" | "corrupt" | "io" | "incompatible" | "unavailable",
     readonly cause?: unknown,
   ) {
     super(message);
@@ -275,6 +275,47 @@ describe("unlockSecretSession error mapping", () => {
       expect(result.error.retryable).toBe(true);
     }
   });
+
+  /**
+   * Vault unlock error classification: every non-authentication failure —
+   * corrupt envelope (pre-decrypt), unreadable contents (post-auth), a
+   * too-new outer OR inner version, a crypto-runtime error — must map to
+   * codes OTHER than `wallet.password_invalid` — the IPC unlock handler
+   * (`ipc/secrets.ts`) advances the unlock throttle ONLY when it sees that
+   * exact code, so a distinct code here is what keeps a correct password's
+   * downstream failure from ever counting as a failed guess.
+   */
+  it("maps LocalSecretVaultError('corrupt') to wallet.vault_corrupt (never wallet.password_invalid)", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockImplementation(() => {
+      throw new LocalSecretVaultErrorMock("vault contents unreadable", "corrupt");
+    });
+
+    const session = await loadSession();
+    const result = session.unlockSecretSession("anypassword");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("wallet.vault_corrupt");
+      expect(result.error.code).not.toBe("wallet.password_invalid");
+      expect(result.error.retryable).toBe(false);
+    }
+  });
+
+  it("maps LocalSecretVaultError('incompatible') to wallet.vault_incompatible (never wallet.password_invalid)", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockImplementation(() => {
+      throw new LocalSecretVaultErrorMock("vault too new", "incompatible");
+    });
+
+    const session = await loadSession();
+    const result = session.unlockSecretSession("anypassword");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("wallet.vault_incompatible");
+      expect(result.error.code).not.toBe("wallet.password_invalid");
+      expect(result.error.retryable).toBe(false);
+    }
+  });
 });
 
 describe("getConfiguredPolymarketAddresses", () => {
@@ -402,6 +443,22 @@ describe("getConfiguredPolymarketAddresses", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("onboarding.env_persist_failed");
+    }
+  });
+
+  it("maps LocalSecretVaultError('unavailable') to the RETRYABLE wallet.vault_unavailable (never password_invalid, never vault_corrupt)", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockImplementation(() => {
+      throw new LocalSecretVaultErrorMock("scrypt runtime failure", "unavailable");
+    });
+
+    const session = await loadSession();
+    const result = session.unlockSecretSession("anypassword");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("wallet.vault_unavailable");
+      expect(result.error.retryable).toBe(true);
+      expect(result.error.code).not.toBe("wallet.password_invalid");
     }
   });
 });

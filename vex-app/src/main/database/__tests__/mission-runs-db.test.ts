@@ -39,7 +39,9 @@ vi.mock("../db-config.js", () => ({
 
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
-const { getActiveRunForSession } = await import("../mission-runs-db.js");
+const { getActiveRunForSession, getLatestRunForSession } = await import(
+  "../mission-runs-db.js"
+);
 
 const SESSION = "00000000-0000-4000-8000-00000000eeee";
 
@@ -154,5 +156,52 @@ describe("mission-runs-db mapper", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("internal.unexpected");
     expect(result.error.domain).toBe("runtime");
+  });
+});
+
+describe("getLatestRunForSession — lease-active mapping (WP-C)", () => {
+  // `vi.mocked` re-types the hoisted `QueryFn`-cast mock so the vitest Mock
+  // API (`mockResolvedValueOnce`) is visible without re-triggering the
+  // file's pre-existing `QueryFn`-cast type-baseline pattern.
+  const q = vi.mocked(mocks.query);
+
+  it("returns null when the session never had a run", async () => {
+    q.mockResolvedValueOnce({ rows: [] });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toBeNull();
+  });
+
+  it("maps lease_active=true through for a running row with a live lease", async () => {
+    q.mockResolvedValueOnce({
+      rows: [{ id: "run-1", status: "running", lease_active: true }],
+    });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toEqual({
+      missionRunId: "run-1",
+      status: "running",
+      leaseActive: true,
+    });
+  });
+
+  it("maps a NULL lease join (no runner_leases row) to leaseActive=false", async () => {
+    q.mockResolvedValueOnce({
+      rows: [{ id: "run-1", status: "running", lease_active: null }],
+    });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data?.leaseActive).toBe(false);
+  });
+
+  it("rejects an unrecognized status defensively", async () => {
+    q.mockResolvedValueOnce({
+      rows: [{ id: "run-1", status: "not_a_real_status", lease_active: false }],
+    });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(false);
   });
 });
