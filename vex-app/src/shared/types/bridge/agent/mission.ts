@@ -11,8 +11,6 @@ import type {
   MissionGetRenewableSourceInput,
   MissionGetRenewableSourceResult,
   MissionGetResultForRunInput,
-  MissionGetSessionResultInput,
-  MissionGetSessionResultResult,
   MissionGetResultForRunResult,
   MissionGetSessionResultInput,
   MissionGetSessionResultResult,
@@ -79,10 +77,6 @@ export interface MissionBridge {
   readonly getRenewableSource: (
     input: MissionGetRenewableSourceInput,
   ) => Promise<Result<MissionGetRenewableSourceResult>>;
-  /** Fork-only: latest finalized ledger row for a SESSION (summary card). */
-  readonly getSessionResult: (
-    input: MissionGetSessionResultInput,
-  ) => Promise<Result<MissionGetSessionResultResult>>;
   readonly setAutoRetry: (
     input: MissionSetAutoRetryInput,
   ) => Promise<Result<MissionSetAutoRetryResult>>;

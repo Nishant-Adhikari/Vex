@@ -134,20 +134,6 @@ export const mission = {
       missionGetRenewableSourceInputSchema,
     );
   },
-  listResults(input: MissionListResultsInput) {
-    return invokeWithSchema(
-      CH.mission.listResults,
-      input,
-      missionListResultsInputSchema,
-    );
-  },
-  getSessionResult(input: MissionGetSessionResultInput) {
-    return invokeWithSchema(
-      CH.mission.getSessionResult,
-      input,
-      missionGetSessionResultInputSchema,
-    );
-  },
   setAutoRetry(input: MissionSetAutoRetryInput) {
     return invokeWithSchema(
       CH.mission.setAutoRetry,

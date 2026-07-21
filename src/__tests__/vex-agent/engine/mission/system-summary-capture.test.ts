@@ -36,6 +36,10 @@ const OPENED_ROW = {
 function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
   return {
     getMission: vi.fn(async () => MISSION as never),
+    // Fork-specific: finalize reads the LIVE on-chain bankroll first and
+    // falls back to the projection. Return null here so the projection below
+    // stays the source of the end bankroll, price, and open-position bag.
+    readBankrollOnChain: vi.fn(async () => null) as never,
     readBankroll: vi.fn(async () => ({
       bankrollEth: 0.0096,
       ethPriceUsd: 1800,

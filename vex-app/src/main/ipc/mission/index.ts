@@ -40,8 +40,6 @@ export function registerMissionHandlers(): ReadonlyArray<() => void> {
     registerMissionRenewHandler(),
     registerMissionStopHandler(),
     registerMissionGetRenewableSourceHandler(),
-    registerMissionListResultsHandler(),
-    registerMissionGetSessionResultHandler(),
     registerMissionSetAutoRetryHandler(),
     registerMissionListResultsHandler(),
     registerMissionGetResultForRunHandler(),
