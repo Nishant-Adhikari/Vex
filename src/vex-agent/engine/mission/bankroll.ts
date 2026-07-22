@@ -174,7 +174,11 @@ export async function readEthBankrollOnChain(
     if (!deployment) return null;
     const client = deps.getPublicClient(deployment);
     const owner = getAddress(walletAddress);
-    const wethAddress = (resolveWethAddress(chainId) ?? deployment.weth) as Address;
+    // Canonicalise to a checksummed Address: resolveWethAddress() lowercases
+    // (for the case-insensitive compare in computeEthBankroll), but the live
+    // read must pass viem the canonical registry address — same contract,
+    // consistent with how `owner` is normalised above.
+    const wethAddress = getAddress(resolveWethAddress(chainId) ?? deployment.weth);
     const [nativeWei, wethWei] = await Promise.all([
       client.getBalance({ address: owner }),
       client.readContract({
