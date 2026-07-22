@@ -235,10 +235,12 @@ describe("patch-parser", () => {
       expect(result.durationMinutes).toBe(360);
     });
 
-    it("coerces a numeric string to a number", () => {
-      const result = sanitizePatch({ durationMinutes: "360" } as never);
-      expect(result.durationMinutes).toBe(360);
-    });
+    // A numeric string ("360") is intentionally REJECTED, not coerced — the
+    // model must send a JSON number across the untrusted model→DB boundary.
+    // See "rejects a numeric-string durationMinutes (model must send a JSON
+    // number)" above for the canonical assertion. (An earlier fork-era test
+    // here expected coercion; it contradicted that security-boundary rule and
+    // the shipped sanitizer, so it was removed as a merge artifact.)
 
     it("floors a fractional duration to a whole minute", () => {
       const result = sanitizePatch({ durationMinutes: 360.9 });
