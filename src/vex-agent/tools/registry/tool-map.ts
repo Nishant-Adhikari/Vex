@@ -50,7 +50,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     toolNames: ["swap_quote", "token_check", "bridge_quote", "bridge_status"],
   },
   { label: "Swap & bridge execution (on-chain — quote first)", toolNames: ["swap", "bridge"] },
-  { label: "Research", toolNames: ["web_research", "twitter_account"] },
+  { label: "Research", toolNames: ["web_research", "twitter_account", "website_context"] },
   { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },
   {
     label: "Session memory — this conversation/mission only",

@@ -25,6 +25,9 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Web research (search + optional fetch in one tool)
   web_research: async () => (await import("../internal/web.js")).handleWebResearch,
 
+  // Project website context + quality signals (free raw fetch, no API key)
+  website_context: async () => (await import("../internal/website-context.js")).handleWebsiteContext,
+
   // Twitter/X account research
   twitter_account: async () => (await import("../internal/twitter-account.js")).handleTwitterAccount,
 
