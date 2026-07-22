@@ -202,7 +202,10 @@ export async function openMissionResult(input: OpenMissionResultInput): Promise<
       input.goalSnippet,
       input.bankrollStartEth,
       input.ethPriceUsdStart,
-      nullableJsonb(input.startPositions),
+      // `startPositions` is an optional snapshot ("null when no start snapshot
+      // was recorded"): normalise a JS `undefined` (omitted field) to null so
+      // the strict jsonb serializer records a null column instead of throwing.
+      nullableJsonb(input.startPositions ?? null),
     ]);
   });
 }
@@ -245,7 +248,10 @@ export async function closeMissionResult(input: CloseMissionResultInput): Promis
     input.losses,
     input.rotations,
     input.vetoes,
-    nullableJsonb(input.openPositions),
+    // Same optional-snapshot semantics as startPositions: an omitted
+    // `openPositions` (undefined) records a null column rather than throwing at
+    // finalize — mission finalization must never fail on bankroll accounting.
+    nullableJsonb(input.openPositions ?? null),
   ]);
 }
 

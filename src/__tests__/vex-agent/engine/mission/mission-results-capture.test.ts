@@ -24,6 +24,8 @@ const MISSION = {
 function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
   return {
     getMission: vi.fn(async () => MISSION as never),
+    // Default: RPC unavailable → capture falls back to the projection read below.
+    readBankrollOnChain: vi.fn(async () => null),
     readBankroll: vi.fn(async () => ({ bankrollEth: 0.01, ethPriceUsd: 3000, openPositions: [] })),
     openResult: vi.fn(async () => {}),
     closeResult: vi.fn(async () => {}),

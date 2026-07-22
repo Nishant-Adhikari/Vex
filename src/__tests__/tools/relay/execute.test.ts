@@ -403,7 +403,10 @@ describe("executeRelayBridge — bounded status poll (1s cadence per Relay docs)
     const quote = {
       steps: [
         step("approve", ORIGIN, APPROVE_TO, "0", "0x"),
-        step("deposit", DESTINATION, DEPOSIT_TO, "1000", "0xabcd"),
+        // requestId present so the quote clears PHASE-1 pre-validation (an
+        // idless quote fails closed before broadcast — covered separately) and
+        // this test actually exercises PHASE-2 revert-abort.
+        step("deposit", DESTINATION, DEPOSIT_TO, "1000", "0xabcd", "0xreq"),
       ],
     } as unknown as RelayQuoteResponse;
 

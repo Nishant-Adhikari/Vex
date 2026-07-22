@@ -99,7 +99,12 @@ export function buildRuntimeClockPrompt(snapshot: RuntimeClockSnapshot): string 
   lines.push("- To wait when `loop_defer` is available in your current mode, call `loop_defer(after_ms, reason)` for relative waits or `loop_defer(wake_at, reason)` for an exact ISO time.");
   lines.push("- Before using deadline_reached or scheduling another wake, compare live state against this Runtime Clock.");
   if (snapshot.missionDeadline) {
-    lines.push("- The Mission deadline is HARD: the run AUTO-TERMINATES then, regardless of what you are doing. SELL/close ALL open positions BEFORE it — anything still held when it fires is abandoned. Start flattening with enough buffer for swaps to settle; do NOT open new positions you cannot exit in time.");
+    // WP-I1: NEUTRAL timebox awareness only. State what the deadline DOES
+    // (auto-finalize; open positions reported as unresolved) — never issue an
+    // imperative to sell/close/flatten. Agent-driven flattening at the deadline
+    // is the deferred, approval-gated WP-I2 surface; the prompt must not push
+    // the agent toward an unapproved fire-sale as the clock runs out.
+    lines.push("- The Mission deadline is HARD: at that time the run AUTO-TERMINATES and auto-finalizes, regardless of what you are doing. Any positions still open when it fires are reported as unresolved in the mission result — they are not resolved automatically. Plan your remaining time accordingly, and do not open new positions you would not want left unresolved.");
   }
 
   return lines.join("\n");
