@@ -20,10 +20,12 @@ import {
 } from "../missionSummaryModel.js";
 
 describe("formatPnlEth", () => {
-  it("signs the ETH figure and appends the unit", () => {
+  it("signs a non-zero ETH figure and appends the unit", () => {
     expect(formatPnlEth(0.0012)).toBe("+0.0012 ETH");
     expect(formatPnlEth(-0.0034)).toBe("-0.0034 ETH");
-    expect(formatPnlEth(0)).toBe("+0.0000 ETH");
+    // Break-even shows no sign — a "+" on exactly zero reads as a tiny gain,
+    // which misleads on a card built for non-technical clarity.
+    expect(formatPnlEth(0)).toBe("0.0000 ETH");
   });
 
   it("renders a bare em dash for null / non-finite", () => {

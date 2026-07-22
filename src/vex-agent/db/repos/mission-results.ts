@@ -279,3 +279,44 @@ export async function getResultForRun(
   );
   return row ? toRow(row) : null;
 }
+
+/**
+ * The ledger row for a single run, keyed on the run id ALONE (null if the run
+ * never opened a result). `mission_run_id` is UNIQUE (see `openMissionResult`'s
+ * `ON CONFLICT (mission_run_id)`), so this returns at most one row. Used by the
+ * deadline force-liquidator, which must READ the row to DISCOVER the mission's
+ * wallet/chain (safety contract #3) — it has the run id but not yet the wallet,
+ * so the wallet-scoped `getResultForRun` cannot serve it.
+ */
+export async function getResultByRunId(
+  missionRunId: string,
+): Promise<MissionResultRow | null> {
+  const row = await queryOne<Raw>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM mission_results
+      WHERE mission_run_id = $1`,
+    [missionRunId],
+  );
+  return row ? toRow(row) : null;
+}
+
+/**
+ * The newest ledger row for a session (null if the session never opened a
+ * mission result). A session maps 1:1 to a mission run, but the renderer's
+ * post-mission summary card only has the session id in hand — this is the
+ * session-keyed sibling of `getResultForRun`. Ordered by seq_no DESC so the
+ * latest run for the session wins if more than one row ever shares it.
+ */
+export async function getSessionResult(
+  sessionId: string,
+): Promise<MissionResultRow | null> {
+  const row = await queryOne<Raw>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM mission_results
+      WHERE session_id = $1
+      ORDER BY seq_no DESC
+      LIMIT 1`,
+    [sessionId],
+  );
+  return row ? toRow(row) : null;
+}

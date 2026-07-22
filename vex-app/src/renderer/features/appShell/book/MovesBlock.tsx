@@ -67,6 +67,7 @@ import {
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import { BRAND_ICON_SYMBOLS, TokenIcon } from "../../../components/common/TokenIcon.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
+import { useMissionSessionResult } from "../../../lib/api/mission.js";
 import { formatClock, truncateAddress } from "../../../lib/format.js";
 import { formatEth } from "../missionHistoryModel.js";
 import { cn } from "../../../lib/utils.js";
@@ -162,6 +163,12 @@ interface TokenDisplay {
   readonly full: string | null;
   /** Safe symbol used by the app's offline token mark; null for raw addresses. */
   readonly iconSymbol: string | null;
+  /**
+   * True when the resolved ticker is a base/native/quote UNIT (`UNIT_SYMBOLS`)
+   * — the leg whose amount is the meaningful figure. The TRADED leg (`isUnit`
+   * false) drops its raw quantity (owner: "we don't care about qty").
+   */
+  readonly isUnit: boolean;
 }
 
 /**
@@ -211,6 +218,15 @@ function tokenDisplay(
   capturedSymbol: string | null,
   localSymbol: string | null,
 ): TokenDisplay {
+  const core = resolveTokenDisplay(token, capturedSymbol, localSymbol);
+  return { ...core, isUnit: UNIT_SYMBOLS.has(core.text.toUpperCase()) };
+}
+
+function resolveTokenDisplay(
+  token: string | null,
+  capturedSymbol: string | null,
+  localSymbol: string | null,
+): Omit<TokenDisplay, "isUnit"> {
   // Rule 1 — the ONLY brand path: a known mint address proves the identity.
   const knownTicker = token !== null ? KNOWN_MINTS.get(token) : undefined;
   if (knownTicker !== undefined) {
@@ -302,7 +318,11 @@ export function computeDeployedEth(moves: readonly MoveItem[]): number {
   let total = 0;
   for (const m of moves) {
     if (m.tradeSide?.toLowerCase() !== "buy") continue;
-    if (tokenDisplay(m.inputToken).text !== "ETH") continue;
+    if (
+      tokenDisplay(m.inputToken, m.inputTokenSymbol, m.inputTokenLocalSymbol)
+        .text !== "ETH"
+    )
+      continue;
     const eth = parseAmount(m.inputAmount);
     if (eth !== null) total += eth;
   }
@@ -544,7 +564,7 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
             <TokenIcon symbol={input.iconSymbol} size={12} />
           ) : null}
           <span className="truncate">
-            {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+            {legText(input, inputAmount)}
           </span>
         </span>
         <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
@@ -556,7 +576,7 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
             <TokenIcon symbol={output.iconSymbol} size={12} />
           ) : null}
           <span className="truncate">
-            {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+            {legText(output, outputAmount)}
           </span>
         </span>
       </span>

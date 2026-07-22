@@ -75,6 +75,7 @@ import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
+import { MissionSummaryCard } from "./MissionSummaryCard.js";
 import { planMissing } from "./MissionRail.js";
 
 /**

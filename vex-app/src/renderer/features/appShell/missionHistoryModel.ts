@@ -61,6 +61,26 @@ export function sumPnlEth(results: readonly MissionResultDto[]): number {
   return results.reduce((total, r) => total + (r.pnlEth ?? 0), 0);
 }
 
+/**
+ * Best (max) and worst (min) single-mission ETH PnL across the results. Only
+ * rows with a finite `pnlEth` count; `null` when none qualify (so the panel can
+ * drop the figure rather than print a fabricated 0).
+ */
+export function bestWorst(
+  results: readonly MissionResultDto[],
+): { best: number; worst: number } | null {
+  let best: number | null = null;
+  let worst: number | null = null;
+  for (const r of results) {
+    if (r.pnlEth === null || !Number.isFinite(r.pnlEth)) continue;
+    const pnl = r.pnlEth;
+    if (best === null || pnl > best) best = pnl;
+    if (worst === null || pnl < worst) worst = pnl;
+  }
+  if (best === null || worst === null) return null;
+  return { best, worst };
+}
+
 const ETH_DECIMALS = 4;
 
 /** Fixed-precision ETH amount; `signed` prefixes +/-. `null`/non-finite -> em dash. */

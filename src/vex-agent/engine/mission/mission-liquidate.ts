@@ -26,7 +26,7 @@
  * the attribution + safety logic with no RPC and no real swaps.
  */
 
-import { getResultForRun } from "../../db/repos/mission-results.js";
+import { getResultByRunId } from "../../db/repos/mission-results.js";
 import { readEthBankroll, type OpenPosition } from "./bankroll.js";
 import { buildSessionWalletResolution } from "../core/hydrate.js";
 import { NATIVE_TOKEN_ADDRESS } from "../../../tools/kyberswap/constants.js";
@@ -108,7 +108,7 @@ async function productionDeps(): Promise<LiquidateDeps> {
     );
   }
   return {
-    getResult: getResultForRun,
+    getResult: getResultByRunId,
     readHoldings: async (wallet, chainId) => {
       const bankroll = await readEthBankroll(wallet, chainId);
       return bankroll?.openPositions ?? [];

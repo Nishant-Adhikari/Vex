@@ -35,11 +35,13 @@
  * total, semantic up/down on the PnL; `tabular-nums` on every figure.
  */
 
-import type { JSX } from "react";
-import type { PortfolioDto } from "@shared/schemas/portfolio.js";
-import { usePortfolio } from "../../../lib/api/portfolio.js";
+import { useState, type JSX } from "react";
+import type { PortfolioDto, PortfolioReadInput } from "@shared/schemas/portfolio.js";
+import { usePortfolioScoped } from "../../../lib/api/portfolio.js";
+import { useAvailableWallets } from "../../../lib/api/wallet-inventory.js";
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
 import { formatUsd, formatUsdDelta } from "../../../lib/format.js";
+import { cn } from "../../../lib/utils.js";
 import { BookBlock } from "./BookBlock.js";
 import { DepositAddresses } from "./DepositAddresses.js";
 import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
