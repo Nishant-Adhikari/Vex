@@ -55,6 +55,23 @@ function fetchMock() {
   return globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
 }
 
+// Stub DNS so tests never touch the real resolver. Default: every host
+// resolves to a public address. Individual tests override for the SSRF case.
+const publicResolver = async () => ["93.184.216.34"];
+const opts = { resolveHost: publicResolver };
+
+/** Build a mock Response whose `body` is a ReadableStream of `chunks`. */
+function streamResponse(chunks: string[], status = 200): MockResponse & { body: ReadableStream<Uint8Array> } {
+  const enc = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const c of chunks) controller.enqueue(enc.encode(c));
+      controller.close();
+    },
+  });
+  return { ...mockResponse({ status }), body: stream };
+}
+
 // ── URL normalization ────────────────────────────────────────────
 
 describe("normalizeWebsiteUrl", () => {
@@ -173,7 +190,7 @@ describe("fetchWebsiteContext", () => {
       </body></html>`;
     fetchMock().mockResolvedValueOnce(mockResponse({ status: 200, body }));
 
-    const result = await fetchWebsiteContext("acme.xyz");
+    const result = await fetchWebsiteContext("acme.xyz", opts);
     expect(result.status).toBe("ok");
     expect(result.title).toBe("Acme Protocol");
     expect(result.description).toBe("On-chain lending.");
@@ -189,7 +206,7 @@ describe("fetchWebsiteContext", () => {
     fetchMock().mockResolvedValueOnce(
       mockResponse({ status: 200, body: "<html><title>Parked</title><body><p>Coming soon</p></body></html>" }),
     );
-    const result = await fetchWebsiteContext("https://acme.xyz");
+    const result = await fetchWebsiteContext("https://acme.xyz", opts);
     expect(result.status).toBe("ok");
     expect(result.signals.isParkedOrPlaceholder).toBe(true);
     expect(result.signals.hasSubstantiveContent).toBe(false);
@@ -197,7 +214,7 @@ describe("fetchWebsiteContext", () => {
 
   it("returns unavailable on a 404 without throwing", async () => {
     fetchMock().mockResolvedValueOnce(mockResponse({ status: 404 }));
-    const result = await fetchWebsiteContext("https://acme.xyz");
+    const result = await fetchWebsiteContext("https://acme.xyz", opts);
     expect(result.status).toBe("unavailable");
     expect(result.reason).toContain("404");
     expect(result.httpStatus).toBe(404);
@@ -206,14 +223,14 @@ describe("fetchWebsiteContext", () => {
 
   it("returns unavailable on a network/timeout error without throwing", async () => {
     fetchMock().mockRejectedValueOnce(new Error("Request timed out after 8000ms"));
-    const result = await fetchWebsiteContext("https://acme.xyz");
+    const result = await fetchWebsiteContext("https://acme.xyz", opts);
     expect(result.status).toBe("unavailable");
     expect(result.reason).toContain("unreachable");
     expect(result.signals.reachable).toBe(false);
   });
 
   it("returns unavailable 'no website' when no URL is provided", async () => {
-    const result = await fetchWebsiteContext("");
+    const result = await fetchWebsiteContext("", opts);
     expect(result.status).toBe("unavailable");
     expect(result.reason).toBe("no website");
     expect(fetchMock()).not.toHaveBeenCalled();
@@ -223,7 +240,7 @@ describe("fetchWebsiteContext", () => {
     fetchMock()
       .mockResolvedValueOnce(mockResponse({ status: 301, location: "https://x.com/acme" }))
       .mockResolvedValueOnce(mockResponse({ status: 200, body: "<html><title>Acme on X</title><body>profile</body></html>" }));
-    const result = await fetchWebsiteContext("acme.xyz");
+    const result = await fetchWebsiteContext("acme.xyz", opts);
     expect(result.status).toBe("ok");
     expect(result.finalUrl).toBe("https://x.com/acme");
     expect(result.signals.redirectsToSocialOnly).toBe(true);
@@ -234,15 +251,35 @@ describe("fetchWebsiteContext", () => {
       .mockResolvedValueOnce(mockResponse({ status: 301, location: "https://acme.xyz/a" }))
       .mockResolvedValueOnce(mockResponse({ status: 301, location: "https://acme.xyz/b" }))
       .mockResolvedValueOnce(mockResponse({ status: 301, location: "https://acme.xyz/c" }));
-    const result = await fetchWebsiteContext("acme.xyz");
+    const result = await fetchWebsiteContext("acme.xyz", opts);
     expect(result.status).toBe("unavailable");
     expect(result.reason).toContain("too many redirects");
   });
 
   it("blocks a private-host URL without fetching", async () => {
-    const result = await fetchWebsiteContext("http://127.0.0.1/admin");
+    const result = await fetchWebsiteContext("http://127.0.0.1/admin", opts);
     expect(result.status).toBe("unavailable");
     expect(result.reason).toContain("blocked host");
     expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("blocks a public hostname that RESOLVES to a private address (SSRF)", async () => {
+    const privateResolver = async () => ["10.0.0.5"];
+    const result = await fetchWebsiteContext("acme.xyz", { resolveHost: privateResolver });
+    expect(result.status).toBe("unavailable");
+    expect(result.reason).toContain("resolves to private");
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("stream-caps a hostile oversized body instead of buffering it whole", async () => {
+    // 1 MB of body streamed in chunks; cap is 512 KB.
+    const chunk = "A".repeat(64 * 1024);
+    const chunks = [`<html><title>Big</title><body>`, ...Array(16).fill(chunk), `</body></html>`];
+    fetchMock().mockResolvedValueOnce(streamResponse(chunks));
+    const result = await fetchWebsiteContext("acme.xyz", opts);
+    expect(result.status).toBe("ok");
+    // Excerpt is capped far below the raw body; the read stopped at the cap.
+    expect(result.excerpt.length).toBeLessThanOrEqual(2100);
+    expect(result.title).toBe("Big");
   });
 });

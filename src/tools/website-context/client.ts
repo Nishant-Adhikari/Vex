@@ -10,8 +10,10 @@
  * Bounding (defense against hostile / runaway sites):
  *   - hard request timeout per hop (via {@link fetchWithTimeout})
  *   - at most {@link MAX_REDIRECTS} manual redirects (default 2)
- *   - response body capped at {@link MAX_BODY_BYTES}
- *   - SSRF guard: refuses private / loopback / link-local hosts
+ *   - response body STREAM-capped at {@link MAX_BODY_BYTES} (a dribbled,
+ *     unbounded body is aborted at the cap — never fully buffered)
+ *   - SSRF guard on every hop: refuses private/loopback/link-local hosts by
+ *     literal string AND by RESOLVED address (public host → private IP)
  *   - normal browser User-Agent
  *
  * Graceful degradation is MANDATORY: every failure path returns an
@@ -19,6 +21,7 @@
  * crash on it.
  */
 
+import { lookup } from "node:dns/promises";
 import { fetchWithTimeout } from "../../utils/http.js";
 import { normalizeWebsiteUrl } from "./normalize-url.js";
 import { computeSignals, extractMetaDescription, extractText, extractTitle, isSocialHost } from "./parse.js";
@@ -29,6 +32,23 @@ const MAX_REDIRECTS = 2;
 const MAX_BODY_BYTES = 512 * 1024; // 512 KB is plenty for a landing page.
 const USER_AGENT =
   "Mozilla/5.0 (compatible; VexResearchBot/1.0; +https://github.com/Vex-Foundation/Vex)";
+
+/**
+ * Resolves a hostname to its IP addresses. Injectable so tests never touch
+ * real DNS. Default uses the OS resolver.
+ */
+export type HostResolver = (host: string) => Promise<string[]>;
+
+const defaultResolveHost: HostResolver = async (host) => {
+  const records = await lookup(host, { all: true });
+  return records.map((r) => r.address);
+};
+
+/** Options for {@link fetchWebsiteContext} — primarily test seams. */
+export interface FetchWebsiteOptions {
+  /** Override DNS resolution (tests). Defaults to the OS resolver. */
+  resolveHost?: HostResolver;
+}
 
 /** Neutral "nothing usable" signal block for unavailable results. */
 function unreachableSignals(): WebsiteQualitySignals {
@@ -95,16 +115,67 @@ export function isBlockedHost(hostname: string): boolean {
   return false;
 }
 
+/** True for an IPv4/IPv6 literal (already covered by {@link isBlockedHost}). */
+function isIpLiteral(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, "");
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.includes(":");
+}
+
+/**
+ * Reject a hostname whose RESOLVED addresses point at internal infrastructure.
+ * Closes the gap where a public hostname has a private/loopback A/AAAA record
+ * ({@link isBlockedHost} only sees the literal host string). Returns a block
+ * reason, or null when every resolved address is public.
+ *
+ * NOTE: this narrows the SSRF window but does not fully close DNS-rebinding —
+ * undici re-resolves at connect time, so a record that flips between this
+ * check and the socket connect is still a (much smaller) TOCTOU. A fully
+ * rebinding-proof fetch would pin the validated IP into the connection; that
+ * is deliberately out of scope for this advisory research tool.
+ */
+async function blockedByResolution(host: string, resolveHost: HostResolver): Promise<string | null> {
+  if (isIpLiteral(host)) return null; // literal already vetted by isBlockedHost
+  const addresses = await resolveHost(host);
+  if (addresses.length === 0) return "unreachable: DNS returned no records";
+  const bad = addresses.find((addr) => isBlockedHost(addr));
+  return bad ? `blocked host (resolves to private/loopback address ${bad})` : null;
+}
+
+/**
+ * Read the response body with a hard byte cap, streaming so a hostile site
+ * that dribbles an unbounded body (no honest Content-Length) can neither
+ * exhaust memory nor hang past the cap. Falls back to `text()` for response
+ * doubles that expose no `body` stream (test mocks).
+ */
 async function readBoundedText(response: Response): Promise<string> {
-  // Fast reject on an oversized declared length; still cap after reading in
-  // case Content-Length lies or is absent.
-  const declared = Number(response.headers?.get?.("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES * 4) {
-    // Absurdly large — read nothing (the site is not a normal landing page).
-    return "";
+  const body = (response as { body?: ReadableStream<Uint8Array> | null }).body;
+  if (!body || typeof body.getReader !== "function") {
+    // No stream (mock/legacy) — buffer then cap.
+    const text = await response.text();
+    return text.length > MAX_BODY_BYTES ? text.slice(0, MAX_BODY_BYTES) : text;
   }
-  const body = await response.text();
-  return body.length > MAX_BODY_BYTES ? body.slice(0, MAX_BODY_BYTES) : body;
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let out = "";
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      bytes += value.byteLength;
+      const remaining = MAX_BODY_BYTES - (bytes - value.byteLength);
+      const slice = bytes > MAX_BODY_BYTES ? value.subarray(0, Math.max(0, remaining)) : value;
+      out += decoder.decode(slice, { stream: true });
+      if (bytes >= MAX_BODY_BYTES) break; // cap hit — stop reading
+    }
+  } finally {
+    // Abort the underlying request so a never-ending body can't linger.
+    await reader.cancel().catch(() => undefined);
+  }
+  out += decoder.decode();
+  return out;
 }
 
 /**
@@ -113,7 +184,11 @@ async function readBoundedText(response: Response): Promise<string> {
  * @param rawUrl a website URL (full or bare, e.g. `site.xyz`). Undefined /
  *   empty / no-website → `unavailable` with reason "no website".
  */
-export async function fetchWebsiteContext(rawUrl: unknown): Promise<WebsiteContextResult> {
+export async function fetchWebsiteContext(
+  rawUrl: unknown,
+  options: FetchWebsiteOptions = {},
+): Promise<WebsiteContextResult> {
+  const resolveHost = options.resolveHost ?? defaultResolveHost;
   const normalized = normalizeWebsiteUrl(rawUrl);
   if (normalized === null) {
     const provided = typeof rawUrl === "string" && rawUrl.trim().length > 0;
@@ -133,6 +208,12 @@ export async function fetchWebsiteContext(rawUrl: unknown): Promise<WebsiteConte
       }
       if (isBlockedHost(host)) {
         return unavailable("blocked host (private/loopback address)", normalized, currentUrl, null);
+      }
+      // Resolved-IP SSRF guard: block a public hostname that points at a
+      // private/loopback address (DNS-level vector isBlockedHost can't see).
+      const resolutionBlock = await blockedByResolution(host, resolveHost);
+      if (resolutionBlock !== null) {
+        return unavailable(resolutionBlock, normalized, currentUrl, null);
       }
       if (isSocialHost(host) && currentUrl !== normalized) redirectChainToSocial = true;
 
