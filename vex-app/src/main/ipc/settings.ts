@@ -27,6 +27,12 @@ const setTelemetryConsentInput = z
   })
   .strict();
 
+const setKeepAwakeDuringMissionInput = z
+  .object({
+    enabled: z.boolean(),
+  })
+  .strict();
+
 export function registerSettingsHandlers(): Array<() => void> {
   const handlers: Array<() => void> = [];
 
@@ -113,6 +119,24 @@ export function registerSettingsHandlers(): Array<() => void> {
         return ok(next);
       },
     })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.setKeepAwakeDuringMission,
+      domain: "settings",
+      inputSchema: setKeepAwakeDuringMissionInput,
+      outputSchema: preferencesSchema,
+      handle: async ({ enabled }): Promise<Result<Preferences>> => {
+        // Persist only; the main keep-awake worker observes preferencesStore and
+        // reconciles the powerSaveBlocker on the resulting change (fork feature).
+        const current = await preferencesStore.load();
+        const next = await preferencesStore.update({
+          ui: { ...current.ui, keepAwakeDuringMission: enabled },
+        });
+        return ok(preferencesSchema.parse(next));
+      },
+    }),
   );
 
   return handlers;
