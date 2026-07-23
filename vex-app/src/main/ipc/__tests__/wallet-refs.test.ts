@@ -7,11 +7,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockGetWalletById = vi.fn();
+const mockGetPrimaryEvmEntry = vi.fn();
 vi.mock("@vex-lib/wallet.js", () => ({
   getWalletById: (...a: unknown[]) => mockGetWalletById(...a),
+  getPrimaryEvmEntry: (...a: unknown[]) => mockGetPrimaryEvmEntry(...a),
 }));
 
-const { resolveWalletRef, invalidWalletSelectionError } = await import("../_wallet-refs.js");
+const { resolveWalletRef, invalidWalletSelectionError, defaultMissionEvmWalletRef } =
+  await import("../_wallet-refs.js");
+
+const PRIMARY_ADDR = "0x9ed25bdedceB28Adf9E3C7fCa34511e78e47C77f";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -34,6 +39,30 @@ describe("resolveWalletRef", () => {
   it("unknown id → 'invalid' (caller fails closed)", () => {
     mockGetWalletById.mockReturnValue(null);
     expect(resolveWalletRef("solana", "sol_x")).toBe("invalid");
+  });
+});
+
+describe("defaultMissionEvmWalletRef", () => {
+  it("returns the primary EVM entry as {id,address} (the 0x9ed2… trading wallet)", () => {
+    mockGetPrimaryEvmEntry.mockReturnValue({
+      id: "evm_legacy",
+      address: PRIMARY_ADDR,
+      label: "Primary",
+      createdAt: "",
+      legacy: true,
+      vault: false,
+    });
+    expect(defaultMissionEvmWalletRef()).toEqual({ id: "evm_legacy", address: PRIMARY_ADDR });
+  });
+
+  it("returns null when the primary entry is a vault (never default onto hold-only)", () => {
+    mockGetPrimaryEvmEntry.mockReturnValue({ id: "evm_vault", address: "0xVault", vault: true });
+    expect(defaultMissionEvmWalletRef()).toBeNull();
+  });
+
+  it("returns null when there is no primary entry", () => {
+    mockGetPrimaryEvmEntry.mockReturnValue(null);
+    expect(defaultMissionEvmWalletRef()).toBeNull();
   });
 });
 
