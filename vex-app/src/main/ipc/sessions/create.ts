@@ -22,6 +22,7 @@ import { createSession } from "../../database/sessions-db.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 import {
+  defaultMissionEvmWalletRef,
   invalidWalletSelectionError,
   isVaultWallet,
   resolveWalletRef,
@@ -37,7 +38,7 @@ export function registerSessionsCreateHandler(): () => void {
     handle: async (input, ctx): Promise<Result<SessionCreateResult>> => {
       // Resolve selected wallet IDs → {id,address} server-side. Invalid id →
       // fail closed WITHOUT creating the session (or the mission row).
-      const evm = resolveWalletRef("evm", input.selectedEvmWalletId);
+      let evm = resolveWalletRef("evm", input.selectedEvmWalletId);
       const solana = resolveWalletRef("solana", input.selectedSolanaWalletId);
       if (evm === "invalid" || solana === "invalid") {
         log.info(
@@ -56,6 +57,26 @@ export function registerSessionsCreateHandler(): () => void {
           `[ipc:vex:sessions:create] vault_wallet_rejected correlationId=${ctx.requestId}`,
         );
         return err(vaultWalletSelectionError(ctx.requestId));
+      }
+      // MISSION default: when the operator selected no EVM wallet, bind the
+      // session to the PRIMARY trading wallet so they never have to pick one
+      // (covers both the Mission Presets tab and the normal new-mission flow,
+      // which both send selectedEvmWalletId: null). Only fills when unselected —
+      // never overrides an explicit choice — and never lands on a vault
+      // (defaultMissionEvmWalletRef returns null for a vault/missing primary).
+      if (input.mode === "mission" && !input.selectedEvmWalletId && evm === null) {
+        evm = defaultMissionEvmWalletRef();
+        if (evm) {
+          log.info(
+            `[ipc:vex:sessions:create] mission_default_evm_wallet applied ` +
+              `correlationId=${ctx.requestId}`,
+          );
+        } else {
+          log.info(
+            `[ipc:vex:sessions:create] mission_default_evm_wallet unavailable ` +
+              `(no primary or vault) correlationId=${ctx.requestId}`,
+          );
+        }
       }
       const outcome = await createSession(input, { evm, solana });
       if (outcome.ok) {
