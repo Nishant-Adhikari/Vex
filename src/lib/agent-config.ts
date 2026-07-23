@@ -70,6 +70,25 @@ export const AGENT_TEMPERATURE: FieldWithDefault = {
   default: null,
 };
 
+/**
+ * Hard per-mission TOKEN BUDGET (whole tokens). A cumulative ceiling on a single
+ * mission run's prompt+completion spend: once crossed, the run loop stops with
+ * `token_budget_exhausted` before issuing another LLM call. The backstop a broken
+ * model that loops a tool (one such loop burned ~9M tokens / ~$3) needs.
+ *
+ * Read like the other AGENT_* fields, but FAIL-OPEN (see
+ * `resolveMissionTokenBudget`): a missing/blank/invalid value resolves to the
+ * 500000 default rather than throwing, because a mis-set budget must never block
+ * a run from starting — the same fail-open stance as the hard-deadline env.
+ */
+export const AGENT_MISSION_TOKEN_BUDGET: FieldWithDefault = {
+  key: "AGENT_MISSION_TOKEN_BUDGET",
+  kind: "int",
+  min: 1,
+  max: 1_000_000_000,
+  default: 500_000,
+};
+
 export const SUBAGENT_MAX_CONCURRENT: FieldWithDefault = {
   key: "SUBAGENT_MAX_CONCURRENT",
   kind: "int",
@@ -175,6 +194,25 @@ export function parseAgentEnv(env: EnvLike): ParseResult<AgentEffective> {
     },
     errors,
   };
+}
+
+/**
+ * Resolve the effective hard per-mission token budget from env. Fail-open:
+ * unset, blank, non-numeric, or out-of-range all resolve to the 500000 default
+ * (the collected parse error is intentionally discarded — a bad budget must not
+ * block a run, mirroring the hard-deadline env's fallback stance). Reads
+ * `AGENT_MISSION_TOKEN_BUDGET` through the same field-descriptor parser the
+ * other AGENT_* whole-number fields use, so validation stays consistent.
+ */
+export function resolveMissionTokenBudget(env: EnvLike): number {
+  const discardedErrors: ParseError[] = [];
+  return (
+    parseFieldOrDefault(
+      AGENT_MISSION_TOKEN_BUDGET,
+      env[AGENT_MISSION_TOKEN_BUDGET.key],
+      discardedErrors,
+    ) ?? AGENT_MISSION_TOKEN_BUDGET.default!
+  );
 }
 
 export function parseSubagentEnv(env: EnvLike, agentEff: AgentEffective): ParseResult<SubagentEffective> {

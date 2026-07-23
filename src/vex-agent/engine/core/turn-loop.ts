@@ -37,6 +37,7 @@ import {
   maxOperatorInstructionId,
 } from "./operator-instructions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
+import * as usageRepo from "@vex-agent/db/repos/usage.js";
 
 // Per-iteration helpers (pure async; thread state explicitly through args/returns):
 import { tryCriticalBandFallback } from "./turn-loop-critical-fallback.js";
@@ -146,6 +147,27 @@ export async function runTurnLoop(
       });
       stopReason = "deadline_reached";
       break;
+    }
+
+    // Hard token budget — the agent-independent spend-box. Checked each
+    // iteration AFTER the previous turn's usage was recorded (executeTurn awaits
+    // logUsage) and BEFORE another inference call, so once the run's cumulative
+    // prompt+completion spend crosses the ceiling no further tokens are spent.
+    // Reads the SAME accumulated session total logUsage feeds — no parallel
+    // counter. Stops with `token_budget_exhausted`, which finalizeMissionRunStatus
+    // maps through the standard business-stop path (force-close then terminal).
+    if (loopConfig.missionTokenBudget != null) {
+      const tokensUsed = await usageRepo.getSessionTotalTokens(context.sessionId);
+      if (tokensUsed >= loopConfig.missionTokenBudget) {
+        logger.info("engine.mission.token_budget_enforced", {
+          missionRunId: context.missionRunId ?? null,
+          tokensUsed,
+          budget: loopConfig.missionTokenBudget,
+          iteration,
+        });
+        stopReason = "token_budget_exhausted";
+        break;
+      }
     }
 
     // Iteration entry: abort → observe-control → runtime-stop, in that order.

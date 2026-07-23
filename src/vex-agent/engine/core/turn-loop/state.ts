@@ -30,6 +30,16 @@ export interface TurnLoopConfig {
    * Null/undefined = no box.
    */
   missionDeadlineMs?: number | null;
+  /**
+   * Hard cumulative token budget for the mission run (whole tokens). When set,
+   * the turn loop stops with `token_budget_exhausted` the moment the run's
+   * accumulated prompt+completion spend (the summed `usage_log.total_tokens`
+   * for the session) is at or above this ceiling — checked at the top of each
+   * iteration, after the previous turn's usage was recorded and BEFORE another
+   * inference call is spent. Resolved from `AGENT_MISSION_TOKEN_BUDGET`
+   * (default 500000). Null/undefined = no budget (guard disabled).
+   */
+  missionTokenBudget?: number | null;
 }
 
 export interface TurnLoopResult {

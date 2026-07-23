@@ -46,6 +46,21 @@ export async function logUsage(sessionId: string, entry: UsageEntry): Promise<vo
   );
 }
 
+/**
+ * Cumulative prompt+completion tokens logged for a session (SUM of
+ * `total_tokens`), across every turn and currency. This is the same accumulator
+ * `logUsage` feeds after each LLM turn; the hard token-budget guard reads it at
+ * the top of each mission iteration to decide whether to auto-abort. `0` when
+ * the session has no usage rows yet.
+ */
+export async function getSessionTotalTokens(sessionId: string): Promise<number> {
+  const row = await queryOne<{ tokens: string }>(
+    "SELECT COALESCE(SUM(total_tokens),0) AS tokens FROM usage_log WHERE session_id = $1",
+    [sessionId],
+  );
+  return parseInt(row?.tokens ?? "0", 10);
+}
+
 export async function getStats(sessionId?: string, currency?: string): Promise<UsageStats> {
   const currencyClause = currency ? " WHERE currency = $1" : "";
   const currencyParams = currency ? [currency] : [];

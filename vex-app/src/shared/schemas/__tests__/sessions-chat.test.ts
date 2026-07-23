@@ -101,6 +101,7 @@ describe("chatStopReasonSchema (engine StopReason mirror)", () => {
     "no_viable_opportunity",
     "emergency_stop",
     "user_stopped",
+    "token_budget_exhausted",
     "approval_required",
     "checkpoint_pause",
     "iteration_limit",

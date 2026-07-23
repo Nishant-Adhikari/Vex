@@ -37,6 +37,7 @@ import {
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
 import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
+import { resolveMissionTokenBudget } from "../../../../lib/agent-config.js";
 import { captureMissionStart } from "../../mission/mission-results-capture.js";
 import { forceLiquidateOnDeadline } from "./mission-liquidate-hook.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
@@ -167,6 +168,9 @@ export async function runPreparedMissionStart(
         hydrated.context.missionRunStartedAt,
         prepared.contractSnapshot,
       ),
+      // Hard token budget (AGENT_MISSION_TOKEN_BUDGET, default 500000): the
+      // spend-box backstop against a runaway loop. Fail-open to the default.
+      missionTokenBudget: resolveMissionTokenBudget(process.env),
     };
 
     const result = await runTurnLoop(
@@ -313,6 +317,10 @@ export async function resumePreparedMissionRun(
         hydrated.context.missionRunStartedAt,
         prepared.run.contractSnapshotJson,
       ),
+      // Hard token budget (AGENT_MISSION_TOKEN_BUDGET, default 500000): the
+      // spend-box backstop against a runaway loop. Re-resolved on resume so a
+      // re-kicked run carries the same guard. Fail-open to the default.
+      missionTokenBudget: resolveMissionTokenBudget(process.env),
     };
 
     const result = await runTurnLoop(
