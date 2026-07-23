@@ -105,6 +105,15 @@ function apiUnreachableHint(causeCode: string | null): string {
 export interface OpenRouterProviderInit {
   apiKey?: string;
   model?: string;
+  /**
+   * Optional model-availability fallback. When the PRIMARY `model` is absent
+   * from the `/models` catalog (a retired/mistyped slug — OpenRouter
+   * `model_not_found`) and this differs from the primary, `loadConfig()`
+   * resolves the request against this model instead of erroring (issue #37).
+   * Defaults to `AGENT_MODEL_FALLBACK` (read the same way `model` reads
+   * `AGENT_MODEL`); unset ⇒ no fallback, behavior unchanged.
+   */
+  fallbackModel?: string;
   displayName?: string;
 }
 
@@ -113,8 +122,25 @@ export class OpenRouterProvider implements InferenceProvider {
   readonly displayName: string;
 
   private readonly apiKey: string;
+  /** The ENV-configured primary model — the preferred target on every fetch. */
+  private readonly primaryModel: string;
+  /**
+   * Optional model-availability fallback (differs from primary, or null). Used
+   * only when the primary is absent from the `/models` catalog (issue #37).
+   */
+  private readonly fallbackModel: string | null;
+  /**
+   * The model the LAST successful config load resolved to — the primary
+   * normally, or {@link fallbackModel} after a model-availability failover.
+   * Exposed via {@link model} so the failover wrapper's per-turn `config.model`
+   * retarget (`FailoverProvider.configFor`) stays consistent with the model the
+   * returned config was actually built for.
+   */
+  private activeModel: string;
   /** Public so the failover wrapper can retarget `config.model` on a failover. */
-  readonly model: string;
+  get model(): string {
+    return this.activeModel;
+  }
   private readonly contextLimit: number;
   private readonly temperature: number | undefined;
   private readonly maxOutputTokens: number;
@@ -137,6 +163,10 @@ export class OpenRouterProvider implements InferenceProvider {
 
     const apiKey = init.apiKey ?? env.openrouterApiKey;
     const model = init.model ?? env.agentModel;
+    // Read AGENT_MODEL_FALLBACK exactly the way `model` reads AGENT_MODEL
+    // (init override → resolved ENV). A fallback equal to the primary is a
+    // no-op (nothing to fail over to), so it is normalized to null.
+    const fallbackModel = init.fallbackModel ?? env.fallbackAgentModel;
 
     if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is required for OpenRouter provider");
@@ -147,7 +177,10 @@ export class OpenRouterProvider implements InferenceProvider {
 
     this.displayName = init.displayName ?? "OpenRouter";
     this.apiKey = apiKey;
-    this.model = model;
+    this.primaryModel = model;
+    this.activeModel = model;
+    this.fallbackModel =
+      fallbackModel && fallbackModel !== model ? fallbackModel : null;
     this.contextLimit = env.contextLimit;
     this.temperature = env.temperature ?? undefined;
     this.maxOutputTokens = env.maxOutputTokens;
@@ -239,21 +272,26 @@ export class OpenRouterProvider implements InferenceProvider {
   // ── _fetchConfig (uncached `/models` read) ──────────────────────
   //
   // Classifies the outcome so `loadConfig()` can decide stale-vs-null:
-  //   - `success`              → catalog responded and contains `this.model`;
-  //   - `model_not_found`      → catalog responded but lacks the model (hard);
+  //   - `success`              → catalog responded and contains the primary
+  //                              model, OR (issue #37) the primary was absent
+  //                              but a configured, differing fallback resolved;
+  //   - `model_not_found`      → catalog responded but lacks the model, and no
+  //                              fallback recovered it (hard);
   //   - `metadata_unavailable` → the `/models` request itself failed.
+  //
+  // Model-availability failover (issue #37) is scoped EXACTLY to `model_not_found`
+  // (a retired/mistyped slug). A `metadata_unavailable` transient (`/models`
+  // outage) is NOT an availability miss and never triggers the fallback — masking
+  // it would hide a real outage behind a silent model swap. The fallback is
+  // attempted at most once (single dual-resolve over one catalog response), so
+  // there is no retry loop, and on the primary each fetch is re-preferred so a
+  // recovered primary auto-reverts on the next TTL refresh.
 
   private async _fetchConfig(): Promise<
     | { kind: "success"; config: InferenceConfig }
     | { kind: "model_not_found" }
     | { kind: "metadata_unavailable" }
   > {
-    let inputPricePerM = 0;
-    let outputPricePerM = 0;
-    let cachePricePerM: number | null = null;
-    let cacheWritePricePerM: number | null = null;
-    let reasoningPricePerM: number | null = null;
-
     // `/models` transport/server/SDK failure → metadata_unavailable (the
     // caller may serve a last-good config). A successful catalog that lacks
     // the model is a distinct, hard `model_not_found`.
@@ -263,7 +301,7 @@ export class OpenRouterProvider implements InferenceProvider {
     } catch (err) {
       const causeCode = extractCauseCode(err);
       logger.error("inference.openrouter.api_unreachable", {
-        model: this.model,
+        model: this.primaryModel,
         error: err instanceof Error ? err.message : String(err),
         ...(causeCode !== null ? { causeCode } : {}),
         hint: apiUnreachableHint(causeCode),
@@ -271,14 +309,56 @@ export class OpenRouterProvider implements InferenceProvider {
       return { kind: "metadata_unavailable" };
     }
 
-    const found = models.data?.find((m: { id: string }) => m.id === this.model);
-    if (!found) {
-      logger.error("inference.openrouter.model_not_found", {
-        model: this.model,
-        hint: "Check AGENT_MODEL or OpenRouter model availability",
-      });
-      return { kind: "model_not_found" };
+    // Prefer the primary model every fetch (so a recovered primary reverts).
+    const primaryConfig = this.buildConfigForModel(models, this.primaryModel);
+    if (primaryConfig) {
+      this.activeModel = this.primaryModel;
+      return { kind: "success", config: primaryConfig };
     }
+
+    // Primary is a model-availability miss. If a differing fallback is
+    // configured, resolve the request against it ONCE from the same catalog.
+    if (this.fallbackModel !== null) {
+      const fallbackConfig = this.buildConfigForModel(models, this.fallbackModel);
+      if (fallbackConfig) {
+        this.activeModel = this.fallbackModel;
+        logger.warn("inference.model.fallback_used", {
+          primary: this.primaryModel,
+          fallback: this.fallbackModel,
+        });
+        return { kind: "success", config: fallbackConfig };
+      }
+    }
+
+    // No fallback, or the fallback is also absent — surface the original miss
+    // (unchanged `model_not_found` → null-config behavior).
+    logger.error("inference.openrouter.model_not_found", {
+      model: this.primaryModel,
+      ...(this.fallbackModel !== null ? { fallbackAlsoMissing: this.fallbackModel } : {}),
+      hint: "Check AGENT_MODEL or OpenRouter model availability",
+    });
+    return { kind: "model_not_found" };
+  }
+
+  // ── buildConfigForModel (pure per-model catalog resolve) ────────
+  //
+  // Resolve one model id against an already-fetched `/models` catalog: returns
+  // its priced {@link InferenceConfig} (and logs `config_loaded`) when present,
+  // or `null` when the catalog lacks it. No network — the caller owns the fetch
+  // — so the primary and the fallback are resolved from ONE catalog response.
+
+  private buildConfigForModel(
+    models: Awaited<ReturnType<typeof this.client.models.list>>,
+    model: string,
+  ): InferenceConfig | null {
+    const found = models.data?.find((m: { id: string }) => m.id === model);
+    if (!found) return null;
+
+    let inputPricePerM = 0;
+    let outputPricePerM = 0;
+    let cachePricePerM: number | null = null;
+    let cacheWritePricePerM: number | null = null;
+    let reasoningPricePerM: number | null = null;
 
     if (found.pricing) {
       // PublicPricing: prompt/completion are per-TOKEN strings (not per-1M).
@@ -293,7 +373,7 @@ export class OpenRouterProvider implements InferenceProvider {
     }
 
     logger.info("inference.openrouter.config_loaded", {
-      model: this.model,
+      model,
       contextLimit: this.contextLimit,
       inputPricePerM: inputPricePerM.toFixed(4),
       outputPricePerM: outputPricePerM.toFixed(4),
@@ -302,20 +382,17 @@ export class OpenRouterProvider implements InferenceProvider {
     });
 
     return {
-      kind: "success",
-      config: {
-        provider: this.id,
-        model: this.model,
-        contextLimit: this.contextLimit,
-        temperature: this.temperature,
-        maxOutputTokens: this.maxOutputTokens,
-        inputPricePerM,
-        outputPricePerM,
-        priceCurrency: "USD",
-        cachePricePerM,
-        cacheWritePricePerM,
-        reasoningPricePerM,
-      },
+      provider: this.id,
+      model,
+      contextLimit: this.contextLimit,
+      temperature: this.temperature,
+      maxOutputTokens: this.maxOutputTokens,
+      inputPricePerM,
+      outputPricePerM,
+      priceCurrency: "USD",
+      cachePricePerM,
+      cacheWritePricePerM,
+      reasoningPricePerM,
     };
   }
 
