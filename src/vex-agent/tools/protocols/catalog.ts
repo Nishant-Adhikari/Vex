@@ -45,6 +45,7 @@ import { HYPERLIQUID_TOOLS } from "./hyperliquid/manifest.js";
 import { HYPERLIQUID_HANDLERS } from "./hyperliquid/handlers.js";
 import { HYPERLIQUID_MARKET_ANALYSIS_HANDLERS } from "./hyperliquid/market-analysis-handlers.js";
 import { isHlMutationAvailable } from "../../../lib/hyperliquid-policy.js";
+import { buildNormalizedNameIndex, normalizeToolName } from "../name-normalize.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -180,6 +181,28 @@ export function getProtocolHandler(toolId: string): ProtocolHandler | undefined 
 /** O(1) manifest lookup by toolId. */
 export function getProtocolManifest(toolId: string): ProtocolToolManifest | undefined {
   return MANIFEST_BY_ID.get(toolId);
+}
+
+/** Every registered protocol toolId (canonical, dotted). */
+export function getAllProtocolToolIds(): string[] {
+  return [...MANIFEST_BY_ID.keys()];
+}
+
+// Separator-insensitive fallback index (normalize(toolId) -> canonical toolId).
+// Built once from the fully-populated MANIFEST_BY_ID; collision-safe (ambiguous
+// keys are dropped — see buildNormalizedNameIndex).
+const NORMALIZED_TOOL_ID_INDEX = buildNormalizedNameIndex(MANIFEST_BY_ID.keys());
+
+/**
+ * Resolve a caller-supplied name to a canonical protocol toolId. Exact match
+ * wins; otherwise a separator-insensitive match (so the model's underscore
+ * variant `dexscreener_search` resolves to `dexscreener.search`). Returns
+ * `undefined` for names that are neither — the dispatcher then falls through to
+ * its "Unknown tool" path.
+ */
+export function resolveProtocolToolId(name: string): string | undefined {
+  if (MANIFEST_BY_ID.has(name)) return name; // exact — unchanged behavior
+  return NORMALIZED_TOOL_ID_INDEX.get(normalizeToolName(name));
 }
 
 // ── Namespace defaults ──────────────────────────────────────────
