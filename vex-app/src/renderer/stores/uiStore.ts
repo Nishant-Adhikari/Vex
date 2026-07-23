@@ -121,6 +121,15 @@ interface UiState {
    */
   readonly bookOpen: boolean;
   readonly currentView: View;
+  /**
+   * True once startup detects onboarding is already complete on this machine
+   * (a RETURNING user). Drives the express lane: the healthy setup screens
+   * auto-advance instead of waiting for Begin/Continue clicks, so a returning
+   * user flows straight to the unlock gate. Defaults false (first-run sees the
+   * full flow) and is NOT persisted — it is recomputed from capabilities on
+   * every launch (see partialize).
+   */
+  readonly returningUser: boolean;
   readonly wizardEntryMode: WizardEntryMode;
   readonly unlockReturnView: UnlockReturnView;
   readonly logBuffer: ReadonlyArray<UiLogEntry>;
@@ -170,6 +179,7 @@ interface UiState {
   readonly toggleBook: () => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
+  readonly setReturningUser: (value: boolean) => void;
   readonly openWizard: (mode: WizardEntryMode) => void;
   readonly openUnlock: (returnView: UnlockReturnView) => void;
   readonly setActiveSessionId: (value: string | null) => void;
@@ -199,6 +209,7 @@ export const useUiStore = create<UiState>()(
       sidebarOpen: true,
       bookOpen: true,
       currentView: "splash",
+      returningUser: false,
       wizardEntryMode: "setup",
       unlockReturnView: "appShell",
       logBuffer: [],
@@ -221,6 +232,7 @@ export const useUiStore = create<UiState>()(
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
+      setReturningUser: (returningUser) => set({ returningUser }),
       openWizard: (wizardEntryMode) =>
         set({ currentView: "wizard", wizardEntryMode }),
       openUnlock: (unlockReturnView) =>
