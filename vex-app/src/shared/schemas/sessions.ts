@@ -43,6 +43,41 @@ export const sessionTitleSchema = z
 export const sessionModeSchema = z.enum(["agent", "mission"]);
 export type SessionMode = z.infer<typeof sessionModeSchema>;
 
+// ── Mission draft seed (one-click presets) ───────────────────────────────
+//
+// A preset launch can carry an authoritative structured seed so the mission
+// contract renders complete on create instead of showing every field "Still
+// Missing" until the model parses them from the goal prose. The main process
+// routes this seed through the engine's EXACT validated draft-write pipeline
+// (`mission_draft_update` sanitizer), so this schema is only the IPC-boundary
+// shape guard — bounds mirror the engine patch-parser (2000-char strings, 50
+// items, 500 chars/item). `allowedWallets` is intentionally absent: the
+// primary trading wallet is already bound at session creation.
+const SEED_STRING_MAX = 2000;
+const SEED_LIST_MAX = 50;
+const SEED_LIST_ITEM_MAX = 500;
+
+const seedString = z.string().trim().min(1).max(SEED_STRING_MAX);
+const seedStringList = z
+  .array(z.string().trim().min(1).max(SEED_LIST_ITEM_MAX))
+  .max(SEED_LIST_MAX);
+
+export const missionDraftSeedSchema = z
+  .object({
+    title: seedString.optional(),
+    goal: seedString.optional(),
+    capitalSource: seedString.optional(),
+    startingCapital: seedString.optional(),
+    riskProfile: seedString.optional(),
+    allowedChains: seedStringList.optional(),
+    allowedProtocols: seedStringList.optional(),
+    successCriteria: seedStringList.optional(),
+    stopConditions: seedStringList.optional(),
+    durationMinutes: z.number().int().positive().max(1440).optional(),
+  })
+  .strict();
+export type MissionDraftSeed = z.infer<typeof missionDraftSeedSchema>;
+
 export const sessionPermissionSchema = z.enum(["restricted", "full"]);
 export type SessionPermission = z.infer<typeof sessionPermissionSchema>;
 
@@ -88,6 +123,11 @@ export const sessionCreateInputSchema = z.discriminatedUnion("mode", [
       permission: sessionPermissionSchema,
       selectedEvmWalletId: z.string().max(128).nullable().optional(),
       selectedSolanaWalletId: z.string().max(128).nullable().optional(),
+      // Optional authoritative structured draft seed (one-click presets).
+      // When present, main seeds the companion mission draft row through the
+      // engine's validated pipeline right after create so the contract is
+      // complete without depending on the model to parse the goal prose.
+      missionDraftSeed: missionDraftSeedSchema.optional(),
     })
     .strict(),
 ]);

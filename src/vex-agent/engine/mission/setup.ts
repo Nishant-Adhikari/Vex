@@ -160,6 +160,31 @@ export async function applyMissionPatch(
 }
 
 /**
+ * Seed a session's mission draft from a preset's structured fields.
+ *
+ * One-click presets (e.g. PONS Scalper) carry an authoritative `draft` seed
+ * so the mission contract renders complete on launch instead of showing every
+ * field "Still Missing" and hoping the model parses them out of the goal prose.
+ *
+ * This is deliberately NOT a parallel draft writer: it resolves the companion
+ * mission row created at session creation and routes the seed through the EXACT
+ * validated pipeline the agent's `mission_draft_update` uses
+ * (`applyMissionPatch` → extract → sanitize → domainToRow → repo.updateDraft).
+ * The seed is treated as untrusted model-shaped input and re-sanitized there.
+ *
+ * Returns the resulting `SetupResult`, or `null` when the session has no
+ * mission draft row (e.g. an agent session) — callers treat that as a no-op.
+ */
+export async function seedMissionDraftForSession(
+  sessionId: string,
+  seed: unknown,
+): Promise<SetupResult | null> {
+  const mission = await missionsRepo.getMissionBySession(sessionId);
+  if (!mission) return null;
+  return applyMissionPatch(mission.id, seed);
+}
+
+/**
  * Get current setup state for a mission.
  */
 export async function getMissionSetupState(missionId: string): Promise<SetupResult | null> {

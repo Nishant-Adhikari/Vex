@@ -7,16 +7,26 @@
  * lands one tap from Accept + Run. Presets NEVER auto-accept or auto-run — the
  * host still reviews and signs the contract.
  *
- * Constraints (duration, spend cap, wallet) are carried by the GOAL TEXT
- * itself, not by structured session fields — session creation has no such
- * inputs, and mission constraints are parsed from the goal by the agent. The
- * typed `constraints` block is retained as metadata for the card copy and to
- * keep a future structured-draft path trivial; it is not sent over IPC.
+ * A preset also carries an authoritative structured `draft` seed. On launch the
+ * main process seeds the companion mission draft row from it through the
+ * engine's validated `mission_draft_update` pipeline, so the mission contract
+ * renders every field FILLED instead of "Still Missing" — the model no longer
+ * has to parse title/capital/chains/protocols/risk/criteria/stops out of the
+ * goal prose (which often left them blank). The `goal` prose is still sent (it
+ * guides the agent's EXECUTION); the structured fields are the contract of
+ * record. `allowedWallets` is intentionally omitted from the seed — the primary
+ * trading wallet is bound at session creation and must never be surfaced here.
+ *
+ * The typed `constraints` block is retained as metadata for the card copy and
+ * mirrors the seed's duration/spend/wallet.
  *
  * Adding a second preset later is a one-line append to `MISSION_PRESETS`.
  */
 
-import type { SessionPermission } from "@shared/schemas/sessions.js";
+import type {
+  MissionDraftSeed,
+  SessionPermission,
+} from "@shared/schemas/sessions.js";
 
 export interface MissionPresetConstraints {
   /** Hard time box in minutes — baked into the goal text. */
@@ -39,9 +49,16 @@ export interface MissionPreset {
    * full autonomy ("execute yourself, don't wait for approval").
    */
   readonly permission: SessionPermission;
-  /** The mission goal text seeded into the composer (carries all constraints). */
+  /** The mission goal text seeded into the composer (guides execution). */
   readonly goal: string;
-  /** Metadata mirror of the constraints the goal text encodes. */
+  /**
+   * Authoritative structured contract seed. Applied to the mission draft on
+   * launch through the engine's validated pipeline so the contract renders
+   * complete. Never includes `allowedWallets` (primary wallet is bound at
+   * session creation).
+   */
+  readonly draft: MissionDraftSeed;
+  /** Metadata mirror of the constraints the seed + goal text encode. */
   readonly constraints: MissionPresetConstraints;
 }
 
@@ -70,6 +87,43 @@ expanding, sell only enough to recover initials, keep 60-80% moonbag. Trim/cut o
 25-35% drawdown from the local high or a support break. Never average down.
 Force-close before the 60-minute deadline — never leave an unmanaged bag.`;
 
+/**
+ * PONS Scalper structured contract seed. Values are authoritative and applied
+ * verbatim (via the engine's validated sanitizer) so no field is left blank.
+ *
+ * `allowedChains` uses "Robinhood Chain" (NOT "Robinhood Chain (4663)"): the
+ * engine's local chain resolver (`resolveLocalChainId`, used by mission
+ * results capture on `allowedChains[0]`) matches the chain NAME/alias — the
+ * parenthetical form is unresolvable. "Robinhood Chain" normalizes to the
+ * registered alias and resolves to chain id 4663.
+ */
+const PONS_SCALPER_DRAFT: MissionDraftSeed = {
+  title: "PONS Scalper",
+  goal: PONS_SCALPER_GOAL,
+  capitalSource: "primary wallet balance",
+  startingCapital: "$20 (USD)",
+  riskProfile: "aggressive",
+  allowedChains: ["Robinhood Chain"],
+  allowedProtocols: [
+    "DexScreener (research)",
+    "on-chain swap route (execution)",
+  ],
+  successCriteria: [
+    "Sellability-gated single scalp: confirm a clean $20 in-and-out exit before any buy",
+    "Set an 8% stop-loss AND a take-profit before entering the position",
+    "At 2x with flow still expanding, sell only enough to recover initials and keep a 60-80% moonbag",
+    "Trim or cut on a 25-35% drawdown from the local high or a support break",
+    "Force-close all positions before the 60-minute deadline",
+  ],
+  stopConditions: [
+    "deadline_reached: the 60-minute hard time-box has elapsed",
+    "capital_depleted: the full $20 budget is spent",
+    "max_loss_hit: the 8% stop-loss triggers",
+    "no_viable_opportunity: nothing clears the sellability gate",
+  ],
+  durationMinutes: 60,
+};
+
 export const MISSION_PRESETS: readonly MissionPreset[] = [
   {
     id: "pons-scalper",
@@ -77,6 +131,7 @@ export const MISSION_PRESETS: readonly MissionPreset[] = [
     description: "Sellability-gated PONS runner scalp — $20, 1h.",
     permission: "full",
     goal: PONS_SCALPER_GOAL,
+    draft: PONS_SCALPER_DRAFT,
     constraints: {
       durationMinutes: 60,
       spendCapUsd: 20,

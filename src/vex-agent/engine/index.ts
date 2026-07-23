@@ -63,4 +63,8 @@ export type { AbortMissionRunResult, StopMissionRunForEditResult } from "./core/
 
 export { retryActiveMissionRun } from "./core/runner/retry.js";
 
+// One-click preset launch seeds the mission contract's structured fields
+// directly (no LLM parse) through the same validated draft-write pipeline.
+export { seedMissionDraftForSession } from "./mission/setup.js";
+
 export * from "./types.js";
