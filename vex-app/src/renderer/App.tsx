@@ -12,7 +12,7 @@
  * they are not part of the user-facing flow.
  */
 
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useState, type JSX } from "react";
 import { IntroScreen } from "./features/splash/IntroScreen.js";
 import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
 import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
@@ -41,10 +41,14 @@ export function App(): JSX.Element {
   // probe; if it fails we degrade to the first-run flow (splash) rather than
   // trapping the user on a spinner.
   const [booting, setBooting] = useState(true);
-  const bootedRef = useRef(false);
   useEffect(() => {
-    if (bootedRef.current) return;
-    bootedRef.current = true;
+    // Standard cancelled-flag pattern. We deliberately DO NOT guard this
+    // with a persistent ref: React 18 StrictMode (dev) mounts → unmounts →
+    // remounts, and a ref that survives the remount would block the second
+    // mount's probe. With the first probe already suppressed by its own
+    // `cancelled` flag, `booting` would then never flip false and the app
+    // hangs forever on the BootGate spinner. Re-firing per mount is cheap
+    // (a local file probe) and `cancelled` discards the stale first response.
     let cancelled = false;
     void window.vex.capabilities
       .get()
