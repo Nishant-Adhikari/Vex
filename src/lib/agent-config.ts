@@ -70,6 +70,45 @@ export const AGENT_TEMPERATURE: FieldWithDefault = {
   default: null,
 };
 
+/**
+ * Hard per-mission TOKEN BUDGET (whole tokens). A cumulative ceiling on a single
+ * mission run's prompt+completion spend: once crossed, the run loop stops with
+ * `token_budget_exhausted` before issuing another LLM call. The backstop a broken
+ * model that loops a tool (one such loop burned ~9M tokens / ~$3) needs.
+ *
+ * Read like the other AGENT_* fields, but FAIL-OPEN (see
+ * `resolveMissionTokenBudget`): a missing/blank/invalid value resolves to the
+ * 500000 default rather than throwing, because a mis-set budget must never block
+ * a run from starting — the same fail-open stance as the hard-deadline env.
+ */
+export const AGENT_MISSION_TOKEN_BUDGET: FieldWithDefault = {
+  key: "AGENT_MISSION_TOKEN_BUDGET",
+  kind: "int",
+  min: 1,
+  // Upper bound raised to MAX_SAFE_INTEGER so a large, INTENTIONAL budget is
+  // honored rather than silently downgraded to the 500000 default. The former
+  // `1_000_000_000` cap shrank e.g. 2e9 → out-of-range → 500000 (a surprise
+  // early abort). There is no meaningful too-high ceiling for a spend backstop.
+  max: Number.MAX_SAFE_INTEGER,
+  default: 500_000,
+};
+
+/**
+ * Explicit values that DISABLE the hard token-budget guard entirely (resolve to
+ * `null` = "no box"). Case-insensitive, trimmed. This is the ONLY way to turn
+ * the backstop off: a blank/unset var keeps the safe 500000 default so the guard
+ * can never be silently removed by an empty env. `0` is treated as an intentional
+ * "unlimited" sentinel here (not an out-of-range number).
+ */
+const MISSION_TOKEN_BUDGET_DISABLE_SENTINELS: ReadonlySet<string> = new Set([
+  "0",
+  "off",
+  "none",
+  "unlimited",
+  "disable",
+  "disabled",
+]);
+
 export const SUBAGENT_MAX_CONCURRENT: FieldWithDefault = {
   key: "SUBAGENT_MAX_CONCURRENT",
   kind: "int",
@@ -175,6 +214,37 @@ export function parseAgentEnv(env: EnvLike): ParseResult<AgentEffective> {
     },
     errors,
   };
+}
+
+/**
+ * Resolve the effective hard per-mission token budget from env.
+ *
+ * Returns `null` when the guard is explicitly DISABLED (an
+ * `AGENT_MISSION_TOKEN_BUDGET` of `0`/`off`/`none`/`unlimited`/`disabled`,
+ * case-insensitive) — `null` flows to the turn loop as "no box".
+ *
+ * Otherwise fail-open to the 500000 default: unset, blank, non-numeric, or
+ * negative/out-of-range all resolve to the default (the collected parse error
+ * is intentionally discarded — a bad budget must not block a run, mirroring the
+ * hard-deadline env's fallback stance). A large, in-range value is honored
+ * verbatim (see the raised field `max`), never silently downgraded. Reads
+ * through the same field-descriptor parser the other AGENT_* whole-number
+ * fields use, so validation stays consistent.
+ */
+export function resolveMissionTokenBudget(env: EnvLike): number | null {
+  const raw = env[AGENT_MISSION_TOKEN_BUDGET.key];
+  if (raw != null) {
+    const norm = raw.trim().toLowerCase();
+    if (MISSION_TOKEN_BUDGET_DISABLE_SENTINELS.has(norm)) return null;
+  }
+  const discardedErrors: ParseError[] = [];
+  return (
+    parseFieldOrDefault(
+      AGENT_MISSION_TOKEN_BUDGET,
+      raw,
+      discardedErrors,
+    ) ?? AGENT_MISSION_TOKEN_BUDGET.default!
+  );
 }
 
 export function parseSubagentEnv(env: EnvLike, agentEff: AgentEffective): ParseResult<SubagentEffective> {

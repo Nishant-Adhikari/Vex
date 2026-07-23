@@ -37,6 +37,7 @@ import {
   maxOperatorInstructionId,
 } from "./operator-instructions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
+import * as usageRepo from "@vex-agent/db/repos/usage.js";
 
 // Per-iteration helpers (pure async; thread state explicitly through args/returns):
 import { tryCriticalBandFallback } from "./turn-loop-critical-fallback.js";
@@ -146,6 +147,46 @@ export async function runTurnLoop(
       });
       stopReason = "deadline_reached";
       break;
+    }
+
+    // Hard token budget — the agent-independent spend-box. Checked each
+    // iteration AFTER the previous turn's usage was recorded (executeTurn awaits
+    // logUsage) and BEFORE another inference call, so once the phase's cumulative
+    // prompt+completion spend crosses the ceiling no further tokens are spent.
+    // Reads the SAME accumulated total logUsage feeds — no parallel counter —
+    // over the session subtree (subagent child sessions included) and scoped to
+    // this phase by `missionTokenSince` (a RUN counts only its own spend, not the
+    // setup tokens already on the session). Stops with `token_budget_exhausted`,
+    // which finalizeMissionRunStatus maps through the standard business-stop path
+    // (force-close then terminal); the setup phase halts cleanly (no position).
+    //
+    // FAIL-SOFT (matches mission-liquidate-hook): a transient accumulator read
+    // failure logs a warning and CONTINUES the loop — a backstop that itself
+    // crashes the run would be worse than no backstop. It never pauses/aborts.
+    if (loopConfig.missionTokenBudget != null) {
+      try {
+        const tokensUsed = await usageRepo.getSessionTotalTokens(
+          context.sessionId,
+          { since: loopConfig.missionTokenSince ?? null },
+        );
+        if (tokensUsed >= loopConfig.missionTokenBudget) {
+          logger.info("engine.mission.token_budget_enforced", {
+            missionRunId: context.missionRunId ?? null,
+            tokensUsed,
+            budget: loopConfig.missionTokenBudget,
+            iteration,
+          });
+          stopReason = "token_budget_exhausted";
+          break;
+        }
+      } catch (err) {
+        logger.warn("engine.mission.token_budget_read_failed", {
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Continue — do not pause or abort on a transient read failure.
+      }
     }
 
     // Iteration entry: abort → observe-control → runtime-stop, in that order.

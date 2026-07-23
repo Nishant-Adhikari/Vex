@@ -180,7 +180,15 @@ export type BusinessStopReason =
   | "max_loss_hit"
   | "no_viable_opportunity"
   | "emergency_stop"
-  | "user_stopped";
+  | "user_stopped"
+  /**
+   * Hard token-budget backstop: cumulative prompt+completion spend for the run
+   * crossed `AGENT_MISSION_TOKEN_BUDGET`. Engine-enforced only (never model- or
+   * user-configurable) — the auto-abort for a runaway that would otherwise burn
+   * tokens unbounded. Force-closes open positions before finalize, like the
+   * hard deadline.
+   */
+  | "token_budget_exhausted";
 
 export type RuntimeStopReason =
   | "approval_required"

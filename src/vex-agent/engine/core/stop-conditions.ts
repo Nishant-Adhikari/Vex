@@ -23,6 +23,9 @@ const BUSINESS_STOPS = new Set<string>([
   "no_viable_opportunity",
   "emergency_stop",
   "user_stopped",
+  // Engine-enforced hard token-budget backstop — a terminal business stop
+  // (auto-abort of a runaway run), never model/user-driven.
+  "token_budget_exhausted",
 ]);
 
 const RUNTIME_PAUSES = new Set<string>([
