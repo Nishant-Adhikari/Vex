@@ -9,7 +9,7 @@
 
 import type { ToolCallRequest } from "../types.js";
 import { isMutatingTool } from "../registry.js";
-import { getProtocolManifest } from "../protocols/catalog.js";
+import { getProtocolManifest, resolveProtocolToolId } from "../protocols/catalog.js";
 import {
   MUTATING_PROTOCOL_ALIAS_ROUTERS,
   isMutatingProtocolAlias,
@@ -60,6 +60,16 @@ export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
     // execution boundary. Keeping this lookup passive also lets dispatcher
     // tests use intentionally partial manifest catalogs.
     return getProtocolManifest(HYPERVEXING_ALIAS_TARGETS[call.name])?.mutating === true;
+  }
+  // Direct protocol-tool calls (dispatched via the tolerant resolver in
+  // protocol-route.ts): a mutating target invoked directly by a dot/underscore
+  // variant must still stamp the mission auto-retry-unsafe flag. Only genuine
+  // protocol-id-shaped names match here — internal tools resolve to `undefined`
+  // and fall through to the registry flag below, so exact-name behavior is
+  // unchanged.
+  const directProtocolToolId = resolveProtocolToolId(call.name);
+  if (directProtocolToolId !== undefined) {
+    return getProtocolManifest(directProtocolToolId)?.mutating === true;
   }
   return isMutatingTool(call.name);
 }

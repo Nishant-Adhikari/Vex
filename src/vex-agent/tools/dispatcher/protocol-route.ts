@@ -11,9 +11,10 @@ import type {
   ProtocolDiscoveryResult,
   ProtocolDiscoveryModelResult,
 } from "../protocols/types.js";
-import { isInternalTool, isMutatingTool, isToolBlockedForRole } from "../registry.js";
+import { isInternalTool, isMutatingTool, isToolBlockedForRole, resolveToolName } from "../registry.js";
 import { discoverProtocolCapabilities } from "../protocols/runtime.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
+import { resolveProtocolToolId } from "../protocols/catalog.js";
 import {
   MUTATING_PROTOCOL_ALIAS_ROUTERS,
   MutatingAliasRouteError,
@@ -199,12 +200,41 @@ export async function routeToolCall(
     );
   }
 
-  // Internal tools — route by name
-  if (!isInternalTool(call.name)) {
-    return { success: false, output: `Unknown tool: ${call.name}` };
+  // Internal tools — route by name. `isInternalTool` (via getToolDef) tolerates
+  // separator variants; routeInternalTool re-derives the canonical name for the
+  // loader lookup, so a `dot`/`_` variant of an internal tool still dispatches.
+  if (isInternalTool(call.name)) {
+    return routeInternalTool(call, context);
   }
 
-  return routeInternalTool(call, context);
+  // Tolerant protocol-tool routing. The model sometimes emits a protocol
+  // toolId DIRECTLY as the tool name — and frequently swaps the canonical dot
+  // for an underscore (`dexscreener_search` for `dexscreener.search`), which
+  // used to dead-end here at "Unknown tool" and stop the mission with zero
+  // trades. Resolve against the protocol catalog (exact, then
+  // separator-insensitive) and route through the SAME executeProtocolTool path
+  // as `execute_tool`, so every gate (param validation, prequote, approval,
+  // pressure) still applies identically.
+  const resolvedProtocolToolId = resolveProtocolToolId(call.name);
+  if (resolvedProtocolToolId !== undefined) {
+    return executeProtocolTool(
+      { toolId: resolvedProtocolToolId, params: call.args },
+      {
+        sessionPermission: context.sessionPermission,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        // Hydrated only for hyperliquid.* targets (see the execute_tool branch).
+        ...(resolvedProtocolToolId.startsWith("hyperliquid.")
+          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
+          : {}),
+      },
+    );
+  }
+
+  return { success: false, output: `Unknown tool: ${call.name}` };
 }
 
 function hyperliquidPolicyScope(context: InternalToolContext): {
@@ -226,18 +256,22 @@ async function routeInternalTool(
   call: ToolCallRequest,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  const loader = INTERNAL_TOOL_LOADERS[call.name];
+  // The loader map is keyed by CANONICAL name; resolve any separator variant
+  // (dot/underscore) back to it. `resolveToolName` returns the exact name
+  // unchanged, so canonical calls are byte-identical to before.
+  const canonicalName = resolveToolName(call.name) ?? call.name;
+  const loader = INTERNAL_TOOL_LOADERS[canonicalName];
   if (!loader) {
     return { success: false, output: `Unknown internal tool: ${call.name}` };
   }
-  if (isMutatingTool(call.name) && context.sessionPermission === "restricted" && !context.approved) {
+  if (isMutatingTool(canonicalName) && context.sessionPermission === "restricted" && !context.approved) {
     logger.info("tools.dispatch.approval_required", {
-      tool: call.name,
+      tool: canonicalName,
       permission: context.sessionPermission,
     });
     return {
       success: false,
-      output: `${call.name} requires approval — mutating tool in restricted permission mode.`,
+      output: `${canonicalName} requires approval — mutating tool in restricted permission mode.`,
       pendingApproval: true,
     };
   }

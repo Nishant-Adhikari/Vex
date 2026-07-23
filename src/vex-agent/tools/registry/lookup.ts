@@ -31,6 +31,7 @@ import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
 import { HYPERLIQUID_INTERNAL_TOOLS } from "./hyperliquid.js";
 import { getHypervexingAliasToolDef } from "../hypervexing-aliases.js";
+import { buildNormalizedNameIndex, normalizeToolName } from "../name-normalize.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -59,8 +60,27 @@ export const TOOLS: readonly ToolDef[] = [
 
 const byName = new Map<string, ToolDef>(TOOLS.map(t => [t.name, t]));
 
+// Separator-insensitive fallback index (normalize(name) -> canonical name).
+// Collision-safe: ambiguous keys are dropped (see buildNormalizedNameIndex),
+// so exact match is always the authority.
+const NORMALIZED_NAME_INDEX = buildNormalizedNameIndex(byName.keys());
+
+/**
+ * Resolve a caller-supplied name to a canonical registered internal-tool name.
+ * Exact match wins; otherwise a separator-insensitive match (so a `dot`/`_`
+ * variant of an internal tool still routes). Returns `undefined` when neither
+ * matches. Hypervexing aliases are resolved separately (mode-gated) and are not
+ * part of this index.
+ */
+export function resolveToolName(name: string): string | undefined {
+  if (byName.has(name)) return name; // exact — unchanged behavior
+  return NORMALIZED_NAME_INDEX.get(normalizeToolName(name));
+}
+
 export function getToolDef(name: string): ToolDef | undefined {
-  return byName.get(name) ?? getHypervexingAliasToolDef(name);
+  const canonical = resolveToolName(name);
+  if (canonical !== undefined) return byName.get(canonical);
+  return getHypervexingAliasToolDef(name);
 }
 
 export function isInternalTool(name: string): boolean {
