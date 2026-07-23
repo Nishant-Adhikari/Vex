@@ -51,9 +51,11 @@ import { UnhealthyBody } from "./bootstrap/branches/UnhealthyBody.js";
 import { FailedBody } from "./bootstrap/branches/FailedBody.js";
 import { CancelledBody } from "./bootstrap/branches/CancelledBody.js";
 import { useStopPreviousInstallStacks } from "../../lib/api/docker.js";
+import { shouldExpressAdvanceCompose } from "../../lib/express-lane.js";
 
 export function ComposeBootstrap(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const returningUser = useUiStore((s) => s.returningUser);
   const [logs, setLogs] = useState<ReadonlyArray<ComposeLog>>([]);
   const [phase, setPhase] = useState<Phase>({ kind: "running" });
   const [retryToken, setRetryToken] = useState(0);
@@ -167,6 +169,14 @@ export function ComposeBootstrap(): JSX.Element {
   const handleContinue = useCallback((): void => {
     setCurrentView("migrations");
   }, [setCurrentView]);
+
+  // Express lane: a returning user whose compose stack is already healthy
+  // (phase "ready") auto-advances instead of clicking Continue. The ready-state
+  // celebration is skipped for returning users; any error phase keeps the
+  // screen so the user can retry.
+  useEffect(() => {
+    if (shouldExpressAdvanceCompose(returningUser, phase.kind)) handleContinue();
+  }, [returningUser, phase.kind, handleContinue]);
 
   const recentLogLines = useMemo<readonly string[]>(
     () => logs.map((l) => l.line),

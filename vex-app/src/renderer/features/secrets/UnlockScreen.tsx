@@ -77,6 +77,13 @@ export function UnlockScreen(): JSX.Element {
   const [touchId, setTouchId] = useState<{ supported: boolean; enabled: boolean } | null>(null);
   const [touchIdPending, setTouchIdPending] = useState(false);
   const touchIdPromptedRef = useRef(false);
+  // After a successful PASSWORD unlock, if Touch ID is available but not yet
+  // enrolled, we pause on a one-tap enrolment offer instead of navigating away
+  // — the vault is unlocked right now, so this is the one moment enrolment can
+  // capture the in-memory master password. Enabling here means the user never
+  // types the password again (the next launch auto-prompts Touch ID).
+  const [enableOffer, setEnableOffer] = useState(false);
+  const [enablePending, setEnablePending] = useState(false);
 
   // Tick once a second while a throttle window is active so the countdown
   // re-renders. Cleared on every state change — no leaked intervals.
@@ -149,10 +156,34 @@ export function UnlockScreen(): JSX.Element {
         return;
       }
       if (passwordRef.current) passwordRef.current.value = "";
+      // Offer Touch ID enrolment while the vault is unlocked (the only moment
+      // the password is in memory) — but only when the hardware supports it and
+      // it is not already on. Otherwise go straight to the app.
+      if (touchId?.supported && !touchId.enabled) {
+        setEnableOffer(true);
+        return;
+      }
       setCurrentView(returnView);
     } finally {
       setPending(false);
     }
+  }
+
+  // Enrol Touch ID from the post-unlock offer, then continue. Enrolment is
+  // best-effort: a failure here must not trap the user, so we navigate on into
+  // the app regardless (they can retry from Settings).
+  async function handleEnableFromOffer(): Promise<void> {
+    setEnablePending(true);
+    try {
+      await window.vex.secrets.touchIdEnable();
+    } finally {
+      setEnablePending(false);
+      setCurrentView(returnView);
+    }
+  }
+
+  function handleSkipEnableOffer(): void {
+    setCurrentView(returnView);
   }
 
   async function handleTouchIdUnlock(): Promise<void> {
@@ -502,6 +533,49 @@ export function UnlockScreen(): JSX.Element {
               </Button>
             </DialogFooter>
           ) : null}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={enableOffer}
+        onOpenChange={(open) => {
+          // Dismissing the offer (backdrop/Escape) is a "Not now" — never trap
+          // the user on the unlock screen with an already-unlocked vault.
+          if (!open && !enablePending) handleSkipEnableOffer();
+        }}
+      >
+        <DialogContent closeOnBackdropClick={false} data-vex-touchid-offer="true">
+          <DialogHeader>
+            <DialogTitle>Skip typing next time?</DialogTitle>
+            <DialogDescription>
+              Unlock Vex with Touch ID instead of your master password.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              Your master password is stored on this Mac (encrypted, released by
+              your fingerprint). It&apos;s a convenience, not hardware-enforced
+              security: anyone who can pass Touch ID on your unlocked Mac could
+              unlock Vex. You can turn it off any time in Settings.
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={enablePending}
+              onClick={handleSkipEnableOffer}
+            >
+              Not now
+            </Button>
+            <Button
+              type="button"
+              disabled={enablePending}
+              onClick={() => void handleEnableFromOffer()}
+              data-vex-touchid-offer-enable="true"
+            >
+              {enablePending ? "Enabling…" : "Enable Touch ID"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </main>

@@ -30,9 +30,18 @@ vi.mock("../../../lib/api/docker.js", () => ({
   }),
 }));
 
+let mockReturningUser = false;
 vi.mock("../../../stores/uiStore.js", () => ({
-  useUiStore: (selector: (s: { setCurrentView: (v: string) => void }) => unknown) =>
-    selector({ setCurrentView: mockSetCurrentView }),
+  useUiStore: (
+    selector: (s: {
+      setCurrentView: (v: string) => void;
+      returningUser: boolean;
+    }) => unknown,
+  ) =>
+    selector({
+      setCurrentView: mockSetCurrentView,
+      returningUser: mockReturningUser,
+    }),
 }));
 
 const { ComposeBootstrap } = await import("../ComposeBootstrap.js");
@@ -51,6 +60,7 @@ function arrangeBridge(): void {
 }
 
 beforeEach(() => {
+  mockReturningUser = false;
   mockCompose.mockReset();
   mockCancel.mockReset();
   mockSetCurrentView.mockReset();
@@ -179,6 +189,27 @@ describe("ComposeBootstrap — terminal kinds", () => {
     expect(continueBtn).toBeTruthy();
     fireEvent.click(continueBtn!);
     expect(mockSetCurrentView).toHaveBeenCalledWith("migrations");
+  });
+
+  it("express lane: a returning user auto-advances once the stack is ready (no Continue click)", async () => {
+    mockReturningUser = true;
+    mockCompose.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: {
+          kind: "running",
+          composeOutPath: "/tmp/compose.yml",
+          installId: "vex-express-lane",
+          message: "Vex stack is running.",
+          previousInstallHoldingPorts: false,
+        },
+      }),
+      cancel: mockCancel,
+    });
+    render(<ComposeBootstrap />);
+    await waitFor(() => {
+      expect(mockSetCurrentView).toHaveBeenCalledWith("migrations");
+    });
   });
 
   it("kind=reused → 'Stack reused' tile + Continue button", async () => {
