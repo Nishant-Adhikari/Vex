@@ -169,8 +169,15 @@ export async function runPreparedMissionStart(
         prepared.contractSnapshot,
       ),
       // Hard token budget (AGENT_MISSION_TOKEN_BUDGET, default 500000): the
-      // spend-box backstop against a runaway loop. Fail-open to the default.
+      // spend-box backstop against a runaway loop. Fail-open to the default;
+      // null when explicitly disabled (0/off/…).
       missionTokenBudget: resolveMissionTokenBudget(process.env),
+      // Run-scope the budget to the tokens THIS run spends (fix B): count only
+      // usage logged at/after the run's IMMUTABLE started_at, excluding the
+      // setup/recovery tokens already on this root session. Same value on resume
+      // (started_at never changes), so pre-pause run spend still counts and the
+      // baseline is never reset.
+      missionTokenSince: hydrated.context.missionRunStartedAt ?? null,
     };
 
     const result = await runTurnLoop(
@@ -319,8 +326,14 @@ export async function resumePreparedMissionRun(
       ),
       // Hard token budget (AGENT_MISSION_TOKEN_BUDGET, default 500000): the
       // spend-box backstop against a runaway loop. Re-resolved on resume so a
-      // re-kicked run carries the same guard. Fail-open to the default.
+      // re-kicked run carries the same guard. Fail-open to the default; null when
+      // explicitly disabled (0/off/…).
       missionTokenBudget: resolveMissionTokenBudget(process.env),
+      // Run-scope to the tokens THIS run spent (fix B). The cutoff is the run's
+      // IMMUTABLE started_at, identical to the initial start, so tokens spent
+      // before the pause still count toward the ceiling — resume does NOT reset
+      // the baseline.
+      missionTokenSince: hydrated.context.missionRunStartedAt ?? null,
     };
 
     const result = await runTurnLoop(

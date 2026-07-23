@@ -32,14 +32,25 @@ export interface TurnLoopConfig {
   missionDeadlineMs?: number | null;
   /**
    * Hard cumulative token budget for the mission run (whole tokens). When set,
-   * the turn loop stops with `token_budget_exhausted` the moment the run's
+   * the turn loop stops with `token_budget_exhausted` the moment the phase's
    * accumulated prompt+completion spend (the summed `usage_log.total_tokens`
-   * for the session) is at or above this ceiling — checked at the top of each
-   * iteration, after the previous turn's usage was recorded and BEFORE another
-   * inference call is spent. Resolved from `AGENT_MISSION_TOKEN_BUDGET`
-   * (default 500000). Null/undefined = no budget (guard disabled).
+   * for the session subtree, scoped by `missionTokenSince`) is at or above this
+   * ceiling — checked at the top of each iteration, after the previous turn's
+   * usage was recorded and BEFORE another inference call is spent. Resolved from
+   * `AGENT_MISSION_TOKEN_BUDGET` (default 500000). Null/undefined = no budget
+   * (guard disabled — explicit `0`/`off`/… sentinel or an unconfigured phase).
    */
   missionTokenBudget?: number | null;
+  /**
+   * Baseline cutoff (ISO timestamp) that scopes the budget to a single PHASE.
+   * The accumulator sums only usage rows with `created_at >= missionTokenSince`,
+   * so a RUN counts only the tokens it spent itself — not the setup/recovery
+   * tokens already logged to the same root session before the run started. The
+   * run passes its IMMUTABLE `started_at` (identical across resume, so the same
+   * baseline is reused and pre-pause run spend still counts). Null/undefined =
+   * all-time (the setup phase, whose baseline is the session's own start).
+   */
+  missionTokenSince?: string | null;
 }
 
 export interface TurnLoopResult {

@@ -478,5 +478,42 @@ describe("turn-loop", () => {
       expect(mockGetSessionTotalTokens).not.toHaveBeenCalled();
       expect(provider.chatCompletion).toHaveBeenCalled();
     });
+
+    // Run-scoping (fix B): the guard reads only tokens the RUN itself spent by
+    // passing the run's baseline timestamp (`missionTokenSince`) to the
+    // accumulator, so setup/recovery tokens already logged to the same root
+    // session before the run don't count and can't false-abort iteration 0.
+    it("forwards missionTokenSince to the accumulator so spend is run-scoped, not whole-session", async () => {
+      const provider = makeProvider([{ content: "Working..." }]);
+      mockGetSessionTotalTokens.mockResolvedValue(1_000);
+      const since = "2026-07-22T00:00:00.000Z";
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1, missionTokenBudget: 500_000, missionTokenSince: since },
+      );
+
+      expect(mockGetSessionTotalTokens).toHaveBeenCalledWith("session-1", { since });
+    });
+
+    // Fail-soft (fix E): a transient DB read failure in the accumulator must NOT
+    // pause/abort the mission — the guard logs and CONTINUES, matching the
+    // sibling mission-liquidate-hook's fail-soft stance. A backstop that itself
+    // crashes the run would be worse than no backstop.
+    it("continues (does not abort or pause) when the accumulator read throws", async () => {
+      const provider = makeProvider([{ content: "Working..." }]);
+      mockGetSessionTotalTokens.mockRejectedValue(new Error("db down"));
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1, missionTokenBudget: 500_000 },
+      );
+
+      expect(result.stopReason).not.toBe("token_budget_exhausted");
+      expect(result.stopReason).not.toBe("paused_error");
+      expect(provider.chatCompletion).toHaveBeenCalled();
+    });
   });
 });

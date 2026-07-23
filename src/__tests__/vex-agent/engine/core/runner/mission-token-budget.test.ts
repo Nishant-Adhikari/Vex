@@ -43,9 +43,30 @@ describe("resolveMissionTokenBudget — AGENT_MISSION_TOKEN_BUDGET", () => {
     expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "1.5e6" })).toBe(500_000);
   });
 
-  it("falls back to 500000 on a non-positive / out-of-range value", () => {
-    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "0" })).toBe(500_000);
+  it("falls back to 500000 on a negative / out-of-range value", () => {
     expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "-1" })).toBe(500_000);
+  });
+
+  // ── Disable sentinels (fix D) ─────────────────────────────────
+  // An explicit sentinel turns the guard OFF (returns null = "no box").
+  // This is the ONLY way to disable the backstop — a blank/unset value keeps
+  // the safe 500000 default so the guard is never silently removed.
+  it("returns null (guard disabled) for the explicit `0` sentinel", () => {
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "0" })).toBeNull();
+  });
+
+  it("returns null (guard disabled) for the `off`/`none`/`unlimited`/`disabled` sentinels, case-insensitive", () => {
+    for (const raw of ["off", "OFF", "  Off ", "none", "unlimited", "disable", "disabled"]) {
+      expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: raw })).toBeNull();
+    }
+  });
+
+  // ── No silent downgrade (fix D) ───────────────────────────────
+  // A large, intentional value must be HONORED, not clamped back to 500000 by
+  // a too-low field max. Previously `max: 1_000_000_000` shrank 2e9 → 500000.
+  it("honors a large intentional budget instead of downgrading it to 500000", () => {
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "2000000000" })).toBe(2_000_000_000);
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "50000000000" })).toBe(50_000_000_000);
   });
 });
 

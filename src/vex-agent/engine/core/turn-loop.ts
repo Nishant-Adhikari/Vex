@@ -151,22 +151,41 @@ export async function runTurnLoop(
 
     // Hard token budget — the agent-independent spend-box. Checked each
     // iteration AFTER the previous turn's usage was recorded (executeTurn awaits
-    // logUsage) and BEFORE another inference call, so once the run's cumulative
+    // logUsage) and BEFORE another inference call, so once the phase's cumulative
     // prompt+completion spend crosses the ceiling no further tokens are spent.
-    // Reads the SAME accumulated session total logUsage feeds — no parallel
-    // counter. Stops with `token_budget_exhausted`, which finalizeMissionRunStatus
-    // maps through the standard business-stop path (force-close then terminal).
+    // Reads the SAME accumulated total logUsage feeds — no parallel counter —
+    // over the session subtree (subagent child sessions included) and scoped to
+    // this phase by `missionTokenSince` (a RUN counts only its own spend, not the
+    // setup tokens already on the session). Stops with `token_budget_exhausted`,
+    // which finalizeMissionRunStatus maps through the standard business-stop path
+    // (force-close then terminal); the setup phase halts cleanly (no position).
+    //
+    // FAIL-SOFT (matches mission-liquidate-hook): a transient accumulator read
+    // failure logs a warning and CONTINUES the loop — a backstop that itself
+    // crashes the run would be worse than no backstop. It never pauses/aborts.
     if (loopConfig.missionTokenBudget != null) {
-      const tokensUsed = await usageRepo.getSessionTotalTokens(context.sessionId);
-      if (tokensUsed >= loopConfig.missionTokenBudget) {
-        logger.info("engine.mission.token_budget_enforced", {
+      try {
+        const tokensUsed = await usageRepo.getSessionTotalTokens(
+          context.sessionId,
+          { since: loopConfig.missionTokenSince ?? null },
+        );
+        if (tokensUsed >= loopConfig.missionTokenBudget) {
+          logger.info("engine.mission.token_budget_enforced", {
+            missionRunId: context.missionRunId ?? null,
+            tokensUsed,
+            budget: loopConfig.missionTokenBudget,
+            iteration,
+          });
+          stopReason = "token_budget_exhausted";
+          break;
+        }
+      } catch (err) {
+        logger.warn("engine.mission.token_budget_read_failed", {
           missionRunId: context.missionRunId ?? null,
-          tokensUsed,
-          budget: loopConfig.missionTokenBudget,
           iteration,
+          error: err instanceof Error ? err.message : String(err),
         });
-        stopReason = "token_budget_exhausted";
-        break;
+        // Continue — do not pause or abort on a transient read failure.
       }
     }
 
