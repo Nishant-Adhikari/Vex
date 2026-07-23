@@ -163,12 +163,16 @@ export async function runTurnLoop(
     // FAIL-SOFT (matches mission-liquidate-hook): a transient accumulator read
     // failure logs a warning and CONTINUES the loop — a backstop that itself
     // crashes the run would be worse than no backstop. It never pauses/aborts.
+    // Live budget usage for THIS turn's budget-pressure banner (below). Null
+    // when there is no budget box; recomputed each iteration.
+    let missionBudgetFraction: number | null = null;
     if (loopConfig.missionTokenBudget != null) {
       try {
         const tokensUsed = await usageRepo.getSessionTotalTokens(
           context.sessionId,
           { since: loopConfig.missionTokenSince ?? null },
         );
+        missionBudgetFraction = tokensUsed / loopConfig.missionTokenBudget;
         if (tokensUsed >= loopConfig.missionTokenBudget) {
           logger.info("engine.mission.token_budget_enforced", {
             missionRunId: context.missionRunId ?? null,
@@ -286,6 +290,7 @@ export async function runTurnLoop(
       postCompactBridgeRemaining,
       basePromptOptions: promptOptions,
       baseVisibility: loopConfig.baseVisibility,
+      missionBudgetFraction,
     });
     postCompactBridgeRemaining = stack.nextPostCompactBridgeRemaining;
 

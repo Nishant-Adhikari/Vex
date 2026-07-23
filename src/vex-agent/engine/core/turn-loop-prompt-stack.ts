@@ -28,6 +28,7 @@ import type {
 import { pressureFraction, type ContextUsageBand } from "./context-band.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
+import { buildMissionBudgetBanner } from "../prompts/budget-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
 import { buildSignalRadarBanner } from "../prompts/signal-radar-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
@@ -65,10 +66,19 @@ export async function buildTurnPromptStack(args: {
    * the axes are derived from `context` so the single-ctx projection still holds.
    */
   readonly baseVisibility?: ToolVisibilityBase;
+  /**
+   * Live mission token-budget usage fraction (`tokensUsed / budget`) for the
+   * budget-pressure banner. Null/undefined (no budget box or non-mission turn)
+   * omits the banner.
+   */
+  readonly missionBudgetFraction?: number | null;
 }): Promise<TurnPromptStackResult> {
   const turnFraction = pressureFraction(args.currentTokenCount, args.contextLimit);
   const promptOptions: PromptStackOptions = { ...args.basePromptOptions };
   promptOptions.contextPressureBanner = buildContextPressureBanner(args.turnBand, turnFraction);
+  promptOptions.missionBudgetBanner = buildMissionBudgetBanner(
+    args.missionBudgetFraction ?? null,
+  );
 
   // $VEX live-metrics banner (turn-state). Fully fail-soft inside the builder:
   // any fetch error yields "" so the banner is omitted and the turn is never
