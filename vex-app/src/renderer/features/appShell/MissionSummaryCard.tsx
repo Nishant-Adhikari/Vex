@@ -22,6 +22,7 @@ import { useSessionMessagesTail } from "../../lib/api/messages.js";
 import { formatClock } from "../../lib/format.js";
 import { EM_DASH, formatDurationS } from "./missionHistoryModel.js";
 import {
+  deriveEndReason,
   formatBankrollRangeUsd,
   formatMetaLine,
   formatPnlEth,
@@ -57,6 +58,14 @@ export function MissionSummaryCard({
       ? formatPnlUsd(result.pnlEth, result.ethPriceUsdEnd)
       : null;
   const pnlTitle = pnlEthText === EM_DASH ? undefined : `${pnlEthText} at close`;
+  // "Why it ended" — only on an abnormal/non-success end (a clean `completed`
+  // run stays quiet). Null when nothing explanatory was persisted; the card
+  // fabricates no reason.
+  const endReason = deriveEndReason(
+    result.outcome,
+    result.stopReason,
+    result.summary,
+  );
 
   // Decision Journal + mission-scoped bag count both derive from the session's
   // executed moves; the journal additionally reads the assistant reasoning tail.
@@ -141,6 +150,33 @@ export function MissionSummaryCard({
       <p className="font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
         {formatMetaLine(result.trades, bagsHeld)}
       </p>
+
+      {/* Why it ended — only on an abnormal/non-success end. Reason phrase on
+          an eyebrow-labelled line; the persisted summary below it, truncated
+          with the full text on hover (mirrors the goal caption). */}
+      {endReason !== null ? (
+        <div
+          data-vex-area="mission-summary-end-reason"
+          className="flex flex-col gap-0.5"
+        >
+          {endReason.reason !== null ? (
+            <p className="flex items-baseline gap-2 font-mono text-[11px] text-[var(--vex-text-2)]">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+                Ended
+              </span>
+              <span>{endReason.reason}</span>
+            </p>
+          ) : null}
+          {endReason.summary !== null ? (
+            <p
+              title={endReason.summary}
+              className="truncate text-xs text-[var(--vex-text-3)]"
+            >
+              {endReason.summary}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Goal caption — truncated, only when present. */}
       {result.goalSnippet !== null ? (

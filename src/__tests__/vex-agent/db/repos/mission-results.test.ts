@@ -144,6 +144,9 @@ describe("history reads", () => {
     expect(s).toContain("FROM mission_results");
     expect(s).toContain("LOWER(wallet_address) = LOWER($1)");
     expect(s).toContain("ORDER BY seq_no DESC");
+    // Joins the run's stop_summary in for the "why it ended" card readout.
+    expect(s).toContain("stop_summary");
+    expect(s).toContain("FROM mission_runs r");
     expect(params).toEqual(["0xAbC", 25]);
   });
 
@@ -152,6 +155,78 @@ describe("history reads", () => {
     const [sql, params] = mockQueryOne.mock.calls[0]!;
     expect(norm(sql)).toContain("WHERE mission_run_id = $1");
     expect(norm(sql)).toContain("LOWER(wallet_address) = LOWER($2)");
+    expect(norm(sql)).toContain("stop_summary");
     expect(params).toEqual(["run-1", "0xAbC"]);
+  });
+
+  it("maps the joined stop_summary onto the row's summary field", () => {
+    // toRow is exercised via a stubbed queryOne return that carries the joined
+    // column — the "why it ended" summary reaches the DTO as `summary`.
+    mockQueryOne = vi.fn(async () => ({
+      id: "res-1",
+      mission_id: "mission-1",
+      mission_run_id: "run-1",
+      session_id: "sess-1",
+      wallet_address: "0xAbC",
+      chain_id: 4663,
+      seq_no: 1,
+      goal_snippet: null,
+      started_at: "2026-07-12T18:00:00.000Z",
+      ended_at: "2026-07-12T19:00:00.000Z",
+      duration_s: 3600,
+      bankroll_start_eth: null,
+      bankroll_end_eth: null,
+      pnl_eth: null,
+      pnl_pct: null,
+      eth_price_usd_start: null,
+      eth_price_usd_end: null,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      rotations: 0,
+      vetoes: 0,
+      outcome: "failed",
+      stop_reason: "emergency_stop",
+      stop_summary: "Halted after repeated tool errors.",
+      open_positions_json: null,
+      start_positions_json: null,
+    }));
+    return repo.getResultForRun("run-1", "0xAbC").then((row) => {
+      expect(row?.summary).toBe("Halted after repeated tool errors.");
+    });
+  });
+
+  it("defaults summary to null when the read did not join it", () => {
+    mockQueryOne = vi.fn(async () => ({
+      id: "res-1",
+      mission_id: "mission-1",
+      mission_run_id: "run-1",
+      session_id: "sess-1",
+      wallet_address: "0xAbC",
+      chain_id: 4663,
+      seq_no: 1,
+      goal_snippet: null,
+      started_at: "2026-07-12T18:00:00.000Z",
+      ended_at: null,
+      duration_s: null,
+      bankroll_start_eth: null,
+      bankroll_end_eth: null,
+      pnl_eth: null,
+      pnl_pct: null,
+      eth_price_usd_start: null,
+      eth_price_usd_end: null,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      rotations: 0,
+      vetoes: 0,
+      outcome: "running",
+      stop_reason: null,
+      open_positions_json: null,
+      start_positions_json: null,
+    }));
+    return repo.getResultByRunId("run-1").then((row) => {
+      expect(row?.summary).toBeNull();
+    });
   });
 });

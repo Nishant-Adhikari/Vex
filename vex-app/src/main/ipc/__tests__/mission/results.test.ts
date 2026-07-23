@@ -84,6 +84,7 @@ const LEDGER_ROW = {
   trades: 2,
   outcome: "completed" as const,
   stopReason: "goal_reached",
+  summary: "Goal reached: bankroll +10%.",
   openPositions: [{ symbol: "NOXA" }],
 };
 
@@ -108,6 +109,7 @@ describe("mission.listResults", () => {
       seqNo: 1,
       outcome: "completed",
       stopReason: "goal_reached",
+      summary: "Goal reached: bankroll +10%.",
       openPositionsCount: 1,
     });
     // The DTO never echoes the wallet address or raw open-position payload.
