@@ -524,8 +524,10 @@ describe("healSchemaVersionDrift — drift detection + repair", () => {
         const name = String(params?.[0]);
         return { rows: [{ reg: existing.has(name) ? name : null }] };
       }
-      // 038's SQL blows up; 040's SQL succeeds.
-      if (sql === SQL_038) {
+      // 038's SQL blows up; 040's SQL succeeds. Match by content (the heal
+      // now splits files into per-statement queries, so the trailing `;` is
+      // stripped and an exact-string compare would miss).
+      if (/CREATE\s+TABLE/i.test(sql) && /hyperliquid_session_policies/i.test(sql)) {
         throw new Error("disk full during re-run");
       }
       if (/CREATE\s+TABLE/i.test(sql)) {
@@ -579,5 +581,251 @@ describe("healSchemaVersionDrift — drift detection + repair", () => {
     expect(result.failures).toEqual([]);
     // Short-circuits before even connecting when nothing declares a table.
     expect(client.calls.length).toBe(0);
+  });
+});
+
+/**
+ * Non-idempotent migration resilience. The real migrations (001_initial.sql
+ * and friends) use PLAIN `CREATE TABLE` — no `IF NOT EXISTS` — for ~34
+ * tables. When partial DB-state loss drops one of them (say `sessions`)
+ * while a sibling from the same file survives (`soul`), re-running the whole
+ * file inside one transaction hits `CREATE TABLE soul` first, which raises
+ * duplicate_table (SQLSTATE 42P07) and aborts the transaction, so `sessions`
+ * is NEVER recreated and drift persists forever.
+ *
+ * The mock below closes the fidelity gap the reviewer flagged: a PLAIN
+ * `CREATE TABLE x` on an already-present table THROWS a 42P07-coded error
+ * (mirroring Postgres), while `CREATE TABLE IF NOT EXISTS x` is a silent
+ * no-op. The old `makeDriftPool` never threw, which is exactly why the bug
+ * was invisible to the suite.
+ */
+class PgFidelityError extends Error {
+  public readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "PgFidelityError";
+    this.code = code;
+  }
+}
+
+const CREATE_TABLE_STMT_RE =
+  /CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_$]*)"?/gi;
+
+function makeFidelityDriftPool(
+  existingTables: Iterable<string>,
+  appliedVersions: Iterable<number>
+): MockPool & { existing: Set<string> } {
+  const base = makeMockPool();
+  const existing = new Set<string>(existingTables);
+  const applied = new Set<number>(appliedVersions);
+  base.client.setQueryImpl(async (sql, params) => {
+    if (/SELECT version FROM schema_version/i.test(sql)) {
+      return { rows: [...applied].map((version) => ({ version })) };
+    }
+    if (/SELECT COALESCE\(MAX\(version\)/i.test(sql)) {
+      return { rows: [{ version: Math.max(0, ...applied) }] };
+    }
+    if (/to_regclass/i.test(sql)) {
+      const name = String(params?.[0]);
+      return { rows: [{ reg: existing.has(name) ? name : null }] };
+    }
+    // Postgres CREATE TABLE semantics: PLAIN create on an existing relation
+    // raises 42P07 and aborts at that statement (nothing after it runs);
+    // IF NOT EXISTS is a silent no-op.
+    if (/CREATE\s+(?:UNLOGGED\s+)?TABLE/i.test(sql)) {
+      let m: RegExpExecArray | null;
+      CREATE_TABLE_STMT_RE.lastIndex = 0;
+      while ((m = CREATE_TABLE_STMT_RE.exec(sql)) !== null) {
+        const ifNotExists = Boolean(m[1]);
+        const name = m[2];
+        if (!name) continue;
+        if (existing.has(name)) {
+          if (ifNotExists) continue; // silent no-op
+          throw new PgFidelityError(
+            `relation "${name}" already exists`,
+            "42P07"
+          );
+        }
+        existing.add(name);
+      }
+    }
+    return undefined;
+  });
+  return { ...base, existing };
+}
+
+describe("healSchemaVersionDrift — non-idempotent (plain CREATE TABLE) resilience", () => {
+  it("heals a partially-lost migration whose file uses PLAIN CREATE TABLE (42P07 on the surviving table)", async () => {
+    // Mirrors 001_initial.sql: plain `CREATE TABLE` for every table. The
+    // `sessions` table was lost but its sibling `soul` (declared FIRST in the
+    // file) survived. A naive whole-file re-run throws 42P07 on `soul` and
+    // rolls back, never recreating `sessions`.
+    writeFileSync(
+      join(tmpDir, "001_initial.sql"),
+      "CREATE TABLE soul (id int);\nCREATE TABLE sessions (id int);"
+    );
+    const { pool, existing } = makeFidelityDriftPool(
+      ["soul", "schema_version"],
+      [1]
+    );
+    const warn = vi.fn();
+
+    const result = await healSchemaVersionDrift({
+      pool,
+      migrationsDir: tmpDir,
+      logger: { warn },
+    });
+
+    // The truly-missing table is recreated; the surviving one is untouched.
+    expect(existing.has("sessions")).toBe(true);
+    expect(existing.has("soul")).toBe(true);
+    // Heal is reported as success — NOT a rolled-back failure.
+    expect(result.healed.map((h) => h.version)).toEqual([1]);
+    expect(result.failures).toEqual([]);
+    const healed001 = result.healed.find((h) => h.version === 1);
+    expect(healed001?.missingTables).toEqual(["sessions"]);
+  });
+
+  it("skips already-present objects instead of erroring (per-statement, not whole-file)", async () => {
+    // Two surviving tables (soul, messages) → two 42P07s that must be
+    // swallowed, not recorded as failures; only `sessions` is recreated.
+    writeFileSync(
+      join(tmpDir, "001_initial.sql"),
+      "CREATE TABLE soul (id int);\nCREATE TABLE messages (id int);\nCREATE TABLE sessions (id int);"
+    );
+    const { pool, existing } = makeFidelityDriftPool(
+      ["soul", "messages", "schema_version"],
+      [1]
+    );
+
+    const result = await healSchemaVersionDrift({ pool, migrationsDir: tmpDir });
+
+    expect(existing.has("sessions")).toBe(true);
+    expect(result.healed.map((h) => h.version)).toEqual([1]);
+    expect(result.failures).toEqual([]);
+  });
+
+  it("keeps a dollar-quoted function body as a single statement (does not split on inner ;)", async () => {
+    // Several real migrations define plpgsql functions whose bodies contain
+    // semicolons inside `$$ … $$`. The per-statement splitter must treat the
+    // whole block as one statement, or the re-run would send broken SQL.
+    const fnBody = [
+      "CREATE TABLE sessions (id int);",
+      "CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger AS $$",
+      "BEGIN",
+      "  NEW.updated_at := now();",
+      "  RETURN NEW;",
+      "END;",
+      "$$ LANGUAGE plpgsql;",
+    ].join("\n");
+    writeFileSync(join(tmpDir, "001_initial.sql"), fnBody);
+    const { pool, client, existing } = makeFidelityDriftPool(
+      ["schema_version"],
+      [1]
+    );
+
+    const result = await healSchemaVersionDrift({ pool, migrationsDir: tmpDir });
+
+    expect(existing.has("sessions")).toBe(true);
+    expect(result.failures).toEqual([]);
+    // The function arrived intact in ONE query: opening and LANGUAGE clause
+    // are in the same statement, and the inner `;`s did not spawn fragments.
+    const fnCalls = client.calls.filter((c) =>
+      /CREATE OR REPLACE FUNCTION touch_updated_at/i.test(c.sql)
+    );
+    expect(fnCalls).toHaveLength(1);
+    expect(fnCalls[0]?.sql).toMatch(/LANGUAGE plpgsql/i);
+    expect(fnCalls[0]?.sql).toMatch(/RETURN NEW/i);
+    // No fragment consisting of a lone RETURN/END slipped through as its own
+    // statement (which is what a naive `;` split would produce).
+    const strayFragment = client.calls.find(
+      (c) => /^\s*RETURN NEW\s*$/i.test(c.sql) || /^\s*END\s*$/i.test(c.sql)
+    );
+    expect(strayFragment).toBeUndefined();
+  });
+
+  it("does NOT resurrect a table a higher-versioned migration dropped (drop-hazard guard)", async () => {
+    // Mirrors 033_drop_recall_cache.sql: 001 created `recall_cache_entries`
+    // (plain), a later migration DROPs it. Even if 001 still declared the
+    // CREATE, the table is intentionally gone — self-heal must leave it gone.
+    writeFileSync(
+      join(tmpDir, "001_initial.sql"),
+      "CREATE TABLE soul (id int);\nCREATE TABLE recall_cache_entries (id int);"
+    );
+    writeFileSync(
+      join(tmpDir, "033_drop_recall_cache.sql"),
+      "DROP TABLE IF EXISTS recall_cache_entries;"
+    );
+    // Both migrations applied; the dropped table is legitimately absent.
+    const { pool, client, existing } = makeFidelityDriftPool(
+      ["soul", "schema_version"],
+      [1, 33]
+    );
+    const warn = vi.fn();
+
+    const result = await healSchemaVersionDrift({
+      pool,
+      migrationsDir: tmpDir,
+      logger: { warn },
+    });
+
+    // No heal, no warning, and the dropped table is NOT recreated.
+    expect(result.healed).toEqual([]);
+    expect(result.failures).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    expect(existing.has("recall_cache_entries")).toBe(false);
+    // No re-run happened at all (soul is present, recall_cache_entries is not
+    // in the expected set), so there is no BEGIN.
+    expect(client.calls.some((c) => c.sql === "BEGIN")).toBe(false);
+  });
+
+  it("still expects a table that is dropped then re-created by an even-higher migration", async () => {
+    // 001 creates `foo`, 010 drops it, 020 re-creates it → `foo` IS expected
+    // (the re-CREATE outranks the DROP). If `foo` vanished, heal repairs it.
+    writeFileSync(join(tmpDir, "001_initial.sql"), "CREATE TABLE foo (id int);");
+    writeFileSync(join(tmpDir, "010_drop_foo.sql"), "DROP TABLE IF EXISTS foo;");
+    writeFileSync(join(tmpDir, "020_recreate_foo.sql"), "CREATE TABLE foo (id int);");
+    const { pool, existing } = makeFidelityDriftPool(["schema_version"], [1, 10, 20]);
+
+    const result = await healSchemaVersionDrift({ pool, migrationsDir: tmpDir });
+
+    expect(result.healed.map((h) => h.version)).toEqual([20]);
+    expect(result.failures).toEqual([]);
+    expect(existing.has("foo")).toBe(true);
+  });
+
+  it("does NOT swallow a genuine (non-already-exists) error — records failure + rolls back", async () => {
+    // A real error (disk full — no 42P07 code) must abort the file, roll
+    // back, and be recorded as a failure rather than silently skipped.
+    writeFileSync(
+      join(tmpDir, "001_initial.sql"),
+      "CREATE TABLE sessions (id int);"
+    );
+    const base = makeMockPool();
+    const existing = new Set<string>(["schema_version"]);
+    const applied = new Set<number>([1]);
+    base.client.setQueryImpl(async (sql, params) => {
+      if (/SELECT version FROM schema_version/i.test(sql)) {
+        return { rows: [...applied].map((version) => ({ version })) };
+      }
+      if (/to_regclass/i.test(sql)) {
+        const name = String(params?.[0]);
+        return { rows: [{ reg: existing.has(name) ? name : null }] };
+      }
+      if (/CREATE\s+TABLE/i.test(sql)) {
+        throw new Error("could not extend file: No space left on device");
+      }
+      return undefined;
+    });
+
+    const result = await healSchemaVersionDrift({
+      pool: base.pool,
+      migrationsDir: tmpDir,
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+
+    expect(result.healed).toEqual([]);
+    expect(result.failures.map((f) => f.version)).toEqual([1]);
+    expect(base.client.calls.some((c) => c.sql === "ROLLBACK")).toBe(true);
   });
 });

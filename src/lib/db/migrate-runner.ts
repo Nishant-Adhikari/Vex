@@ -258,9 +258,18 @@ export async function runMigrationsWithProgress(
 // `schema_version` counter intact. Because the counter still said "applied",
 // the normal migration pass skipped re-creating those tables forever, and
 // downstream code (`active session policy hydration`) failed hard — the agent
-// looked "stuck" and could not trade. Every migration is idempotent
-// (`CREATE TABLE IF NOT EXISTS`), so re-running the exact file that owns a
-// vanished table is safe and restores it.
+// looked "stuck" and could not trade.
+//
+// Re-running the file that owns a vanished table restores it — but the
+// migrations are NOT uniformly idempotent: 001_initial.sql and several others
+// use PLAIN `CREATE TABLE` (no `IF NOT EXISTS`) for ~34 tables. Re-running
+// such a file as one transaction aborts on the FIRST already-present table
+// (SQLSTATE 42P07 duplicate_table), rolling back every repair including the
+// truly-missing table. So the re-run executes each statement under its own
+// SAVEPOINT and SWALLOWS "already exists" errors (42P07 tables/indexes, 42710
+// duplicate_object for constraints/types, 42701 duplicate_column), rolling
+// back only that one statement and continuing. Net effect: only the missing
+// objects get created; present ones are skipped; nothing is ever dropped.
 // ---------------------------------------------------------------------------
 
 /**
@@ -272,6 +281,14 @@ export async function runMigrationsWithProgress(
  */
 const CREATE_TABLE_RE =
   /CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_$]*)"?/gi;
+
+/**
+ * Matches `DROP TABLE [IF EXISTS] <name>`. Used to subtract intentionally-
+ * removed tables from the expected set so self-heal never resurrects a table
+ * a later migration deliberately dropped (e.g. 033_drop_recall_cache.sql).
+ */
+const DROP_TABLE_RE =
+  /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_$]*)"?/gi;
 
 /** A migration file and the tables its SQL declares via CREATE TABLE. */
 interface MigrationExpectedTables {
@@ -305,6 +322,8 @@ export interface HealLogger {
   readonly warn: (msg: string) => void;
   readonly info?: (msg: string) => void;
   readonly error?: (msg: string) => void;
+  /** Swallowed per-statement "already exists" notices during a re-run. */
+  readonly debug?: (msg: string) => void;
 }
 
 export interface HealSchemaDriftOptions {
@@ -332,22 +351,58 @@ function parseCreatedTables(sql: string): ReadonlyArray<string> {
   return [...tables];
 }
 
+/** Parse the distinct table names a migration's SQL drops. */
+function parseDroppedTables(sql: string): ReadonlyArray<string> {
+  const cleaned = stripSqlComments(sql);
+  const tables = new Set<string>();
+  let match: RegExpExecArray | null;
+  DROP_TABLE_RE.lastIndex = 0;
+  while ((match = DROP_TABLE_RE.exec(cleaned)) !== null) {
+    if (match[1]) tables.add(match[1]);
+  }
+  return [...tables];
+}
+
 /**
  * Build the version → expected-tables map from the migrations dir.
  * Migrations that CREATE no table (pure ALTER/ADD COLUMN, e.g. 039) are
  * dropped, so they can never be misflagged as drifted.
+ *
+ * Drop-hazard guard: a table a later migration DROPs is intentionally gone,
+ * so it is subtracted from the expected set — otherwise self-heal would see
+ * it "missing" and resurrect it. The subtraction is version-aware: a table is
+ * only removed from a migration's expected list if a HIGHER-versioned
+ * migration drops it, so a later re-CREATE (whose version is above the drop)
+ * is still correctly expected. This makes heal correct-by-construction even if
+ * a future `DROP TABLE foo` migration forgets to also remove the original
+ * `CREATE TABLE foo` (the convention 033_drop_recall_cache.sql follows).
  */
 function buildExpectedTables(
   migrationsDir: string
 ): ReadonlyArray<MigrationExpectedTables> {
-  return readdirSync(migrationsDir)
+  const parsed = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql") && /^\d{3}_/.test(f))
     .sort()
-    .map((file) => ({
-      version: parseInt(file.slice(0, 3), 10),
-      file,
-      tables: parseCreatedTables(
-        readFileSync(path.join(migrationsDir, file), "utf-8")
+    .map((file) => {
+      const sql = readFileSync(path.join(migrationsDir, file), "utf-8");
+      return {
+        version: parseInt(file.slice(0, 3), 10),
+        file,
+        created: parseCreatedTables(sql),
+        dropped: parseDroppedTables(sql),
+      };
+    });
+
+  return parsed
+    .map((m) => ({
+      version: m.version,
+      file: m.file,
+      tables: m.created.filter(
+        (table) =>
+          !parsed.some(
+            (other) =>
+              other.version > m.version && other.dropped.includes(table)
+          )
       ),
     }))
     .filter((m) => m.tables.length > 0);
@@ -371,19 +426,184 @@ async function findMissingTables(
 }
 
 /**
- * Re-execute a migration file's SQL in its own transaction. Does NOT touch
- * `schema_version` — the version is already recorded; we only repair the
- * missing objects. Relies on the migration being idempotent.
+ * SQLSTATE codes for "object already exists", swallowed during a heal re-run
+ * so a non-idempotent statement targeting a surviving object doesn't abort
+ * the repair of the truly-missing ones.
+ *   - 42P07 duplicate_table   (tables AND indexes)
+ *   - 42710 duplicate_object  (constraints, types, sequences, triggers, …)
+ *   - 42701 duplicate_column  (ADD COLUMN without IF NOT EXISTS)
+ */
+const DUPLICATE_OBJECT_SQLSTATES: ReadonlySet<string> = new Set([
+  "42P07",
+  "42710",
+  "42701",
+]);
+
+/** True for pg errors whose SQLSTATE means "this object already exists". */
+function isAlreadyExistsError(err: unknown): boolean {
+  if (err !== null && typeof err === "object" && "code" in err) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "string" && DUPLICATE_OBJECT_SQLSTATES.has(code);
+  }
+  return false;
+}
+
+/**
+ * Split a migration file into individual top-level SQL statements, honouring
+ * the quoting contexts where a `;` is NOT a terminator: single-quoted string
+ * literals (`''` escaping), double-quoted identifiers, dollar-quoted blocks
+ * (`$$ … $$` / `$tag$ … $tag$`, used by the plpgsql functions in a few
+ * migrations), and line/block comments. Comment-only fragments are dropped.
+ *
+ * This is intentionally not a full SQL parser — it only needs to find the
+ * real statement boundaries so each can be re-run under its own SAVEPOINT.
+ */
+function splitSqlStatements(sql: string): ReadonlyArray<string> {
+  const statements: string[] = [];
+  let current = "";
+  let i = 0;
+  const n = sql.length;
+
+  const pushCurrent = (): void => {
+    const trimmed = current.trim();
+    // Skip fragments that are only comments/whitespace once comments are
+    // stripped — sending a bare comment to pg is harmless but pointless.
+    if (trimmed.length > 0 && stripSqlComments(trimmed).trim().length > 0) {
+      statements.push(trimmed);
+    }
+    current = "";
+  };
+
+  while (i < n) {
+    const ch = sql[i];
+    const next = sql[i + 1];
+
+    // Line comment — consume through end of line.
+    if (ch === "-" && next === "-") {
+      let j = i;
+      while (j < n && sql[j] !== "\n") j += 1;
+      current += sql.slice(i, j);
+      i = j;
+      continue;
+    }
+
+    // Block comment — consume through the closing */.
+    if (ch === "/" && next === "*") {
+      let j = i + 2;
+      while (j < n && !(sql[j] === "*" && sql[j + 1] === "/")) j += 1;
+      j = Math.min(j + 2, n);
+      current += sql.slice(i, j);
+      i = j;
+      continue;
+    }
+
+    // Single-quoted string literal ('' is an escaped quote).
+    if (ch === "'") {
+      let j = i + 1;
+      while (j < n) {
+        if (sql[j] === "'" && sql[j + 1] === "'") {
+          j += 2;
+          continue;
+        }
+        if (sql[j] === "'") {
+          j += 1;
+          break;
+        }
+        j += 1;
+      }
+      current += sql.slice(i, j);
+      i = j;
+      continue;
+    }
+
+    // Double-quoted identifier ("" is an escaped quote).
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < n) {
+        if (sql[j] === '"' && sql[j + 1] === '"') {
+          j += 2;
+          continue;
+        }
+        if (sql[j] === '"') {
+          j += 1;
+          break;
+        }
+        j += 1;
+      }
+      current += sql.slice(i, j);
+      i = j;
+      continue;
+    }
+
+    // Dollar-quoted block ($$ … $$ or $tag$ … $tag$). `$1` placeholders and
+    // bare `$` do not match the opening-tag pattern and fall through.
+    if (ch === "$") {
+      const tagMatch = /^\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$/.exec(sql.slice(i));
+      if (tagMatch) {
+        const tag = tagMatch[0];
+        const end = sql.indexOf(tag, i + tag.length);
+        const j = end === -1 ? n : end + tag.length;
+        current += sql.slice(i, j);
+        i = j;
+        continue;
+      }
+    }
+
+    // Statement terminator.
+    if (ch === ";") {
+      pushCurrent();
+      i += 1;
+      continue;
+    }
+
+    current += ch;
+    i += 1;
+  }
+
+  pushCurrent();
+  return statements;
+}
+
+/**
+ * Re-execute a migration file's SQL to repair drift. Does NOT touch
+ * `schema_version` — the version is already recorded; we only recreate the
+ * missing objects.
+ *
+ * The migrations are not uniformly idempotent (plain `CREATE TABLE`), so a
+ * whole-file transaction would abort on the first surviving object. Instead
+ * each statement runs under its own SAVEPOINT: an "already exists" error
+ * (see DUPLICATE_OBJECT_SQLSTATES) rolls back just that statement and we
+ * continue; any other error aborts the whole file (outer ROLLBACK + rethrow),
+ * so a genuine failure is still surfaced and nothing is left half-applied.
+ * Nothing is ever dropped.
  */
 async function rerunMigrationSql(
   client: pg.PoolClient,
   migrationsDir: string,
-  file: string
+  file: string,
+  logger?: HealLogger
 ): Promise<void> {
   const sql = readFileSync(path.join(migrationsDir, file), "utf-8");
+  const statements = splitSqlStatements(sql);
+  const SAVEPOINT = "vex_heal_stmt";
   try {
     await client.query("BEGIN");
-    await client.query(sql);
+    for (const statement of statements) {
+      await client.query(`SAVEPOINT ${SAVEPOINT}`);
+      try {
+        await client.query(statement);
+        await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      } catch (stmtErr: unknown) {
+        if (!isAlreadyExistsError(stmtErr)) throw stmtErr;
+        // Object already present — expected on re-run of a non-idempotent
+        // file. Undo just this statement and move on.
+        await client.query(`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`);
+        const code = (stmtErr as { code?: unknown }).code;
+        logger?.debug?.(
+          `[migrate:self-heal] ${file}: skipped already-present object (SQLSTATE ${String(code)})`
+        );
+      }
+    }
     await client.query("COMMIT");
   } catch (cause: unknown) {
     try {
@@ -454,7 +674,12 @@ export async function healSchemaVersionDrift(
       );
 
       try {
-        await rerunMigrationSql(client, options.migrationsDir, migration.file);
+        await rerunMigrationSql(
+          client,
+          options.migrationsDir,
+          migration.file,
+          logger
+        );
         const stillMissing = await findMissingTables(client, migration.tables);
         if (stillMissing.length > 0) {
           const errMsg = `re-run completed but table(s) still missing: ${stillMissing.join(", ")}`;
