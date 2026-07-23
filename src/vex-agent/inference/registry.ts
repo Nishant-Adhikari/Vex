@@ -27,6 +27,18 @@ async function createOpenRouterProvider(): Promise<InferenceProvider> {
   const { OpenRouterProvider } = await import("./openrouter.js");
   const env = loadEnvConfig();
 
+  // A SEPARATE #25 provider-level fallback is configured iff BOTH the fallback
+  // key and model are set (same gate used below to push the secondary). When it
+  // is, the PRIMARY must NOT ALSO carry intra-provider (#37) model fallback:
+  // the two overlap on `AGENT_MODEL_FALLBACK`, and a self-healing primary would
+  // return a config for the fallback model on the PRIMARY key, stopping the
+  // `FailoverProvider.loadConfig` walk before the #25 secondary (with its OWN
+  // key) is consulted. Making them mutually exclusive by construction keeps the
+  // separate-key isolation intact for the model-not-found case.
+  const hasSeparateFallbackProvider = Boolean(
+    env.fallbackOpenrouterApiKey && env.fallbackAgentModel,
+  );
+
   // Primary is constructed explicitly from the resolved ENV (equivalent to the
   // legacy zero-arg constructor, which reads the same values) so both slots
   // share one construction path.
@@ -35,9 +47,14 @@ async function createOpenRouterProvider(): Promise<InferenceProvider> {
       apiKey: env.openrouterApiKey ?? undefined,
       model: env.agentModel ?? undefined,
       displayName: "OpenRouter",
+      // Single-key setups keep intra-provider model fallback (unchanged);
+      // a #25 stack disables it on the primary (see above).
+      disableModelFallback: hasSeparateFallbackProvider,
     }),
   ];
 
+  // Re-test the fields directly (not the derived boolean) so TS narrows both
+  // `string | null` values to `string` for the secondary construction.
   if (env.fallbackOpenrouterApiKey && env.fallbackAgentModel) {
     providers.push(
       new OpenRouterProvider({
