@@ -127,8 +127,8 @@ describe("isTransientInferenceError", () => {
     expect(isTransientInferenceError(reset)).toBe(true);
   });
 
-  it("treats undici `fetch failed` / connection-level errors as transient (retry, not fatal pause)", () => {
-    // undici's bare TypeError: no status, no top-level code — matched by message.
+  it("treats undici `fetch failed` / connection-level blips as transient (retry, not fatal pause)", () => {
+    // undici's bare TypeError: no status, no code — matched by message → retry.
     expect(isTransientInferenceError(new TypeError("fetch failed"))).toBe(true);
     // The wrapped phrasing seen in the wild (this is what hard-paused missions).
     expect(
@@ -138,20 +138,43 @@ describe("isTransientInferenceError", () => {
         ),
       ),
     ).toBe(true);
-    // Real cause on `.cause` when upstream drops the top-level code.
+    // Transient errno carried on `.cause` when upstream drops the top-level code.
     const wrapped = new TypeError("fetch failed");
     (wrapped as unknown as Record<string, unknown>).cause = Object.assign(
       new Error("read ECONNRESET"),
       { code: "ECONNRESET" },
     );
     expect(isTransientInferenceError(wrapped)).toBe(true);
-    // undici connect-timeout + DNS not-found codes.
+    // Normalized transient causeCode (undici socket) on a generic message → retry.
+    const norm = new Error("Unable to make request: fetch failed");
+    Object.defineProperty(norm, "causeCode", { value: "UND_ERR_SOCKET" });
+    expect(isTransientInferenceError(norm)).toBe(true);
+    // undici connect-timeout code (top-level) → retry.
     const undici = new Error("connect timeout");
     (undici as unknown as Record<string, unknown>).code = "UND_ERR_CONNECT_TIMEOUT";
     expect(isTransientInferenceError(undici)).toBe(true);
-    const dns = new Error("getaddrinfo ENOTFOUND openrouter.ai");
-    (dns as unknown as Record<string, unknown>).code = "ENOTFOUND";
-    expect(isTransientInferenceError(dns)).toBe(true);
+  });
+
+  it("does NOT auto-retry hard-excluded fetch failures — TLS / hard-DNS need operator action", () => {
+    // TLS cert failure normalized onto `causeCode`, generic message → FATAL.
+    const tls = new Error("Unable to make request: fetch failed");
+    Object.defineProperty(tls, "causeCode", { value: "CERT_HAS_EXPIRED" });
+    expect(isTransientInferenceError(tls)).toBe(false);
+    // Self-signed cert carried on `err.cause.code` → FATAL.
+    const selfSigned = new TypeError("fetch failed");
+    (selfSigned as unknown as Record<string, unknown>).cause = Object.assign(
+      new Error("self signed certificate in chain"),
+      { code: "SELF_SIGNED_CERT_IN_CHAIN" },
+    );
+    expect(isTransientInferenceError(selfSigned)).toBe(false);
+    // Hard DNS not-found (misconfig) → FATAL, distinct from transient EAI_AGAIN.
+    const enotfound = new Error("Unable to make request: fetch failed");
+    Object.defineProperty(enotfound, "causeCode", { value: "ENOTFOUND" });
+    expect(isTransientInferenceError(enotfound)).toBe(false);
+    // ...but a temporary DNS failure (EAI_AGAIN) stays transient.
+    const eai = new Error("getaddrinfo EAI_AGAIN openrouter.ai");
+    (eai as unknown as Record<string, unknown>).code = "EAI_AGAIN";
+    expect(isTransientInferenceError(eai)).toBe(true);
   });
 
   it("does not over-broaden — a codeless/statusless non-network error stays FATAL", () => {

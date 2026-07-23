@@ -81,13 +81,43 @@ const TRANSIENT_NODE_CODES: ReadonlySet<string> = new Set([
   "ETIMEDOUT",
   "ECONNRESET",
   "ECONNREFUSED",
-  "EAI_AGAIN",
+  "EAI_AGAIN", // temporary DNS "try again" — distinct from a hard ENOTFOUND
   "EPIPE",
-  "ENOTFOUND", // transient DNS blip for a known-good host
-  "ENETUNREACH",
   "UND_ERR_CONNECT_TIMEOUT", // undici connect timeout
   "UND_ERR_SOCKET", // undici socket error
 ]);
+
+// Connection cause codes that need OPERATOR action, never an auto-retry loop:
+// TLS-cert verification failures (antivirus/proxy HTTPS interception) and a hard
+// DNS "not found" (misconfig). These surface with the SAME generic `fetch failed`
+// message as a transient blip, so they must be resolved from the normalized
+// `causeCode` and excluded BEFORE the message fallback — otherwise a
+// misconfiguration becomes an endless backoff loop. Mirrors `TLS_CAUSE_CODES`
+// and the persistent half of `DNS_CAUSE_CODES` in `openrouter.ts`.
+const HARD_EXCLUDED_CAUSE_CODES: ReadonlySet<string> = new Set([
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "CERT_HAS_EXPIRED",
+  "ENOTFOUND",
+]);
+
+/**
+ * The real connection errno behind a `fetch failed`: the normalized
+ * non-enumerable `causeCode` own-property (`attachCauseCode`) if present, else
+ * undici's `err.cause.code`. Returns null when neither is available.
+ */
+function resolveCauseCode(err: Error): string | null {
+  const normalized = readField(err, "causeCode");
+  if (typeof normalized === "string") return normalized;
+  const cause = readField(err, "cause");
+  if (cause instanceof Error) {
+    const code = readField(cause, "code");
+    if (typeof code === "string") return code;
+  }
+  return null;
+}
 
 /** VexError codes that represent a transient request-level failure. */
 const TRANSIENT_VEX_CODES: ReadonlySet<string> = new Set(["HTTP_TIMEOUT"]);
@@ -140,21 +170,21 @@ export function isTransientInferenceError(err: unknown): boolean {
   // Timeout races (`withTimeout`) throw a plain Error with no status/code.
   if (/\btimed out\b/i.test(err.message)) return true;
 
-  // Connection-level failures with no status or top-level `code` — notably
-  // undici's `TypeError: fetch failed`, whose real cause (DNS / reset / refused)
-  // lives on `err.cause` and is frequently dropped by upstream re-wrapping.
-  // A request that fails BEFORE any response byte is idempotent-safe to retry,
-  // and these are never auth/validation errors — so treat them as transient
-  // (bounded retry → failover → recoverable park) instead of a fatal, manual-
-  // resume pause. Unwrap the cause for its Node code, then fall back to the
-  // undici/openrouter connection-failure phrasings on the message.
-  const cause = readField(err, "cause");
-  if (cause instanceof Error) {
-    const causeCode = readField(cause, "code");
-    if (typeof causeCode === "string" && TRANSIENT_NODE_CODES.has(causeCode)) {
-      return true;
-    }
+  // Connection-level failures ("fetch failed") share ONE generic message whether
+  // the real errno is a transient blip or a TLS/DNS MISCONFIG that needs operator
+  // action. Resolve the actual cause code first and let it decide: hard
+  // exclusions (TLS cert / hard DNS) fail fast so they surface for an operator
+  // instead of looping; known transient codes retry.
+  const causeCode = resolveCauseCode(err);
+  if (causeCode !== null) {
+    if (HARD_EXCLUDED_CAUSE_CODES.has(causeCode)) return false; // operator action
+    if (TRANSIENT_NODE_CODES.has(causeCode)) return true;
   }
+
+  // No decisive cause code (e.g. a bare `TypeError: fetch failed` whose errno was
+  // dropped upstream): fall back to the connection-failure phrasings. A request
+  // that fails before any response byte is idempotent-safe to retry, and any
+  // hard-excluded code was already ruled out above.
   if (
     /\bfetch failed\b|\bsocket hang up\b|\bother side closed\b|\bunable to make request\b|\bnetwork is unreachable\b/i.test(
       err.message,
