@@ -19,6 +19,7 @@ import {
 } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
+import { SessionPresets } from "./SessionPresets.js";
 import { MemoryButton } from "./MemoryButton.js";
 import { MissionsButton } from "./MissionsButton.js";
 import { RuntimeLedger } from "./RuntimeLedger.js";
@@ -153,6 +154,11 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
   const toggleSidebar = useCallback((): void => {
     setSidebarOpen(!sidebarOpen);
   }, [setSidebarOpen, sidebarOpen]);
+
+  // The PRESETS tab swaps the session list for the one-click mission-preset
+  // cards. It is a rail view, not a session-mode filter, so it bypasses the
+  // sessions query entirely (and the Browse-all footer, since totalRows is 0).
+  const showPresets = sessionModeFilter === "presets";
 
   const totalRows = visibleRows.length;
 
@@ -300,9 +306,14 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
 
       <div
         ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-hidden px-2 py-3"
+        className={cn(
+          "min-h-0 flex-1 px-2 py-3",
+          showPresets ? "overflow-y-auto" : "overflow-hidden",
+        )}
       >
-        {query.isLoading ? (
+        {showPresets ? (
+          <SessionPresets />
+        ) : query.isLoading ? (
           <SessionsLoadingPlaceholder sidebarOpen={sidebarOpen} />
         ) : query.data && query.data.ok === false ? (
           <SessionsErrorPlaceholder
