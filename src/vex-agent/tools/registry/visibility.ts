@@ -58,6 +58,19 @@ export interface ToolVisibilityContext {
    * chunks first appear after a compact, possibly mid-session.
    */
   hasSessionMemory: boolean;
+  /**
+   * Mission-scoped tool exclusion. Names in this set are hidden from the
+   * LLM surface WHEN `missionRunActive` is true — a mission can run on a
+   * trimmed toolset (e.g. a single-chain spot scalp does not need perps,
+   * prediction markets, bridges, social, or subagent orchestration). This
+   * shrinks the re-sent-every-turn prompt prefix (the dominant consumer of
+   * the hard token budget) and stops a weak model flailing across tools it
+   * can never correctly use. STATIC per session (part of `ToolVisibilityBase`)
+   * — resolved once from `AGENT_MISSION_EXCLUDED_TOOLS`. Empty/undefined =
+   * no exclusion (the pre-existing full surface), so non-mission sessions and
+   * unconfigured deployments are unaffected.
+   */
+  missionExcludedTools?: readonly string[];
 }
 
 /**
@@ -114,6 +127,13 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
     .filter(t => !t.excludeRoles?.includes(ctx.role))
+    // Mission-scoped exclusion — only bites during an active mission run and
+    // only for explicitly-listed names, so agent sessions and unconfigured
+    // deployments keep the full surface. Placed before the visibility/pressure
+    // gates because it is a hard, context-independent removal.
+    .filter(t => !(ctx.missionRunActive
+      && ctx.missionExcludedTools
+      && ctx.missionExcludedTools.includes(t.name)))
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => passesPressureSafety(t, ctx.contextUsageBand));
   // Hypervexing aliases are a session-mode projection, not permanent ToolDefs.

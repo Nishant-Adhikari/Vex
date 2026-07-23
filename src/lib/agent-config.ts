@@ -247,6 +247,33 @@ export function resolveMissionTokenBudget(env: EnvLike): number | null {
   );
 }
 
+/**
+ * Mission tool-exclusion list — tool names hidden from the LLM surface during
+ * an ACTIVE mission run (consumed via `ToolVisibilityContext.missionExcludedTools`).
+ *
+ * Read from `AGENT_MISSION_EXCLUDED_TOOLS` as a comma-separated list of tool
+ * names, e.g. "hyperliquid_enter,polymarket_setup,bridge". Purpose: let a
+ * focused mission (a single-chain spot scalp) run on a trimmed toolset so the
+ * re-sent-every-turn prompt prefix — which counts in full against the hard
+ * token budget every turn — is smaller, and a weak model has fewer irrelevant
+ * tools to flail on.
+ *
+ * FAIL-OPEN: unset or blank resolves to `[]` (no exclusion — the full surface),
+ * mirroring the other AGENT_* envs' stance, so a mis-set value can never strip
+ * a tool a mission genuinely needs. Each name is trimmed; empty entries drop.
+ * Validation against the real catalog is intentionally omitted — an unknown
+ * name is a harmless no-op in the visibility filter, keeping this a pure,
+ * dependency-free env read.
+ */
+export function resolveMissionExcludedTools(env: EnvLike): readonly string[] {
+  const raw = env["AGENT_MISSION_EXCLUDED_TOOLS"];
+  if (raw == null) return [];
+  return raw
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
 export function parseSubagentEnv(env: EnvLike, agentEff: AgentEffective): ParseResult<SubagentEffective> {
   const errors: ParseError[] = [];
   const maxConcurrent = parseFieldOrDefault(SUBAGENT_MAX_CONCURRENT, env[SUBAGENT_MAX_CONCURRENT.key], errors);
