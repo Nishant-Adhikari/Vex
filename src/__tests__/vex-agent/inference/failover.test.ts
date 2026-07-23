@@ -127,6 +127,39 @@ describe("isTransientInferenceError", () => {
     expect(isTransientInferenceError(reset)).toBe(true);
   });
 
+  it("treats undici `fetch failed` / connection-level errors as transient (retry, not fatal pause)", () => {
+    // undici's bare TypeError: no status, no top-level code — matched by message.
+    expect(isTransientInferenceError(new TypeError("fetch failed"))).toBe(true);
+    // The wrapped phrasing seen in the wild (this is what hard-paused missions).
+    expect(
+      isTransientInferenceError(
+        new Error(
+          "OpenRouter streaming chat completion failed: Unable to make request: TypeError: fetch failed",
+        ),
+      ),
+    ).toBe(true);
+    // Real cause on `.cause` when upstream drops the top-level code.
+    const wrapped = new TypeError("fetch failed");
+    (wrapped as unknown as Record<string, unknown>).cause = Object.assign(
+      new Error("read ECONNRESET"),
+      { code: "ECONNRESET" },
+    );
+    expect(isTransientInferenceError(wrapped)).toBe(true);
+    // undici connect-timeout + DNS not-found codes.
+    const undici = new Error("connect timeout");
+    (undici as unknown as Record<string, unknown>).code = "UND_ERR_CONNECT_TIMEOUT";
+    expect(isTransientInferenceError(undici)).toBe(true);
+    const dns = new Error("getaddrinfo ENOTFOUND openrouter.ai");
+    (dns as unknown as Record<string, unknown>).code = "ENOTFOUND";
+    expect(isTransientInferenceError(dns)).toBe(true);
+  });
+
+  it("does not over-broaden — a codeless/statusless non-network error stays FATAL", () => {
+    expect(
+      isTransientInferenceError(new Error("invalid request: unknown field 'foo'")),
+    ).toBe(false);
+  });
+
   it("treats 4xx auth/validation and aborts as FATAL (fail fast)", () => {
     expect(isTransientInferenceError(httpError(400))).toBe(false);
     expect(isTransientInferenceError(httpError(401))).toBe(false);

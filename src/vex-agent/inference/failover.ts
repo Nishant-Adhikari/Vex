@@ -83,6 +83,10 @@ const TRANSIENT_NODE_CODES: ReadonlySet<string> = new Set([
   "ECONNREFUSED",
   "EAI_AGAIN",
   "EPIPE",
+  "ENOTFOUND", // transient DNS blip for a known-good host
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT", // undici connect timeout
+  "UND_ERR_SOCKET", // undici socket error
 ]);
 
 /** VexError codes that represent a transient request-level failure. */
@@ -135,6 +139,29 @@ export function isTransientInferenceError(err: unknown): boolean {
 
   // Timeout races (`withTimeout`) throw a plain Error with no status/code.
   if (/\btimed out\b/i.test(err.message)) return true;
+
+  // Connection-level failures with no status or top-level `code` — notably
+  // undici's `TypeError: fetch failed`, whose real cause (DNS / reset / refused)
+  // lives on `err.cause` and is frequently dropped by upstream re-wrapping.
+  // A request that fails BEFORE any response byte is idempotent-safe to retry,
+  // and these are never auth/validation errors — so treat them as transient
+  // (bounded retry → failover → recoverable park) instead of a fatal, manual-
+  // resume pause. Unwrap the cause for its Node code, then fall back to the
+  // undici/openrouter connection-failure phrasings on the message.
+  const cause = readField(err, "cause");
+  if (cause instanceof Error) {
+    const causeCode = readField(cause, "code");
+    if (typeof causeCode === "string" && TRANSIENT_NODE_CODES.has(causeCode)) {
+      return true;
+    }
+  }
+  if (
+    /\bfetch failed\b|\bsocket hang up\b|\bother side closed\b|\bunable to make request\b|\bnetwork is unreachable\b/i.test(
+      err.message,
+    )
+  ) {
+    return true;
+  }
 
   return false;
 }
