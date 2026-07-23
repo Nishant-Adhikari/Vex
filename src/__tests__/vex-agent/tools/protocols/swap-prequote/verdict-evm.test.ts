@@ -136,12 +136,18 @@ function evmResult(
     chainId: 8453,
     tokenIn: { address: EVM_TOKEN_IN, symbol: "AAA", decimals: 18 },
     tokenOut: { address: EVM_TOKEN_OUT, symbol: "BBB", decimals: 18 },
-    routeSummary: { foo: "bar" },
+    // Realistic low-impact route summary (0.2% impact) — the KyberSwap quote
+    // always carries this block, so the pre-buy price-impact leg resolves to a
+    // clean `pass` and does not disturb the token-safety doctrine assertions.
+    routeSummary: { priceImpact: 0.002, amountInUsd: "100", amountOutUsd: "99.8", foo: "bar" },
     routerAddress: "0xROUTER",
     safety: { tokenIn: tokenInLeg, tokenOut: tokenOutLeg },
     ...overrides,
   };
 }
+
+/** The clean price-impact disclosure the default low-impact fixture produces. */
+const CLEAN_PRICE_IMPACT_DETAIL = { checked: true, magnitude: 0.002, high: false };
 
 // Solana solana.swap.quote result.data builder.
 function solanaResult(
@@ -248,6 +254,7 @@ describe("verdict — EVM (kyberswap.swap.quote)", () => {
     expect(extracted?.safetyDetail).toEqual({
       tokenIn: { isHoneypot: false, isFOT: true, tax: 12 },
       tokenOut: { native: true },
+      priceImpact: CLEAN_PRICE_IMPACT_DETAIL,
     });
   });
 
@@ -263,6 +270,7 @@ describe("verdict — EVM (kyberswap.swap.quote)", () => {
     expect(extracted?.safetyDetail).toEqual({
       tokenIn: { isHoneypot: false, isFOT: true, tax: 75 },
       tokenOut: { native: true },
+      priceImpact: CLEAN_PRICE_IMPACT_DETAIL,
     });
   });
 
@@ -275,6 +283,7 @@ describe("verdict — EVM (kyberswap.swap.quote)", () => {
     expect(extracted?.safetyDetail).toEqual({
       tokenIn: { checkFailed: true, reason: "rate_limited" },
       tokenOut: { native: true },
+      priceImpact: CLEAN_PRICE_IMPACT_DETAIL,
     });
   });
 });
