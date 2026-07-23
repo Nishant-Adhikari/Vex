@@ -37,7 +37,10 @@ import {
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
 import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
-import { resolveMissionTokenBudget } from "../../../../lib/agent-config.js";
+import {
+  resolveMissionTokenBudget,
+  resolveMissionExcludedTools,
+} from "../../../../lib/agent-config.js";
 import { captureMissionStart } from "../../mission/mission-results-capture.js";
 import { forceLiquidateOnDeadline } from "./mission-liquidate-hook.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
@@ -143,6 +146,9 @@ export async function runPreparedMissionStart(
       sessionKind: "mission",
       missionRunActive: true,
       planMode: hydrated.context.planMode ?? false,
+      // Trim the mission's tool surface (env AGENT_MISSION_EXCLUDED_TOOLS) so a
+      // focused run doesn't pay to re-send irrelevant tool schemas every turn.
+      missionExcludedTools: resolveMissionExcludedTools(process.env),
     };
     // Seed tools — overridden per turn by buildTurnPromptStack with the live
     // band + `hasSessionMemory`.
@@ -298,6 +304,9 @@ export async function resumePreparedMissionRun(
       sessionKind: "mission",
       missionRunActive: true,
       planMode: hydrated.context.planMode ?? false,
+      // Trim the mission's tool surface (env AGENT_MISSION_EXCLUDED_TOOLS) so a
+      // focused run doesn't pay to re-send irrelevant tool schemas every turn.
+      missionExcludedTools: resolveMissionExcludedTools(process.env),
     };
     // Seed tools — overridden per turn by buildTurnPromptStack with the live
     // band + `hasSessionMemory`.
