@@ -310,6 +310,9 @@ export const CH = {
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
     setHyperliquidPolicy: "vex:settings:setHyperliquidPolicy",
+    // Fork-only: persist the mission-scoped keep-awake toggle. Main's
+    // keep-awake worker reads the value via preferencesStore.subscribe.
+    setKeepAwakeDuringMission: "vex:settings:setKeepAwakeDuringMission",
   },
 
   // Updater — user-triggered in-app update flow (M13). `check` may run on

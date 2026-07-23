@@ -274,3 +274,9 @@ export const hyperliquidKeys = {
   sessionRiskPolicy: (sessionId: string) => ["hyperliquid", "sessionRiskPolicy", sessionId] as const,
   preferences: () => ["hyperliquid", "preferences"] as const,
 };
+
+/** App-level user preferences (settings bridge). */
+export const settingsKeys = {
+  all: ["settings"] as const,
+  preferences: () => ["settings", "preferences"] as const,
+};

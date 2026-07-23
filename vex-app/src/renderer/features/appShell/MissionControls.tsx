@@ -72,6 +72,10 @@ import {
   useRenewableMissionSource,
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
+import {
+  usePreferences,
+  useSetKeepAwakeDuringMission,
+} from "../../lib/api/settings.js";
 import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
@@ -329,6 +333,7 @@ export function MissionControls({
           />
           {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
         </div>
+        <KeepAwakeToggle />
       </>
     );
   }
@@ -504,6 +509,49 @@ function MissionErrorAlert({
         The mission is not monitoring the market or your positions until you
         recover it.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Fork-only "keep this Mac awake during missions" toggle, surfaced with the
+ * active-run controls. Default ON (mirrors the persisted
+ * `ui.keepAwakeDuringMission` pref); main's keep-awake worker reads the pref
+ * and holds the Mac awake for the run when it is on. Honest caveat: Electron's
+ * `prevent-app-suspension` does NOT survive a closed lid on macOS, so we say so
+ * rather than imply a lid-shut overnight run is safe.
+ */
+function KeepAwakeToggle(): JSX.Element | null {
+  const prefsQuery = usePreferences();
+  const setKeepAwake = useSetKeepAwakeDuringMission();
+  const prefs = prefsQuery.data?.ok === true ? prefsQuery.data.data : null;
+  // Until prefs load, mirror the persisted default (on) so the control never
+  // flashes an incorrect "off" state.
+  const enabled = prefs?.ui.keepAwakeDuringMission ?? true;
+  const controlId = "keep-awake-during-mission";
+
+  return (
+    <div className="mt-3 flex items-start gap-2.5" data-vex-area="keep-awake-toggle">
+      <input
+        id={controlId}
+        type="checkbox"
+        checked={enabled}
+        disabled={prefsQuery.data === undefined || setKeepAwake.isPending}
+        onChange={(e) => setKeepAwake.mutate(e.target.checked)}
+        aria-describedby={`${controlId}-caveat`}
+        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+      />
+      <label htmlFor={controlId} className="cursor-pointer select-none">
+        <span className="block text-xs font-medium text-[var(--vex-text-2)]">
+          Keep this Mac awake during missions
+        </span>
+        <span
+          id={`${controlId}-caveat`}
+          className="mt-0.5 block text-[11px] text-[var(--vex-text-3)]"
+        >
+          Closing the lid still sleeps the Mac.
+        </span>
+      </label>
     </div>
   );
 }

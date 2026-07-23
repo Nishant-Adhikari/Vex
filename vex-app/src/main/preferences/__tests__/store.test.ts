@@ -95,7 +95,9 @@ describe("preferencesStore", () => {
       store.update({
         telemetry: { enabled: true, consentedAt: "2026-05-07T00:00:00.000Z" },
       }),
-      store.update({ ui: { reducedMotion: "always" } }),
+      store.update({
+        ui: { reducedMotion: "always", keepAwakeDuringMission: true },
+      }),
       store.update({
         updater: { lastCheckedAt: "2026-05-07T01:00:00.000Z" },
       }),
@@ -118,5 +120,52 @@ describe("preferencesStore", () => {
     const store = await loadStoreModule();
     const prefs = await store.load();
     expect(prefs.telemetry.enabled).toBe(false);
+  });
+
+  it("defaults keepAwakeDuringMission to true (fork feature)", async () => {
+    const store = await loadStoreModule();
+    const prefs = await store.load();
+    expect(prefs.ui.keepAwakeDuringMission).toBe(true);
+  });
+
+  it("persists keepAwakeDuringMission=false across a reload", async () => {
+    const store = await loadStoreModule();
+    const current = await store.load();
+    await store.update({
+      ui: { ...current.ui, keepAwakeDuringMission: false },
+    });
+
+    const onDisk = JSON.parse(
+      await fs.readFile(path.join(userDataDir, "preferences.json"), "utf8")
+    );
+    expect(onDisk.ui.keepAwakeDuringMission).toBe(false);
+
+    // Reload from a fresh module/cache: the persisted false must survive.
+    const reloaded = await loadStoreModule();
+    const prefs = await reloaded.load();
+    expect(prefs.ui.keepAwakeDuringMission).toBe(false);
+  });
+
+  it("treats a pre-existing ui block without the key as keep-awake ON", async () => {
+    // Backward-compat: an older preferences.json (no keepAwakeDuringMission)
+    // must load cleanly with the default ON rather than fall to full defaults.
+    await fs.mkdir(userDataDir, { recursive: true });
+    await fs.writeFile(
+      path.join(userDataDir, "preferences.json"),
+      JSON.stringify({
+        version: 1,
+        telemetry: { enabled: true, consentedAt: "2026-05-07T00:00:00.000Z" },
+        window: { width: 1280, height: 800, x: null, y: null, maximized: false },
+        updater: { lastCheckedAt: null },
+        ui: { reducedMotion: "always" },
+      }),
+      "utf8"
+    );
+    const store = await loadStoreModule();
+    const prefs = await store.load();
+    // Old value preserved, new key defaulted ON — not reset to defaults.
+    expect(prefs.telemetry.enabled).toBe(true);
+    expect(prefs.ui.reducedMotion).toBe("always");
+    expect(prefs.ui.keepAwakeDuringMission).toBe(true);
   });
 });

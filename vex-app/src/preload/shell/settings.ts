@@ -11,6 +11,10 @@ const setTelemetryConsentInputSchema = z
   .object({ enabled: z.boolean() })
   .strict();
 
+const setKeepAwakeDuringMissionInputSchema = z
+  .object({ enabled: z.boolean() })
+  .strict();
+
 export const settings = {
   getPreferences() {
     return invokeWithSchema(CH.settings.getPreferences, {});
@@ -27,6 +31,13 @@ export const settings = {
       CH.settings.setHyperliquidPolicy,
       input,
       hyperliquidSettingsUpdateInputSchema,
+    );
+  },
+  setKeepAwakeDuringMission(input: { enabled: boolean }) {
+    return invokeWithSchema(
+      CH.settings.setKeepAwakeDuringMission,
+      input,
+      setKeepAwakeDuringMissionInputSchema,
     );
   },
 } satisfies SettingsBridge;

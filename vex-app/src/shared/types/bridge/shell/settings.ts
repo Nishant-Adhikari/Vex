@@ -10,4 +10,7 @@ export interface SettingsBridge {
   readonly setHyperliquidPolicy: (
     input: HyperliquidSettingsUpdateInput,
   ) => Promise<Result<Preferences>>;
+  readonly setKeepAwakeDuringMission: (input: {
+    readonly enabled: boolean;
+  }) => Promise<Result<Preferences>>;
 }

@@ -60,6 +60,14 @@ export const preferencesSchema = z
     ui: z
       .object({
         reducedMotion: z.enum(["auto", "always", "never"]),
+        /**
+         * Gate for the (fork-only) mission-scoped keep-awake: when true (the
+         * default, preserving the prior always-on behavior) the main process
+         * holds the Mac awake via `powerSaveBlocker` for the duration of an
+         * active mission run. `.default(true)` keeps pre-existing preference
+         * files valid — an absent key reads as on, not corrupt.
+         */
+        keepAwakeDuringMission: z.boolean().default(true),
       })
       .strict(),
 
@@ -82,7 +90,7 @@ export const defaultPreferences: Preferences = {
   telemetry: { enabled: false, consentedAt: null },
   window: { width: 1280, height: 800, x: null, y: null, maximized: false },
   updater: { lastCheckedAt: null },
-  ui: { reducedMotion: "auto" },
+  ui: { reducedMotion: "auto", keepAwakeDuringMission: true },
   hyperliquid: {
     policy: hyperliquidPolicyTransportSchema.parse({}),
     riskAcknowledgedAt: null,
