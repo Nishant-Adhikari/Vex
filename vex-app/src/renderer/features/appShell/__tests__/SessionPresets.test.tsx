@@ -79,6 +79,13 @@ describe("SessionPresets", () => {
     expect(input.permission).toBe("full");
     expect(input.selectedEvmWalletId).toBeNull();
     expect(input.selectedSolanaWalletId).toBeNull();
+    // Carries the preset's authoritative structured seed so main can pre-fill
+    // the mission contract (no "Still Missing" fields).
+    if (input.mode !== "mission") throw new Error("expected mission input");
+    expect(input.missionDraftSeed).toEqual(MISSION_PRESETS[0]?.draft);
+    expect(input.missionDraftSeed?.title).toBe("PONS Scalper");
+    expect(input.missionDraftSeed?.riskProfile).toBe("aggressive");
+    expect(input.missionDraftSeed?.allowedChains).toEqual(["Robinhood Chain"]);
 
     // 2. Hands the preset goal to the new session's composer (same draft path).
     await waitFor(() => {

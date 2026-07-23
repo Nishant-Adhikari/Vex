@@ -9,7 +9,9 @@
  * invent a parallel draft path:
  *   1. `useCreateSession` mutation → a mission session (permission from the
  *      preset; wallets left null so the backend applies the primary trading
- *      wallet, same as a normal new mission).
+ *      wallet, same as a normal new mission). The preset's structured `draft`
+ *      rides along as `missionDraftSeed`; main seeds the mission contract from
+ *      it (validated pipeline) so no field renders "Still Missing".
  *   2. `setPendingFirstMessage` hands the preset goal to the new session's
  *      composer, which submits it and generates the mission draft.
  *   3. `setReviewModal("mission")` opens the contract screen (MissionRail owns
@@ -59,6 +61,10 @@ export function SessionPresets(): JSX.Element {
         permission: preset.permission,
         selectedEvmWalletId: null,
         selectedSolanaWalletId: null,
+        // Authoritative structured contract seed — main applies it to the
+        // mission draft right after create so every field renders filled
+        // instead of "Still Missing".
+        missionDraftSeed: preset.draft,
       };
       setSigningState("signing");
       try {

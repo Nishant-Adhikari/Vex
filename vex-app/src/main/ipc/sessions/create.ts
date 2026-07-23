@@ -28,6 +28,45 @@ import {
   resolveWalletRef,
   vaultWalletSelectionError,
 } from "../_wallet-refs.js";
+import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+
+/**
+ * Seed the freshly-created mission draft from a one-click preset's structured
+ * fields so the contract renders complete (no "Still Missing"). Best-effort:
+ * the session+mission rows are already committed, and the goal-prose setup turn
+ * remains a fallback, so a seeding failure must NOT fail the launch — we log and
+ * return the created session. Routes through the engine's SAME validated
+ * draft-write pipeline the agent's `mission_draft_update` uses.
+ */
+async function seedPresetDraft(
+  sessionId: string,
+  seed: unknown,
+  correlationId: string,
+): Promise<void> {
+  const dbUrlOutcome = await ensureEngineDbUrl(correlationId);
+  if (!dbUrlOutcome.ok) {
+    log.warn(
+      `[ipc:vex:sessions:create] preset_seed_db_unavailable ` +
+        `correlationId=${correlationId}`,
+    );
+    return;
+  }
+  try {
+    const { seedMissionDraftForSession } = await import(
+      "@vex-agent/engine/index.js"
+    );
+    const result = await seedMissionDraftForSession(sessionId, seed);
+    log.info(
+      `[ipc:vex:sessions:create] preset_seed_applied ` +
+        `ready=${result?.ready ?? "no_mission"} correlationId=${correlationId}`,
+    );
+  } catch (cause) {
+    log.warn(
+      `[ipc:vex:sessions:create] preset_seed_failed correlationId=${correlationId}`,
+      cause,
+    );
+  }
+}
 
 export function registerSessionsCreateHandler(): () => void {
   return registerHandler({
@@ -85,6 +124,15 @@ export function registerSessionsCreateHandler(): () => void {
             `mode=${outcome.data.mode} permission=${outcome.data.permission} ` +
             `correlationId=${ctx.requestId}`,
         );
+        // One-click preset launch: seed the mission contract's structured
+        // fields now so it renders complete instead of "Still Missing".
+        if (input.mode === "mission" && input.missionDraftSeed) {
+          await seedPresetDraft(
+            outcome.data.id,
+            input.missionDraftSeed,
+            ctx.requestId,
+          );
+        }
       } else {
         log.info(
           `[ipc:vex:sessions:create] errCode=${outcome.error.code} ` +
