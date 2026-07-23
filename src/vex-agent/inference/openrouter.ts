@@ -114,6 +114,21 @@ export interface OpenRouterProviderInit {
    * `AGENT_MODEL`); unset ⇒ no fallback, behavior unchanged.
    */
   fallbackModel?: string;
+  /**
+   * Hard-disable intra-provider (issue #37) model fallback for THIS instance,
+   * overriding both `fallbackModel` and the `AGENT_MODEL_FALLBACK` env default.
+   *
+   * Why this is separate from `fallbackModel`: the constructor resolves
+   * `fallbackModel ?? env.fallbackAgentModel`, so passing `fallbackModel:
+   * undefined` is INDISTINGUISHABLE from "unset" and still inherits the env
+   * default. This explicit boolean lets the registry construct the PRIMARY with
+   * NO intra-provider fallback when a SEPARATE provider-level fallback (issue
+   * #25, `OPENROUTER_API_KEY_FALLBACK`) is configured — the two features must be
+   * mutually exclusive, else the primary self-heals onto the fallback model
+   * (its own key) and shorts the failover walk before the #25 secondary (with
+   * its own key) is ever consulted.
+   */
+  disableModelFallback?: boolean;
   displayName?: string;
 }
 
@@ -166,7 +181,12 @@ export class OpenRouterProvider implements InferenceProvider {
     // Read AGENT_MODEL_FALLBACK exactly the way `model` reads AGENT_MODEL
     // (init override → resolved ENV). A fallback equal to the primary is a
     // no-op (nothing to fail over to), so it is normalized to null.
-    const fallbackModel = init.fallbackModel ?? env.fallbackAgentModel;
+    // `disableModelFallback` hard-opts-out (registry sets it when a SEPARATE
+    // #25 provider-level fallback is configured) — it must beat the env default,
+    // which a bare `init.fallbackModel ?? env.fallbackAgentModel` could not.
+    const fallbackModel = init.disableModelFallback
+      ? undefined
+      : init.fallbackModel ?? env.fallbackAgentModel;
 
     if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is required for OpenRouter provider");
@@ -312,6 +332,15 @@ export class OpenRouterProvider implements InferenceProvider {
     // Prefer the primary model every fetch (so a recovered primary reverts).
     const primaryConfig = this.buildConfigForModel(models, this.primaryModel);
     if (primaryConfig) {
+      // Symmetric to `inference.model.fallback_used`: if we were serving the
+      // fallback and the primary is now back, warn on the flap-back so operators
+      // watching the warn stream see BOTH edges of a model-availability blip.
+      if (this.activeModel !== this.primaryModel) {
+        logger.warn("inference.model.fallback_reverted", {
+          primary: this.primaryModel,
+          previous: this.activeModel,
+        });
+      }
       this.activeModel = this.primaryModel;
       return { kind: "success", config: primaryConfig };
     }

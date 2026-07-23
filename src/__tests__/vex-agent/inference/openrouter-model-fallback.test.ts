@@ -69,6 +69,14 @@ function fallbackWarnMeta(): Record<string, unknown> | undefined {
   return call?.[1] as Record<string, unknown> | undefined;
 }
 
+/** Metadata of the single `inference.model.fallback_reverted` (flap-back) warn. */
+function fallbackRevertMeta(): Record<string, unknown> | undefined {
+  const call = loggerMock.warn.mock.calls.find(
+    (c) => c[0] === "inference.model.fallback_reverted",
+  );
+  return call?.[1] as Record<string, unknown> | undefined;
+}
+
 describe("OpenRouterProvider AGENT_MODEL_FALLBACK model-availability failover", () => {
   const originalEnv = { ...process.env };
 
@@ -168,6 +176,39 @@ describe("OpenRouterProvider AGENT_MODEL_FALLBACK model-availability failover", 
 
     expect(config).toBeNull();
     expect(fallbackWarnMeta()).toBeUndefined();
+  });
+
+  it("logs fallback_reverted and restores the primary when it returns on the next TTL refresh (state C)", async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.AGENT_MODEL_FALLBACK = FALLBACK_ID;
+      const provider = new OpenRouterProvider();
+
+      // Fetch 1: primary absent → fallback engaged.
+      listMock.mockResolvedValueOnce(catalog(FALLBACK_ID));
+      const c1 = await provider.loadConfig();
+      expect(c1?.model).toBe(FALLBACK_ID);
+      expect(provider.model).toBe(FALLBACK_ID);
+      expect(fallbackWarnMeta()?.fallback).toBe(FALLBACK_ID);
+      expect(fallbackRevertMeta()).toBeUndefined(); // not yet reverted
+
+      // Advance past the config cache TTL so the next loadConfig re-fetches.
+      vi.advanceTimersByTime(3_600_001);
+
+      // Fetch 2: the primary is back → revert, with a symmetric warn.
+      listMock.mockResolvedValueOnce(catalog(PRIMARY_ID, FALLBACK_ID));
+      const c2 = await provider.loadConfig();
+
+      expect(c2?.model).toBe(PRIMARY_ID); // returned config reverted
+      expect(provider.model).toBe(PRIMARY_ID); // getter reverted too
+      const revert = fallbackRevertMeta();
+      expect(revert).toBeDefined();
+      expect(revert?.primary).toBe(PRIMARY_ID);
+      expect(revert?.previous).toBe(FALLBACK_ID);
+      expect(listMock).toHaveBeenCalledTimes(2); // one fetch per TTL window
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not touch the fallback when the primary model is available", async () => {
