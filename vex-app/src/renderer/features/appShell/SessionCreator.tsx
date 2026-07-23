@@ -74,6 +74,10 @@ export function SessionCreator({
   // from the picker so they can't be fat-fingered, and note which are hidden.
   const evmSelectable = inventory.evm.filter((w) => !w.vault);
   const solanaSelectable = inventory.solana.filter((w) => !w.vault);
+  // The operator's PRIMARY EVM wallet = the first non-vault EVM entry in
+  // inventory order (there is no explicit isPrimary flag). Mission sessions
+  // bind it by default in the backend (#41); the picker mirrors that below.
+  const primaryEvmWalletId = evmSelectable[0]?.id ?? null;
   const vaultLabels = [...inventory.evm, ...inventory.solana]
     .filter((w) => w.vault)
     .map((w) => w.label);
@@ -97,6 +101,10 @@ export function SessionCreator({
   const [permission, setPermission] = useState<SessionPermission>("restricted");
   const [selectedEvmWalletId, setSelectedEvmWalletId] = useState<string | null>(null);
   const [selectedSolanaWalletId, setSelectedSolanaWalletId] = useState<string | null>(null);
+  // Whether the operator has manually changed the EVM picker this open. Guards
+  // the mission auto-default below from clobbering an explicit choice (a picked
+  // wallet OR an explicit "None"). Reset on every (re)open.
+  const [evmWalletTouched, setEvmWalletTouched] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
 
@@ -112,9 +120,32 @@ export function SessionCreator({
       setPermission("restricted");
       setSelectedEvmWalletId(null);
       setSelectedSolanaWalletId(null);
+      setEvmWalletTouched(false);
       setSubmitError(null);
     }
   }, [open, createSessionInitialMessage, sessionModeFilter]);
+
+  // Mission sessions pre-select the operator's primary EVM wallet so creating
+  // a mission is one-click (no manual pick), mirroring the backend default
+  // (#41) — the UI otherwise misleadingly showed "None". Scope + guards:
+  //   • MISSION mode only — agent/chat sessions stay wallet-optional (None).
+  //   • Never override an explicit choice: skip once the operator has touched
+  //     the picker (a wallet OR "None") this open.
+  //   • Keyed on the loaded primary id so it applies after the async wallet
+  //     inventory arrives, and re-derives when toggling agent↔mission.
+  //   • No non-vault EVM wallet (or inventory not yet loaded) → primary id is
+  //     null → stays None, no crash. Solana is left as-is (mission is EVM).
+  useEffect(() => {
+    if (!open || evmWalletTouched) return;
+    setSelectedEvmWalletId(mode === "mission" ? primaryEvmWalletId : null);
+  }, [open, mode, primaryEvmWalletId, evmWalletTouched]);
+
+  // The operator changing the EVM picker (including to "None") pins their
+  // choice so the mission auto-default never re-applies over it.
+  const handleEvmWalletChange = useCallback((id: string | null): void => {
+    setEvmWalletTouched(true);
+    setSelectedEvmWalletId(id);
+  }, []);
 
   // Focus the Name input first when the dialog opens — it is the only
   // text field in this modal. Mission goal capture happens in chat.
@@ -244,7 +275,7 @@ export function SessionCreator({
               evmOptions={evmSelectable}
               solanaOptions={solanaSelectable}
               vaultLabels={vaultLabels}
-              onEvmChange={setSelectedEvmWalletId}
+              onEvmChange={handleEvmWalletChange}
               onSolanaChange={setSelectedSolanaWalletId}
             />
 
