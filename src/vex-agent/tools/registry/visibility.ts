@@ -127,20 +127,25 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
     .filter(t => !t.excludeRoles?.includes(ctx.role))
-    // Mission-scoped exclusion — only bites during an active mission run and
-    // only for explicitly-listed names, so agent sessions and unconfigured
-    // deployments keep the full surface. Placed before the visibility/pressure
-    // gates because it is a hard, context-independent removal.
-    .filter(t => !(ctx.missionRunActive
-      && ctx.missionExcludedTools
-      && ctx.missionExcludedTools.includes(t.name)))
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => passesPressureSafety(t, ctx.contextUsageBand));
   // Hypervexing aliases are a session-mode projection, not permanent ToolDefs.
   // The alias projection receives this same band so it shares the catalog's
   // release, policy, and pressure visibility rather than re-implementing it.
   const hotSet = getVisibleHypervexingAliasTools(ctx.sessionId, ctx.contextUsageBand);
-  return [...staticTools, ...hotSet];
+  const visible = [...staticTools, ...hotSet];
+  // Mission-scoped exclusion — a hard, context-independent removal applied to
+  // the FULL surface (static tools AND Hypervexing aliases) so an excluded
+  // name can never leak back in via the hot set. Only bites during an active
+  // mission run with a non-empty list; agent sessions and unconfigured
+  // deployments keep the full surface unchanged.
+  if (ctx.missionRunActive
+      && ctx.missionExcludedTools
+      && ctx.missionExcludedTools.length > 0) {
+    const excluded = new Set(ctx.missionExcludedTools);
+    return visible.filter(t => !excluded.has(t.name));
+  }
+  return visible;
 }
 
 /**
