@@ -22,6 +22,7 @@ import {
 function result(p: Partial<MissionResultDto>): MissionResultDto {
   return {
     missionRunId: "run",
+    sessionId: "session",
     seqNo: 1,
     goalSnippet: null,
     startedAt: "2026-07-11T10:00:00.000Z",
