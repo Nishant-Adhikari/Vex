@@ -27,6 +27,7 @@ import {
   SUBAGENT_MAX_OUTPUT_TOKENS,
   SUBAGENT_TEMPERATURE,
   SUBAGENT_TIMEOUT_MS,
+  resolveMissionTokenBudget,
 } from "../../lib/agent-config.js";
 
 describe("agent-config field metadata", () => {
@@ -245,5 +246,42 @@ describe("formatParseErrors", () => {
     ]);
     const lines = out.split("\n");
     expect(lines.length).toBe(3);
+  });
+});
+
+describe("resolveMissionTokenBudget (duration-derived)", () => {
+  it("derives budget from durationMinutes × default per-minute (150k)", () => {
+    expect(resolveMissionTokenBudget({}, 240)).toBe(240 * 150_000); // 4h → 36M
+    expect(resolveMissionTokenBudget({}, 60)).toBe(60 * 150_000); //  1h → 9M
+    expect(resolveMissionTokenBudget({}, 5)).toBe(5 * 150_000);
+  });
+
+  it("falls back to a 60-minute box when duration is absent / non-positive", () => {
+    expect(resolveMissionTokenBudget({})).toBe(60 * 150_000);
+    expect(resolveMissionTokenBudget({}, 0)).toBe(60 * 150_000);
+    expect(resolveMissionTokenBudget({}, -5)).toBe(60 * 150_000);
+  });
+
+  it("honors a custom AGENT_MISSION_TOKENS_PER_MINUTE", () => {
+    expect(
+      resolveMissionTokenBudget({ AGENT_MISSION_TOKENS_PER_MINUTE: "100000" }, 60),
+    ).toBe(6_000_000);
+  });
+
+  it("an explicit AGENT_MISSION_TOKEN_BUDGET overrides the dynamic default", () => {
+    expect(
+      resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "2000000" }, 240),
+    ).toBe(2_000_000);
+  });
+
+  it("disable sentinels resolve to null (no box)", () => {
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "0" }, 60)).toBeNull();
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "off" }, 60)).toBeNull();
+  });
+
+  it("a malformed explicit budget falls through to the dynamic default", () => {
+    expect(
+      resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "abc" }, 60),
+    ).toBe(60 * 150_000);
   });
 });
