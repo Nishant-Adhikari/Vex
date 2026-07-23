@@ -16,6 +16,7 @@ import type pg from "pg";
 import {
   MigrationError,
   runMigrationsWithProgress,
+  healSchemaVersionDrift,
   type MigrationProgressEvent,
 } from "../../../lib/db/migrate-runner.js";
 
@@ -346,5 +347,237 @@ describe("runMigrationsWithProgress — unlock failure handling", () => {
     await runMigrationsWithProgress({ pool, migrationsDir: tmpDir });
     expect(client.release).toHaveBeenCalledTimes(1);
     expect(client.release.mock.calls[0]?.[0]).toBeUndefined();
+  });
+});
+
+/**
+ * Self-heal tests. Models the exact failure that broke the app: the
+ * `schema_version` table said migrations 038/040 were applied, but the
+ * hyperliquid_* tables those migrations CREATE had vanished (partial DB
+ * state loss). The runner skipped re-creating them forever because the
+ * version counter was intact. `healSchemaVersionDrift` closes that gap.
+ *
+ * The mock DB is stateful: it tracks a `Set` of existing tables and a
+ * `Set` of applied versions. `to_regclass($1)` resolves against the
+ * existing-tables set; executing a migration's SQL string (an idempotent
+ * `CREATE TABLE IF NOT EXISTS`) adds the created table(s) back — modelling
+ * the idempotent re-run repairing the drift.
+ */
+const CREATE_TABLE_IN_SQL = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_$]*)"?/gi;
+
+function makeDriftPool(
+  existingTables: Iterable<string>,
+  appliedVersions: Iterable<number>
+): MockPool & { existing: Set<string> } {
+  const base = makeMockPool();
+  const existing = new Set<string>(existingTables);
+  const applied = new Set<number>(appliedVersions);
+  base.client.setQueryImpl(async (sql, params) => {
+    if (/SELECT version FROM schema_version/i.test(sql)) {
+      return { rows: [...applied].map((version) => ({ version })) };
+    }
+    if (/SELECT COALESCE\(MAX\(version\)/i.test(sql)) {
+      return { rows: [{ version: Math.max(0, ...applied) }] };
+    }
+    if (/to_regclass/i.test(sql)) {
+      const name = String(params?.[0]);
+      return { rows: [{ reg: existing.has(name) ? name : null }] };
+    }
+    // Simulate an idempotent migration re-run creating its table(s).
+    if (/CREATE\s+TABLE/i.test(sql)) {
+      let m: RegExpExecArray | null;
+      CREATE_TABLE_IN_SQL.lastIndex = 0;
+      while ((m = CREATE_TABLE_IN_SQL.exec(sql)) !== null) {
+        if (m[1]) existing.add(m[1]);
+      }
+    }
+    return undefined;
+  });
+  return { ...base, existing };
+}
+
+const SQL_038 =
+  "CREATE TABLE IF NOT EXISTS hyperliquid_session_policies (id INT);";
+const SQL_039 =
+  "ALTER TABLE protocol_executions ADD COLUMN IF NOT EXISTS execution_status TEXT NOT NULL DEFAULT 'succeeded';";
+const SQL_040 = [
+  "CREATE TABLE IF NOT EXISTS hyperliquid_candles (id INT);",
+  "CREATE TABLE IF NOT EXISTS hyperliquid_candle_watches (id INT);",
+].join("\n");
+
+function writeHyperliquidMigrations(): void {
+  writeFileSync(join(tmpDir, "038_hyperliquid_session_policies.sql"), SQL_038);
+  writeFileSync(join(tmpDir, "039_hyperliquid_execution_intents.sql"), SQL_039);
+  writeFileSync(join(tmpDir, "040_hyperliquid_candles.sql"), SQL_040);
+}
+
+describe("healSchemaVersionDrift — drift detection + repair", () => {
+  it("re-runs an applied migration whose CREATEd table vanished (038/040 case)", async () => {
+    writeHyperliquidMigrations();
+    // 038/039/040 all marked applied, but the hyperliquid tables are gone.
+    // protocol_executions (039's ALTER target) still exists.
+    const { pool, client, existing } = makeDriftPool(
+      ["protocol_executions", "schema_version"],
+      [38, 39, 40]
+    );
+    const warn = vi.fn();
+
+    const result = await healSchemaVersionDrift({
+      pool,
+      migrationsDir: tmpDir,
+      logger: { warn },
+    });
+
+    // Only the two CREATE-TABLE migrations healed; 039 (ALTER-only) is not.
+    expect(result.healed.map((h) => h.version).sort()).toEqual([38, 40]);
+    expect(result.failures).toEqual([]);
+    // Tables are present again after the idempotent re-run.
+    expect(existing.has("hyperliquid_session_policies")).toBe(true);
+    expect(existing.has("hyperliquid_candles")).toBe(true);
+    expect(existing.has("hyperliquid_candle_watches")).toBe(true);
+    // A clear warning was logged naming the drifted migration.
+    expect(warn).toHaveBeenCalled();
+    const warnText = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warnText).toMatch(/038_hyperliquid_session_policies\.sql/);
+    expect(warnText).toMatch(/hyperliquid_candle_watches/);
+    // Each heal re-ran the SQL inside its own BEGIN/COMMIT block.
+    const beginCount = client.calls.filter((c) => c.sql === "BEGIN").length;
+    const commitCount = client.calls.filter((c) => c.sql === "COMMIT").length;
+    expect(beginCount).toBe(2);
+    expect(commitCount).toBe(2);
+  });
+
+  it("is a no-op when every expected table is present (no false heals)", async () => {
+    writeHyperliquidMigrations();
+    const { pool, client } = makeDriftPool(
+      [
+        "protocol_executions",
+        "schema_version",
+        "hyperliquid_session_policies",
+        "hyperliquid_candles",
+        "hyperliquid_candle_watches",
+      ],
+      [38, 39, 40]
+    );
+    const warn = vi.fn();
+
+    const result = await healSchemaVersionDrift({
+      pool,
+      migrationsDir: tmpDir,
+      logger: { warn },
+    });
+
+    expect(result.healed).toEqual([]);
+    expect(result.failures).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    // No re-runs → no BEGIN/COMMIT at all.
+    expect(client.calls.some((c) => c.sql === "BEGIN")).toBe(false);
+  });
+
+  it("ignores ALTER/ADD COLUMN-only migrations (039 is never misflagged)", async () => {
+    // Only the ALTER-only migration exists and is applied. Its target table
+    // is intentionally absent — the healer must still not touch it, because
+    // 039 CREATEs no table so it declares no expected tables.
+    writeFileSync(join(tmpDir, "039_hyperliquid_execution_intents.sql"), SQL_039);
+    const { pool, client } = makeDriftPool(["schema_version"], [39]);
+    const warn = vi.fn();
+
+    const result = await healSchemaVersionDrift({
+      pool,
+      migrationsDir: tmpDir,
+      logger: { warn },
+    });
+
+    expect(result.healed).toEqual([]);
+    expect(result.failures).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    expect(client.calls.some((c) => c.sql === "BEGIN")).toBe(false);
+    // to_regclass is never even queried for an ALTER-only migration.
+    expect(client.calls.some((c) => /to_regclass/i.test(c.sql))).toBe(false);
+  });
+
+  it("does NOT heal a migration whose version is not in schema_version", async () => {
+    // 040's tables are missing AND 040 is not recorded as applied → this is
+    // the normal migration pass's job, not the healer's.
+    writeHyperliquidMigrations();
+    const { pool } = makeDriftPool(
+      ["protocol_executions", "schema_version", "hyperliquid_session_policies"],
+      [38, 39]
+    );
+
+    const result = await healSchemaVersionDrift({ pool, migrationsDir: tmpDir });
+
+    expect(result.healed).toEqual([]);
+    expect(result.failures).toEqual([]);
+  });
+
+  it("isolates a failing re-run so the rest still heal", async () => {
+    writeHyperliquidMigrations();
+    const base = makeMockPool();
+    const existing = new Set<string>(["protocol_executions", "schema_version"]);
+    const applied = new Set<number>([38, 39, 40]);
+    base.client.setQueryImpl(async (sql, params) => {
+      if (/SELECT version FROM schema_version/i.test(sql)) {
+        return { rows: [...applied].map((version) => ({ version })) };
+      }
+      if (/to_regclass/i.test(sql)) {
+        const name = String(params?.[0]);
+        return { rows: [{ reg: existing.has(name) ? name : null }] };
+      }
+      // 038's SQL blows up; 040's SQL succeeds.
+      if (sql === SQL_038) {
+        throw new Error("disk full during re-run");
+      }
+      if (/CREATE\s+TABLE/i.test(sql)) {
+        let m: RegExpExecArray | null;
+        CREATE_TABLE_IN_SQL.lastIndex = 0;
+        while ((m = CREATE_TABLE_IN_SQL.exec(sql)) !== null) {
+          if (m[1]) existing.add(m[1]);
+        }
+      }
+      return undefined;
+    });
+
+    const result = await healSchemaVersionDrift({
+      pool: base.pool,
+      migrationsDir: tmpDir,
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+
+    expect(result.healed.map((h) => h.version)).toEqual([40]);
+    expect(result.failures.map((f) => f.version)).toEqual([38]);
+    // A ROLLBACK was issued for the failed re-run.
+    expect(base.client.calls.some((c) => c.sql === "ROLLBACK")).toBe(true);
+  });
+
+  it("acquires + releases the advisory lock around the heal pass", async () => {
+    writeHyperliquidMigrations();
+    const { pool, client } = makeDriftPool(
+      ["protocol_executions", "schema_version"],
+      [38, 39, 40]
+    );
+
+    await healSchemaVersionDrift({ pool, migrationsDir: tmpDir });
+
+    const lockIdx = indexOfCall(client.calls, /pg_advisory_lock\(\$1::bigint\)/i);
+    const unlockIdx = indexOfCall(
+      client.calls,
+      /pg_advisory_unlock\(\$1::bigint\)/i
+    );
+    expect(lockIdx).toBeGreaterThanOrEqual(0);
+    expect(unlockIdx).toBeGreaterThan(lockIdx);
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("no-ops cleanly when the migrations dir has no CREATE-TABLE files", async () => {
+    writeFileSync(join(tmpDir, "039_only_alter.sql"), SQL_039);
+    const { pool, client } = makeDriftPool(["schema_version"], [39]);
+
+    const result = await healSchemaVersionDrift({ pool, migrationsDir: tmpDir });
+
+    expect(result.healed).toEqual([]);
+    expect(result.failures).toEqual([]);
+    // Short-circuits before even connecting when nothing declares a table.
+    expect(client.calls.length).toBe(0);
   });
 });
