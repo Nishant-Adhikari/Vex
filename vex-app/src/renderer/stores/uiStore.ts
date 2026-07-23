@@ -64,7 +64,10 @@ export type View =
 
 export type WizardEntryMode = "setup" | "reconfigure";
 export type UnlockReturnView = "wizard" | "appShell";
-export type SessionModeFilter = "all" | "agent" | "mission";
+// "presets" is a sidebar TAB, not a session mode: when active the rail swaps
+// the session list for the one-click mission-preset cards. It never matches a
+// session's `mode`, so `filterSessionsByMode` yields no rows for it.
+export type SessionModeFilter = "all" | "agent" | "mission" | "presets";
 /**
  * Sub-view of the app shell panel area. `session` is the default chat/
  * welcome panel; `sessionsLibrary` is the dedicated "browse all sessions"

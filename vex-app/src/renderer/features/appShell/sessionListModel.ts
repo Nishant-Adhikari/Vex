@@ -25,6 +25,8 @@ export const SESSION_MODE_FILTERS: ReadonlyArray<{
   { value: "all", label: "All" },
   { value: "agent", label: "Agent" },
   { value: "mission", label: "Mission" },
+  // Not a session mode — this tab swaps the list for the mission-preset cards.
+  { value: "presets", label: "Presets" },
 ];
 
 const ACTIVE_MISSION_STATUSES: ReadonlySet<MissionRunStatus> = new Set(["running"]);

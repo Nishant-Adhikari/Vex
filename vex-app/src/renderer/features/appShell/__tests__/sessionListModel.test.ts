@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
+  filterSessionsByMode,
   filterSessionsByTitle,
   formatSessionTime,
+  SESSION_MODE_FILTERS,
 } from "../sessionListModel.js";
 
 describe("formatSessionTime", () => {
@@ -46,6 +48,21 @@ describe("filterSessionsByTitle", () => {
 
   it("returns the original rows for an empty query", () => {
     expect(filterSessionsByTitle(rows, "   ")).toBe(rows);
+  });
+});
+
+describe("SESSION_MODE_FILTERS / filterSessionsByMode", () => {
+  it("exposes the Presets tab alongside the session-mode filters", () => {
+    const values = SESSION_MODE_FILTERS.map((f) => f.value);
+    expect(values).toEqual(["all", "agent", "mission", "presets"]);
+  });
+
+  it("yields no session rows for the presets tab (it is not a session mode)", () => {
+    const rows: readonly SessionListItem[] = [
+      makeRow({ mode: "agent" }),
+      makeRow({ mode: "mission" }),
+    ];
+    expect(filterSessionsByMode(rows, "presets")).toEqual([]);
   });
 });
 
