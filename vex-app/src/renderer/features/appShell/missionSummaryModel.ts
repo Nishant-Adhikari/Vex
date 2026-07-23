@@ -121,6 +121,67 @@ export function formatPnlUsd(
 }
 
 /**
+ * Friendly phrases for the engine's terminal `StopReason`s (mirrors
+ * `src/vex-agent/engine/types.ts`). Only reasons that can CLOSE a ledger row
+ * are mapped; an unmapped-but-present reason is prettified (underscores →
+ * spaces) rather than dropped — the phrase is always DERIVED from a stored
+ * value, never invented.
+ */
+export const END_REASON_PHRASES: Record<string, string> = {
+  goal_reached: "Goal reached",
+  deadline_reached: "Time box reached",
+  token_budget_exhausted: "Token budget spent",
+  capital_depleted: "Capital depleted",
+  max_loss_hit: "Max loss hit",
+  no_viable_opportunity: "No viable opportunity",
+  emergency_stop: "Emergency stop",
+  user_stopped: "Stopped by you",
+  system_error: "System error",
+  compact_unable_at_critical: "Could not compact context",
+};
+
+/**
+ * Human phrase for a raw engine stop reason. Known reasons map to a friendly
+ * label; an unmapped-but-present reason is prettified (underscores → spaces);
+ * a missing/empty reason yields `null` (the card shows nothing rather than a
+ * fabricated cause).
+ */
+export function friendlyStopReason(stopReason: string | null): string | null {
+  if (stopReason === null || stopReason.length === 0) return null;
+  return END_REASON_PHRASES[stopReason] ?? stopReason.replace(/_/g, " ");
+}
+
+/** The "why it ended" readout for the summary card. */
+export interface MissionEndReason {
+  /** Friendly stop-reason phrase, or `null` when no reason was stored. */
+  readonly reason: string | null;
+  /** Persisted engine summary text (trimmed), or `null` when none was stored. */
+  readonly summary: string | null;
+}
+
+/**
+ * Derive the "why it ended" line — surfaced ONLY on an abnormal / non-success
+ * end. A clean `completed` run (and a still-`running` row) stays quiet so the
+ * card is not noisy on the happy path. Returns `null` when the run finished
+ * cleanly OR when nothing explanatory was persisted (no reason AND no
+ * summary) — nothing is fabricated. The `summary` is trimmed and only kept
+ * when non-blank; the card truncates it for display with the full text on
+ * hover (mirrors the goal snippet).
+ */
+export function deriveEndReason(
+  outcome: string,
+  stopReason: string | null,
+  summary: string | null,
+): MissionEndReason | null {
+  if (outcome === "completed" || outcome === "running") return null;
+  const reason = friendlyStopReason(stopReason);
+  const trimmed =
+    summary !== null && summary.trim().length > 0 ? summary.trim() : null;
+  if (reason === null && trimmed === null) return null;
+  return { reason, summary: trimmed };
+}
+
+/**
  * Sign → PnL colour class: positive success, negative destructive, flat/unknown
  * muted. Mirrors `MissionHistory`'s local `pnlTone` so both surfaces agree.
  */

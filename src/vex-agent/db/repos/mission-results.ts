@@ -47,6 +47,13 @@ export interface MissionResultRow {
   vetoes: number;
   outcome: MissionResultOutcome;
   stopReason: string | null;
+  /**
+   * The run's persisted `stop_summary` (from `mission_runs`, joined in by the
+   * renderer-facing reads only) — the operator-facing "why it ended" prose the
+   * finalize path records alongside the raw stop reason. Null when no summary
+   * was stored, or when the read did not join it (e.g. `getResultByRunId`).
+   */
+  summary: string | null;
   openPositions: unknown;
   /**
    * Bags held at run START (pre-existing dust captured at open). Used by the
@@ -94,6 +101,16 @@ const SELECT_COLUMNS = `
   trades, wins, losses, rotations, vetoes,
   outcome, stop_reason, open_positions_json, start_positions_json`;
 
+// The "why it ended" summary lives on `mission_runs.stop_summary` (written by
+// the finalize path), NOT on the ledger row — there is no summary column on
+// `mission_results`. A correlated subselect joins it in for the renderer-facing
+// reads WITHOUT a table JOIN, so the unqualified `SELECT_COLUMNS` above stay
+// unambiguous and no migration is needed. Aliased to `stop_summary` so `toRow`
+// reads it the same way regardless of query.
+const STOP_SUMMARY_SUBSELECT = `
+  (SELECT r.stop_summary FROM mission_runs r
+    WHERE r.id = mission_results.mission_run_id) AS stop_summary`;
+
 interface Raw {
   id: string;
   mission_id: string;
@@ -119,6 +136,9 @@ interface Raw {
   vetoes: number;
   outcome: MissionResultOutcome;
   stop_reason: string | null;
+  // Joined from `mission_runs.stop_summary` by the renderer-facing reads only;
+  // absent (undefined) on reads that do not select it.
+  stop_summary?: string | null;
   open_positions_json: unknown;
   start_positions_json: unknown;
 }
@@ -155,6 +175,7 @@ function toRow(r: Raw): MissionResultRow {
     vetoes: r.vetoes,
     outcome: r.outcome,
     stopReason: r.stop_reason,
+    summary: r.stop_summary ?? null,
     openPositions: r.open_positions_json,
     startPositions: r.start_positions_json,
   };
@@ -261,7 +282,7 @@ export async function listResultsForWallet(
   limit = 50,
 ): Promise<MissionResultRow[]> {
   const rows = await query<Raw>(
-    `SELECT ${SELECT_COLUMNS}
+    `SELECT ${SELECT_COLUMNS}, ${STOP_SUMMARY_SUBSELECT}
        FROM mission_results
       WHERE LOWER(wallet_address) = LOWER($1)
       ORDER BY seq_no DESC
@@ -277,7 +298,7 @@ export async function getResultForRun(
   walletAddress: string,
 ): Promise<MissionResultRow | null> {
   const row = await queryOne<Raw>(
-    `SELECT ${SELECT_COLUMNS}
+    `SELECT ${SELECT_COLUMNS}, ${STOP_SUMMARY_SUBSELECT}
        FROM mission_results
       WHERE mission_run_id = $1
         AND LOWER(wallet_address) = LOWER($2)`,
@@ -317,7 +338,7 @@ export async function getSessionResult(
   sessionId: string,
 ): Promise<MissionResultRow | null> {
   const row = await queryOne<Raw>(
-    `SELECT ${SELECT_COLUMNS}
+    `SELECT ${SELECT_COLUMNS}, ${STOP_SUMMARY_SUBSELECT}
        FROM mission_results
       WHERE session_id = $1
       ORDER BY seq_no DESC

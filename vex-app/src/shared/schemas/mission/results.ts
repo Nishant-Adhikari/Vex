@@ -48,6 +48,12 @@ export const missionResultDtoSchema = z
     outcome: missionResultOutcomeSchema,
     /** Raw engine StopReason (e.g. "goal_reached", "deadline_reached"), or null. */
     stopReason: z.string().nullable(),
+    /**
+     * Persisted engine `stop_summary` for the run (from `mission_runs`, joined
+     * in at read time) — the operator-facing "why it ended" prose. Null when
+     * the finalize path stored no summary; never fabricated in the read layer.
+     */
+    summary: z.string().nullable(),
     openPositionsCount: z.number().int().nonnegative(),
   })
   .strict();

@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { EM_DASH } from "../missionHistoryModel.js";
 import {
+  deriveEndReason,
   formatBankrollRange,
   formatBankrollRangeUsd,
   formatMetaLine,
@@ -15,6 +16,7 @@ import {
   formatPnlUsd,
   formatSettlement,
   formatSettlementSignal,
+  friendlyStopReason,
   pnlToneClass,
   pnlUsdTitle,
 } from "../missionSummaryModel.js";
@@ -117,6 +119,76 @@ describe("pnlUsdTitle", () => {
   it("is undefined when either input is missing", () => {
     expect(pnlUsdTitle(null, 3000)).toBeUndefined();
     expect(pnlUsdTitle(0.01, null)).toBeUndefined();
+  });
+});
+
+describe("friendlyStopReason", () => {
+  it("maps the known terminal stop reasons to human phrases", () => {
+    expect(friendlyStopReason("emergency_stop")).toBe("Emergency stop");
+    expect(friendlyStopReason("deadline_reached")).toBe("Time box reached");
+    expect(friendlyStopReason("token_budget_exhausted")).toBe(
+      "Token budget spent",
+    );
+    expect(friendlyStopReason("system_error")).toBe("System error");
+    expect(friendlyStopReason("max_loss_hit")).toBe("Max loss hit");
+    expect(friendlyStopReason("user_stopped")).toBe("Stopped by you");
+  });
+
+  it("prettifies an unmapped-but-present reason (never fabricates, never drops)", () => {
+    expect(friendlyStopReason("some_new_reason")).toBe("some new reason");
+  });
+
+  it("is null for a missing reason", () => {
+    expect(friendlyStopReason(null)).toBeNull();
+    expect(friendlyStopReason("")).toBeNull();
+  });
+});
+
+describe("deriveEndReason", () => {
+  it("surfaces the reason phrase + persisted summary on an abnormal end", () => {
+    expect(
+      deriveEndReason(
+        "failed",
+        "emergency_stop",
+        "Halted after 3 consecutive tool errors.",
+      ),
+    ).toEqual({
+      reason: "Emergency stop",
+      summary: "Halted after 3 consecutive tool errors.",
+    });
+  });
+
+  it("keeps a clean success card quiet (no reason line on completed)", () => {
+    expect(deriveEndReason("completed", "goal_reached", "Goal reached")).toBeNull();
+  });
+
+  it("never surfaces a reason while the run is still running", () => {
+    expect(deriveEndReason("running", null, null)).toBeNull();
+  });
+
+  it("fabricates nothing when neither reason nor summary was stored", () => {
+    expect(deriveEndReason("failed", null, null)).toBeNull();
+    expect(deriveEndReason("failed", null, "   ")).toBeNull();
+  });
+
+  it("shows the reason alone when no summary was persisted", () => {
+    expect(deriveEndReason("failed", "system_error", null)).toEqual({
+      reason: "System error",
+      summary: null,
+    });
+  });
+
+  it("shows the summary alone when the reason is missing", () => {
+    expect(deriveEndReason("stopped", null, "Operator review required.")).toEqual({
+      reason: null,
+      summary: "Operator review required.",
+    });
+  });
+
+  it("trims surrounding whitespace from the persisted summary", () => {
+    expect(
+      deriveEndReason("failed", "system_error", "  boom  ")?.summary,
+    ).toBe("boom");
   });
 });
 

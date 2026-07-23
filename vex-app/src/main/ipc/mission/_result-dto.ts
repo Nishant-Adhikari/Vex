@@ -23,6 +23,7 @@ export function toMissionResultDto(row: MissionResultRow): MissionResultDto {
     trades: row.trades,
     outcome: row.outcome,
     stopReason: row.stopReason,
+    summary: row.summary ?? null,
     openPositionsCount: Array.isArray(row.openPositions) ? row.openPositions.length : 0,
   };
 }
