@@ -45,6 +45,15 @@ export const MOVES_MAX = 50;
 export const MOVE_TOKEN_SYMBOL_MAX = TOKEN_SYMBOL_MAX_LENGTH;
 
 /**
+ * Maximum length of the agent-authored trade `rationale` surfaced per move.
+ * Kept in lock-step with the write-side clamp `TRADE_RATIONALE_MAX`
+ * (src/vex-agent/tools/protocols/handler-helpers.ts): the moves-db SQL
+ * `LEFT(...)` clamp, the JS re-clamp, and this IPC `.max(...)` must all agree so
+ * a stored value can never overflow the output schema and 500 the panel.
+ */
+export const MOVE_RATIONALE_MAX = 600;
+
+/**
  * IPC input for `vex.portfolio.listMoves`. `.strict()` rejects any extra key;
  * `sessionId` MUST be a UUID. The renderer never supplies a wallet address —
  * main resolves the session's wallet scope server-side.
@@ -141,6 +150,17 @@ export const moveItemSchema = z
     chain: z.string(),
     txRef: z.string().nullable(),
     walletAddress: z.string().nullable(),
+    /**
+     * The agent's stated reason for the trade, captured as a typed tool param
+     * (`rationale`) and stored in the activity row's `trade_capture` JSONB. The
+     * Decision Journal shows it verbatim instead of "No recorded rationale".
+     * `null` for historical fills recorded before the param existed, for
+     * externally-detected activity, or when the agent supplied none. Bounded +
+     * control-stripped at both the write (`TRADE_RATIONALE_MAX`) and read
+     * (SQL `LEFT` + JS clamp) boundaries. Agent-authored — NOT provider
+     * metadata — but still treated as display text (never markup/HTML).
+     */
+    rationale: z.string().min(1).max(MOVE_RATIONALE_MAX).nullable().default(null),
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();

@@ -202,6 +202,79 @@ describe("moves-db getMovesForSession — scoping + binding", () => {
     expect(sql).toContain("ci.id = a.capture_item_id");
     expect(sql).toContain("ci.execution_id = a.execution_id");
     expect(sql).toContain("LIMIT 50");
+    // Rationale is extracted the same sanctioned way: a string-typed,
+    // length-bounded scalar from the capture item's trade_capture (never the
+    // raw blob), matching the write/DTO bound of 600.
+    expect(sql).toContain("jsonb_typeof(ci.trade_capture->'rationale')");
+    expect(sql).toContain("LEFT(ci.trade_capture->>'rationale', 600)");
+  });
+
+  it("surfaces the agent-authored rationale and sanitizes it (control chars → null-safe prose)", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 9,
+          trade_side: "buy",
+          product_type: "spot",
+          venue: "kyberswap",
+          input_token: "ETH",
+          input_token_symbol: "ETH",
+          input_amount: "0.1",
+          output_token: "0xVENA",
+          output_token_symbol: "VENA",
+          output_amount: "1000",
+          value_usd: "100",
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "robinhood",
+          tx_ref: null,
+          wallet_address: WALLET_A,
+          // A control char + collapsible whitespace survive the SQL LEFT bound;
+          // the JS sanitizer neutralises the control byte and collapses runs.
+          rationale: "Momentum\tstrong   and liquidity deep",
+          created_at: "2026-06-01T12:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]?.rationale).toBe("Momentum strong and liquidity deep");
+  });
+
+  it("maps a missing/absent rationale to null (historical fills stay tolerant)", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 10,
+          trade_side: "sell",
+          product_type: "spot",
+          venue: "uniswap",
+          input_token: "0xVENA",
+          input_token_symbol: "VENA",
+          input_amount: "1000",
+          output_token: "ETH",
+          output_token_symbol: "ETH",
+          output_amount: "0.13",
+          value_usd: null,
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "robinhood",
+          tx_ref: null,
+          wallet_address: WALLET_A,
+          rationale: null,
+          created_at: "2026-06-01T12:05:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]?.rationale).toBeNull();
   });
 });
 
@@ -537,6 +610,7 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         chain: "solana",
         txRef: null,
         walletAddress: SOL_ADDR,
+        rationale: null,
         createdAt: "2026-05-21T10:00:00.000Z",
       },
     ]);

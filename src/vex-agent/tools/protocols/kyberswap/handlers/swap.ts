@@ -35,7 +35,7 @@ import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
-import { str, num, ok, fail } from "../../handler-helpers.js";
+import { str, num, ok, fail, rationale } from "../../handler-helpers.js";
 import { paperFillSwap } from "@vex-agent/sim/swap-sim.js";
 import type { SimSwapFill } from "@vex-agent/sim/paper-fill.js";
 
@@ -220,6 +220,9 @@ export function resolveRecordedTradeSide(
 async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell", context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
+  // Agent's stated reason for this trade — normalised + bounded, persisted with
+  // the move so the Decision Journal shows "why" instead of the placeholder.
+  const rationaleText = rationale(p);
 
   const slug = resolveChainSlug(chain);
   requireFeature(slug, "aggregator");
@@ -391,6 +394,8 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
       settlementAssetKey: economicSide === "buy" ? tokenIn.symbol : tokenOut.symbol,
       inputValueNative: tokenInIsNative ? formatUnits(amountIn, tokenIn.decimals) : undefined,
       outputValueNative: tokenOutIsNative ? formatUnits(BigInt(buildResp.data.amountOut), tokenOut.decimals) : undefined,
+      // Agent-authored decision rationale (omitted when the agent gave none).
+      ...(rationaleText ? { rationale: rationaleText } : {}),
       meta: { dex: "kyberswap", side: economicSide },
     } },
   };
