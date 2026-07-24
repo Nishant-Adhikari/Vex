@@ -188,7 +188,18 @@ export type BusinessStopReason =
    * tokens unbounded. Force-closes open positions before finalize, like the
    * hard deadline.
    */
-  | "token_budget_exhausted";
+  | "token_budget_exhausted"
+  /**
+   * Orphaned / interrupted run: the app restarted (or the runner process died)
+   * mid-run, so the `mission_runs` row is stuck at `running` while its
+   * `runner_leases` row expired and no worker re-acquired it. The boot-time
+   * (and periodic) reconciler force-finalizes such runs to a DISTINCT terminal
+   * state — run status `stopped`, `stop_reason='runner_lost'` — so a wedged run
+   * is never silently auto-resumed. Force-closes any open positions before
+   * finalize (like the hard deadline) so it ends flat instead of stranding a
+   * bag. Engine-enforced only — never model- or user-driven.
+   */
+  | "runner_lost";
 
 export type RuntimeStopReason =
   | "approval_required"

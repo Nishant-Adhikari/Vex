@@ -147,8 +147,21 @@ export async function abortMissionRun(runId: string): Promise<AbortMissionRunRes
     return { aborted: true, finalStatus: "running", rejectedApprovals };
   }
 
-  // (b) Paused states or out-of-process running → finalise directly using
-  // the same status mapping the loop would have produced for `user_stopped`.
+  // (b) Paused states or out-of-process running → NO live turn-loop is
+  // observing this run, so a queued stop would never be applied and the run's
+  // open positions would be stranded. Flatten the mission's positions FIRST
+  // (reuse the deadline liquidation core; fail-soft — never blocks the abort),
+  // then finalise directly using the same status mapping the loop would have
+  // produced for `user_stopped`. This is what lets the operator STOP a wedged /
+  // leaseless run from the UI and have it end FLAT, not just marked cancelled.
+  const { flattenInterruptedRunPositions } = await import(
+    "./mission-liquidate-hook.js"
+  );
+  await flattenInterruptedRunPositions({
+    missionId: run.missionId,
+    runId,
+    sessionId: run.sessionId,
+  });
   await missionRunsRepo.updateStatus(runId, "cancelled", "user_stopped");
   await missionsRepo.setStatus(run.missionId, "cancelled");
   logger.info("engine.mission.abort_finalized_directly", {

@@ -26,6 +26,10 @@ const BUSINESS_STOPS = new Set<string>([
   // Engine-enforced hard token-budget backstop — a terminal business stop
   // (auto-abort of a runaway run), never model/user-driven.
   "token_budget_exhausted",
+  // Orphaned/interrupted run reclaimed by the reconciler — a terminal business
+  // stop (the run's lease was lost and no worker re-acquired it). Never
+  // model/user-driven; it must terminate (never resume).
+  "runner_lost",
 ]);
 
 const RUNTIME_PAUSES = new Set<string>([

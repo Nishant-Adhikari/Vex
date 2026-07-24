@@ -140,6 +140,23 @@ export async function releaseLease(
   );
 }
 
+/**
+ * Drop the STALE (expired) lease for a session, if any. Owner-agnostic and
+ * guarded on `expires_at < NOW()` so it can only ever remove a dead lease —
+ * never one a live runner still holds. Used by the orphaned-run reconciler to
+ * clear the leftover lease of a wedged run. Idempotent; returns rowsAffected.
+ */
+export async function releaseExpiredLease(
+  sessionId: string,
+  exec?: Executor,
+): Promise<number> {
+  return executeWith(
+    exec ?? (await import("../client.js")).getPool(),
+    `DELETE FROM runner_leases WHERE session_id = $1 AND expires_at < NOW()`,
+    [sessionId],
+  );
+}
+
 /** Read-only — current lease for a session (or null). */
 export async function getLease(
   sessionId: string,

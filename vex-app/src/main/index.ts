@@ -38,6 +38,7 @@ import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
+import { setupOrphanReconcilerWorker } from "./agent/orphan-reconciler-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
 import { setupSignalsIngestWorker } from "./agent/signals-worker.js";
@@ -183,6 +184,16 @@ async function initializeMainRuntime(): Promise<void> {
   // Started AFTER registerAllIpcHandlers so the agent bridges already exist.
   const stopCompactWorker = setupCompactWorker();
 
+  // 6a-reconcile. Reclaim WEDGED (orphaned) mission runs BEFORE the wake worker
+  // (the auto-resume path) can act. A run whose runner lease expired with no
+  // worker re-acquiring it (app restart / runner death mid-run) is stuck
+  // `status='running'` forever — the UI shows it RUNNING, STOP has no loop to
+  // signal, and boot would AUTO-RESUME it. This sweep force-finalizes each such
+  // orphan (flatten open positions + terminal `runner_lost`) so it is never
+  // auto-resumed, then keeps sweeping periodically for mid-uptime runner deaths.
+  // Started before setupWakeWorker so the boot sweep runs ahead of any resume.
+  const stopOrphanReconcilerWorker = setupOrphanReconcilerWorker();
+
   // 6a-wake. Own the engine wake executor so loop_defer-scheduled paused_wake
   // mission runs actually resume (otherwise deferred autonomous missions sleep
   // forever). Like the compact worker it stays idle until the loop_wake_requests
@@ -290,6 +301,7 @@ async function initializeMainRuntime(): Promise<void> {
     makeOrderedQuitCleanup(async () => {
       const results = await Promise.allSettled([
         stopCompactWorker(),
+        stopOrphanReconcilerWorker(),
         stopWakeWorker(),
         stopSyncWorker(),
         stopSignalsIngestWorker(),

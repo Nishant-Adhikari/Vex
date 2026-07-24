@@ -136,6 +136,7 @@ export const END_REASON_PHRASES: Record<string, string> = {
   no_viable_opportunity: "No viable opportunity",
   emergency_stop: "Emergency stop",
   user_stopped: "Stopped by you",
+  runner_lost: "Interrupted (app restarted)",
   system_error: "System error",
   compact_unable_at_critical: "Could not compact context",
 };
