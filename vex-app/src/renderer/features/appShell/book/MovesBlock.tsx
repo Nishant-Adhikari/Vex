@@ -393,7 +393,13 @@ const STAMP_TONE: Record<SideTone, string> = {
   neutral: "border-[var(--vex-line)] text-[var(--vex-text-3)]",
 };
 
-export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
+export function MovesBlock({
+  sessionId,
+  collapsible = false,
+}: {
+  readonly sessionId: string;
+  readonly collapsible?: boolean;
+}): JSX.Element {
   const query = useMoves(sessionId);
   const result = query.data;
   const allMoves = result?.ok ? result.data : [];
@@ -453,6 +459,7 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
   return (
     <BookBlock
       title="Moves"
+      collapsible={collapsible}
       trailing={
         allMoves.length > 0 ? (
           // Landing .ws-badge: accent fill, accent-contrast mono figure

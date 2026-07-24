@@ -33,8 +33,7 @@ import {
   PanelRightOpenIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "../../lib/utils.js";
-import { SessionRuntimeBar } from "./SessionRuntimeBar.js";
-import { BookBlock } from "./book/BookBlock.js";
+import { MissionRuntimeCostBlock } from "./book/MissionRuntimeCostBlock.js";
 import { MovesBlock } from "./book/MovesBlock.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionBlock } from "./book/SessionBlock.js";
@@ -105,11 +104,12 @@ export function BookPanel({
               <PositionBlock activeSessionId={activeSessionId} hero />
               <HyperliquidPositionsBlock sessionId={activeSessionId} />
               <HyperliquidRiskBlock sessionId={activeSessionId} />
-              <MovesBlock sessionId={activeSessionId} />
-              <BookBlock title="Runtime & Cost">
-                <SessionRuntimeBar sessionId={activeSessionId} layout="stack" />
-              </BookBlock>
-              <SessionBlock sessionId={activeSessionId} />
+              {/* Detail instruments are collapsible (accordion) so the operator
+               * can drill into one mission facet at a time; the POSITION hero
+               * stays always-open as the panel's dominant figure. */}
+              <MovesBlock sessionId={activeSessionId} collapsible />
+              <MissionRuntimeCostBlock sessionId={activeSessionId} />
+              <SessionBlock sessionId={activeSessionId} collapsible />
               {/* Zero-token door back into the room (owner feature): shows
                   only for acknowledged sessions with mode history — main
                   re-verifies both fail-closed on the invoke. */}
