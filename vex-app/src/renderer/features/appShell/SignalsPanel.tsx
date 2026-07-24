@@ -18,7 +18,10 @@ import { useCallback, useState, type JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import type { Result } from "@shared/ipc/result.js";
-import type { SignalGradeResult } from "@shared/schemas/signals.js";
+import type {
+  SignalGradeResult,
+  SignalListItemDto,
+} from "@shared/schemas/signals.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { Button } from "../../components/ui/button.js";
 import { useGradeSignal, useSignalsToday } from "../../lib/api/signals.js";
@@ -56,6 +59,25 @@ const VERDICT_LABEL: Record<SignalGradeResult["verdict"], string> = {
   trap: "Trap",
   neutral: "Neutral",
 };
+
+/**
+ * Build a "done" grade cell from the signal's PERSISTED grade (auto-graded on
+ * ingest, carried through the read DTO). Returns `undefined` for an ungraded
+ * row. A fresh manual re-grade (the ephemeral `grades` map) takes precedence
+ * over this — see `SignalRow`.
+ */
+function persistedGradeCell(signal: SignalListItemDto): GradeCell | undefined {
+  if (signal.grade === null || signal.gradeVerdict === null) return undefined;
+  return {
+    status: "done",
+    data: {
+      id: signal.id,
+      grade: signal.grade,
+      verdict: signal.gradeVerdict,
+      rationale: signal.gradeRationale ?? "",
+    },
+  };
+}
 
 export function SignalsPanel(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
@@ -261,6 +283,10 @@ function SignalRow({
   readonly onGrade: (id: number) => void | Promise<void>;
 }): JSX.Element {
   const { signal, stamp } = entry;
+  // A fresh manual re-grade (ephemeral `cell`) wins; otherwise fall back to the
+  // grade persisted on the row (auto-graded on ingest) so a freshly-ingested
+  // graded signal shows its badge on load.
+  const effectiveCell = cell ?? persistedGradeCell(signal);
   return (
     <li
       data-vex-signal-id={signal.id}
@@ -291,7 +317,7 @@ function SignalRow({
           </span>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          {cell !== undefined ? <GradePill cell={cell} /> : null}
+          {effectiveCell !== undefined ? <GradePill cell={effectiveCell} /> : null}
           <Button
             variant="ghost"
             size="sm"
@@ -327,9 +353,10 @@ function SignalRow({
         ) : null}
       </div>
 
-      {cell?.status === "done" && cell.data.rationale.length > 0 ? (
+      {effectiveCell?.status === "done" &&
+      effectiveCell.data.rationale.length > 0 ? (
         <p className="mt-1 line-clamp-2 text-xs text-[var(--vex-text-2)]">
-          {cell.data.rationale}
+          {effectiveCell.data.rationale}
         </p>
       ) : null}
     </li>

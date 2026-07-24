@@ -79,6 +79,10 @@ const SIGNAL = {
   riskFlags: ["low_liquidity"],
   feedGeneratedAt: "2026-07-23T10:00:00.000Z",
   ingestedAt: "2026-07-23T10:05:00.000Z",
+  grade: null,
+  gradeVerdict: null,
+  gradeRationale: null,
+  gradedAt: null,
 };
 
 afterEach(() => {
@@ -108,6 +112,31 @@ describe("SignalsPanel", () => {
     expect(
       screen.getByRole("button", { name: /Grade WIF/i }),
     ).not.toBeNull();
+  });
+
+  it("renders the persisted auto-grade badge on load (no click needed)", async () => {
+    listTodayMock.mockResolvedValue(
+      ok([
+        {
+          ...SIGNAL,
+          grade: 81,
+          gradeVerdict: "runner",
+          gradeRationale: "Auto-graded on ingest.",
+          gradedAt: "2026-07-23T10:06:00.000Z",
+        },
+      ]),
+    );
+    setVex();
+    render(createElement(SignalsPanel), { wrapper: makeWrapper(freshClient()) });
+
+    await waitFor(() => {
+      expect(screen.getByText("WIF")).not.toBeNull();
+    });
+    // Badge + rationale come straight from the persisted DTO — the manual
+    // Grade button was never clicked (gradeMock never called).
+    expect(screen.getByText(/Runner · 81/)).not.toBeNull();
+    expect(screen.getByText("Auto-graded on ingest.")).not.toBeNull();
+    expect(gradeMock).not.toHaveBeenCalled();
   });
 
   it("grades a signal on click and renders the verdict", async () => {

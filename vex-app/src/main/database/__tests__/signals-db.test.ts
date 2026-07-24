@@ -69,6 +69,10 @@ const DB_ROW = {
   },
   feed_generated_at: new Date("2026-07-23T10:00:00.000Z"),
   ingested_at: new Date("2026-07-23T10:05:00.000Z"),
+  grade: 72,
+  grade_verdict: "runner",
+  grade_rationale: "Strong velocity with healthy liquidity",
+  graded_at: new Date("2026-07-23T10:06:00.000Z"),
 };
 
 afterEach(() => {
@@ -118,6 +122,40 @@ describe("mapSignalRow", () => {
     expect(dto["raw"]).toBeUndefined();
     expect(dto["secret_internal"]).toBeUndefined();
     expect(JSON.stringify(dto)).not.toContain("must-not-leak");
+  });
+
+  // Display-gap fix: the persisted auto-grade must flow through the read DTO so
+  // a freshly-ingested graded signal shows its badge on load.
+  it("surfaces the persisted grade through the read DTO", () => {
+    const dto = mapSignalRow(DB_ROW);
+    expect(dto.grade).toBe(72);
+    expect(dto.gradeVerdict).toBe("runner");
+    expect(dto.gradeRationale).toBe("Strong velocity with healthy liquidity");
+    expect(dto.gradedAt).toBe("2026-07-23T10:06:00.000Z");
+  });
+
+  it("nulls the grade fields for an ungraded row", () => {
+    const dto = mapSignalRow({
+      ...DB_ROW,
+      grade: null,
+      grade_verdict: null,
+      grade_rationale: null,
+      graded_at: null,
+    });
+    expect(dto.grade).toBeNull();
+    expect(dto.gradeVerdict).toBeNull();
+    expect(dto.gradeRationale).toBeNull();
+    expect(dto.gradedAt).toBeNull();
+  });
+
+  it("clamps grade and rejects an unknown verdict", () => {
+    const dto = mapSignalRow({
+      ...DB_ROW,
+      grade: 250,
+      grade_verdict: "bogus",
+    });
+    expect(dto.grade).toBe(100);
+    expect(dto.gradeVerdict).toBeNull();
   });
 });
 

@@ -13,7 +13,10 @@
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
+  SIGNAL_GRADE_RATIONALE_MAX,
+  SIGNAL_GRADE_VERDICTS,
   type SignalGradeResult,
+  type SignalGradeVerdict,
   type SignalListItemDto,
   type SignalsListTodayInput,
   type SignalsListTodayResult,
@@ -163,12 +166,17 @@ interface SignalDbRow {
   readonly raw: unknown;
   readonly feed_generated_at: string | Date | null;
   readonly ingested_at: string | Date;
+  readonly grade: number | string | null;
+  readonly grade_verdict: string | null;
+  readonly grade_rationale: string | null;
+  readonly graded_at: string | Date | null;
 }
 
 const SELECT_COLUMNS = `id, source, chain, contract, symbol, action, score,
   today_mentions, yesterday_mentions, velocity_pct, liquidity_usd,
   volume_24h_usd, price_usd, narratives, risk_flags, raw,
-  feed_generated_at, ingested_at`;
+  feed_generated_at, ingested_at, grade, grade_verdict, grade_rationale,
+  graded_at`;
 
 function toIso(value: string | Date | null): string | null {
   if (value === null) return null;
@@ -183,6 +191,29 @@ function toNum(value: number | string | null | undefined): number | null {
 
 function toStr(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+const GRADE_VERDICT_SET = new Set<string>(SIGNAL_GRADE_VERDICTS);
+
+/** Clamp a persisted grade to a 0-100 integer (or null when absent/invalid). */
+function toGrade(value: number | string | null | undefined): number | null {
+  const n = toNum(value);
+  if (n === null) return null;
+  const clamped = Math.min(100, Math.max(0, Math.round(n)));
+  return clamped;
+}
+
+/** Narrow a persisted verdict string to the known enum (or null otherwise). */
+function toVerdict(value: string | null): SignalGradeVerdict | null {
+  return value !== null && GRADE_VERDICT_SET.has(value)
+    ? (value as SignalGradeVerdict)
+    : null;
+}
+
+/** Bound a persisted rationale to the schema max length (or null when empty). */
+function toRationale(value: string | null): string | null {
+  const s = toStr(value);
+  return s === null ? null : s.slice(0, SIGNAL_GRADE_RATIONALE_MAX);
 }
 
 /**
@@ -232,6 +263,10 @@ export function mapSignalRow(r: SignalDbRow): SignalListItemDto {
     riskFlags: r.risk_flags ?? [],
     feedGeneratedAt: toIso(r.feed_generated_at),
     ingestedAt: toIso(r.ingested_at) ?? new Date(0).toISOString(),
+    grade: toGrade(r.grade),
+    gradeVerdict: toVerdict(r.grade_verdict),
+    gradeRationale: toRationale(r.grade_rationale),
+    gradedAt: toIso(r.graded_at),
   };
 }
 

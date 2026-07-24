@@ -39,6 +39,10 @@ function sig(id: number, ingestedAt: string): SignalListItemDto {
     riskFlags: [],
     feedGeneratedAt: null,
     ingestedAt,
+    grade: null,
+    gradeVerdict: null,
+    gradeRationale: null,
+    gradedAt: null,
   };
 }
 

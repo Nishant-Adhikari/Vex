@@ -49,6 +49,10 @@ function makeSignal(id: number): SignalListItemDto {
     riskFlags: [],
     feedGeneratedAt: null,
     ingestedAt: new Date().toISOString(),
+    grade: null,
+    gradeVerdict: null,
+    gradeRationale: null,
+    gradedAt: null,
   };
 }
 

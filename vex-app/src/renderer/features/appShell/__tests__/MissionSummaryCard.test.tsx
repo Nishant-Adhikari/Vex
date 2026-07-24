@@ -52,6 +52,7 @@ function result(over: Partial<MissionResultDto> = {}): MissionResultDto {
     trades: 1,
     outcome: "completed",
     stopReason: "goal_reached",
+    simulated: false,
     summary: null,
     openPositionsCount: 0,
     ...over,

@@ -51,6 +51,7 @@ function finalizedResult(over: Partial<MissionResultRow> = {}): MissionResultRow
     vetoes: 0,
     outcome: "completed",
     stopReason: "goal_reached",
+    simulated: false,
     summary: "Target reached",
     openPositions: null,
     startPositions: null,
