@@ -36,7 +36,11 @@ import {
   type MissionRunContractSnapshot,
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
-import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
+import {
+  resolveFrozenDeadlineMs,
+  resolveDurationMinutes,
+  frozenDurationMinutes,
+} from "../../mission/mission-deadline.js";
 import {
   resolveMissionTokenBudget,
   resolveMissionExcludedTools,
@@ -174,10 +178,15 @@ export async function runPreparedMissionStart(
         hydrated.context.missionRunStartedAt,
         prepared.contractSnapshot,
       ),
-      // Hard token budget (AGENT_MISSION_TOKEN_BUDGET, default 500000): the
-      // spend-box backstop against a runaway loop. Fail-open to the default;
-      // null when explicitly disabled (0/off/…).
-      missionTokenBudget: resolveMissionTokenBudget(process.env),
+      // Hard token budget: DERIVED from the mission's own time-box
+      // (durationMinutes × AGENT_MISSION_TOKENS_PER_MINUTE) so a longer run gets
+      // proportionally more runway with no per-mission tuning. An explicit
+      // AGENT_MISSION_TOKEN_BUDGET still overrides; 0/off/… disables. Reads the
+      // SAME frozen durationMinutes the deadline above uses, so box and budget agree.
+      missionTokenBudget: resolveMissionTokenBudget(
+        process.env,
+        resolveDurationMinutes(frozenDurationMinutes(prepared.contractSnapshot)),
+      ),
       // Run-scope the budget to the tokens THIS run spends (fix B): count only
       // usage logged at/after the run's IMMUTABLE started_at, excluding the
       // setup/recovery tokens already on this root session. Same value on resume
@@ -333,11 +342,15 @@ export async function resumePreparedMissionRun(
         hydrated.context.missionRunStartedAt,
         prepared.run.contractSnapshotJson,
       ),
-      // Hard token budget (AGENT_MISSION_TOKEN_BUDGET, default 500000): the
-      // spend-box backstop against a runaway loop. Re-resolved on resume so a
-      // re-kicked run carries the same guard. Fail-open to the default; null when
-      // explicitly disabled (0/off/…).
-      missionTokenBudget: resolveMissionTokenBudget(process.env),
+      // Hard token budget: DERIVED from the frozen durationMinutes (× per-minute
+      // rate), re-resolved on resume so a re-kicked run carries the identical
+      // guard; explicit AGENT_MISSION_TOKEN_BUDGET overrides, 0/off/… disables.
+      missionTokenBudget: resolveMissionTokenBudget(
+        process.env,
+        resolveDurationMinutes(
+          frozenDurationMinutes(prepared.run.contractSnapshotJson),
+        ),
+      ),
       // Run-scope to the tokens THIS run spent (fix B). The cutoff is the run's
       // IMMUTABLE started_at, identical to the initial start, so tokens spent
       // before the pause still count toward the ceiling — resume does NOT reset
