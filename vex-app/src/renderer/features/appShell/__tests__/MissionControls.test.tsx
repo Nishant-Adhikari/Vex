@@ -316,6 +316,36 @@ describe("MissionControls", () => {
     ).toBe(true);
   });
 
+  it("running: shows a live RUNNING pulse header in the detail control area", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({ hasActiveRun: true, status: "running", missionRunId: "r1" }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    await screen.findByRole("button", { name: "Stop mission" });
+    const header = document.querySelector(
+      '[data-vex-area="mission-running-header"]',
+    );
+    expect(header).not.toBeNull();
+    expect(header?.textContent).toMatch(/Running/i);
+  });
+
+  it("paused (not running): no RUNNING pulse header", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({ hasActiveRun: true, status: "paused_wake", missionRunId: "r1" }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    await screen.findByRole("button", { name: "Stop mission" });
+    expect(
+      document.querySelector('[data-vex-area="mission-running-header"]'),
+    ).toBeNull();
+  });
+
   it("paused_error: Recover enabled (dispatches mission.retry), Continue disabled", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({ hasActiveRun: true, status: "paused_error", missionRunId: "r1" }),

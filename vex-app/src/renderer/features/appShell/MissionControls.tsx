@@ -315,6 +315,7 @@ export function MissionControls({
         {canRecover ? (
           <MissionErrorAlert stopReason={runtime.stopReason} />
         ) : null}
+        {status === "running" ? <MissionRunningHeader /> : null}
         <div
           data-vex-area="mission-controls"
           role="group"
@@ -525,6 +526,30 @@ function MissionErrorAlert({
         The mission is not monitoring the market or your positions until you
         recover it.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Live "RUNNING" marker for the mission-detail control header — a pulsing
+ * success dot + label so the operator can tell at a glance the run is in-flight
+ * (mirrors the SessionsList row pulse + the ActiveMissionsBar dot). Purely
+ * decorative status; the controls below carry the actions.
+ */
+function MissionRunningHeader(): JSX.Element {
+  return (
+    <div
+      data-vex-area="mission-running-header"
+      role="status"
+      className="mt-3 flex items-center gap-2"
+    >
+      <span
+        aria-hidden
+        className="vex-pulse-dot h-2 w-2 shrink-0 rounded-full bg-[var(--color-success)]"
+      />
+      <span className="font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--color-success)]">
+        Running
+      </span>
     </div>
   );
 }

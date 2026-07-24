@@ -27,7 +27,13 @@ function Row({ label, children }: { readonly label: string; readonly children: R
   );
 }
 
-export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
+export function SessionBlock({
+  sessionId,
+  collapsible = false,
+}: {
+  readonly sessionId: string;
+  readonly collapsible?: boolean;
+}): JSX.Element {
   const query = useSession(sessionId);
   const session = query.data?.ok ? query.data.data : null;
   // The mission RUN's start/end (from the results ledger) — distinct from the
@@ -38,7 +44,7 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
 
   if (session === null) {
     return (
-      <BookBlock title="Session">
+      <BookBlock title="Session" collapsible={collapsible}>
         <p className="text-[11px] text-[var(--vex-text-3)]">
           {query.isLoading ? "Loading…" : "Unavailable."}
         </p>
@@ -48,7 +54,7 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
 
   const activity = getMissionActivity(session);
   return (
-    <BookBlock title="Session">
+    <BookBlock title="Session" collapsible={collapsible}>
       <div className="flex flex-col">
         <Row label="Mode">{session.mode === "mission" ? "Mission" : "Agent"}</Row>
         <Row label="Access">{session.permission === "full" ? "Full" : "Restricted"}</Row>
