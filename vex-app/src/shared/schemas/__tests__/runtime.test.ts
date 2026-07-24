@@ -23,6 +23,11 @@ describe("runtime schemas", () => {
       stopReason: null,
       lastCheckpointAt: null,
       startedAt: null,
+      deadlineAt: null,
+      durationMinutes: null,
+      tokenBudget: null,
+      runTokensUsed: null,
+      runCostUsd: null,
       iterationCount: null,
       leaseActive: false,
       leaseExpiresAt: null,
@@ -40,12 +45,68 @@ describe("runtime schemas", () => {
       stopReason: null,
       lastCheckpointAt: ISO,
       startedAt: ISO,
+      // Run-scoped observability facts present on a live run.
+      deadlineAt: ISO,
+      durationMinutes: 60,
+      tokenBudget: 9_000_000,
+      runTokensUsed: 123_456,
+      runCostUsd: 0.2051,
       iterationCount: 3,
       leaseActive: true,
       leaseExpiresAt: ISO,
       pendingControlKind: null,
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("runtimeStateDtoSchema accepts a null deadlineAt/budget on an active run (fail-soft)", () => {
+    const parsed = runtimeStateDtoSchema.safeParse({
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "running",
+      stopReason: null,
+      lastCheckpointAt: ISO,
+      startedAt: ISO,
+      // Deadline/budget unresolvable mid-run → null; the renderer degrades.
+      deadlineAt: null,
+      durationMinutes: null,
+      tokenBudget: null,
+      runTokensUsed: null,
+      runCostUsd: null,
+      iterationCount: 3,
+      leaseActive: true,
+      leaseExpiresAt: ISO,
+      pendingControlKind: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects a non-positive durationMinutes / negative runTokensUsed", () => {
+    const base = {
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "running" as const,
+      stopReason: null,
+      lastCheckpointAt: ISO,
+      startedAt: ISO,
+      deadlineAt: ISO,
+      durationMinutes: 60,
+      tokenBudget: 9_000_000,
+      runTokensUsed: 100,
+      runCostUsd: 0.1,
+      iterationCount: 3,
+      leaseActive: true,
+      leaseExpiresAt: ISO,
+      pendingControlKind: null,
+    };
+    expect(
+      runtimeStateDtoSchema.safeParse({ ...base, durationMinutes: 0 }).success,
+    ).toBe(false);
+    expect(
+      runtimeStateDtoSchema.safeParse({ ...base, runTokensUsed: -1 }).success,
+    ).toBe(false);
   });
 
   it("accepts paused_user status", () => {
@@ -57,6 +118,11 @@ describe("runtime schemas", () => {
       stopReason: "user_paused",
       lastCheckpointAt: null,
       startedAt: ISO,
+      deadlineAt: null,
+      durationMinutes: null,
+      tokenBudget: null,
+      runTokensUsed: null,
+      runCostUsd: null,
       iterationCount: 0,
       leaseActive: false,
       leaseExpiresAt: null,
