@@ -34,6 +34,26 @@ export type SessionKind = "agent" | "mission";
  */
 export type Permission = "restricted" | "full";
 
+/**
+ * Execution mode of a mission run. IMMUTABLE per run — frozen at run start
+ * (mirrors `Permission` / `durationMinutes`) and NEVER derived from mutable
+ * state mid-run.
+ *
+ *  - `"live"`      — the default. Swaps resolve a signer and BROADCAST a real
+ *                    on-chain transaction.
+ *  - `"simulator"` — dry-run / paper-trading. The FULL agent loop runs
+ *                    identically, but every swap is PAPER-FILLED from the live
+ *                    quote: no signer is resolved, no transaction is ever
+ *                    broadcast, and a shadow portfolio tracks paper PnL.
+ *
+ * SAFETY: a `simulator` run must NEVER touch the wallet or broadcast. The
+ * no-broadcast invariant is enforced at TWO independent layers — the swap
+ * execute path (paper-fill in the handler) AND the low-level broadcast
+ * primitive (`assertBroadcastAllowedForActiveMode`), which fail-closes to
+ * `simulator` when the mode cannot be determined.
+ */
+export type MissionMode = "live" | "simulator";
+
 // ── Mission lifecycle ───────────────────────────────────────────
 
 export type MissionStatus =
@@ -335,6 +355,14 @@ export interface EngineContext {
    * the DB or threading a stale `loopMode` through.
    */
   sessionPermission: Permission;
+  /**
+   * Mission execution mode, hydrated once from the ACTIVE run's frozen
+   * `mission_runs.mode` (falling back to `sessions.mission_mode`). Immutable
+   * for the duration of the run — every no-broadcast decision reads this single
+   * value rather than re-querying mutable state mid-run. Defaults to `"live"`
+   * for non-hydrated/test contexts and for agent sessions with no mission.
+   */
+  missionMode?: MissionMode;
   missionId: string | null;
   missionRunId: string | null;
   /** Session creation time from DB; used only for runtime clock prompt context. */

@@ -6,6 +6,7 @@
  */
 
 import {
+  type MissionMode,
   type MissionRunStatus,
   ACTIVE_RUN_STATUSES,
   PAUSED_RUN_STATUSES,
@@ -30,6 +31,13 @@ export interface MissionRun {
   missionId: string;
   sessionId: string;
   status: MissionRunStatus;
+  /**
+   * IMMUTABLE per-run execution mode, frozen at createRun. `"simulator"` runs
+   * paper-fill every swap and never broadcast; `"live"` (default) broadcast
+   * real transactions. The authoritative source for the run's no-broadcast
+   * behaviour (hydration prefers this over the mutable `sessions.mission_mode`).
+   */
+  mode: MissionMode;
   startedAt: string;
   endedAt: string | null;
   lastCheckpointAt: string | null;
@@ -71,6 +79,7 @@ function mapRow(r: Record<string, unknown>): MissionRun {
     missionId: r.mission_id as string,
     sessionId: r.session_id as string,
     status: coerceStatus(r.status, id),
+    mode: r.mode === "simulator" ? "simulator" : "live",
     startedAt: (r.started_at instanceof Date ? r.started_at.toISOString() : r.started_at as string),
     endedAt: r.ended_at ? (r.ended_at instanceof Date ? r.ended_at.toISOString() : r.ended_at as string) : null,
     lastCheckpointAt: r.last_checkpoint_at ? (r.last_checkpoint_at instanceof Date ? r.last_checkpoint_at.toISOString() : r.last_checkpoint_at as string) : null,
@@ -94,18 +103,25 @@ export async function createRun(
   options: {
     contractSnapshotJson?: Record<string, unknown> | null;
     recoveredFromRunId?: string | null;
+    /**
+     * Frozen execution mode for this run. Defaults to `"live"`. The simulator
+     * scheduler / a sim-mode start passes `"simulator"`; recovery inherits the
+     * prior run's mode so a resumed sim run can never turn live.
+     */
+    mode?: MissionMode;
   } = {},
   client?: PoolClient,
 ): Promise<void> {
   const sql = `INSERT INTO mission_runs (
-       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id
-     ) VALUES ($1, $2, $3, $4::jsonb, $5)`;
+       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id, mode
+     ) VALUES ($1, $2, $3, $4::jsonb, $5, $6)`;
   const params = [
     id,
     missionId,
     sessionId,
     nullableJsonb(options.contractSnapshotJson ?? null),
     options.recoveredFromRunId ?? null,
+    options.mode ?? "live",
   ];
   if (client) {
     await client.query(sql, params);
@@ -376,6 +392,18 @@ export async function markStoppedIfRunning(
     ? (await client.query(sql, params)).rowCount ?? 0
     : await execute(sql, params);
   return affected === 1;
+}
+
+/**
+ * Count active (running or paused) runs of a given mode. The simulator
+ * scheduler uses `mode='simulator'` to cap how many paper missions run at once
+ * so it never stacks unbounded concurrent sims.
+ */
+export async function countActiveRunsByMode(mode: MissionMode): Promise<number> {
+  const sql = `SELECT COUNT(*)::text AS n FROM mission_runs
+                WHERE mode = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN})`;
+  const row = await queryOne<{ n: string }>(sql, [mode]);
+  return Number(row?.n ?? "0");
 }
 
 export async function getRun(

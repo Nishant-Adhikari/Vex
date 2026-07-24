@@ -37,6 +37,7 @@ function result(over: Partial<MissionResultDto> = {}): MissionResultDto {
     stopReason: "goal_reached",
     summary: null,
     openPositionsCount: 0,
+    simulated: false,
     ...over,
   };
 }

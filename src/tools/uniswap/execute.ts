@@ -26,6 +26,7 @@ import {
 } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
+import { assertBroadcastAllowed } from "../../lib/mission-mode.js";
 import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import {
   UNISWAP_V2_ROUTER_ABI,
@@ -187,6 +188,9 @@ export async function sendUniswapTransaction(
   tx: BuiltSwapTx,
 ): Promise<Hex> {
   try {
+    // Layer B (belt-and-suspenders): a simulator mission run must never reach
+    // the wire. Fail-closed — throws before sendTransaction under a sim run.
+    assertBroadcastAllowed("Uniswap swap broadcast");
     const hash = await walletClient.sendTransaction({
       account: walletClient.account,
       chain: walletClient.chain,

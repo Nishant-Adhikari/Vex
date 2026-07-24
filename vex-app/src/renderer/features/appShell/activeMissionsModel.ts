@@ -62,6 +62,8 @@ export interface ActiveMission {
   readonly pnlEth: number | null;
   readonly pnlPct: number | null;
   readonly openPositionsCount: number;
+  /** True for a SIMULATOR (paper-trading) run — rendered with a "SIM" badge. */
+  readonly simulated: boolean;
 }
 
 /**
@@ -151,6 +153,7 @@ export function classifyActiveMissions(
       pnlEth: r.pnlEth,
       pnlPct: r.pnlPct,
       openPositionsCount: r.openPositionsCount,
+      simulated: r.simulated,
     };
   });
 

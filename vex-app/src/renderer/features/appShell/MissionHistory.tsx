@@ -191,6 +191,14 @@ function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Eleme
         #{result.seqNo}
       </td>
       <td className="max-w-[220px] truncate py-2.5 pr-3 text-foreground">
+        {result.simulated ? (
+          <span
+            className="mr-1.5 rounded-[3px] border border-[var(--vex-accent)]/40 px-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--vex-accent)]"
+            title="Simulator run — paper-traded, no real transactions"
+          >
+            SIM
+          </span>
+        ) : null}
         <span title={result.goalSnippet ?? undefined}>{result.goalSnippet ?? EM_DASH}</span>
       </td>
       <td className="py-2.5 pr-3">

@@ -38,6 +38,8 @@ import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
+import { paperFillSwap } from "@vex-agent/sim/swap-sim.js";
+import type { SimSwapFill } from "@vex-agent/sim/paper-fill.js";
 
 const DEFAULT_SLIPPAGE_BPS = 50;
 const DEFAULT_DEADLINE_SECONDS = 600; // ~10 min
@@ -337,6 +339,45 @@ async function executeUniswapSwap(
       });
       return fail(veto);
     }
+  }
+
+  // ── Simulator paper-fill (LAYER A) ──────────────────────────────────────
+  // Under a simulator mission run we NEVER resolve a signer or broadcast. The
+  // fill is synthesized from the impact-aware quote just computed: the AMM's
+  // `amountOut` already prices real pool depth, so it is the paper fill. Runs
+  // AFTER the read-only exit-safety veto (so a sim buy is vetoed exactly as a
+  // live one) and BEFORE any key is decrypted.
+  if (context.missionMode === "simulator") {
+    const amountOutHuman = formatUnits(quoted.amountOut, tokenOut.decimals);
+    const inputIsNative =
+      tokenIn.isNative || tokenIn.address.toLowerCase() === deployment.weth.toLowerCase();
+    const outputIsNative =
+      tokenOut.isNative || tokenOut.address.toLowerCase() === deployment.weth.toLowerCase();
+    // Anchor the position on the NON-native leg; native value = the native
+    // side moved (spent on a buy, received on a sell), else null (token<->token).
+    const isBuy = economicSide === "buy";
+    const fill: SimSwapFill = {
+      side: economicSide,
+      chain: deployment.key,
+      dex: "uniswap",
+      tokenAddress: isBuy ? tokenOut.address : tokenIn.address,
+      tokenSymbol: isBuy ? tokenOut.symbol : tokenIn.symbol,
+      tokenQty: isBuy ? Number(amountOutHuman) : Number(amountInRaw),
+      nativeValue: isBuy
+        ? (inputIsNative ? Number(amountInRaw) : null)
+        : (outputIsNative ? Number(amountOutHuman) : null),
+      priceImpact: quoted.priceImpact ?? null,
+    };
+    return paperFillSwap({
+      missionRunId: context.missionRunId ?? "",
+      sessionId: context.sessionId ?? "",
+      fill,
+      amountInHuman: amountInRaw,
+      amountOutHuman,
+      tokenInSymbol: tokenIn.symbol,
+      tokenOutSymbol: tokenOut.symbol,
+      route: { version: quoted.route.version, path: quoted.route.path },
+    });
   }
 
   // Per-session signing wallet — resolved AFTER dryRun so a preview never decrypts a key.

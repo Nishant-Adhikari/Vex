@@ -107,6 +107,8 @@ export async function routeToolCall(
       { toolId, params },
       {
         sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
@@ -149,6 +151,8 @@ export async function routeToolCall(
       { toolId: target.toolId, params: target.params },
       {
         sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
@@ -187,6 +191,8 @@ export async function routeToolCall(
       { toolId: target.toolId, params: target.params },
       {
         sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
@@ -221,6 +227,8 @@ export async function routeToolCall(
       { toolId: resolvedProtocolToolId, params: call.args },
       {
         sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
