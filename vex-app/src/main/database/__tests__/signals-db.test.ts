@@ -37,9 +37,13 @@ vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { listTodaySignals, mapSignalRow, extractRawFields } = await import(
-  "../signals-db.js"
-);
+const {
+  listTodaySignals,
+  listUngradedSignals,
+  persistSignalGrade,
+  mapSignalRow,
+  extractRawFields,
+} = await import("../signals-db.js");
 
 const DB_ROW = {
   id: "12",
@@ -155,6 +159,86 @@ describe("listTodaySignals", () => {
       null as unknown as Awaited<ReturnType<typeof buildPoolConfig>>,
     );
     const res = await listTodaySignals({ withinHours: 24, limit: 50 }, "corr-1");
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("listUngradedSignals", () => {
+  it("selects only ungraded rows (grade IS NULL), newest first, bounded", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rows: [DB_ROW] });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listUngradedSignals(25, "corr-ug");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0]?.symbol).toBe("WIF");
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/FROM signals/);
+    expect(sql).toMatch(/WHERE grade IS NULL/);
+    expect(sql).toMatch(/ORDER BY ingested_at DESC/);
+    expect(sql).toMatch(/LIMIT \$1/);
+    expect(params).toEqual([25]);
+  });
+
+  it("fails soft to an error Result when the query throws", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockRejectedValue(new Error("boom"));
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listUngradedSignals(25, "corr-ug");
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("persistSignalGrade", () => {
+  const GRADE = {
+    id: 12,
+    grade: 73,
+    verdict: "runner" as const,
+    rationale: "deep liquidity, real momentum",
+  };
+
+  it("writes the four grade columns guarded by grade IS NULL (idempotent)", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rowCount: 1 });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toBe(true); // a row was written
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/UPDATE signals/);
+    expect(sql).toMatch(/SET grade = \$2/);
+    expect(sql).toMatch(/grade_verdict = \$3/);
+    expect(sql).toMatch(/grade_rationale = \$4/);
+    expect(sql).toMatch(/graded_at = NOW\(\)/);
+    // The idempotency guard: never clobber an existing grade.
+    expect(sql).toMatch(/WHERE id = \$1\s+AND grade IS NULL/);
+    expect(params).toEqual([12, 73, "runner", "deep liquidity, real momentum"]);
+  });
+
+  it("returns ok(false) when the guard matched no row (already graded)", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rowCount: 0 });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toBe(false);
+  });
+
+  it("fails soft to an error Result when the update throws", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockRejectedValue(new Error("boom"));
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
     expect(res.ok).toBe(false);
   });
 });

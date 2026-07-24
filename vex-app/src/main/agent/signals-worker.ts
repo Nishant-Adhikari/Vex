@@ -45,7 +45,17 @@ async function defaultStartExecutor(): Promise<SignalsIngestExecutorHandle> {
   const { startSignalsIngestExecutor } = await import(
     "@vex-agent/signals/executor.js"
   );
-  return startSignalsIngestExecutor();
+  // Auto-grade newly-ingested signals after each tick via the SAME LLM-as-judge
+  // path the per-row GRADE button uses (`autoGradeIngestedSignals` → `gradeSignal`).
+  // It is idempotent (grades only `grade IS NULL` rows), fail-soft per signal,
+  // and capped per pass — see `../signals/auto-grade.ts`. Fully swallowed by the
+  // executor's post-tick hook so it can never disturb ingest.
+  const { autoGradeIngestedSignals } = await import("../signals/auto-grade.js");
+  return startSignalsIngestExecutor({
+    afterIngest: async (signal) => {
+      await autoGradeIngestedSignals({ signal });
+    },
+  });
 }
 
 /**
