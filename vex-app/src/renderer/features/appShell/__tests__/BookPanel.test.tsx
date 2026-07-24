@@ -19,6 +19,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 vi.mock("@hugeicons/react", () => ({
   HugeiconsIcon: () => null,
 }));
+vi.mock("../book/MissionControlHeader.js", () => ({
+  MissionControlHeader: () => <div data-testid="mission-control-header" />,
+}));
 vi.mock("../book/PositionBlock.js", () => ({
   PositionBlock: () => <div data-testid="position-block" />,
 }));
@@ -65,7 +68,7 @@ describe("BookPanel chrome", () => {
     );
     expect(screen.getByText(/^v/)).not.toBeNull();
     expect(
-      screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
+      screen.getByRole("button", { name: /Collapse the Mission Control panel/i }),
     ).not.toBeNull();
     // Instrument blocks render when expanded. The risk block MOUNT exists on
     // an active session — the real component self-gates to pending proposals
@@ -82,7 +85,7 @@ describe("BookPanel chrome", () => {
     );
     expect(screen.queryByText(/^v/)).toBeNull();
     expect(
-      screen.getByRole("button", { name: /Expand the BOOK panel/i }),
+      screen.getByRole("button", { name: /Expand the Mission Control panel/i }),
     ).not.toBeNull();
     expect(screen.queryByTestId("position-block")).toBeNull();
     expect(screen.queryByTestId("moves-block")).toBeNull();
@@ -96,7 +99,7 @@ describe("BookPanel chrome", () => {
       <BookPanel activeSessionId={SESSION} bookOpen onToggle={onToggle} />,
     );
     fireEvent.click(
-      screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
+      screen.getByRole("button", { name: /Collapse the Mission Control panel/i }),
     );
     expect(onToggle).toHaveBeenCalledOnce();
   });
