@@ -371,13 +371,16 @@ describe("MissionControls", () => {
     ).toBe(true);
   });
 
-  it("disables every control while a control request is already pending", async () => {
+  it("locks the resume-class controls while a LIVE pending control is observed, but keeps Stop enabled (escape hatch)", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({
         hasActiveRun: true,
         status: "paused_wake",
         missionRunId: "r1",
         pendingControlKind: "resume",
+        // Live lease → the pending control IS being observed, so Continue is
+        // correctly locked against a double-fire.
+        leaseActive: true,
       }),
     );
     getDraftMock.mockResolvedValue(draftReady());
@@ -386,10 +389,78 @@ describe("MissionControls", () => {
 
     const continueBtn = await screen.findByRole("button", { name: "Continue mission" });
     expect((continueBtn as HTMLButtonElement).disabled).toBe(true);
+    // Stop is the escape hatch — it must stay live even with a pending control.
     expect(
       (screen.getByRole("button", { name: "Stop mission" }) as HTMLButtonElement)
         .disabled,
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it("STOP stays enabled even when a control request is pending (never gates on pendingControlKind)", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "running",
+        missionRunId: "r1",
+        pendingControlKind: "resume",
+        leaseActive: true,
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    stopMock.mockResolvedValue(ok({ outcome: "stopped" }));
+    renderControls();
+
+    const stopBtn = await screen.findByRole("button", { name: "Stop mission" });
+    expect((stopBtn as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(stopBtn);
+    await waitFor(() => expect(stopMock).toHaveBeenCalledWith({ sessionId: SESSION }));
+  });
+
+  it("orphaned run (pending control but DEAD lease): Recover AND Stop stay enabled — no lockout", async () => {
+    // The runner died mid-control: `pendingControlKind` is still set but the
+    // lease expired (`leaseActive=false`). Recover/Stop are exactly how the
+    // operator reclaims the run, so a stale pending control must NOT lock them.
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        pendingControlKind: "resume",
+        leaseActive: false,
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Stop mission" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("surfaces the control hints as native title tooltips on each toolbar button", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({ hasActiveRun: true, status: "paused_wake", missionRunId: "r1" }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const stopBtn = await screen.findByRole("button", { name: "Stop mission" });
+    expect(stopBtn.getAttribute("title")).toMatch(/flatten/i);
+    expect(
+      screen.getByRole("button", { name: "Continue mission" }).getAttribute("title"),
+    ).toMatch(/resume/i);
+    expect(
+      screen.getByRole("button", { name: "Recover mission" }).getAttribute("title"),
+    ).toMatch(/error/i);
+    expect(
+      screen.getByRole("button", { name: "Edit mission" }).getAttribute("title"),
+    ).toMatch(/contract or goal/i);
   });
 
   it("surfaces a refusal outcome (Start not_accepted → notice)", async () => {

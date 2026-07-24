@@ -285,6 +285,8 @@ export function MissionControls({
     stop.isPending ||
     renew.isPending;
   // Disable while a control is in flight OR one is already pending server-side.
+  // Used by the NO-ACTIVE-RUN keys (Start / Renew) only; the active-run
+  // toolbar below uses the lease-aware `controlsBusy` + a STOP-specific gate.
   const disabled = anyPending || runtime.pendingControlKind !== null;
 
   // ACTIVE RUN → status-gated toolbar (keys off runtime.status alone).
@@ -293,6 +295,21 @@ export function MissionControls({
     const canContinue = status === "paused_wake" || status === "paused_user";
     const canRecover = status === "paused_error";
     const canEdit = status !== "paused_approval";
+    // A pending control request only LOCKS the resume-class controls
+    // (Continue/Recover/Edit) while a live runner lease is actually observing
+    // it. A STALE pending control — `pendingControlKind` set but the lease has
+    // expired (`leaseActive=false`, the orphaned-run case) — must NOT lock
+    // Recover/Continue: those are exactly how the operator reclaims a run whose
+    // runner died mid-control. Gating them on a dead control would wedge the
+    // session with no way forward.
+    const pendingControlLock =
+      runtime.pendingControlKind !== null && runtime.leaseActive;
+    const controlsBusy = anyPending || pendingControlLock;
+    // STOP is the escape hatch — ALWAYS live except while its own request is in
+    // flight. It never gates on `pendingControlKind` (a stuck/orphaned control
+    // must never lock the user out of stopping) nor on other controls' pending
+    // state (so Stop stays clickable even mid-Recover/Continue).
+    const stopDisabled = stop.isPending;
     return (
       <>
         {canRecover ? (
@@ -306,25 +323,29 @@ export function MissionControls({
         >
           <ControlButton
             label="Continue"
-            disabled={disabled || !canContinue}
+            hint="Resume a normally-paused run (wake timer or manual pause)."
+            disabled={controlsBusy || !canContinue}
             onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
           />
           <ControlButton
             label={recover.isPending ? "Recovering…" : "Recover"}
             ariaLabel="Recover mission"
+            hint="Resume a run that paused after an error."
             ariaBusy={recover.isPending}
-            disabled={disabled || !canRecover}
+            disabled={controlsBusy || !canRecover}
             onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
           />
           <ControlButton
             label="Edit"
-            disabled={disabled || !canEdit}
+            hint="Change the mission contract or goal."
+            disabled={controlsBusy || !canEdit}
             onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
           />
           <ControlButton
             label="Stop"
             tone="danger"
-            disabled={disabled}
+            hint="Halt the run, finalize it, and flatten open positions."
+            disabled={stopDisabled}
             onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
           />
           {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
@@ -515,6 +536,7 @@ function ControlButton({
   tone,
   ariaLabel,
   ariaBusy,
+  hint,
 }: {
   readonly label: string;
   readonly onClick: () => void;
@@ -525,6 +547,9 @@ function ControlButton({
    * must stay stable for assistive tech and tests. */
   readonly ariaLabel?: string;
   readonly ariaBusy?: boolean;
+  /** One-line what-this-does hint, surfaced as the native `title` tooltip and
+   * appended to the accessible description so it is not pointer-only. */
+  readonly hint?: string;
 }): JSX.Element {
   return (
     <button
@@ -533,6 +558,10 @@ function ControlButton({
       onClick={onClick}
       aria-label={ariaLabel ?? `${label} mission`}
       aria-busy={ariaBusy}
+      // `title` carries the one-line hint as a native hover tooltip; it is also
+      // announced by common screen readers, so the hint is not pointer-only
+      // while the accessible NAME stays the stable `${label} mission`.
+      title={hint}
       className={cn(
         // Toolbar keys: quiet mono-uppercase hairline pills; Stop keeps the
         // destructive tone with the one sanctioned danger fill (/10).
