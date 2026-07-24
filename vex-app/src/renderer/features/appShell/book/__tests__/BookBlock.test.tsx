@@ -6,17 +6,14 @@
 
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { createElement } from "react";
 import { BookBlock } from "../BookBlock.js";
 
 describe("BookBlock", () => {
   it("renders a static section (no toggle button) by default", () => {
     render(
-      createElement(
-        BookBlock,
-        { title: "Moves" },
-        createElement("p", null, "body-content"),
-      ),
+      <BookBlock title="Moves">
+        <p>body-content</p>
+      </BookBlock>,
     );
     expect(screen.getByText("body-content")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
@@ -24,11 +21,9 @@ describe("BookBlock", () => {
 
   it("collapsible: body visible by default, header is an expanded toggle", () => {
     render(
-      createElement(
-        BookBlock,
-        { title: "Session", collapsible: true },
-        createElement("p", null, "session-body"),
-      ),
+      <BookBlock title="Session" collapsible>
+        <p>session-body</p>
+      </BookBlock>,
     );
     const toggle = screen.getByRole("button", { name: /Session/i });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
@@ -37,11 +32,9 @@ describe("BookBlock", () => {
 
   it("collapsible: clicking the header collapses and re-expands the body", () => {
     render(
-      createElement(
-        BookBlock,
-        { title: "Session", collapsible: true },
-        createElement("p", null, "session-body"),
-      ),
+      <BookBlock title="Session" collapsible>
+        <p>session-body</p>
+      </BookBlock>,
     );
     const toggle = screen.getByRole("button", { name: /Session/i });
     fireEvent.click(toggle);
@@ -54,11 +47,9 @@ describe("BookBlock", () => {
 
   it("collapsible: respects defaultOpen=false (starts collapsed)", () => {
     render(
-      createElement(
-        BookBlock,
-        { title: "Runtime & Cost", collapsible: true, defaultOpen: false },
-        createElement("p", null, "runtime-body"),
-      ),
+      <BookBlock title="Runtime & Cost" collapsible defaultOpen={false}>
+        <p>runtime-body</p>
+      </BookBlock>,
     );
     const toggle = screen.getByRole("button", { name: /Runtime & Cost/i });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
