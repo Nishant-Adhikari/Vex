@@ -17,6 +17,7 @@ import {
   missionGetDraftInputSchema,
   missionGetRenewableSourceInputSchema,
   missionGetResultForRunInputSchema,
+  missionGetRetrospectiveInputSchema,
   missionGetSessionResultInputSchema,
   missionListResultsInputSchema,
   missionRecoverInputSchema,
@@ -35,6 +36,7 @@ import type {
   MissionGetDraftInput,
   MissionGetRenewableSourceInput,
   MissionGetResultForRunInput,
+  MissionGetRetrospectiveInput,
   MissionGetSessionResultInput,
   MissionListResultsInput,
   MissionRecoverInput,
@@ -160,6 +162,13 @@ export const mission = {
       CH.mission.getResultForRun,
       input,
       missionGetResultForRunInputSchema,
+    );
+  },
+  getRetrospective(input: MissionGetRetrospectiveInput) {
+    return invokeWithSchema(
+      CH.mission.getRetrospective,
+      input,
+      missionGetRetrospectiveInputSchema,
     );
   },
 } satisfies MissionBridge;

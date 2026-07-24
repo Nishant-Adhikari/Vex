@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import type { EngineContext, Permission, SessionKind, WalletPolicy } from "../types.js";
+import type { EngineContext, MissionMode, Permission, SessionKind, WalletPolicy } from "../types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
@@ -16,6 +16,7 @@ import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as sessionLinksRepo from "@vex-agent/db/repos/session-links.js";
 import * as sessionPlansRepo from "@vex-agent/db/repos/session-plans.js";
 import { loadPersona } from "../../../lib/persona.js";
+import { resolveActiveMissionMode } from "../../../lib/mission-mode.js";
 import { PERSONA_FILE } from "@config/paths.js";
 
 export interface HydratedSession {
@@ -122,6 +123,11 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
   // synchronously (see Commit C mission creation pipeline).
   const sessionKind: SessionKind = mission ? "mission" : session.mode;
   const sessionPermission: Permission = session.permission;
+  // Mission execution mode — IMMUTABLE per run. The ACTIVE run's frozen
+  // `mission_runs.mode` is authoritative; fall back to the session-level intent
+  // only when no run exists yet (setup). Never derived from mutable state
+  // mid-run: once a run is live, its stored mode wins for the whole run.
+  const missionMode: MissionMode = resolveActiveMissionMode(activeRun?.mode, session.missionMode);
 
   // Local-first user persona (name + optional tone block). Best-effort read —
   // a missing/malformed persona.md degrades to the default ("Vex", no block).
@@ -138,6 +144,7 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
       sessionId,
       sessionKind,
       sessionPermission,
+      missionMode,
       missionId: mission?.id ?? null,
       missionRunId,
       sessionStartedAt: session.startedAt,

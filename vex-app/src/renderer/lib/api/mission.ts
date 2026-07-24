@@ -40,6 +40,7 @@ import type {
   MissionGetSessionResultResult,
   MissionGetRenewableSourceResult,
   MissionGetResultForRunResult,
+  MissionGetRetrospectiveResult,
   MissionListResultsResult,
   MissionRecoverInput,
   MissionRecoverResult,
@@ -95,6 +96,35 @@ export function useMissionSessionResult(
       queryFn: () =>
         window.vex.mission.getSessionResult({ sessionId: sessionId ?? "" }),
       staleTime: STALE_MS,
+      enabled: !!sessionId,
+    }),
+  );
+}
+
+/**
+ * The "lessons learned" retrospective for a session's latest finalized mission
+ * run — read-or-lazily-generate (the completed-mission card's Retrospective
+ * section). Generation is a single one-shot LLM completion the FIRST time a
+ * finalized run's card is viewed; it is cached thereafter, so this uses a long
+ * stale window and never background-refetches. Fail-soft: resolves `null` when
+ * there is nothing to show (no finalized run, or inference unavailable).
+ *
+ * `enabled` is gated by the caller (pass a sessionId only once a finalized
+ * result exists) so a running mission never fires a generation attempt.
+ */
+export function useMissionRetrospective(
+  sessionId: string | null,
+): UseQueryResult<Result<MissionGetRetrospectiveResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: missionKeys.retrospective(sessionId ?? ""),
+      queryFn: () =>
+        window.vex.mission.getRetrospective({ sessionId: sessionId ?? "" }),
+      // Immutable once generated — cache aggressively, don't refetch on focus.
+      staleTime: Infinity,
+      gcTime: Infinity,
+      refetchOnWindowFocus: false,
+      retry: false,
       enabled: !!sessionId,
     }),
   );

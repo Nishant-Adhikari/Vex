@@ -27,7 +27,7 @@ import { signalsKeys } from "./queryKeys.js";
 const STALE_MS = 30_000;
 const DEFAULT_WITHIN_HOURS = 24;
 
-/** Today's ingested signals (highest score first). */
+/** Today's ingested signals (newest first; the panel groups them by hour). */
 export function useSignalsToday(
   withinHours: number = DEFAULT_WITHIN_HOURS,
 ): UseQueryResult<Result<SignalsListTodayResult>> {

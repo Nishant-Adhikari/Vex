@@ -180,13 +180,22 @@ export async function commitMissionStart(
     //    runs even if the mission row later moves back to draft.
     const contractSnapshot = buildMissionRunContractSnapshot(mission);
 
-    // 8. createRun inside the same tx; the FK on `mission_runs.mission_id`
+    // 8. Freeze the run's execution mode from the session's intent (immutable
+    //    for the whole run). Read inside the same tx so the mode captured is
+    //    exactly the session's at start. Default 'live' for any legacy row.
+    const modeRow = await client.query<{ mission_mode: string | null }>(
+      "SELECT mission_mode FROM sessions WHERE id = $1",
+      [mission.rootSessionId],
+    );
+    const runMode = modeRow.rows[0]?.mission_mode === "simulator" ? "simulator" : "live";
+
+    // 9. createRun inside the same tx; the FK on `mission_runs.mission_id`
     //    references the row we just flipped.
     await missionRunsRepo.createRun(
       input.runId,
       input.missionId,
       mission.rootSessionId,
-      { contractSnapshotJson: contractSnapshot },
+      { contractSnapshotJson: contractSnapshot, mode: runMode },
       client,
     );
 

@@ -59,6 +59,39 @@ export function bool(p: Record<string, unknown>, k: string): boolean | undefined
   return typeof p[k] === "boolean" ? (p[k] as boolean) : undefined;
 }
 
+/**
+ * Storage bound for a trade `rationale` (the agent's stated reason for a swap,
+ * threaded into the trade-capture record so the Decision Journal can show
+ * "why", not "No recorded rationale"). Kept in lock-step with the read/IPC
+ * bound `MOVE_RATIONALE_MAX` (vex-app/src/shared/schemas/portfolio-moves.ts):
+ * the moves-db SQL `LEFT(...)` clamp, the IPC schema `.max(...)`, and this
+ * write-side clamp must all agree so a stored value can never overflow the
+ * output schema and 500 the panel. One glanceable paragraph, not an essay.
+ */
+export const TRADE_RATIONALE_MAX = 600;
+
+/**
+ * Read + normalise the OPTIONAL `rationale` param the agent fills to justify a
+ * mutating trade. Agent-authored (not provider-controlled), but still defended:
+ * C0 control chars + DEL are neutralised to spaces (so a newline-injected value
+ * can never splice structure into any downstream text/prompt), whitespace is
+ * collapsed, and the result is bounded to `TRADE_RATIONALE_MAX`. Returns
+ * `undefined` when absent or empty so the capture record simply omits the field
+ * (no fabricated rationale). The codepoint loop keeps any control byte out of
+ * this source file (mirrors the signals judge's `cleanScalar`).
+ */
+export function rationale(p: Record<string, unknown>): string | undefined {
+  const raw = p["rationale"];
+  if (typeof raw !== "string") return undefined;
+  let out = "";
+  for (const ch of raw) {
+    const code = ch.codePointAt(0) ?? 0;
+    out += code < 0x20 || code === 0x7f ? " " : ch;
+  }
+  out = out.replace(/\s+/g, " ").trim().slice(0, TRADE_RATIONALE_MAX);
+  return out.length > 0 ? out : undefined;
+}
+
 /** Comma-separated string → trimmed string array. Returns undefined if empty/missing. */
 export function strArray(p: Record<string, unknown>, k: string): string[] | undefined {
   const v = typeof p[k] === "string" ? (p[k] as string) : "";

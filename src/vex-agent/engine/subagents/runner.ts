@@ -98,6 +98,14 @@ export async function runSubagentEngine(
   const context: EngineContext = {
     ...hydrated.context,
     sessionPermission: effectivePermission,
+    // SAFETY: a subagent of a simulator run is ALSO simulator — inherit the
+    // parent's frozen mode so a child can never broadcast on a sim mission.
+    // Fail-closed to simulator when the parent scope reports simulator; a live
+    // parent (or none) stays live via the child's own hydration.
+    missionMode:
+      parentContext?.missionMode === "simulator"
+        ? "simulator"
+        : hydrated.context.missionMode,
     isSubagent: true,
     selectedEvmWallet: parentContext?.selectedEvmWallet ?? null,
     selectedSolanaWallet: parentContext?.selectedSolanaWallet ?? null,

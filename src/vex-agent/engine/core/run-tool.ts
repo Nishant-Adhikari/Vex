@@ -36,6 +36,7 @@
 import type { ToolResult } from "../../tools/types.js";
 import type { InternalToolContext } from "../../tools/internal/types.js";
 import { buildSessionWalletResolution, resolveWalletPolicy } from "./hydrate.js";
+import { resolveActiveMissionMode } from "../../../lib/mission-mode.js";
 import { dispatchTool } from "../../tools/dispatcher.js";
 import * as sessionsRepo from "../../db/repos/sessions.js";
 import * as missionRunsRepo from "../../db/repos/mission-runs.js";
@@ -71,6 +72,8 @@ export async function runTool(
     sessionId,
     loadedDocuments: new Map(),
     sessionPermission: session.permission,
+    // Frozen per-run mode wins over the session intent (same rule as hydrate).
+    missionMode: resolveActiveMissionMode(activeRun?.mode, session.missionMode),
     approved: true,
     role: "parent",
     missionRunId: activeRun?.id ?? null,

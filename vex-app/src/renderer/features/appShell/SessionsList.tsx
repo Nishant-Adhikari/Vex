@@ -26,7 +26,7 @@ import { SignalsButton } from "./SignalsButton.js";
 import { RuntimeLedger } from "./RuntimeLedger.js";
 import { SettingsButton } from "./SettingsButton.js";
 import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
-import { VexTokenCardCompact } from "./market/VexTokenCardCompact.js";
+import { SidebarPositionSummary } from "./market/SidebarPositionSummary.js";
 import {
   SessionGroups,
   SessionsEmptyPlaceholder,
@@ -370,13 +370,14 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         </div>
       ) : null}
 
-      {/* LIVE $VEX — the compact market widget rides the rail between BROWSE
-       * ALL and the footer registry (moved off the welcome stage to keep it
-       * clean). Hidden when the rail is collapsed: the icon-only rail has no
-       * room for the price + stats grid. */}
+      {/* POSITION — the operator's own wallet position summary (total · wallet
+       * count · ETH balance) rides the rail between BROWSE ALL and the footer
+       * registry, replacing the former $VEX price ticker (owner request).
+       * Hidden when the rail is collapsed: the icon-only rail has no room for
+       * the figures. */}
       {sidebarOpen ? (
         <div className="border-t border-[var(--vex-line)] px-3 py-3">
-          <VexTokenCardCompact />
+          <SidebarPositionSummary />
         </div>
       ) : null}
 

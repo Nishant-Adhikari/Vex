@@ -63,6 +63,13 @@ export const missionResultDtoSchema = z
      */
     summary: z.string().nullable(),
     openPositionsCount: z.number().int().nonnegative(),
+    /**
+     * True for a SIMULATOR (paper-trading) run — the full agent loop ran but
+     * every swap was paper-filled and no transaction was broadcast. Powers the
+     * "SIM" badge in the missions history + the Active Missions bar. Defaults
+     * to `false` so pre-simulator ledger rows read as live.
+     */
+    simulated: z.boolean().default(false),
   })
   .strict();
 export type MissionResultDto = z.infer<typeof missionResultDtoSchema>;

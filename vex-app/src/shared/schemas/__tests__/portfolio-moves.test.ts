@@ -180,6 +180,28 @@ describe("move item schema (tolerant)", () => {
     ).toBe(false);
   });
 
+  it("defaults an absent rationale to null (tolerant of pre-existing payloads)", () => {
+    const parsed = moveItemSchema.safeParse(itemFixture());
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.rationale).toBeNull();
+  });
+
+  it("accepts an explicit rationale and bounds it", () => {
+    const parsed = moveItemSchema.safeParse(
+      itemFixture({ rationale: "Buying VENA: liquidity deep, sell-back confirmed." }),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.rationale).toBe(
+        "Buying VENA: liquidity deep, sell-back confirmed.",
+      );
+    }
+    // Over the 600-char bound is rejected by the strict output schema.
+    expect(
+      moveItemSchema.safeParse(itemFixture({ rationale: "x".repeat(601) })).success,
+    ).toBe(false);
+  });
+
   it("rejects an unknown key (strict)", () => {
     expect(
       moveItemSchema.safeParse(itemFixture({ rawResult: "0xdeadbeef" })).success,

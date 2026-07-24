@@ -13,6 +13,10 @@
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
+  SIGNAL_GRADE_RATIONALE_MAX,
+  SIGNAL_GRADE_VERDICTS,
+  type SignalGradeResult,
+  type SignalGradeVerdict,
   type SignalListItemDto,
   type SignalsListTodayInput,
   type SignalsListTodayResult,
@@ -162,12 +166,17 @@ interface SignalDbRow {
   readonly raw: unknown;
   readonly feed_generated_at: string | Date | null;
   readonly ingested_at: string | Date;
+  readonly grade: number | string | null;
+  readonly grade_verdict: string | null;
+  readonly grade_rationale: string | null;
+  readonly graded_at: string | Date | null;
 }
 
 const SELECT_COLUMNS = `id, source, chain, contract, symbol, action, score,
   today_mentions, yesterday_mentions, velocity_pct, liquidity_usd,
   volume_24h_usd, price_usd, narratives, risk_flags, raw,
-  feed_generated_at, ingested_at`;
+  feed_generated_at, ingested_at, grade, grade_verdict, grade_rationale,
+  graded_at`;
 
 function toIso(value: string | Date | null): string | null {
   if (value === null) return null;
@@ -182,6 +191,29 @@ function toNum(value: number | string | null | undefined): number | null {
 
 function toStr(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+const GRADE_VERDICT_SET = new Set<string>(SIGNAL_GRADE_VERDICTS);
+
+/** Clamp a persisted grade to a 0-100 integer (or null when absent/invalid). */
+function toGrade(value: number | string | null | undefined): number | null {
+  const n = toNum(value);
+  if (n === null) return null;
+  const clamped = Math.min(100, Math.max(0, Math.round(n)));
+  return clamped;
+}
+
+/** Narrow a persisted verdict string to the known enum (or null otherwise). */
+function toVerdict(value: string | null): SignalGradeVerdict | null {
+  return value !== null && GRADE_VERDICT_SET.has(value)
+    ? (value as SignalGradeVerdict)
+    : null;
+}
+
+/** Bound a persisted rationale to the schema max length (or null when empty). */
+function toRationale(value: string | null): string | null {
+  const s = toStr(value);
+  return s === null ? null : s.slice(0, SIGNAL_GRADE_RATIONALE_MAX);
 }
 
 /**
@@ -231,13 +263,19 @@ export function mapSignalRow(r: SignalDbRow): SignalListItemDto {
     riskFlags: r.risk_flags ?? [],
     feedGeneratedAt: toIso(r.feed_generated_at),
     ingestedAt: toIso(r.ingested_at) ?? new Date(0).toISOString(),
+    grade: toGrade(r.grade),
+    gradeVerdict: toVerdict(r.grade_verdict),
+    gradeRationale: toRationale(r.grade_rationale),
+    gradedAt: toIso(r.graded_at),
   };
 }
 
 /**
- * List today's signals — rows ingested within `withinHours`, highest score
- * first (freshest as tiebreak). Bounded by `input.limit` (validated + capped
- * in the shared schema).
+ * List today's signals — rows ingested within `withinHours`, newest first
+ * (most recent ingest at the top; score as the tiebreak). The panel groups the
+ * result by hour, so newest-first here keeps the freshest hour on top even when
+ * `input.limit` truncates. Bounded by `input.limit` (validated + capped in the
+ * shared schema).
  */
 export async function listTodaySignals(
   input: SignalsListTodayInput,
@@ -249,8 +287,8 @@ export async function listTodaySignals(
         `SELECT ${SELECT_COLUMNS}
            FROM signals
           WHERE ingested_at > NOW() - make_interval(hours => $1::int)
-          ORDER BY score DESC NULLS LAST, feed_generated_at DESC NULLS LAST,
-                   ingested_at DESC
+          ORDER BY ingested_at DESC, score DESC NULLS LAST,
+                   feed_generated_at DESC NULLS LAST
           LIMIT $2`,
         [input.withinHours, input.limit],
       );
@@ -276,6 +314,67 @@ export async function getSignalById(
       return ok(row === undefined ? null : mapSignalRow(row));
     } catch (cause) {
       return dbError("getSignalById query failed", correlationId, cause);
+    }
+  });
+}
+
+// ── Auto-grade helpers (signals-ingest worker) ──────────────────────────────
+
+/**
+ * List the freshest UNGRADED signals (grade IS NULL) for the auto-grader, newest
+ * first, bounded by `limit`. Grading uses the same feature DTO the manual GRADE
+ * button feeds the judge, so this reuses `mapSignalRow`. The `grade IS NULL`
+ * predicate is what makes auto-grading idempotent — an already-graded row is
+ * never returned here, so it is never re-graded automatically.
+ */
+export async function listUngradedSignals(
+  limit: number,
+  correlationId: string,
+): Promise<Result<readonly SignalListItemDto[], VexError>> {
+  return withClient(correlationId, async (client) => {
+    try {
+      const result = await client.query<SignalDbRow>(
+        `SELECT ${SELECT_COLUMNS}
+           FROM signals
+          WHERE grade IS NULL
+          ORDER BY ingested_at DESC
+          LIMIT $1`,
+        [limit],
+      );
+      return ok(result.rows.map(mapSignalRow));
+    } catch (cause) {
+      return dbError("listUngradedSignals query failed", correlationId, cause);
+    }
+  });
+}
+
+/**
+ * Persist an LLM-as-judge verdict onto its signal row. Idempotent by contract:
+ * the `AND grade IS NULL` guard means the auto-grader only ever FILLS an empty
+ * grade — it never clobbers a value (even under a concurrent double tick). The
+ * result is `ok(true)` when a row was written, `ok(false)` when the row was
+ * already graded (or vanished) — the caller treats `false` as a benign skip, not
+ * an error. Fail-soft: a DB failure returns an error Result, never throws.
+ */
+export async function persistSignalGrade(
+  grade: SignalGradeResult,
+  correlationId: string,
+): Promise<Result<boolean, VexError>> {
+  return withClient(correlationId, async (client) => {
+    try {
+      const result = await client.query(
+        `UPDATE signals
+            SET grade = $2,
+                grade_verdict = $3,
+                grade_rationale = $4,
+                graded_at = NOW()
+          WHERE id = $1
+            AND grade IS NULL`,
+        [grade.id, grade.grade, grade.verdict, grade.rationale],
+      );
+      return ok((result.rowCount ?? 0) > 0);
+    } catch (cause) {
+      return dbError("persistSignalGrade query failed", correlationId, cause);
     }
   });
 }

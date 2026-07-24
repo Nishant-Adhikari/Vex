@@ -11,8 +11,10 @@
  * authorise a trade.
  *
  * The grade is the LLM-as-judge verdict for ONE signal, graded on the
- * signal's own features (a compact `{ grade, verdict, rationale }`). It is
- * ephemeral in the renderer (React Query cache) and never persisted.
+ * signal's own features (a compact `{ grade, verdict, rationale }`). The
+ * verdict is PERSISTED on the signal row (auto-graded on ingest) and also
+ * surfaced through the read DTO so a freshly-ingested graded signal shows
+ * its badge on load; the per-row GRADE button re-grades on demand.
  */
 
 import { z } from "zod";
@@ -37,6 +39,12 @@ export const signalsListTodayInputSchema = z
   })
   .strict();
 export type SignalsListTodayInput = z.infer<typeof signalsListTodayInputSchema>;
+
+export const SIGNAL_GRADE_VERDICTS = ["runner", "trap", "neutral"] as const;
+export const signalGradeVerdictSchema = z.enum(SIGNAL_GRADE_VERDICTS);
+export type SignalGradeVerdict = z.infer<typeof signalGradeVerdictSchema>;
+
+export const SIGNAL_GRADE_RATIONALE_MAX = 200;
 
 /** One signal row, sanitized for the panel. `id` keys the per-row grade. */
 export const signalListItemDtoSchema = z
@@ -64,6 +72,15 @@ export const signalListItemDtoSchema = z
     riskFlags: z.array(z.string()),
     feedGeneratedAt: z.string().nullable(),
     ingestedAt: z.string(),
+    /**
+     * Persisted LLM-as-judge grade (auto-graded on ingest). All four are
+     * NULL together when the row has not been graded yet. Sanitized/bounded
+     * in main (`mapSignalRow`) — the raw JSONB never crosses IPC.
+     */
+    grade: z.number().int().min(0).max(100).nullable(),
+    gradeVerdict: signalGradeVerdictSchema.nullable(),
+    gradeRationale: z.string().max(SIGNAL_GRADE_RATIONALE_MAX).nullable(),
+    gradedAt: z.string().nullable(),
   })
   .strict();
 export type SignalListItemDto = z.infer<typeof signalListItemDtoSchema>;
@@ -79,12 +96,6 @@ export const signalGradeInputSchema = z
   .object({ id: z.number().int().positive() })
   .strict();
 export type SignalGradeInput = z.infer<typeof signalGradeInputSchema>;
-
-export const SIGNAL_GRADE_VERDICTS = ["runner", "trap", "neutral"] as const;
-export const signalGradeVerdictSchema = z.enum(SIGNAL_GRADE_VERDICTS);
-export type SignalGradeVerdict = z.infer<typeof signalGradeVerdictSchema>;
-
-export const SIGNAL_GRADE_RATIONALE_MAX = 200;
 
 /**
  * The LLM-as-judge verdict. `grade` is 0-100 (higher = more likely a real

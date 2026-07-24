@@ -43,6 +43,12 @@ vi.mock("../book/HyperliquidRiskBlock.js", () => ({
 vi.mock("../SessionRuntimeBar.js", () => ({
   SessionRuntimeBar: () => <div data-testid="runtime-bar" />,
 }));
+// RUNTIME & COST section (its own data wiring + live timer are covered by
+// MissionRunTimer.test.tsx / missionRunTiming.test.ts) — mocked here so the
+// panel-chrome suite stays free of query hooks, like the sibling blocks.
+vi.mock("../book/MissionRuntimeCostBlock.js", () => ({
+  MissionRuntimeCostBlock: () => <div data-testid="runtime-cost-block" />,
+}));
 
 const { BookPanel } = await import("../BookPanel.js");
 

@@ -35,7 +35,9 @@ import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
-import { str, num, ok, fail } from "../../handler-helpers.js";
+import { str, num, ok, fail, rationale } from "../../handler-helpers.js";
+import { paperFillSwap } from "@vex-agent/sim/swap-sim.js";
+import type { SimSwapFill } from "@vex-agent/sim/paper-fill.js";
 
 // ── Read-only token safety surfacing for kyberswap.swap.quote (Stage 6b) ──
 //
@@ -218,6 +220,9 @@ export function resolveRecordedTradeSide(
 async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell", context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
+  // Agent's stated reason for this trade — normalised + bounded, persisted with
+  // the move so the Decision Journal shows "why" instead of the placeholder.
+  const rationaleText = rationale(p);
 
   const slug = resolveChainSlug(chain);
   requireFeature(slug, "aggregator");
@@ -274,6 +279,46 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
 
   if (p.dryRun === true) {
     return ok({ dryRun: true, side: economicSide, chain: slug, routeSummary: formatRouteSummary(routeSummary), routerAddress });
+  }
+
+  // ── Simulator paper-fill (LAYER A) ──────────────────────────────────────
+  // Under a simulator mission run we NEVER resolve a signer, call buildRoute, or
+  // broadcast. The fill is synthesized from the aggregator ROUTE response (which
+  // already prices the swap against real liquidity) — no build/broadcast leg.
+  if (context.missionMode === "simulator") {
+    const amountOutHuman = formatUnits(BigInt(routeSummary.amountOut), tokenOut.decimals);
+    const isBuy = economicSide === "buy";
+    // Rough price impact from the aggregator's USD in/out (advisory; includes
+    // fees/gas, so it is an upper bound on pure pool impact). Null when USD
+    // pricing is unavailable.
+    const inUsd = Number(routeSummary.amountInUsd);
+    const outUsd = Number(routeSummary.amountOutUsd);
+    const priceImpact =
+      Number.isFinite(inUsd) && inUsd > 0 && Number.isFinite(outUsd)
+        ? (inUsd - outUsd) / inUsd
+        : null;
+    const fill: SimSwapFill = {
+      side: economicSide,
+      chain: slug,
+      dex: "kyberswap",
+      tokenAddress: isBuy ? tokenOut.address : tokenIn.address,
+      tokenSymbol: isBuy ? tokenOut.symbol : tokenIn.symbol,
+      tokenQty: isBuy ? Number(amountOutHuman) : Number(amountInRaw),
+      nativeValue: isBuy
+        ? (tokenInIsNative ? Number(amountInRaw) : null)
+        : (tokenOutIsNative ? Number(amountOutHuman) : null),
+      priceImpact,
+    };
+    return paperFillSwap({
+      missionRunId: context.missionRunId ?? "",
+      sessionId: context.sessionId ?? "",
+      fill,
+      amountInHuman: amountInRaw,
+      amountOutHuman,
+      tokenInSymbol: tokenIn.symbol,
+      tokenOutSymbol: tokenOut.symbol,
+      route: { dex: "kyberswap", summary: formatRouteSummary(routeSummary) },
+    });
   }
 
   // Per-session signing wallet (puzzle 5 phase 5D-protocols) — resolved AFTER the
@@ -349,6 +394,8 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
       settlementAssetKey: economicSide === "buy" ? tokenIn.symbol : tokenOut.symbol,
       inputValueNative: tokenInIsNative ? formatUnits(amountIn, tokenIn.decimals) : undefined,
       outputValueNative: tokenOutIsNative ? formatUnits(BigInt(buildResp.data.amountOut), tokenOut.decimals) : undefined,
+      // Agent-authored decision rationale (omitted when the agent gave none).
+      ...(rationaleText ? { rationale: rationaleText } : {}),
       meta: { dex: "kyberswap", side: economicSide },
     } },
   };

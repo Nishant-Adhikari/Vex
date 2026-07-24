@@ -84,6 +84,7 @@ function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem 
     chain: "solana",
     txRef: null,
     walletAddress: null,
+    rationale: null,
     createdAt: "2026-07-02T10:21:00+00:00",
     ...overrides,
   };

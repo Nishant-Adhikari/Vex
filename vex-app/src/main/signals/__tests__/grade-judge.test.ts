@@ -30,6 +30,10 @@ const FEATURES: SignalListItemDto = {
   riskFlags: ["low_liquidity"],
   feedGeneratedAt: null,
   ingestedAt: "2026-07-23T10:00:00.000Z",
+  grade: null,
+  gradeVerdict: null,
+  gradeRationale: null,
+  gradedAt: null,
 };
 
 describe("parseGradeResponse (valid)", () => {

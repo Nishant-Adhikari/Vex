@@ -34,6 +34,10 @@ const VALID_ITEM = {
   riskFlags: [],
   feedGeneratedAt: "2026-07-23T10:00:00.000Z",
   ingestedAt: "2026-07-23T10:05:00.000Z",
+  grade: 72,
+  gradeVerdict: "runner",
+  gradeRationale: "Deep liquidity, strong mention momentum.",
+  gradedAt: "2026-07-23T10:06:00.000Z",
 } as const;
 
 describe("signalListItemDtoSchema", () => {
@@ -48,6 +52,32 @@ describe("signalListItemDtoSchema", () => {
     expect(parsed.score).toBeNull();
     expect(parsed.dexscreenerUrl).toBeNull();
     expect(parsed.contract).toBe(VALID_ITEM.contract);
+  });
+
+  it("carries the persisted grade fields through the DTO", () => {
+    const parsed = signalListItemDtoSchema.parse(VALID_ITEM);
+    expect(parsed.grade).toBe(72);
+    expect(parsed.gradeVerdict).toBe("runner");
+    expect(parsed.gradedAt).toBe("2026-07-23T10:06:00.000Z");
+  });
+
+  it("accepts an ungraded item (all grade fields null)", () => {
+    const parsed = signalListItemDtoSchema.parse({
+      ...VALID_ITEM,
+      grade: null,
+      gradeVerdict: null,
+      gradeRationale: null,
+      gradedAt: null,
+    });
+    expect(parsed.grade).toBeNull();
+    expect(parsed.gradeVerdict).toBeNull();
+  });
+
+  it("rejects an unknown persisted verdict", () => {
+    expect(
+      signalListItemDtoSchema.safeParse({ ...VALID_ITEM, gradeVerdict: "moon" })
+        .success,
+    ).toBe(false);
   });
 
   it("rejects unknown keys (strict) so raw provider jsonb cannot leak", () => {

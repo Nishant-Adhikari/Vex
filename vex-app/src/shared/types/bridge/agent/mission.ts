@@ -11,6 +11,8 @@ import type {
   MissionGetRenewableSourceInput,
   MissionGetRenewableSourceResult,
   MissionGetResultForRunInput,
+  MissionGetRetrospectiveInput,
+  MissionGetRetrospectiveResult,
   MissionGetSessionResultInput,
   MissionGetSessionResultResult,
   MissionGetResultForRunResult,
@@ -92,4 +94,12 @@ export interface MissionBridge {
   readonly getResultForRun: (
     input: MissionGetResultForRunInput,
   ) => Promise<Result<MissionGetResultForRunResult>>;
+  /**
+   * Read-or-lazily-generate the "lessons learned" retrospective for a session's
+   * latest finalized mission run (the completed-mission card). Fail-soft: null
+   * when there is nothing to show (no finalized run, inference unavailable).
+   */
+  readonly getRetrospective: (
+    input: MissionGetRetrospectiveInput,
+  ) => Promise<Result<MissionGetRetrospectiveResult>>;
 }

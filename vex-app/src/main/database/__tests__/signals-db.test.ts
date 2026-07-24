@@ -37,9 +37,13 @@ vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { listTodaySignals, mapSignalRow, extractRawFields } = await import(
-  "../signals-db.js"
-);
+const {
+  listTodaySignals,
+  listUngradedSignals,
+  persistSignalGrade,
+  mapSignalRow,
+  extractRawFields,
+} = await import("../signals-db.js");
 
 const DB_ROW = {
   id: "12",
@@ -65,6 +69,10 @@ const DB_ROW = {
   },
   feed_generated_at: new Date("2026-07-23T10:00:00.000Z"),
   ingested_at: new Date("2026-07-23T10:05:00.000Z"),
+  grade: 72,
+  grade_verdict: "runner",
+  grade_rationale: "Strong velocity with healthy liquidity",
+  graded_at: new Date("2026-07-23T10:06:00.000Z"),
 };
 
 afterEach(() => {
@@ -115,10 +123,44 @@ describe("mapSignalRow", () => {
     expect(dto["secret_internal"]).toBeUndefined();
     expect(JSON.stringify(dto)).not.toContain("must-not-leak");
   });
+
+  // Display-gap fix: the persisted auto-grade must flow through the read DTO so
+  // a freshly-ingested graded signal shows its badge on load.
+  it("surfaces the persisted grade through the read DTO", () => {
+    const dto = mapSignalRow(DB_ROW);
+    expect(dto.grade).toBe(72);
+    expect(dto.gradeVerdict).toBe("runner");
+    expect(dto.gradeRationale).toBe("Strong velocity with healthy liquidity");
+    expect(dto.gradedAt).toBe("2026-07-23T10:06:00.000Z");
+  });
+
+  it("nulls the grade fields for an ungraded row", () => {
+    const dto = mapSignalRow({
+      ...DB_ROW,
+      grade: null,
+      grade_verdict: null,
+      grade_rationale: null,
+      graded_at: null,
+    });
+    expect(dto.grade).toBeNull();
+    expect(dto.gradeVerdict).toBeNull();
+    expect(dto.gradeRationale).toBeNull();
+    expect(dto.gradedAt).toBeNull();
+  });
+
+  it("clamps grade and rejects an unknown verdict", () => {
+    const dto = mapSignalRow({
+      ...DB_ROW,
+      grade: 250,
+      grade_verdict: "bogus",
+    });
+    expect(dto.grade).toBe(100);
+    expect(dto.gradeVerdict).toBeNull();
+  });
 });
 
 describe("listTodaySignals", () => {
-  it("builds a windowed, score-ordered, bounded query and maps rows", async () => {
+  it("builds a windowed, newest-first, bounded query and maps rows", async () => {
     connectMock.mockResolvedValue(undefined);
     queryMock.mockResolvedValue({ rows: [DB_ROW] });
     endMock.mockResolvedValue(undefined);
@@ -132,7 +174,7 @@ describe("listTodaySignals", () => {
     const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
     expect(sql).toMatch(/FROM signals/);
     expect(sql).toMatch(/ingested_at > NOW\(\) - make_interval/);
-    expect(sql).toMatch(/ORDER BY score DESC NULLS LAST/);
+    expect(sql).toMatch(/ORDER BY ingested_at DESC, score DESC NULLS LAST/);
     expect(sql).toMatch(/LIMIT \$2/);
     expect(params).toEqual([24, 50]);
   });
@@ -155,6 +197,86 @@ describe("listTodaySignals", () => {
       null as unknown as Awaited<ReturnType<typeof buildPoolConfig>>,
     );
     const res = await listTodaySignals({ withinHours: 24, limit: 50 }, "corr-1");
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("listUngradedSignals", () => {
+  it("selects only ungraded rows (grade IS NULL), newest first, bounded", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rows: [DB_ROW] });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listUngradedSignals(25, "corr-ug");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0]?.symbol).toBe("WIF");
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/FROM signals/);
+    expect(sql).toMatch(/WHERE grade IS NULL/);
+    expect(sql).toMatch(/ORDER BY ingested_at DESC/);
+    expect(sql).toMatch(/LIMIT \$1/);
+    expect(params).toEqual([25]);
+  });
+
+  it("fails soft to an error Result when the query throws", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockRejectedValue(new Error("boom"));
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listUngradedSignals(25, "corr-ug");
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("persistSignalGrade", () => {
+  const GRADE = {
+    id: 12,
+    grade: 73,
+    verdict: "runner" as const,
+    rationale: "deep liquidity, real momentum",
+  };
+
+  it("writes the four grade columns guarded by grade IS NULL (idempotent)", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rowCount: 1 });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toBe(true); // a row was written
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/UPDATE signals/);
+    expect(sql).toMatch(/SET grade = \$2/);
+    expect(sql).toMatch(/grade_verdict = \$3/);
+    expect(sql).toMatch(/grade_rationale = \$4/);
+    expect(sql).toMatch(/graded_at = NOW\(\)/);
+    // The idempotency guard: never clobber an existing grade.
+    expect(sql).toMatch(/WHERE id = \$1\s+AND grade IS NULL/);
+    expect(params).toEqual([12, 73, "runner", "deep liquidity, real momentum"]);
+  });
+
+  it("returns ok(false) when the guard matched no row (already graded)", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rowCount: 0 });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toBe(false);
+  });
+
+  it("fails soft to an error Result when the update throws", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockRejectedValue(new Error("boom"));
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
     expect(res.ok).toBe(false);
   });
 });

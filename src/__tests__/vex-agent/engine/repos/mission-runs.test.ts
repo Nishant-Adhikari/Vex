@@ -38,7 +38,7 @@ describe("mission-runs repo", () => {
       expect(mockExecute).toHaveBeenCalledTimes(1);
       const [sql, params] = mockExecute.mock.calls[0];
       expect(sql).toContain("INSERT INTO mission_runs");
-      expect(params).toEqual(["run-1", "mission-1", "session-1", null, null]);
+      expect(params).toEqual(["run-1", "mission-1", "session-1", null, null, "live"]);
     });
   });
 

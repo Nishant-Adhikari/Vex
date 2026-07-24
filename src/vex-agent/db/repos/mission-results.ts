@@ -47,6 +47,8 @@ export interface MissionResultRow {
   vetoes: number;
   outcome: MissionResultOutcome;
   stopReason: string | null;
+  /** True for a simulator (paper-trading) run. Powers the SIM badge. */
+  simulated: boolean;
   /**
    * The run's persisted `stop_summary` (from `mission_runs`, joined in by the
    * renderer-facing reads only) — the operator-facing "why it ended" prose the
@@ -75,6 +77,8 @@ export interface OpenMissionResultInput {
   bankrollStartEth: number | null;
   ethPriceUsdStart: number | null;
   startPositions: unknown;
+  /** True for a simulator (paper-trading) run — badges the ledger row. */
+  simulated?: boolean;
 }
 
 export interface CloseMissionResultInput {
@@ -99,7 +103,7 @@ const SELECT_COLUMNS = `
   bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
   eth_price_usd_start, eth_price_usd_end,
   trades, wins, losses, rotations, vetoes,
-  outcome, stop_reason, open_positions_json, start_positions_json`;
+  outcome, stop_reason, simulated, open_positions_json, start_positions_json`;
 
 // The "why it ended" summary lives on `mission_runs.stop_summary` (written by
 // the finalize path), NOT on the ledger row — there is no summary column on
@@ -136,6 +140,7 @@ interface Raw {
   vetoes: number;
   outcome: MissionResultOutcome;
   stop_reason: string | null;
+  simulated: boolean;
   // Joined from `mission_runs.stop_summary` by the renderer-facing reads only;
   // absent (undefined) on reads that do not select it.
   stop_summary?: string | null;
@@ -175,6 +180,7 @@ function toRow(r: Raw): MissionResultRow {
     vetoes: r.vetoes,
     outcome: r.outcome,
     stopReason: r.stop_reason,
+    simulated: r.simulated ?? false,
     summary: r.stop_summary ?? null,
     openPositions: r.open_positions_json,
     startPositions: r.start_positions_json,
@@ -209,8 +215,8 @@ export async function openMissionResult(input: OpenMissionResultInput): Promise<
       INSERT INTO mission_results (
         id, mission_id, mission_run_id, session_id, wallet_address, chain_id,
         seq_no, goal_snippet, bankroll_start_eth, eth_price_usd_start,
-        start_positions_json, outcome
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'running')
+        start_positions_json, simulated, outcome
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'running')
       ON CONFLICT (mission_run_id) DO NOTHING`;
     await executeWith(client, sql, [
       input.id,
@@ -227,6 +233,7 @@ export async function openMissionResult(input: OpenMissionResultInput): Promise<
       // was recorded"): normalise a JS `undefined` (omitted field) to null so
       // the strict jsonb serializer records a null column instead of throwing.
       nullableJsonb(input.startPositions ?? null),
+      input.simulated ?? false,
     ]);
   });
 }

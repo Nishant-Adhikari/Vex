@@ -24,6 +24,7 @@ import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution } from "./capture-validator.js";
+import { PAPER_FILLABLE_SWAP_TOOL_IDS } from "../../sim/swap-sim.js";
 import {
   PREQUOTE_QUOTE_TOOLS,
   recordPrequoteFromQuote,
@@ -205,6 +206,30 @@ export async function executeProtocolTool(
     return withActionKind({
       success: false,
       output: paramValidation.reason,
+    }, effectiveActionKind);
+  }
+
+  // ── Simulator no-broadcast guard (LAYER A, the execute path) ─────────────
+  // Under a `simulator` mission run NO real transaction may ever be broadcast.
+  // Paper-fillable swaps fall through: their handler branches on `missionMode`
+  // and paper-fills from the live quote instead of resolving a signer. Any OTHER
+  // `user_wallet_broadcast` tool (a bridge, a wallet send, etc.) cannot be
+  // modeled and is REFUSED here — never reaching a signer or a primitive. Preview
+  // / dryRun is read-only simulation and is exempt. This is independent of the
+  // async broadcast guard (layer B) bound by the dispatcher.
+  if (
+    scopedContext.missionMode === "simulator"
+    && manifest.actionKind === "user_wallet_broadcast"
+    && !isPreviewExecution(request.toolId, params)
+    && !PAPER_FILLABLE_SWAP_TOOL_IDS.has(request.toolId)
+  ) {
+    logger.info("protocol.execute.simulator_broadcast_blocked", { toolId: request.toolId });
+    return withActionKind({
+      success: false,
+      output:
+        `${request.toolId} is blocked in a SIMULATOR mission run — it broadcasts a transaction and `
+        + `cannot be paper-filled. Only swaps (uniswap/kyberswap buy/sell) are simulated. `
+        + `Use a swap, or run this mission in live mode.`,
     }, effectiveActionKind);
   }
 
