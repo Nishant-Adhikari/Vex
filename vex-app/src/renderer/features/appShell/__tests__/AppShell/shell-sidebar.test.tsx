@@ -378,24 +378,28 @@ describe("AppShell", () => {
     expect(mark?.textContent).toBe("");
   });
 
-  it("mounts the compact $VEX widget in the sidebar rail, not on the welcome stage", async () => {
+  it("mounts the wallet POSITION summary in the sidebar rail, not on the welcome stage", async () => {
     const view = renderShell();
     const sidebar = view.container.querySelector(
       "[data-vex-area='sessions-sidebar']",
     );
-    // The market bridge mock returns null → the widget shows its loading
-    // skeleton, proving it lives in the rail.
+    // The $VEX price ticker was replaced by the operator's own position summary
+    // (owner request). It rides the same rail slot — proving it lives here.
     await waitFor(() => {
       expect(
-        sidebar?.querySelector("[data-vex-area='vex-token-compact']"),
+        sidebar?.querySelector("[data-vex-area='sidebar-position']"),
       ).not.toBeNull();
     });
-    // The welcome panel no longer carries any market card — the stage is clean.
+    // The former market ticker is gone from the sidebar entirely.
+    expect(
+      sidebar?.querySelector("[data-vex-area='vex-token-compact']"),
+    ).toBeNull();
+    // The welcome panel carries no market/position card — the stage is clean.
     const panel = view.container.querySelector(
       "[data-vex-area='session-panel']",
     );
     expect(
-      panel?.querySelector("[data-vex-area='vex-token-compact']"),
+      panel?.querySelector("[data-vex-area='sidebar-position']"),
     ).toBeNull();
   });
 
