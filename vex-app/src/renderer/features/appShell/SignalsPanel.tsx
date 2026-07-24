@@ -18,14 +18,16 @@ import { useCallback, useState, type JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import type { Result } from "@shared/ipc/result.js";
-import type {
-  SignalGradeResult,
-  SignalListItemDto,
-} from "@shared/schemas/signals.js";
+import type { SignalGradeResult } from "@shared/schemas/signals.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { Button } from "../../components/ui/button.js";
 import { useGradeSignal, useSignalsToday } from "../../lib/api/signals.js";
 import { Empty, ErrorState, Loading, PILL } from "./MemoryPanelShared.js";
+import {
+  groupSignalsByHour,
+  type GroupedSignal,
+  type SignalHourGroup,
+} from "./signalsGrouping.js";
 
 /** Ephemeral per-row grade state (local only — no persistence). */
 type GradeCell =
@@ -137,9 +139,9 @@ export function SignalsPanel(): JSX.Element {
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto flex w-full max-w-[880px] flex-col">
           <p className="mb-4 text-xs text-[var(--vex-text-2)]">
-            Today&apos;s ingested TrendRadar signals, highest score first. Each
-            is graded on its own features by an LLM-as-judge — DISCOVERY only,
-            never a trade instruction.
+            Today&apos;s ingested TrendRadar signals, newest first, grouped by
+            hour. Each is graded on its own features by an LLM-as-judge —
+            DISCOVERY only, never a trade instruction.
           </p>
           <SignalsList query={query} grades={grades} onGrade={gradeOne} />
         </div>
@@ -171,17 +173,56 @@ function SignalsList({
   if (res.data.length === 0) {
     return <Empty label="No signals ingested today." />;
   }
+  const groups = groupSignalsByHour(res.data);
   return (
-    <ul className="flex flex-col">
-      {res.data.map((signal) => (
-        <SignalRow
-          key={signal.id}
-          signal={signal}
-          cell={grades.get(signal.id)}
+    <div className="flex flex-col gap-5">
+      {groups.map((group) => (
+        <HourGroup
+          key={group.key}
+          group={group}
+          grades={grades}
           onGrade={onGrade}
         />
       ))}
-    </ul>
+    </div>
+  );
+}
+
+function HourGroup({
+  group,
+  grades,
+  onGrade,
+}: {
+  readonly group: SignalHourGroup;
+  readonly grades: ReadonlyMap<number, GradeCell>;
+  readonly onGrade: (id: number) => void | Promise<void>;
+}): JSX.Element {
+  return (
+    <section>
+      <div className="mb-1 flex items-baseline gap-2 border-b border-[var(--vex-line)] pb-1">
+        <span className="font-mono text-[11px] font-medium tabular-nums text-foreground">
+          {group.hourLabel}
+        </span>
+        {group.dateLabel.length > 0 ? (
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+            {group.dateLabel}
+          </span>
+        ) : null}
+        <span className="ml-auto font-mono text-[10px] text-[var(--vex-text-3)]">
+          {group.signals.length}
+        </span>
+      </div>
+      <ul className="flex flex-col">
+        {group.signals.map((entry) => (
+          <SignalRow
+            key={entry.signal.id}
+            entry={entry}
+            cell={grades.get(entry.signal.id)}
+            onGrade={onGrade}
+          />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -211,14 +252,15 @@ function GradePill({ cell }: { readonly cell: GradeCell }): JSX.Element {
 }
 
 function SignalRow({
-  signal,
+  entry,
   cell,
   onGrade,
 }: {
-  readonly signal: SignalListItemDto;
+  readonly entry: GroupedSignal;
   readonly cell: GradeCell | undefined;
   readonly onGrade: (id: number) => void | Promise<void>;
 }): JSX.Element {
+  const { signal, stamp } = entry;
   return (
     <li
       data-vex-signal-id={signal.id}
@@ -229,6 +271,14 @@ function SignalRow({
           {signal.symbol ?? signal.contract.slice(0, 10)}
         </span>
         <span className={PILL}>{signal.chain}</span>
+        {stamp !== null ? (
+          <span
+            className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+            title="Ingested (local time)"
+          >
+            {stamp}
+          </span>
+        ) : null}
         {signal.score !== null ? (
           <span className={PILL}>score {signal.score}</span>
         ) : null}

@@ -101,6 +101,9 @@ describe("SignalsPanel", () => {
     expect(container.querySelector('[data-vex-signal-id="12"]')).not.toBeNull();
     expect(screen.getByText("low_liquidity")).not.toBeNull();
     expect(screen.getByText("DexScreener")).not.toBeNull();
+    // The row carries a compact local ingest stamp ("Mon DD · HH:MM"); the
+    // exact hour is tz-dependent, so assert the format, not the value.
+    expect(screen.getByText(/[A-Z][a-z]{2} \d{1,2} · \d{2}:\d{2}/)).not.toBeNull();
     // The per-row Grade button exists.
     expect(
       screen.getByRole("button", { name: /Grade WIF/i }),
