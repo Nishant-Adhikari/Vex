@@ -29,6 +29,7 @@ import { models } from "./models.js";
 import { portfolio } from "./portfolio.js";
 import { runtime } from "./runtime.js";
 import { sessions } from "./sessions.js";
+import { signals } from "./signals.js";
 import { usage } from "./usage.js";
 import { wallets } from "./wallets.js";
 
@@ -49,4 +50,5 @@ export const agentBridge = {
   portfolio,
   engine,
   hyperliquid,
+  signals,
 } satisfies VexAgentBridge;

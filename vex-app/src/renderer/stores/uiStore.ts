@@ -81,7 +81,9 @@ export type AppShellView =
   // Read-only long-term + session-memory panel (stage 7-2a, S9 rewire).
   | "memory"
   // Read-only mission results ledger (WP-J).
-  | "missionHistory";
+  | "missionHistory"
+  // Read-only Signals section — today's TrendRadar signals + LLM-judge grade.
+  | "signals";
 
 export interface UiLogEntry {
   readonly id: string;

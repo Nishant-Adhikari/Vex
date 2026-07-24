@@ -47,6 +47,7 @@ import { SessionPanel } from "./SessionPanel.js";
 import { SessionsLibrary } from "./SessionsLibrary.js";
 import { SessionsList } from "./SessionsList.js";
 import { MemoryPanel } from "./MemoryPanel.js";
+import { SignalsPanel } from "./SignalsPanel.js";
 import { MissionHistory } from "./MissionHistory.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
 import { SignalSky } from "./SignalSky.js";
@@ -258,6 +259,8 @@ function NormalShell({
             <SessionsLibrary />
           ) : appShellView === "memory" ? (
             <MemoryPanel />
+          ) : appShellView === "signals" ? (
+            <SignalsPanel />
           ) : appShellView === "missionHistory" ? (
             <MissionHistory />
           ) : (

@@ -128,6 +128,17 @@ export const runtimeKeys = {
   state: (sessionId: string) => ["runtime", "state", sessionId] as const,
 };
 
+/**
+ * Signals section — today's ingested TrendRadar signals (list, keyed by the
+ * rolling window) and the per-signal LLM-as-judge grade (keyed by signal id).
+ * Grades are ephemeral in this cache — no persistence.
+ */
+export const signalsKeys = {
+  all: ["signals"] as const,
+  today: (withinHours: number) => ["signals", "today", withinHours] as const,
+  grade: (id: number) => ["signals", "grade", id] as const,
+};
+
 export const missionKeys = {
   all: ["mission"] as const,
   draft: (sessionId: string) => ["mission", "draft", sessionId] as const,

@@ -34,6 +34,7 @@ import { registerProviderHandler } from "./onboarding/provider.js";
 import { registerProviderModelsHandler } from "./onboarding/provider-models.js";
 import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerRuntimeHandlers } from "./runtime.js";
+import { registerSignalsHandlers } from "./signals.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
 import { registerSessionsDeleteHandler } from "./sessions/delete.js";
 import { registerSessionsExportMarkdownHandler } from "./sessions/export-markdown.js";
@@ -96,6 +97,9 @@ export function registerAllIpcHandlers(): void {
   // broadcast are owned by the market service, started in index.ts.
   teardowns.push(...registerMarketHandlers());
   teardowns.push(...registerHyperliquidHandlers());
+  // Signals section — read-only TrendRadar signal list + LLM-as-judge grade.
+  // Observability only; never places a trade. Both handlers are fail-soft.
+  teardowns.push(...registerSignalsHandlers());
   // Agent integration stage 7-1: read-only Track-2 compaction status for the
   // runtime bar. The Track-2 executor itself is owned by main and started in
   // `index.ts` (see `setupCompactWorker`), not here. Stage 7-2a extends this

@@ -22,6 +22,7 @@ import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { SessionPresets } from "./SessionPresets.js";
 import { MemoryButton } from "./MemoryButton.js";
 import { MissionsButton } from "./MissionsButton.js";
+import { SignalsButton } from "./SignalsButton.js";
 import { RuntimeLedger } from "./RuntimeLedger.js";
 import { SettingsButton } from "./SettingsButton.js";
 import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
@@ -391,7 +392,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
       >
         <MissionsButton compact={!sidebarOpen} />
         <MemoryButton compact={!sidebarOpen} />
-        <MissionsButton compact={!sidebarOpen} />
+        <SignalsButton compact={!sidebarOpen} />
         <SettingsButton compact={!sidebarOpen} />
         {/* Report issue intentionally hidden for now; ReportIssueButton/Dialog retained for re-enable. */}
         <RuntimeLedger sidebarOpen={sidebarOpen} />
