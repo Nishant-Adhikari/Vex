@@ -13,6 +13,7 @@
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
+  type SignalGradeResult,
   type SignalListItemDto,
   type SignalsListTodayInput,
   type SignalsListTodayResult,
@@ -276,6 +277,67 @@ export async function getSignalById(
       return ok(row === undefined ? null : mapSignalRow(row));
     } catch (cause) {
       return dbError("getSignalById query failed", correlationId, cause);
+    }
+  });
+}
+
+// ── Auto-grade helpers (signals-ingest worker) ──────────────────────────────
+
+/**
+ * List the freshest UNGRADED signals (grade IS NULL) for the auto-grader, newest
+ * first, bounded by `limit`. Grading uses the same feature DTO the manual GRADE
+ * button feeds the judge, so this reuses `mapSignalRow`. The `grade IS NULL`
+ * predicate is what makes auto-grading idempotent — an already-graded row is
+ * never returned here, so it is never re-graded automatically.
+ */
+export async function listUngradedSignals(
+  limit: number,
+  correlationId: string,
+): Promise<Result<readonly SignalListItemDto[], VexError>> {
+  return withClient(correlationId, async (client) => {
+    try {
+      const result = await client.query<SignalDbRow>(
+        `SELECT ${SELECT_COLUMNS}
+           FROM signals
+          WHERE grade IS NULL
+          ORDER BY ingested_at DESC
+          LIMIT $1`,
+        [limit],
+      );
+      return ok(result.rows.map(mapSignalRow));
+    } catch (cause) {
+      return dbError("listUngradedSignals query failed", correlationId, cause);
+    }
+  });
+}
+
+/**
+ * Persist an LLM-as-judge verdict onto its signal row. Idempotent by contract:
+ * the `AND grade IS NULL` guard means the auto-grader only ever FILLS an empty
+ * grade — it never clobbers a value (even under a concurrent double tick). The
+ * result is `ok(true)` when a row was written, `ok(false)` when the row was
+ * already graded (or vanished) — the caller treats `false` as a benign skip, not
+ * an error. Fail-soft: a DB failure returns an error Result, never throws.
+ */
+export async function persistSignalGrade(
+  grade: SignalGradeResult,
+  correlationId: string,
+): Promise<Result<boolean, VexError>> {
+  return withClient(correlationId, async (client) => {
+    try {
+      const result = await client.query(
+        `UPDATE signals
+            SET grade = $2,
+                grade_verdict = $3,
+                grade_rationale = $4,
+                graded_at = NOW()
+          WHERE id = $1
+            AND grade IS NULL`,
+        [grade.id, grade.grade, grade.verdict, grade.rationale],
+      );
+      return ok((result.rowCount ?? 0) > 0);
+    } catch (cause) {
+      return dbError("persistSignalGrade query failed", correlationId, cause);
     }
   });
 }

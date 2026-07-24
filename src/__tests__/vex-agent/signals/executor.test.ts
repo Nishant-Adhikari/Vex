@@ -31,4 +31,45 @@ describe("startSignalsIngestExecutor", () => {
     // stop() awaits the in-flight (rejected) tick without throwing
     await expect(handle.stop()).resolves.toBeUndefined();
   });
+
+  it("runs the afterIngest hook after each ingest tick", async () => {
+    const order: string[] = [];
+    let resolveHook!: () => void;
+    const hookDone = new Promise<void>((r) => (resolveHook = r));
+    const handle = startSignalsIngestExecutor({
+      intervalMs: 1_000_000,
+      deps: { ingest: async () => { order.push("ingest"); } },
+      afterIngest: async () => { order.push("afterIngest"); resolveHook(); },
+    });
+    await hookDone;
+    expect(order).toEqual(["ingest", "afterIngest"]);
+    await handle.stop();
+  });
+
+  it("runs afterIngest even when the ingest tick fails", async () => {
+    let resolveHook!: () => void;
+    const hookDone = new Promise<void>((r) => (resolveHook = r));
+    let hookRan = false;
+    const handle = startSignalsIngestExecutor({
+      intervalMs: 1_000_000,
+      deps: { ingest: async () => { throw new Error("feed down"); } },
+      afterIngest: async () => { hookRan = true; resolveHook(); },
+    });
+    await hookDone;
+    expect(hookRan).toBe(true);
+    await handle.stop();
+  });
+
+  it("does not crash the loop when the afterIngest hook throws", async () => {
+    let resolveHook!: () => void;
+    const hookDone = new Promise<void>((r) => (resolveHook = r));
+    const handle = startSignalsIngestExecutor({
+      intervalMs: 1_000_000,
+      deps: { ingest: async () => {} },
+      afterIngest: async () => { resolveHook(); throw new Error("grade boom"); },
+    });
+    await hookDone;
+    // stop() settles the in-flight tick (whose hook rejected) without throwing
+    await expect(handle.stop()).resolves.toBeUndefined();
+  });
 });

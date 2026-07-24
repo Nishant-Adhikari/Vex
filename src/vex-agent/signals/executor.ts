@@ -23,6 +23,14 @@ export interface SignalsIngestStartOptions {
   url?: string;
   /** Dependency injection for tests. */
   deps?: SignalsIngestDeps;
+  /**
+   * Optional post-tick hook — runs AFTER each ingest attempt (Electron main
+   * injects the signals auto-grader here). It runs whether or not the ingest
+   * itself succeeded, so a feed hiccup still lets the grader drain any backlog
+   * of ungraded rows. FAIL-SOFT: its errors are caught + logged and never kill
+   * the loop.
+   */
+  afterIngest?: () => Promise<void>;
 }
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1h
@@ -47,6 +55,18 @@ export function startSignalsIngestExecutor(
       logger.warn("signals.executor.tick_failed", {
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+    // Post-tick hook (auto-grade). Independently fail-soft: it runs even after
+    // an ingest failure (to drain a backlog) and its own error never kills the
+    // loop or masks a preceding ingest error.
+    if (options.afterIngest !== undefined) {
+      try {
+        await options.afterIngest();
+      } catch (err) {
+        logger.warn("signals.executor.after_ingest_failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   };
 
