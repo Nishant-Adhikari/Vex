@@ -31,7 +31,7 @@ import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as runnerLeasesRepo from "@vex-agent/db/repos/runner-leases.js";
 import logger from "@utils/logger.js";
-import { finalizeMissionRunStatus } from "./mission-finalize.js";
+import { closeRunnerLostFinalize } from "./mission-finalize.js";
 import { flattenInterruptedRunPositions } from "./mission-liquidate-hook.js";
 
 /** Distinct stop reason stamped on a reclaimed orphan (auditable in the ledger). */
@@ -58,27 +58,35 @@ export interface ReconcileOrphanedRunsSummary {
  */
 export interface ReconcileDeps {
   findOrphans: () => Promise<MissionRun[]>;
+  /**
+   * Race-safe claim: flip `running`→`stopped(runner_lost)` ONLY while the run
+   * is still `running` AND has no live lease. `true` = THIS pass won the run
+   * (proceed to flatten + finalize); `false` = it was resumed / already
+   * terminal (skip — never touch a run someone else now owns).
+   */
+  claim: (runId: string, stopPayload: { summary: string }) => Promise<boolean>;
   flatten: (args: {
     missionId: string;
     runId: string;
     sessionId: string;
   }) => Promise<void>;
-  finalize: (
+  /** The finalize tail — mission→cancelled, control-state emit, ledger close. */
+  closeLedger: (
     missionId: string,
     runId: string,
     sessionId: string,
-    stopReason: "runner_lost",
-    stopPayload: { summary: string },
-  ) => Promise<unknown>;
+  ) => Promise<void>;
   dropStaleLease: (sessionId: string) => Promise<number>;
 }
 
 function defaultDeps(): ReconcileDeps {
   return {
     findOrphans: () => missionRunsRepo.findOrphanedRunningRuns(),
+    claim: (runId, stopPayload) =>
+      missionRunsRepo.markStoppedIfRunning(runId, RUNNER_LOST_STOP_REASON, stopPayload),
     flatten: (a) => flattenInterruptedRunPositions(a),
-    finalize: (missionId, runId, sessionId, stopReason, stopPayload) =>
-      finalizeMissionRunStatus(missionId, runId, sessionId, stopReason, stopPayload),
+    closeLedger: (missionId, runId, sessionId) =>
+      closeRunnerLostFinalize(missionId, runId, sessionId),
     dropStaleLease: (sessionId) =>
       runnerLeasesRepo.releaseExpiredLease(sessionId),
   };
@@ -90,12 +98,16 @@ function defaultDeps(): ReconcileDeps {
 const inFlight = new Set<string>();
 
 /**
- * Reconcile a single orphaned run: flatten its positions, finalize to
- * `runner_lost`, then drop the stale lease. `finalize` (the shared
- * `finalizeMissionRunStatus` path) owns the guarded claim
- * (`WHERE status='running'`), the ledger close, the mission-status flip and the
- * control-state emit. The in-process guard here plus that DB-level guard mean a
- * run is flattened + finalized at most once.
+ * Reconcile a single orphaned run: CLAIM it race-safely, then flatten its
+ * positions, close the ledger, and drop the stale lease.
+ *
+ * Order matters. The claim (`markStoppedIfRunning`: `running` + no live lease →
+ * `stopped(runner_lost)`) runs FIRST so nothing is flattened or finalized
+ * unless we atomically won the run against a concurrent operator Resume — that
+ * closes the race Codex flagged (a resume acquires a fresh lease while keeping
+ * status `running`; our lease-aware guard then refuses the flip). Only after
+ * winning do we flatten (the run's frozen snapshot keeps the exit executable
+ * post-claim) and close the ledger via the shared finalize tail.
  */
 async function reconcileOne(
   run: MissionRun,
@@ -104,28 +116,28 @@ async function reconcileOne(
   if (inFlight.has(run.id)) return "skipped";
   inFlight.add(run.id);
   try {
-    // Flatten FIRST so the deadline liquidation core runs while the mission is
-    // still hydratable as active (the finalize below flips it terminal). The
-    // in-process guard prevents a concurrent tick from double-selling; the
-    // liquidator is itself idempotent (re-reads current holdings). Fail-soft.
+    const won = await deps.claim(run.id, { summary: RUNNER_LOST_SUMMARY });
+    if (!won) {
+      // Resumed by the operator, already terminal, or won by another pass —
+      // never touch a run we don't exclusively own.
+      logger.info("engine.mission.reconcile_skip_claim_lost", {
+        runId: run.id,
+        sessionId: run.sessionId,
+      });
+      return "skipped";
+    }
+
+    // We now exclusively own the run (it is `stopped`). Flatten its open
+    // positions back to ETH so it ends flat, then run the shared finalize tail
+    // (mission→cancelled, control-state emit, ledger close). Flatten is
+    // fail-soft; the run is already terminal so a flatten hiccup never re-opens
+    // it.
     await deps.flatten({
       missionId: run.missionId,
       runId: run.id,
       sessionId: run.sessionId,
     });
-
-    // Reuse the shared finalize path — its guarded `markStoppedIfRunning`
-    // (`WHERE status='running'`) is the idempotency source of truth: it closes
-    // the `mission_results` ledger, sets the parent mission to `cancelled`, and
-    // emits the terminal control state. A no-op if the run already went
-    // terminal via another pass.
-    await deps.finalize(
-      run.missionId,
-      run.id,
-      run.sessionId,
-      RUNNER_LOST_STOP_REASON,
-      { summary: RUNNER_LOST_SUMMARY },
-    );
+    await deps.closeLedger(run.missionId, run.id, run.sessionId);
 
     // Drop the leftover expired lease so a later getState/resume sees a clean
     // session (owner-agnostic, guarded on expiry — never touches a live lease).

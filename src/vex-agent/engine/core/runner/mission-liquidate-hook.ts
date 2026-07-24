@@ -74,7 +74,9 @@ export async function flattenInterruptedRunPositions(args: {
   sessionId: string;
 }): Promise<void> {
   try {
-    const { hydrateEngineSession } = await import("../hydrate.js");
+    const { hydrateEngineSession, resolveWalletPolicy } = await import(
+      "../hydrate.js"
+    );
     const hydrated = await hydrateEngineSession(args.sessionId);
     if (!hydrated) {
       logger.warn("mission.liquidate.interrupted_no_session", {
@@ -83,6 +85,26 @@ export async function flattenInterruptedRunPositions(args: {
       });
       return;
     }
+    // Resolve the wallet policy from the RUN's OWN frozen snapshot rather than
+    // the live active-run lookup: the reconciler claims (flips the run terminal)
+    // BEFORE flattening — closing the resume race — so `hydrate` no longer sees
+    // it as the session's active run and would otherwise yield an `invalid`
+    // policy (`mission_without_active_run`) that rejects the exit swap. Reading
+    // the run + mission directly keeps the exit executable post-claim, and is
+    // identical for the still-active abort path.
+    const [{ getRun }, { getMission }] = await Promise.all([
+      import("@vex-agent/db/repos/mission-runs.js"),
+      import("@vex-agent/db/repos/missions.js"),
+    ]);
+    const [run, mission] = await Promise.all([
+      getRun(args.runId),
+      getMission(args.missionId),
+    ]);
+    const walletPolicy =
+      run && mission
+        ? resolveWalletPolicy(mission, run)
+        : hydrated.context.walletPolicy;
+
     const { liquidateMissionPositions } = await import(
       "../../mission/mission-liquidate.js"
     );
@@ -94,6 +116,7 @@ export async function flattenInterruptedRunPositions(args: {
         ...hydrated.context,
         missionRunId: args.runId,
         sessionKind: "mission",
+        walletPolicy,
       },
     });
   } catch (err) {

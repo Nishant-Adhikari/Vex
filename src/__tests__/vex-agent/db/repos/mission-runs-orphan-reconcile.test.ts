@@ -100,12 +100,17 @@ describe("markStoppedIfRunning", () => {
     expect(sql).toMatch(/status\s*=\s*'stopped'/);
     expect(sql).toMatch(/stop_reason\s*=\s*\$2/);
     expect(sql).toMatch(/ended_at\s*=\s*NOW\(\)/i);
-    // Idempotency guard: only flips a still-running row.
-    expect(sql).toMatch(/WHERE\s+id\s*=\s*\$1\s+AND\s+status\s*=\s*'running'/i);
+    // Guard 1: only flips a still-running row.
+    expect(sql).toMatch(/m\.status\s*=\s*'running'/i);
+    // Guard 2 (race-safe): refuses to flip when a LIVE lease exists — closes the
+    // resume race (an operator Resume acquires a fresh lease + keeps running).
+    expect(sql).toMatch(/NOT\s+EXISTS/i);
+    expect(sql).toMatch(/runner_leases/i);
+    expect(sql).toMatch(/expires_at\s*>\s*NOW\(\)/i);
     expect(params).toEqual(["run-1", "runner_lost", "interrupted", null]);
   });
 
-  it("returns false when no running row matched (already terminal)", async () => {
+  it("returns false when no eligible row matched (terminal or live-leased)", async () => {
     mockExecute.mockResolvedValue(0);
     expect(await repo.markStoppedIfRunning("run-1", "runner_lost")).toBe(false);
   });

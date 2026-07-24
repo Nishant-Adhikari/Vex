@@ -332,13 +332,20 @@ export async function findOrphanedRunningRuns(
 }
 
 /**
- * Idempotent guarded terminal flip used by the orphaned-run reconciler and the
- * leaseless force-stop path. Atomically moves a run to `stopped` ONLY while it
- * is still `running` (`WHERE ... AND status = 'running'`), stamping the distinct
- * `stop_reason` (e.g. `runner_lost`) + `ended_at = NOW()`. Returns `true` when
- * THIS call performed the transition, `false` when the run was already terminal
- * / re-claimed (another reconciler pass or a live finalize won the race) — so
- * re-running the reconciler is a no-op and never double-finalizes.
+ * Idempotent, race-safe terminal flip used by the orphaned-run reconciler.
+ * Atomically moves a run to `stopped` ONLY while it is still `running` AND its
+ * session has NO LIVE runner lease — stamping the distinct `stop_reason` (e.g.
+ * `runner_lost`) + `ended_at = NOW()`. Returns `true` when THIS call performed
+ * the transition, `false` otherwise.
+ *
+ * The `NOT EXISTS (live lease)` guard is what makes reclaiming an orphan safe
+ * against a concurrent operator Resume/Continue: the resume dispatcher
+ * (`runtime-resume-dispatch.ts`) reclaims a dead-lease `running` run by
+ * acquiring a FRESH lease while keeping the status `running`. Without the lease
+ * guard this UPDATE would happily finalize that just-resumed, now-LIVE run as
+ * `runner_lost`. With it, the two writers are mutually exclusive: whoever
+ * commits first wins (a live lease blocks the reconciler; a completed flip
+ * blocks the resume CAS). Re-running the reconciler is likewise a no-op.
  */
 export async function markStoppedIfRunning(
   id: string,
@@ -346,14 +353,19 @@ export async function markStoppedIfRunning(
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
   client?: PoolClient,
 ): Promise<boolean> {
-  const sql = `UPDATE mission_runs
+  const sql = `UPDATE mission_runs m
                   SET status = 'stopped',
                       stop_reason = $2,
                       stop_summary = COALESCE($3, stop_summary),
                       stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
                       ended_at = NOW()
-                WHERE id = $1
-                  AND status = 'running'`;
+                WHERE m.id = $1
+                  AND m.status = 'running'
+                  AND NOT EXISTS (
+                        SELECT 1 FROM runner_leases l
+                         WHERE l.session_id = m.session_id
+                           AND l.expires_at > NOW()
+                      )`;
   const params = [
     id,
     stopReason,

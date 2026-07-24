@@ -74,6 +74,34 @@ async function emitFinalizeControlState(
   }
 }
 
+/**
+ * The `runner_lost` finalize TAIL — the side effects that follow a successful
+ * `markStoppedIfRunning` claim: flip the parent mission to `cancelled` (the run
+ * itself is already `stopped`), broadcast the terminal control state, and close
+ * the `mission_results` ledger with `outcome='stopped'`.
+ *
+ * Exported so the orphaned-run reconciler can run its own claim → FLATTEN →
+ * tail sequence (flatten must sit between the claim that closes the resume race
+ * and the ledger close) while reusing the SAME finalize side effects instead of
+ * duplicating them. Idempotent: `setStatus` / `captureMissionFinal` re-run
+ * harmlessly.
+ */
+export async function closeRunnerLostFinalize(
+  missionId: string,
+  runId: string,
+  sessionId: string,
+): Promise<void> {
+  await missionsRepo.setStatus(missionId, "cancelled");
+  await emitFinalizeControlState(sessionId, runId);
+  await captureMissionFinal({
+    missionId,
+    runId,
+    sessionId,
+    outcome: "stopped",
+    stopReason: "runner_lost",
+  });
+}
+
 export async function finalizeMissionRunStatus(
   missionId: string,
   runId: string,
@@ -86,10 +114,11 @@ export async function finalizeMissionRunStatus(
   // Orphaned/interrupted run reclaimed by the reconciler (or a leaseless
   // force-stop). Distinct terminal surface — run status `stopped` +
   // `stop_reason='runner_lost'` — so a wedged run is auditable and never
-  // auto-resumed. The flip is GUARDED (`WHERE status='running'`) so re-running
-  // the reconciler is a no-op: if another pass / a live finalize already moved
-  // the row out of `running`, we short-circuit without re-closing the ledger.
-  // The parent mission row goes to `cancelled` (MissionStatus has no `stopped`).
+  // auto-resumed. The flip is race-safe (`markStoppedIfRunning`: only while
+  // still `running` AND no live lease) so a concurrent operator Resume can
+  // never be finalized out from under the user, and re-running the reconciler
+  // is a no-op. The parent mission goes to `cancelled` (MissionStatus has no
+  // `stopped`).
   if (stopReason === "runner_lost") {
     const claimed = await missionRunsRepo.markStoppedIfRunning(
       runId,
@@ -97,15 +126,7 @@ export async function finalizeMissionRunStatus(
       stopPayload,
     );
     if (!claimed) return "cancelled";
-    await missionsRepo.setStatus(missionId, "cancelled");
-    await emitFinalizeControlState(sessionId, runId);
-    await captureMissionFinal({
-      missionId,
-      runId,
-      sessionId,
-      outcome: "stopped",
-      stopReason,
-    });
+    await closeRunnerLostFinalize(missionId, runId, sessionId);
     return "cancelled";
   }
 
