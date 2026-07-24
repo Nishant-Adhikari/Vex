@@ -62,6 +62,7 @@ export function SignalsPanel(): JSX.Element {
   const [grades, setGrades] = useState<ReadonlyMap<number, GradeCell>>(
     () => new Map(),
   );
+  const [gradingAll, setGradingAll] = useState(false);
 
   const gradeOne = useCallback(
     async (id: number): Promise<void> => {
@@ -84,12 +85,22 @@ export function SignalsPanel(): JSX.Element {
     query.data !== undefined && query.data.ok ? query.data.data : [];
 
   const gradeAll = useCallback(async (): Promise<void> => {
-    // Sequential — one lightweight completion at a time, ungraded rows only.
-    for (const row of rows) {
-      if (grades.get(row.id)?.status === "done") continue;
-      await gradeOne(row.id);
+    // Guard against a second concurrent bulk pass double-spending completions.
+    if (gradingAll) return;
+    setGradingAll(true);
+    try {
+      // Sequential — one lightweight completion at a time. Skip rows already
+      // graded OR currently in flight (an individual Grade click), so no row
+      // is ever double-submitted.
+      for (const row of rows) {
+        const status = grades.get(row.id)?.status;
+        if (status === "done" || status === "loading") continue;
+        await gradeOne(row.id);
+      }
+    } finally {
+      setGradingAll(false);
     }
-  }, [rows, grades, gradeOne]);
+  }, [gradingAll, rows, grades, gradeOne]);
 
   return (
     <div
@@ -114,9 +125,10 @@ export function SignalsPanel(): JSX.Element {
               variant="ghost"
               size="sm"
               onClick={() => void gradeAll()}
+              disabled={gradingAll}
               className="h-8 rounded-[6px] border border-[var(--vex-line-strong)] px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] hover:text-foreground"
             >
-              Grade all
+              {gradingAll ? "Grading…" : "Grade all"}
             </Button>
           ) : null}
         </div>
