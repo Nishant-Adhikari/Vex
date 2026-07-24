@@ -235,9 +235,11 @@ export function mapSignalRow(r: SignalDbRow): SignalListItemDto {
 }
 
 /**
- * List today's signals — rows ingested within `withinHours`, highest score
- * first (freshest as tiebreak). Bounded by `input.limit` (validated + capped
- * in the shared schema).
+ * List today's signals — rows ingested within `withinHours`, newest first
+ * (most recent ingest at the top; score as the tiebreak). The panel groups the
+ * result by hour, so newest-first here keeps the freshest hour on top even when
+ * `input.limit` truncates. Bounded by `input.limit` (validated + capped in the
+ * shared schema).
  */
 export async function listTodaySignals(
   input: SignalsListTodayInput,
@@ -249,8 +251,8 @@ export async function listTodaySignals(
         `SELECT ${SELECT_COLUMNS}
            FROM signals
           WHERE ingested_at > NOW() - make_interval(hours => $1::int)
-          ORDER BY score DESC NULLS LAST, feed_generated_at DESC NULLS LAST,
-                   ingested_at DESC
+          ORDER BY ingested_at DESC, score DESC NULLS LAST,
+                   feed_generated_at DESC NULLS LAST
           LIMIT $2`,
         [input.withinHours, input.limit],
       );
