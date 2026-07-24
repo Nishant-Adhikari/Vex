@@ -52,8 +52,8 @@ async function defaultStartExecutor(): Promise<SignalsIngestExecutorHandle> {
   // executor's post-tick hook so it can never disturb ingest.
   const { autoGradeIngestedSignals } = await import("../signals/auto-grade.js");
   return startSignalsIngestExecutor({
-    afterIngest: async () => {
-      await autoGradeIngestedSignals();
+    afterIngest: async (signal) => {
+      await autoGradeIngestedSignals({ signal });
     },
   });
 }

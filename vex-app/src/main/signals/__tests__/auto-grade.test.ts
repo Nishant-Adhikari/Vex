@@ -205,8 +205,34 @@ describe("autoGradeIngestedSignals", () => {
       graded: 0,
       skipped: 0,
       truncated: false,
+      aborted: false,
     });
     expect(logWarn).toHaveBeenCalled();
+  });
+
+  it("winds down mid-pass when its abort signal fires (bounds one chunk)", async () => {
+    // 6 ungraded, concurrency 2 → 3 chunks. Abort after the first chunk's grades
+    // resolve: the loop's between-chunk check must stop launching further chunks,
+    // so at most the first chunk (2 grades) runs.
+    const signals = [1, 2, 3, 4, 5, 6].map(makeSignal);
+    const controller = new AbortController();
+    let gradeCalls = 0;
+    const gradeOne = vi.fn(async (s: SignalListItemDto) => {
+      gradeCalls += 1;
+      if (gradeCalls === 2) controller.abort(); // trip abort during chunk 1
+      return ok(gradeFor(s.id));
+    });
+    const persist = vi.fn(async () => ok(true));
+
+    const summary = await autoGradeIngestedSignals({
+      concurrency: 2,
+      signal: controller.signal,
+      deps: { listUngraded: async () => ok(signals), gradeOne, persist },
+    });
+
+    expect(summary.aborted).toBe(true);
+    expect(summary.considered).toBe(2); // only the first chunk was launched
+    expect(gradeOne).toHaveBeenCalledTimes(2);
   });
 
   it("does nothing (no grade calls) when there are no ungraded signals", async () => {

@@ -66,6 +66,12 @@ export interface AutoGradeOptions {
   readonly concurrency?: number;
   /** Correlation id prefix for log lines (a per-signal id is derived from it). */
   readonly correlationId?: string;
+  /**
+   * Aborts the pass when the ingest worker is stopping (app quit). Checked
+   * between concurrency chunks so at most one in-flight chunk outlives the
+   * abort — the pass never blocks quit cleanup for a whole backlog.
+   */
+  readonly signal?: AbortSignal;
   /** Test seams; production omits → real DB + grading path. */
   readonly deps?: Partial<AutoGradeDeps>;
 }
@@ -79,6 +85,8 @@ export interface AutoGradeSummary {
   readonly skipped: number;
   /** True when the cap truncated a larger backlog. */
   readonly truncated: boolean;
+  /** True when the pass wound down early because its abort signal fired. */
+  readonly aborted: boolean;
 }
 
 function positiveIntFromEnv(name: string): number | null {
@@ -121,6 +129,7 @@ export async function autoGradeIngestedSignals(
   const listUngraded = options.deps?.listUngraded ?? listUngradedSignals;
   const gradeOne = options.deps?.gradeOne ?? gradeSignal;
   const persist = options.deps?.persist ?? persistSignalGrade;
+  const abortSignal = options.signal;
 
   // Fetch one MORE than the cap: if the DB has more ungraded rows than we will
   // grade this pass, the extra row tells us the cap truncated a backlog.
@@ -130,7 +139,7 @@ export async function autoGradeIngestedSignals(
       `[signals:autograde] list ungraded failed errCode=${listed.error.code} ` +
         `correlationId=${correlationId}`,
     );
-    return { considered: 0, graded: 0, skipped: 0, truncated: false };
+    return { considered: 0, graded: 0, skipped: 0, truncated: false, aborted: false };
   }
 
   const truncated = listed.data.length > maxPerCycle;
@@ -142,7 +151,7 @@ export async function autoGradeIngestedSignals(
     );
   }
   if (batch.length === 0) {
-    return { considered: 0, graded: 0, skipped: 0, truncated };
+    return { considered: 0, graded: 0, skipped: 0, truncated, aborted: false };
   }
 
   let graded = 0;
@@ -189,17 +198,30 @@ export async function autoGradeIngestedSignals(
   };
 
   // Bounded concurrency: fixed-size chunks keep at most `concurrency` grades in
-  // flight without pulling in a pool dependency.
+  // flight without pulling in a pool dependency. The abort check between chunks
+  // means a stop() during the pass leaves at most one chunk in flight — so app
+  // quit is never held for a whole backlog of grading.
+  let considered = 0;
+  let aborted = false;
   for (let i = 0; i < batch.length; i += concurrency) {
+    if (abortSignal?.aborted === true) {
+      aborted = true;
+      log.info(
+        `[signals:autograde] aborted mid-pass (worker stopping) after ` +
+          `${considered}/${batch.length} correlationId=${correlationId}`,
+      );
+      break;
+    }
     const chunk = batch.slice(i, i + concurrency);
+    considered += chunk.length;
     await Promise.all(chunk.map(gradeAndPersist));
   }
 
   log.info(
-    `[signals:autograde] pass complete considered=${batch.length} ` +
+    `[signals:autograde] pass complete considered=${considered} ` +
       `graded=${graded} skipped=${skipped} truncated=${truncated} ` +
-      `correlationId=${correlationId}`,
+      `aborted=${aborted} correlationId=${correlationId}`,
   );
 
-  return { considered: batch.length, graded, skipped, truncated };
+  return { considered, graded, skipped, truncated, aborted };
 }

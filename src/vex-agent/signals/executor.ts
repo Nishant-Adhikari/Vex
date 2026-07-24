@@ -29,8 +29,12 @@ export interface SignalsIngestStartOptions {
    * itself succeeded, so a feed hiccup still lets the grader drain any backlog
    * of ungraded rows. FAIL-SOFT: its errors are caught + logged and never kill
    * the loop.
+   *
+   * The `signal` aborts when `stop()` is called: the hook must stop launching
+   * new work promptly so app-quit cleanup (which awaits the in-flight tick) is
+   * never held hostage by a slow post-tick pass (e.g. a stalled LLM provider).
    */
-  afterIngest?: () => Promise<void>;
+  afterIngest?: (signal: AbortSignal) => Promise<void>;
 }
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1h
@@ -47,6 +51,9 @@ export function startSignalsIngestExecutor(
   let stopped = false;
   let inFlight: Promise<void> | null = null;
   let timer: NodeJS.Timeout | null = null;
+  // Aborts on stop() so the post-tick hook can bail out fast during shutdown
+  // instead of holding quit cleanup for a full (possibly slow) grading pass.
+  const abort = new AbortController();
 
   const runOne = async (): Promise<void> => {
     try {
@@ -59,9 +66,9 @@ export function startSignalsIngestExecutor(
     // Post-tick hook (auto-grade). Independently fail-soft: it runs even after
     // an ingest failure (to drain a backlog) and its own error never kills the
     // loop or masks a preceding ingest error.
-    if (options.afterIngest !== undefined) {
+    if (options.afterIngest !== undefined && !abort.signal.aborted) {
       try {
-        await options.afterIngest();
+        await options.afterIngest(abort.signal);
       } catch (err) {
         logger.warn("signals.executor.after_ingest_failed", {
           error: err instanceof Error ? err.message : String(err),
@@ -86,6 +93,9 @@ export function startSignalsIngestExecutor(
   return {
     async stop(): Promise<void> {
       stopped = true;
+      // Signal the post-tick hook to wind down BEFORE we await the in-flight
+      // tick, so a slow grading pass can't stall quit cleanup.
+      abort.abort();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {
