@@ -37,7 +37,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
-import { str, num, ok, fail } from "../../handler-helpers.js";
+import { str, num, ok, fail, rationale } from "../../handler-helpers.js";
 
 const DEFAULT_SLIPPAGE_BPS = 50;
 const DEFAULT_DEADLINE_SECONDS = 600; // ~10 min
@@ -263,6 +263,9 @@ async function executeUniswapSwap(
   const tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
   const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
   const sellFraction = num(p, "sellFraction");
+  // Agent's stated reason for this trade — normalised + bounded, persisted with
+  // the move so the Decision Journal shows "why" instead of the placeholder.
+  const rationaleText = rationale(p);
 
   // Sell-live-balance resolution (exit-guards Fix #2): the sentinel amountIn:"max"
   // (or a sellFraction) sells the EXACT live on-chain balance, killing the drift/
@@ -436,6 +439,8 @@ async function executeUniswapSwap(
         instrumentKey: `${deployment.key}:${economicSide === "buy" ? tokenOut.address : tokenIn.address}`,
         valuationSource: "none",
         settlementAssetKey: economicSide === "buy" ? tokenIn.symbol : tokenOut.symbol,
+        // Agent-authored decision rationale (omitted when the agent gave none).
+        ...(rationaleText ? { rationale: rationaleText } : {}),
         meta: { dex: "uniswap", version: quoted.route.version, side: economicSide },
       },
     },

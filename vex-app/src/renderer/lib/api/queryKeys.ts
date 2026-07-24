@@ -178,6 +178,12 @@ export const missionKeys = {
    */
   sessionResult: (sessionId: string) =>
     ["mission", "sessionResult", sessionId] as const,
+  /**
+   * Fork-only — the "lessons learned" retrospective for a session's latest
+   * finalized run (read-or-lazily-generate; the completed-mission card).
+   */
+  retrospective: (sessionId: string) =>
+    ["mission", "retrospective", sessionId] as const,
 };
 
 export const approvalsKeys = {

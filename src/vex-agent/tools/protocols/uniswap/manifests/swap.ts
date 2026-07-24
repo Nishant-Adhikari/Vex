@@ -8,6 +8,7 @@ const SWAP_EXECUTION_PARAMS = [
   { key: "amountIn", type: "string" as const, required: true, description: "Amount in human-readable units." },
   { key: "slippageBps", type: "number" as const, description: "Slippage tolerance in basis points (default: 50 = 0.5%)." },
   { key: "recipient", type: "string" as const, description: "Recipient address for the output (default: sender)." },
+  { key: "rationale", type: "string" as const, description: "Your one-sentence reason for THIS trade (the signal/thesis and why now). Recorded verbatim in the mission Decision Journal so the trade is auditable — always provide it." },
   { key: "dryRun", type: "boolean" as const, description: "Preview without executing." },
 ];
 
@@ -22,6 +23,7 @@ const SWAP_SELL_PARAMS = [
   { key: "sellFraction", type: "number" as const, description: "Optional fraction 0-1 of the live token balance to exit (0.5 = half). Overrides amountIn. Non-native tokenIn." },
   { key: "slippageBps", type: "number" as const, description: "Slippage tolerance in basis points (default: 50 = 0.5%)." },
   { key: "recipient", type: "string" as const, description: "Recipient address for the output (default: sender)." },
+  { key: "rationale", type: "string" as const, description: "Your one-sentence reason for THIS exit (what changed / why sell now). Recorded verbatim in the mission Decision Journal so the trade is auditable — always provide it." },
   { key: "dryRun", type: "boolean" as const, description: "Preview without executing." },
 ];
 

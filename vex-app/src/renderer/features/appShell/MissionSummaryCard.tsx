@@ -15,9 +15,13 @@
 import { useId, useState, type JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import type { MissionResultDto } from "@shared/schemas/mission.js";
+import type {
+  MissionResultDto,
+  MissionRetrospectiveDto,
+} from "@shared/schemas/mission.js";
 import { cn } from "../../lib/utils.js";
 import { useMoves } from "../../lib/api/portfolio.js";
+import { useMissionRetrospective } from "../../lib/api/mission.js";
 import { useSessionMessagesTail } from "../../lib/api/messages.js";
 import { formatClock } from "../../lib/format.js";
 import { EM_DASH, formatDurationS } from "./missionHistoryModel.js";
@@ -90,6 +94,21 @@ export function MissionSummaryCard({
     movesResult?.ok === true
       ? countMissionBagsHeld(moves, result.startedAt, result.endedAt)
       : result.openPositionsCount;
+
+  // Retrospective — the "lessons learned" section. Only a FINALIZED run has one
+  // (a still-running mission would trigger no inference), and it is read-or-
+  // lazily-generated once, so gate the query on both a session id and a
+  // terminal outcome. Fail-soft: while generating (first view) the section
+  // shows a subtle hint; a null/failed result hides it entirely.
+  const finalized = result.outcome !== "running";
+  const retroQuery = useMissionRetrospective(
+    finalized ? (sessionId ?? null) : null,
+  );
+  const retroResult = retroQuery.data;
+  const retrospective =
+    retroResult?.ok === true ? retroResult.data : null;
+  const retroPending =
+    finalized && !!sessionId && retroQuery.isLoading;
 
   return (
     <section
@@ -190,7 +209,104 @@ export function MissionSummaryCard({
 
       {/* Decision Journal — per-trade "why", each expandable to full reasoning. */}
       {journal.length > 0 ? <DecisionJournal entries={journal} /> : null}
+
+      {/* Retrospective / Lessons — LLM post-mortem, generated on first view. */}
+      <RetrospectiveSection data={retrospective} pending={retroPending} />
     </section>
+  );
+}
+
+/**
+ * Retrospective / Lessons — a compact post-mortem: narrative summary, then
+ * "What worked" / "What to fix" / "Lessons for next mission" bullet lists. The
+ * lessons are the actionable prompt-tweaks that seed the self-improving loop.
+ *
+ * Renders nothing when there is no retrospective and none is being generated
+ * (fail-soft), and a single quiet line while the first-view generation is in
+ * flight. Mirrors the card grammar: `.vex-eyebrow` micro label, hairline top
+ * border, mono/ink tokens.
+ */
+function RetrospectiveSection({
+  data,
+  pending,
+}: {
+  readonly data: MissionRetrospectiveDto | null;
+  readonly pending: boolean;
+}): JSX.Element | null {
+  if (data === null) {
+    if (!pending) return null;
+    return (
+      <div className="mt-1 border-t border-[var(--vex-line)] pt-2">
+        <p className="vex-eyebrow mb-1.5">Retrospective</p>
+        <p className="text-[11px] italic text-[var(--vex-text-3)]">
+          Generating lessons from this run…
+        </p>
+      </div>
+    );
+  }
+  const hasLists =
+    data.wentWell.length > 0 ||
+    data.wentWrong.length > 0 ||
+    data.lessons.length > 0;
+  return (
+    <div className="mt-1 border-t border-[var(--vex-line)] pt-2">
+      <p className="vex-eyebrow mb-1.5">Retrospective</p>
+      <p className="mb-2 text-[11px] leading-relaxed text-[var(--vex-text-2)]">
+        {data.summary}
+      </p>
+      {hasLists ? (
+        <div className="flex flex-col gap-2">
+          <RetroList
+            label="What worked"
+            items={data.wentWell}
+            tone="text-success"
+          />
+          <RetroList
+            label="What to fix"
+            items={data.wentWrong}
+            tone="text-[var(--vex-text-2)]"
+          />
+          <RetroList
+            label="Lessons for next mission"
+            items={data.lessons}
+            tone="text-[var(--vex-accent-text)]"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One labelled bullet list inside the Retrospective; renders nothing if empty. */
+function RetroList({
+  label,
+  items,
+  tone,
+}: {
+  readonly label: string;
+  readonly items: readonly string[];
+  readonly tone: string;
+}): JSX.Element | null {
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+        {label}
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {items.map((item, i) => (
+          <li
+            key={i}
+            className="flex gap-1.5 text-[11px] leading-snug text-[var(--vex-text-2)]"
+          >
+            <span aria-hidden className={cn("shrink-0", tone)}>
+              ·
+            </span>
+            <span className="min-w-0">{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

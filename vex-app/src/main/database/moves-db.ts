@@ -72,6 +72,11 @@
  *    must never let either override `input_token`/`output_token` identity or
  *    claim a brand icon without independent corroboration (`KNOWN_MINTS`).
  *    Neither raw `trade_capture` nor raw `external_refs` crosses IPC.
+ *    The `rationale` extraction is the SAME sanctioned shape: a string-typed,
+ *    `MOVE_RATIONALE_MAX`-bounded scalar from `trade_capture->>'rationale'`
+ *    (the agent's OWN stated trade reason, NOT provider metadata), re-clamped +
+ *    control-stripped in JS by `sanitizeRationale`. Display prose only — never
+ *    an identity/icon signal; the raw JSONB blob still never crosses IPC.
  *  - `wallet_address` IS projected (`walletAddress`) so the renderer can build
  *    an account block-explorer link for rows without a tx ref (HyperCore). This
  *    is the session's OWN wallet, already server-side scoped by the wallet
@@ -86,6 +91,7 @@ import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   MOVES_MAX,
   MOVE_TOKEN_SYMBOL_MAX,
+  MOVE_RATIONALE_MAX,
   type MovesDto,
 } from "@shared/schemas/portfolio-moves.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
@@ -180,7 +186,30 @@ interface MoveRow {
   readonly chain: string;
   readonly tx_ref: string | null;
   readonly wallet_address: string | null;
+  readonly rationale: string | null;
   readonly created_at: string | Date;
+}
+
+/**
+ * Normalise the agent-authored `rationale` scalar extracted from the capture
+ * item. It is written already-bounded + control-stripped by the swap handler
+ * (`handler-helpers.ts` `rationale()`), and clamped again in SQL, but this
+ * defends the read boundary independently: coerce a non-string to null, drop C0
+ * control chars + DEL (a defense-in-depth pass — a hand-written/legacy capture
+ * row could carry raw text), collapse whitespace, clamp, and treat empty as
+ * null. Unlike token symbols this is NOT provider metadata, so it is not passed
+ * through the confusables allowlist — it is free prose the renderer shows as
+ * plain text (never markup).
+ */
+function sanitizeRationale(value: string | null): string | null {
+  if (typeof value !== "string") return null;
+  let out = "";
+  for (const ch of value) {
+    const code = ch.codePointAt(0) ?? 0;
+    out += code < 0x20 || code === 0x7f ? " " : ch;
+  }
+  out = out.replace(/\s+/g, " ").trim().slice(0, MOVE_RATIONALE_MAX);
+  return out.length > 0 ? out : null;
 }
 
 /**
@@ -311,6 +340,18 @@ export async function getMovesForSession(
                 COALESCE(a.external_refs->>'txHash', a.external_refs->>'signature')
                   AS tx_ref,
                 a.wallet_address,
+                -- Agent-authored decision rationale for this trade, extracted as
+                -- a single string-typed, length-bounded scalar from the exact
+                -- capture item's trade_capture JSONB (never the raw blob). The
+                -- CASE guards the type + bound in SQL; JS re-clamps + strips
+                -- control chars. NULL for historical/externally-detected rows.
+                CASE
+                  WHEN jsonb_typeof(ci.trade_capture->'rationale') = 'string'
+                   AND char_length(ci.trade_capture->>'rationale')
+                       BETWEEN 1 AND ${MOVE_RATIONALE_MAX}
+                  THEN LEFT(ci.trade_capture->>'rationale', ${MOVE_RATIONALE_MAX})
+                  ELSE NULL
+                END AS rationale,
                 a.created_at
            FROM proj_activity a
            JOIN protocol_executions e ON e.id = a.execution_id
@@ -343,6 +384,7 @@ export async function getMovesForSession(
         chain: row.chain,
         txRef: row.tx_ref,
         walletAddress: row.wallet_address,
+        rationale: sanitizeRationale(row.rationale),
         createdAt: toIso(row.created_at),
       }));
 
