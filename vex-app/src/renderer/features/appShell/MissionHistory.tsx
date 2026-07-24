@@ -20,25 +20,28 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import type { Result } from "@shared/ipc/result.js";
 import type { MissionListResultsResult, MissionResultDto } from "@shared/schemas/mission.js";
-import { useUiStore } from "../../stores/uiStore.js";
+import { useUiStore, type PnlCurrency } from "../../stores/uiStore.js";
 import { useMissionResults } from "../../lib/api/mission.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
-import { formatPercentDelta, formatUsd } from "../../lib/format.js";
+import { formatPercentDelta } from "../../lib/format.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
 import { OutcomeBadge } from "./OutcomeBadge.js";
 import {
   EM_DASH,
   computeWinRate,
+  formatCumulativePnl,
   formatDurationS,
-  formatEth,
+  formatPnl,
+  isUsdFallback,
   missionDisplayOutcome,
-  pnlUsd,
   sumPnlEth,
 } from "./missionHistoryModel.js";
 
 export function MissionHistory(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
+  const pnlCurrency = useUiStore((s) => s.pnlCurrency);
+  const setPnlCurrency = useUiStore((s) => s.setPnlCurrency);
   const walletsQuery = useAvailableWallets();
   const primaryWallet =
     walletsQuery.data && walletsQuery.data.ok ? (walletsQuery.data.data.evm[0] ?? null) : null;
@@ -63,6 +66,10 @@ export function MissionHistory(): JSX.Element {
         <h1 className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-foreground">
           Missions
         </h1>
+        {/* Denomination toggle — a persisted display preference (uiStore),
+         * surfaced right where the PnL figures live rather than buried in the
+         * reconfigure wizard. Defaults to USD. */}
+        <PnlCurrencyToggle value={pnlCurrency} onChange={setPnlCurrency} />
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
@@ -70,7 +77,7 @@ export function MissionHistory(): JSX.Element {
           {primaryWallet === null ? (
             <Empty label="No wallet available — add a wallet to see mission history." />
           ) : (
-            <Body query={resultsQuery} />
+            <Body query={resultsQuery} currency={pnlCurrency} />
           )}
         </div>
       </div>
@@ -85,8 +92,10 @@ export function MissionHistory(): JSX.Element {
  */
 function Body({
   query,
+  currency,
 }: {
   readonly query: UseQueryResult<Result<MissionListResultsResult>>;
+  readonly currency: PnlCurrency;
 }): JSX.Element {
   if (query.isPending) return <Loading label="Loading missions…" />;
   if (query.isError) return <ErrorState message={query.error.message} />;
@@ -95,17 +104,22 @@ function Body({
   if (res.data.length === 0) {
     return <Empty label="No missions yet — finish a mission to see it here." />;
   }
-  return <Ledger results={res.data} />;
+  return <Ledger results={res.data} currency={currency} />;
 }
 
-function Ledger({ results }: { readonly results: readonly MissionResultDto[] }): JSX.Element {
+function Ledger({
+  results,
+  currency,
+}: {
+  readonly results: readonly MissionResultDto[];
+  readonly currency: PnlCurrency;
+}): JSX.Element {
   const winRate = computeWinRate(results);
-  const cumulative = sumPnlEth(results);
 
   return (
     <>
-      <SummaryHeader total={results.length} winRate={winRate} cumulativeEth={cumulative} />
-      <ResultsTable results={results} />
+      <SummaryHeader total={results.length} winRate={winRate} results={results} currency={currency} />
+      <ResultsTable results={results} currency={currency} />
     </>
   );
 }
@@ -113,22 +127,68 @@ function Ledger({ results }: { readonly results: readonly MissionResultDto[] }):
 function SummaryHeader({
   total,
   winRate,
-  cumulativeEth,
+  results,
+  currency,
 }: {
   readonly total: number;
   readonly winRate: number | null;
-  readonly cumulativeEth: number;
+  readonly results: readonly MissionResultDto[];
+  readonly currency: PnlCurrency;
 }): JSX.Element {
+  // Sign (and therefore colour) is denomination-independent — a positive ETH
+  // PnL is a positive USD PnL — so tone tracks the ETH total either way.
+  const cumulativeEth = sumPnlEth(results);
   return (
     <section className="flex flex-wrap items-end gap-x-10 gap-y-4 border-b border-[var(--vex-line)] pb-6">
       <Stat label="Missions" value={String(total)} />
       <Stat label="Win rate" value={winRate === null ? EM_DASH : `${winRate.toFixed(0)}%`} />
       <Stat
         label="Cumulative PnL"
-        value={`${formatEth(cumulativeEth, { signed: true })} ETH`}
+        value={formatCumulativePnl(results, currency)}
         tone={pnlTone(cumulativeEth)}
       />
     </section>
+  );
+}
+
+/**
+ * ETH | USD segmented control — a two-button `radiogroup`. Persisted preference
+ * (uiStore); flipping it re-denominates the cumulative + per-row PnL in place.
+ */
+function PnlCurrencyToggle({
+  value,
+  onChange,
+}: {
+  readonly value: PnlCurrency;
+  readonly onChange: (next: PnlCurrency) => void;
+}): JSX.Element {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="PnL denomination"
+      className="ml-auto flex items-center gap-0.5 rounded-[6px] border border-[var(--vex-line)] p-0.5"
+    >
+      {(["usd", "eth"] as const).map((option) => {
+        const active = value === option;
+        return (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(option)}
+            className={cn(
+              "rounded-[4px] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+              active
+                ? "bg-[var(--vex-accent-fill-12)] text-foreground"
+                : "text-[var(--vex-text-3)] hover:text-foreground",
+            )}
+          >
+            {option === "usd" ? "USD" : "ETH"}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -155,8 +215,10 @@ function Stat({
 
 function ResultsTable({
   results,
+  currency,
 }: {
   readonly results: readonly MissionResultDto[];
+  readonly currency: PnlCurrency;
 }): JSX.Element {
   return (
     <div className="overflow-x-auto">
@@ -168,12 +230,12 @@ function ResultsTable({
             <Th>Outcome</Th>
             <Th align="right">Duration</Th>
             <Th align="right">Trades</Th>
-            <Th align="right">PnL (ETH)</Th>
+            <Th align="right">{currency === "usd" ? "PnL (USD)" : "PnL (ETH)"}</Th>
           </tr>
         </thead>
         <tbody>
           {results.map((r) => (
-            <ResultRow key={r.missionRunId} result={r} />
+            <ResultRow key={r.missionRunId} result={r} currency={currency} />
           ))}
         </tbody>
       </table>
@@ -181,9 +243,17 @@ function ResultsTable({
   );
 }
 
-function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Element {
-  const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  const pnlTitle = usd === null ? undefined : `${formatUsd(usd)} at close`;
+function ResultRow({
+  result,
+  currency,
+}: {
+  readonly result: MissionResultDto;
+  readonly currency: PnlCurrency;
+}): JSX.Element {
+  // FAIL-SOFT: USD selected but this run has no captured close price -> the
+  // cell shows ETH; a title explains why so the mixed unit isn't a surprise.
+  const fellBack = isUsdFallback(currency, result.pnlEth, result.ethPriceUsdEnd);
+  const pnlTitle = fellBack ? "No close price recorded — showing ETH" : undefined;
 
   return (
     <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
@@ -212,7 +282,7 @@ function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Eleme
       </td>
       <td className="py-2.5 text-right">
         <span title={pnlTitle} className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}>
-          {formatEth(result.pnlEth, { signed: true })}
+          {formatPnl(result.pnlEth, currency, result.ethPriceUsdEnd)}
         </span>
         {result.pnlPct !== null ? (
           <span className="ml-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
