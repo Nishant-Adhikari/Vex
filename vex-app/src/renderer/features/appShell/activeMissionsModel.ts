@@ -9,7 +9,9 @@
  * an open, possibly real-money position. This model takes the per-wallet
  * ledger's still-"running" rows and cross-references each against that
  * session's LIVE runtime state to split genuinely-live runs from
- * stale/orphaned ledger rows that only LOOK live.
+ * stale/orphaned ledger rows that only LOOK live — including the crashed-runner
+ * case where the run row is still `status='running'` but its runner lease has
+ * expired (`leaseActive=false`), which `hasActiveRun` alone cannot detect.
  *
  * All of the heuristics live here as a pure function so they can be unit
  * tested without React or IPC. The hook (`useActiveMissions`) is a thin
@@ -39,6 +41,15 @@ export type ActiveMissionStatus =
 export interface ActiveMissionRuntime {
   readonly hasActiveRun: boolean;
   readonly status: MissionRunStatus | null;
+  /**
+   * Whether a runner lease is currently held AND unexpired. A crashed/killed
+   * runner leaves the `mission_runs` row at `status='running'` (so
+   * `hasActiveRun` stays true) while its lease expires — `leaseActive` is the
+   * ONLY signal that separates that dead run from a genuinely-executing one.
+   * Legitimately parked runs (`paused_*`) release the lease too, so this is
+   * consulted for the `running` status only.
+   */
+  readonly leaseActive: boolean;
 }
 
 export interface ActiveMission {
@@ -54,24 +65,30 @@ export interface ActiveMission {
 }
 
 /**
- * Map a live run's `mission_runs.status` to a bar status. `hasActiveRun` has
- * already proven the run is live by the time this is called, so a terminal or
- * null status here is an inconsistent edge → treat as `preparing` (neutral),
- * never as orphaned (which would wrongly imply "no live run").
+ * Classify a RESOLVED runtime read into a bar status.
+ *
+ *  - No active run row at all → `stale_orphaned` (ledger says running,
+ *    runtime disagrees).
+ *  - `paused_*` → `paused` (a legitimately parked run; it releases its lease,
+ *    so lease state is not consulted here).
+ *  - `running` → `running` ONLY when the lease is live; a `running` row with a
+ *    DEAD lease is a crashed/killed runner → `stale_orphaned`. This is the
+ *    orphan case the bar exists to catch.
+ *  - anything else (terminal/null status while `hasActiveRun`) → `preparing`
+ *    (an inconsistent edge, surfaced neutrally — never as a false orphan).
  */
-function classifyLiveStatus(status: MissionRunStatus | null): ActiveMissionStatus {
-  switch (status) {
-    case "running":
-      return "running";
+function classifyRuntime(rt: ActiveMissionRuntime): ActiveMissionStatus {
+  if (!rt.hasActiveRun) return "stale_orphaned";
+  switch (rt.status) {
     case "paused_approval":
     case "paused_wake":
     case "paused_error":
     case "paused_user":
     case "paused_plan_acceptance":
       return "paused";
+    case "running":
+      return rt.leaseActive ? "running" : "stale_orphaned";
     default:
-      // completed / failed / stopped / cancelled / null — inconsistent with a
-      // live run, but not evidence of an orphan. Surface it neutrally.
       return "preparing";
   }
 }
@@ -121,16 +138,10 @@ export function classifyActiveMissions(
 
   const items: ActiveMission[] = open.map((r) => {
     const runtime = runtimeBySession.get(r.sessionId);
-    let status: ActiveMissionStatus;
-    if (runtime === undefined) {
-      // Runtime not yet resolved — trust the ledger's "running" tentatively.
-      status = "running";
-    } else if (!runtime.hasActiveRun) {
-      // Ledger says running, runtime says no active run → orphaned.
-      status = "stale_orphaned";
-    } else {
-      status = classifyLiveStatus(runtime.status);
-    }
+    // Runtime not yet resolved → trust the ledger's "running" tentatively
+    // (never flash orphaned before runtime has actually confirmed no live run).
+    const status: ActiveMissionStatus =
+      runtime === undefined ? "running" : classifyRuntime(runtime);
     return {
       missionRunId: r.missionRunId,
       sessionId: r.sessionId,

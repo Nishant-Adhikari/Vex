@@ -15,13 +15,12 @@
  */
 
 import { useMemo } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
-import { useMissionResults } from "../../lib/api/mission.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
-import { runtimeKeys } from "../../lib/api/queryKeys.js";
+import { missionKeys, runtimeKeys } from "../../lib/api/queryKeys.js";
 import {
   classifyActiveMissions,
   type ActiveMission,
@@ -45,7 +44,19 @@ export function useActiveMissions(): UseActiveMissionsResult {
       ? (walletsQuery.data.data.evm[0] ?? null)
       : null;
 
-  const resultsQuery = useMissionResults(primaryWallet?.address ?? null);
+  // Ledger read — the SAME cache key `useMissionResults` uses (so Mission
+  // History and this bar share one entry), but with a poll: this bar is a live
+  // safety net, so a mission started (or finalized) in another session must
+  // surface without waiting on an unrelated focus/remount refetch. Sharing the
+  // key means our poll also refreshes Mission History's view.
+  const walletAddress = primaryWallet?.address ?? "";
+  const resultsQuery = useQuery({
+    queryKey: missionKeys.results(walletAddress),
+    queryFn: () => window.vex.mission.listResults({ walletAddress }),
+    enabled: walletAddress.length > 0,
+    staleTime: 2_000,
+    refetchInterval: LEDGER_POLL_MS,
+  });
   const sessionsQuery = useSessionsList();
 
   // Candidate open/orphaned runs: ledger rows still marked running.
@@ -81,6 +92,7 @@ export function useActiveMissions(): UseActiveMissionsResult {
         map.set(id, {
           hasActiveRun: data.data.hasActiveRun,
           status: data.data.status,
+          leaseActive: data.data.leaseActive,
         });
       }
     });
@@ -128,7 +140,7 @@ function runtimeSignature(
     .map((q) => {
       const data = q.data;
       if (!data || !data.ok) return "?";
-      return `${data.data.sessionId}:${data.data.hasActiveRun ? 1 : 0}:${data.data.status ?? "-"}`;
+      return `${data.data.sessionId}:${data.data.hasActiveRun ? 1 : 0}:${data.data.leaseActive ? 1 : 0}:${data.data.status ?? "-"}`;
     })
     .join("|");
 }

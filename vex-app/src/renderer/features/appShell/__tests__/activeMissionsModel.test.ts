@@ -40,8 +40,10 @@ function row(over: Partial<MissionResultDto> = {}): MissionResultDto {
 function runtime(
   hasActiveRun: boolean,
   status: MissionRunStatus | null = hasActiveRun ? "running" : null,
+  // A live run defaults to a live lease; paused runs release the lease.
+  leaseActive: boolean = hasActiveRun && status === "running",
 ): ActiveMissionRuntime {
-  return { hasActiveRun, status };
+  return { hasActiveRun, status, leaseActive };
 }
 
 describe("classifyActiveMissions", () => {
@@ -70,6 +72,32 @@ describe("classifyActiveMissions", () => {
       new Map([["s-a", runtime(false)]]),
     );
     expect(out[0]?.status).toBe("stale_orphaned");
+  });
+
+  it("flags a running row with a DEAD lease (crashed runner) as stale_orphaned", () => {
+    // hasActiveRun stays true because mission_runs.status is still 'running',
+    // but the runner lease expired — the killed-run orphan case.
+    const out = classifyActiveMissions(
+      [row({ sessionId: "s-a" })],
+      new Map([["s-a", runtime(true, "running", /* leaseActive */ false)]]),
+    );
+    expect(out[0]?.status).toBe("stale_orphaned");
+  });
+
+  it("keeps a running row with a LIVE lease as running", () => {
+    const out = classifyActiveMissions(
+      [row({ sessionId: "s-a" })],
+      new Map([["s-a", runtime(true, "running", /* leaseActive */ true)]]),
+    );
+    expect(out[0]?.status).toBe("running");
+  });
+
+  it("classifies a paused run as paused even though it holds no lease", () => {
+    const out = classifyActiveMissions(
+      [row({ sessionId: "s-a" })],
+      new Map([["s-a", runtime(true, "paused_wake", /* leaseActive */ false)]]),
+    );
+    expect(out[0]?.status).toBe("paused");
   });
 
   it("never flashes orphaned before runtime resolves — an absent runtime stays running", () => {
