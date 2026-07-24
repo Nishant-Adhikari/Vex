@@ -53,6 +53,8 @@ interface SessionRow {
   mode?: string | null;
   /** Session-scoped approval policy: `restricted` (default) or `full`. */
   permission?: string | null;
+  /** Mission execution mode intent: `live` (default) or `simulator`. */
+  mission_mode?: string | null;
   /** Snapshot of user-supplied goal at session creation; null for `agent` rows. */
   initial_goal?: string | null;
   /** Per-session selected wallet (id + address snapshot). Null = unselected. */
@@ -76,6 +78,13 @@ export type SessionMode = "agent" | "mission";
  * after session creation.
  */
 export type SessionPermission = "restricted" | "full";
+
+/**
+ * Session's intended mission execution mode. `"live"` (default) broadcasts real
+ * transactions; `"simulator"` paper-fills every swap and never broadcasts.
+ * Immutable after session creation.
+ */
+export type SessionMissionMode = "live" | "simulator";
 
 /** A session's pinned wallet choice: inventory id + on-chain address snapshot. */
 export interface SessionWalletRef {
@@ -107,6 +116,13 @@ export interface Session {
   mode: SessionMode;
   /** Approval policy. Immutable. */
   permission: SessionPermission;
+  /**
+   * Mission execution mode intent, set at creation. `"live"` (default) or
+   * `"simulator"`. The simulator scheduler creates sessions with `"simulator"`;
+   * the run inherits it as the frozen `mission_runs.mode` at start. Hydration
+   * prefers the active run's frozen mode over this session-level intent.
+   */
+  missionMode: SessionMissionMode;
   /**
    * Snapshot of user intent at session creation. The negotiated/refined
    * mission contract goal lives on `missions.goal` and may differ from
@@ -142,6 +158,7 @@ function mapRow(r: SessionRow): Session {
     checkpointGeneration: r.checkpoint_generation,
     mode: r.mode === "mission" ? "mission" : "agent",
     permission: r.permission === "full" ? "full" : "restricted",
+    missionMode: r.mission_mode === "simulator" ? "simulator" : "live",
     initialGoal: r.initial_goal ?? null,
     selectedEvmWallet: walletRef(r.selected_evm_wallet_id, r.selected_evm_wallet_address),
     selectedSolanaWallet: walletRef(r.selected_solana_wallet_id, r.selected_solana_wallet_address),
@@ -153,6 +170,11 @@ export interface CreateSessionOptions {
   mode?: SessionMode;
   /** Permission is immutable per session. Defaults to `"restricted"`. */
   permission?: SessionPermission;
+  /**
+   * Mission execution mode. Immutable per session. Defaults to `"live"`. The
+   * simulator scheduler passes `"simulator"` so the mission run paper-trades.
+   */
+  missionMode?: SessionMissionMode;
   /**
    * Optional snapshot of the first mission goal. Mission sessions can be
    * created without it; GUI chat sets it on the first user turn.
@@ -184,6 +206,7 @@ export async function createSession(
 ): Promise<void> {
   const mode: SessionMode = options.mode ?? "agent";
   const permission: SessionPermission = options.permission ?? "restricted";
+  const missionMode: SessionMissionMode = options.missionMode ?? "live";
   const initialGoal: string | null = mode === "mission" ? (options.initialGoal ?? null) : null;
   const evm = options.selectedEvmWallet ?? null;
   const solana = options.selectedSolanaWallet ?? null;
@@ -191,13 +214,13 @@ export async function createSession(
   await executeWith(
     executor,
     `INSERT INTO sessions
-       (id, mode, permission, initial_goal,
+       (id, mode, permission, mission_mode, initial_goal,
         selected_evm_wallet_id, selected_evm_wallet_address,
         selected_solana_wallet_id, selected_solana_wallet_address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (id) DO NOTHING`,
     [
-      id, mode, permission, initialGoal,
+      id, mode, permission, missionMode, initialGoal,
       evm?.id ?? null, evm?.address ?? null,
       solana?.id ?? null, solana?.address ?? null,
     ],

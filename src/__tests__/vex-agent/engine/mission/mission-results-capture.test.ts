@@ -31,6 +31,8 @@ function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
     closeResult: vi.fn(async () => {}),
     getResult: vi.fn(async () => null),
     countTrades: vi.fn(async () => 3),
+    // Default: a live run (mode 'live') → the ledger row is not badged simulator.
+    getRun: vi.fn(async () => ({ mode: "live" }) as never),
     ...over,
   };
 }
@@ -64,6 +66,14 @@ describe("captureMissionStart", () => {
       ethPriceUsdStart: 3000,
     });
     expect(arg.goalSnippet).toContain("grow ETH");
+  });
+
+  it("badges the ledger row simulated:true for a simulator run", async () => {
+    const d = deps({ getRun: vi.fn(async () => ({ mode: "simulator" }) as never) });
+    await captureMissionStart({ missionId: "mission-1", runId: "run-1", sessionId: "s-1" }, d);
+    expect(d.openResult).toHaveBeenCalledTimes(1);
+    const arg = (d.openResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(arg).toMatchObject({ simulated: true });
   });
 
   it("no-ops when the mission is missing (nothing to open)", async () => {

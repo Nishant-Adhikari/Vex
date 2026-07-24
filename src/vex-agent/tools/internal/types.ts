@@ -11,7 +11,7 @@
  */
 
 import type { ToolResult } from "../types.js";
-import type { Permission, SessionKind, WalletPolicy } from "@vex-agent/engine/types.js";
+import type { MissionMode, Permission, SessionKind, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 
 /** Result from an internal tool handler */
@@ -83,6 +83,14 @@ export interface InternalToolContext {
   walletResolution: WalletResolution;
   /** Mission wallet policy — enforced alongside the resolution by the resolvers. */
   walletPolicy: WalletPolicy;
+  /**
+   * Mission execution mode, propagated from `EngineContext.missionMode`
+   * (frozen per run). `"simulator"` means every swap is paper-filled and NO
+   * transaction is broadcast. Optional so non-hydrated/test/legacy callers
+   * default to `"live"`. The dispatcher binds this onto the async broadcast
+   * guard so the low-level primitives fail-closed independently.
+   */
+  missionMode?: MissionMode;
 }
 
 // ── Param accessors ─────────────────────────────────────────────

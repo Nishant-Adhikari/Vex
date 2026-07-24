@@ -19,6 +19,7 @@
 
 import { randomUUID } from "node:crypto";
 import { getMission, type Mission } from "../../db/repos/missions.js";
+import { getRun as getMissionRun } from "../../db/repos/mission-runs.js";
 import { resolveLocalChainId } from "../../../tools/evm-chains/registry.js";
 import { readEthBankroll, readEthBankrollOnChain } from "./bankroll.js";
 import { countMissionTrades } from "./mission-metrics.js";
@@ -42,6 +43,8 @@ export interface CaptureDeps {
   closeResult: typeof closeMissionResult;
   getResult: typeof getResultForRun;
   countTrades: typeof countMissionTrades;
+  /** Reads the run's frozen mode so the ledger row can be badged simulator. */
+  getRun: typeof getMissionRun;
 }
 
 // Built lazily (inside each function's try) rather than at module load: some
@@ -57,6 +60,7 @@ function productionDeps(): CaptureDeps {
     closeResult: closeMissionResult,
     getResult: getResultForRun,
     countTrades: countMissionTrades,
+    getRun: getMissionRun,
   };
 }
 
@@ -102,7 +106,10 @@ export async function captureMissionStart(
     const onChain = await deps.readBankrollOnChain(wc.wallet, wc.chainId);
     const projection = await deps.readBankroll(wc.wallet, wc.chainId);
     const bankroll = onChain ?? projection;
+    // Badge the ledger row for a simulator run (fail-soft — default live).
+    const run = await deps.getRun(args.runId);
     await deps.openResult({
+      simulated: run?.mode === "simulator",
       id: `mres-${randomUUID()}`,
       missionId: args.missionId,
       missionRunId: args.runId,

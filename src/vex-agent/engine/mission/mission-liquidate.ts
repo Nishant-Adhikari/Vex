@@ -160,6 +160,11 @@ function isBankrollToken(
 function buildLiquidationExecContext(context: EngineContext): ProtocolExecutionContext {
   return {
     sessionPermission: context.sessionPermission,
+    // A simulator run holds only PAPER positions (no real proj_open_positions),
+    // so this force-exit is a no-op there; carry the mode regardless so any sell
+    // it did attempt would paper-fill (layer A), never broadcast.
+    missionMode: context.missionMode ?? "live",
+    missionRunId: context.missionRunId,
     approved: true,
     walletResolution: buildSessionWalletResolution(context),
     walletPolicy: context.walletPolicy,

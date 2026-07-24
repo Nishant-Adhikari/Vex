@@ -33,6 +33,7 @@ function mission(over: Partial<ActiveMission> = {}): ActiveMission {
     pnlEth: null,
     pnlPct: null,
     openPositionsCount: 0,
+    simulated: false,
     ...over,
   };
 }

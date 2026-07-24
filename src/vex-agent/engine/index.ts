@@ -81,4 +81,12 @@ export type {
 // directly (no LLM parse) through the same validated draft-write pipeline.
 export { seedMissionDraftForSession } from "./mission/setup.js";
 
+// Simulator scheduler — hands-free paper missions (the boot worker drives it).
+export {
+  launchScheduledSimulatorMission,
+  type LaunchSimulatorMissionInput,
+  type LaunchSimulatorMissionOutcome,
+} from "./mission/simulator-scheduler.js";
+export { countActiveRunsByMode } from "../db/repos/mission-runs.js";
+
 export * from "./types.js";

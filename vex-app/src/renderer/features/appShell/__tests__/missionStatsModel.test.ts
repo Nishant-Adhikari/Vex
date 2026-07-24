@@ -38,6 +38,7 @@ function result(p: Partial<MissionResultDto>): MissionResultDto {
     stopReason: null,
     summary: null,
     openPositionsCount: 0,
+    simulated: false,
     ...p,
   };
 }

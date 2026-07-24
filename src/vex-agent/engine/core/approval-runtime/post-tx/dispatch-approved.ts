@@ -100,6 +100,9 @@ export async function applyApproveSideEffects(
       sessionId,
       loadedDocuments: new Map(),
       sessionPermission: row.queue_permission_at_enqueue,
+      // Carry the run's frozen mode so an approved swap on a simulator mission
+      // still paper-fills / is blocked (never broadcasts) on resume.
+      missionMode: walletHydrated?.context.missionMode ?? "live",
       approved: true,
       role: "parent",
       missionRunId,

@@ -13,6 +13,7 @@ import {
   type Transport,
 } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
+import { assertBroadcastAllowed } from "../../../lib/mission-mode.js";
 import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import { KYBER_KNOWN_SPENDERS } from "../constants.js";
 import logger from "../../../utils/logger.js";
@@ -224,6 +225,9 @@ export async function sendKyberTransaction(
   params: { to: Address; data: Hex; value?: bigint },
 ): Promise<Hex> {
   try {
+    // Layer B (belt-and-suspenders): fail-closed no-broadcast under a
+    // simulator mission run — throws before sendTransaction.
+    assertBroadcastAllowed("KyberSwap transaction broadcast");
     const txHash = await walletClient.sendTransaction({
       account: walletClient.account!,
       to: params.to,
@@ -253,6 +257,9 @@ export async function sendKyberTransactionWithReceipt(
   params: { to: Address; data: Hex; value?: bigint },
 ): Promise<{ hash: Hex; receipt: { logs: Array<{ address: string; topics: string[]; data: string }> } }> {
   try {
+    // Layer B (belt-and-suspenders): fail-closed no-broadcast under a
+    // simulator mission run — throws before sendTransaction.
+    assertBroadcastAllowed("KyberSwap transaction broadcast");
     const hash = await walletClient.sendTransaction({
       account: walletClient.account!,
       to: params.to,

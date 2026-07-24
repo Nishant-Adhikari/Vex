@@ -124,6 +124,14 @@ function MissionChip({
       <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
         #{mission.seqNo}
       </span>
+      {mission.simulated ? (
+        <span
+          className="shrink-0 rounded-[3px] border border-[var(--vex-accent)]/40 px-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--vex-accent)]"
+          title="Simulator run — paper-traded, no real transactions"
+        >
+          SIM
+        </span>
+      ) : null}
       <span className="min-w-0 truncate text-[12px] text-foreground">
         {mission.label}
       </span>

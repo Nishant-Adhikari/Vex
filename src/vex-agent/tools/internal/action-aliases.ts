@@ -47,6 +47,8 @@ import logger from "@utils/logger.js";
 function protocolContext(context: InternalToolContext): Parameters<typeof executeProtocolTool>[1] {
   return {
     sessionPermission: context.sessionPermission,
+    missionMode: context.missionMode,
+    missionRunId: context.missionRunId,
     approved: context.approved,
     sessionId: context.sessionId,
     walletResolution: context.walletResolution,

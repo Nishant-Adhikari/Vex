@@ -40,6 +40,7 @@ import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupOrphanReconcilerWorker } from "./agent/orphan-reconciler-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
+import { setupSimulatorSchedulerWorker } from "./agent/simulator-scheduler-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
 import { setupSignalsIngestWorker } from "./agent/signals-worker.js";
 import { setupKeepAwakeWorker } from "./agent/keep-awake-worker.js";
@@ -265,6 +266,15 @@ async function initializeMainRuntime(): Promise<void> {
   // reads already-synced projections.
   const stopExitWatchWorker = setupExitWatchWorker();
 
+  // 6a-sim-scheduler. Own the hands-free simulator scheduler: when
+  // VEX_SIM_SCHEDULER_ENABLED is set it auto-launches a NEW paper-trading
+  // (mission_mode='simulator') mission every interval, capped at
+  // maxConcurrent, so the shadow ledger accumulates lots of pick→trade→outcome
+  // samples. DISABLED BY DEFAULT and fully isolated from real missions — a
+  // simulator run never touches a wallet or broadcasts (paper-fill + the two
+  // no-broadcast layers). Stays idle until the engine DB url resolves.
+  const stopSimulatorSchedulerWorker = setupSimulatorSchedulerWorker();
+
   // 6a-market. Own the VEX market poller (T1) so the welcome-screen price
   // widget has a live snapshot to read + subscribe to. Broadcast-only (no DB,
   // no provider gate, no vault): it polls public DexScreener / GeckoTerminal /
@@ -310,6 +320,7 @@ async function initializeMainRuntime(): Promise<void> {
         stopRegimeWorker(),
         stopToolEmbeddingReconcileWorker(),
         stopExitWatchWorker(),
+        stopSimulatorSchedulerWorker(),
       ]);
       for (const r of results) {
         if (r.status === "rejected") {
