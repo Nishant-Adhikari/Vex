@@ -83,6 +83,32 @@ export async function finalizeMissionRunStatus(
 ): Promise<MissionStatus> {
   if (!stopReason) return "running";
 
+  // Orphaned/interrupted run reclaimed by the reconciler (or a leaseless
+  // force-stop). Distinct terminal surface — run status `stopped` +
+  // `stop_reason='runner_lost'` — so a wedged run is auditable and never
+  // auto-resumed. The flip is GUARDED (`WHERE status='running'`) so re-running
+  // the reconciler is a no-op: if another pass / a live finalize already moved
+  // the row out of `running`, we short-circuit without re-closing the ledger.
+  // The parent mission row goes to `cancelled` (MissionStatus has no `stopped`).
+  if (stopReason === "runner_lost") {
+    const claimed = await missionRunsRepo.markStoppedIfRunning(
+      runId,
+      stopReason,
+      stopPayload,
+    );
+    if (!claimed) return "cancelled";
+    await missionsRepo.setStatus(missionId, "cancelled");
+    await emitFinalizeControlState(sessionId, runId);
+    await captureMissionFinal({
+      missionId,
+      runId,
+      sessionId,
+      outcome: "stopped",
+      stopReason,
+    });
+    return "cancelled";
+  }
+
   const { shouldTerminateRun } = await import("../stop-conditions.js");
 
   if (shouldTerminateRun(stopReason)) {

@@ -14,7 +14,7 @@ import {
 } from "../../engine/types.js";
 import type { PoolClient } from "pg";
 
-import { queryOne, queryOneWith, execute, getPool } from "../client.js";
+import { query, queryOne, queryOneWith, execute, getPool } from "../client.js";
 import { nullableJsonb } from "../params.js";
 import logger from "@utils/logger.js";
 
@@ -300,6 +300,70 @@ export async function casFlipToRunning(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Orphaned-run selection for the boot / periodic reconciler.
+ *
+ * Returns every `running` run (`ended_at IS NULL`) whose session has NO LIVE
+ * runner lease — i.e. the lease row is missing OR expired (`expires_at <=
+ * NOW()`). These are the wedged runs: the app restarted (or the runner process
+ * died) mid-run, the `mission_runs` row is stuck `running`, and no worker
+ * re-acquired the lease. A run WITH a live lease (a genuinely-executing run) is
+ * excluded, as are all paused_* / terminal runs. Ordered oldest-first so the
+ * longest-stranded run is reconciled first.
+ */
+export async function findOrphanedRunningRuns(
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql = `SELECT m.*
+                 FROM mission_runs m
+                 LEFT JOIN runner_leases l
+                   ON l.session_id = m.session_id
+                  AND l.expires_at > NOW()
+                WHERE m.status = 'running'
+                  AND m.ended_at IS NULL
+                  AND l.session_id IS NULL
+                ORDER BY m.started_at ASC`;
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql)).rows
+    : await query<Record<string, unknown>>(sql);
+  return rows.map(mapRow);
+}
+
+/**
+ * Idempotent guarded terminal flip used by the orphaned-run reconciler and the
+ * leaseless force-stop path. Atomically moves a run to `stopped` ONLY while it
+ * is still `running` (`WHERE ... AND status = 'running'`), stamping the distinct
+ * `stop_reason` (e.g. `runner_lost`) + `ended_at = NOW()`. Returns `true` when
+ * THIS call performed the transition, `false` when the run was already terminal
+ * / re-claimed (another reconciler pass or a live finalize won the race) — so
+ * re-running the reconciler is a no-op and never double-finalizes.
+ */
+export async function markStoppedIfRunning(
+  id: string,
+  stopReason: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs
+                  SET status = 'stopped',
+                      stop_reason = $2,
+                      stop_summary = COALESCE($3, stop_summary),
+                      stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+                      ended_at = NOW()
+                WHERE id = $1
+                  AND status = 'running'`;
+  const params = [
+    id,
+    stopReason,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
 }
 
 export async function getRun(

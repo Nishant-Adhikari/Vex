@@ -52,3 +52,54 @@ export async function forceLiquidateOnDeadline(args: {
     });
   }
 }
+
+/**
+ * Flatten the open positions of an INTERRUPTED run — a wedged/orphaned run the
+ * reconciler is reclaiming, or a leaseless run the operator force-stopped.
+ *
+ * Unlike `forceLiquidateOnDeadline`, there is no live turn-loop here to hand us
+ * an `EngineContext`, so we hydrate the run's session to rebuild it, then reuse
+ * the SAME `liquidateMissionPositions` core (the deadline flatten path — NOT a
+ * parallel implementation). Sells only the tokens THAT MISSION opened back to
+ * ETH so the run ends flat instead of stranding a bag.
+ *
+ * FULLY fail-soft: a missing session, a hydrate failure, or any liquidator
+ * throw is logged and swallowed — flattening must NEVER block the finalize that
+ * gets a wedged run out of `running`. Naturally idempotent: a second call
+ * re-reads CURRENT holdings and finds the mission tokens already sold.
+ */
+export async function flattenInterruptedRunPositions(args: {
+  missionId: string;
+  runId: string;
+  sessionId: string;
+}): Promise<void> {
+  try {
+    const { hydrateEngineSession } = await import("../hydrate.js");
+    const hydrated = await hydrateEngineSession(args.sessionId);
+    if (!hydrated) {
+      logger.warn("mission.liquidate.interrupted_no_session", {
+        runId: args.runId,
+        sessionId: args.sessionId,
+      });
+      return;
+    }
+    const { liquidateMissionPositions } = await import(
+      "../../mission/mission-liquidate.js"
+    );
+    await liquidateMissionPositions({
+      missionId: args.missionId,
+      runId: args.runId,
+      sessionId: args.sessionId,
+      context: {
+        ...hydrated.context,
+        missionRunId: args.runId,
+        sessionKind: "mission",
+      },
+    });
+  } catch (err) {
+    logger.warn("mission.liquidate.interrupted_failed", {
+      runId: args.runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}

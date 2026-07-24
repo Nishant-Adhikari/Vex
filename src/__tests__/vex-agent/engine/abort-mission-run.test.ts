@@ -23,6 +23,7 @@ const mockCancelForSession = vi.fn();
 const mockGetPendingApprovals = vi.fn();
 const mockRejectApproval = vi.fn();
 const mockReconcileDraftReadiness = vi.fn();
+const mockFlattenInterrupted = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getRun: (...a: unknown[]) => mockGetRun(...a),
@@ -54,6 +55,14 @@ vi.mock("../../../vex-agent/engine/mission/draft-readiness.js", () => ({
     mockReconcileDraftReadiness(...a),
 }));
 
+// The leaseless / out-of-process direct-finalize path (b) flattens the
+// mission's open positions BEFORE finalizing (so a wedged run ends flat, not
+// stranding a bag). Mocked here so these tests assert it fires on path (b) and
+// NOT on the live-loop path (a), with no real hydrate/liquidation.
+vi.mock("../../../vex-agent/engine/core/runner/mission-liquidate-hook.js", () => ({
+  flattenInterruptedRunPositions: (...a: unknown[]) => mockFlattenInterrupted(...a),
+}));
+
 const {
   abortMissionRun,
   abortActiveMissionForSession,
@@ -75,6 +84,8 @@ describe("abortMissionRun", () => {
     mockRejectApproval.mockReset();
     mockCancelForSession.mockResolvedValue(0);
     mockGetPendingApprovals.mockResolvedValue([]);
+    mockFlattenInterrupted.mockClear();
+    mockFlattenInterrupted.mockResolvedValue(undefined);
     // Drop any controllers leaked between tests.
     if (hasMissionRunAbortController("run-1")) unregisterMissionRunAbortController("run-1");
     if (hasMissionRunAbortController("run-running")) unregisterMissionRunAbortController("run-running");
@@ -126,6 +137,9 @@ describe("abortMissionRun", () => {
     // Direct finalize path NOT taken — loop owns that.
     expect(mockUpdateRunStatus).not.toHaveBeenCalled();
     expect(mockSetMissionStatus).not.toHaveBeenCalled();
+    // Live loop owns liquidation via its own deadline hook — path (b) flatten
+    // must NOT fire here (would double-handle a run the loop is finalizing).
+    expect(mockFlattenInterrupted).not.toHaveBeenCalled();
   });
 
   it("running without registered controller → finalises directly", async () => {
@@ -140,6 +154,13 @@ describe("abortMissionRun", () => {
 
     expect(result.aborted).toBe(true);
     expect(result.finalStatus).toBe("cancelled");
+    // Wedged/leaseless run — flatten its positions BEFORE finalizing so it ends
+    // flat, then finalize directly.
+    expect(mockFlattenInterrupted).toHaveBeenCalledWith({
+      missionId: "mission-3",
+      runId: "run-orphan",
+      sessionId: "sess-3",
+    });
     expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-orphan", "cancelled", "user_stopped");
     expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-3", "cancelled");
   });
