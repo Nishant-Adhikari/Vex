@@ -37,6 +37,7 @@ import { AnimatePresence } from "motion/react";
 import type { SkyTheme } from "./signalSkyShaders.js";
 import type { AppShellView, WorkspaceMode } from "../../stores/uiStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { ActiveMissionsBar } from "./ActiveMissionsBar.js";
 import { BookPanel } from "./BookPanel.js";
 import { shouldFocusComposerAfterWorkspaceExit } from "./composer-focus-handoff.js";
 import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
@@ -253,6 +254,11 @@ function NormalShell({
             <GlobalApprovals />
           </div>
         </header>
+
+        {/* Persistent cross-session run monitor — sits directly under the desk
+         * rule so it's always visible in every view. Self-collapses (renders
+         * nothing, zero height) when there are no active/open missions. */}
+        <ActiveMissionsBar />
 
         <div className="min-h-0 flex-1">
           {appShellView === "sessionsLibrary" ? (

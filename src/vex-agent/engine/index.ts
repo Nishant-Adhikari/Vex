@@ -63,6 +63,20 @@ export type { AbortMissionRunResult, StopMissionRunForEditResult } from "./core/
 
 export { retryActiveMissionRun } from "./core/runner/retry.js";
 
+// Boot-time + periodic reconciler for WEDGED (orphaned) mission runs — a
+// `running` row whose runner lease expired with no worker re-acquiring it.
+// Force-finalizes them (flatten + `runner_lost` terminal) so they are never
+// auto-resumed. Called from the desktop app's boot sequence BEFORE any
+// resume/wake worker.
+export {
+  reconcileOrphanedRuns,
+  RUNNER_LOST_STOP_REASON,
+} from "./core/runner/mission-reconcile.js";
+export type {
+  ReconcileOrphanedRunsSummary,
+  ReconcileDeps,
+} from "./core/runner/mission-reconcile.js";
+
 // One-click preset launch seeds the mission contract's structured fields
 // directly (no LLM parse) through the same validated draft-write pipeline.
 export { seedMissionDraftForSession } from "./mission/setup.js";

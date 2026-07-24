@@ -98,6 +98,13 @@ export interface PromptStackOptions {
    */
   contextPressureBanner?: string;
   /**
+   * Pre-formatted mission token-budget pressure banner from
+   * `buildMissionBudgetBanner`. Empty string (below the warning threshold or no
+   * budget box) omits the section. Built by `runTurnLoop` from the live
+   * tokensUsed / mission token budget before invoking `executeTurn`.
+   */
+  missionBudgetBanner?: string;
+  /**
    * Pre-formatted post-compact resume packet from `buildResumePacket`. Present
    * only for the first `POST_COMPACT_BRIDGE_CYCLES` turns following a
    * `compact_committed` engine signal. Empty string omits the section.
@@ -243,6 +250,9 @@ export function buildPromptStack(
   // tool catalog.
   if (options.contextPressureBanner && options.contextPressureBanner.length > 0) {
     turnLayers.push(options.contextPressureBanner);
+  }
+  if (options.missionBudgetBanner && options.missionBudgetBanner.length > 0) {
+    turnLayers.push(options.missionBudgetBanner);
   }
   if (options.resumePacket && options.resumePacket.length > 0) {
     turnLayers.push(options.resumePacket);

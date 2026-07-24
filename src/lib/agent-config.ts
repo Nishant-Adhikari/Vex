@@ -109,6 +109,24 @@ const MISSION_TOKEN_BUDGET_DISABLE_SENTINELS: ReadonlySet<string> = new Set([
   "disabled",
 ]);
 
+/**
+ * Per-minute token burn used to DERIVE a mission's token budget from its
+ * duration (`AGENT_MISSION_TOKEN_BUDGET` unset → dynamic). Empirical: a trimmed
+ * mission turn-loop burned ~2M tokens in ~15 min (~135k/min); default rounds up
+ * with headroom so a run reaches its time-box instead of token-capping early.
+ */
+export const AGENT_MISSION_TOKENS_PER_MINUTE: FieldWithDefault = {
+  key: "AGENT_MISSION_TOKENS_PER_MINUTE",
+  kind: "int",
+  min: 1,
+  max: Number.MAX_SAFE_INTEGER,
+  default: 150_000,
+};
+
+/** Duration fallback when a mission carries no valid `durationMinutes` — mirrors
+ * the deadline resolver's 60-minute default so budget and time-box agree. */
+const DEFAULT_MISSION_DURATION_MINUTES = 60;
+
 export const SUBAGENT_MAX_CONCURRENT: FieldWithDefault = {
   key: "SUBAGENT_MAX_CONCURRENT",
   kind: "int",
@@ -231,20 +249,44 @@ export function parseAgentEnv(env: EnvLike): ParseResult<AgentEffective> {
  * through the same field-descriptor parser the other AGENT_* whole-number
  * fields use, so validation stays consistent.
  */
-export function resolveMissionTokenBudget(env: EnvLike): number | null {
+export function resolveMissionTokenBudget(
+  env: EnvLike,
+  durationMinutes?: number | null,
+): number | null {
   const raw = env[AGENT_MISSION_TOKEN_BUDGET.key];
   if (raw != null) {
     const norm = raw.trim().toLowerCase();
+    // Disable sentinels (0/off/none/…) → no box.
     if (MISSION_TOKEN_BUDGET_DISABLE_SENTINELS.has(norm)) return null;
+    // An explicit, well-formed absolute value is an override / escape hatch
+    // (pin a fixed cap, e.g. for tests) — it wins over the duration-derived
+    // default. A malformed value falls through to the dynamic default.
+    if (norm !== "") {
+      const overrideErrors: ParseError[] = [];
+      const explicit = parseFieldOrDefault(
+        AGENT_MISSION_TOKEN_BUDGET,
+        raw,
+        overrideErrors,
+      );
+      if (explicit != null && overrideErrors.length === 0) return explicit;
+    }
   }
-  const discardedErrors: ParseError[] = [];
-  return (
+  // DEFAULT: derive the budget from the mission's own time-box so a longer run
+  // gets proportionally more runway with zero per-mission tuning —
+  // `durationMinutes × AGENT_MISSION_TOKENS_PER_MINUTE`. Duration falls back to
+  // 60 (matching the deadline resolver) when absent/non-positive.
+  const perMinuteErrors: ParseError[] = [];
+  const perMinute =
     parseFieldOrDefault(
-      AGENT_MISSION_TOKEN_BUDGET,
-      raw,
-      discardedErrors,
-    ) ?? AGENT_MISSION_TOKEN_BUDGET.default!
-  );
+      AGENT_MISSION_TOKENS_PER_MINUTE,
+      env[AGENT_MISSION_TOKENS_PER_MINUTE.key],
+      perMinuteErrors,
+    ) ?? AGENT_MISSION_TOKENS_PER_MINUTE.default!;
+  const minutes =
+    typeof durationMinutes === "number" && durationMinutes > 0
+      ? durationMinutes
+      : DEFAULT_MISSION_DURATION_MINUTES;
+  return Math.ceil(minutes * perMinute);
 }
 
 /**

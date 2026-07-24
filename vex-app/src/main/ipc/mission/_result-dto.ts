@@ -10,6 +10,7 @@ import type { MissionResultDto } from "@shared/schemas/mission.js";
 export function toMissionResultDto(row: MissionResultRow): MissionResultDto {
   return {
     missionRunId: row.missionRunId,
+    sessionId: row.sessionId,
     seqNo: row.seqNo,
     goalSnippet: row.goalSnippet,
     startedAt: row.startedAt,

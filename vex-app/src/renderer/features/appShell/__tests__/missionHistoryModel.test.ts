@@ -21,6 +21,7 @@ import {
 function result(over: Partial<MissionResultDto> = {}): MissionResultDto {
   return {
     missionRunId: "run-1",
+    sessionId: "session-1",
     seqNo: 1,
     goalSnippet: "grow ETH",
     startedAt: "2026-07-12T18:00:00.000Z",
