@@ -34,6 +34,14 @@ export type MissionResultOutcome = z.infer<typeof missionResultOutcomeSchema>;
 export const missionResultDtoSchema = z
   .object({
     missionRunId: z.string().min(1),
+    /**
+     * The session that owns this run. Surfaced so read-only observability
+     * surfaces (e.g. the Active Missions bar) can cross-reference a ledger
+     * row against per-session runtime state and jump into the session on
+     * click. The session ↔ run mapping lives only on the ledger row; there
+     * is no other renderer-visible link from a `missionRunId` to a session.
+     */
+    sessionId: z.string().min(1),
     seqNo: z.number().int().positive(),
     goalSnippet: z.string().nullable(),
     startedAt: z.string().datetime({ offset: true }),
