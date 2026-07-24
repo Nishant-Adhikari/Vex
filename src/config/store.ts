@@ -57,6 +57,49 @@ const walletInventoryEntrySchema = z.object({
   vault: z.boolean().optional(),
 });
 
+/**
+ * Strategy Discipline — a set of INDEPENDENTLY-toggleable trade-discipline
+ * rules injected into the mission-run prompt. Every field is optional and the
+ * defaults are OFF/permissive, so an absent section (or an absent field) leaves
+ * mission behavior exactly as it was before this config existed. The user
+ * mix-and-matches combinations across runs by editing `config.json` — read
+ * fresh at prompt-BUILD time (loadConfig is uncached), so no code rebuild is
+ * needed between runs.
+ *   - requireThesis                 → force a one-line THESIS before entry
+ *   - requireInvalidation           → force an explicit INVALIDATION trigger
+ *   - minSignalsToAgree (int ≥ 0)   → N independent signals must agree (0/absent = off)
+ *   - requirePositionSizeRationale  → force stated size + risk rationale
+ *   - maxHoldMinutes (>0 | null)    → hard per-position hold cap (null/absent = off)
+ */
+export const strategyDisciplineSchema = z
+  .object({
+    requireThesis: z.boolean().optional(),
+    requireInvalidation: z.boolean().optional(),
+    minSignalsToAgree: z.number().int().min(0).optional(),
+    requirePositionSizeRationale: z.boolean().optional(),
+    maxHoldMinutes: z.number().positive().nullable().optional(),
+  })
+  .strict();
+
+export type StrategyDiscipline = z.infer<typeof strategyDisciplineSchema>;
+
+/**
+ * Parse the optional `strategyDiscipline` section from untrusted config.
+ * Fail-soft: a malformed section (wrong types, negative counts, unknown keys)
+ * is dropped entirely — the whole rule set disables rather than bricking config
+ * load or letting a half-valid section reach the prompt. Returns undefined when
+ * absent or invalid.
+ */
+export function parseStrategyDiscipline(raw: unknown): StrategyDiscipline | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = strategyDisciplineSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn("Dropping malformed strategyDiscipline config section");
+    return undefined;
+  }
+  return parsed.data;
+}
+
 /** Deterministic timestamp for synthesized legacy entries (avoids per-load drift). */
 const LEGACY_CREATED_AT = new Date(0).toISOString();
 
@@ -119,6 +162,11 @@ export interface VexConfig {
   // Absent by default; the bundled default RPC (per the Pendle chain registry)
   // wins otherwise. Consumed by src/tools/pendle/evm-client.ts.
   pendleRpcUrls?: Record<string, string> | undefined;
+  // Optional Strategy Discipline rule set — independently-toggleable trade
+  // guardrails injected into the mission-run prompt. Absent by default (no
+  // behavior change). Read fresh at prompt-build time so edits to config.json
+  // take effect on the next run without a rebuild. See strategyDisciplineSchema.
+  strategyDiscipline?: StrategyDiscipline | undefined;
 }
 
 export function getDefaultConfig(): VexConfig {
@@ -309,6 +357,7 @@ export function loadConfig(): VexConfig {
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
       ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),
       ...(parseChainRpcUrls(parsed.pendleRpcUrls) ? { pendleRpcUrls: parseChainRpcUrls(parsed.pendleRpcUrls) } : {}),
+      ...(parseStrategyDiscipline(parsed.strategyDiscipline) ? { strategyDiscipline: parseStrategyDiscipline(parsed.strategyDiscipline) } : {}),
     };
   } catch (err) {
     logger.error(`Failed to parse config: ${err}`);

@@ -6,6 +6,8 @@
  */
 
 import type { EngineContext } from "../types.js";
+import { loadConfig } from "@config/store.js";
+import { buildStrategyDisciplineSection } from "./strategy-discipline.js";
 
 export interface MissionRunContext {
   /** Frozen mission summary for prompt injection. */
@@ -64,6 +66,18 @@ export function buildMissionRunPrompt(
   lines.push("4. Verify the result");
   lines.push("5. Repeat from step 1");
   lines.push("");
+
+  // Strategy Discipline — optional, independently-toggleable trade guardrails.
+  // Read fresh from config at prompt-BUILD time (loadConfig is uncached), so the
+  // operator can mix-and-match rules across runs by editing config.json without
+  // a code rebuild. Omitted entirely when no rule is enabled (the default).
+  const strategyDisciplineSection = buildStrategyDisciplineSection(
+    loadConfig().strategyDiscipline,
+  );
+  if (strategyDisciplineSection.length > 0) {
+    lines.push(strategyDisciplineSection);
+    lines.push("");
+  }
 
   if (runContext) {
     if (runContext.missionPromptContext) {
