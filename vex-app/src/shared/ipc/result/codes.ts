@@ -96,6 +96,7 @@ export const VEX_DOMAINS = [
   "portfolio",
   "hyperliquid",
   "market",
+  "signals",
   "sessions",
   "preload",
   "internal",

@@ -268,6 +268,18 @@ export const CH = {
     listMoves: "vex:portfolio:listMoves",
   },
 
+  // Signals — read-only TrendRadar signal list + the LLM-as-judge grade
+  // (Signals section). `listToday` reads today's ingested `signals` rows
+  // (sanitized DTO, no raw jsonb crossing); `grade` runs ONE lightweight LLM
+  // completion over a single signal's own features and returns a compact
+  // `{ grade, verdict, rationale }`. Observability only — never places a trade
+  // or mutates wallet state. Both fail-soft (DB/inference errors → the panel
+  // still lists signals ungraded).
+  signals: {
+    listToday: "vex:signals:listToday",
+    grade: "vex:signals:grade",
+  },
+
   // Market — read-only live VEX token metrics for the welcome-screen price
   // widget (T1). `getVexSnapshot` returns main's in-memory cache (no network
   // call from the handler); the live poll + `EV.market.vex` broadcast are owned

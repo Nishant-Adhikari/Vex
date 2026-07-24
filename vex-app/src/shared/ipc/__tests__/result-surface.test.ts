@@ -133,6 +133,8 @@ describe("result barrel surface", () => {
       // Hyperliquid adds a dedicated main-owned IPC error domain.
       "hyperliquid",
       "market",
+      // Signals section — read-only signal list + LLM-as-judge grade.
+      "signals",
       "sessions",
       "preload",
       "internal",

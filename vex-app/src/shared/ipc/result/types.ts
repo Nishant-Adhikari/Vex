@@ -84,6 +84,14 @@ export type VexDomain =
    */
   | "market"
   /**
+   * Signals section — read-only TrendRadar signal list + the LLM-as-judge
+   * grade (`signals.listToday` / `signals.grade`). Observability/analysis
+   * only: it never places a trade or mutates wallet state. DB unavailability
+   * maps to `internal.unexpected`; a failed inference maps to
+   * `provider.unavailable` (both fail-soft — the panel still lists signals).
+   */
+  | "signals"
+  /**
    * Used by the read-only `sessions.getModel` handler (global runtime
    * model resolution). Existing sessions handlers
    * (`vex:sessions:create|list|get|setPinned|delete`) deliberately keep
