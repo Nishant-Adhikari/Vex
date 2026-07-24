@@ -118,7 +118,7 @@ describe("mapSignalRow", () => {
 });
 
 describe("listTodaySignals", () => {
-  it("builds a windowed, score-ordered, bounded query and maps rows", async () => {
+  it("builds a windowed, newest-first, bounded query and maps rows", async () => {
     connectMock.mockResolvedValue(undefined);
     queryMock.mockResolvedValue({ rows: [DB_ROW] });
     endMock.mockResolvedValue(undefined);
@@ -132,7 +132,7 @@ describe("listTodaySignals", () => {
     const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
     expect(sql).toMatch(/FROM signals/);
     expect(sql).toMatch(/ingested_at > NOW\(\) - make_interval/);
-    expect(sql).toMatch(/ORDER BY score DESC NULLS LAST/);
+    expect(sql).toMatch(/ORDER BY ingested_at DESC, score DESC NULLS LAST/);
     expect(sql).toMatch(/LIMIT \$2/);
     expect(params).toEqual([24, 50]);
   });
