@@ -40,4 +40,7 @@ export const settings = {
       setKeepAwakeDuringMissionInputSchema,
     );
   },
+  getKeepAwakeState() {
+    return invokeWithSchema(CH.settings.getKeepAwakeState, {});
+  },
 } satisfies SettingsBridge;

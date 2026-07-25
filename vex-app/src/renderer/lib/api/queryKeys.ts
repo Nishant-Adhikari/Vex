@@ -279,4 +279,5 @@ export const hyperliquidKeys = {
 export const settingsKeys = {
   all: ["settings"] as const,
   preferences: () => ["settings", "preferences"] as const,
+  keepAwakeState: () => ["settings", "keepAwakeState"] as const,
 };

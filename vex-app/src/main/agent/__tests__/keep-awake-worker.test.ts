@@ -48,6 +48,24 @@ vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// The clamshell layer shells out to `pmset`/`osascript` — mock it wholesale so
+// these powerSaveBlocker tests NEVER touch the real system power setting (this
+// machine is macOS, so an unmocked reconcile would actually prompt/run pmset).
+vi.mock("../keep-awake-clamshell.js", () => ({
+  reconcileClamshell: vi.fn(async () => ({
+    active: false,
+    adminDeclined: false,
+    supported: true,
+  })),
+  restoreClamshellOnQuit: vi.fn(async () => undefined),
+  bootSafetyResetClamshell: vi.fn(async () => undefined),
+  getClamshellStatus: vi.fn(() => ({
+    active: false,
+    adminDeclined: false,
+    supported: true,
+  })),
+}));
+
 type Worker = typeof import("../keep-awake-worker.js");
 
 async function loadWorker(): Promise<Worker> {

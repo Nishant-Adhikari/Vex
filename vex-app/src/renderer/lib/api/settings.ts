@@ -15,7 +15,10 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
-import type { Preferences } from "@shared/schemas/preferences.js";
+import type {
+  KeepAwakeState,
+  Preferences,
+} from "@shared/schemas/preferences.js";
 import { settingsKeys } from "./queryKeys.js";
 
 /** Full persisted preferences read (stable — refreshed via mutations below). */
@@ -24,6 +27,26 @@ export function usePreferences(): UseQueryResult<Result<Preferences>> {
     queryKey: settingsKeys.preferences(),
     queryFn: () => window.vex.settings.getPreferences(),
     staleTime: Number.POSITIVE_INFINITY,
+    retry: 0,
+  });
+}
+
+/**
+ * Live keep-awake worker state (fork feature) — whether the macOS clamshell
+ * (lid-close) override is actually holding the Mac awake vs. idle-only /
+ * admin-declined. Polled while mounted so the mission-controls indicator tracks
+ * the real main-process state (an admin-prompt decline flips it to idle-only).
+ * `enabled` lets the caller poll only while the toggle is on + a run is active.
+ */
+export function useKeepAwakeState(
+  enabled = true,
+): UseQueryResult<Result<KeepAwakeState>> {
+  return useQuery({
+    queryKey: settingsKeys.keepAwakeState(),
+    queryFn: () => window.vex.settings.getKeepAwakeState(),
+    enabled,
+    refetchInterval: enabled ? 4_000 : false,
+    staleTime: 0,
     retry: 0,
   });
 }

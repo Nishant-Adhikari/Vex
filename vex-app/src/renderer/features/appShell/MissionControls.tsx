@@ -56,6 +56,7 @@ import type {
   MissionRenewResult,
   MissionResultDto,
 } from "@shared/schemas/mission.js";
+import type { KeepAwakeState } from "@shared/schemas/preferences.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import {
@@ -73,6 +74,7 @@ import {
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import {
+  useKeepAwakeState,
   usePreferences,
   useSetKeepAwakeDuringMission,
 } from "../../lib/api/settings.js";
@@ -514,12 +516,19 @@ function MissionErrorAlert({
 }
 
 /**
- * Fork-only "keep this Mac awake during missions" toggle, surfaced with the
- * active-run controls. Default ON (mirrors the persisted
- * `ui.keepAwakeDuringMission` pref); main's keep-awake worker reads the pref
- * and holds the Mac awake for the run when it is on. Honest caveat: Electron's
- * `prevent-app-suspension` does NOT survive a closed lid on macOS, so we say so
- * rather than imply a lid-shut overnight run is safe.
+ * Fork-only "keep running with the lid closed" toggle, surfaced with the
+ * active-run controls (so it only shows while a mission is running). Default ON
+ * (mirrors the persisted `ui.keepAwakeDuringMission` pref).
+ *
+ * Two stacked layers in main:
+ *   - `powerSaveBlocker` stops IDLE sleep; and
+ *   - a macOS clamshell override (`pmset disablesleep 1`, admin-authorized once)
+ *     that additionally keeps the mission running with the LID CLOSED.
+ *
+ * The live indicator below reflects the real worker state (`useKeepAwakeState`):
+ * "Lid-close is prevented" once the clamshell override is engaged, or a plain
+ * idle-only note if the user declined the admin prompt (we fall back to
+ * powerSaveBlocker-only rather than fail the mission) or off macOS.
  */
 function KeepAwakeToggle(): JSX.Element | null {
   const prefsQuery = usePreferences();
@@ -530,8 +539,17 @@ function KeepAwakeToggle(): JSX.Element | null {
   const enabled = prefs?.ui.keepAwakeDuringMission ?? true;
   const controlId = "keep-awake-during-mission";
 
+  // Poll the live worker state only while the toggle is on (this component only
+  // renders during an active run, so on ⇒ clamshell is being attempted).
+  const stateQuery = useKeepAwakeState(enabled);
+  const state = stateQuery.data?.ok === true ? stateQuery.data.data : null;
+  const clamshell = state?.clamshell ?? null;
+
   return (
-    <div className="mt-3 flex items-start gap-2.5" data-vex-area="keep-awake-toggle">
+    <div
+      className="mt-3 flex items-start gap-2.5"
+      data-vex-area="keep-awake-toggle"
+    >
       <input
         id={controlId}
         type="checkbox"
@@ -543,17 +561,54 @@ function KeepAwakeToggle(): JSX.Element | null {
       />
       <label htmlFor={controlId} className="cursor-pointer select-none">
         <span className="block text-xs font-medium text-[var(--vex-text-2)]">
-          Keep this Mac awake during missions
+          Keep running with the lid closed
         </span>
         <span
           id={`${controlId}-caveat`}
+          data-vex-state={keepAwakeCaveatState(enabled, clamshell)}
           className="mt-0.5 block text-[11px] text-[var(--vex-text-3)]"
         >
-          Closing the lid still sleeps the Mac.
+          {keepAwakeCaveat(enabled, clamshell)}
         </span>
       </label>
     </div>
   );
+}
+
+type ClamshellState = KeepAwakeState["clamshell"];
+
+/** Stable data-attr for tests / debugging the indicator branch. */
+function keepAwakeCaveatState(
+  enabled: boolean,
+  clamshell: ClamshellState | null,
+): string {
+  if (!enabled) return "off";
+  if (clamshell === null) return "pending";
+  if (!clamshell.supported) return "idle-only-unsupported";
+  if (clamshell.adminDeclined) return "idle-only-declined";
+  if (clamshell.active) return "lid-close-active";
+  return "engaging";
+}
+
+/** Human-readable caveat mirroring the live clamshell override state. */
+function keepAwakeCaveat(
+  enabled: boolean,
+  clamshell: ClamshellState | null,
+): string {
+  if (!enabled) return "The Mac may sleep during the mission.";
+  if (clamshell === null || (!clamshell.active && !clamshell.adminDeclined)) {
+    return "Keeping the mission running — lid-close override starting…";
+  }
+  if (!clamshell.supported) {
+    return "Idle sleep is prevented. Lid-close override is macOS-only.";
+  }
+  if (clamshell.adminDeclined) {
+    return "Idle sleep is prevented, but you declined the admin prompt — closing the lid will still sleep the Mac.";
+  }
+  if (clamshell.active) {
+    return "Lid-close is prevented — the mission keeps running with the lid shut.";
+  }
+  return "Keeping the mission running — lid-close override starting…";
 }
 
 function ControlButton({

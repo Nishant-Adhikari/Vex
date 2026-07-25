@@ -7,9 +7,12 @@ import { z } from "zod";
 import { CH } from "@shared/ipc/channels.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
+  keepAwakeStateSchema,
   preferencesSchema,
+  type KeepAwakeState,
   type Preferences,
 } from "@shared/schemas/preferences.js";
+import { getKeepAwakeState } from "../agent/keep-awake-worker.js";
 import { hyperliquidSettingsUpdateInputSchema } from "@shared/schemas/hyperliquid.js";
 import { hyperliquidPolicySchema } from "@vex-lib/hyperliquid-policy.js";
 import { preferencesStore } from "../preferences/store.js";
@@ -135,6 +138,21 @@ export function registerSettingsHandlers(): Array<() => void> {
           ui: { ...current.ui, keepAwakeDuringMission: enabled },
         });
         return ok(preferencesSchema.parse(next));
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.getKeepAwakeState,
+      domain: "settings",
+      inputSchema: empty,
+      outputSchema: keepAwakeStateSchema,
+      handle: async (): Promise<Result<KeepAwakeState>> => {
+        // Live main-process worker state (idle blocker + macOS clamshell
+        // override). Read-only; the renderer polls it for the lid-close
+        // indicator + admin-declined note.
+        return ok(keepAwakeStateSchema.parse(getKeepAwakeState()));
       },
     }),
   );

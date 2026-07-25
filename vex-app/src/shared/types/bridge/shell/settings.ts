@@ -1,6 +1,9 @@
 import type { Result } from "../../../ipc/result.js";
 import type { HyperliquidSettingsUpdateInput } from "../../../schemas/hyperliquid.js";
-import type { Preferences } from "../../../schemas/preferences.js";
+import type {
+  KeepAwakeState,
+  Preferences,
+} from "../../../schemas/preferences.js";
 
 export interface SettingsBridge {
   readonly getPreferences: () => Promise<Result<Preferences>>;
@@ -13,4 +16,5 @@ export interface SettingsBridge {
   readonly setKeepAwakeDuringMission: (input: {
     readonly enabled: boolean;
   }) => Promise<Result<Preferences>>;
+  readonly getKeepAwakeState: () => Promise<Result<KeepAwakeState>>;
 }

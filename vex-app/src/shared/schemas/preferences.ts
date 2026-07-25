@@ -85,6 +85,37 @@ export const preferencesSchema = z
 
 export type Preferences = z.infer<typeof preferencesSchema>;
 
+/**
+ * Live keep-awake worker state (fork-only), read by the renderer to indicate
+ * whether the macOS clamshell (lid-close) override is actually holding the Mac
+ * awake vs. running idle-only. Not persisted — reflects the main-process worker.
+ */
+export const keepAwakeStateSchema = z
+  .object({
+    /** The manual "Stay awake" menu toggle is on. */
+    manual: z.boolean(),
+    /** The persisted mission keep-awake toggle (`ui.keepAwakeDuringMission`). */
+    missionGate: z.boolean(),
+    /** The idle `powerSaveBlocker` is currently engaged. */
+    active: z.boolean(),
+    /** A mission run is actively executing. */
+    missionRunning: z.boolean(),
+    /** macOS clamshell (lid-close) override status. */
+    clamshell: z
+      .object({
+        /** We hold `pmset disablesleep 1` — lid-close is being prevented. */
+        active: z.boolean(),
+        /** The user cancelled the admin prompt → idle-only fallback. */
+        adminDeclined: z.boolean(),
+        /** false off macOS (clamshell override is a no-op). */
+        supported: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type KeepAwakeState = z.infer<typeof keepAwakeStateSchema>;
+
 export const defaultPreferences: Preferences = {
   version: 1,
   telemetry: { enabled: false, consentedAt: null },
