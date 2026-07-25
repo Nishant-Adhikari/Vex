@@ -59,6 +59,18 @@ describe("missionDisplayOutcome", () => {
     ).toBe("completed");
   });
 
+  it("maps the RAW ledger outcome 'timed_out' to the neutral timeBoxed outcome (BUG A fix)", () => {
+    // The finalize path now records `outcome='timed_out'` directly for a
+    // hard-deadline end (previously it mislabeled the ledger row 'failed').
+    expect(
+      missionDisplayOutcome({ outcome: "timed_out", stopReason: "deadline_reached" }),
+    ).toBe("timeBoxed");
+    // Robust even if a future row carries `timed_out` without the stop reason.
+    expect(
+      missionDisplayOutcome({ outcome: "timed_out", stopReason: null }),
+    ).toBe("timeBoxed");
+  });
+
   it("passes through every other (outcome, stopReason) pair unchanged", () => {
     expect(missionDisplayOutcome({ outcome: "completed", stopReason: "goal_reached" })).toBe("completed");
     expect(missionDisplayOutcome({ outcome: "cancelled", stopReason: "user_stopped" })).toBe("cancelled");

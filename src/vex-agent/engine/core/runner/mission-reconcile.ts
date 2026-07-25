@@ -31,15 +31,23 @@ import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as runnerLeasesRepo from "@vex-agent/db/repos/runner-leases.js";
 import logger from "@utils/logger.js";
-import { closeRunnerLostFinalize } from "./mission-finalize.js";
+import { closeRunnerLostFinalize, closeReapedErrorFinalize } from "./mission-finalize.js";
 import { flattenInterruptedRunPositions } from "./mission-liquidate-hook.js";
 
 /** Distinct stop reason stamped on a reclaimed orphan (auditable in the ledger). */
 export const RUNNER_LOST_STOP_REASON = "runner_lost" as const;
 
+/** Distinct stop reason stamped on a reaped, abandoned paused_error run. */
+export const REAPED_STALE_ERROR_STOP_REASON = "reaped_stale_error" as const;
+
 const RUNNER_LOST_SUMMARY =
   "Run interrupted — its runner lease expired with no worker re-acquiring it " +
   "(app restart or runner process death). Reclaimed by the orphaned-run reconciler.";
+
+const REAPED_STALE_ERROR_SUMMARY =
+  "Run abandoned in `paused_error` — no live runner lease and 0 open positions, " +
+  "and no operator recovered it. Auto-finalized by the stale-error reaper so a " +
+  "new mission can start in this session (a recoverable run is never reaped).";
 
 export interface ReconcileOrphanedRunsSummary {
   /** Orphaned runs the selection query returned this pass. */
@@ -50,6 +58,19 @@ export interface ReconcileOrphanedRunsSummary {
   skipped: number;
   /** Runs whose finalize threw (logged; never rethrown). */
   failed: number;
+  /**
+   * Expired `runner_leases` rows reclaimed by the GLOBAL boot sweep (BUG B) —
+   * standalone dead leases (blank `mission_run_id`, or a `paused_error` session)
+   * that the per-orphan lease drop never reaches. 0 when the sweep is disabled
+   * or finds none.
+   */
+  leasesSwept: number;
+  /**
+   * Abandoned `paused_error` runs REAPED this pass (BUG C) — no live lease AND 0
+   * open positions, so a new mission can start without a human clearing the DB.
+   * A run holding a live lease or an open position is NEVER counted here.
+   */
+  staleErrorsReaped: number;
 }
 
 /**
@@ -77,6 +98,35 @@ export interface ReconcileDeps {
     sessionId: string,
   ) => Promise<void>;
   dropStaleLease: (sessionId: string) => Promise<number>;
+  /**
+   * GLOBAL sweep (BUG B): DELETE every expired `runner_leases` row regardless of
+   * associated run — including a standalone lease with a blank `mission_run_id`
+   * or a `paused_error` session — that the per-orphan `dropStaleLease` never
+   * reaches. Owner-agnostic, guarded on expiry, idempotent. Returns rows deleted.
+   */
+  sweepExpiredLeases: () => Promise<number>;
+  /** Abandoned `paused_error` runs (no live lease) — reaper candidates (BUG C). */
+  findAbandonedPausedErrors: () => Promise<MissionRun[]>;
+  /**
+   * Open-position count for a run's mission wallet — the CONSERVATIVE reaper
+   * guard (BUG C). A non-zero count (or a thrown read) preserves the run for
+   * Recover; only a confirmed 0 lets it be reaped.
+   */
+  countRunOpenPositions: (run: MissionRun) => Promise<number>;
+  /**
+   * Race-safe reap flip: `paused_error` → `failed(reaped_stale_error)` ONLY
+   * while still `paused_error` AND no live lease. `true` = THIS pass won it.
+   */
+  reapStaleError: (
+    runId: string,
+    stopPayload: { summary: string },
+  ) => Promise<boolean>;
+  /** The reaper finalize tail — mission→failed, control-state emit, ledger close. */
+  closeReapedLedger: (
+    missionId: string,
+    runId: string,
+    sessionId: string,
+  ) => Promise<void>;
 }
 
 function defaultDeps(): ReconcileDeps {
@@ -89,7 +139,52 @@ function defaultDeps(): ReconcileDeps {
       closeRunnerLostFinalize(missionId, runId, sessionId),
     dropStaleLease: (sessionId) =>
       runnerLeasesRepo.releaseExpiredLease(sessionId),
+    sweepExpiredLeases: () => runnerLeasesRepo.releaseAllExpiredLeases(),
+    findAbandonedPausedErrors: () =>
+      missionRunsRepo.findAbandonedPausedErrorRuns(),
+    countRunOpenPositions: (run) => countRunOpenPositions(run),
+    reapStaleError: (runId, stopPayload) =>
+      missionRunsRepo.markStaleErrorReaped(
+        runId,
+        REAPED_STALE_ERROR_STOP_REASON,
+        stopPayload,
+      ),
+    closeReapedLedger: (missionId, runId, sessionId) =>
+      closeReapedErrorFinalize(missionId, runId, sessionId),
   };
+}
+
+/**
+ * Default open-position count for a run's mission wallet. Reads the CHEAP
+ * projections (no RPC): spot token bags from `proj_balances` (via the ETH
+ * bankroll fold) PLUS tracked perps/predictions/LP/order positions from
+ * `proj_open_positions`. A run with ANY of these is still holding value and must
+ * stay recoverable — never reaped. Lazily imports the heavier deps so this
+ * foundational module keeps a light static graph.
+ */
+async function countRunOpenPositions(run: MissionRun): Promise<number> {
+  const [{ getMission }, { readEthBankroll }, { getOpen }, { resolveLocalChainId }] =
+    await Promise.all([
+      import("@vex-agent/db/repos/missions.js"),
+      import("../../mission/bankroll.js"),
+      import("@vex-agent/db/repos/open-positions.js"),
+      import("../../../../tools/evm-chains/registry.js"),
+    ]);
+  const mission = await getMission(run.missionId);
+  const wallet = mission?.allowedWallets[0];
+  const chainKey = mission?.allowedChains[0];
+  if (!wallet || !chainKey) {
+    // Cannot resolve the wallet — treat as UNKNOWN (conservative: not reapable).
+    // Signal "has positions" so the reaper preserves the run.
+    return 1;
+  }
+  const chainId = resolveLocalChainId(chainKey);
+  const spotBags =
+    chainId === undefined
+      ? []
+      : (await readEthBankroll(wallet, chainId))?.openPositions ?? [];
+  const tracked = await getOpen([wallet]);
+  return spotBags.length + tracked.length;
 }
 
 // In-process guard so the boot pass and a periodic tick (same electron_main
@@ -162,9 +257,86 @@ async function reconcileOne(
 }
 
 /**
- * Reconcile ALL orphaned runs. Safe to call on boot and on an interval. Each
- * run is finalized independently — one failure never aborts the sweep. Never
- * throws (a selection-query failure resolves to a zero summary).
+ * Reap a single ABANDONED paused_error run: verify 0 open positions, then CLAIM
+ * it race-safely (`paused_error` → `failed(reaped_stale_error)`, only while no
+ * live lease reappeared) and close the ledger. CONSERVATIVE — a run with ANY
+ * open position, or whose position read THROWS, is preserved (never reaped) so
+ * the user can still Recover it. Returns whether this pass reaped it.
+ */
+async function reapOne(run: MissionRun, deps: ReconcileDeps): Promise<boolean> {
+  if (inFlight.has(run.id)) return false;
+  inFlight.add(run.id);
+  try {
+    let openPositions: number;
+    try {
+      openPositions = await deps.countRunOpenPositions(run);
+    } catch (err) {
+      // Fail-CLOSED: an unknown position state must never let us reap a run that
+      // might still hold a bag. Preserve it for Recover.
+      logger.warn("engine.mission.reap_skip_positions_unknown", {
+        runId: run.id,
+        sessionId: run.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+    if (openPositions > 0) {
+      logger.info("engine.mission.reap_skip_open_positions", {
+        runId: run.id,
+        sessionId: run.sessionId,
+        openPositions,
+      });
+      return false;
+    }
+
+    const won = await deps.reapStaleError(run.id, {
+      summary: REAPED_STALE_ERROR_SUMMARY,
+    });
+    if (!won) {
+      // Recovered by the operator, already terminal, or a live lease reappeared —
+      // never touch a run we don't exclusively own.
+      logger.info("engine.mission.reap_skip_claim_lost", {
+        runId: run.id,
+        sessionId: run.sessionId,
+      });
+      return false;
+    }
+
+    await deps.closeReapedLedger(run.missionId, run.id, run.sessionId);
+    // Clear the leftover expired lease for a clean session (idempotent; the
+    // global sweep also covers it).
+    await deps.dropStaleLease(run.sessionId);
+
+    logger.info("engine.mission.reap_finalized", {
+      runId: run.id,
+      missionId: run.missionId,
+      sessionId: run.sessionId,
+    });
+    return true;
+  } catch (err) {
+    logger.error("engine.mission.reap_failed", {
+      runId: run.id,
+      sessionId: run.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  } finally {
+    inFlight.delete(run.id);
+  }
+}
+
+/**
+ * Reconcile ALL wedged mission state on boot / interval. Runs THREE independent,
+ * fail-soft passes so one failure never blocks the others (and no early return
+ * skips a later pass):
+ *
+ *   1. GLOBAL expired-lease sweep (BUG B) — reclaims standalone dead leases the
+ *      per-orphan drop never reaches; the direct fix for the `lease_busy` wedge.
+ *   2. Orphaned RUNNING-run reconcile — claim → flatten → finalize `runner_lost`.
+ *   3. Abandoned paused_error REAP (BUG C) — finalize a `paused_error` run only
+ *      when clearly abandoned (no live lease AND 0 open positions).
+ *
+ * Never throws — any pass's scan/finalize failure resolves fail-soft.
  */
 export async function reconcileOrphanedRuns(
   injected?: Partial<ReconcileDeps>,
@@ -175,26 +347,56 @@ export async function reconcileOrphanedRuns(
     reconciled: 0,
     skipped: 0,
     failed: 0,
+    leasesSwept: 0,
+    staleErrorsReaped: 0,
   };
 
-  let orphans: MissionRun[];
+  // ── Pass 1: GLOBAL expired-lease sweep (BUG B). Independent of any run. ──
+  try {
+    summary.leasesSwept = await deps.sweepExpiredLeases();
+    if (summary.leasesSwept > 0) {
+      logger.info("engine.mission.reconcile_leases_swept", {
+        leasesSwept: summary.leasesSwept,
+      });
+    }
+  } catch (err) {
+    logger.error("engine.mission.reconcile_lease_sweep_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // ── Pass 2: orphaned RUNNING-run reconcile. ──
+  let orphans: MissionRun[] = [];
   try {
     orphans = await deps.findOrphans();
   } catch (err) {
     logger.error("engine.mission.reconcile_scan_failed", {
       error: err instanceof Error ? err.message : String(err),
     });
-    return summary;
+  }
+  summary.scanned = orphans.length;
+  if (orphans.length > 0) {
+    logger.info("engine.mission.reconcile_scan", { orphans: orphans.length });
+    for (const run of orphans) {
+      const outcome = await reconcileOne(run, deps);
+      summary[outcome] += 1;
+    }
   }
 
-  summary.scanned = orphans.length;
-  if (orphans.length === 0) return summary;
-
-  logger.info("engine.mission.reconcile_scan", { orphans: orphans.length });
-
-  for (const run of orphans) {
-    const outcome = await reconcileOne(run, deps);
-    summary[outcome] += 1;
+  // ── Pass 3: abandoned paused_error REAP (BUG C). ──
+  let stale: MissionRun[] = [];
+  try {
+    stale = await deps.findAbandonedPausedErrors();
+  } catch (err) {
+    logger.error("engine.mission.reap_scan_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  if (stale.length > 0) {
+    logger.info("engine.mission.reap_scan", { candidates: stale.length });
+    for (const run of stale) {
+      if (await reapOne(run, deps)) summary.staleErrorsReaped += 1;
+    }
   }
 
   logger.info("engine.mission.reconcile_done", {
@@ -202,6 +404,8 @@ export async function reconcileOrphanedRuns(
     reconciled: summary.reconciled,
     skipped: summary.skipped,
     failed: summary.failed,
+    leasesSwept: summary.leasesSwept,
+    staleErrorsReaped: summary.staleErrorsReaped,
   });
   return summary;
 }

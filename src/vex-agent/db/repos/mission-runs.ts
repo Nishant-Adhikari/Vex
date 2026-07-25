@@ -348,6 +348,83 @@ export async function findOrphanedRunningRuns(
 }
 
 /**
+ * Selection for the boot / periodic paused_error REAPER (companion to
+ * `findOrphanedRunningRuns`).
+ *
+ * Returns every `paused_error` run (`ended_at IS NULL`) whose session has NO
+ * LIVE runner lease — the lease row is missing OR expired. These are candidate
+ * ABANDONED error-paused runs: a provider error paused the run, no operator ever
+ * recovered it, and no runner holds the session. Left alone such a run stays
+ * "active" to `getActiveRunBySession`, so `prepareMissionStart` refuses every
+ * new mission start in that session forever (confirmed prod incident).
+ *
+ * This is only the FIRST gate — the reaper additionally requires 0 open
+ * positions before finalizing, so a recoverable run holding a bag is preserved.
+ * A run WITH a live lease is excluded here (still recoverable). Oldest-first.
+ */
+export async function findAbandonedPausedErrorRuns(
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql = `SELECT m.*
+                 FROM mission_runs m
+                 LEFT JOIN runner_leases l
+                   ON l.session_id = m.session_id
+                  AND l.expires_at > NOW()
+                WHERE m.status = 'paused_error'
+                  AND m.ended_at IS NULL
+                  AND l.session_id IS NULL
+                ORDER BY m.started_at ASC`;
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql)).rows
+    : await query<Record<string, unknown>>(sql);
+  return rows.map(mapRow);
+}
+
+/**
+ * Idempotent, race-safe terminal flip for the ABANDONED paused_error reaper.
+ * Atomically moves a run to `failed` ONLY while it is still `paused_error` AND
+ * its session has NO LIVE runner lease — stamping `stop_reason` (e.g.
+ * `reaped_stale_error`) + `ended_at = NOW()`. Returns `true` when THIS call
+ * performed the transition, `false` otherwise (already recovered/terminal, or a
+ * live lease re-appeared).
+ *
+ * The `status='paused_error'` + `NOT EXISTS (live lease)` guards make it safe
+ * against a concurrent operator `/retry`: the retry CAS (`casFlipToRunning`)
+ * moves the row to `running` (and a resume acquires a fresh lease), so whoever
+ * commits first wins and the other becomes a no-op.
+ */
+export async function markStaleErrorReaped(
+  id: string,
+  stopReason: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs m
+                  SET status = 'failed',
+                      stop_reason = $2,
+                      stop_summary = COALESCE($3, stop_summary),
+                      stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+                      ended_at = NOW()
+                WHERE m.id = $1
+                  AND m.status = 'paused_error'
+                  AND NOT EXISTS (
+                        SELECT 1 FROM runner_leases l
+                         WHERE l.session_id = m.session_id
+                           AND l.expires_at > NOW()
+                      )`;
+  const params = [
+    id,
+    stopReason,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
+}
+
+/**
  * Idempotent, race-safe terminal flip used by the orphaned-run reconciler.
  * Atomically moves a run to `stopped` ONLY while it is still `running` AND its
  * session has NO LIVE runner lease — stamping the distinct `stop_reason` (e.g.

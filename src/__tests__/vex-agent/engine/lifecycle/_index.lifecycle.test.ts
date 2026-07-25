@@ -58,21 +58,23 @@
  *     coherent outcome/stop_reason/pnl/trades.      outcome/stop_reason/pnl/trades ledger row);
  *                                                   EXISTING mission-finalize-timed-out.test.ts.
  *
- * ─ CONFIRMED PROD BUGS (guards added; fixes tracked separately) ──────────────
+ * ─ CONFIRMED PROD BUGS (now FIXED; guards flipped to assert the fix) ─────────
  *
  *  B1 Standalone expired lease never reclaimed:     NEW expired-lease-and-reconcile.lifecycle.ts
  *     an expired runner_leases row (blank           (claimSessionLease RECLAIMS an expired/foreign/blank
- *     mission_run_id) blocked ALL new mission        lease, not lease_busy; the boot reconciler only sweeps
- *     starts; the boot reconciler only sweeps        leases tied to an orphaned RUNNING run — a standalone
- *     leases tied to orphaned RUNNING runs.          expired lease is NEVER swept → FINDING).
+ *     mission_run_id) blocked ALL new mission        lease, not lease_busy; AND the boot reconciler now runs
+ *     starts. FIX: the boot reconciler runs a        a GLOBAL expired-lease sweep unconditionally, reclaiming
+ *     GLOBAL expired-lease sweep every pass.         a standalone dead lease no orphaned RUNNING run touches).
  *
  *  B2 Lingering paused_error run wedges starts:     NEW paused-error-blocks-start.lifecycle.ts
- *     a paused_error run (ended_at=NULL) is still   (prepareMissionStart → session_has_active_run refuses
- *     "active" → every new start is refused.         new starts while it lingers → FINDING).
+ *     a paused_error run (ended_at=NULL) is still   (the prepareMissionStart gate correctly PROTECTS a
+ *     "active" → every new start was refused         present run; the boot reconciler REAPS an ABANDONED
+ *     forever. FIX: the boot reconciler reaps an     paused_error run — no live lease AND 0 open positions —
+ *     ABANDONED paused_error run (conservative).     to failed(reaped_stale_error), preserving recoverable ones).
  *
- * See the PR body for full repros of the two pre-existing engine bugs surfaced:
+ * See the PR body for full repros of the three engine bugs fixed this pass:
  *   (a) mission-finalize.ts deadline ledger outcome mislabel (dead `outcome` var);
- *   (b) B1/B2 above.
+ *   (b) B1 standalone expired-lease sweep; (c) B2 abandoned paused_error reaper.
  * ============================================================================
  */
 

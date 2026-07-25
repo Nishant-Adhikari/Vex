@@ -54,9 +54,20 @@ function deps(over: Partial<ReconcileDeps> = {}): ReconcileDeps {
     flatten: vi.fn(async () => {}),
     closeLedger: vi.fn(async () => {}),
     dropStaleLease: vi.fn(async () => 1),
+    // BUG B / BUG C seams — stubbed inert here so this suite pins only the
+    // orphaned-RUNNING-run orchestration (the lease sweep + paused_error reaper
+    // have their own guards in expired-lease-and-reconcile.lifecycle.test.ts).
+    sweepExpiredLeases: vi.fn(async () => 0),
+    findAbandonedPausedErrors: vi.fn(async () => [] as MissionRun[]),
+    countRunOpenPositions: vi.fn(async () => 0),
+    reapStaleError: vi.fn(async () => true),
+    closeReapedLedger: vi.fn(async () => {}),
     ...over,
   };
 }
+
+/** The zero-valued lease-sweep / reaper counters, for exact summary asserts. */
+const ZERO_SELF_HEAL = { leasesSwept: 0, staleErrorsReaped: 0 };
 
 describe("reconcileOrphanedRuns", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -70,7 +81,7 @@ describe("reconcileOrphanedRuns", () => {
 
     const summary = await reconcileOrphanedRuns(d);
 
-    expect(summary).toEqual({ scanned: 2, reconciled: 2, skipped: 0, failed: 0 });
+    expect(summary).toEqual({ scanned: 2, reconciled: 2, skipped: 0, failed: 0, ...ZERO_SELF_HEAL });
     expect(d.claim).toHaveBeenCalledWith(
       "run-1",
       expect.objectContaining({ summary: expect.any(String) }),
@@ -115,7 +126,7 @@ describe("reconcileOrphanedRuns", () => {
 
     const summary = await reconcileOrphanedRuns(d);
 
-    expect(summary).toEqual({ scanned: 1, reconciled: 0, skipped: 1, failed: 0 });
+    expect(summary).toEqual({ scanned: 1, reconciled: 0, skipped: 1, failed: 0, ...ZERO_SELF_HEAL });
     expect(d.flatten).not.toHaveBeenCalled();
     expect(d.closeLedger).not.toHaveBeenCalled();
     expect(d.dropStaleLease).not.toHaveBeenCalled();
@@ -141,7 +152,7 @@ describe("reconcileOrphanedRuns", () => {
   it("is a fail-soft no-op when there are no orphans", async () => {
     const d = deps();
     const summary = await reconcileOrphanedRuns(d);
-    expect(summary).toEqual({ scanned: 0, reconciled: 0, skipped: 0, failed: 0 });
+    expect(summary).toEqual({ scanned: 0, reconciled: 0, skipped: 0, failed: 0, ...ZERO_SELF_HEAL });
     expect(d.claim).not.toHaveBeenCalled();
     expect(d.flatten).not.toHaveBeenCalled();
     expect(d.closeLedger).not.toHaveBeenCalled();
@@ -154,6 +165,6 @@ describe("reconcileOrphanedRuns", () => {
       }),
     });
     const summary = await reconcileOrphanedRuns(d);
-    expect(summary).toEqual({ scanned: 0, reconciled: 0, skipped: 0, failed: 0 });
+    expect(summary).toEqual({ scanned: 0, reconciled: 0, skipped: 0, failed: 0, ...ZERO_SELF_HEAL });
   });
 });
