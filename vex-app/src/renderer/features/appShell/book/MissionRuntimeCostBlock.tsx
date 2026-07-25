@@ -2,12 +2,14 @@
  * RUNTIME & COST — the BOOK panel's mission-run instrument section.
  *
  * Leads with a RUN-SCOPED BUDGET meter for an active mission run: run-scoped
- * tokens + cost (reset per run — counted from the run's `started_at`, so a new
+ * COST in dollars (reset per run — counted from the run's `started_at`, so a new
  * mission in the same session starts near 0 instead of inheriting the prior
- * run's cumulative total) reconciled against the ENFORCED mission token budget
- * (`durationMinutes × AGENT_MISSION_TOKENS_PER_MINUTE`) — the exact denominator
- * the turn-loop enforcer checks, both surfaced via `runtime.getState`. So the
- * percentage means "% of THIS run's budget", not context-window fill.
+ * run's cumulative total) reconciled against the ENFORCED mission COST CAP
+ * (`AGENT_MISSION_COST_CAP_USD`, default $1.00, or a per-mission `costCapUsd`
+ * override) — the exact PRIMARY denominator the turn-loop enforcer hard-cuts on,
+ * both surfaced via `runtime.getState`. So the percentage means "% of THIS run's
+ * dollar budget", not context-window fill or gross-token count. Run-scoped
+ * tokens are shown as a secondary readout.
  *
  * Beneath it sits the `SessionRuntimeBar` (model · last-turn usage · context
  * window · compaction) — the context-window meter there is a DISTINCT indicator
@@ -48,11 +50,11 @@ export function MissionRuntimeCostBlock({
   const hasActiveRun = runtime?.hasActiveRun === true;
   const budget = hasActiveRun
     ? computeBudgetMeter(
-        runtime?.runTokensUsed ?? null,
-        runtime?.tokenBudget ?? null,
+        runtime?.runCostUsd ?? null,
+        runtime?.costCapUsd ?? null,
       )
     : null;
-  const runCost = hasActiveRun ? (runtime?.runCostUsd ?? null) : null;
+  const runTokens = hasActiveRun ? (runtime?.runTokensUsed ?? null) : null;
 
   return (
     <BookBlock title="Runtime & Cost" collapsible defaultOpen>
@@ -63,10 +65,10 @@ export function MissionRuntimeCostBlock({
               Budget
             </span>
             <span className="font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
-              {fmtTokens(budget.tokensUsed)}
+              {fmtCost(budget.costUsed)}
               <span className="text-[var(--vex-text-3)]">
                 {" / "}
-                {fmtTokens(budget.budget)}
+                {fmtCost(budget.capUsd)}
               </span>
             </span>
           </div>
@@ -87,9 +89,9 @@ export function MissionRuntimeCostBlock({
             <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
               {budget.pct}% of run budget
             </span>
-            {runCost !== null ? (
+            {runTokens !== null ? (
               <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-                {fmtCost(runCost)} this run
+                {fmtTokens(runTokens)} tok this run
               </span>
             ) : null}
           </div>

@@ -127,6 +127,49 @@ export const AGENT_MISSION_TOKENS_PER_MINUTE: FieldWithDefault = {
  * the deadline resolver's 60-minute default so budget and time-box agree. */
 const DEFAULT_MISSION_DURATION_MINUTES = 60;
 
+/**
+ * Hard per-mission COST CAP (US dollars). The PRIMARY spend-box: a cumulative
+ * ceiling on a single run's real LLM inference COST (summed `usage_log.cost`,
+ * which reflects prompt-cache discounts), enforced alongside the token budget in
+ * the turn loop. Once crossed the run stops with `cost_cap_reached` and the
+ * system force-liquidates, exactly like the token/deadline backstops.
+ *
+ * Why dollars, not tokens: the token budget sums GROSS `total_tokens` (cached
+ * included), so cache savings never extend runway and the count is a poor proxy
+ * for real spend. Real data: a full 5h08m mission cost ~$0.42; typical missions
+ * $0.20–0.42. A flat per-mission dollar cap is the right unit.
+ *
+ * FAIL-SOFT (see `resolveMissionCostCap`): missing/blank/invalid resolves to the
+ * $1.00 default rather than throwing — a mis-set cap must never block a run from
+ * starting, mirroring the token-budget + hard-deadline fail-open stance.
+ */
+export const AGENT_MISSION_COST_CAP_USD: FieldWithDefault = {
+  key: "AGENT_MISSION_COST_CAP_USD",
+  kind: "float",
+  // A floor of a fraction of a cent keeps a fat-fingered "0.00001" from being a
+  // silent always-on kill; genuine "disable" goes through the sentinels below.
+  min: 0.0001,
+  // No meaningful too-high ceiling for a spend backstop; keep it generous.
+  max: 1_000_000,
+  default: 1.0,
+};
+
+/**
+ * Explicit values that DISABLE the hard cost cap entirely (resolve to `null` =
+ * "no box"). Case-insensitive, trimmed. Mirrors the token-budget disable
+ * sentinels: a blank/unset var keeps the safe $1.00 default so the cap can never
+ * be silently removed by an empty env. `0` is an intentional "unlimited"
+ * sentinel here (not an out-of-range number).
+ */
+const MISSION_COST_CAP_DISABLE_SENTINELS: ReadonlySet<string> = new Set([
+  "0",
+  "off",
+  "none",
+  "unlimited",
+  "disable",
+  "disabled",
+]);
+
 export const SUBAGENT_MAX_CONCURRENT: FieldWithDefault = {
   key: "SUBAGENT_MAX_CONCURRENT",
   kind: "int",
@@ -287,6 +330,49 @@ export function resolveMissionTokenBudget(
       ? durationMinutes
       : DEFAULT_MISSION_DURATION_MINUTES;
   return Math.ceil(minutes * perMinute);
+}
+
+/**
+ * Resolve the effective hard per-mission COST CAP (US dollars) from env + an
+ * optional per-mission override.
+ *
+ * Resolution order (mirrors how `durationMinutes` overrides the env deadline):
+ *   1. Global kill switch — an explicit `AGENT_MISSION_COST_CAP_USD` disable
+ *      sentinel (`0`/`off`/`none`/`unlimited`/`disabled`, case-insensitive)
+ *      turns the cap OFF (`null` = "no box"), regardless of any per-mission cap.
+ *   2. Per-mission override — a valid positive `costCapUsd` frozen on the run
+ *      contract wins over the env default (the analog of a per-mission
+ *      `durationMinutes` winning over the env deadline).
+ *   3. Explicit env value — a well-formed `AGENT_MISSION_COST_CAP_USD`.
+ *   4. Fail-soft to the $1.00 default: unset, blank, non-numeric, or
+ *      out-of-range all resolve to the default (the parse error is intentionally
+ *      discarded — a bad cap must not block a run, mirroring the token-budget +
+ *      hard-deadline stance).
+ */
+export function resolveMissionCostCap(
+  env: EnvLike,
+  costCapUsd?: number | null,
+): number | null {
+  const raw = env[AGENT_MISSION_COST_CAP_USD.key];
+  // 1. Global disable sentinel → no box (wins over any per-mission value).
+  if (raw != null) {
+    const norm = raw.trim().toLowerCase();
+    if (MISSION_COST_CAP_DISABLE_SENTINELS.has(norm)) return null;
+  }
+  // 2. Per-mission override (frozen contract cost cap) beats the env default.
+  if (
+    typeof costCapUsd === "number" &&
+    Number.isFinite(costCapUsd) &&
+    costCapUsd > 0
+  ) {
+    return costCapUsd;
+  }
+  // 3 + 4. Explicit env value, else fail-soft to the $1.00 default.
+  const errors: ParseError[] = [];
+  return (
+    parseFieldOrDefault(AGENT_MISSION_COST_CAP_USD, raw, errors) ??
+    AGENT_MISSION_COST_CAP_USD.default!
+  );
 }
 
 /**

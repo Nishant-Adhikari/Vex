@@ -67,33 +67,34 @@ describe("deriveMissionName", () => {
   });
 });
 
-describe("computeBudgetMeter — run budget reconciliation", () => {
-  it("computes % against the ENFORCED budget", () => {
-    // 60 min × 150k/min default = 9,000,000. 5.31M spent → 59%.
-    const m = computeBudgetMeter(5_310_000, 9_000_000);
+describe("computeBudgetMeter — run cost-cap reconciliation", () => {
+  it("computes % against the ENFORCED cost cap", () => {
+    // $1.00 default cap. $0.59 spent → 59%.
+    const m = computeBudgetMeter(0.59, 1.0);
     expect(m).not.toBeNull();
     expect(m?.pct).toBe(59);
     expect(m?.exhausted).toBe(false);
   });
 
   it("reads ~0% for a brand-new run", () => {
-    const m = computeBudgetMeter(0, 9_000_000);
+    const m = computeBudgetMeter(0, 1.0);
     expect(m?.pct).toBe(0);
-    expect(m?.tokensUsed).toBe(0);
+    expect(m?.costUsed).toBe(0);
+    expect(m?.capUsd).toBe(1.0);
   });
 
-  it("clamps at 100% and flags exhausted once spend meets the budget", () => {
-    const m = computeBudgetMeter(9_500_000, 9_000_000);
+  it("clamps at 100% and flags exhausted once cost meets the cap", () => {
+    const m = computeBudgetMeter(1.05, 1.0);
     expect(m?.pct).toBe(100);
     expect(m?.exhausted).toBe(true);
   });
 
-  it("returns null (no bar) when the budget is disabled/absent", () => {
-    expect(computeBudgetMeter(1_000, null)).toBeNull();
-    expect(computeBudgetMeter(1_000, 0)).toBeNull();
+  it("returns null (no bar) when the cost cap is disabled/absent", () => {
+    expect(computeBudgetMeter(0.5, null)).toBeNull();
+    expect(computeBudgetMeter(0.5, 0)).toBeNull();
   });
 
-  it("returns null (no bar) when the run-scoped token read failed", () => {
-    expect(computeBudgetMeter(null, 9_000_000)).toBeNull();
+  it("returns null (no bar) when the run-scoped cost read failed", () => {
+    expect(computeBudgetMeter(null, 1.0)).toBeNull();
   });
 });

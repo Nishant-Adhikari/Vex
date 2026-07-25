@@ -65,6 +65,9 @@ export const chatStopReasonSchema = z.enum([
   "emergency_stop",
   "user_stopped",
   "token_budget_exhausted",
+  // Engine-enforced hard cost-cap backstop (primary spend-box) — a terminal
+  // business stop, kept in this superset so it never turns a turn into an IPC error.
+  "cost_cap_reached",
   // Orphaned/interrupted run reclaimed by the boot/periodic reconciler (or a
   // leaseless force-stop) — a terminal business stop. Kept in this superset so
   // a reconcile that races a chat turn can never turn into an IPC error.

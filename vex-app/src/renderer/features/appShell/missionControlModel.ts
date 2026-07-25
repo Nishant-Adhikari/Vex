@@ -8,10 +8,10 @@
  *     toned pill (a live pulse only while genuinely `running`).
  *   - `deriveMissionName` picks the best human label (session title → goal
  *     snippet → generic), mirroring the Active Missions bar's rule.
- *   - `computeBudgetMeter` reconciles run-scoped token spend against the
- *     ENFORCED mission budget (the turn-loop denominator), degrading to `null`
- *     when the budget is unknown/disabled so the caller shows no bar (never a
- *     fabricated percentage).
+ *   - `computeBudgetMeter` reconciles run-scoped COST spend (dollars) against
+ *     the ENFORCED mission COST CAP (the turn-loop's primary denominator),
+ *     degrading to `null` when the cap is unknown/disabled so the caller shows
+ *     no bar (never a fabricated percentage).
  */
 
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
@@ -91,33 +91,35 @@ export function deriveMissionName(
 }
 
 export interface BudgetMeter {
-  readonly tokensUsed: number;
-  readonly budget: number;
-  /** Integer percent [0,100] of the enforced budget consumed this run. */
+  /** Run-scoped inference cost spent so far, in US dollars. */
+  readonly costUsed: number;
+  /** The enforced per-mission cost cap (US dollars) — the meter denominator. */
+  readonly capUsd: number;
+  /** Integer percent [0,100] of the enforced cost cap consumed this run. */
   readonly pct: number;
-  /** `true` once spend meets/exceeds the budget (the enforcer stops the run). */
+  /** `true` once cost meets/exceeds the cap (the enforcer stops the run). */
   readonly exhausted: boolean;
 }
 
 /**
- * Reconcile run-scoped token spend against the ENFORCED mission budget — the
- * exact `runTokensUsed / tokenBudget` fraction the turn-loop enforcer checks.
- * Returns `null` (→ show no budget bar) when either input is unusable: the
- * budget is disabled/absent (`null`/≤0) or the run-scoped token read failed
- * (`null`). `0` tokens is valid (a brand-new run reads ~0%).
+ * Reconcile run-scoped COST spend against the ENFORCED mission COST CAP — the
+ * exact `runCostUsd / costCapUsd` fraction the turn-loop enforcer checks (the
+ * PRIMARY spend-box). Returns `null` (→ show no budget bar) when either input is
+ * unusable: the cap is disabled/absent (`null`/≤0) or the run-scoped cost read
+ * failed (`null`). `0` cost is valid (a brand-new run reads ~0%).
  */
 export function computeBudgetMeter(
-  runTokensUsed: number | null,
-  tokenBudget: number | null,
+  runCostUsd: number | null,
+  costCapUsd: number | null,
 ): BudgetMeter | null {
-  if (tokenBudget === null || tokenBudget <= 0) return null;
-  if (runTokensUsed === null || !Number.isFinite(runTokensUsed)) return null;
-  const used = Math.max(0, runTokensUsed);
-  const pct = Math.min(100, Math.max(0, Math.round((used / tokenBudget) * 100)));
+  if (costCapUsd === null || costCapUsd <= 0) return null;
+  if (runCostUsd === null || !Number.isFinite(runCostUsd)) return null;
+  const used = Math.max(0, runCostUsd);
+  const pct = Math.min(100, Math.max(0, Math.round((used / costCapUsd) * 100)));
   return {
-    tokensUsed: used,
-    budget: tokenBudget,
+    costUsed: used,
+    capUsd: costCapUsd,
     pct,
-    exhausted: used >= tokenBudget,
+    exhausted: used >= costCapUsd,
   };
 }

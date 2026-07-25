@@ -149,30 +149,71 @@ export async function runTurnLoop(
       break;
     }
 
-    // Hard token budget — the agent-independent spend-box. Checked each
+    // Hard spend-box — the agent-independent budget guard, checked each
     // iteration AFTER the previous turn's usage was recorded (executeTurn awaits
-    // logUsage) and BEFORE another inference call, so once the phase's cumulative
-    // prompt+completion spend crosses the ceiling no further tokens are spent.
-    // Reads the SAME accumulated total logUsage feeds — no parallel counter —
-    // over the session subtree (subagent child sessions included) and scoped to
-    // this phase by `missionTokenSince` (a RUN counts only its own spend, not the
-    // setup tokens already on the session). Stops with `token_budget_exhausted`,
-    // which finalizeMissionRunStatus maps through the standard business-stop path
-    // (force-close then terminal); the setup phase halts cleanly (no position).
+    // logUsage) and BEFORE another inference call, so once the run's cumulative
+    // spend crosses a ceiling no further tokens are spent. Both meters read the
+    // SAME accumulated totals logUsage feeds — no parallel counter — over the
+    // session subtree (subagent child sessions included), scoped to this phase by
+    // `missionTokenSince` (a RUN counts only its own spend, not the setup tokens
+    // already on the session).
+    //
+    // PRIMARY: the COST CAP (dollars). `usage_log.cost` reflects prompt-cache
+    // discounts, so this is the true spend — cache savings extend runway. Stops
+    // with `cost_cap_reached`. SECONDARY: the TOKEN BUDGET (gross tokens) is
+    // kept as a low-risk backstop ceiling — it rarely fires (its duration-derived
+    // default is far above real cost-capped spend) but guards a pathological run
+    // whose cost accounting is systematically wrong/missing. Stops with
+    // `token_budget_exhausted`. Both map through finalizeMissionRunStatus's
+    // standard business-stop path (force-close then terminal); the setup phase
+    // halts cleanly (no position).
     //
     // FAIL-SOFT (matches mission-liquidate-hook): a transient accumulator read
-    // failure logs a warning and CONTINUES the loop — a backstop that itself
-    // crashes the run would be worse than no backstop. It never pauses/aborts.
-    // Live budget usage for THIS turn's budget-pressure banner (below). Null
-    // when there is no budget box; recomputed each iteration.
+    // failure logs a warning and CONTINUES — a backstop that itself crashes the
+    // run would be worse than no backstop. If the cost read fails, the token
+    // ceiling below still applies (a run is never left un-capped), and the banner
+    // degrades to the token fraction rather than blanking.
+    // Live budget usage for THIS turn's budget-pressure banner (below). Prefers
+    // the COST fraction (spent/$cap); falls back to the token fraction only when
+    // there is no cost cap or its read failed. Null when neither box exists.
     let missionBudgetFraction: number | null = null;
+    if (loopConfig.missionCostCap != null) {
+      try {
+        const costUsed = await usageRepo.getSessionTotalCost(
+          context.sessionId,
+          { since: loopConfig.missionTokenSince ?? null },
+        );
+        missionBudgetFraction = costUsed / loopConfig.missionCostCap;
+        if (costUsed >= loopConfig.missionCostCap) {
+          logger.info("engine.mission.cost_cap_enforced", {
+            missionRunId: context.missionRunId ?? null,
+            costUsed,
+            costCapUsd: loopConfig.missionCostCap,
+            iteration,
+          });
+          stopReason = "cost_cap_reached";
+          break;
+        }
+      } catch (err) {
+        logger.warn("engine.mission.cost_cap_read_failed", {
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Continue — the token ceiling below is the fail-soft backstop.
+      }
+    }
     if (loopConfig.missionTokenBudget != null) {
       try {
         const tokensUsed = await usageRepo.getSessionTotalTokens(
           context.sessionId,
           { since: loopConfig.missionTokenSince ?? null },
         );
-        missionBudgetFraction = tokensUsed / loopConfig.missionTokenBudget;
+        // Only surface the token fraction when the cost fraction is unavailable
+        // (no cost cap, or its read failed) — the cost cap is the primary meter.
+        if (missionBudgetFraction == null) {
+          missionBudgetFraction = tokensUsed / loopConfig.missionTokenBudget;
+        }
         if (tokensUsed >= loopConfig.missionTokenBudget) {
           logger.info("engine.mission.token_budget_enforced", {
             missionRunId: context.missionRunId ?? null,

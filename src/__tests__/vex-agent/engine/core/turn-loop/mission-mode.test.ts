@@ -94,12 +94,15 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
 }));
 
 const mockGetSessionTotalTokens = vi.fn().mockResolvedValue(0);
+const mockGetSessionTotalCost = vi.fn().mockResolvedValue(0);
 
 vi.mock("@vex-agent/db/repos/usage.js", () => ({
   logUsage: vi.fn(),
   // Hard token-budget guard reads the session's cumulative total_tokens here
   // (the same accumulator `logUsage` feeds) at the top of each iteration.
   getSessionTotalTokens: (...a: unknown[]) => mockGetSessionTotalTokens(...a),
+  // Hard cost-cap guard (PRIMARY spend-box) reads cumulative usage_log.cost here.
+  getSessionTotalCost: (...a: unknown[]) => mockGetSessionTotalCost(...a),
 }));
 
 vi.mock("@vex-agent/db/client.js", () => ({
@@ -222,6 +225,7 @@ describe("turn-loop", () => {
     vi.clearAllMocks();
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 0 });
     mockGetSessionTotalTokens.mockResolvedValue(0);
+    mockGetSessionTotalCost.mockResolvedValue(0);
     mockForcedFallback.mockResolvedValue({
       kind: "committed",
       generation: 1,
@@ -512,6 +516,87 @@ describe("turn-loop", () => {
       );
 
       expect(result.stopReason).not.toBe("token_budget_exhausted");
+      expect(result.stopReason).not.toBe("paused_error");
+      expect(provider.chatCompletion).toHaveBeenCalled();
+    });
+  });
+
+  describe("hard cost cap (primary spend-box)", () => {
+    it("stops with cost_cap_reached once accumulated cost crosses the cap, before the next turn", async () => {
+      const provider = makeProvider([{ content: "Working..." }]);
+      // iter 0 reads $0 (under cap → one turn runs); iter 1 reads a total at the
+      // cap → abort before spending another inference call.
+      mockGetSessionTotalCost
+        .mockResolvedValueOnce(0)
+        .mockResolvedValue(1.0);
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 5, missionCostCap: 1.0 },
+      );
+
+      expect(result.stopReason).toBe("cost_cap_reached");
+      expect(provider.chatCompletion).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not false-stop while accumulated cost stays under the cap", async () => {
+      const provider = makeProvider([{ content: "Working..." }]);
+      mockGetSessionTotalCost.mockResolvedValue(0.2);
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1, missionCostCap: 1.0 },
+      );
+
+      expect(result.stopReason).not.toBe("cost_cap_reached");
+      expect(provider.chatCompletion).toHaveBeenCalled();
+    });
+
+    it("never reads the cost accumulator or stops when no cost cap is configured", async () => {
+      const provider = makeProvider([{ content: "Working..." }]);
+      mockGetSessionTotalCost.mockResolvedValue(99);
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1, missionCostCap: null, missionTokenBudget: null },
+      );
+
+      expect(result.stopReason).not.toBe("cost_cap_reached");
+      expect(mockGetSessionTotalCost).not.toHaveBeenCalled();
+      expect(provider.chatCompletion).toHaveBeenCalled();
+    });
+
+    it("run-scopes the cap by forwarding missionTokenSince to the cost accumulator", async () => {
+      const provider = makeProvider([{ content: "Working..." }]);
+      mockGetSessionTotalCost.mockResolvedValue(0.1);
+      const since = "2026-07-22T00:00:00.000Z";
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1, missionCostCap: 1.0, missionTokenSince: since },
+      );
+
+      expect(mockGetSessionTotalCost).toHaveBeenCalledWith("session-1", { since });
+    });
+
+    // Fail-soft: a transient cost-read failure must NOT abort the run; the TOKEN
+    // budget below is the backstop, and the loop continues rather than crashing.
+    it("continues (does not abort) when the cost accumulator read throws; the token ceiling still guards", async () => {
+      const provider = makeProvider([{ content: "Working..." }]);
+      mockGetSessionTotalCost.mockRejectedValue(new Error("cost read boom"));
+      mockGetSessionTotalTokens.mockResolvedValue(1_000); // under the token ceiling
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 1, missionCostCap: 1.0, missionTokenBudget: 500_000 },
+      );
+
+      expect(result.stopReason).not.toBe("cost_cap_reached");
       expect(result.stopReason).not.toBe("paused_error");
       expect(provider.chatCompletion).toHaveBeenCalled();
     });

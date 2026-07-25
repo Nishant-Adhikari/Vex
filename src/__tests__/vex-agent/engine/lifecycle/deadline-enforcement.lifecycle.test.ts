@@ -81,6 +81,7 @@ vi.mock("@vex-agent/engine/mission/mission-deadline.js", () => ({
   resolveFrozenDeadlineMs: vi.fn().mockReturnValue(null),
   resolveDurationMinutes: vi.fn().mockReturnValue(60),
   frozenDurationMinutes: vi.fn().mockReturnValue(null),
+  frozenCostCapUsd: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock("@vex-agent/tools/registry.js", () => ({

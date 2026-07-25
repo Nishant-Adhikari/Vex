@@ -96,6 +96,26 @@ export function frozenDurationMinutes(snapshot: unknown): number | null {
 }
 
 /**
+ * Read the per-mission COST CAP (US dollars) from a FROZEN run contract snapshot
+ * (`frozenMission.draft.costCapUsd`) — the same immutable source
+ * `frozenDurationMinutes` reads, so a post-start mutation can never move the
+ * enforced cap mid-run. This is the per-mission OVERRIDE fed to
+ * `resolveMissionCostCap`; a positive value wins over the env default, mirroring
+ * how `durationMinutes` overrides the env deadline. FAIL-OPEN to `null` (→ env →
+ * $1.00 default) on any missing/malformed level or a non-positive value. Not a
+ * trading surface — a spend backstop, never a trade instruction.
+ */
+export function frozenCostCapUsd(snapshot: unknown): number | null {
+  if (snapshot === null || typeof snapshot !== "object") return null;
+  const frozen = (snapshot as Record<string, unknown>).frozenMission;
+  if (frozen === null || typeof frozen !== "object") return null;
+  const draft = (frozen as Record<string, unknown>).draft;
+  if (draft === null || typeof draft !== "object") return null;
+  const raw = (draft as Record<string, unknown>).costCapUsd;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : null;
+}
+
+/**
  * The absolute hard-deadline epoch (ms) for a run: `started_at + duration`.
  * Returns null when `started_at` is unparseable — fail-open, so a bad
  * timestamp never manufactures a spurious deadline that kills a run early.
