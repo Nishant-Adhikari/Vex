@@ -11,15 +11,15 @@
  *      `lease_busy`. Regressing the `expires_at >= now` tolerance would re-open
  *      the incident, so we guard it.
  *
- *   B. THE GAP (documented, NOT fixed here) — the boot reconciler
- *      (`reconcileOrphanedRuns`, #56) only sweeps leases attached to an ORPHANED
- *      RUNNING run: `dropStaleLease` (releaseExpiredLease) runs once per orphan
- *      returned by `findOrphanedRunningRuns()`. A STANDALONE expired lease with
- *      NO running run (a dead `agent-turn-…` chat lease, or a session whose run
- *      is `paused_error`) is NEVER passed to the sweep, so it survives every
- *      restart. See the FINDING in the suite index / PR body. The primitive that
- *      would fix it — `runnerLeasesRepo.releaseExpiredLease` (owner-agnostic,
- *      `WHERE expires_at < NOW()`) — already exists but is only wired per-orphan.
+ *   B. THE FIX (BUG B) — the boot reconciler (`reconcileOrphanedRuns`) now runs
+ *      a GLOBAL expired-lease sweep (`runnerLeasesRepo.releaseAllExpiredLeases`,
+ *      `WHERE expires_at < NOW()`) UNCONDITIONALLY, independent of any orphaned
+ *      RUNNING run. Previously it only dropped leases attached to an orphaned
+ *      running run (`dropStaleLease` once per `findOrphanedRunningRuns()` result),
+ *      so a STANDALONE expired lease with NO running run (a dead `agent-turn-…`
+ *      chat lease, or a `paused_error` session) survived every restart and wedged
+ *      all new starts with `lease_busy`. Block B guards that the global sweep now
+ *      fires on every pass and reclaims the standalone dead lease.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -121,22 +121,35 @@ function reconcileDeps(over: Record<string, unknown> = {}) {
     flatten: vi.fn(async () => {}),
     closeLedger: vi.fn(async () => {}),
     dropStaleLease: vi.fn(async () => 1),
+    // The BOOT-TIME global expired-lease sweep (BUG B fix). Returns the number
+    // of dead `runner_leases` rows reclaimed across ALL sessions.
+    sweepExpiredLeases: vi.fn(async () => 1),
+    // Paused_error reaper seams (BUG C) — inert here (this block guards the
+    // lease sweep; the reaper has its own guard in paused-error-blocks-start).
+    findAbandonedPausedErrors: vi.fn(async () => []),
+    countRunOpenPositions: vi.fn(async () => 0),
+    reapStaleError: vi.fn(async () => true),
+    closeReapedLedger: vi.fn(async () => {}),
     ...over,
   };
 }
 
-describe("reconcileOrphanedRuns — standalone expired-lease sweep GAP", () => {
-  it("FINDING: a standalone expired lease (no orphaned RUNNING run) is NEVER swept", async () => {
-    // No orphaned running run -> the sweep body never runs -> dropStaleLease
-    // (releaseExpiredLease) is never called. The dead lease survives. This is
-    // the confirmed bug: the boot reconcile has no standalone-lease sweep.
+describe("reconcileOrphanedRuns — standalone expired-lease sweep (BUG B fixed)", () => {
+  it("reclaims a standalone expired lease (no orphaned RUNNING run) via the global boot sweep", async () => {
+    // No orphaned running run -> the per-orphan drop never fires, but the NEW
+    // global sweep runs UNCONDITIONALLY and reclaims the dead standalone lease.
+    // This is the fix for the confirmed `lease_busy` wedge.
     const deps = reconcileDeps({ findOrphans: vi.fn(async () => []) });
     const summary = await reconcileOrphanedRuns(deps);
-    expect(summary).toEqual({ scanned: 0, reconciled: 0, skipped: 0, failed: 0 });
+    expect(deps.sweepExpiredLeases).toHaveBeenCalledOnce();
+    expect(summary.leasesSwept).toBe(1);
+    expect(summary).toMatchObject({ scanned: 0, reconciled: 0, skipped: 0, failed: 0 });
+    // The per-orphan drop still does NOT fire (there is no orphaned running run);
+    // the standalone lease is cleared by the global sweep, not the per-orphan one.
     expect(deps.dropStaleLease).not.toHaveBeenCalled();
   });
 
-  it("only drops the stale lease for a session that HAS an orphaned running run", async () => {
+  it("sweeps expired leases AND drops the stale lease for a session that HAS an orphaned running run", async () => {
     const orphan = {
       id: "run-9", missionId: "m-9", sessionId: "sess-9", status: "running",
       startedAt: "2026-07-01T00:00:00.000Z", endedAt: null, lastCheckpointAt: null,
@@ -146,6 +159,7 @@ describe("reconcileOrphanedRuns — standalone expired-lease sweep GAP", () => {
     };
     const deps = reconcileDeps({ findOrphans: vi.fn(async () => [orphan]) });
     await reconcileOrphanedRuns(deps as never);
+    expect(deps.sweepExpiredLeases).toHaveBeenCalledOnce();
     expect(deps.dropStaleLease).toHaveBeenCalledWith("sess-9");
   });
 });

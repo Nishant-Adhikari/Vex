@@ -32,3 +32,9 @@ export {
   type ClaimAutoRetryOutcome,
   type AutoRetryIneligibleReason,
 } from "./claim-auto-retry.js";
+export {
+  claimRunForSelfHeal,
+  type ClaimSelfHealInput,
+  type ClaimSelfHealOutcome,
+  type SelfHealIneligibleReason,
+} from "./claim-self-heal.js";

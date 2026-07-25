@@ -63,6 +63,7 @@ function runtime(over: Record<string, unknown> = {}) {
     deadlineAt: null,
     durationMinutes: null,
     tokenBudget: null,
+    costCapUsd: null,
     runTokensUsed: null,
     runCostUsd: null,
     iterationCount: null,

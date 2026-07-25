@@ -19,7 +19,17 @@ import type pg from "pg";
 import { query, queryOne, queryOneWith, execute, executeWith, withTransaction } from "../client.js";
 import { nullableJsonb } from "../params.js";
 
-export type MissionResultOutcome = "running" | "completed" | "cancelled" | "failed" | "stopped";
+// `timed_out` is a hard-deadline (time-box) end — a clean, non-error terminal
+// outcome distinct from `failed`. The engine run/mission STATUS stays terminal
+// (`failed`); only this operator-facing LEDGER outcome relabels it so the
+// results UI reads "TIMED OUT" instead of the alarming "FAILED".
+export type MissionResultOutcome =
+  | "running"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "stopped"
+  | "timed_out";
 
 export interface MissionResultRow {
   id: string;

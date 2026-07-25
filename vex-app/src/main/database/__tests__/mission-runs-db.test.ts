@@ -90,6 +90,7 @@ describe("mission-runs-db mapper", () => {
       deadlineAt: null,
       durationMinutes: null,
       tokenBudget: null,
+      costCapUsd: null,
       runTokensUsed: null,
       runCostUsd: null,
       iterationCount: null,
@@ -194,6 +195,9 @@ describe("mission-runs-db mapper", () => {
     // a positive integer derived from the SAME frozen duration.
     expect(result.data.tokenBudget).not.toBeNull();
     expect(result.data.tokenBudget).toBeGreaterThan(0);
+    // The PRIMARY cost cap: env AGENT_MISSION_COST_CAP_USD default $1.00 (no
+    // per-mission override in this snapshot) — the meter's budget denominator.
+    expect(result.data.costCapUsd).toBe(1.0);
     // Run-scoped usage flows through from the since-query.
     expect(result.data.runTokensUsed).toBe(100000);
     expect(result.data.runCostUsd).toBe(0.5);

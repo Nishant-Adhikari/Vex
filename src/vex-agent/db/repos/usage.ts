@@ -89,6 +89,44 @@ export async function getSessionTotalTokens(
   return parseInt(row?.tokens ?? "0", 10);
 }
 
+/**
+ * Cumulative real inference COST (USD) logged for a session subtree (SUM of
+ * `usage_log.cost`). Unlike `getSessionTotalTokens` (which sums GROSS
+ * `total_tokens`, cached included), `cost` already reflects prompt-cache
+ * discounts — so this is the true spend the hard COST CAP enforces. The mission
+ * turn loop reads it at the top of each iteration and auto-aborts once the
+ * run's cumulative cost crosses the cap.
+ *
+ * SUBTREE + `since` semantics are IDENTICAL to `getSessionTotalTokens`: the sum
+ * spans the session AND every linked subagent child session (recursively, not
+ * filtered by `session_links.ended_at`), and `since` (the run's immutable
+ * `started_at`) scopes the cap to the tokens the RUN itself spent — the same
+ * `missionTokenSince` boundary the token budget uses. Returns `0` when the
+ * subtree has no matching usage rows yet.
+ */
+export async function getSessionTotalCost(
+  sessionId: string,
+  opts?: { since?: string | null },
+): Promise<number> {
+  const since = opts?.since ?? null;
+  const cutoffClause = since ? " WHERE u.created_at >= $2" : "";
+  const params: unknown[] = since ? [sessionId, since] : [sessionId];
+  const row = await queryOne<{ cost: string | null }>(
+    `WITH RECURSIVE session_tree(session_id) AS (
+       SELECT $1::text
+       UNION
+       SELECT sl.child_session_id
+         FROM session_links sl
+         JOIN session_tree st ON sl.parent_session_id = st.session_id
+     )
+     SELECT COALESCE(SUM(u.cost),0) AS cost
+       FROM usage_log u
+       JOIN session_tree st ON u.session_id = st.session_id${cutoffClause}`,
+    params,
+  );
+  return parseFloat(row?.cost ?? "0");
+}
+
 export async function getStats(sessionId?: string, currency?: string): Promise<UsageStats> {
   const currencyClause = currency ? " WHERE currency = $1" : "";
   const currencyParams = currency ? [currency] : [];

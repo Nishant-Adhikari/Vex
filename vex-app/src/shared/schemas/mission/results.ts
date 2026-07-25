@@ -21,13 +21,19 @@ import { z } from "zod";
 const MAX_RESULTS_LIMIT = 100;
 const DEFAULT_RESULTS_LIMIT = 50;
 
-/** Mirrors `mission_results.outcome` (migration 041) — the RAW run-level outcome. */
+/**
+ * Mirrors `mission_results.outcome` (migrations 041 + 047) — the RAW run-level
+ * outcome. `timed_out` is the hard-deadline (time-box) end: a clean, non-error
+ * terminal outcome the finalize path records instead of `failed` so the results
+ * UI reads "TIMED OUT" rather than "FAILED".
+ */
 export const missionResultOutcomeSchema = z.enum([
   "running",
   "completed",
   "cancelled",
   "failed",
   "stopped",
+  "timed_out",
 ]);
 export type MissionResultOutcome = z.infer<typeof missionResultOutcomeSchema>;
 

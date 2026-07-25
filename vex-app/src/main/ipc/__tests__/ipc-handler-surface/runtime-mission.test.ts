@@ -190,6 +190,7 @@ describe("runtime handlers", () => {
         deadlineAt: null,
         durationMinutes: null,
         tokenBudget: null,
+        costCapUsd: null,
         runTokensUsed: null,
         runCostUsd: null,
         iterationCount: null,

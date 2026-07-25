@@ -74,6 +74,12 @@ const SwapArgs = z.object({
   side: z.enum(["sell", "buy"]).optional(),
   slippageBps: z.number().int().nonnegative().optional(),
   recipient: z.string().min(1).optional(),
+  // EVM-only: the KyberSwap/Uniswap swap.buy/swap.sell targets declare
+  // `rationale` REQUIRED (recorded verbatim in the mission Decision Journal so
+  // the trade is auditable). Optional at the schema boundary so a Solana swap
+  // — whose Jupiter target has no rationale param — is not forced to carry one;
+  // the EVM branch enforces presence and the Solana branch rejects it.
+  rationale: z.string().min(1).optional(),
 });
 
 type SwapArgs = z.infer<typeof SwapArgs>;
@@ -122,6 +128,16 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
         `swap: "recipient" is not supported for a Solana (Jupiter) swap. Omit it for chain "solana".`,
       );
     }
+    // `rationale` is an EVM-only capture concept: the Jupiter execute manifest
+    // has no rationale param (the trade-capture pipeline records rationale only
+    // for the kyberswap/uniswap swap handlers), and forwarding it would be
+    // rejected as an unknown parameter. Reject it explicitly rather than
+    // silently dropping it — same doctrine as `side` / `recipient` above.
+    if (a.rationale !== undefined) {
+      throw new MutatingAliasRouteError(
+        `swap: "rationale" is not recorded for a Solana (Jupiter) swap. Omit it for chain "solana".`,
+      );
+    }
     // Jupiter execute manifest types `amount` as a NUMBER (human decimal).
     const amount = Number(a.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -148,11 +164,26 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
     );
   }
 
+  // `rationale` is REQUIRED on the EVM swap targets. Enforce it HERE too: this
+  // alias routes STRAIGHT to `executeProtocolTool`, so without forwarding a
+  // rationale every action-named EVM swap would be rejected there for a missing
+  // required param. Reject early with an actionable message (a whitespace-only
+  // value is treated as absent — it would normalise to an empty capture and the
+  // target's required check would reject it anyway).
+  const rationaleText = typeof a.rationale === "string" ? a.rationale.trim() : "";
+  if (rationaleText.length === 0) {
+    throw new MutatingAliasRouteError(
+      `swap: "rationale" is required — give a one-sentence reason for this trade ` +
+        `(the signal/thesis and why now). It is recorded in the mission Decision Journal ` +
+        `so the trade is auditable.`,
+    );
+  }
+
   // EVM → the VENUE ROUTER's primary venue (KyberSwap where supported, Uniswap on
   // Robinhood Chain / as an all-EVM fallback). `side === "buy"` → buy (opens a lot
   // on tokenOut); "sell"/default → sell. amount → amountIn (both human decimal).
   // Both venues share the same execute param shape (chain, tokenIn, tokenOut,
-  // amountIn, slippageBps?, recipient?), verified against their manifests.
+  // amountIn, slippageBps?, recipient?, rationale), verified against their manifests.
   const isBuy = a.side === "buy";
   const toolId =
     family.venue === "uniswap"
@@ -167,6 +198,7 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
     tokenIn: a.tokenIn,
     tokenOut: a.tokenOut,
     amountIn: a.amount,
+    rationale: a.rationale,
     ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
     ...(a.recipient !== undefined ? { recipient: a.recipient } : {}),
   };

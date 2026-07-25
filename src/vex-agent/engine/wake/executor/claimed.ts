@@ -1,10 +1,12 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 import { AUTO_RETRY_WAKE_TRIGGER } from "../../core/runner/mission-auto-retry-policy.js";
+import { SELF_HEAL_WAKE_TRIGGER } from "../../self-heal/policy.js";
 import logger from "@utils/logger.js";
 
 import type { WakeDeps } from "./deps.js";
 import type { ClaimedWakeOutcome } from "./tick.js";
 import { handleAutoRetryClaimed } from "./auto-retry.js";
+import { handleSelfHealClaimed } from "./self-heal.js";
 
 export async function handleClaimed(
   wake: LoopWakeRequest,
@@ -20,6 +22,13 @@ export async function handleClaimed(
   // structured payload trigger, NOT the model-influenced `reason` text.
   if (wake.payload?.trigger === AUTO_RETRY_WAKE_TRIGGER) {
     return handleAutoRetryClaimed(wake, run, deps);
+  }
+
+  // Overnight self-heal (OV2): minutes-scale re-arm beyond the fast Phase-4d
+  // retries. Routed by the structured payload trigger; the self-heal claim
+  // re-verifies the full safety state (incl. deadline + kill switch).
+  if (wake.payload?.trigger === SELF_HEAL_WAKE_TRIGGER) {
+    return handleSelfHealClaimed(wake, run, deps);
   }
 
   // Preempt-before-resume re-check. Only wake a run that is still

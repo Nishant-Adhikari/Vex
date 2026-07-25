@@ -42,13 +42,27 @@ export interface TurnLoopConfig {
    */
   missionTokenBudget?: number | null;
   /**
-   * Baseline cutoff (ISO timestamp) that scopes the budget to a single PHASE.
-   * The accumulator sums only usage rows with `created_at >= missionTokenSince`,
-   * so a RUN counts only the tokens it spent itself — not the setup/recovery
-   * tokens already logged to the same root session before the run started. The
-   * run passes its IMMUTABLE `started_at` (identical across resume, so the same
-   * baseline is reused and pre-pause run spend still counts). Null/undefined =
-   * all-time (the setup phase, whose baseline is the session's own start).
+   * Hard cumulative COST CAP for the mission run (US dollars) — the PRIMARY
+   * spend-box. When set, the turn loop stops with `cost_cap_reached` the moment
+   * the run's accumulated real inference cost (the summed `usage_log.cost` for
+   * the session subtree, scoped by `missionTokenSince`) is at or above this
+   * ceiling — checked at the top of each iteration BEFORE another inference call
+   * is spent. Resolved from `AGENT_MISSION_COST_CAP_USD` (default $1.00) with an
+   * optional per-mission override. Unlike the token budget it sums COST (which
+   * reflects cache discounts), so cache savings extend runway. Null/undefined =
+   * no cost cap (explicit `0`/`off`/… sentinel or an unconfigured phase); the
+   * token budget still applies as a secondary safety ceiling.
+   */
+  missionCostCap?: number | null;
+  /**
+   * Baseline cutoff (ISO timestamp) that scopes BOTH the token budget and the
+   * cost cap to a single PHASE. The accumulators sum only usage rows with
+   * `created_at >= missionTokenSince`, so a RUN counts only the tokens/cost it
+   * spent itself — not the setup/recovery tokens already logged to the same root
+   * session before the run started. The run passes its IMMUTABLE `started_at`
+   * (identical across resume, so the same baseline is reused and pre-pause run
+   * spend still counts). Null/undefined = all-time (the setup phase, whose
+   * baseline is the session's own start).
    */
   missionTokenSince?: string | null;
 }

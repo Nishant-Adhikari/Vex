@@ -16,7 +16,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryOne: (...a: unknown[]) => mockQueryOne(...a),
 }));
 
-const { logUsage, getSessionTotalTokens } = await import("@vex-agent/db/repos/usage.js");
+const { logUsage, getSessionTotalTokens, getSessionTotalCost } = await import("@vex-agent/db/repos/usage.js");
 
 describe("usage repo — logUsage", () => {
   beforeEach(() => {
@@ -110,5 +110,53 @@ describe("usage repo — getSessionTotalTokens (subtree + since scoping)", () =>
   it("returns 0 when the session has no usage rows", async () => {
     mockQueryOne.mockResolvedValue(null);
     expect(await getSessionTotalTokens("root-1")).toBe(0);
+  });
+});
+
+describe("usage repo — getSessionTotalCost (subtree + since scoping)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockQueryOne.mockResolvedValue({ cost: "0" });
+  });
+
+  it("sums usage_log.cost over the session AND its linked child sessions (same subtree as tokens)", async () => {
+    mockQueryOne.mockResolvedValue({ cost: "0.4231" });
+
+    const total = await getSessionTotalCost("root-1");
+
+    expect(total).toBeCloseTo(0.4231, 6);
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/RECURSIVE/i);
+    expect(sql).toContain("session_links");
+    expect(sql).toContain("usage_log");
+    expect(sql).toContain("SUM(u.cost)");
+    expect(params[0]).toBe("root-1");
+    // No `since` → no created_at cutoff (all-time, for the setup phase).
+    expect(sql).not.toContain("created_at");
+    expect(params).toHaveLength(1);
+  });
+
+  it("applies a created_at >= since cutoff when a run baseline is given (run-scoped cost cap, matches the token boundary)", async () => {
+    mockQueryOne.mockResolvedValue({ cost: "0.2051" });
+
+    const total = await getSessionTotalCost("root-1", { since: "2026-07-22T00:00:00.000Z" });
+
+    expect(total).toBeCloseTo(0.2051, 6);
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("created_at");
+    expect(sql).toMatch(/>=/);
+    expect(params).toEqual(["root-1", "2026-07-22T00:00:00.000Z"]);
+  });
+
+  it("treats a null since as all-time (no cutoff)", async () => {
+    await getSessionTotalCost("root-1", { since: null });
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sql).not.toContain("created_at");
+    expect(params).toHaveLength(1);
+  });
+
+  it("returns 0 when the subtree has no matching usage rows", async () => {
+    mockQueryOne.mockResolvedValue(null);
+    expect(await getSessionTotalCost("root-1")).toBe(0);
   });
 });

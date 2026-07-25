@@ -66,6 +66,16 @@ export const runtimeStateDtoSchema = z
      */
     tokenBudget: z.number().int().positive().nullable(),
     /**
+     * The ENFORCED mission COST CAP for THIS run in US dollars — the PRIMARY
+     * spend-box the turn-loop enforcer hard-cuts on (env
+     * `AGENT_MISSION_COST_CAP_USD` default $1.00, or a per-mission `costCapUsd`
+     * override), computed by the shared `resolveMissionCostCap`. This is the
+     * denominator of the BUDGET % meter (`runCostUsd / costCapUsd`). `null` when
+     * the cap is disabled (0/off/…) or there is no active run. Distinct from the
+     * trading capital cap — this is LLM inference spend only.
+     */
+    costCapUsd: z.number().positive().nullable(),
+    /**
      * Run-scoped tokens spent so far: `SUM(usage_log.total_tokens)` over the
      * session subtree with `created_at >= started_at` — the SAME run boundary
      * (`missionTokenSince`) the budget enforcer uses, so it resets per run

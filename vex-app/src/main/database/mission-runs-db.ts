@@ -21,9 +21,13 @@ import {
   type MissionRunStatus,
 } from "@shared/schemas/sessions.js";
 import { type RuntimeStateDto } from "@shared/schemas/runtime.js";
-import { resolveMissionTokenBudget } from "@vex-lib/agent-config.js";
+import {
+  resolveMissionTokenBudget,
+  resolveMissionCostCap,
+} from "@vex-lib/agent-config.js";
 import {
   frozenDurationMinutes,
+  frozenCostCapUsd,
   resolveDurationMinutes,
   resolveFrozenDeadlineMs,
 } from "@vex-agent/engine/mission/mission-deadline.js";
@@ -126,7 +130,9 @@ interface MissionRunRow {
  * The run-scoped observability facts derived from the frozen contract +
  * usage_log, mirroring EXACTLY what the turn-loop enforcer computes:
  *   - `durationMinutes` / `deadlineAt` from `resolveFrozenDeadlineMs`,
- *   - `tokenBudget` from `resolveMissionTokenBudget` (the enforced denominator),
+ *   - `costCapUsd` from `resolveMissionCostCap` (the PRIMARY enforced denominator
+ *     — the meter's budget %), and `tokenBudget` from `resolveMissionTokenBudget`
+ *     (the secondary ceiling, surfaced for reference),
  *   - `runTokensUsed` / `runCostUsd` summed over the run boundary
  *     (`created_at >= started_at`, subtree-inclusive) — the same
  *     `missionTokenSince` cut the enforcer scopes its budget to, so the meter
@@ -138,6 +144,7 @@ interface RunScopedFacts {
   readonly deadlineAt: string | null;
   readonly durationMinutes: number | null;
   readonly tokenBudget: number | null;
+  readonly costCapUsd: number | null;
   readonly runTokensUsed: number | null;
   readonly runCostUsd: number | null;
 }
@@ -146,6 +153,7 @@ const NO_RUN_SCOPED_FACTS: RunScopedFacts = {
   deadlineAt: null,
   durationMinutes: null,
   tokenBudget: null,
+  costCapUsd: null,
   runTokensUsed: null,
   runCostUsd: null,
 };
@@ -208,11 +216,19 @@ async function deriveRunScopedFacts(
   );
   const deadlineMs = resolveFrozenDeadlineMs(startedAtIso, contractSnapshot);
   const tokenBudget = resolveMissionTokenBudget(process.env, durationMinutes);
+  // PRIMARY spend-box denominator — the exact $ cap the turn-loop enforcer
+  // hard-cuts on (env AGENT_MISSION_COST_CAP_USD default $1.00, overridden by a
+  // frozen per-mission costCapUsd). The budget % meter is runCostUsd / costCapUsd.
+  const costCapUsd = resolveMissionCostCap(
+    process.env,
+    frozenCostCapUsd(contractSnapshot),
+  );
   const usage = await sumRunScopedUsage(client, sessionId, startedAtIso);
   return {
     deadlineAt: deadlineMs !== null ? new Date(deadlineMs).toISOString() : null,
     durationMinutes,
     tokenBudget,
+    costCapUsd,
     runTokensUsed: usage?.tokens ?? null,
     runCostUsd: usage?.cost ?? null,
   };

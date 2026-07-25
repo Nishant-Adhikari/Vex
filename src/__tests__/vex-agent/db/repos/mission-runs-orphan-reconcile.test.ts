@@ -82,6 +82,59 @@ describe("findOrphanedRunningRuns", () => {
   });
 });
 
+// RECONCILIATION B — the paused_error reaper (#70) and the OV2 self-heal
+// recoverer (#73) must form a LADDER, never a race. #73 schedules its retry as a
+// row in the SAME `loop_wake_requests` table (`status='pending'`, `mission_run_id`
+// set, the `self_heal_retry` marker living inside the payload). The reaper's
+// "no pending wake" exclusion is TRIGGER-AGNOSTIC — it defers on ANY pending wake
+// for the run — so it already covers self_heal_retry wakes without a code change:
+// while OV2 owns a run (a retry wake is pending) the run is NOT a reap candidate;
+// once OV2 gives up (past deadline/cost or max attempts → it stops arming wakes)
+// no pending wake remains and the run becomes reap-eligible. These tests pin that
+// exclusion so a future narrowing of the join can't silently re-open the race.
+describe("findAbandonedPausedErrorRuns — reaper↔self-heal ladder", () => {
+  beforeEach(() => {
+    mockQuery = vi.fn().mockResolvedValue([]);
+    mockExecute = vi.fn().mockResolvedValue(0);
+  });
+
+  it("excludes any run with a PENDING wake (covers #73's self_heal_retry wake)", async () => {
+    await repo.findAbandonedPausedErrorRuns(30);
+    const sql = mockQuery.mock.calls[0]![0] as string;
+
+    // Only abandoned paused_error runs, past the grace window, with no live lease.
+    expect(sql).toMatch(/status\s*=\s*'paused_error'/i);
+    expect(sql).toMatch(/ended_at\s+IS\s+NULL/i);
+    expect(sql).toMatch(/l\.session_id\s+IS\s+NULL/i);
+    // The pending-wake exclusion: LEFT JOIN loop_wake_requests on the RUN id +
+    // status='pending', then require it ABSENT. A pending self_heal_retry wake
+    // (mission_run_id set, status='pending') therefore makes the run a non-candidate.
+    expect(sql).toMatch(/loop_wake_requests/i);
+    expect(sql).toMatch(/w\.mission_run_id\s*=\s*m\.id/i);
+    expect(sql).toMatch(/w\.status\s*=\s*'pending'/i);
+    expect(sql).toMatch(/w\.id\s+IS\s+NULL/i);
+    // TRIGGER-AGNOSTIC: the wake join must NOT be narrowed to a specific
+    // trigger/reason, or a self_heal_retry wake would slip past the exclusion and
+    // the reaper could reap a run OV2 still owns (the race this ladder forbids).
+    expect(sql).not.toMatch(/self_heal/i);
+    expect(sql).not.toMatch(/trigger/i);
+  });
+
+  it("returns the run only when the query yields it (no pending wake, past grace)", async () => {
+    // The DB applies the exclusion; the repo faithfully surfaces whatever the
+    // ladder-aware query returns. A run OV2 has given up on (no pending wake) is
+    // the one the query yields → the reaper finalizes it.
+    mockQuery.mockResolvedValue([
+      runRow({ id: "reap-me", status: "paused_error", session_id: "sess-9" }),
+    ]);
+    const abandoned = await repo.findAbandonedPausedErrorRuns(30);
+    expect(abandoned).toHaveLength(1);
+    expect(abandoned[0]!.id).toBe("reap-me");
+    // Grace window carried as the sole positional param.
+    expect(mockQuery.mock.calls[0]![1]).toEqual([30]);
+  });
+});
+
 describe("markStoppedIfRunning", () => {
   beforeEach(() => {
     mockQuery = vi.fn().mockResolvedValue([]);

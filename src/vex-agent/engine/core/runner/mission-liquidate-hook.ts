@@ -4,11 +4,12 @@
  * `finalizeMissionRunStatus`, in both the start-run and resume-run paths.
  *
  * Fires when the run stopped on an ENGINE-ENFORCED hard backstop that can cut
- * the agent off mid-position — the hard deadline (`deadline_reached`) or the
- * hard token budget (`token_budget_exhausted`). In either case we sell the
- * tokens THAT MISSION opened back to ETH first, so the run ends flat instead of
- * stranded holding a bag. Agent-driven stops (goal_reached, mission_stop, etc.)
- * are the agent's own decision and are NOT force-liquidated here.
+ * the agent off mid-position — the hard deadline (`deadline_reached`), the hard
+ * cost cap (`cost_cap_reached`), or the hard token budget
+ * (`token_budget_exhausted`). In each case we sell the tokens THAT MISSION
+ * opened back to ETH first, so the run ends flat instead of stranded holding a
+ * bag. Agent-driven stops (goal_reached, mission_stop, etc.) are the agent's own
+ * decision and are NOT force-liquidated here.
  *
  * The liquidator is itself fully fail-soft; this wrapper adds a second try/catch
  * (defense in depth) plus a dynamic import so the heavy uniswap swap graph is
@@ -29,6 +30,7 @@ export async function forceLiquidateOnDeadline(args: {
 }): Promise<void> {
   if (
     args.stopReason !== "deadline_reached" &&
+    args.stopReason !== "cost_cap_reached" &&
     args.stopReason !== "token_budget_exhausted"
   ) {
     return;

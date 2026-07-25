@@ -34,6 +34,12 @@ export type MissionDisplayOutcome =
 export function missionDisplayOutcome(
   result: Pick<MissionResultDto, "outcome" | "stopReason">,
 ): MissionDisplayOutcome {
+  // A hard-deadline run now records the ledger outcome `timed_out` directly
+  // (finalize path); older rows only carry `stop_reason='deadline_reached'`.
+  // Both map to the neutral, medium-level "timeBoxed" — never a failure.
+  if (result.outcome === "timed_out") {
+    return "timeBoxed";
+  }
   if (result.stopReason === "deadline_reached" && result.outcome !== "completed") {
     return "timeBoxed";
   }

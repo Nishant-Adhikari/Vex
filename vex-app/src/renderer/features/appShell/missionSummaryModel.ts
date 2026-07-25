@@ -131,6 +131,7 @@ export const END_REASON_PHRASES: Record<string, string> = {
   goal_reached: "Goal reached",
   deadline_reached: "Time box reached",
   token_budget_exhausted: "Token budget spent",
+  cost_cap_reached: "Cost cap reached",
   capital_depleted: "Capital depleted",
   max_loss_hit: "Max loss hit",
   no_viable_opportunity: "No viable opportunity",
