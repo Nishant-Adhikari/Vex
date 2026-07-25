@@ -527,3 +527,52 @@ export async function getLatestFailedRunBySession(sessionId: string): Promise<Mi
   );
   return row ? mapRow(row) : null;
 }
+
+/**
+ * Idempotent, race-safe terminal flip for the OV3 wake-stall watchdog: move a
+ * run to `failed` ONLY while it is still `paused_wake`, stamping
+ * `wake_stall_unrecoverable`. Returns `true` when THIS call performed the flip,
+ * `false` if the run already left `paused_wake` (a concurrent wake resume /
+ * user action won). Keeps the watchdog from finalizing a run that just resumed.
+ */
+export async function markPausedWakeFailed(
+  id: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs
+                  SET status = 'failed',
+                      stop_reason = 'wake_stall_unrecoverable',
+                      stop_summary = COALESCE($2, stop_summary),
+                      stop_evidence_json = COALESCE($3::jsonb, stop_evidence_json),
+                      ended_at = NOW()
+                WHERE id = $1
+                  AND status = 'paused_wake'`;
+  const params = [
+    id,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
+}
+
+/**
+ * Every run currently in `status`, oldest-first. Used by the overnight
+ * self-heal watchdog to sweep `paused_error` (OV2) and `paused_wake` (OV3)
+ * runs each tick. Read-only; the watchdog re-verifies each row's full safety
+ * state under a row lock before it acts.
+ */
+export async function listRunsByStatus(
+  status: MissionRunStatus,
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql =
+    "SELECT * FROM mission_runs WHERE status = $1 ORDER BY started_at ASC";
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql, [status])).rows
+    : await query<Record<string, unknown>>(sql, [status]);
+  return rows.map(mapRow);
+}

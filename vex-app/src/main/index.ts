@@ -48,6 +48,7 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupExitWatchWorker } from "./agent/exit-watch-wiring.js";
+import { setupSelfHealWorker } from "./agent/self-heal-wiring.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
 import { setupHyperliquidPositionsService } from "./market/hyperliquid-positions-service.js";
 import { setupHyperliquidLiveFeedService } from "./market/hyperliquid-live-feed-service.js";
@@ -266,6 +267,19 @@ async function initializeMainRuntime(): Promise<void> {
   // reads already-synced projections.
   const stopExitWatchWorker = setupExitWatchWorker();
 
+  // 6a-self-heal. Own the overnight self-heal watchdog so an unattended
+  // multi-hour mission recovers from provider outages (OV2) and paused_wake
+  // stalls (OV3) with NO human. It only SCHEDULES/RE-ARMS durable wake rows —
+  // the wake executor stays the single serialized resume authority — so every
+  // recovery re-verifies the full safety state (transient-only, no half-done
+  // irreversible action, deadline + cost bounded, full-mode, kill switch) under
+  // a row lock before resuming. DEFAULT-ON, disabled by AGENT_SELF_HEAL_ENABLED.
+  // Composes as a LADDER with the abandoned-run reaper (recovers first; the
+  // reaper finalizes only what self-heal gave up on). Restart-durable: the boot
+  // tick re-arms any in-deadline paused_error run. Stays idle until the engine
+  // DB url resolves (supervisor gate). Changes NO trade target/sizing/scoring.
+  const stopSelfHealWorker = setupSelfHealWorker();
+
   // 6a-sim-scheduler. Own the hands-free simulator scheduler: when
   // VEX_SIM_SCHEDULER_ENABLED is set it auto-launches a NEW paper-trading
   // (mission_mode='simulator') mission every interval, capped at
@@ -320,6 +334,7 @@ async function initializeMainRuntime(): Promise<void> {
         stopRegimeWorker(),
         stopToolEmbeddingReconcileWorker(),
         stopExitWatchWorker(),
+        stopSelfHealWorker(),
         stopSimulatorSchedulerWorker(),
       ]);
       for (const r of results) {
