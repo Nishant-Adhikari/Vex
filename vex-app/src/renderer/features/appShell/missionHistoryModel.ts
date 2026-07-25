@@ -17,6 +17,8 @@
  */
 
 import type { MissionResultDto } from "@shared/schemas/mission.js";
+import type { PnlCurrency } from "../../stores/uiStore.js";
+import { formatUsdDelta } from "../../lib/format.js";
 
 export const EM_DASH = "—";
 
@@ -94,6 +96,87 @@ export function formatEth(value: number | null, opts: { signed?: boolean } = {})
 export function pnlUsd(pnlEth: number | null, ethPriceUsdEnd: number | null): number | null {
   if (pnlEth === null || ethPriceUsdEnd === null) return null;
   return pnlEth * ethPriceUsdEnd;
+}
+
+/**
+ * Self-describing signed PnL string in the SELECTED denomination — the single
+ * reusable formatter behind the Missions ETH|USD toggle (and reusable for the
+ * per-position / per-move PnL readouts later):
+ *
+ *  - `usd` + a known ETH→USD price  → compact signed USD (`+$12.30`, `-$4.00`);
+ *  - `eth`, OR `usd` with a null/non-finite price (FAIL-SOFT) → signed ETH
+ *    (`+0.0279 ETH`) so a run with no captured close price is never blank/`$NaN`;
+ *  - null/non-finite `ethAmount` → em dash.
+ *
+ * Pure: the price is passed in (the row's own `ethPriceUsdEnd`), never fetched.
+ */
+export function formatPnl(
+  ethAmount: number | null,
+  currency: PnlCurrency,
+  ethUsdPrice: number | null,
+): string {
+  if (ethAmount === null || !Number.isFinite(ethAmount)) return EM_DASH;
+  if (
+    currency === "usd" &&
+    ethUsdPrice !== null &&
+    Number.isFinite(ethUsdPrice)
+  ) {
+    return formatUsdDelta(ethAmount * ethUsdPrice);
+  }
+  return `${formatEth(ethAmount, { signed: true })} ETH`;
+}
+
+/**
+ * Cumulative realized USD PnL — the sum of each contributing run valued at ITS
+ * OWN close price (`pnlEth × ethPriceUsdEnd`), NOT a single live spot applied to
+ * the ETH total. `null` (so the header falls back to the ETH total) when either
+ * no run has a known PnL, OR any PnL-bearing run lacks a close price — a partial
+ * USD total that silently drops runs would misrepresent the aggregate.
+ */
+export function sumPnlUsd(results: readonly MissionResultDto[]): number | null {
+  let total = 0;
+  let counted = 0;
+  for (const r of results) {
+    if (r.pnlEth === null || !Number.isFinite(r.pnlEth)) continue;
+    if (r.ethPriceUsdEnd === null) return null;
+    total += r.pnlEth * r.ethPriceUsdEnd;
+    counted += 1;
+  }
+  return counted === 0 ? null : total;
+}
+
+/**
+ * The cumulative PnL header string in the selected denomination. `usd` shows
+ * the summed realized USD when every PnL-bearing run has a close price; it
+ * FAILS SOFT to the signed ETH total otherwise (and always in `eth` mode).
+ */
+export function formatCumulativePnl(
+  results: readonly MissionResultDto[],
+  currency: PnlCurrency,
+): string {
+  if (currency === "usd") {
+    const usd = sumPnlUsd(results);
+    if (usd !== null) return formatUsdDelta(usd);
+  }
+  return `${formatEth(sumPnlEth(results), { signed: true })} ETH`;
+}
+
+/**
+ * True when `usd` is selected but the figure had to fall back to ETH (no usable
+ * close price) — lets the view show a subtle "showing ETH" hint without
+ * duplicating the fallback logic.
+ */
+export function isUsdFallback(
+  currency: PnlCurrency,
+  ethAmount: number | null,
+  ethUsdPrice: number | null,
+): boolean {
+  return (
+    currency === "usd" &&
+    ethAmount !== null &&
+    Number.isFinite(ethAmount) &&
+    (ethUsdPrice === null || !Number.isFinite(ethUsdPrice))
+  );
 }
 
 /** `Xs` / `Xm` / `Xh Ym` for a run's persisted duration in seconds; em dash when unknown. */

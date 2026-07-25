@@ -40,6 +40,45 @@ export const runtimeStateDtoSchema = z
     stopReason: z.string().nullable(),
     lastCheckpointAt: z.string().datetime({ offset: true }).nullable(),
     startedAt: z.string().datetime({ offset: true }).nullable(),
+    /**
+     * The run's hard-deadline instant — `started_at + durationMinutes`, derived
+     * from the FROZEN contract snapshot exactly as the engine's turn-loop
+     * enforcer does (see `mission-deadline.ts` `resolveFrozenDeadlineMs`). Lets
+     * the renderer show a live TIME LEFT countdown for a run whose draft has
+     * already dropped out mid-run (the draft's `constraints.deadlineAt` is only
+     * resolvable pre-start). `null` when no active run or the deadline can't be
+     * derived (fail-soft — the timer degrades to elapsed-only, never NaN).
+     */
+    deadlineAt: z.string().datetime({ offset: true }).nullable(),
+    /**
+     * The run's effective time-box in whole minutes (the frozen
+     * `durationMinutes` → env override → 60 default), i.e. the same value the
+     * deadline + token budget are derived from. `null` when no active run.
+     */
+    durationMinutes: z.number().int().positive().nullable(),
+    /**
+     * The ENFORCED mission token budget for THIS run
+     * (`durationMinutes × AGENT_MISSION_TOKENS_PER_MINUTE`, or an explicit
+     * `AGENT_MISSION_TOKEN_BUDGET` override), computed by the shared
+     * `resolveMissionTokenBudget` in main-process agent-config — the exact
+     * denominator the turn-loop enforcer checks against. `null` when the budget
+     * is disabled (0/off/…) or there is no active run.
+     */
+    tokenBudget: z.number().int().positive().nullable(),
+    /**
+     * Run-scoped tokens spent so far: `SUM(usage_log.total_tokens)` over the
+     * session subtree with `created_at >= started_at` — the SAME run boundary
+     * (`missionTokenSince`) the budget enforcer uses, so it resets per run
+     * instead of climbing cumulatively across renewals. `null` when no active
+     * run or the sum can't be read (fail-soft).
+     */
+    runTokensUsed: z.number().int().min(0).nullable(),
+    /**
+     * Run-scoped inference cost so far: `SUM(usage_log.cost)` over the same
+     * run boundary as `runTokensUsed`. This is LLM provider billing (not
+     * trading PnL). `null` when no active run or unreadable.
+     */
+    runCostUsd: z.number().min(0).nullable(),
     iterationCount: z.number().int().min(0).nullable(),
     /** `runner_leases` summary — bounded so owner IDs stay internal. */
     leaseActive: z.boolean(),

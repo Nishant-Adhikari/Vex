@@ -31,6 +31,7 @@ function resetStoreToDefaults(): void {
     createSessionInitialMessage: null,
     pendingFirstMessage: null,
     reviewModal: "none",
+    pnlCurrency: "usd",
   });
 }
 
@@ -61,6 +62,44 @@ describe("uiStore", () => {
     expect(state.createSessionInitialMessage).toBeNull();
     expect(state.pendingFirstMessage).toBeNull();
     expect(state.reviewModal).toBe("none");
+    // Mission PnL denomination defaults to USD (issue #17).
+    expect(state.pnlCurrency).toBe("usd");
+  });
+
+  it("setPnlCurrency flips the persisted denomination preference", () => {
+    expect(useUiStore.getState().pnlCurrency).toBe("usd");
+    useUiStore.getState().setPnlCurrency("eth");
+    expect(useUiStore.getState().pnlCurrency).toBe("eth");
+    // In the persist whitelist so the choice survives relaunch.
+    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
+    expect(parsed.state.pnlCurrency).toBe("eth");
+  });
+
+  it("migrate v4→v5 seeds the USD default without disturbing v4 fields", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { theme: "robinhood", sidebarOpen: false, bookOpen: true, hlFavorites: ["BTC"] },
+        version: 4,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().pnlCurrency).toBe("usd");
+    // v4 fields are preserved across the hop.
+    expect(useUiStore.getState().theme).toBe("robinhood");
+    expect(useUiStore.getState().hlFavorites).toEqual(["BTC"]);
+  });
+
+  it("coerces an off-union persisted pnlCurrency to 'usd' on rehydrate (tampered localStorage)", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { theme: "vex", sidebarOpen: true, bookOpen: true, pnlCurrency: "gbp" },
+        version: 5,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().pnlCurrency).toBe("usd");
   });
 
   it("setReviewModal mutates and reflects new value, without persisting it", () => {
@@ -193,6 +232,7 @@ describe("uiStore", () => {
       sidebarOpen: true,
       bookOpen: true,
       hlFavorites: [],
+      pnlCurrency: "usd",
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialMessage).toBeUndefined();
@@ -279,6 +319,7 @@ describe("uiStore", () => {
       sidebarOpen: false,
       bookOpen: true,
       hlFavorites: [],
+      pnlCurrency: "usd",
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

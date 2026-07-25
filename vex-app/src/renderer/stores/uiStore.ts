@@ -42,6 +42,18 @@ export type VexTheme = "vex" | "robinhood";
 export type WorkspaceMode = "normal" | "hypervexing";
 
 /**
+ * Denomination for the mission PnL readouts (the Missions ledger's cumulative
+ * figure + each per-run row). `usd` (the DEFAULT) values each run at the
+ * ETH→USD spot price captured at THAT run's close (`ethPriceUsdEnd`, already on
+ * the ledger row) — historically faithful, never a single live spot applied to
+ * old runs; `eth` shows the raw native PnL. Persisted (partialize whitelist
+ * below): a trader's denomination preference is a deliberate choice that must
+ * survive relaunch. Fail-soft in the view: a run with no captured close price
+ * falls back to ETH even under `usd`, so the figure is never blank or `$NaN`.
+ */
+export type PnlCurrency = "eth" | "usd";
+
+/**
  * Which mission/plan review dialog (if any) the DESK RULE header cluster
  * (`MissionRail`) should show. Lifted out of `MissionRail`'s local state so a
  * DIFFERENT component in a different tree branch — `MissionControls`' "Review
@@ -173,6 +185,11 @@ interface UiState {
   readonly hlFavorites: readonly string[];
   /** See `ReviewModal`. NOT persisted — see partialize. */
   readonly reviewModal: ReviewModal;
+  /**
+   * Mission PnL denomination (see `PnlCurrency`). Defaults to `usd` and IS
+   * persisted (partialize) so the choice survives relaunch.
+   */
+  readonly pnlCurrency: PnlCurrency;
   readonly setTheme: (value: VexTheme) => void;
   readonly toggleTheme: () => void;
   readonly setWorkspaceMode: (value: WorkspaceMode) => void;
@@ -199,6 +216,7 @@ interface UiState {
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
   readonly toggleHlFavorite: (coin: string) => void;
   readonly setReviewModal: (value: ReviewModal) => void;
+  readonly setPnlCurrency: (value: PnlCurrency) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -225,6 +243,7 @@ export const useUiStore = create<UiState>()(
       reasoningEffortBySession: {},
       hlFavorites: [],
       reviewModal: "none",
+      pnlCurrency: "usd",
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === "vex" ? "robinhood" : "vex" })),
@@ -269,6 +288,7 @@ export const useUiStore = create<UiState>()(
             : [...state.hlFavorites, coin],
         })),
       setReviewModal: (reviewModal) => set({ reviewModal }),
+      setPnlCurrency: (pnlCurrency) => set({ pnlCurrency }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -277,13 +297,14 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
         hlFavorites: state.hlFavorites,
+        pnlCurrency: state.pnlCurrency,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -292,6 +313,8 @@ export const useUiStore = create<UiState>()(
       //   v3: `theme` added — seed the cobalt default so a pre-theme install
       //       hydrates into `vex`, not `undefined`.
       //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
+      //   v5: `pnlCurrency` added (mission PnL denomination) — seed the `usd`
+      //       default so a pre-toggle install hydrates into USD, not undefined.
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -301,6 +324,9 @@ export const useUiStore = create<UiState>()(
         if (version < 3 && !("theme" in next)) next = { ...next, theme: "vex" };
         if (version < 4 && !("hlFavorites" in next)) {
           next = { ...next, hlFavorites: [] };
+        }
+        if (version < 5 && !("pnlCurrency" in next)) {
+          next = { ...next, pnlCurrency: "usd" };
         }
         return next;
       },
@@ -325,7 +351,12 @@ export const useUiStore = create<UiState>()(
               (coin): coin is string => typeof coin === "string",
             )
           : [];
-        return { ...current, ...incoming, theme, hlFavorites };
+        // Same hand-edited-payload coercion for the PnL denomination: only an
+        // explicit "eth" opts out of the USD default; anything else (undefined,
+        // a typo, a non-string) degrades to `usd`, never an off-union value.
+        const pnlCurrency: PnlCurrency =
+          incoming?.pnlCurrency === "eth" ? "eth" : "usd";
+        return { ...current, ...incoming, theme, hlFavorites, pnlCurrency };
       },
     }
   )

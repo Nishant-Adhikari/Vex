@@ -21,6 +21,12 @@ import {
   type MissionRunStatus,
 } from "@shared/schemas/sessions.js";
 import { type RuntimeStateDto } from "@shared/schemas/runtime.js";
+import { resolveMissionTokenBudget } from "@vex-lib/agent-config.js";
+import {
+  frozenDurationMinutes,
+  resolveDurationMinutes,
+  resolveFrozenDeadlineMs,
+} from "@vex-agent/engine/mission/mission-deadline.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
 
@@ -108,6 +114,108 @@ interface MissionRunRow {
   readonly last_checkpoint_at: string | Date | null;
   readonly stop_reason: string | null;
   readonly iteration_count: number | string | null;
+  /**
+   * FROZEN mission contract snapshot (JSONB) — the run-immutable source the
+   * engine derives the hard deadline + token budget from
+   * (`frozenMission.draft.durationMinutes`). `pg` returns JSONB pre-parsed.
+   */
+  readonly contract_snapshot_json: unknown;
+}
+
+/**
+ * The run-scoped observability facts derived from the frozen contract +
+ * usage_log, mirroring EXACTLY what the turn-loop enforcer computes:
+ *   - `durationMinutes` / `deadlineAt` from `resolveFrozenDeadlineMs`,
+ *   - `tokenBudget` from `resolveMissionTokenBudget` (the enforced denominator),
+ *   - `runTokensUsed` / `runCostUsd` summed over the run boundary
+ *     (`created_at >= started_at`, subtree-inclusive) — the same
+ *     `missionTokenSince` cut the enforcer scopes its budget to, so the meter
+ *     resets per run instead of climbing across renewals.
+ * Every field fails soft to `null` so a bad snapshot / usage read never blocks
+ * the runtime-state DTO.
+ */
+interface RunScopedFacts {
+  readonly deadlineAt: string | null;
+  readonly durationMinutes: number | null;
+  readonly tokenBudget: number | null;
+  readonly runTokensUsed: number | null;
+  readonly runCostUsd: number | null;
+}
+
+const NO_RUN_SCOPED_FACTS: RunScopedFacts = {
+  deadlineAt: null,
+  durationMinutes: null,
+  tokenBudget: null,
+  runTokensUsed: null,
+  runCostUsd: null,
+};
+
+/**
+ * Sum the tokens + inference cost logged AT/AFTER the run's `started_at` over
+ * the session subtree (parent + linked subagent child sessions, recursively) —
+ * a faithful replica of the engine's `getSessionTotalTokens(sessionId,{since})`
+ * so the panel's numerator matches the enforcer's. Fail-soft: any error →
+ * `null` (the caller degrades to the session-cumulative display, never blanks).
+ */
+async function sumRunScopedUsage(
+  client: Client,
+  sessionId: string,
+  sinceIso: string,
+): Promise<{ tokens: number; cost: number } | null> {
+  try {
+    const result = await client.query<{ tokens: string; cost: string | null }>(
+      `WITH RECURSIVE session_tree(session_id) AS (
+         SELECT $1::text
+         UNION
+         SELECT sl.child_session_id
+           FROM session_links sl
+           JOIN session_tree st ON sl.parent_session_id = st.session_id
+       )
+       SELECT COALESCE(SUM(u.total_tokens), 0) AS tokens,
+              SUM(u.cost)                       AS cost
+         FROM usage_log u
+         JOIN session_tree st ON u.session_id = st.session_id
+        WHERE u.created_at >= $2`,
+      [sessionId, sinceIso],
+    );
+    const row = result.rows[0];
+    if (!row) return { tokens: 0, cost: 0 };
+    const tokens = Number.parseInt(row.tokens, 10);
+    const cost = row.cost === null ? 0 : Number.parseFloat(row.cost);
+    return {
+      tokens: Number.isFinite(tokens) ? Math.max(0, tokens) : 0,
+      cost: Number.isFinite(cost) ? Math.max(0, cost) : 0,
+    };
+  } catch (cause) {
+    log.warn("[mission-runs-db] sumRunScopedUsage query failed", cause);
+    return null;
+  }
+}
+
+/**
+ * Derive the run-scoped observability facts for an active run row. Deadline +
+ * duration + budget come from the FROZEN snapshot (never the live mission row),
+ * and the usage sums are scoped to the run's `started_at`.
+ */
+async function deriveRunScopedFacts(
+  client: Client,
+  sessionId: string,
+  startedAtIso: string,
+  contractSnapshot: unknown,
+): Promise<RunScopedFacts> {
+  const durationMinutes = resolveDurationMinutes(
+    frozenDurationMinutes(contractSnapshot),
+  );
+  const deadlineMs = resolveFrozenDeadlineMs(startedAtIso, contractSnapshot);
+  const tokenBudget = resolveMissionTokenBudget(process.env, durationMinutes);
+  const usage = await sumRunScopedUsage(client, sessionId, startedAtIso);
+  return {
+    deadlineAt: deadlineMs !== null ? new Date(deadlineMs).toISOString() : null,
+    durationMinutes,
+    tokenBudget,
+    runTokensUsed: usage?.tokens ?? null,
+    runCostUsd: usage?.cost ?? null,
+  };
 }
 
 function toIso(value: string | Date): string {
@@ -222,7 +330,7 @@ export async function getActiveRunForSession(
         }
       >(
         `SELECT m.id, m.session_id, m.status, m.started_at, m.last_checkpoint_at,
-                m.stop_reason, m.iteration_count,
+                m.stop_reason, m.iteration_count, m.contract_snapshot_json,
                 CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
                      THEN TRUE ELSE FALSE END               AS lease_active,
                 CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
@@ -276,6 +384,7 @@ export async function getActiveRunForSession(
           stopReason: null,
           lastCheckpointAt: null,
           startedAt: null,
+          ...NO_RUN_SCOPED_FACTS,
           iterationCount: null,
           leaseActive: Boolean(f?.lease_active),
           leaseExpiresAt: f?.lease_expires_at ? toIso(f.lease_expires_at) : null,
@@ -285,6 +394,19 @@ export async function getActiveRunForSession(
         });
       }
       const status = normaliseStatus(row.status);
+      const startedAtIso = toIso(row.started_at);
+      // Run-scoped observability facts (deadline / duration / enforced budget /
+      // run-scoped usage) — derived only when the row is a genuine active run,
+      // so a defensive null-status row never manufactures a spurious deadline.
+      const runFacts =
+        status !== null
+          ? await deriveRunScopedFacts(
+              client,
+              sessionId,
+              startedAtIso,
+              row.contract_snapshot_json,
+            )
+          : NO_RUN_SCOPED_FACTS;
       return ok({
         sessionId,
         hasActiveRun: status !== null,
@@ -292,7 +414,8 @@ export async function getActiveRunForSession(
         status,
         stopReason: row.stop_reason,
         lastCheckpointAt: toIsoOrNull(row.last_checkpoint_at),
-        startedAt: toIso(row.started_at),
+        startedAt: startedAtIso,
+        ...runFacts,
         iterationCount: toIntOrNull(row.iteration_count),
         leaseActive: Boolean(row.lease_active),
         leaseExpiresAt: row.lease_expires_at

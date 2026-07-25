@@ -10,12 +10,16 @@ import { describe, it, expect } from "vitest";
 import type { MissionResultDto } from "@shared/schemas/mission.js";
 import {
   computeWinRate,
+  formatCumulativePnl,
   formatDurationS,
   formatEth,
+  formatPnl,
   isCompletionLike,
+  isUsdFallback,
   missionDisplayOutcome,
   pnlUsd,
   sumPnlEth,
+  sumPnlUsd,
 } from "../missionHistoryModel.js";
 
 function result(over: Partial<MissionResultDto> = {}): MissionResultDto {
@@ -146,6 +150,95 @@ describe("pnlUsd", () => {
   it("is null when either input is unknown", () => {
     expect(pnlUsd(null, 3000)).toBeNull();
     expect(pnlUsd(0.001, null)).toBeNull();
+  });
+});
+
+describe("formatPnl", () => {
+  it("renders signed ETH in eth mode (price ignored)", () => {
+    expect(formatPnl(0.0279, "eth", 3000)).toBe("+0.0279 ETH");
+    expect(formatPnl(-0.0279, "eth", null)).toBe("-0.0279 ETH");
+    expect(formatPnl(0, "eth", 3000)).toBe("0.0000 ETH");
+  });
+
+  it("renders compact signed USD in usd mode when a price is known", () => {
+    expect(formatPnl(0.001, "usd", 3000)).toBe("+$3.00");
+    expect(formatPnl(-0.002, "usd", 3000)).toBe("-$6.00");
+  });
+
+  it("FAILS SOFT to ETH in usd mode when the price is null/non-finite", () => {
+    expect(formatPnl(0.0279, "usd", null)).toBe("+0.0279 ETH");
+    expect(formatPnl(0.0279, "usd", Number.NaN)).toBe("+0.0279 ETH");
+  });
+
+  it("renders an em dash for a null/non-finite ETH amount in either mode", () => {
+    expect(formatPnl(null, "usd", 3000)).toBe("—");
+    expect(formatPnl(Number.NaN, "eth", 3000)).toBe("—");
+  });
+});
+
+describe("sumPnlUsd", () => {
+  it("sums each run at its OWN close price", () => {
+    const results = [
+      result({ pnlEth: 0.001, ethPriceUsdEnd: 3000 }), // +$3
+      result({ pnlEth: 0.002, ethPriceUsdEnd: 2000 }), // +$4
+    ];
+    expect(sumPnlUsd(results)).toBeCloseTo(7, 9);
+  });
+
+  it("ignores runs with no known PnL (they contribute nothing to either total)", () => {
+    const results = [
+      result({ pnlEth: 0.001, ethPriceUsdEnd: 3000 }),
+      result({ pnlEth: null, ethPriceUsdEnd: null }),
+    ];
+    expect(sumPnlUsd(results)).toBeCloseTo(3, 9);
+  });
+
+  it("is null when a PnL-bearing run lacks a close price (no faithful total)", () => {
+    const results = [
+      result({ pnlEth: 0.001, ethPriceUsdEnd: 3000 }),
+      result({ pnlEth: 0.002, ethPriceUsdEnd: null }),
+    ];
+    expect(sumPnlUsd(results)).toBeNull();
+  });
+
+  it("is null when no run has a known PnL", () => {
+    expect(sumPnlUsd([result({ pnlEth: null })])).toBeNull();
+    expect(sumPnlUsd([])).toBeNull();
+  });
+});
+
+describe("formatCumulativePnl", () => {
+  const priced = [
+    result({ pnlEth: 0.001, ethPriceUsdEnd: 3000 }),
+    result({ pnlEth: 0.002, ethPriceUsdEnd: 2000 }),
+  ];
+
+  it("shows summed USD in usd mode when every run is priced", () => {
+    expect(formatCumulativePnl(priced, "usd")).toBe("+$7.00");
+  });
+
+  it("shows the signed ETH total in eth mode", () => {
+    expect(formatCumulativePnl(priced, "eth")).toBe("+0.0030 ETH");
+  });
+
+  it("FAILS SOFT to the ETH total in usd mode when a run lacks a price", () => {
+    const mixed = [
+      result({ pnlEth: 0.001, ethPriceUsdEnd: 3000 }),
+      result({ pnlEth: 0.002, ethPriceUsdEnd: null }),
+    ];
+    expect(formatCumulativePnl(mixed, "usd")).toBe("+0.0030 ETH");
+  });
+});
+
+describe("isUsdFallback", () => {
+  it("is true only when usd is selected AND a real ETH amount has no usable price", () => {
+    expect(isUsdFallback("usd", 0.0279, null)).toBe(true);
+    expect(isUsdFallback("usd", 0.0279, Number.NaN)).toBe(true);
+  });
+  it("is false in eth mode, with a known price, or with no ETH amount", () => {
+    expect(isUsdFallback("eth", 0.0279, null)).toBe(false);
+    expect(isUsdFallback("usd", 0.0279, 3000)).toBe(false);
+    expect(isUsdFallback("usd", null, null)).toBe(false);
   });
 });
 
