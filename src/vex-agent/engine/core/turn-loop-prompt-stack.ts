@@ -86,10 +86,16 @@ export async function buildTurnPromptStack(args: {
   promptOptions.ownTokenBanner = await buildOwnTokenBanner();
 
   // SIGNAL RADAR — ranked TrendRadar lead-list. Only for ACTIVE MISSION runs
-  // (irrelevant + noisy on ordinary chat turns). Fully fail-soft inside the
-  // builder: any DB error or empty window yields "" so the turn is never blocked.
+  // (irrelevant + noisy on ordinary chat turns). CHAIN-SCOPED to the mission's
+  // chain (`missionChain`, a DexScreener slug resolved at hydration) so a
+  // PONS/Robinhood mission surfaces its own `robinhood` picks first instead of
+  // an unscoped cross-chain feed. Fail-soft: no chain → unscoped (prior
+  // behavior); any DB error or empty window yields "" so the turn is never
+  // blocked.
   if (args.baseVisibility?.missionRunActive === true) {
-    promptOptions.signalRadarBanner = await buildSignalRadarBanner();
+    promptOptions.signalRadarBanner = await buildSignalRadarBanner({
+      chain: args.context.missionChain ?? undefined,
+    });
   }
 
   let nextPostCompactBridgeRemaining = args.postCompactBridgeRemaining;

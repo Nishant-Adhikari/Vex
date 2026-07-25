@@ -14,6 +14,46 @@ export interface MissionRunContext {
   iterationCount: number;
 }
 
+/**
+ * FIND guidance — how to DISCOVER candidates on the mission's chain.
+ *
+ * The load-bearing correction: NEVER a bare cross-chain ticker/name search.
+ * DexScreener `search` with no chain filter returns same-name tokens on OTHER
+ * chains (clones / scams), which is how a PONS mission concluded "no viable
+ * opportunity" while the real Robinhood-chain movers were sitting in the
+ * chain-scoped feeds it never read. Every discovery read is scoped to the
+ * mission's chain.
+ *
+ * The mission chain (`engineContext.missionChain`, a DexScreener slug resolved
+ * at hydration) is baked in explicitly when known so the agent always has a
+ * concrete `chainId` to pass. It is immutable per run, so rendering it here does
+ * not bust the static prompt-prefix cache between slices. Absent → generic
+ * "the mission's allowed chain (see the Mission Contract)" wording.
+ */
+function buildFindGuidance(engineContext: EngineContext): string[] {
+  const chain = engineContext.missionChain?.trim();
+  const chainId = chain && chain.length > 0 ? chain : null;
+  // A concrete `chainId=<slug>` when known, else generic token the agent
+  // substitutes from the Mission Contract's allowed chains.
+  const scopeArg = chainId ? `chainId=${chainId}` : "chainId=<your mission chain>";
+  const chainLabel = chainId
+    ? `Your mission operates on the \`${chainId}\` chain — pass \`${scopeArg}\` on every discovery read below.`
+    : "Your mission operates on the allowed chain from the Mission Contract — pass its slug as `chainId` on every discovery read below.";
+
+  return [
+    "## Finding candidates (chain-scoped discovery)",
+    chainLabel,
+    "- PRIMARY sources (in order):",
+    "  1. The chain-scoped **SIGNAL RADAR** feed above — already filtered to your mission chain; these are your strongest leads.",
+    `  2. **\`dexscreener.boosts.top ${scopeArg}\`** and **\`dexscreener.attention ${scopeArg}\`** — the promoted / attention movers on your chain (who is buying visibility). \`dexscreener.boosts\` / \`dexscreener.profiles\` with the same \`${scopeArg}\` are secondary.`,
+    `- \`dexscreener.search\` is allowed ONLY WITH \`${scopeArg}\`. NEVER run a bare cross-chain ticker/name search (e.g. \`search query="pons"\` with no chain): it returns same-name clones on other chains — a scam vector, not your token. A name is not an identity across chains; the chain + official contract address is.`,
+    `- VERIFY every candidate before the sellability gate: confirm its official contract address, pool, and live liquidity via \`dexscreener.tokenPairs ${scopeArg} tokenAddress=<CA>\` (or \`dexscreener.tokens ${scopeArg} tokenAddresses=<CA>\`). Pick the deepest pool; reject anything you cannot resolve to a real pool on your chain.`,
+    "- For fresh/newly-launched Solana tokens (Solana missions only), prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed.",
+    "- These are LEADS only. Discovery never authorizes a trade — the mission contract's constraints and the sellability / exit-safety gate still apply unchanged.",
+    "",
+  ];
+}
+
 export function buildMissionRunPrompt(
   engineContext: EngineContext,
   runContext?: MissionRunContext,
@@ -52,10 +92,11 @@ export function buildMissionRunPrompt(
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
   lines.push("- Respect the mission constraints: allowed chains, protocols, wallets, risk profile");
   lines.push("- Use DexScreener, Jupiter/Solana, wallet, portfolio, or web research only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
-  lines.push("- For fresh/newly-launched Solana tokens, prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
   lines.push("- Log significant decisions with rationale for audit trail");
   lines.push("- MANDATORY: every swap.buy / swap.sell (kyberswap or uniswap) MUST pass the `rationale` param — one sentence with the signal/thesis and why now (for an exit, what changed). It is recorded in the Decision Journal; a call without it is REJECTED as a missing required parameter, so retry immediately WITH a rationale. Never trade silently.");
   lines.push("");
+
+  lines.push(...buildFindGuidance(engineContext));
 
   lines.push("## Workflow");
   lines.push("1. Assess current state (balances, positions, market conditions)");
