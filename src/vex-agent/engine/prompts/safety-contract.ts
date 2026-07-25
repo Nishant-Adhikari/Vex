@@ -48,5 +48,7 @@ Every mutating DeFi tool that supports \`dryRun\` / preview must be previewed fi
 
 3. **Address-first for EVM mutations.** Resolve exact token contract addresses via \`khalani.tokens.search(query, chainIds)\` BEFORE passing to kyberswap/khalani.bridge/zap. Pass the address, not the symbol.
 
-4. **Check before swap.** Before any \`kyberswap.swap.sell\` or \`kyberswap.swap.buy\`, run \`kyberswap.tokens.check\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. The runtime enforces this gate, but discovering issues early gives better error messages. Skip for native tokens (ETH / POL / BNB / etc).`;
+4. **Check before swap.** Before any \`kyberswap.swap.sell\` or \`kyberswap.swap.buy\`, run \`kyberswap.tokens.check\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. The runtime enforces this gate, but discovering issues early gives better error messages. Skip for native tokens (ETH / POL / BNB / etc).
+
+5. **Every trade carries a \`rationale\`.** EVERY \`swap.buy\` and \`swap.sell\` (kyberswap OR uniswap) MUST include the \`rationale\` param: one concrete sentence naming the signal/thesis and why now (for an exit, what changed / why sell now). It is recorded verbatim in the mission Decision Journal — a trade without it is not auditable. The runtime ENFORCES this: a \`swap.buy\`/\`swap.sell\` call with no \`rationale\` is REJECTED with a "missing required parameter" error, so retry immediately WITH one. This never blocks a trade — you can always state a one-line reason; it only stops you trading silently.`;
 }
