@@ -114,104 +114,124 @@ export function MissionSummaryCard({
     <section
       data-vex-area="mission-summary"
       aria-label="Mission summary"
-      className="mb-3 flex flex-col gap-2 rounded-[10px] border border-[var(--vex-line)] bg-white/[0.02] px-4 py-3"
+      // Bounded to the viewport so a tall card (long Decision Journal +
+      // Retrospective) never runs off-screen behind the composer fade: the
+      // header stays pinned and the body below scrolls (see the inner region).
+      // 60vh (not more) leaves headroom on the 600px minimum window for the
+      // panel header + composer + the Renew button that sits below this card,
+      // so the action never gets pushed behind the composer.
+      className="mb-3 flex max-h-[60vh] flex-col gap-2 rounded-[10px] border border-[var(--vex-line)] bg-white/[0.02] px-4 py-3"
     >
-      {/* Line 1 — identity + outcome stamp + duration. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-text-2)]">
-        <span className="tabular-nums text-foreground">
-          Mission #{result.seqNo}
-        </span>
-        <span className="text-[var(--vex-text-3)]">·</span>
-        <OutcomeBadge outcome={result.outcome} />
-        <span className="text-[var(--vex-text-3)]">·</span>
-        <span className="tabular-nums">{formatDurationS(result.durationS)}</span>
-      </div>
-
-      {/* Line 2 — the signed USD PnL headline (ETH aside + in the tooltip). */}
-      <div className="flex items-baseline gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
-          PnL
-        </span>
-        <span
-          title={pnlTitle}
-          className={cn(
-            "font-mono text-lg tabular-nums",
-            pnlToneClass(result.pnlEth),
-          )}
-        >
-          {pnlUsdText ?? pnlEthText}
-          {pct.length > 0 ? (
-            <span className="ml-2 text-[11px]">{pct}</span>
-          ) : null}
-          {pnlUsdText !== null && pnlEthText !== EM_DASH ? (
-            <span className="ml-2 text-[11px] text-[var(--vex-text-3)]">
-              ≈ {pnlEthText}
-            </span>
-          ) : null}
-        </span>
-      </div>
-
-      {/* Line 3 — bankroll start→end in USD (the basis behind the PnL). */}
-      <div className="flex items-baseline gap-2 font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
-        <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
-          Bankroll
-        </span>
-        <span>
-          {formatBankrollRangeUsd(
-            result.bankrollStartEth,
-            result.bankrollEndEth,
-            result.ethPriceUsdEnd,
-          )}
-        </span>
-      </div>
-
-      {/* Line 4 — trades + settlement (mission-scoped bag count). */}
-      <p className="font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
-        {formatMetaLine(result.trades, bagsHeld)}
-      </p>
-
-      {/* Why it ended — only on an abnormal/non-success end. Reason phrase on
-          an eyebrow-labelled line; the persisted summary below it, truncated
-          with the full text on hover (mirrors the goal caption). */}
-      {endReason !== null ? (
-        <div
-          data-vex-area="mission-summary-end-reason"
-          className="flex flex-col gap-0.5"
-        >
-          {endReason.reason !== null ? (
-            <p className="flex items-baseline gap-2 font-mono text-[11px] text-[var(--vex-text-2)]">
-              <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
-                Ended
-              </span>
-              <span>{endReason.reason}</span>
-            </p>
-          ) : null}
-          {endReason.summary !== null ? (
-            <p
-              title={endReason.summary}
-              className="truncate text-xs text-[var(--vex-text-3)]"
-            >
-              {endReason.summary}
-            </p>
-          ) : null}
+      {/* Header — identity/PnL/bankroll/trades. Stays fixed above the scroll
+          region so the headline figures are always in view. */}
+      <div className="flex flex-col gap-2">
+        {/* Line 1 — identity + outcome stamp + duration. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-text-2)]">
+          <span className="tabular-nums text-foreground">
+            Mission #{result.seqNo}
+          </span>
+          <span className="text-[var(--vex-text-3)]">·</span>
+          <OutcomeBadge outcome={result.outcome} />
+          <span className="text-[var(--vex-text-3)]">·</span>
+          <span className="tabular-nums">
+            {formatDurationS(result.durationS)}
+          </span>
         </div>
-      ) : null}
 
-      {/* Goal caption — truncated, only when present. */}
-      {result.goalSnippet !== null ? (
-        <p
-          title={result.goalSnippet}
-          className="truncate text-xs text-[var(--vex-text-3)]"
-        >
-          {result.goalSnippet}
+        {/* Line 2 — the signed USD PnL headline (ETH aside + in the tooltip). */}
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+            PnL
+          </span>
+          <span
+            title={pnlTitle}
+            className={cn(
+              "font-mono text-lg tabular-nums",
+              pnlToneClass(result.pnlEth),
+            )}
+          >
+            {pnlUsdText ?? pnlEthText}
+            {pct.length > 0 ? (
+              <span className="ml-2 text-[11px]">{pct}</span>
+            ) : null}
+            {pnlUsdText !== null && pnlEthText !== EM_DASH ? (
+              <span className="ml-2 text-[11px] text-[var(--vex-text-3)]">
+                ≈ {pnlEthText}
+              </span>
+            ) : null}
+          </span>
+        </div>
+
+        {/* Line 3 — bankroll start→end in USD (the basis behind the PnL). */}
+        <div className="flex items-baseline gap-2 font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+            Bankroll
+          </span>
+          <span>
+            {formatBankrollRangeUsd(
+              result.bankrollStartEth,
+              result.bankrollEndEth,
+              result.ethPriceUsdEnd,
+            )}
+          </span>
+        </div>
+
+        {/* Line 4 — trades + settlement (mission-scoped bag count). */}
+        <p className="font-mono text-[11px] tabular-nums text-[var(--vex-text-2)]">
+          {formatMetaLine(result.trades, bagsHeld)}
         </p>
-      ) : null}
+      </div>
 
-      {/* Decision Journal — per-trade "why", each expandable to full reasoning. */}
-      {journal.length > 0 ? <DecisionJournal entries={journal} /> : null}
+      {/* Scroll body — everything below the header. `min-h-0` lets it shrink
+          inside the bounded section so its own overflow scrolls (rather than
+          the whole card overflowing the viewport). */}
+      <div
+        data-vex-area="mission-summary-scroll"
+        className="flex min-h-0 flex-col gap-2 overflow-y-auto"
+      >
+        {/* Why it ended — only on an abnormal/non-success end. Reason phrase on
+            an eyebrow-labelled line; the persisted summary below it, truncated
+            with the full text on hover (mirrors the goal caption). */}
+        {endReason !== null ? (
+          <div
+            data-vex-area="mission-summary-end-reason"
+            className="flex flex-col gap-0.5"
+          >
+            {endReason.reason !== null ? (
+              <p className="flex items-baseline gap-2 font-mono text-[11px] text-[var(--vex-text-2)]">
+                <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+                  Ended
+                </span>
+                <span>{endReason.reason}</span>
+              </p>
+            ) : null}
+            {endReason.summary !== null ? (
+              <p
+                title={endReason.summary}
+                className="truncate text-xs text-[var(--vex-text-3)]"
+              >
+                {endReason.summary}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
-      {/* Retrospective / Lessons — LLM post-mortem, generated on first view. */}
-      <RetrospectiveSection data={retrospective} pending={retroPending} />
+        {/* Goal caption — truncated, only when present. */}
+        {result.goalSnippet !== null ? (
+          <p
+            title={result.goalSnippet}
+            className="truncate text-xs text-[var(--vex-text-3)]"
+          >
+            {result.goalSnippet}
+          </p>
+        ) : null}
+
+        {/* Decision Journal — per-trade "why", each expandable to full reasoning. */}
+        {journal.length > 0 ? <DecisionJournal entries={journal} /> : null}
+
+        {/* Retrospective / Lessons — LLM post-mortem, generated on first view. */}
+        <RetrospectiveSection data={retrospective} pending={retroPending} />
+      </div>
     </section>
   );
 }
@@ -251,9 +271,8 @@ function RetrospectiveSection({
   return (
     <div className="mt-1 border-t border-[var(--vex-line)] pt-2">
       <p className="vex-eyebrow mb-1.5">Retrospective</p>
-      <p className="mb-2 text-[11px] leading-relaxed text-[var(--vex-text-2)]">
-        {data.summary}
-      </p>
+      {/* Bullets lead — the scannable "what worked / to fix / next" lists are
+          the star. */}
       {hasLists ? (
         <div className="flex flex-col gap-2">
           <RetroList
@@ -272,6 +291,19 @@ function RetrospectiveSection({
             tone="text-[var(--vex-accent-text)]"
           />
         </div>
+      ) : null}
+      {/* TL;DR — the prose summary demoted to a muted one/two-line caption
+          under the bullets (clamped so a long generation can't dominate). */}
+      {data.summary.trim().length > 0 ? (
+        <p
+          title={data.summary}
+          className={cn(
+            "line-clamp-2 text-[10px] italic leading-relaxed text-[var(--vex-text-3)]",
+            hasLists ? "mt-2" : "",
+          )}
+        >
+          TL;DR — {data.summary}
+        </p>
       ) : null}
     </div>
   );
