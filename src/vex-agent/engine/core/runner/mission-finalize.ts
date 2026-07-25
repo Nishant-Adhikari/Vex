@@ -22,6 +22,7 @@ import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
 import { consumeMissionRunAbortIntent } from "./abort.js";
 import { captureMissionFinal } from "../../mission/mission-results-capture.js";
+import { getMissionLearningSink } from "../../mission/mission-learning-registry.js";
 import { reconcileDraftReadiness } from "../../mission/draft-readiness.js";
 import {
   isContinuableRuntimeStop,
@@ -129,6 +130,38 @@ export async function closeReapedErrorFinalize(
   });
 }
 
+/**
+ * Fire the self-improving learning pass for a terminal finalize (fire-and-
+ * forget). NON-BLOCKING and fully fail-soft: we do NOT await the sink and we
+ * swallow any synchronous throw, so a slow or failing learning pass can never
+ * delay or break mission finalize. The sink (installed by vex-app main) banks
+ * the retrospective and, only when the loop is enabled, proposes a strategy
+ * revision — all behind its own guards.
+ */
+function fireMissionLearning(evt: {
+  missionId: string;
+  runId: string;
+  sessionId: string;
+  outcome: string;
+  stopReason: string | null;
+}): void {
+  try {
+    void getMissionLearningSink()
+      .onMissionFinalized(evt)
+      .catch((err: unknown) => {
+        logger.warn("engine.mission.learning_sink_failed", {
+          runId: evt.runId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  } catch (err) {
+    logger.warn("engine.mission.learning_sink_throw", {
+      runId: evt.runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export async function finalizeMissionRunStatus(
   missionId: string,
   runId: string,
@@ -189,6 +222,11 @@ export async function finalizeMissionRunStatus(
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     await emitFinalizeControlState(sessionId, runId);
     await captureMissionFinal({ missionId, runId, sessionId, outcome, stopReason });
+    // Self-improving loop: bank the retrospective + (if enabled) propose a
+    // strategy revision. Fire-and-forget, fail-soft — never blocks finalize.
+    // Uses the relabeled ledger `outcome` (e.g. deadline → `timed_out`) so the
+    // learning pass sees the same terminal record the operator does.
+    fireMissionLearning({ missionId, runId, sessionId, outcome, stopReason });
     return status;
   }
 

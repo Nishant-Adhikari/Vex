@@ -116,6 +116,75 @@ export async function getRetrospectiveForRun(
   return row ? toRow(row) : null;
 }
 
+/**
+ * One recent finalized mission's lessons joined to its ledger outcome + trade
+ * count — the input to the self-improving loop's anti-overfit recurrence gate.
+ * Only rows that HAVE a retrospective appear (a retrospective is banked at
+ * finalize), newest first.
+ */
+export interface RecentMissionLessons {
+  missionRunId: string;
+  outcome: string;
+  trades: number;
+  pnlPct: number | null;
+  summary: string | null;
+  lessons: string[];
+  wentWrong: string[];
+  createdAt: string;
+}
+
+interface RecentRaw {
+  mission_run_id: string;
+  outcome: string | null;
+  trades: number | null;
+  pnl_pct: number | string | null;
+  result_summary: string | null;
+  lessons_json: unknown;
+  went_wrong_json: unknown;
+  created_at: Date | string;
+}
+
+/**
+ * Recent finalized missions with their banked lessons + ledger outcome/trades.
+ * Joins `mission_retrospectives` to `mission_results` on the run id. Used to
+ * compute cross-mission lesson recurrence (a lesson must recur before it can
+ * rewrite the strategy) and to build the recent-missions digest.
+ */
+export async function listRecentMissionLessons(
+  limit = 8,
+): Promise<RecentMissionLessons[]> {
+  const rows = await query<RecentRaw>(
+    `SELECT r.mission_run_id,
+            res.outcome        AS outcome,
+            res.trades         AS trades,
+            res.pnl_pct        AS pnl_pct,
+            res.summary        AS result_summary,
+            r.lessons_json,
+            r.went_wrong_json,
+            r.created_at
+       FROM mission_retrospectives r
+       LEFT JOIN mission_results res ON res.mission_run_id = r.mission_run_id
+      ORDER BY r.created_at DESC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({
+    missionRunId: r.mission_run_id,
+    outcome: r.outcome ?? "unknown",
+    trades: typeof r.trades === "number" ? r.trades : 0,
+    pnlPct:
+      r.pnl_pct === null
+        ? null
+        : typeof r.pnl_pct === "number"
+          ? r.pnl_pct
+          : Number(r.pnl_pct),
+    summary: r.result_summary,
+    lessons: toStringList(r.lessons_json),
+    wentWrong: toStringList(r.went_wrong_json),
+    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
 /** The newest retrospective for a session (null when none exists). */
 export async function getRetrospectiveForSession(
   sessionId: string,
