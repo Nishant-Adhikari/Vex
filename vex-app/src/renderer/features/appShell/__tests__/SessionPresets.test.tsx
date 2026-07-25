@@ -60,6 +60,58 @@ describe("SessionPresets", () => {
     ).not.toBeNull();
   });
 
+  it("presents the preset as a launchable TEMPLATE card, not a history row", () => {
+    render(<SessionPresets />);
+
+    const card = screen.getByRole("button", {
+      name: /Launch preset: PONS Scalper/i,
+    });
+
+    // Distinct card treatment marked for the presets area (vs. the box-less
+    // session/mission ledger rows).
+    expect(card.getAttribute("data-preset-card")).not.toBeNull();
+
+    // A TEMPLATE marker so it reads as a preset, not a past run.
+    expect(screen.getByText(/^Template$/i)).not.toBeNull();
+
+    // Key params surfaced as scannable chips (cap · time-box · chain · autonomy)
+    // instead of buried in prose.
+    const chips = card.querySelector("[data-preset-chips]");
+    expect(chips).not.toBeNull();
+    expect(card.querySelector('[data-preset-chip="cap"]')?.textContent).toMatch(
+      /\$20 cap/,
+    );
+    expect(
+      card.querySelector('[data-preset-chip="duration"]')?.textContent,
+    ).toMatch(/1h/);
+    expect(
+      card.querySelector('[data-preset-chip="chain"]')?.textContent,
+    ).toMatch(/Robinhood Chain/);
+    expect(
+      card.querySelector('[data-preset-chip="autonomy"]')?.textContent,
+    ).toMatch(/Full autonomy/i);
+
+    // An explicit launch affordance.
+    const launch = card.querySelector("[data-preset-launch]");
+    expect(launch).not.toBeNull();
+    expect(launch?.textContent).toMatch(/Launch mission/i);
+  });
+
+  it("still fires the existing launch handler when the card is clicked", async () => {
+    render(<SessionPresets />);
+
+    // Clicking the redesigned card must trigger the SAME create-session
+    // hand-off — presentation changed, the launch action did not.
+    fireEvent.click(
+      screen.getByRole("button", { name: /Launch preset: PONS Scalper/i }),
+    );
+
+    await waitFor(() => {
+      expect(spies.mutateAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(spies.setReviewModal).toHaveBeenCalledWith("mission");
+  });
+
   it("creates a mission draft from the preset goal and opens the contract screen", async () => {
     render(<SessionPresets />);
 
