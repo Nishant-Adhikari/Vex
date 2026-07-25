@@ -45,9 +45,18 @@ const RUNNER_LOST_SUMMARY =
   "(app restart or runner process death). Reclaimed by the orphaned-run reconciler.";
 
 const REAPED_STALE_ERROR_SUMMARY =
-  "Run abandoned in `paused_error` — no live runner lease and 0 open positions, " +
-  "and no operator recovered it. Auto-finalized by the stale-error reaper so a " +
-  "new mission can start in this session (a recoverable run is never reaped).";
+  "Run abandoned in `paused_error` — no live runner lease, no pending auto-retry " +
+  "wake, 0 open positions, and stale for the grace window, with no operator " +
+  "recovery. Auto-finalized by the stale-error reaper so a new mission can start " +
+  "in this session (a recoverable run is never reaped).";
+
+/**
+ * Grace window (minutes) a `paused_error` run must sit UNTOUCHED — no live lease,
+ * no pending wake — before it is eligible for reaping. Comfortably longer than
+ * the auto-retry back-off (≤ ~32 s) and a normal manual-Recover reaction window,
+ * so only a genuinely-stuck run is ever finalized.
+ */
+export const PAUSED_ERROR_REAP_GRACE_MINUTES = 30;
 
 export interface ReconcileOrphanedRunsSummary {
   /** Orphaned runs the selection query returned this pass. */
@@ -141,7 +150,9 @@ function defaultDeps(): ReconcileDeps {
       runnerLeasesRepo.releaseExpiredLease(sessionId),
     sweepExpiredLeases: () => runnerLeasesRepo.releaseAllExpiredLeases(),
     findAbandonedPausedErrors: () =>
-      missionRunsRepo.findAbandonedPausedErrorRuns(),
+      missionRunsRepo.findAbandonedPausedErrorRuns(
+        PAUSED_ERROR_REAP_GRACE_MINUTES,
+      ),
     countRunOpenPositions: (run) => countRunOpenPositions(run),
     reapStaleError: (runId, stopPayload) =>
       missionRunsRepo.markStaleErrorReaped(
@@ -161,6 +172,13 @@ function defaultDeps(): ReconcileDeps {
  * `proj_open_positions`. A run with ANY of these is still holding value and must
  * stay recoverable — never reaped. Lazily imports the heavier deps so this
  * foundational module keeps a light static graph.
+ *
+ * THROWS on any UNKNOWN position state — an unresolvable wallet/chain, or a
+ * bankroll read that FAILED (`readEthBankroll` returns `null`). An unknown count
+ * must never collapse to a confirmed 0: `reapOne` fail-CLOSES on a throw, so a
+ * transient read failure or an unsynced bag preserves the run for Recover rather
+ * than letting it be reaped. Only a CONFIRMED read (non-null bankroll) yields a
+ * count the reaper may act on.
  */
 async function countRunOpenPositions(run: MissionRun): Promise<number> {
   const [{ getMission }, { readEthBankroll }, { getOpen }, { resolveLocalChainId }] =
@@ -174,17 +192,25 @@ async function countRunOpenPositions(run: MissionRun): Promise<number> {
   const wallet = mission?.allowedWallets[0];
   const chainKey = mission?.allowedChains[0];
   if (!wallet || !chainKey) {
-    // Cannot resolve the wallet — treat as UNKNOWN (conservative: not reapable).
-    // Signal "has positions" so the reaper preserves the run.
-    return 1;
+    throw new Error(
+      `reaper: unresolved mission wallet/chain for run ${run.id} — position state unknown`,
+    );
   }
   const chainId = resolveLocalChainId(chainKey);
-  const spotBags =
-    chainId === undefined
-      ? []
-      : (await readEthBankroll(wallet, chainId))?.openPositions ?? [];
+  if (chainId === undefined) {
+    throw new Error(
+      `reaper: unresolved chain '${chainKey}' for run ${run.id} — position state unknown`,
+    );
+  }
+  // A NULL bankroll means the read FAILED (not "0 positions") — treat as unknown.
+  const bankroll = await readEthBankroll(wallet, chainId);
+  if (bankroll === null) {
+    throw new Error(
+      `reaper: bankroll read failed for run ${run.id} — position state unknown`,
+    );
+  }
   const tracked = await getOpen([wallet]);
-  return spotBags.length + tracked.length;
+  return bankroll.openPositions.length + tracked.length;
 }
 
 // In-process guard so the boot pass and a periodic tick (same electron_main

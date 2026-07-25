@@ -351,18 +351,25 @@ export async function findOrphanedRunningRuns(
  * Selection for the boot / periodic paused_error REAPER (companion to
  * `findOrphanedRunningRuns`).
  *
- * Returns every `paused_error` run (`ended_at IS NULL`) whose session has NO
- * LIVE runner lease — the lease row is missing OR expired. These are candidate
- * ABANDONED error-paused runs: a provider error paused the run, no operator ever
- * recovered it, and no runner holds the session. Left alone such a run stays
- * "active" to `getActiveRunBySession`, so `prepareMissionStart` refuses every
- * new mission start in that session forever (confirmed prod incident).
+ * Returns a `paused_error` run (`ended_at IS NULL`) ONLY when it carries a
+ * GENUINE abandonment signal — never merely because it is lease-free, which is
+ * the NORMAL waiting state for a recoverable error or a scheduled auto-retry.
+ * All of these must hold:
  *
- * This is only the FIRST gate — the reaper additionally requires 0 open
- * positions before finalizing, so a recoverable run holding a bag is preserved.
- * A run WITH a live lease is excluded here (still recoverable). Oldest-first.
+ *   - NO LIVE runner lease (missing or expired) — no worker is driving it, AND
+ *   - NO PENDING wake in `loop_wake_requests` for the run — a scheduled
+ *     auto-retry or runtime continuation is NOT in flight (those pauses are
+ *     self-recovering and must never be reaped), AND
+ *   - it has been sitting in the pause for at least `graceMinutes` (measured
+ *     from `last_checkpoint_at`, falling back to `started_at`) — so a run that
+ *     just paused, and any run inside its 2–32 s auto-retry window, is skipped.
+ *
+ * This is still only the FIRST gate — the reaper ADDITIONALLY requires a
+ * CONFIRMED 0 open positions before finalizing, so a run holding a bag (or one
+ * whose position state can't be read) is preserved for Recover. Oldest-first.
  */
 export async function findAbandonedPausedErrorRuns(
+  graceMinutes: number,
   client?: PoolClient,
 ): Promise<MissionRun[]> {
   const sql = `SELECT m.*
@@ -370,13 +377,20 @@ export async function findAbandonedPausedErrorRuns(
                  LEFT JOIN runner_leases l
                    ON l.session_id = m.session_id
                   AND l.expires_at > NOW()
+                 LEFT JOIN loop_wake_requests w
+                   ON w.mission_run_id = m.id
+                  AND w.status = 'pending'
                 WHERE m.status = 'paused_error'
                   AND m.ended_at IS NULL
                   AND l.session_id IS NULL
+                  AND w.id IS NULL
+                  AND COALESCE(m.last_checkpoint_at, m.started_at)
+                        < NOW() - ($1::int * interval '1 minute')
                 ORDER BY m.started_at ASC`;
+  const params = [graceMinutes];
   const rows = client
-    ? (await client.query<Record<string, unknown>>(sql)).rows
-    : await query<Record<string, unknown>>(sql);
+    ? (await client.query<Record<string, unknown>>(sql, params)).rows
+    : await query<Record<string, unknown>>(sql, params);
   return rows.map(mapRow);
 }
 
