@@ -117,7 +117,10 @@ export function MissionSummaryCard({
       // Bounded to the viewport so a tall card (long Decision Journal +
       // Retrospective) never runs off-screen behind the composer fade: the
       // header stays pinned and the body below scrolls (see the inner region).
-      className="mb-3 flex max-h-[70vh] flex-col gap-2 rounded-[10px] border border-[var(--vex-line)] bg-white/[0.02] px-4 py-3"
+      // 60vh (not more) leaves headroom on the 600px minimum window for the
+      // panel header + composer + the Renew button that sits below this card,
+      // so the action never gets pushed behind the composer.
+      className="mb-3 flex max-h-[60vh] flex-col gap-2 rounded-[10px] border border-[var(--vex-line)] bg-white/[0.02] px-4 py-3"
     >
       {/* Header — identity/PnL/bankroll/trades. Stays fixed above the scroll
           region so the headline figures are always in view. */}

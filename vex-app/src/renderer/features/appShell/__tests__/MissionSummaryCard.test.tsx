@@ -134,7 +134,7 @@ describe("MissionSummaryCard — scrollable container", () => {
     // The card is capped to the viewport…
     const card = document.querySelector('[data-vex-area="mission-summary"]');
     expect(card).not.toBeNull();
-    expect(card?.className).toContain("max-h-[70vh]");
+    expect(card?.className).toContain("max-h-[60vh]");
     // …and its body region scrolls (min-h-0 + overflow-y-auto) rather than
     // pushing the whole card off-screen behind the composer fade.
     const scroll = document.querySelector(
