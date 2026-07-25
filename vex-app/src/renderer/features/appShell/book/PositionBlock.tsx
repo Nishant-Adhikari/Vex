@@ -50,9 +50,19 @@ import { PositionChains } from "./PositionChains.js";
 export function PositionBlock({
   activeSessionId,
   hero = false,
+  collapsible = false,
+  sectionId,
 }: {
   readonly activeSessionId: string | null;
   readonly hero?: boolean;
+  /**
+   * Make the section a persisted-collapse accordion. Used on the LEFT sidebar,
+   * where POSITION is one of the rail's collapsible sections. The right rail
+   * historically rendered it always-open (hero), so the default stays false.
+   */
+  readonly collapsible?: boolean;
+  /** Stable id for persisted collapse (see BookBlock). */
+  readonly sectionId?: string;
 }): JSX.Element {
   const isSession = activeSessionId !== null;
   const title = isSession ? "Position" : "Portfolio";
@@ -86,7 +96,7 @@ export function PositionBlock({
 
   if (query.isLoading) {
     return (
-      <BookBlock title={title}>
+      <BookBlock title={title} collapsible={collapsible} sectionId={sectionId}>
         {filter}
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
           Loading…
@@ -97,7 +107,7 @@ export function PositionBlock({
 
   if ((result !== undefined && !result.ok) || query.isError) {
     return (
-      <BookBlock title={title}>
+      <BookBlock title={title} collapsible={collapsible} sectionId={sectionId}>
         {filter}
         <p className="text-[11px] text-[var(--vex-warn-text)]">
           Couldn&apos;t load your portfolio.
@@ -108,7 +118,7 @@ export function PositionBlock({
 
   if (portfolio === null || portfolio.walletCount === 0) {
     return (
-      <BookBlock title={title}>
+      <BookBlock title={title} collapsible={collapsible} sectionId={sectionId}>
         {filter}
         <p className="text-[11px] text-[var(--vex-text-3)]">
           {isSession
@@ -122,6 +132,8 @@ export function PositionBlock({
   return (
     <BookBlock
       title={title}
+      collapsible={collapsible}
+      sectionId={sectionId}
       trailing={`${portfolio.walletCount} ${
         portfolio.walletCount === 1 ? "wallet" : "wallets"
       }`}

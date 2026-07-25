@@ -1,10 +1,17 @@
 /**
  * BOOK — the on-demand right-side instrument rail (a new <aside> sibling in the
- * AppShell <main> flex row). Per-session register: POSITION (scoped wallet
- * portfolio), MOVES (what the agent did), RUNTIME & COST (model/context/usage/
- * compaction), SESSION (metadata). The global no-session view shows the GLOBAL
- * inventory POSITION ("Portfolio"). The MISSION contract/setup lives in the
- * centre column (SessionPanel), not here — this rail is instruments only.
+ * AppShell <main> flex row). It is MISSION CONTROL only: the run's instruments,
+ * in a user-reorderable stack — MOVES (what the agent did), RUNTIME & COST
+ * (model/context/usage/compaction), SESSION (metadata) — under the fixed
+ * MISSION CONTROL run-status header + the conditional Hyperliquid blocks.
+ * POSITION (the wallet portfolio) moved to the LEFT sidebar, so it no longer
+ * appears here; the global no-session view therefore shows only a short
+ * "no active mission" hint. The MISSION contract/setup lives in the centre
+ * column (SessionPanel), not here — this rail is instruments only.
+ *
+ * Section order is persisted (`uiStore.bookSectionOrder`) and reconciled
+ * through `resolveBookSectionOrder`; each section carries move up/down controls
+ * (disabled at the ends) and a persisted-collapse accordion header.
  *
  * The rail is ONE continuous editorial column of soft translucent ink
  * (--vex-rail + backdrop-blur, guard-whitelisted for exactly this file and
@@ -33,15 +40,20 @@ import {
   PanelRightOpenIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "../../lib/utils.js";
+import { useUiStore } from "../../stores/uiStore.js";
 import { MissionControlHeader } from "./book/MissionControlHeader.js";
 import { MissionRuntimeCostBlock } from "./book/MissionRuntimeCostBlock.js";
 import { MovesBlock } from "./book/MovesBlock.js";
-import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionBlock } from "./book/SessionBlock.js";
 import { HyperliquidPositionsBlock } from "./book/HyperliquidPositionsBlock.js";
 import { HyperliquidRiskBlock } from "./book/HyperliquidRiskBlock.js";
 import { HypervexingEnterButton } from "./workspace/HypervexingEnterButton.js";
 import { SidebarIconButton } from "./SessionRows.js";
+import {
+  resolveBookSectionOrder,
+  type BookSectionId,
+} from "./book/bookSectionModel.js";
+import type { BookBlockReorder } from "./book/BookBlock.js";
 
 export function BookPanel({
   activeSessionId,
@@ -52,6 +64,9 @@ export function BookPanel({
   readonly bookOpen: boolean;
   readonly onToggle: () => void;
 }): JSX.Element {
+  const bookSectionOrder = useUiStore((s) => s.bookSectionOrder);
+  const moveBookSection = useUiStore((s) => s.moveBookSection);
+  const order = resolveBookSectionOrder(bookSectionOrder);
   return (
     <aside
       data-vex-area="book-panel"
@@ -117,32 +132,82 @@ export function BookPanel({
             <>
               {/* Run-status header — the active run's identity + state + live
                * timers, above the instruments. Self-gates to mission sessions
-               * (renders nothing for an agent session). */}
+               * (renders nothing for an agent session). Fixed at the top: not
+               * part of the reorderable stack. */}
               <MissionControlHeader sessionId={activeSessionId} />
-              <PositionBlock activeSessionId={activeSessionId} hero />
+              {/* Conditional mission-mode instruments — self-gate to the
+               * hypervexing mode; not user-reorderable. */}
               <HyperliquidPositionsBlock sessionId={activeSessionId} />
               <HyperliquidRiskBlock sessionId={activeSessionId} />
-              {/* Detail instruments are collapsible (accordion) so the operator
-               * can drill into one mission facet at a time; the POSITION hero
-               * stays always-open as the panel's dominant figure. */}
-              <MovesBlock sessionId={activeSessionId} collapsible />
-              <MissionRuntimeCostBlock sessionId={activeSessionId} />
-              <SessionBlock sessionId={activeSessionId} collapsible />
+              {/* The reorderable MISSION CONTROL stack (MOVES / RUNTIME & COST /
+               * SESSION). Each is a persisted-collapse accordion with move
+               * up/down controls; order is persisted in uiStore. */}
+              {order.map((id, index) =>
+                renderBookSection(id, activeSessionId, {
+                  canUp: index > 0,
+                  canDown: index < order.length - 1,
+                  onUp: () => moveBookSection(id, "up"),
+                  onDown: () => moveBookSection(id, "down"),
+                }),
+              )}
               {/* Zero-token door back into the room (owner feature): shows
                   only for acknowledged sessions with mode history — main
                   re-verifies both fail-closed on the invoke. */}
               <HypervexingEnterButton sessionId={activeSessionId} />
             </>
           ) : (
-            <>
-              {/* Global portfolio (no active session) — the configured inventory.
-                  No Hyperliquid block here by owner decree: the agent activates
-                  the mode and risk setup arrives as a confirmable card. */}
-              <PositionBlock activeSessionId={null} hero />
-            </>
+            // No active session → no mission to control. POSITION lives on the
+            // LEFT sidebar now, so the right rail simply rests with a hint.
+            <p className="border-t border-[var(--vex-line)] py-4 text-[11px] text-[var(--vex-text-3)] first:border-t-0 first:pt-1.5">
+              Open a mission to see its controls.
+            </p>
           )}
         </div>
       ) : null}
     </aside>
   );
+}
+
+/**
+ * Render one reorderable MISSION CONTROL section by its stable id, wired with
+ * the persisted-collapse `sectionId` and the move controls for its slot. Keyed
+ * by id so React preserves each section's own query/component state across a
+ * reorder (the array position changes, the identity does not).
+ */
+function renderBookSection(
+  id: BookSectionId,
+  sessionId: string,
+  reorder: BookBlockReorder,
+): JSX.Element {
+  switch (id) {
+    case "moves":
+      return (
+        <MovesBlock
+          key={id}
+          sessionId={sessionId}
+          collapsible
+          sectionId={id}
+          reorder={reorder}
+        />
+      );
+    case "runtime":
+      return (
+        <MissionRuntimeCostBlock
+          key={id}
+          sessionId={sessionId}
+          sectionId={id}
+          reorder={reorder}
+        />
+      );
+    case "session":
+      return (
+        <SessionBlock
+          key={id}
+          sessionId={sessionId}
+          collapsible
+          sectionId={id}
+          reorder={reorder}
+        />
+      );
+  }
 }

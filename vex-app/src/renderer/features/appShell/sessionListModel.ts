@@ -51,6 +51,41 @@ export function filterSessionsByMode(
 }
 
 /**
+ * A mission row is "live" when it has a run in a non-terminal state (running or
+ * any paused_*). A mission with no run yet (`missionStatus === null`) or a
+ * finished run (completed/failed/stopped/cancelled) is NOT live. Agent rows are
+ * never live missions. Fail-soft: an unrecognised status is treated as live so
+ * a genuinely-running mission is never hidden by an enum drift.
+ */
+export function isLiveMission(row: SessionListItem): boolean {
+  if (row.mode !== "mission" || row.missionStatus === null) return false;
+  return !TERMINAL_MISSION_STATUSES.has(row.missionStatus);
+}
+
+/**
+ * Drop ENDED mission-kind runs from the DEFAULT sidebar list. The user reads
+ * run history in the Missions view, not the rail ("don't show previous run,
+ * I don't care — people can go to Missions to check it out"), so the sidebar
+ * keeps only: pinned rows, non-mission (agent/chat) sessions, LIVE missions
+ * (running/paused), and the currently-open session (never yank the row the
+ * user is looking at). The MISSION tab and the Missions view are unaffected —
+ * they still show the full mission history. Fail-soft: any row that doesn't
+ * clearly qualify as an ended mission is kept.
+ */
+export function hideEndedMissions(
+  rows: readonly SessionListItem[],
+  activeSessionId: string | null = null,
+): readonly SessionListItem[] {
+  return rows.filter(
+    (row) =>
+      row.id === activeSessionId ||
+      row.pinnedAt !== null ||
+      row.mode !== "mission" ||
+      isLiveMission(row),
+  );
+}
+
+/**
  * Case-insensitive title search for the sessions register. Search the same
  * resolved title the row renders so legacy missions (which fall back to their
  * initial goal) remain discoverable without exposing a second naming rule.

@@ -71,7 +71,7 @@ import { useMissionSessionResult } from "../../../lib/api/mission.js";
 import { formatClock, truncateAddress } from "../../../lib/format.js";
 import { formatEth } from "../missionHistoryModel.js";
 import { cn } from "../../../lib/utils.js";
-import { BookBlock } from "./BookBlock.js";
+import { BookBlock, type BookBlockReorder } from "./BookBlock.js";
 
 /** Rendered window: the 10 newest fills. The badge counts the fetched total. */
 const MOVES_DISPLAY_CAP = 10;
@@ -396,9 +396,13 @@ const STAMP_TONE: Record<SideTone, string> = {
 export function MovesBlock({
   sessionId,
   collapsible = false,
+  sectionId,
+  reorder,
 }: {
   readonly sessionId: string;
   readonly collapsible?: boolean;
+  readonly sectionId?: string;
+  readonly reorder?: BookBlockReorder;
 }): JSX.Element {
   const query = useMoves(sessionId);
   const result = query.data;
@@ -460,6 +464,8 @@ export function MovesBlock({
     <BookBlock
       title="Moves"
       collapsible={collapsible}
+      sectionId={sectionId}
+      reorder={reorder}
       trailing={
         allMoves.length > 0 ? (
           // Landing .ws-badge: accent fill, accent-contrast mono figure
