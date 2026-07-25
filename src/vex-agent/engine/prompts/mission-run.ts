@@ -6,12 +6,25 @@
  */
 
 import type { EngineContext } from "../types.js";
+import { buildMissionSafetyCorePrompt } from "./mission-safety-core.js";
+import {
+  ADAPTIVE_STRATEGY_BASELINE,
+  buildAdaptiveStrategyPrompt,
+} from "./mission-adaptive.js";
 
 export interface MissionRunContext {
   /** Frozen mission summary for prompt injection. */
   missionPromptContext: string;
   /** Current iteration count. */
   iterationCount: number;
+  /**
+   * The currently-active ADAPTIVE STRATEGY tactics section (self-improving
+   * loop). Loaded fresh at slice start from `strategy_versions` and pinned for
+   * the slice. Undefined → the code baseline is rendered (fail-soft: a DB read
+   * failure never blocks a mission from running). The IMMUTABLE safety core is
+   * ALWAYS rendered from source regardless of this value.
+   */
+  adaptiveStrategy?: string;
 }
 
 export function buildMissionRunPrompt(
@@ -71,6 +84,19 @@ export function buildMissionRunPrompt(
       lines.push(runContext.missionPromptContext);
       lines.push("");
     }
+    // ── Strategy: IMMUTABLE safety core, then the AUTO-TUNED adaptive tactics.
+    // The core is ALWAYS pinned from source (never from the DB / rewriter); the
+    // adaptive block is the active version, or the code baseline when absent
+    // (fail-soft). This concatenation order is authoritative and mirrored by
+    // `assembleStrategyPrompt` so the safety-core validator sees the same bytes.
+    lines.push(buildMissionSafetyCorePrompt());
+    lines.push("");
+    lines.push(
+      buildAdaptiveStrategyPrompt(
+        runContext.adaptiveStrategy ?? ADAPTIVE_STRATEGY_BASELINE,
+      ),
+    );
+    lines.push("");
     // NOTE: the `Iteration: N` line deliberately does NOT live here anymore
     // (D-SPLIT-MISSION). The contract core above is part of the STATIC cache
     // prefix; the per-slice iteration counter renders as a small turn-state

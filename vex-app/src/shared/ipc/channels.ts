@@ -164,6 +164,12 @@ export const CH = {
     listResults: "vex:mission:listResults",
     getResultForRun: "vex:mission:getResultForRun",
     getRetrospective: "vex:mission:getRetrospective",
+    // Self-improving strategy loop — audit + control surface.
+    getStrategy: "vex:mission:getStrategy",
+    listStrategyVersions: "vex:mission:listStrategyVersions",
+    approveStrategyVersion: "vex:mission:approveStrategyVersion",
+    rollbackStrategyVersion: "vex:mission:rollbackStrategyVersion",
+    resetStrategyBaseline: "vex:mission:resetStrategyBaseline",
   },
 
   // Approvals — queue browsing + decisions. Pending/get/history are
