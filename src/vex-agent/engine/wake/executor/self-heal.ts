@@ -49,14 +49,6 @@ export async function handleSelfHealClaimed(
     typeof wake.payload?.attempt === "number" ? wake.payload.attempt : -1;
   const wantFailover = wake.payload?.failover === true;
 
-  // Apply/restore the backup model BEFORE the claim so the resume that follows
-  // resolves the intended model. Idempotent + fail-soft (never throws).
-  if (wantFailover) {
-    applyModelFailover();
-  } else {
-    restorePrimaryModel();
-  }
-
   const ownerId = `self-heal-${wake.id}`;
   const { claimRunForSelfHeal } = await import(
     "../../runtime/lease-and-status.js"
@@ -94,10 +86,18 @@ export async function handleSelfHealClaimed(
     ttlMs: 5 * 60_000,
   });
   try {
+    // Model failover is scoped to THIS resume only: apply the backup model
+    // AFTER a successful claim, and ALWAYS restore the primary in `finally`.
+    // This prevents the process-global `AGENT_MODEL` from leaking past the
+    // attempt — since retry counts only rise, later wakes stay `failover:true`,
+    // so a persisted swap would otherwise never be restored until app restart.
+    // Both calls are idempotent + fail-soft (never throw).
+    if (wantFailover) applyModelFailover();
     await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
     await deps.resumeMissionRun(run.id);
     return { kind: "resumed", runId: run.id };
   } finally {
+    restorePrimaryModel(); // no-op unless we applied a failover above
     const { releaseLeaseAndEmitControlState } = await import(
       "../../runtime/release-and-emit.js"
     );

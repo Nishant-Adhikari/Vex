@@ -68,16 +68,25 @@ function wake(over: Partial<LoopWakeRequest> = {}): LoopWakeRequest {
   };
 }
 
+interface ScheduledOv2 {
+  runId: string;
+  sessionId: string;
+  dueAt: Date;
+  reason: string;
+  failover: boolean;
+}
+
 interface Harness {
   deps: SelfHealDeps;
   paused_error: MissionRun[];
   paused_wake: MissionRun[];
   pending: Map<string, LoopWakeRequest | null>;
-  incremented: string[];
+  scheduledOv2: ScheduledOv2[];
   enqueued: Parameters<SelfHealDeps["enqueueWake"]>[0][];
   cancelled: string[];
   finalized: string[];
   counter: number;
+  providerReady: boolean;
 }
 
 function harness(over: Partial<SelfHealDeps> = {}): Harness {
@@ -85,24 +94,29 @@ function harness(over: Partial<SelfHealDeps> = {}): Harness {
     paused_error: [],
     paused_wake: [],
     pending: new Map(),
-    incremented: [],
+    scheduledOv2: [],
     enqueued: [],
     cancelled: [],
     finalized: [],
     counter: 0,
+    providerReady: true,
     deps: undefined as unknown as SelfHealDeps,
   };
   h.deps = {
     now: () => NOW,
+    isProviderReady: () => h.providerReady,
     listRunsByStatus: async (status) =>
       status === "paused_error" ? h.paused_error : status === "paused_wake" ? h.paused_wake : [],
     getSessionPermission: async () => "full",
     getPendingWake: async (sessionId) => h.pending.get(sessionId) ?? null,
-    incrementErrorRetryCount: async (runId) => {
-      h.incremented.push(runId);
-      const r = [...h.paused_error, ...h.paused_wake].find((x) => x.id === runId);
-      const next = (r?.errorRetryCount ?? 0) + 1;
-      return next;
+    // Atomic OV2 schedule: mirrors the real insert-first / increment-if-won
+    // helper — returns null when a wake is already pending for the session.
+    scheduleErrorRetry: async (input) => {
+      if ((h.pending.get(input.sessionId) ?? null) !== null) return null;
+      h.scheduledOv2.push(input);
+      const r = h.paused_error.find((x) => x.id === input.runId);
+      const attempt = (r?.errorRetryCount ?? 0) + 1;
+      return { attempt };
     },
     enqueueWake: async (input) => {
       h.enqueued.push(input);
@@ -141,12 +155,10 @@ describe("OV2 — provider-outage re-arm", () => {
     const r = await wd.tick();
 
     expect(r.scheduled).toBe(1);
-    expect(h.incremented).toEqual(["run-1"]);
-    expect(h.enqueued).toHaveLength(1);
-    const enq = h.enqueued[0];
-    expect(enq.payload.trigger).toBe("self_heal_retry");
-    expect(enq.payload.attempt).toBe(1);
-    expect(enq.payload.failover).toBe(false);
+    expect(h.scheduledOv2).toHaveLength(1);
+    const enq = h.scheduledOv2[0];
+    expect(enq.runId).toBe("run-1");
+    expect(enq.failover).toBe(false);
     // first rung = 1m
     expect(enq.dueAt.getTime()).toBe(NOW + 60_000);
   });
@@ -161,12 +173,12 @@ describe("OV2 — provider-outage re-arm", () => {
       [1, 120_000],
       [2, 300_000],
     ] as const) {
-      h.enqueued = [];
+      h.scheduledOv2 = [];
       h.pending.set("s-1", null); // prior wake consumed, run re-paused
       h.paused_error = [run({ errorRetryCount: count })];
       const r = await wd.tick();
       expect(r.scheduled).toBe(1);
-      expect(h.enqueued[0].dueAt.getTime()).toBe(NOW + rung);
+      expect(h.scheduledOv2[0].dueAt.getTime()).toBe(NOW + rung);
     }
   });
 
@@ -179,7 +191,7 @@ describe("OV2 — provider-outage re-arm", () => {
     const r = await wd.tick();
     expect(r.scheduled).toBe(0);
     expect(r.skipped).toBe(1);
-    expect(h.enqueued).toHaveLength(0);
+    expect(h.scheduledOv2).toHaveLength(0);
   });
 
   it("fails over to the backup model past the threshold", async () => {
@@ -190,7 +202,7 @@ describe("OV2 — provider-outage re-arm", () => {
 
     const r = await wd.tick();
     expect(r.scheduled).toBe(1);
-    expect(h.enqueued[0].payload.failover).toBe(true);
+    expect(h.scheduledOv2[0].failover).toBe(true);
   });
 
   it("does NOT set failover below the threshold", async () => {
@@ -199,7 +211,7 @@ describe("OV2 — provider-outage re-arm", () => {
     h.paused_error = [run({ errorRetryCount: SELF_HEAL_FAILOVER_THRESHOLD - 1 })];
     const wd = createSelfHealWatchdog(h.deps);
     await wd.tick();
-    expect(h.enqueued[0].payload.failover).toBe(false);
+    expect(h.scheduledOv2[0].failover).toBe(false);
   });
 
   it("recovery CEASES at the deadline (past-deadline run is left for the reaper)", async () => {
@@ -210,8 +222,7 @@ describe("OV2 — provider-outage re-arm", () => {
 
     const r = await wd.tick();
     expect(r.scheduled).toBe(0);
-    expect(h.enqueued).toHaveLength(0);
-    expect(h.incremented).toHaveLength(0);
+    expect(h.scheduledOv2).toHaveLength(0);
   });
 
   it("never schedules a NON-transient error (stays paused for a human)", async () => {
@@ -221,7 +232,7 @@ describe("OV2 — provider-outage re-arm", () => {
 
     const r = await wd.tick();
     expect(r.scheduled).toBe(0);
-    expect(h.enqueued).toHaveLength(0);
+    expect(h.scheduledOv2).toHaveLength(0);
   });
 
   it("never schedules across a half-completed irreversible action (unsafe stamp)", async () => {
@@ -231,7 +242,7 @@ describe("OV2 — provider-outage re-arm", () => {
 
     const r = await wd.tick();
     expect(r.scheduled).toBe(0);
-    expect(h.enqueued).toHaveLength(0);
+    expect(h.scheduledOv2).toHaveLength(0);
   });
 
   it("only recovers full-mode missions", async () => {
@@ -273,6 +284,28 @@ describe("kill switch", () => {
 
     const r = await wd.tick();
     expect(r).toEqual({ scheduled: 0, wakeResumed: 0, finalized: 0, skipped: 0, errors: 0 });
+    expect(h.scheduledOv2).toHaveLength(0);
+    expect(h.enqueued).toHaveLength(0);
+    expect(h.finalized).toHaveLength(0);
+  });
+});
+
+// ── Provider gate ───────────────────────────────────────────────
+
+describe("provider readiness gate", () => {
+  it("not ready (vault locked / key not injected) → no-op, never re-arms or finalizes", async () => {
+    const staleCheckpoint = new Date(NOW - WAKE_STALL_MARGIN_MS - 60_000).toISOString();
+    const h = harness();
+    h.providerReady = false;
+    h.paused_error = [run()];
+    h.paused_wake = [
+      run({ id: "run-2", status: "paused_wake", lastCheckpointAt: staleCheckpoint }),
+    ];
+    const wd = createSelfHealWatchdog(h.deps);
+
+    const r = await wd.tick();
+    expect(r).toEqual({ scheduled: 0, wakeResumed: 0, finalized: 0, skipped: 0, errors: 0 });
+    expect(h.scheduledOv2).toHaveLength(0);
     expect(h.enqueued).toHaveLength(0);
     expect(h.finalized).toHaveLength(0);
   });
@@ -285,9 +318,9 @@ describe("fail-soft", () => {
     const boom = run({ id: "boom", sessionId: "s-boom" });
     const ok = run({ id: "ok", sessionId: "s-ok" });
     const h = harness({
-      getPendingWake: async (sessionId) => {
-        if (sessionId === "s-boom") throw new Error("db down");
-        return null;
+      scheduleErrorRetry: async (input) => {
+        if (input.sessionId === "s-boom") throw new Error("db down");
+        return { attempt: 1 };
       },
     });
     h.paused_error = [boom, ok];
@@ -296,7 +329,6 @@ describe("fail-soft", () => {
     const r = await wd.tick();
     expect(r.errors).toBe(1);
     expect(r.scheduled).toBe(1); // the healthy run still got scheduled
-    expect(h.enqueued.map((e) => e.missionRunId)).toEqual(["ok"]);
   });
 
   it("a whole-sweep failure never throws out of tick()", async () => {

@@ -94,7 +94,7 @@ afterEach(() => {
 });
 
 describe("handleSelfHealClaimed routing", () => {
-  it("failover:true → applies the backup model, claims, and resumes", async () => {
+  it("failover:true → applies the backup model AFTER the claim, resumes, then restores in finally", async () => {
     mockClaimRunForSelfHeal.mockResolvedValue({ outcome: "claimed", lease: {} });
     const d = deps(pausedErrorRun(), {
       claimDue: async () => [selfHealWake({ trigger: "self_heal_retry", attempt: 3, failover: true })],
@@ -102,25 +102,26 @@ describe("handleSelfHealClaimed routing", () => {
 
     const results = await tick(new Date(), 10, d);
 
-    expect(applyModelFailover).toHaveBeenCalledTimes(1);
-    expect(restorePrimaryModel).not.toHaveBeenCalled();
     expect(mockClaimRunForSelfHeal).toHaveBeenCalledTimes(1);
+    expect(applyModelFailover).toHaveBeenCalledTimes(1);
+    // ALWAYS restored — the swap is scoped to this single resume, never leaked.
+    expect(restorePrimaryModel).toHaveBeenCalledTimes(1);
     expect(d.resumeMissionRun).toHaveBeenCalledWith("run-1");
     expect(results[0].outcome).toEqual({ kind: "resumed", runId: "run-1" });
   });
 
-  it("failover:false → restores the primary model before resuming", async () => {
+  it("failover:false → never applies the backup; still restores in finally (no-op)", async () => {
     mockClaimRunForSelfHeal.mockResolvedValue({ outcome: "claimed", lease: {} });
     const d = deps(pausedErrorRun(), {
       claimDue: async () => [selfHealWake({ trigger: "self_heal_retry", attempt: 3, failover: false })],
     });
 
     await tick(new Date(), 10, d);
-    expect(restorePrimaryModel).toHaveBeenCalledTimes(1);
     expect(applyModelFailover).not.toHaveBeenCalled();
+    expect(restorePrimaryModel).toHaveBeenCalledTimes(1);
   });
 
-  it("kill switch disabled → drops the wake without claiming or resuming", async () => {
+  it("kill switch disabled → drops the wake without claiming, resuming, or touching the model", async () => {
     process.env.AGENT_SELF_HEAL_ENABLED = "false";
     const resumeMissionRun = vi.fn().mockResolvedValue(undefined);
     const d = deps(pausedErrorRun(), { resumeMissionRun });
@@ -128,15 +129,17 @@ describe("handleSelfHealClaimed routing", () => {
     const results = await tick(new Date(), 10, d);
     expect(mockClaimRunForSelfHeal).not.toHaveBeenCalled();
     expect(resumeMissionRun).not.toHaveBeenCalled();
+    expect(applyModelFailover).not.toHaveBeenCalled();
     expect(results[0].outcome).toEqual({ kind: "skipped_claim_lost" });
   });
 
-  it("claim ineligible (e.g. human Recover raced) → no resume", async () => {
+  it("claim ineligible (e.g. human Recover raced) → no resume, no model swap", async () => {
     mockClaimRunForSelfHeal.mockResolvedValue({ outcome: "ineligible", reason: "unsafe" });
     const resumeMissionRun = vi.fn().mockResolvedValue(undefined);
     const d = deps(pausedErrorRun(), { resumeMissionRun });
 
     await tick(new Date(), 10, d);
     expect(resumeMissionRun).not.toHaveBeenCalled();
+    expect(applyModelFailover).not.toHaveBeenCalled();
   });
 });

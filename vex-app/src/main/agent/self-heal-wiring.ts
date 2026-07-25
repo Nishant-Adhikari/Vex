@@ -25,9 +25,11 @@ import {
   type SelfHealWatchdog,
 } from "@vex-agent/engine/self-heal/watchdog.js";
 import { SELF_HEAL_TICK_INTERVAL_MS } from "@vex-agent/engine/self-heal/policy.js";
+import { scheduleSelfHealRetry } from "@vex-agent/engine/self-heal/schedule.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import { getSession } from "@vex-agent/db/repos/sessions.js";
+import { isWakeProviderConfigured } from "@vex-agent/engine/wake/executor.js";
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
 
@@ -36,14 +38,15 @@ import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
 export function createSelfHealDeps(): SelfHealDeps {
   return {
     now: () => Date.now(),
+    // Same provider gate the wake executor uses to decide whether to claim.
+    isProviderReady: () => isWakeProviderConfigured(),
     listRunsByStatus: (status) => missionRunsRepo.listRunsByStatus(status),
     getSessionPermission: async (sessionId) => {
       const session = await getSession(sessionId);
       return session ? session.permission : null;
     },
     getPendingWake: (sessionId) => loopWakeRepo.getPendingForSession(sessionId),
-    incrementErrorRetryCount: (runId) =>
-      missionRunsRepo.incrementErrorRetryCount(runId),
+    scheduleErrorRetry: (input) => scheduleSelfHealRetry(input),
     enqueueWake: (input) =>
       loopWakeRepo.enqueue({
         sessionId: input.sessionId,

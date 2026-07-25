@@ -37,7 +37,6 @@ import type { LoopWakeRequest } from "../../db/repos/loop-wake.js";
 import logger from "@utils/logger.js";
 
 import {
-  SELF_HEAL_WAKE_TRIGGER,
   MAX_SELF_HEAL_ATTEMPTS,
   MAX_WAKE_STALL_ATTEMPTS,
   WAKE_STALL_MARGIN_MS,
@@ -48,20 +47,40 @@ import {
   evidenceIsTransient,
 } from "./policy.js";
 import { withinRecoveryBounds } from "./bounds.js";
+import type { ScheduledSelfHealRetry } from "./schedule.js";
 
 // ── Injected IO ─────────────────────────────────────────────────────
 
 export interface SelfHealDeps {
   /** Clock (ms). Injectable for deterministic tests. */
   now(): number;
+  /**
+   * Provider-readiness gate — the SAME condition the wake executor uses to
+   * decide whether to claim due wakes (OPENROUTER_API_KEY + AGENT_MODEL in env,
+   * injected by the vault on unlock). When it is closed (vault locked / key not
+   * yet injected) the executor intentionally leaves paused_wake wakes PENDING,
+   * so the watchdog must NOT treat those as stalled and finalize the run —
+   * gate the whole tick on it, exactly like the executor.
+   */
+  isProviderReady(): boolean;
   /** Every run currently in `status`, oldest-first. */
   listRunsByStatus(status: MissionRun["status"]): Promise<MissionRun[]>;
   /** Live session permission ("full" gates OV2). Null when the session is gone. */
   getSessionPermission(sessionId: string): Promise<string | null>;
-  /** The current pending wake for a session, if any (backoff / stall probe). */
+  /** The current pending wake for a session, if any (OV3 stall probe). */
   getPendingWake(sessionId: string): Promise<LoopWakeRequest | null>;
-  /** Bump + return the durable retry epoch (`error_retry_count`). */
-  incrementErrorRetryCount(runId: string): Promise<number>;
+  /**
+   * OV2 — ATOMICALLY schedule the next self-heal retry (epoch bump + wake insert
+   * in one tx, insert-first so a losing enqueue never strands the epoch).
+   * `null` when a retry is already pending or the run left paused_error.
+   */
+  scheduleErrorRetry(input: {
+    runId: string;
+    sessionId: string;
+    dueAt: Date;
+    reason: string;
+    failover: boolean;
+  }): Promise<ScheduledSelfHealRetry | null>;
   /** Enqueue a pending wake; `null` when one already exists for the session. */
   enqueueWake(input: {
     sessionId: string;
@@ -123,6 +142,10 @@ export function createSelfHealWatchdog(deps: SelfHealDeps): SelfHealWatchdog {
   async function tick(): Promise<SelfHealTickResult> {
     // KILL SWITCH — disabled reverts to today's park-and-wait (no-op).
     if (!selfHealEnabled()) return EMPTY;
+    // PROVIDER GATE — when the executor can't resume (vault locked / key not
+    // injected), pending wakes are intentionally parked; do nothing so we never
+    // re-arm or finalize a run the executor was never given a chance to resume.
+    if (!deps.isProviderReady()) return EMPTY;
 
     let ov2: SelfHealTickResult;
     let ov3: SelfHealTickResult;
@@ -195,35 +218,23 @@ export function createSelfHealWatchdog(deps: SelfHealDeps): SelfHealWatchdog {
           skipped++;
           continue;
         }
-        // Backoff / defer-to-fast-retry: a pending wake means a retry (fast
-        // Phase-4d OR a prior self-heal rung) is already scheduled — do nothing
-        // until it is consumed. This is what spaces the ladder.
-        const pending = await deps.getPendingWake(run.sessionId);
-        if (pending !== null) {
-          skipped++;
-          continue;
-        }
 
         const priorFailures = run.errorRetryCount;
         const backoffMs = selfHealBackoffMs(priorFailures);
         const failover = shouldFailover(priorFailures, hasFallback);
-        const attempt = await deps.incrementErrorRetryCount(run.id);
         const dueAt = new Date(nowMs + backoffMs);
-        const wake = await deps.enqueueWake({
+        // Atomic: epoch bump + wake insert in one tx (insert-first, increment
+        // only if it won the pending-wake slot). `null` = a retry is already
+        // pending (defer, spaces the ladder + yields to the fast Phase-4d wake)
+        // or the run left paused_error — either way no epoch is touched.
+        const result = await deps.scheduleErrorRetry({
+          runId: run.id,
           sessionId: run.sessionId,
-          missionRunId: run.id,
           dueAt,
-          reason: `self_heal retry ${attempt} (transient provider error)`,
-          payload: { trigger: SELF_HEAL_WAKE_TRIGGER, attempt, failover },
+          reason: "self_heal retry (transient provider error)",
+          failover,
         });
-        if (wake === null) {
-          // A wake snuck in between the probe and here — the run is still
-          // covered; the next tick reconciles. Not an error.
-          logger.info("engine.self_heal.wake_not_enqueued", {
-            runId: run.id,
-            sessionId: run.sessionId,
-            attempt,
-          });
+        if (result === null) {
           skipped++;
           continue;
         }
@@ -231,7 +242,7 @@ export function createSelfHealWatchdog(deps: SelfHealDeps): SelfHealWatchdog {
         logger.info("engine.self_heal.retry_scheduled", {
           runId: run.id,
           sessionId: run.sessionId,
-          attempt,
+          attempt: result.attempt,
           backoffMs,
           failover,
           dueAt: dueAt.toISOString(),
