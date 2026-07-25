@@ -46,6 +46,7 @@ import {
   resolveMissionExcludedTools,
 } from "../../../../lib/agent-config.js";
 import { captureMissionStart } from "../../mission/mission-results-capture.js";
+import { loadActiveAdaptiveStrategy } from "../../mission/strategy-active.js";
 import { forceLiquidateOnDeadline } from "./mission-liquidate-hook.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
@@ -136,10 +137,16 @@ export async function runPreparedMissionStart(
     const hydrated = await hydrateEngineSession(prepared.sessionId);
     if (!hydrated) throw new Error(`Session ${prepared.sessionId} not found`);
 
+    // Self-improving loop: pin the currently-active adaptive tactics for this
+    // slice (fail-soft → baseline). The immutable safety core is rendered from
+    // source inside the prompt regardless. A renewed mission goes through this
+    // same start path, so it automatically inherits the evolved strategy.
+    const adaptiveStrategy = await loadActiveAdaptiveStrategy();
     const promptOptions: PromptStackOptions = {
       missionRunContext: {
         missionPromptContext: prepared.contractSnapshot.missionPromptContext,
         iterationCount: 0,
+        adaptiveStrategy,
       },
     };
 
@@ -299,10 +306,14 @@ export async function resumePreparedMissionRun(
         prepared.run.contractSnapshotJson as MissionRunContractSnapshot | null,
       fallbackMission: prepared.mission,
     });
+    // Resume path: pin the active adaptive tactics for this slice (fail-soft →
+    // baseline), same as the fresh-start path.
+    const adaptiveStrategy = await loadActiveAdaptiveStrategy();
     const promptOptions: PromptStackOptions = {
       missionRunContext: {
         missionPromptContext,
         iterationCount: prepared.run.iterationCount,
+        adaptiveStrategy,
       },
     };
 

@@ -17,6 +17,11 @@ import { registerMissionGetDraftHandler } from "./get-draft.js";
 import { registerMissionGetRenewableSourceHandler } from "./get-renewable-source.js";
 import { registerMissionGetResultForRunHandler } from "./get-result-for-run.js";
 import { registerMissionGetRetrospectiveHandler } from "./get-retrospective.js";
+import { registerMissionGetStrategyHandler } from "./get-strategy.js";
+import { registerMissionListStrategyVersionsHandler } from "./list-strategy-versions.js";
+import { registerMissionApproveStrategyVersionHandler } from "./approve-strategy-version.js";
+import { registerMissionRollbackStrategyVersionHandler } from "./rollback-strategy-version.js";
+import { registerMissionResetStrategyBaselineHandler } from "./reset-strategy-baseline.js";
 import { registerMissionGetSessionResultHandler } from "./get-session-result.js";
 import { registerMissionListResultsHandler } from "./list-results.js";
 import { registerMissionRecoverHandler } from "./recover.js";
@@ -46,5 +51,10 @@ export function registerMissionHandlers(): ReadonlyArray<() => void> {
     registerMissionSetAutoRetryHandler(),
     registerMissionGetResultForRunHandler(),
     registerMissionGetRetrospectiveHandler(),
+    registerMissionGetStrategyHandler(),
+    registerMissionListStrategyVersionsHandler(),
+    registerMissionApproveStrategyVersionHandler(),
+    registerMissionRollbackStrategyVersionHandler(),
+    registerMissionResetStrategyBaselineHandler(),
   ];
 }

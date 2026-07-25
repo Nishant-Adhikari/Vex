@@ -34,6 +34,14 @@ import type {
   MissionStopResult,
   MissionUpdateDraftInput,
   MissionUpdateDraftResult,
+  MissionGetStrategyInput,
+  MissionGetStrategyResult,
+  MissionListStrategyVersionsInput,
+  MissionListStrategyVersionsResult,
+  MissionActivateStrategyInput,
+  MissionActivateStrategyResult,
+  MissionResetStrategyInput,
+  MissionResetStrategyResult,
 } from "../../../schemas/mission.js";
 
 /**
@@ -102,4 +110,25 @@ export interface MissionBridge {
   readonly getRetrospective: (
     input: MissionGetRetrospectiveInput,
   ) => Promise<Result<MissionGetRetrospectiveResult>>;
+  // ── Self-improving strategy loop — audit + control surface ──
+  /** Active adaptive strategy + pending-approval queue + loop posture. */
+  readonly getStrategy: (
+    input: MissionGetStrategyInput,
+  ) => Promise<Result<MissionGetStrategyResult>>;
+  /** Full version history (baseline/pending/active/archived/rejected). */
+  readonly listStrategyVersions: (
+    input: MissionListStrategyVersionsInput,
+  ) => Promise<Result<MissionListStrategyVersionsResult>>;
+  /** Human approval gate: activate a PENDING revision. */
+  readonly approveStrategyVersion: (
+    input: MissionActivateStrategyInput,
+  ) => Promise<Result<MissionActivateStrategyResult>>;
+  /** Roll back to a prior (archived/baseline) version. */
+  readonly rollbackStrategyVersion: (
+    input: MissionActivateStrategyInput,
+  ) => Promise<Result<MissionActivateStrategyResult>>;
+  /** Reset live strategy to the human baseline seed. */
+  readonly resetStrategyBaseline: (
+    input: MissionResetStrategyInput,
+  ) => Promise<Result<MissionResetStrategyResult>>;
 }
