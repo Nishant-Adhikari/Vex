@@ -22,6 +22,7 @@ describe("pendle alias non-routing", () => {
       tokenIn: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       tokenOut: "0x5a19fa369f2895dcd8d2cee62e4ceae58ef92bbb",
       amount: "1",
+      rationale: "non-routing check", // required EVM swap param
     });
     expect(PENDLE_TOOL_IDS.has(target.toolId)).toBe(false);
     expect(target.toolId.startsWith("pendle.")).toBe(false);

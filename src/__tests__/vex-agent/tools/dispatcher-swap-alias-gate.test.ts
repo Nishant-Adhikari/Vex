@@ -76,6 +76,8 @@ const SELL_MANIFEST = {
     { key: "amountIn", type: "string" as const, required: true, description: "" },
     { key: "slippageBps", type: "number" as const, description: "" },
     { key: "recipient", type: "string" as const, description: "" },
+    // Mirror the real manifest: rationale is a REQUIRED param the alias forwards.
+    { key: "rationale", type: "string" as const, required: true, description: "" },
   ],
   exampleParams: {},
 };
@@ -104,7 +106,9 @@ const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const WETH_BASE = "0x4200000000000000000000000000000000000006";
 
 function swapArgs(extra: Record<string, unknown> = {}) {
-  return { chain: "base", tokenIn: WETH_BASE, tokenOut: USDC_BASE, amount: "0.5", slippageBps: 50, ...extra };
+  // `rationale` is a REQUIRED EVM swap param — the alias rejects a swap without
+  // one before it ever reaches the Stage-7 gate under test here.
+  return { chain: "base", tokenIn: WETH_BASE, tokenOut: USDC_BASE, amount: "0.5", slippageBps: 50, rationale: "gate test rationale", ...extra };
 }
 
 beforeEach(() => {
