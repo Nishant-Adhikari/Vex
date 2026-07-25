@@ -128,7 +128,50 @@ describe("MissionSummaryCard — Decision Journal rationale", () => {
   });
 });
 
+describe("MissionSummaryCard — scrollable container", () => {
+  it("bounds the card height and scrolls its body so tall content is reachable", () => {
+    render(<MissionSummaryCard result={result()} sessionId={SESSION} />);
+    // The card is capped to the viewport…
+    const card = document.querySelector('[data-vex-area="mission-summary"]');
+    expect(card).not.toBeNull();
+    expect(card?.className).toContain("max-h-[70vh]");
+    // …and its body region scrolls (min-h-0 + overflow-y-auto) rather than
+    // pushing the whole card off-screen behind the composer fade.
+    const scroll = document.querySelector(
+      '[data-vex-area="mission-summary-scroll"]',
+    );
+    expect(scroll).not.toBeNull();
+    expect(scroll?.className).toContain("overflow-y-auto");
+    expect(scroll?.className).toContain("min-h-0");
+  });
+});
+
 describe("MissionSummaryCard — Retrospective section", () => {
+  it("leads with the bullet lists and demotes the prose summary to a TL;DR caption", () => {
+    mockUseRetro.mockReturnValue({
+      data: { ok: true, data: retro() },
+      isLoading: false,
+    });
+    render(<MissionSummaryCard result={result()} sessionId={SESSION} />);
+    // Bullet-list labels are present…
+    const worked = screen.getByText("What worked");
+    const fix = screen.getByText("What to fix");
+    const lessons = screen.getByText("Lessons for next mission");
+    expect(worked).toBeTruthy();
+    expect(fix).toBeTruthy();
+    expect(lessons).toBeTruthy();
+    // …and the prose summary renders as a demoted, muted TL;DR caption that
+    // comes AFTER the bullets in document order (bullets are the star).
+    const tldr = screen.getByText(/TL;DR —/);
+    expect(tldr.className).toContain("text-[var(--vex-text-3)]");
+    expect(tldr.className).toContain("line-clamp-2");
+    expect(
+      worked.compareDocumentPosition(tldr) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+
   it("renders the retrospective summary + lessons when present", () => {
     mockUseRetro.mockReturnValue({
       data: { ok: true, data: retro() },
