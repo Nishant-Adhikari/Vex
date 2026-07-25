@@ -18,6 +18,10 @@ import {
   missionGetRenewableSourceInputSchema,
   missionGetResultForRunInputSchema,
   missionGetRetrospectiveInputSchema,
+  missionGetStrategyInputSchema,
+  missionListStrategyVersionsInputSchema,
+  missionActivateStrategyInputSchema,
+  missionResetStrategyInputSchema,
   missionGetSessionResultInputSchema,
   missionListResultsInputSchema,
   missionRecoverInputSchema,
@@ -37,6 +41,10 @@ import type {
   MissionGetRenewableSourceInput,
   MissionGetResultForRunInput,
   MissionGetRetrospectiveInput,
+  MissionGetStrategyInput,
+  MissionListStrategyVersionsInput,
+  MissionActivateStrategyInput,
+  MissionResetStrategyInput,
   MissionGetSessionResultInput,
   MissionListResultsInput,
   MissionRecoverInput,
@@ -169,6 +177,41 @@ export const mission = {
       CH.mission.getRetrospective,
       input,
       missionGetRetrospectiveInputSchema,
+    );
+  },
+  getStrategy(input: MissionGetStrategyInput) {
+    return invokeWithSchema(
+      CH.mission.getStrategy,
+      input,
+      missionGetStrategyInputSchema,
+    );
+  },
+  listStrategyVersions(input: MissionListStrategyVersionsInput) {
+    return invokeWithSchema(
+      CH.mission.listStrategyVersions,
+      input,
+      missionListStrategyVersionsInputSchema,
+    );
+  },
+  approveStrategyVersion(input: MissionActivateStrategyInput) {
+    return invokeWithSchema(
+      CH.mission.approveStrategyVersion,
+      input,
+      missionActivateStrategyInputSchema,
+    );
+  },
+  rollbackStrategyVersion(input: MissionActivateStrategyInput) {
+    return invokeWithSchema(
+      CH.mission.rollbackStrategyVersion,
+      input,
+      missionActivateStrategyInputSchema,
+    );
+  },
+  resetStrategyBaseline(input: MissionResetStrategyInput) {
+    return invokeWithSchema(
+      CH.mission.resetStrategyBaseline,
+      input,
+      missionResetStrategyInputSchema,
     );
   },
 } satisfies MissionBridge;

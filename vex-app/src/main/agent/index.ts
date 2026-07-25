@@ -9,7 +9,12 @@
  */
 
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
+import {
+  setMissionLearningSink,
+  resetMissionLearningSink,
+} from "@vex-agent/engine/mission/mission-learning-registry.js";
 import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
+import { createMissionLearningSink } from "../mission/mission-learning.js";
 import { setupControlBridge } from "./control-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
@@ -38,6 +43,16 @@ export function setupAgentBridges(): () => void {
   setBugReportSink(createAgentBugReportSink());
   teardowns.push(() => {
     resetBugReportSink();
+  });
+
+  // Self-improving strategy loop — install the production MissionLearningSink
+  // that the engine fires (fire-and-forget) on terminal mission finalize: it
+  // banks the retrospective and, ONLY when the loop is enabled, runs the guarded
+  // strategy rewrite. Default posture is OFF (kill switch) + propose-then-approve
+  // (see strategy-config.ts). Teardown resets to the no-op default.
+  setMissionLearningSink(createMissionLearningSink());
+  teardowns.push(() => {
+    resetMissionLearningSink();
   });
 
   return () => {
