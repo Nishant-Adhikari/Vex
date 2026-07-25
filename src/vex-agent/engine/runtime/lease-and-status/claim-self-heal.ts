@@ -24,6 +24,7 @@
  *   - error_retry_count === expectedAttempt           (epoch guard)
  *   - live sessions.permission === "full"
  *   - within the mission hard deadline
+ *   - within the mission hard COST cap (run-scoped spend < frozen dollar cap)
  *
  * One commit; no inter-statement race window.
  */
@@ -36,7 +37,7 @@ import {
 import { acquireLease } from "../../../db/repos/runner-leases.js";
 import type { LeaseProcessKind, RunnerLease } from "../../../db/repos/runner-leases.js";
 import { selfHealEnabled, evidenceIsTransient } from "../../self-heal/policy.js";
-import { withinRecoveryBounds } from "../../self-heal/bounds.js";
+import { withinDeadline, withinCostCap } from "../../self-heal/bounds.js";
 import { type RunnerLeaseRow, mapLease } from "./_row-shapes.js";
 
 export interface ClaimSelfHealInput {
@@ -61,7 +62,8 @@ export type SelfHealIneligibleReason =
   | "not_transient"
   | "attempt_mismatch"
   | "not_full"
-  | "past_deadline";
+  | "past_deadline"
+  | "past_cost_cap";
 
 export type ClaimSelfHealOutcome =
   | { readonly outcome: "claimed"; readonly lease: RunnerLease }
@@ -128,13 +130,19 @@ export async function claimRunForSelfHeal(
     }
     const startedAtIso =
       row.started_at instanceof Date ? row.started_at.toISOString() : row.started_at;
-    if (
-      !withinRecoveryBounds(
-        { startedAt: startedAtIso, contractSnapshotJson: row.contract_snapshot_json },
-        nowMs,
-      )
-    ) {
+    const boundRun = {
+      startedAt: startedAtIso,
+      contractSnapshotJson: row.contract_snapshot_json,
+    };
+    // Deadline first (cheap, synchronous), then the COST cap (run-scoped spend
+    // vs the frozen dollar cap — the same bound the turn-loop enforces). Distinct
+    // reasons for telemetry. Defense-in-depth beneath the watchdog's own
+    // pre-check: either bound could tick past between scheduling and claiming.
+    if (!withinDeadline(boundRun, nowMs)) {
       return { outcome: "ineligible", reason: "past_deadline" };
+    }
+    if (!(await withinCostCap(boundRun, input.sessionId))) {
+      return { outcome: "ineligible", reason: "past_cost_cap" };
     }
 
     // 3. Lock + validate the lease row (absent / expired / same-owner).

@@ -46,7 +46,7 @@ import {
   resolveFallbackModel,
   evidenceIsTransient,
 } from "./policy.js";
-import { withinRecoveryBounds } from "./bounds.js";
+import { withinRecoveryBounds, type RunCostReader } from "./bounds.js";
 import type { ScheduledSelfHealRetry } from "./schedule.js";
 
 // ── Injected IO ─────────────────────────────────────────────────────
@@ -67,6 +67,13 @@ export interface SelfHealDeps {
   listRunsByStatus(status: MissionRun["status"]): Promise<MissionRun[]>;
   /** Live session permission ("full" gates OV2). Null when the session is gone. */
   getSessionPermission(sessionId: string): Promise<string | null>;
+  /**
+   * Run-scoped LLM spend (USD) for the cost-cap recovery bound — the SAME
+   * `getSessionTotalCost(sessionId, { since })` the turn-loop enforcer reads.
+   * Injected so the decision matrix stays DB-free in tests. `since` is the run's
+   * immutable `started_at`, so a run counts only its own spend.
+   */
+  getRunCost: RunCostReader;
   /** The current pending wake for a session, if any (OV3 stall probe). */
   getPendingWake(sessionId: string): Promise<LoopWakeRequest | null>;
   /**
@@ -197,12 +204,18 @@ export function createSelfHealWatchdog(deps: SelfHealDeps): SelfHealWatchdog {
           skipped++;
           continue;
         }
-        // Gate 3 — deadline + cost bound. Past it: leave for the reaper / human.
+        // Gate 3 — deadline + COST bound. Past either: STOP scheduling and leave
+        // the run for the abandoned-run reaper / a human. This is the OV2 half of
+        // the reaper↔self-heal LADDER: once a run is past its box or at/over its
+        // dollar cap, OV2 arms no further wake, so the reaper (which skips any run
+        // with a pending self_heal_retry wake) is finally free to finalize it.
         if (
-          !withinRecoveryBounds(
+          !(await withinRecoveryBounds(
             { startedAt: run.startedAt, contractSnapshotJson: run.contractSnapshotJson },
             nowMs,
-          )
+            run.sessionId,
+            { costReader: deps.getRunCost },
+          ))
         ) {
           skipped++;
           continue;

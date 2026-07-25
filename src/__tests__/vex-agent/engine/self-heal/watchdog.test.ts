@@ -108,6 +108,9 @@ function harness(over: Partial<SelfHealDeps> = {}): Harness {
     listRunsByStatus: async (status) =>
       status === "paused_error" ? h.paused_error : status === "paused_wake" ? h.paused_wake : [],
     getSessionPermission: async () => "full",
+    // Default: $0 run-scoped spend, so the cost bound is transparent unless a
+    // case overrides it (RECONCILIATION A).
+    getRunCost: async () => 0,
     getPendingWake: async (sessionId) => h.pending.get(sessionId) ?? null,
     // Atomic OV2 schedule: mirrors the real insert-first / increment-if-won
     // helper — returns null when a wake is already pending for the session.
@@ -138,10 +141,12 @@ function harness(over: Partial<SelfHealDeps> = {}): Harness {
 beforeEach(() => {
   delete process.env.AGENT_SELF_HEAL_ENABLED;
   delete process.env.AGENT_MODEL_FALLBACK;
+  delete process.env.AGENT_MISSION_COST_CAP_USD;
 });
 afterEach(() => {
   delete process.env.AGENT_SELF_HEAL_ENABLED;
   delete process.env.AGENT_MODEL_FALLBACK;
+  delete process.env.AGENT_MISSION_COST_CAP_USD;
 });
 
 // ── OV2 ─────────────────────────────────────────────────────────
@@ -223,6 +228,32 @@ describe("OV2 — provider-outage re-arm", () => {
     const r = await wd.tick();
     expect(r.scheduled).toBe(0);
     expect(h.scheduledOv2).toHaveLength(0);
+  });
+
+  // RECONCILIATION A — the self-heal ladder ceases at the COST cap too, not just
+  // the deadline. An in-deadline run whose run-scoped spend is at/over its dollar
+  // cap arms NO further wake (OV2 gives it up → the reaper is free to finalize).
+  it("recovery CEASES at the cost cap (over-cap in-deadline run is left for the reaper)", async () => {
+    process.env.AGENT_MISSION_COST_CAP_USD = "1"; // $1 cap
+    const h = harness({ getRunCost: async () => 1.5 }); // already spent $1.50 ≥ cap
+    h.paused_error = [run({ errorRetryCount: 0 })]; // transient, safe, in-deadline
+    const wd = createSelfHealWatchdog(h.deps);
+
+    const r = await wd.tick();
+    expect(r.scheduled).toBe(0);
+    expect(h.scheduledOv2).toHaveLength(0);
+    expect(r.skipped).toBe(1);
+  });
+
+  it("keeps re-arming while UNDER the cost cap (cost gate is non-blocking)", async () => {
+    process.env.AGENT_MISSION_COST_CAP_USD = "1";
+    const h = harness({ getRunCost: async () => 0.4 }); // under cap
+    h.paused_error = [run({ errorRetryCount: 0 })];
+    const wd = createSelfHealWatchdog(h.deps);
+
+    const r = await wd.tick();
+    expect(r.scheduled).toBe(1);
+    expect(h.scheduledOv2).toHaveLength(1);
   });
 
   it("never schedules a NON-transient error (stays paused for a human)", async () => {

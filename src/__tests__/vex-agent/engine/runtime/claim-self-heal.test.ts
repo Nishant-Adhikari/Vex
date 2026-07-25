@@ -9,6 +9,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const queryOneWith = vi.fn();
 const executeWith = vi.fn().mockResolvedValue(1);
 const acquireLease = vi.fn();
+// Run-scoped spend for the cost-cap recovery bound; defaults to $0 (well under
+// the $1 fail-soft cap) so the cost gate is transparent for the other cases.
+const getSessionTotalCost = vi.fn().mockResolvedValue(0);
 
 vi.mock("@vex-agent/db/client.js", () => ({
   withTransaction: async <T>(cb: (client: unknown) => Promise<T>): Promise<T> => cb({}),
@@ -17,6 +20,9 @@ vi.mock("@vex-agent/db/client.js", () => ({
 }));
 vi.mock("@vex-agent/db/repos/runner-leases.js", () => ({
   acquireLease: (...a: unknown[]) => acquireLease(...a),
+}));
+vi.mock("@vex-agent/db/repos/usage.js", () => ({
+  getSessionTotalCost: (...a: unknown[]) => getSessionTotalCost(...a),
 }));
 
 const { claimRunForSelfHeal } = await import(
@@ -58,7 +64,10 @@ afterEach(() => {
   queryOneWith.mockReset();
   executeWith.mockClear();
   acquireLease.mockReset();
+  getSessionTotalCost.mockReset();
+  getSessionTotalCost.mockResolvedValue(0);
   delete process.env.AGENT_SELF_HEAL_ENABLED;
+  delete process.env.AGENT_MISSION_COST_CAP_USD;
 });
 
 describe("claimRunForSelfHeal — happy path", () => {
@@ -108,6 +117,31 @@ describe("claimRunForSelfHeal — fail-closed gates", () => {
       expect(acquireLease).not.toHaveBeenCalled();
     });
   }
+
+  // RECONCILIATION A — the self-heal ladder ceases at the COST cap, not just the
+  // deadline. An in-DEADLINE run whose run-scoped spend is at/over its dollar cap
+  // is refused exactly as a past-deadline run is: no flip, distinct telemetry.
+  it("at/over the cost cap (within deadline) → ineligible:past_cost_cap, no flip", async () => {
+    process.env.AGENT_MISSION_COST_CAP_USD = "1"; // $1 cap
+    getSessionTotalCost.mockResolvedValue(1.25); // run already spent $1.25 ≥ cap
+    queryOneWith.mockResolvedValueOnce(runRow()); // in-deadline paused_error run
+    const out = await claimRunForSelfHeal(INPUT);
+    expect(out).toEqual({ outcome: "ineligible", reason: "past_cost_cap" });
+    expect(getSessionTotalCost).toHaveBeenCalledWith("s1", { since: IN_DEADLINE_START });
+    expect(executeWith).not.toHaveBeenCalled();
+    expect(acquireLease).not.toHaveBeenCalled();
+  });
+
+  it("just UNDER the cost cap (within deadline) → still claimable", async () => {
+    process.env.AGENT_MISSION_COST_CAP_USD = "1";
+    getSessionTotalCost.mockResolvedValue(0.99); // under cap
+    queryOneWith
+      .mockResolvedValueOnce(runRow())
+      .mockResolvedValueOnce(null); // no existing lease
+    acquireLease.mockResolvedValue(LEASE);
+    const out = await claimRunForSelfHeal(INPUT);
+    expect(out.outcome).toBe("claimed");
+  });
 
   it("lease held by another live owner → lease_busy, no flip", async () => {
     queryOneWith
