@@ -27,7 +27,7 @@ import type { JSX } from "react";
 import { useRuntimeState } from "../../../lib/api/runtime.js";
 import { SessionRuntimeBar } from "../SessionRuntimeBar.js";
 import { computeBudgetMeter } from "../missionControlModel.js";
-import { BookBlock } from "./BookBlock.js";
+import { BookBlock, type BookBlockReorder } from "./BookBlock.js";
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -41,8 +41,12 @@ function fmtCost(cost: number): string {
 
 export function MissionRuntimeCostBlock({
   sessionId,
+  sectionId,
+  reorder,
 }: {
   readonly sessionId: string;
+  readonly sectionId?: string;
+  readonly reorder?: BookBlockReorder;
 }): JSX.Element {
   const runtimeQuery = useRuntimeState(sessionId);
   const runtime = runtimeQuery.data?.ok ? runtimeQuery.data.data : null;
@@ -57,7 +61,13 @@ export function MissionRuntimeCostBlock({
   const runTokens = hasActiveRun ? (runtime?.runTokensUsed ?? null) : null;
 
   return (
-    <BookBlock title="Runtime & Cost" collapsible defaultOpen>
+    <BookBlock
+      title="Runtime & Cost"
+      collapsible
+      defaultOpen
+      sectionId={sectionId}
+      reorder={reorder}
+    >
       {budget !== null ? (
         <div data-vex-area="mission-budget-meter" className="mb-3 flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-2">

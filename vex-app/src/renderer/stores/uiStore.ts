@@ -64,6 +64,18 @@ export type PnlCurrency = "eth" | "usd";
  */
 export type ReviewModal = "none" | "mission" | "plan";
 
+/**
+ * The reorderable MISSION CONTROL instrument sections on the right BOOK rail,
+ * in their default top-to-bottom order. POSITION now lives on the LEFT sidebar
+ * (its own always-present accordion), so it is not part of this reorderable set
+ * — the right rail is the run's instruments only. Kept as a plain literal here
+ * (rather than imported from the feature) so the UI-only store never depends on
+ * a feature module. `bookSectionModel.resolveBookSectionOrder` reconciles any
+ * persisted order against this canonical set (drops unknown ids, appends any
+ * missing) so a hand-edited or stale payload can never desync the render.
+ */
+const DEFAULT_BOOK_SECTION_ORDER: readonly string[] = ["moves", "runtime", "session"];
+
 export type View =
   | "splash"
   | "systemCheck"
@@ -190,6 +202,20 @@ interface UiState {
    * persisted (partialize) so the choice survives relaunch.
    */
   readonly pnlCurrency: PnlCurrency;
+  /**
+   * Per-section collapse state for the BOOK rail accordions, keyed by the
+   * stable section id (`moves` / `runtime` / `session` on the right,
+   * `position` on the left). `true` = collapsed. Absent key = the section's
+   * own `defaultOpen`. Persisted so the operator's drilled-in layout survives
+   * relaunch.
+   */
+  readonly bookSectionCollapsed: Readonly<Record<string, boolean>>;
+  /**
+   * User-chosen top-to-bottom order of the right rail's reorderable MISSION
+   * CONTROL sections. Persisted; reconciled against the canonical set at
+   * render (`resolveBookSectionOrder`) so a stale/edited payload is fail-soft.
+   */
+  readonly bookSectionOrder: readonly string[];
   readonly setTheme: (value: VexTheme) => void;
   readonly toggleTheme: () => void;
   readonly setWorkspaceMode: (value: WorkspaceMode) => void;
@@ -217,6 +243,10 @@ interface UiState {
   readonly toggleHlFavorite: (coin: string) => void;
   readonly setReviewModal: (value: ReviewModal) => void;
   readonly setPnlCurrency: (value: PnlCurrency) => void;
+  /** Toggle one BOOK section's persisted collapse state. */
+  readonly toggleBookSection: (id: string) => void;
+  /** Move one right-rail section up or down in the persisted order. */
+  readonly moveBookSection: (id: string, direction: "up" | "down") => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -244,6 +274,8 @@ export const useUiStore = create<UiState>()(
       hlFavorites: [],
       reviewModal: "none",
       pnlCurrency: "usd",
+      bookSectionCollapsed: {},
+      bookSectionOrder: DEFAULT_BOOK_SECTION_ORDER,
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === "vex" ? "robinhood" : "vex" })),
@@ -289,6 +321,27 @@ export const useUiStore = create<UiState>()(
         })),
       setReviewModal: (reviewModal) => set({ reviewModal }),
       setPnlCurrency: (pnlCurrency) => set({ pnlCurrency }),
+      toggleBookSection: (id) =>
+        set((state) => ({
+          bookSectionCollapsed: {
+            ...state.bookSectionCollapsed,
+            [id]: !state.bookSectionCollapsed[id],
+          },
+        })),
+      moveBookSection: (id, direction) =>
+        set((state) => {
+          const order = [...state.bookSectionOrder];
+          const i = order.indexOf(id);
+          if (i === -1) return {};
+          const j = direction === "up" ? i - 1 : i + 1;
+          if (j < 0 || j >= order.length) return {};
+          const moved = order[i];
+          const swapped = order[j];
+          if (moved === undefined || swapped === undefined) return {};
+          order[i] = swapped;
+          order[j] = moved;
+          return { bookSectionOrder: order };
+        }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -297,7 +350,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
@@ -305,6 +358,8 @@ export const useUiStore = create<UiState>()(
         bookOpen: state.bookOpen,
         hlFavorites: state.hlFavorites,
         pnlCurrency: state.pnlCurrency,
+        bookSectionCollapsed: state.bookSectionCollapsed,
+        bookSectionOrder: state.bookSectionOrder,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -315,6 +370,10 @@ export const useUiStore = create<UiState>()(
       //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
       //   v5: `pnlCurrency` added (mission PnL denomination) — seed the `usd`
       //       default so a pre-toggle install hydrates into USD, not undefined.
+      //   v6: BOOK accordion layout added (`bookSectionCollapsed` +
+      //       `bookSectionOrder`) — seed the empty-collapse map + the default
+      //       section order so a pre-layout install hydrates into a valid,
+      //       fully-expanded default rather than undefined.
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -327,6 +386,14 @@ export const useUiStore = create<UiState>()(
         }
         if (version < 5 && !("pnlCurrency" in next)) {
           next = { ...next, pnlCurrency: "usd" };
+        }
+        if (version < 6) {
+          if (!("bookSectionCollapsed" in next)) {
+            next = { ...next, bookSectionCollapsed: {} };
+          }
+          if (!("bookSectionOrder" in next)) {
+            next = { ...next, bookSectionOrder: DEFAULT_BOOK_SECTION_ORDER };
+          }
         }
         return next;
       },
@@ -356,7 +423,44 @@ export const useUiStore = create<UiState>()(
         // a typo, a non-string) degrades to `usd`, never an off-union value.
         const pnlCurrency: PnlCurrency =
           incoming?.pnlCurrency === "eth" ? "eth" : "usd";
-        return { ...current, ...incoming, theme, hlFavorites, pnlCurrency };
+        // BOOK accordion order: only a clean string[] survives; anything else
+        // degrades to the default. `resolveBookSectionOrder` still reconciles
+        // this against the canonical set at render, so even a valid-but-stale
+        // list (unknown/missing ids) is corrected there — this guard only
+        // stops a non-array from reaching the store.
+        const bookSectionOrder: readonly string[] = Array.isArray(
+          incoming?.bookSectionOrder,
+        )
+          ? incoming.bookSectionOrder.filter(
+              (id): id is string => typeof id === "string",
+            )
+          : DEFAULT_BOOK_SECTION_ORDER;
+        // Collapse map: only a plain object of booleans survives; anything else
+        // (array, null, primitive) degrades to no collapse. Non-boolean values
+        // are dropped so an edited payload can't inject junk keys with truthy
+        // strings that would read as "collapsed".
+        const bookSectionCollapsed: Readonly<Record<string, boolean>> =
+          incoming?.bookSectionCollapsed !== null &&
+          typeof incoming?.bookSectionCollapsed === "object" &&
+          !Array.isArray(incoming.bookSectionCollapsed)
+            ? Object.fromEntries(
+                Object.entries(
+                  incoming.bookSectionCollapsed as Record<string, unknown>,
+                ).filter(
+                  (entry): entry is [string, boolean] =>
+                    typeof entry[1] === "boolean",
+                ),
+              )
+            : {};
+        return {
+          ...current,
+          ...incoming,
+          theme,
+          hlFavorites,
+          pnlCurrency,
+          bookSectionOrder,
+          bookSectionCollapsed,
+        };
       },
     }
   )
