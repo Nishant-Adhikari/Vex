@@ -33,6 +33,7 @@ import {
   PanelRightOpenIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "../../lib/utils.js";
+import { MissionControlHeader } from "./book/MissionControlHeader.js";
 import { MissionRuntimeCostBlock } from "./book/MissionRuntimeCostBlock.js";
 import { MovesBlock } from "./book/MovesBlock.js";
 import { PositionBlock } from "./book/PositionBlock.js";
@@ -79,12 +80,25 @@ export function BookPanel({
         )}
       >
         {bookOpen ? (
-          <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
-            v{__VEX_APP_VERSION__}
+          // Panel title — the whole right rail is the MISSION CONTROL cockpit.
+          // The version tag rides along as an unobtrusive muted suffix (its
+          // former standalone slot), so it is still discoverable but no longer
+          // the header's headline.
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--vex-text)]">
+              Mission Control
+            </span>
+            <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.24em] text-[var(--vex-text-3)]">
+              v{__VEX_APP_VERSION__}
+            </span>
           </span>
         ) : null}
         <SidebarIconButton
-          label={bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"}
+          label={
+            bookOpen
+              ? "Collapse the Mission Control panel"
+              : "Expand the Mission Control panel"
+          }
           onClick={onToggle}
         >
           <HugeiconsIcon
@@ -101,6 +115,10 @@ export function BookPanel({
         <div className="flex min-h-0 flex-col">
           {activeSessionId !== null ? (
             <>
+              {/* Run-status header — the active run's identity + state + live
+               * timers, above the instruments. Self-gates to mission sessions
+               * (renders nothing for an agent session). */}
+              <MissionControlHeader sessionId={activeSessionId} />
               <PositionBlock activeSessionId={activeSessionId} hero />
               <HyperliquidPositionsBlock sessionId={activeSessionId} />
               <HyperliquidRiskBlock sessionId={activeSessionId} />
