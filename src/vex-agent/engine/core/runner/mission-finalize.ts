@@ -16,6 +16,7 @@
  */
 
 import type { MissionStatus, StopReason } from "../../types.js";
+import type { MissionResultOutcome } from "@vex-agent/db/repos/mission-results.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
@@ -102,6 +103,32 @@ export async function closeRunnerLostFinalize(
   });
 }
 
+/**
+ * The ABANDONED-paused_error reaper finalize TAIL — the side effects that follow
+ * a successful `markStaleErrorReaped` claim (paused_error → `failed`): flip the
+ * parent mission to `failed`, broadcast the terminal control state, and close
+ * the `mission_results` ledger with `outcome='failed'` + the reaper stop reason.
+ *
+ * Exported so the boot reconciler can run its own claim → tail sequence while
+ * reusing the SAME finalize side effects instead of duplicating them.
+ * Idempotent: `setStatus` / `captureMissionFinal` re-run harmlessly.
+ */
+export async function closeReapedErrorFinalize(
+  missionId: string,
+  runId: string,
+  sessionId: string,
+): Promise<void> {
+  await missionsRepo.setStatus(missionId, "failed");
+  await emitFinalizeControlState(sessionId, runId);
+  await captureMissionFinal({
+    missionId,
+    runId,
+    sessionId,
+    outcome: "failed",
+    stopReason: "reaped_stale_error",
+  });
+}
+
 export async function finalizeMissionRunStatus(
   missionId: string,
   runId: string,
@@ -156,11 +183,12 @@ export async function finalizeMissionRunStatus(
     // that is a clean time-box end, not an error, so the results UI reads
     // "timed_out" instead of the alarming "failed". The run/mission status
     // stays terminal (`failed`) — this only relabels the operator-facing record.
-    const outcome = stopReason === "deadline_reached" ? "timed_out" : status;
+    const outcome: Exclude<MissionResultOutcome, "running"> =
+      stopReason === "deadline_reached" ? "timed_out" : status;
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     await emitFinalizeControlState(sessionId, runId);
-    await captureMissionFinal({ missionId, runId, sessionId, outcome: status, stopReason });
+    await captureMissionFinal({ missionId, runId, sessionId, outcome, stopReason });
     return status;
   }
 

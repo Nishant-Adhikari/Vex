@@ -38,6 +38,8 @@ export interface OrphanReconcilerDeps {
     reconciled: number;
     skipped: number;
     failed: number;
+    leasesSwept: number;
+    staleErrorsReaped: number;
   }>;
   /** Sweep cadence (test override). */
   readonly intervalMs: number;
@@ -48,6 +50,8 @@ async function defaultReconcile(): Promise<{
   reconciled: number;
   skipped: number;
   failed: number;
+  leasesSwept: number;
+  staleErrorsReaped: number;
 }> {
   const { reconcileOrphanedRuns } = await import("@vex-agent/engine/index.js");
   return reconcileOrphanedRuns();
@@ -94,11 +98,17 @@ export function setupOrphanReconcilerWorker(
     }
 
     const summary = await reconcile();
-    if (summary.scanned > 0 || summary.failed > 0) {
+    if (
+      summary.scanned > 0 ||
+      summary.failed > 0 ||
+      summary.leasesSwept > 0 ||
+      summary.staleErrorsReaped > 0
+    ) {
       log.info(
         `[orphan-reconciler] sweep scanned=${summary.scanned} ` +
           `reconciled=${summary.reconciled} skipped=${summary.skipped} ` +
-          `failed=${summary.failed}`,
+          `failed=${summary.failed} leasesSwept=${summary.leasesSwept} ` +
+          `staleErrorsReaped=${summary.staleErrorsReaped}`,
       );
     }
   };

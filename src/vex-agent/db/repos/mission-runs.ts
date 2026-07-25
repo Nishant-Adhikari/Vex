@@ -348,6 +348,97 @@ export async function findOrphanedRunningRuns(
 }
 
 /**
+ * Selection for the boot / periodic paused_error REAPER (companion to
+ * `findOrphanedRunningRuns`).
+ *
+ * Returns a `paused_error` run (`ended_at IS NULL`) ONLY when it carries a
+ * GENUINE abandonment signal — never merely because it is lease-free, which is
+ * the NORMAL waiting state for a recoverable error or a scheduled auto-retry.
+ * All of these must hold:
+ *
+ *   - NO LIVE runner lease (missing or expired) — no worker is driving it, AND
+ *   - NO PENDING wake in `loop_wake_requests` for the run — a scheduled
+ *     auto-retry or runtime continuation is NOT in flight (those pauses are
+ *     self-recovering and must never be reaped), AND
+ *   - it has been sitting in the pause for at least `graceMinutes` (measured
+ *     from `last_checkpoint_at`, falling back to `started_at`) — so a run that
+ *     just paused, and any run inside its 2–32 s auto-retry window, is skipped.
+ *
+ * This is still only the FIRST gate — the reaper ADDITIONALLY requires a
+ * CONFIRMED 0 open positions before finalizing, so a run holding a bag (or one
+ * whose position state can't be read) is preserved for Recover. Oldest-first.
+ */
+export async function findAbandonedPausedErrorRuns(
+  graceMinutes: number,
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql = `SELECT m.*
+                 FROM mission_runs m
+                 LEFT JOIN runner_leases l
+                   ON l.session_id = m.session_id
+                  AND l.expires_at > NOW()
+                 LEFT JOIN loop_wake_requests w
+                   ON w.mission_run_id = m.id
+                  AND w.status = 'pending'
+                WHERE m.status = 'paused_error'
+                  AND m.ended_at IS NULL
+                  AND l.session_id IS NULL
+                  AND w.id IS NULL
+                  AND COALESCE(m.last_checkpoint_at, m.started_at)
+                        < NOW() - ($1::int * interval '1 minute')
+                ORDER BY m.started_at ASC`;
+  const params = [graceMinutes];
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql, params)).rows
+    : await query<Record<string, unknown>>(sql, params);
+  return rows.map(mapRow);
+}
+
+/**
+ * Idempotent, race-safe terminal flip for the ABANDONED paused_error reaper.
+ * Atomically moves a run to `failed` ONLY while it is still `paused_error` AND
+ * its session has NO LIVE runner lease — stamping `stop_reason` (e.g.
+ * `reaped_stale_error`) + `ended_at = NOW()`. Returns `true` when THIS call
+ * performed the transition, `false` otherwise (already recovered/terminal, or a
+ * live lease re-appeared).
+ *
+ * The `status='paused_error'` + `NOT EXISTS (live lease)` guards make it safe
+ * against a concurrent operator `/retry`: the retry CAS (`casFlipToRunning`)
+ * moves the row to `running` (and a resume acquires a fresh lease), so whoever
+ * commits first wins and the other becomes a no-op.
+ */
+export async function markStaleErrorReaped(
+  id: string,
+  stopReason: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs m
+                  SET status = 'failed',
+                      stop_reason = $2,
+                      stop_summary = COALESCE($3, stop_summary),
+                      stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+                      ended_at = NOW()
+                WHERE m.id = $1
+                  AND m.status = 'paused_error'
+                  AND NOT EXISTS (
+                        SELECT 1 FROM runner_leases l
+                         WHERE l.session_id = m.session_id
+                           AND l.expires_at > NOW()
+                      )`;
+  const params = [
+    id,
+    stopReason,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
+}
+
+/**
  * Idempotent, race-safe terminal flip used by the orphaned-run reconciler.
  * Atomically moves a run to `stopped` ONLY while it is still `running` AND its
  * session has NO LIVE runner lease — stamping the distinct `stop_reason` (e.g.

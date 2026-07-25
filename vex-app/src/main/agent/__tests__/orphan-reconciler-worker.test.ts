@@ -24,7 +24,14 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 15));
 }
 
-const zeroSummary = { scanned: 0, reconciled: 0, skipped: 0, failed: 0 };
+const zeroSummary = {
+  scanned: 0,
+  reconciled: 0,
+  skipped: 0,
+  failed: 0,
+  leasesSwept: 0,
+  staleErrorsReaped: 0,
+};
 
 afterEach(() => {
   vi.clearAllMocks();
