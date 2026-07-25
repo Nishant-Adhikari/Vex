@@ -210,6 +210,15 @@ export type BusinessStopReason =
    */
   | "token_budget_exhausted"
   /**
+   * Hard COST-CAP backstop (PRIMARY spend-box): the run's cumulative real
+   * inference cost (`SUM(usage_log.cost)`, cache-discounted) crossed
+   * `AGENT_MISSION_COST_CAP_USD` (default $1.00) or its per-mission override.
+   * Engine-enforced only (never model-driven) — the auto-abort for a run that
+   * would otherwise burn dollars unbounded. Force-closes open positions before
+   * finalize, like the token budget + hard deadline.
+   */
+  | "cost_cap_reached"
+  /**
    * Orphaned / interrupted run: the app restarted (or the runner process died)
    * mid-run, so the `mission_runs` row is stuck at `running` while its
    * `runner_leases` row expired and no worker re-acquired it. The boot-time
@@ -299,6 +308,14 @@ export interface MissionDraft {
    * default. Distinct from `deadline` (free-text, informational only).
    */
   durationMinutes: number | null;
+  /**
+   * Optional per-mission hard COST CAP in US dollars. The turn-loop cost-cap
+   * enforcer stops the run once its cumulative real inference cost crosses this
+   * (see `resolveMissionCostCap`). A positive value OVERRIDES the env
+   * `AGENT_MISSION_COST_CAP_USD` default; absent → env → $1.00. This is the LLM
+   * INFERENCE spend cap, entirely separate from any trading capital cap.
+   */
+  costCapUsd?: number | null;
   /** Optional, host-accepted Hyperliquid envelope for an autonomous mission. */
   hyperliquidRisk?: import("../../lib/hyperliquid-policy.js").HyperliquidMissionRisk | null;
 }

@@ -40,9 +40,11 @@ import {
   resolveFrozenDeadlineMs,
   resolveDurationMinutes,
   frozenDurationMinutes,
+  frozenCostCapUsd,
 } from "../../mission/mission-deadline.js";
 import {
   resolveMissionTokenBudget,
+  resolveMissionCostCap,
   resolveMissionExcludedTools,
 } from "../../../../lib/agent-config.js";
 import { captureMissionStart } from "../../mission/mission-results-capture.js";
@@ -186,6 +188,15 @@ export async function runPreparedMissionStart(
       missionTokenBudget: resolveMissionTokenBudget(
         process.env,
         resolveDurationMinutes(frozenDurationMinutes(prepared.contractSnapshot)),
+      ),
+      // Hard COST CAP (PRIMARY spend-box): $1.00 default via
+      // AGENT_MISSION_COST_CAP_USD, overridable per mission by a frozen
+      // `costCapUsd` on the contract (mirrors how durationMinutes overrides the
+      // deadline). Enforced on real, cache-discounted cost so savings extend
+      // runway; the token budget above is the secondary safety ceiling.
+      missionCostCap: resolveMissionCostCap(
+        process.env,
+        frozenCostCapUsd(prepared.contractSnapshot),
       ),
       // Run-scope the budget to the tokens THIS run spends (fix B): count only
       // usage logged at/after the run's IMMUTABLE started_at, excluding the
@@ -350,6 +361,14 @@ export async function resumePreparedMissionRun(
         resolveDurationMinutes(
           frozenDurationMinutes(prepared.run.contractSnapshotJson),
         ),
+      ),
+      // Hard COST CAP (PRIMARY spend-box): re-resolved on resume from the SAME
+      // frozen `costCapUsd` so a re-kicked run carries the identical cap; env
+      // AGENT_MISSION_COST_CAP_USD default $1.00, 0/off/… disables. Run-scoped by
+      // missionTokenSince below, so pre-pause cost still counts toward the cap.
+      missionCostCap: resolveMissionCostCap(
+        process.env,
+        frozenCostCapUsd(prepared.run.contractSnapshotJson),
       ),
       // Run-scope to the tokens THIS run spent (fix B). The cutoff is the run's
       // IMMUTABLE started_at, identical to the initial start, so tokens spent

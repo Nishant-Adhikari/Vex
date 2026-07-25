@@ -43,6 +43,10 @@ const MissionDraftUpdateArgs = z
     stopConditions: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     deadline: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     durationMinutes: z.number().int().positive().max(1440).nullable().optional(),
+    // Per-mission LLM inference cost cap in USD (overrides the env default).
+    // Separate from any trading capital cap. Bounded to keep a fat-fingered
+    // value from disabling the backstop; a bad value falls back to env/$1.00.
+    costCapUsd: z.number().positive().max(1_000_000).nullable().optional(),
     hyperliquidRisk: hyperliquidMissionRiskSchema.nullable().optional(),
   })
   .strict()

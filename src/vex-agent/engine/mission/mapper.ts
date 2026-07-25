@@ -30,6 +30,8 @@ export function missionToDraft(m: Mission): MissionDraft {
     deadline: constraints?.deadline as string ?? null,
     durationMinutes:
       typeof constraints?.durationMinutes === "number" ? constraints.durationMinutes : null,
+    costCapUsd:
+      typeof constraints?.costCapUsd === "number" ? constraints.costCapUsd : null,
     hyperliquidRisk: risk.success ? risk.data : null,
   };
 }
@@ -62,12 +64,16 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
   if (
     draft.deadline !== undefined ||
     draft.durationMinutes !== undefined ||
+    draft.costCapUsd !== undefined ||
     draft.hyperliquidRisk !== undefined
   ) {
     row.constraints_json = {
       ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
       ...(draft.durationMinutes !== undefined
         ? { durationMinutes: draft.durationMinutes }
+        : {}),
+      ...(draft.costCapUsd !== undefined
+        ? { costCapUsd: draft.costCapUsd }
         : {}),
       ...(draft.hyperliquidRisk !== undefined ? { hyperliquidRisk: draft.hyperliquidRisk } : {}),
     };
@@ -132,6 +138,7 @@ export function draftToPromptContext(m: Mission): string {
   }
   if (draft.deadline) lines.push(`**Deadline:** ${draft.deadline}`);
   if (draft.durationMinutes) lines.push(`**Hard time-box:** ${draft.durationMinutes} min (run auto-stops at start + this)`);
+  if (draft.costCapUsd) lines.push(`**Inference cost cap:** $${draft.costCapUsd} (run auto-stops when LLM spend hits this; separate from trading capital)`);
   if (draft.hyperliquidRisk) {
     lines.push(`**Hyperliquid risk:** ${draft.hyperliquidRisk.leverageCap}x leverage cap, ${draft.hyperliquidRisk.perOrderNotionalPct}% per order, ${draft.hyperliquidRisk.totalNotionalPct}% total`);
   }
