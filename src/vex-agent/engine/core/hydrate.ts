@@ -71,6 +71,40 @@ const FrozenAllowedChainsSchema = z
   })
   .passthrough();
 
+// Canonical DexScreener chain slugs for the common NON-local chains, keyed by
+// the alias / name / numeric-id forms a mission contract might carry. The
+// local-chain registry (robinhood / 4663) is consulted first; this table covers
+// the major chains DexScreener indexes so an accepted alias (`eth`), name
+// (`Ethereum`), or numeric id (`1`, `8453`) resolves to the slug DexScreener
+// actually uses (`ethereum`, `base`, …) instead of an invalid filter value.
+// Discovery-hint only: a chain we cannot confidently resolve yields null
+// (unscoped) rather than a guessed slug that would return empty results while
+// the mission prompt forbids an unscoped retry.
+const DEXSCREENER_SLUG_BY_KEY: Readonly<Record<string, string>> = {
+  ethereum: "ethereum", eth: "ethereum", "1": "ethereum",
+  base: "base", "8453": "base",
+  solana: "solana", sol: "solana",
+  bsc: "bsc", bnb: "bsc", "56": "bsc",
+  arbitrum: "arbitrum", arb: "arbitrum", "42161": "arbitrum",
+  polygon: "polygon", poly: "polygon", matic: "polygon", "137": "polygon",
+  avalanche: "avalanche", avax: "avalanche", "43114": "avalanche",
+  optimism: "optimism", op: "optimism", "10": "optimism",
+};
+
+/** Map one chain key (alias/name/numeric id) to a canonical DexScreener slug, or null. */
+function chainKeyToDexscreenerSlug(chainKey: string): string | null {
+  const normalized = chainKey.trim().toLowerCase();
+  if (normalized.length === 0) return null;
+  // Local chains (robinhood / robinhoodchain / 4663) → registry slug.
+  const localId = resolveLocalChainId(normalized);
+  if (localId !== undefined) {
+    const cfg = getLocalChain(localId);
+    if (cfg) return cfg.dexscreenerSlug;
+  }
+  // Common non-local chains by alias / name / numeric id. Unknown → null.
+  return DEXSCREENER_SLUG_BY_KEY[normalized] ?? null;
+}
+
 /**
  * Resolve the mission's operating chain to a canonical DexScreener slug for
  * DISCOVERY scoping (Signal Radar + boosts/profiles/attention chain filters).
@@ -78,34 +112,33 @@ const FrozenAllowedChainsSchema = z
  * only picks which chain discovery reads focus on.
  *
  * Source of truth is the ACTIVE run's frozen contract snapshot
- * (`draft.allowedChains[0]`), falling back to the live mission row. The raw
- * chain key (alias / name / numeric id) is normalized through the local-chain
- * registry to its `dexscreenerSlug` (e.g. `robinhood`, `robinhoodchain`, `4663`
- * → `"robinhood"`); an unknown key degrades to its lowercased raw form (matches
- * DexScreener's own slug for the common chains: ethereum/base/solana/…). Null
- * when there is no mission / no allowed chain → discovery stays cross-chain.
+ * (`draft.allowedChains`), falling back to the live mission row. The chain key
+ * (alias / name / numeric id) is normalized to a DexScreener slug via
+ * {@link chainKeyToDexscreenerSlug} (`robinhood`/`4663` → `"robinhood"`,
+ * `eth`/`1` → `"ethereum"`, …); a chain we cannot confidently resolve → null.
+ *
+ * Scopes ONLY when the contract authorizes EXACTLY ONE chain. A multi-chain
+ * contract (`allowedChains` is set-semantic) returns null so discovery spans
+ * every allowed chain instead of silently excluding all but the first — the
+ * contract's chain ENFORCEMENT is unchanged. Null → discovery stays cross-chain.
  */
 export function resolveMissionChain(
   mission: missionsRepo.Mission | null,
   activeRun: missionRunsRepo.MissionRun | null,
 ): string | null {
-  let chainKey: string | undefined;
+  let chains: readonly string[] | undefined;
   if (activeRun) {
     const frozen = (activeRun.contractSnapshotJson as { frozenMission?: unknown } | null)
       ?.frozenMission;
     const parsed = FrozenAllowedChainsSchema.safeParse(frozen ?? null);
-    if (parsed.success) chainKey = parsed.data.draft?.allowedChains?.[0];
+    const frozenChains = parsed.success ? parsed.data.draft?.allowedChains : undefined;
+    if (frozenChains && frozenChains.length > 0) chains = frozenChains;
   }
-  // Fall back to the live mission row when the snapshot has no chain (or no run).
-  if (!chainKey) chainKey = mission?.allowedChains?.[0];
-  if (!chainKey || chainKey.trim().length === 0) return null;
-
-  const chainId = resolveLocalChainId(chainKey);
-  if (chainId !== undefined) {
-    const cfg = getLocalChain(chainId);
-    if (cfg) return cfg.dexscreenerSlug;
-  }
-  return chainKey.trim().toLowerCase();
+  // Fall back to the live mission row when the snapshot has no chains (or no run).
+  if (!chains) chains = mission?.allowedChains;
+  // Only single-chain contracts get a discovery scope; multi-chain → unscoped.
+  if (!chains || chains.length !== 1) return null;
+  return chainKeyToDexscreenerSlug(chains[0]!);
 }
 
 /**

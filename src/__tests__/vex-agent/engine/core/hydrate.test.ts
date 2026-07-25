@@ -155,10 +155,19 @@ describe("resolveMissionChain (discovery chain scope)", () => {
     expect(resolveMissionChain(null, null)).toBeNull();
   });
 
-  it("resolves a robinhood alias/id from the frozen snapshot to the dexscreener slug", () => {
+  it("resolves a robinhood alias/id/name from the frozen snapshot to the dexscreener slug", () => {
     expect(resolveMissionChain(mission(["ignored"]), run(["robinhood"]))).toBe("robinhood");
     expect(resolveMissionChain(mission(["ignored"]), run(["4663"]))).toBe("robinhood");
     expect(resolveMissionChain(mission(["ignored"]), run(["Robinhood Chain"]))).toBe("robinhood");
+  });
+
+  it("normalizes common non-local aliases / names / numeric ids to their DexScreener slug", () => {
+    expect(resolveMissionChain(mission(["eth"]), null)).toBe("ethereum");
+    expect(resolveMissionChain(mission(["1"]), null)).toBe("ethereum");
+    expect(resolveMissionChain(mission(["Ethereum"]), null)).toBe("ethereum");
+    expect(resolveMissionChain(mission(["8453"]), null)).toBe("base");
+    expect(resolveMissionChain(mission(["SOLANA"]), null)).toBe("solana");
+    expect(resolveMissionChain(mission(["arb"]), null)).toBe("arbitrum");
   });
 
   it("prefers the frozen snapshot over the live mission row", () => {
@@ -170,9 +179,13 @@ describe("resolveMissionChain (discovery chain scope)", () => {
     expect(resolveMissionChain(mission(["robinhood"]), null)).toBe("robinhood");
   });
 
-  it("passes an unknown chain through as its lowercased raw slug (matches dexscreener for common chains)", () => {
-    expect(resolveMissionChain(mission(["Base"]), null)).toBe("base");
-    expect(resolveMissionChain(mission(["SOLANA"]), null)).toBe("solana");
+  it("does NOT scope a multi-chain contract (spans all allowed chains → null)", () => {
+    expect(resolveMissionChain(mission(["ethereum", "base"]), null)).toBeNull();
+    expect(resolveMissionChain(mission(["x"]), run(["robinhood", "base"]))).toBeNull();
+  });
+
+  it("returns null for a chain it cannot confidently resolve (unscoped, never a guessed filter)", () => {
+    expect(resolveMissionChain(mission(["zzz-unknown-chain"]), null)).toBeNull();
   });
 
   it("returns null for an empty allowed-chains list", () => {
