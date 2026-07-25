@@ -54,6 +54,7 @@ export function buildMissionRunPrompt(
   lines.push("- Use DexScreener, Jupiter/Solana, wallet, portfolio, or web research only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
   lines.push("- For fresh/newly-launched Solana tokens, prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
   lines.push("- Log significant decisions with rationale for audit trail");
+  lines.push("- MANDATORY: every swap.buy / swap.sell (kyberswap or uniswap) MUST pass the `rationale` param — one sentence with the signal/thesis and why now (for an exit, what changed). It is recorded in the Decision Journal; a call without it is REJECTED as a missing required parameter, so retry immediately WITH a rationale. Never trade silently.");
   lines.push("");
 
   lines.push("## Workflow");

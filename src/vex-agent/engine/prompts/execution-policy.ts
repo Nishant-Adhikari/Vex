@@ -84,6 +84,7 @@ You are in mission mode (goal-driven loop) with full permission. Rules:
   policy, and foreign egress always requires approval.
 - Stop only when the frozen mission contract allows it.
 - Log significant decisions and their rationale.
+- Every swap.buy / swap.sell MUST carry the \`rationale\` param (the signal/thesis + why now); the runtime rejects a swap without it — retry immediately WITH one.
 - If you encounter an error, diagnose and adapt — don't stop unless the
   error is unrecoverable.
 - Full permission does NOT waive the \`# Safety Contract\` — every mutating
