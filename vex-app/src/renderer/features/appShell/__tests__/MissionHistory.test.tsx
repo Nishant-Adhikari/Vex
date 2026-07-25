@@ -115,3 +115,43 @@ describe("MissionHistory — PnL denomination", () => {
     expect(screen.queryByText("$NaN")).toBeNull();
   });
 });
+
+describe("MissionHistory — row opens the mission's session", () => {
+  it("clicking a row jumps to that mission's session view", () => {
+    mockResults([result({ sessionId: "session-42", seqNo: 7 })]);
+    render(<MissionHistory />);
+
+    const row = screen.getByRole("button", { name: /Open mission #7/ });
+    fireEvent.click(row);
+
+    const state = useUiStore.getState();
+    expect(state.activeSessionId).toBe("session-42");
+    // Force back to the session view so MissionControls (and its
+    // MissionSummaryCard retrospective) mounts, even from the ledger.
+    expect(state.appShellView).toBe("session");
+  });
+
+  it("pressing Enter on a focused row navigates identically", () => {
+    mockResults([result({ sessionId: "session-99", seqNo: 3 })]);
+    render(<MissionHistory />);
+
+    const row = screen.getByRole("button", { name: /Open mission #3/ });
+    fireEvent.keyDown(row, { key: "Enter" });
+
+    const state = useUiStore.getState();
+    expect(state.activeSessionId).toBe("session-99");
+    expect(state.appShellView).toBe("session");
+  });
+
+  it("pressing Space on a focused row navigates identically", () => {
+    mockResults([result({ sessionId: "session-100", seqNo: 4 })]);
+    render(<MissionHistory />);
+
+    const row = screen.getByRole("button", { name: /Open mission #4/ });
+    fireEvent.keyDown(row, { key: " " });
+
+    const state = useUiStore.getState();
+    expect(state.activeSessionId).toBe("session-100");
+    expect(state.appShellView).toBe("session");
+  });
+});

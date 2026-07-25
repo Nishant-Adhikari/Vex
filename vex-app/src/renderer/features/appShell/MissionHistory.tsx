@@ -255,8 +255,34 @@ function ResultRow({
   const fellBack = isUsdFallback(currency, result.pnlEth, result.ethPriceUsdEnd);
   const pnlTitle = fellBack ? "No close price recorded — showing ETH" : undefined;
 
+  // The row is a link into its mission's session: opening the session mounts
+  // MissionControls, whose finalized-result branch renders MissionSummaryCard
+  // (the retrospective/lessons + trade rationale generate lazily on mount).
+  // Mirrors the sidebar (SessionsList.handleSelect) and the Active Missions bar:
+  // set the active session, then force the panel back to the session view.
+  const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const setAppShellView = useUiStore((s) => s.setAppShellView);
+  const open = (): void => {
+    setActiveSessionId(result.sessionId);
+    setAppShellView("session");
+  };
+
   return (
-    <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
+    <tr
+      role="button"
+      tabIndex={0}
+      aria-label={`Open mission #${result.seqNo}${
+        result.goalSnippet ? ` — ${result.goalSnippet}` : ""
+      }`}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
+      className="cursor-pointer border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-inset"
+    >
       <td className="py-2.5 pr-3 font-mono tabular-nums text-[var(--vex-text-2)]">
         #{result.seqNo}
       </td>
