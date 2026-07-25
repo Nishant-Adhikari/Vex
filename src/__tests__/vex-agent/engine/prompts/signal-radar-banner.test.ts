@@ -3,8 +3,11 @@
  * into a turn-state prompt block the mission agent reads. No DB/network here.
  */
 
-import { describe, it, expect } from "vitest";
-import { renderSignalRadar } from "@vex-agent/engine/prompts/signal-radar-banner.js";
+import { describe, it, expect, vi } from "vitest";
+import {
+  renderSignalRadar,
+  buildSignalRadarBanner,
+} from "@vex-agent/engine/prompts/signal-radar-banner.js";
 import type { SignalRow } from "@vex-agent/db/repos/signals.js";
 
 function row(overrides: Partial<SignalRow> = {}): SignalRow {
@@ -59,5 +62,21 @@ describe("renderSignalRadar", () => {
     ]);
     expect(out.indexOf("1.")).toBeLessThan(out.indexOf("2."));
     expect(out.indexOf("AAA")).toBeLessThan(out.indexOf("BBB"));
+  });
+});
+
+describe("buildSignalRadarBanner — chain scoping", () => {
+  it("passes the mission chain through to the DB read (scoped to that chain)", async () => {
+    const listRecent = vi.fn().mockResolvedValue([row({ chain: "robinhood" })]);
+    await buildSignalRadarBanner({ chain: "robinhood", deps: { listRecent } });
+    expect(listRecent).toHaveBeenCalledTimes(1);
+    expect(listRecent.mock.calls[0]![0]).toMatchObject({ chain: "robinhood" });
+  });
+
+  it("leaves the read unscoped when no chain is given (fail-soft prior behavior)", async () => {
+    const listRecent = vi.fn().mockResolvedValue([row()]);
+    await buildSignalRadarBanner({ deps: { listRecent } });
+    expect(listRecent).toHaveBeenCalledTimes(1);
+    expect(listRecent.mock.calls[0]![0].chain).toBeUndefined();
   });
 });

@@ -171,4 +171,34 @@ describe("mission state prompts", () => {
     expect(prompt).not.toContain("blocked by the runtime gate");
   });
 
+  it("FIND guidance steers discovery to CHAIN-SCOPED sources and forbids a bare name search", () => {
+    const prompt = buildMissionRunPrompt(
+      makeMissionContext({ missionRunId: "run-1", missionChain: "robinhood" }),
+      { missionPromptContext: "# Mission: PONS Scalper", iterationCount: 0 },
+    );
+
+    // A dedicated chain-scoped discovery section that names the mission chain.
+    expect(prompt).toContain("Finding candidates (chain-scoped discovery)");
+    expect(prompt).toContain("`robinhood` chain");
+    // PRIMARY sources = chain-scoped Signal Radar + chain-filtered boosts.top / attention.
+    expect(prompt).toContain("SIGNAL RADAR");
+    expect(prompt).toContain("`dexscreener.boosts.top chainId=robinhood`");
+    expect(prompt).toContain("`dexscreener.attention chainId=robinhood`");
+    // search only WITH the chain filter; a bare cross-chain name search is banned.
+    expect(prompt).toContain("`dexscreener.search` is allowed ONLY WITH `chainId=robinhood`");
+    expect(prompt).toContain("NEVER run a bare cross-chain ticker/name search");
+    // Verify the real CA/pool/liquidity before the sellability gate.
+    expect(prompt).toContain("dexscreener.tokenPairs chainId=robinhood");
+  });
+
+  it("FIND guidance degrades to generic chain wording when no mission chain is resolved", () => {
+    const prompt = buildMissionRunPrompt(
+      makeMissionContext({ missionRunId: "run-1" }), // no missionChain
+      { missionPromptContext: "# Mission: X", iterationCount: 0 },
+    );
+    expect(prompt).toContain("Finding candidates (chain-scoped discovery)");
+    expect(prompt).toContain("chainId=<your mission chain>");
+    expect(prompt).toContain("NEVER run a bare cross-chain ticker/name search");
+  });
+
 });

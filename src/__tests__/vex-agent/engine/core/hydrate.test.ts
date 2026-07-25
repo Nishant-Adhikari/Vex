@@ -39,7 +39,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryOne: vi.fn().mockResolvedValue(null),
 }));
 
-const { hydrateEngineSession } = await import("../../../../vex-agent/engine/core/hydrate.js");
+const { hydrateEngineSession, resolveMissionChain } = await import("../../../../vex-agent/engine/core/hydrate.js");
 
 describe("hydrate", () => {
   beforeEach(() => {
@@ -138,5 +138,44 @@ describe("hydrate", () => {
 
     const result = await hydrateEngineSession("session-1");
     expect(result!.context.loadedDocuments.size).toBe(0);
+  });
+});
+
+describe("resolveMissionChain (discovery chain scope)", () => {
+  const mission = (allowedChains: string[]) =>
+    ({ allowedChains } as unknown as Parameters<typeof resolveMissionChain>[0]);
+  const run = (frozenAllowedChains: string[] | undefined) =>
+    ({
+      contractSnapshotJson: frozenAllowedChains
+        ? { frozenMission: { draft: { allowedChains: frozenAllowedChains } } }
+        : {},
+    } as unknown as Parameters<typeof resolveMissionChain>[1]);
+
+  it("returns null when there is no mission and no run", () => {
+    expect(resolveMissionChain(null, null)).toBeNull();
+  });
+
+  it("resolves a robinhood alias/id from the frozen snapshot to the dexscreener slug", () => {
+    expect(resolveMissionChain(mission(["ignored"]), run(["robinhood"]))).toBe("robinhood");
+    expect(resolveMissionChain(mission(["ignored"]), run(["4663"]))).toBe("robinhood");
+    expect(resolveMissionChain(mission(["ignored"]), run(["Robinhood Chain"]))).toBe("robinhood");
+  });
+
+  it("prefers the frozen snapshot over the live mission row", () => {
+    expect(resolveMissionChain(mission(["base"]), run(["robinhood"]))).toBe("robinhood");
+  });
+
+  it("falls back to the live mission row when the snapshot has no chain", () => {
+    expect(resolveMissionChain(mission(["robinhood"]), run(undefined))).toBe("robinhood");
+    expect(resolveMissionChain(mission(["robinhood"]), null)).toBe("robinhood");
+  });
+
+  it("passes an unknown chain through as its lowercased raw slug (matches dexscreener for common chains)", () => {
+    expect(resolveMissionChain(mission(["Base"]), null)).toBe("base");
+    expect(resolveMissionChain(mission(["SOLANA"]), null)).toBe("solana");
+  });
+
+  it("returns null for an empty allowed-chains list", () => {
+    expect(resolveMissionChain(mission([]), null)).toBeNull();
   });
 });
