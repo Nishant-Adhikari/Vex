@@ -42,6 +42,23 @@ function feedUnavailable(source: string): ToolResult {
   return ok({ available: false, source, reason: UNDOCUMENTED_FEED_UNAVAILABLE });
 }
 
+// ── Client-side chain filter ─────────────────────────────────────
+//
+// The boosts / profiles / attention endpoints are cross-chain and expose no
+// server-side chain parameter, but every item carries a per-token `chainId`.
+// A mission scoped to one chain (e.g. `robinhood`) must not evaluate same-name
+// tokens on other chains, so — mirroring `dexscreener.search`'s `chainId`
+// filter — we drop non-matching items HERE, case-insensitively. An absent/blank
+// filter is a no-op (unscoped, prior behavior).
+function filterByChain<T extends { readonly chainId: string }>(
+  items: readonly T[],
+  chainId: string | undefined,
+): readonly T[] {
+  if (!chainId) return items;
+  const want = chainId.toLowerCase();
+  return items.filter((it) => it.chainId.toLowerCase() === want);
+}
+
 // ── Handler map ──────────────────────────────────────────────────
 
 export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
@@ -124,10 +141,11 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
 
   // ── Profiles & attention signals ──────────────────────────────
 
-  "dexscreener.profiles": async () => {
+  "dexscreener.profiles": async (p) => {
+    const chainId = str(p, "chainId");
     const client = getDexScreenerClient();
-    const profiles = await client.getProfiles();
-    return ok({ count: profiles.length, profiles });
+    const profiles = filterByChain(await client.getProfiles(), chainId);
+    return ok({ chainId: chainId || null, count: profiles.length, profiles });
   },
 
   "dexscreener.profiles.recent": async () => {
@@ -141,16 +159,18 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
     }
   },
 
-  "dexscreener.boosts": async () => {
+  "dexscreener.boosts": async (p) => {
+    const chainId = str(p, "chainId");
     const client = getDexScreenerClient();
-    const boosts = await client.getBoosts();
-    return ok({ count: boosts.length, boosts });
+    const boosts = filterByChain(await client.getBoosts(), chainId);
+    return ok({ chainId: chainId || null, count: boosts.length, boosts });
   },
 
-  "dexscreener.boosts.top": async () => {
+  "dexscreener.boosts.top": async (p) => {
+    const chainId = str(p, "chainId");
     const client = getDexScreenerClient();
-    const boosts = await client.getTopBoosts();
-    return ok({ count: boosts.length, boosts });
+    const boosts = filterByChain(await client.getTopBoosts(), chainId);
+    return ok({ chainId: chainId || null, count: boosts.length, boosts });
   },
 
   "dexscreener.communityTakeovers": async () => {
@@ -165,12 +185,15 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
     // (that is `dexscreener.trending`) — it surfaces who is spending on
     // visibility. Default to 20 when the caller omits `limit`.
     const limit = num(p, "limit") ?? 20;
+    const chainId = str(p, "chainId");
     const client = getDexScreenerClient();
 
-    // Fetch profiles and boosts in parallel
+    // Fetch profiles and boosts in parallel, then chain-scope each source BEFORE
+    // the merge so a mission-chain filter (e.g. robinhood) never surfaces
+    // same-name tokens promoted on other chains.
     const [profiles, boosts] = await Promise.all([
-      client.getProfiles(),
-      client.getBoosts(),
+      client.getProfiles().then((r) => filterByChain(r, chainId)),
+      client.getBoosts().then((r) => filterByChain(r, chainId)),
     ]);
 
     // Merge by chainId:tokenAddress
@@ -227,7 +250,7 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
       items = items.slice(0, limit);
     }
 
-    return ok({ count: items.length, items });
+    return ok({ chainId: chainId || null, count: items.length, items });
   },
 
   // ── Metas / narratives (live, undocumented) ───────────────────

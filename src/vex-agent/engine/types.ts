@@ -391,6 +391,17 @@ export interface EngineContext {
   /** Optional hard time-box (minutes) from the mission constraints; the
    * deadline enforcer resolves this → env → 60. */
   missionDurationMinutes?: number | null;
+  /**
+   * The mission's operating chain as a canonical DexScreener slug (e.g.
+   * `"robinhood"`, `"base"`, `"solana"`), resolved once at hydration from the
+   * frozen contract's `allowedChains[0]` (falling back to the live mission).
+   * Used to CHAIN-SCOPE discovery — the Signal Radar banner and the DexScreener
+   * boosts/profiles/attention chain filters — so a PONS/Robinhood mission never
+   * evaluates same-name clones on other chains. Null when there is no mission,
+   * no allowed chain, or the chain cannot be resolved → discovery stays
+   * cross-chain (prior behavior). Never widens permissions; discovery scope only.
+   */
+  missionChain?: string | null;
   isSubagent: boolean;
   /** Per-session selected wallets (id + address), hydrated from the session row. */
   selectedEvmWallet: { id: string; address: string } | null;

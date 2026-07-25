@@ -7,9 +7,12 @@ import { z } from "zod";
 import { CH } from "@shared/ipc/channels.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
+  keepAwakeStateSchema,
   preferencesSchema,
+  type KeepAwakeState,
   type Preferences,
 } from "@shared/schemas/preferences.js";
+import { getKeepAwakeState } from "../agent/keep-awake-worker.js";
 import { hyperliquidSettingsUpdateInputSchema } from "@shared/schemas/hyperliquid.js";
 import { hyperliquidPolicySchema } from "@vex-lib/hyperliquid-policy.js";
 import { preferencesStore } from "../preferences/store.js";
@@ -22,6 +25,12 @@ import { registerHandler } from "./register-handler.js";
 const empty = z.object({}).strict();
 
 const setTelemetryConsentInput = z
+  .object({
+    enabled: z.boolean(),
+  })
+  .strict();
+
+const setKeepAwakeDuringMissionInput = z
   .object({
     enabled: z.boolean(),
   })
@@ -113,6 +122,39 @@ export function registerSettingsHandlers(): Array<() => void> {
         return ok(next);
       },
     })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.setKeepAwakeDuringMission,
+      domain: "settings",
+      inputSchema: setKeepAwakeDuringMissionInput,
+      outputSchema: preferencesSchema,
+      handle: async ({ enabled }): Promise<Result<Preferences>> => {
+        // Persist only; the main keep-awake worker observes preferencesStore and
+        // reconciles the powerSaveBlocker on the resulting change (fork feature).
+        const current = await preferencesStore.load();
+        const next = await preferencesStore.update({
+          ui: { ...current.ui, keepAwakeDuringMission: enabled },
+        });
+        return ok(preferencesSchema.parse(next));
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.getKeepAwakeState,
+      domain: "settings",
+      inputSchema: empty,
+      outputSchema: keepAwakeStateSchema,
+      handle: async (): Promise<Result<KeepAwakeState>> => {
+        // Live main-process worker state (idle blocker + macOS clamshell
+        // override). Read-only; the renderer polls it for the lid-close
+        // indicator + admin-declined note.
+        return ok(keepAwakeStateSchema.parse(getKeepAwakeState()));
+      },
+    }),
   );
 
   return handlers;

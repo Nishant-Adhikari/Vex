@@ -323,6 +323,13 @@ export const CH = {
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
     setHyperliquidPolicy: "vex:settings:setHyperliquidPolicy",
+    // Fork-only: persist the mission-scoped keep-awake toggle. Main's
+    // keep-awake worker reads the value via preferencesStore.subscribe.
+    setKeepAwakeDuringMission: "vex:settings:setKeepAwakeDuringMission",
+    // Fork-only: read the live keep-awake worker state (incl. macOS clamshell
+    // override status) so the renderer can indicate lid-close-active vs
+    // idle-only / admin-declined.
+    getKeepAwakeState: "vex:settings:getKeepAwakeState",
   },
 
   // Updater — user-triggered in-app update flow (M13). `check` may run on

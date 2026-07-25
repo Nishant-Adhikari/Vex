@@ -101,6 +101,22 @@ export function normalizeStopConditionReason(condition: string): UserConfigurabl
   const canonical = condition.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (isUserConfigurableStopReason(canonical)) return canonical;
 
+  // Stop conditions are stored as `"<enum>: <human description>"` (e.g.
+  // "no_viable_opportunity: nothing clears the sellability gate"). The whole-
+  // string canonicalization above folds the ": <description>" into the token
+  // and never matches, so parse the leading enum before the first ":" and, if
+  // it canonicalizes to a valid reason, trust it. This must run before the
+  // prose substring fallback below, which only recognizes free-text phrases.
+  const colonIndex = condition.indexOf(":");
+  if (colonIndex !== -1) {
+    const enumToken = condition
+      .slice(0, colonIndex)
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    if (isUserConfigurableStopReason(enumToken)) return enumToken;
+  }
+
   const text = condition.toLowerCase();
 
   if (

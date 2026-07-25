@@ -26,7 +26,7 @@ import { SignalsButton } from "./SignalsButton.js";
 import { RuntimeLedger } from "./RuntimeLedger.js";
 import { SettingsButton } from "./SettingsButton.js";
 import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
-import { SidebarPositionSummary } from "./market/SidebarPositionSummary.js";
+import { PositionBlock } from "./book/PositionBlock.js";
 import {
   SessionGroups,
   SessionsEmptyPlaceholder,
@@ -37,6 +37,7 @@ import {
 import {
   filterSessionsByMode,
   groupSessions,
+  hideEndedMissions,
   SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
 import { computeVisibleGroups } from "./sessionListLayout.js";
@@ -90,8 +91,13 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
 
   const visibleRows = useMemo(() => {
     if (!query.data?.ok) return [];
-    return filterSessionsByMode(query.data.data, sessionModeFilter);
-  }, [query.data, sessionModeFilter]);
+    const byMode = filterSessionsByMode(query.data.data, sessionModeFilter);
+    // The MISSION tab IS the mission history view — show every run there
+    // (including ended). Every other tab hides ended mission runs from the
+    // rail; the user reads that history in the Missions view instead.
+    if (sessionModeFilter === "mission") return byMode;
+    return hideEndedMissions(byMode, activeSessionId);
+  }, [query.data, sessionModeFilter, activeSessionId]);
 
   const groups = useMemo(() => groupSessions(visibleRows), [visibleRows]);
 
@@ -370,14 +376,24 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         </div>
       ) : null}
 
-      {/* POSITION — the operator's own wallet position summary (total · wallet
-       * count · ETH balance) rides the rail between BROWSE ALL and the footer
-       * registry, replacing the former $VEX price ticker (owner request).
-       * Hidden when the rail is collapsed: the icon-only rail has no room for
-       * the figures. */}
+      {/* POSITION — the full wallet portfolio card (total · wallet + copy
+       * addresses · per-chain / ETH holdings) now lives on the LEFT rail
+       * (owner request: moved off the right MISSION CONTROL panel). It rides
+       * between BROWSE ALL and the footer registry as a persisted-collapse
+       * accordion, scoped to the active session (session Position) or the
+       * global inventory (Portfolio) when none is open — the same dual-scope
+       * `usePortfolioScoped` read the right rail used, no forked data path.
+       * Hidden when the rail is collapsed: the icon-only rail has no room. */}
       {sidebarOpen ? (
-        <div className="border-t border-[var(--vex-line)] px-3 py-3">
-          <SidebarPositionSummary />
+        <div
+          data-vex-area="sidebar-position"
+          className="border-t border-[var(--vex-line)] px-3"
+        >
+          <PositionBlock
+            activeSessionId={activeSessionId}
+            collapsible
+            sectionId="position"
+          />
         </div>
       ) : null}
 

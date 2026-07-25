@@ -233,6 +233,8 @@ describe("uiStore", () => {
       bookOpen: true,
       hlFavorites: [],
       pnlCurrency: "usd",
+      bookSectionCollapsed: {},
+      bookSectionOrder: ["moves", "runtime", "session"],
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialMessage).toBeUndefined();
@@ -320,6 +322,8 @@ describe("uiStore", () => {
       bookOpen: true,
       hlFavorites: [],
       pnlCurrency: "usd",
+      bookSectionCollapsed: {},
+      bookSectionOrder: ["moves", "runtime", "session"],
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();
