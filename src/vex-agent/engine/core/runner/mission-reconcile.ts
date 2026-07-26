@@ -210,6 +210,21 @@ async function countRunOpenPositions(run: MissionRun): Promise<number> {
     );
   }
   const tracked = await getOpen([wallet]);
+
+  // RECONCILE-01 (known limitation): proj_balances and proj_open_positions are
+  // projection tables that refresh on their own sync cycle. The BalanceRow type
+  // does not expose synced_at, so there is no in-process staleness check here.
+  // A lagging sync worker may yield a false-zero openPositions count, leading
+  // the reaper to reap a run that still holds a bag. A future fix should gate on
+  // proj_balances.synced_at (if surfaced via getBalances) or probe chain state
+  // live via readEthBankrollOnChain. Until then this warn fires on every reap
+  // candidate to make the projection dependency visible in logs.
+  logger.warn("engine.mission.reap_positions_from_projection", {
+    runId: run.id,
+    missionId: run.missionId,
+    note: "proj_balances has no staleness metadata exposed here; sync lag may yield false-zero position count",
+  });
+
   return bankroll.openPositions.length + tracked.length;
 }
 
@@ -258,7 +273,35 @@ async function reconcileOne(
       runId: run.id,
       sessionId: run.sessionId,
     });
-    await deps.closeLedger(run.missionId, run.id, run.sessionId);
+
+    // RECONCILE-001: closeLedger is isolated in its own try-catch so a ledger
+    // write failure NEVER causes this function to return "failed" once claim()
+    // has already won. mission_runs is now `stopped`; returning "failed" here
+    // would mis-count the reconcile and mask the true state. Retry once — the
+    // most common cause is a transient DB hiccup. If retry also fails, log with
+    // enough context for manual repair (runId, missionId) and fall through to
+    // return "reconciled": a stranded ledger outcome='running' is recoverable;
+    // leaving mission_runs in limbo is not.
+    try {
+      await deps.closeLedger(run.missionId, run.id, run.sessionId);
+    } catch (ledgerErr) {
+      logger.error("engine.mission.reconcile_ledger_failed", {
+        runId: run.id,
+        missionId: run.missionId,
+        error: ledgerErr instanceof Error ? ledgerErr.message : String(ledgerErr),
+        note: "mission_runs is stopped; ledger outcome='running' stranded — retry once",
+      });
+      try {
+        await deps.closeLedger(run.missionId, run.id, run.sessionId);
+      } catch (retryErr) {
+        logger.error("engine.mission.reconcile_ledger_retry_failed", {
+          runId: run.id,
+          missionId: run.missionId,
+          error: retryErr instanceof Error ? retryErr.message : String(retryErr),
+        });
+        // Fall through — claim is already committed; ledger reconciliation must be manual
+      }
+    }
 
     // Drop the leftover expired lease so a later getState/resume sees a clean
     // session (owner-agnostic, guarded on expiry — never touches a live lease).
