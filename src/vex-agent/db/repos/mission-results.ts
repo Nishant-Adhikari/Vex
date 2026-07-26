@@ -18,6 +18,7 @@
 import type pg from "pg";
 import { query, queryOne, queryOneWith, execute, executeWith, withTransaction } from "../client.js";
 import { nullableJsonb } from "../params.js";
+import logger from "@utils/logger.js";
 
 // `timed_out` is a hard-deadline (time-box) end — a clean, non-error terminal
 // outcome distinct from `failed`. The engine run/mission STATUS stays terminal
@@ -253,8 +254,16 @@ function missionResultsSeqLockKey(walletAddress: string): string {
   return `mission_results_seq:${walletAddress.toLowerCase()}`;
 }
 
-/** Close the ledger row at finalize. No-op if the row was never opened. */
-export async function closeMissionResult(input: CloseMissionResultInput): Promise<void> {
+/**
+ * Close the ledger row at finalize. No-op if the row was never opened.
+ *
+ * LEDGER-01: the WHERE clause includes `AND outcome = 'running'` so a
+ * double-close silently matches 0 rows instead of overwriting ended_at,
+ * pnl_eth, and duration_s with stale values. Returns true when a row was
+ * actually closed; false when the row was already in a terminal outcome
+ * (double-close detected — logged as a warning for operator visibility).
+ */
+export async function closeMissionResult(input: CloseMissionResultInput): Promise<boolean> {
   const sql = `
     UPDATE mission_results SET
       outcome = $2,
@@ -272,8 +281,8 @@ export async function closeMissionResult(input: CloseMissionResultInput): Promis
       vetoes = $12,
       open_positions_json = $13,
       updated_at = NOW()
-    WHERE mission_run_id = $1`;
-  await execute(sql, [
+    WHERE mission_run_id = $1 AND outcome = 'running'`;
+  const rowCount = await execute(sql, [
     input.missionRunId,
     input.outcome,
     input.stopReason,
@@ -291,6 +300,17 @@ export async function closeMissionResult(input: CloseMissionResultInput): Promis
     // finalize — mission finalization must never fail on bankroll accounting.
     nullableJsonb(input.openPositions ?? null),
   ]);
+  if (rowCount === 0) {
+    // Row was already in a terminal outcome (double-close) or was never opened.
+    // Log a warning so operators can spot repeated close calls in the logs.
+    logger.warn("mission.results.close_noop_already_terminal", {
+      missionRunId: input.missionRunId,
+      outcome: input.outcome,
+      note: "mission_results row was not in outcome='running'; close had no effect (idempotent)",
+    });
+    return false;
+  }
+  return true;
 }
 
 /** Per-wallet mission history, newest first. */
