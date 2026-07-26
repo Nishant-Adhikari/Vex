@@ -181,7 +181,7 @@ export function useRenewableMissionSource(
 function missionResultsOptions(walletAddress: string) {
   return queryOptions({
     queryKey: missionKeys.results(walletAddress),
-    queryFn: () => window.vex.mission.listResults({ walletAddress }),
+    queryFn: () => window.vex.mission.listResults({ walletAddress, limit: 500 }),
     staleTime: STALE_MS,
     enabled: walletAddress.length > 0,
   });

@@ -18,8 +18,8 @@
 
 import { z } from "zod";
 
-const MAX_RESULTS_LIMIT = 100;
-const DEFAULT_RESULTS_LIMIT = 50;
+const MAX_RESULTS_LIMIT = 500;
+const DEFAULT_RESULTS_LIMIT = 500;
 
 /**
  * Mirrors `mission_results.outcome` (migrations 041 + 047) — the RAW run-level
@@ -68,7 +68,7 @@ export const missionResultDtoSchema = z
      * the finalize path stored no summary; never fabricated in the read layer.
      */
     summary: z.string().nullable(),
-    openPositionsCount: z.number().int().nonnegative(),
+    openPositionsCount: z.number().int().nonnegative().nullable(),
     /**
      * True for a SIMULATOR (paper-trading) run — the full agent loop ran but
      * every swap was paper-filled and no transaction was broadcast. Powers the
