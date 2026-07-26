@@ -63,6 +63,14 @@ export function createSelfHealDeps(): SelfHealDeps {
       loopWakeRepo.cancelForSession(sessionId, "self_heal_wake_stall_rearm"),
     finalizeStalledWake: (runId, summary, evidence) =>
       missionRunsRepo.markPausedWakeFailed(runId, { summary, evidence }),
+    // OV3-NO-LIQUIDATION fix: flatten open positions before finalizing a
+    // stalled paused_wake run so the mission's tokens are sold, not stranded.
+    flattenStalledWakePositions: async (args) => {
+      const { flattenInterruptedRunPositions } = await import(
+        "@vex-agent/engine/core/runner/mission-liquidate-hook.js"
+      );
+      await flattenInterruptedRunPositions(args);
+    },
   };
 }
 
