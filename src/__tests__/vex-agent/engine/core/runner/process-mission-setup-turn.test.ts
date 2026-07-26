@@ -435,7 +435,7 @@ describe("runner", () => {
         missionTokenBudget?: number | null;
         missionTokenSince?: string | null;
       };
-      expect(loopConfig.missionTokenBudget).toBe(500_000); // default, env unset
+      expect(loopConfig.missionTokenBudget).toBe(9_000_000); // default: 60 min × 150 000 tok/min, env unset
       // Setup is the first phase — no baseline cutoff, so the guard sums the
       // whole session (= cumulative setup spend across ALL setup turns), not
       // just the current turn.

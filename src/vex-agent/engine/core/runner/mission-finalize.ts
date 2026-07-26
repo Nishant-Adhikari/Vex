@@ -96,7 +96,6 @@ export async function closeRunnerLostFinalize(
   // state. This prevents the orphan reconciler from overwriting a `completed`
   // or `failed` mission that was fully committed before the process was killed.
   await missionsRepo.setStatusIfNotTerminal(missionId, "cancelled");
-  await emitFinalizeControlState(sessionId, runId);
   await captureMissionFinal({
     missionId,
     runId,
@@ -104,6 +103,7 @@ export async function closeRunnerLostFinalize(
     outcome: "stopped",
     stopReason: "runner_lost",
   });
+  await emitFinalizeControlState(sessionId, runId);
 }
 
 /**
@@ -122,7 +122,6 @@ export async function closeReapedErrorFinalize(
   sessionId: string,
 ): Promise<void> {
   await missionsRepo.setStatus(missionId, "failed");
-  await emitFinalizeControlState(sessionId, runId);
   await captureMissionFinal({
     missionId,
     runId,
@@ -130,6 +129,7 @@ export async function closeReapedErrorFinalize(
     outcome: "failed",
     stopReason: "reaped_stale_error",
   });
+  await emitFinalizeControlState(sessionId, runId);
 }
 
 export async function finalizeMissionRunStatus(
@@ -172,8 +172,8 @@ export async function finalizeMissionRunStatus(
       // exactly the timing window issue #41 needs closed at every write
       // site, not just the first one.
       const reconciled = await reconcileDraftReadiness(missionId);
-      await emitFinalizeControlState(sessionId, runId);
       await captureMissionFinal({ missionId, runId, sessionId, outcome: "stopped", stopReason });
+      await emitFinalizeControlState(sessionId, runId);
       return reconciled.promoted ? "ready" : "draft";
     }
 
@@ -194,8 +194,8 @@ export async function finalizeMissionRunStatus(
     // silently overwrite a `completed` mission as `cancelled`.
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     await missionsRepo.setStatus(missionId, status);
-    await emitFinalizeControlState(sessionId, runId);
     await captureMissionFinal({ missionId, runId, sessionId, outcome, stopReason });
+    await emitFinalizeControlState(sessionId, runId);
     return status;
   }
 
@@ -222,8 +222,8 @@ export async function finalizeMissionRunStatus(
     // reconciler and overwrite a terminal mission status.
     await missionRunsRepo.updateStatus(runId, "failed", stopReason);
     await missionsRepo.setStatus(missionId, "failed");
-    await emitFinalizeControlState(sessionId, runId);
     await captureMissionFinal({ missionId, runId, sessionId, outcome: "failed", stopReason });
+    await emitFinalizeControlState(sessionId, runId);
     // Phase 2 BUG-REPORTING emit (puzzle 03): terminal `system_error`
     // is a hard failure surface — record the mission state. Fail-
     // closed so a sink outage cannot mask the terminal flip.

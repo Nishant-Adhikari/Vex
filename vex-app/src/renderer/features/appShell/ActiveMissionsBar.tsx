@@ -143,7 +143,7 @@ function MissionChip({
       >
         {style.word}
       </span>
-      {bags > 0 ? (
+      {bags !== null && bags > 0 ? (
         <span
           className="shrink-0 font-mono text-[10px] text-[var(--color-warning)]"
           title={`${bags} open position${bags === 1 ? "" : "s"}`}
