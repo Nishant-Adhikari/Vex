@@ -79,6 +79,7 @@ describe("finalizeMissionRunStatus — runner_lost", () => {
       { summary: "interrupted" },
     );
     expect(mockSetStatusIfNotTerminal).toHaveBeenCalledWith("mission-1", "cancelled");
+    expect(mockSetMissionStatus).not.toHaveBeenCalled();
     expect(mockCaptureMissionFinal).toHaveBeenCalledTimes(1);
     const arg = mockCaptureMissionFinal.mock.calls[0]![0] as {
       outcome: string;

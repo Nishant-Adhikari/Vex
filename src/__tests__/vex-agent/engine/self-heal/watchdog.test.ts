@@ -85,6 +85,7 @@ interface Harness {
   enqueued: Parameters<SelfHealDeps["enqueueWake"]>[0][];
   cancelled: string[];
   finalized: string[];
+  flattened: string[];
   counter: number;
   providerReady: boolean;
 }
@@ -98,6 +99,7 @@ function harness(over: Partial<SelfHealDeps> = {}): Harness {
     enqueued: [],
     cancelled: [],
     finalized: [],
+    flattened: [],
     counter: 0,
     providerReady: true,
     deps: undefined as unknown as SelfHealDeps,
@@ -129,10 +131,12 @@ function harness(over: Partial<SelfHealDeps> = {}): Harness {
       h.cancelled.push(sessionId);
       return 1;
     },
-    flattenStalledWakePositions: vi.fn().mockResolvedValue(undefined),
     finalizeStalledWake: async (runId) => {
       h.finalized.push(runId);
       return true;
+    },
+    flattenStalledWakePositions: async ({ runId }) => {
+      h.flattened.push(runId);
     },
     ...over,
   };
