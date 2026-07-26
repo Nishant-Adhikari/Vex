@@ -12,6 +12,8 @@
  * further to the SDK-expected enum set.
  */
 
+import { getAddress } from "viem";
+import type { Address } from "viem";
 import type { ToolResult } from "../types.js";
 
 export { enumField } from "../internal/types.js";
@@ -108,10 +110,29 @@ export function numArray(p: Record<string, unknown>, k: string): number[] | unde
   return arr.length > 0 ? arr : undefined;
 }
 
-// ── Native gas reserve (future) ─────────────────────────────────
-// TODO: Runtime gas reserve backstop for native-token spends.
-// Currently enforced via prompt only (DeFi Safety Rules in tool-usage.ts).
-// If prompt-level guidance proves insufficient, add safeNativeAmount()
-// here that deducts ~10% reserve when spending >90% of native balance.
-// Requires moving getKyberEvmClients() before route quote in executeKyberSwap()
-// so publicClient.getBalance() is available before amountIn is used.
+// ── Native gas reserve ───────────────────────────────────────────
+
+/** ETH to keep as gas reserve when the agent wants to spend native. */
+export const NATIVE_GAS_RESERVE_ETH = 0.005;
+const NATIVE_GAS_RESERVE_WEI = BigInt(Math.round(NATIVE_GAS_RESERVE_ETH * 1e18));
+
+/**
+ * Cap a native-token amountIn to leave NATIVE_GAS_RESERVE_ETH for future
+ * transactions (forced exit sells, gas for on-chain ops). Returns the safe
+ * amount (capped if needed), or the original amount if the balance cannot be
+ * read (fail-soft: prompt-level guard still applies in that case).
+ */
+export async function capNativeAmountForGas(
+  publicClient: { getBalance: (args: { address: Address }) => Promise<bigint> },
+  walletAddress: string,
+  requestedWei: bigint,
+): Promise<bigint> {
+  try {
+    const balance = await publicClient.getBalance({ address: getAddress(walletAddress) });
+    const safeMax = balance > NATIVE_GAS_RESERVE_WEI ? balance - NATIVE_GAS_RESERVE_WEI : 0n;
+    return requestedWei > safeMax ? safeMax : requestedWei;
+  } catch {
+    // Can't read balance — return the original amount; prompt-level guard applies.
+    return requestedWei;
+  }
+}
