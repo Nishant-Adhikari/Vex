@@ -142,7 +142,7 @@ describe("useControlStateLiveSync", () => {
     expect(hasKey(spy, ["mission", "diff", SESSION_A])).toBe(true);
   });
 
-  it("ignores a foreign-session event", () => {
+  it("invalidates global results list but ignores session-specific keys for a foreign-session event", () => {
     const client = freshClient();
     const spy = vi.spyOn(client, "invalidateQueries");
     renderHook(() => useControlStateLiveSync(SESSION_A), {
@@ -151,7 +151,12 @@ describe("useControlStateLiveSync", () => {
 
     controlCb?.(controlEvent(SESSION_B));
 
-    expect(spy).not.toHaveBeenCalled();
+    // BAR-004: global mission results list IS invalidated on any event (background
+    // session finalizations must update the history list regardless of active session).
+    expect(hasKey(spy, ["mission", "results"])).toBe(true);
+    // Session-specific queries for SESSION_A are NOT touched by SESSION_B's event.
+    expect(hasKey(spy, runtimeKeys.state(SESSION_A))).toBe(false);
+    expect(hasKey(spy, approvalsKeys.pending(SESSION_A))).toBe(false);
   });
 
   it("runs the 30s fallback invalidation for runtime state only", () => {
