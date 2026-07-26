@@ -37,7 +37,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
-import { str, num, ok, fail, rationale } from "../../handler-helpers.js";
+import { str, num, ok, fail, rationale, capNativeAmountForGas } from "../../handler-helpers.js";
 import { paperFillSwap } from "@vex-agent/sim/swap-sim.js";
 import type { SimSwapFill } from "@vex-agent/sim/paper-fill.js";
 
@@ -289,7 +289,20 @@ async function executeUniswapSwap(
       'amountIn "max" / sellFraction is temporarily disabled pending prequote-gate binding (money-safety). Pass an explicit numeric amountIn with a fresh matching quote.',
     );
   }
-  const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+  let amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+
+  // Gas reserve cap: when spending native, trim amountIn so at least
+  // NATIVE_GAS_RESERVE_ETH remains for future transactions (forced exits, gas).
+  // Fail-soft: if the address can't be resolved, proceed with the original amount.
+  if (tokenIn.isNative) {
+    const gasProbeClient = getUniswapPublicClient(deployment);
+    try {
+      const walletAddress = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
+      amountIn = await capNativeAmountForGas(gasProbeClient, walletAddress, amountIn);
+    } catch {
+      // Address unavailable (e.g. no wallet selected) — proceed; prompt-level guard applies.
+    }
+  }
 
   // Economic direction for RECORDING/reporting — derived from the native leg,
   // not the tool name (`side`). `side` still drives routing/execution below.
@@ -317,7 +330,7 @@ async function executeUniswapSwap(
   // route means every sell reverts (honeypot) — and probe the fee-on-transfer
   // signal. Read-only + keyless, and BEFORE signer resolution so no key is
   // decrypted for a doomed buy. Sells and native-out swaps are exits already.
-  if (side === "buy" && !tokenOut.isNative) {
+  if (economicSide === "buy" && !tokenOut.isNative) {
     const probeClient = getUniswapPublicClient(deployment);
     const [sellBack, fotSuspected] = await Promise.all([
       quoteBestRoute(probeClient, {
