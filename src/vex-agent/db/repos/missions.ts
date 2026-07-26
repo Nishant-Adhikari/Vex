@@ -184,6 +184,23 @@ export async function setStatus(
   }
 }
 
+/**
+ * CAS-style status update: only writes `status` if the mission is NOT already
+ * in a terminal state (`completed` or `failed`). Used by
+ * `closeRunnerLostFinalize` so the orphan reconciler cannot overwrite a
+ * winning `completed` mission as `cancelled` when a crash occurred between
+ * the two DB writes in `finalizeMissionRunStatus`.
+ */
+export async function setStatusIfNotTerminal(
+  id: string,
+  status: string,
+): Promise<void> {
+  await execute(
+    "UPDATE missions SET status = $1, updated_at = NOW() WHERE id = $2 AND status NOT IN ('completed', 'failed')",
+    [status, id],
+  );
+}
+
 export async function setApprovedAt(
   id: string,
   client?: PoolClient,

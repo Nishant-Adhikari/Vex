@@ -10,6 +10,7 @@ import { getKyberCommonClient } from "@tools/kyberswap/common/client.js";
 import { getKyberChains, resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
 import {
   getKyberEvmClients,
+  getKyberPublicClient,
   ensureKyberAllowance,
   sendKyberTransaction,
   verifyRouterAddress,
@@ -29,13 +30,13 @@ import logger from "@utils/logger.js";
 import { isRecord } from "@utils/validation-helpers.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
-import { resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
-import { str, num, ok, fail, rationale } from "../../handler-helpers.js";
+import { str, num, ok, fail, rationale, capNativeAmountForGas } from "../../handler-helpers.js";
 import { paperFillSwap } from "@vex-agent/sim/swap-sim.js";
 import type { SimSwapFill } from "@vex-agent/sim/paper-fill.js";
 
@@ -217,6 +218,13 @@ export function resolveRecordedTradeSide(
 
 // ── Shared swap execution (sell + buy use same routing, differ in trade_side) ──
 
+/**
+ * Sell-tax threshold above which a KyberSwap buy is vetoed. A token with a
+ * sell tax above this level cannot be exited profitably enough to justify the
+ * risk. Tokens at or below this threshold trigger a warn-only advisory.
+ */
+const FOT_VETO_TAX_THRESHOLD = 20; // percent
+
 async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell", context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
@@ -253,12 +261,30 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
     try {
       const outCheck = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, tokenOut.address);
       if (outCheck.isHoneypot) return fail(`Token ${tokenOut.symbol} (${tokenOut.address}) flagged as honeypot. Aborting swap.`);
-      if (outCheck.isFOT && outCheck.tax > 0) logger.warn("kyberswap.swap.fot_warning", { token: tokenOut.symbol, address: tokenOut.address, tax: outCheck.tax });
+      if (outCheck.isFOT && outCheck.tax > 0) {
+        if (outCheck.tax > FOT_VETO_TAX_THRESHOLD) {
+          return fail(`Token ${tokenOut.symbol} has ${outCheck.tax}% sell tax (FoT). Buy vetoed — would lose too much on exit.`);
+        }
+        logger.warn("kyberswap.swap.fot_warning", { token: tokenOut.symbol, address: tokenOut.address, tax: outCheck.tax });
+      }
     } catch (err) {
       logger.warn("kyberswap.swap.safety_check_failed", { address: tokenOut.address, reason: classifySafetyCheckFailure(err) });
     }
   }
-  const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+  let amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+
+  // Gas reserve cap: when spending native, trim amountIn so at least
+  // NATIVE_GAS_RESERVE_ETH remains for future transactions (forced exits, gas).
+  // Fail-soft: if the address can't be resolved, proceed with the original amount.
+  if (tokenIn.isNative) {
+    const gasProbeClient = getKyberPublicClient(slug);
+    try {
+      const walletAddress = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
+      amountIn = await capNativeAmountForGas(gasProbeClient, walletAddress, amountIn);
+    } catch {
+      // Address unavailable — proceed; prompt-level guard applies.
+    }
+  }
 
   const routeResp = await getKyberAggregatorClient().getRoute(slug, {
     tokenIn: tokenIn.address,
@@ -276,6 +302,28 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
   const tokenInIsNative = isEconomicallyNativeLeg(slug, tokenIn);
   const tokenOutIsNative = isEconomicallyNativeLeg(slug, tokenOut);
   const economicSide = resolveRecordedTradeSide(slug, tokenIn, tokenOut, side);
+
+  // Exit-safety sellback probe (buys only): before spending ETH on a token,
+  // verify a reverse route (token→native) exists on-chain. A missing route
+  // means every sell reverts (honeypot). Read-only; fail-soft on API failure
+  // (same doctrine as the FoT API gate: a transient outage must not block a
+  // legit trade, but a confirmed no-route is a hard veto).
+  if (economicSide === "buy" && !tokenOutIsNative) {
+    try {
+      const reverseResp = await getKyberAggregatorClient().getRoute(slug, {
+        tokenIn: tokenOut.address,
+        tokenOut: tokenIn.address,
+        amountIn: routeSummary.amountOut, // sell back what we'd receive
+        ...VEX_INTEGRATOR_FEE_ROUTE_PARAMS,
+      });
+      if (!reverseResp?.data?.routeSummary) {
+        return fail(`No sell route for ${tokenOut.symbol} (${tokenOut.address}) on ${slug}. Token may be a honeypot. Buy vetoed.`);
+      }
+    } catch (err) {
+      // API unavailable — proceed (fail-soft, same as FoT API gate).
+      logger.warn("kyberswap.swap.sellback_probe_failed", { address: tokenOut.address, reason: classifySafetyCheckFailure(err) });
+    }
+  }
 
   if (p.dryRun === true) {
     return ok({ dryRun: true, side: economicSide, chain: slug, routeSummary: formatRouteSummary(routeSummary), routerAddress });

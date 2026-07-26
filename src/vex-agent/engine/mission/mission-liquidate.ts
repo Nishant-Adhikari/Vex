@@ -108,8 +108,8 @@ async function productionDeps(): Promise<LiquidateDeps> {
   const { resolveUniswapDeployment } = await import(
     "../../../tools/uniswap/chains.js"
   );
-  const sellHandler = UNISWAP_SWAP_HANDLERS["uniswap.swap.sell"];
-  if (!sellHandler) {
+  const uniSellHandler = UNISWAP_SWAP_HANDLERS["uniswap.swap.sell"];
+  if (!uniSellHandler) {
     // Registered at module load; if it were ever missing, the deadline
     // force-liquidate would throw "sellHandler is not a function" mid-run.
     // Fail fast with a clear message instead (and it narrows the type so the
@@ -124,7 +124,17 @@ async function productionDeps(): Promise<LiquidateDeps> {
       const bankroll = await readEthBankroll(wallet, chainId);
       return bankroll?.openPositions ?? [];
     },
-    sell: (params, context) => sellHandler(params, context),
+    // LIQUIDATE-UNISWAP-ONLY fix: try Uniswap first; fall back to KyberSwap
+    // for tokens held only in a KyberSwap elastic pool (no Uniswap V2/V3 pool).
+    sell: async (params, context) => {
+      const uniResult = await uniSellHandler(params, context);
+      if (uniResult.success) return uniResult;
+      // Fallback to KyberSwap on primary venue (Robinhood Chain).
+      const { SWAP_HANDLERS: kyberHandlers } = await import("../../tools/protocols/kyberswap/handlers/swap.js");
+      const kyberSell = kyberHandlers["kyberswap.swap.sell"];
+      if (!kyberSell) return uniResult; // keep original failure if no kyber
+      return kyberSell(params, context);
+    },
     resolveWethAddress: (chainId) =>
       resolveUniswapDeployment(String(chainId))?.weth ?? null,
   };
