@@ -92,7 +92,10 @@ export async function closeRunnerLostFinalize(
   runId: string,
   sessionId: string,
 ): Promise<void> {
-  await missionsRepo.setStatus(missionId, "cancelled");
+  // Guard: only write `cancelled` if the mission is not already in a terminal
+  // state. This prevents the orphan reconciler from overwriting a `completed`
+  // or `failed` mission that was fully committed before the process was killed.
+  await missionsRepo.setStatusIfNotTerminal(missionId, "cancelled");
   await emitFinalizeControlState(sessionId, runId);
   await captureMissionFinal({
     missionId,
@@ -185,8 +188,12 @@ export async function finalizeMissionRunStatus(
     // stays terminal (`failed`) — this only relabels the operator-facing record.
     const outcome: Exclude<MissionResultOutcome, "running"> =
       stopReason === "deadline_reached" ? "timed_out" : status;
-    await missionsRepo.setStatus(missionId, status);
+    // Write run row FIRST: once mission_runs is terminal the orphan
+    // reconciler's markStoppedIfRunning claim will be a no-op, so a crash
+    // between these two writes cannot trigger closeRunnerLostFinalize and
+    // silently overwrite a `completed` mission as `cancelled`.
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
+    await missionsRepo.setStatus(missionId, status);
     await emitFinalizeControlState(sessionId, runId);
     await captureMissionFinal({ missionId, runId, sessionId, outcome, stopReason });
     return status;
@@ -210,8 +217,11 @@ export async function finalizeMissionRunStatus(
   }
 
   if (stopReason === "system_error") {
-    await missionsRepo.setStatus(missionId, "failed");
+    // Write run row FIRST (same ordering rule as the shouldTerminateRun branch
+    // above) so a crash between these two writes cannot trigger the orphan
+    // reconciler and overwrite a terminal mission status.
     await missionRunsRepo.updateStatus(runId, "failed", stopReason);
+    await missionsRepo.setStatus(missionId, "failed");
     await emitFinalizeControlState(sessionId, runId);
     await captureMissionFinal({ missionId, runId, sessionId, outcome: "failed", stopReason });
     // Phase 2 BUG-REPORTING emit (puzzle 03): terminal `system_error`
