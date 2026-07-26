@@ -324,11 +324,21 @@ export function createSelfHealWatchdog(deps: SelfHealDeps): SelfHealWatchdog {
             `Mission wake stalled: ${state.attempts} resume attempts made no progress; finalized by self-heal.`;
           // OV3-NO-LIQUIDATION fix: flatten open positions BEFORE finalizing so
           // tokens the mission bought are sold back to ETH, not stranded.
-          await deps.flattenStalledWakePositions({
-            missionId: run.missionId,
-            runId: run.id,
-            sessionId: run.sessionId,
-          });
+          // Wrapped in its own try/catch so a flatten error never prevents
+          // finalization — a permanently paused_wake run is worse than one that
+          // couldn't sell its positions.
+          try {
+            await deps.flattenStalledWakePositions({
+              missionId: run.missionId,
+              runId: run.id,
+              sessionId: run.sessionId,
+            });
+          } catch (flattenErr) {
+            logger.error("engine.self_heal.flatten_failed", {
+              runId: run.id,
+              error: flattenErr instanceof Error ? flattenErr.message : String(flattenErr),
+            });
+          }
           const did = await deps.finalizeStalledWake(run.id, summary, {
             selfHealWakeStall: {
               attempts: state.attempts,
