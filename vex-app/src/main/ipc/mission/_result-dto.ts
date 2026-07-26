@@ -25,7 +25,15 @@ export function toMissionResultDto(row: MissionResultRow): MissionResultDto {
     outcome: row.outcome,
     stopReason: row.stopReason,
     summary: row.summary ?? null,
-    openPositionsCount: Array.isArray(row.openPositions) ? row.openPositions.length : 0,
+    // Running missions have open_positions_json = NULL (only written at
+    // finalization). Return null so the renderer shows "?" instead of a
+    // false 0 for live runs — honest unknown vs. misleading "flat".
+    openPositionsCount:
+      row.outcome === "running"
+        ? null
+        : Array.isArray(row.openPositions)
+          ? row.openPositions.length
+          : 0,
     simulated: row.simulated,
   };
 }

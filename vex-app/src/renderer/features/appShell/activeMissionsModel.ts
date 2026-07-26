@@ -61,7 +61,8 @@ export interface ActiveMission {
   readonly status: ActiveMissionStatus;
   readonly pnlEth: number | null;
   readonly pnlPct: number | null;
-  readonly openPositionsCount: number;
+  /** null for live runs (open_positions_json is written only at finalization). */
+  readonly openPositionsCount: number | null;
   /** True for a SIMULATOR (paper-trading) run — rendered with a "SIM" badge. */
   readonly simulated: boolean;
 }

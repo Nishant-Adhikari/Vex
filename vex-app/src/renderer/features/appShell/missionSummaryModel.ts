@@ -38,8 +38,10 @@ export function formatPnlPct(pnlPct: number | null): string {
 /**
  * Settlement clause: `ended flat ✅` when no bags are held, else `N bag(s)
  * held ⚠` with the noun pluralised. Flat = `openPositionsCount === 0`.
+ * `null` means unknown (live run — open_positions_json not yet written).
  */
-export function formatSettlement(openPositionsCount: number): string {
+export function formatSettlement(openPositionsCount: number | null): string {
+  if (openPositionsCount === null) return "—";
   if (openPositionsCount <= 0) return "ended flat ✅";
   const noun = openPositionsCount === 1 ? "bag" : "bags";
   return `${openPositionsCount} ${noun} held ⚠`;
@@ -51,7 +53,7 @@ export function formatSettlement(openPositionsCount: number): string {
  */
 export function formatMetaLine(
   trades: number,
-  openPositionsCount: number,
+  openPositionsCount: number | null,
 ): string {
   return `${trades} trades · ${formatSettlement(openPositionsCount)}`;
 }
@@ -73,8 +75,10 @@ export function pnlUsdTitle(
  * Compact FLAT/HELD signal for the card headline: `flat` when no
  * mission-attributable bags remain, else `N held`. Drives the same signal as
  * `formatSettlement` but without the sentence framing/emoji, for a glance chip.
+ * `null` means unknown (live run) — returns `"—"`.
  */
-export function formatSettlementSignal(openPositionsCount: number): string {
+export function formatSettlementSignal(openPositionsCount: number | null): string {
+  if (openPositionsCount === null) return "—";
   return openPositionsCount <= 0 ? "flat" : `${openPositionsCount} held`;
 }
 

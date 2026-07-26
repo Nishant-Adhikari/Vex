@@ -85,6 +85,12 @@ export function useControlStateLiveSync(sessionId: string | null): void {
     if (sessionId === null || sessionId.length === 0) return;
 
     const off = window.vex.engine.onControlState((event) => {
+      // Invalidate the global mission results history on ANY control-state event
+      // (background session finalizations must update the history list even when
+      // the event belongs to a different session than the active one).
+      void queryClient.invalidateQueries({
+        queryKey: ["mission", "results"],
+      });
       if (event.sessionId !== sessionId) return;
       void queryClient.invalidateQueries({
         queryKey: runtimeKeys.state(sessionId),

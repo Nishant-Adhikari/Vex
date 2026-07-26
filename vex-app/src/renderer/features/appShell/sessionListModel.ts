@@ -34,6 +34,8 @@ const PAUSED_MISSION_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "paused_approval",
   "paused_wake",
   "paused_error",
+  "paused_user",
+  "paused_plan_acceptance",
 ]);
 const TERMINAL_MISSION_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "completed",

@@ -296,7 +296,7 @@ export async function closeMissionResult(input: CloseMissionResultInput): Promis
 /** Per-wallet mission history, newest first. */
 export async function listResultsForWallet(
   walletAddress: string,
-  limit = 50,
+  limit = 500,
 ): Promise<MissionResultRow[]> {
   const rows = await query<Raw>(
     `SELECT ${SELECT_COLUMNS}, ${STOP_SUMMARY_SUBSELECT}
