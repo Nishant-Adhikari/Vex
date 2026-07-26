@@ -17,12 +17,14 @@ const mockMarkStoppedIfRunning = vi.fn();
 const mockUpdateStatus = vi.fn();
 const mockGetRun = vi.fn().mockResolvedValue(null);
 const mockSetMissionStatus = vi.fn();
+const mockSetStatusIfNotTerminal = vi.fn();
 const mockClearApprovedAt = vi.fn();
 const mockCaptureMissionFinal = vi.fn().mockResolvedValue(undefined);
 const mockGetLease = vi.fn().mockResolvedValue(null);
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   setStatus: (...a: unknown[]) => mockSetMissionStatus(...a),
+  setStatusIfNotTerminal: (...a: unknown[]) => mockSetStatusIfNotTerminal(...a),
   clearApprovedAt: (...a: unknown[]) => mockClearApprovedAt(...a),
 }));
 
@@ -76,7 +78,8 @@ describe("finalizeMissionRunStatus — runner_lost", () => {
       "runner_lost",
       { summary: "interrupted" },
     );
-    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-1", "cancelled");
+    expect(mockSetStatusIfNotTerminal).toHaveBeenCalledWith("mission-1", "cancelled");
+    expect(mockSetMissionStatus).not.toHaveBeenCalled();
     expect(mockCaptureMissionFinal).toHaveBeenCalledTimes(1);
     const arg = mockCaptureMissionFinal.mock.calls[0]![0] as {
       outcome: string;
