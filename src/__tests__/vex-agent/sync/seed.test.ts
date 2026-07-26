@@ -16,9 +16,9 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 9 sync jobs (3 global + 6 per-namespace)", async () => {
+  it("inserts 10 sync jobs (3 global + 6 per-namespace + 1 uniswap post-mutation)", async () => {
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(9);
+    expect(mockExecute).toHaveBeenCalledTimes(10);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

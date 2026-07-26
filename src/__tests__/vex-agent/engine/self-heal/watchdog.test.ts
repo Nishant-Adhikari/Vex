@@ -129,6 +129,7 @@ function harness(over: Partial<SelfHealDeps> = {}): Harness {
       h.cancelled.push(sessionId);
       return 1;
     },
+    flattenStalledWakePositions: vi.fn().mockResolvedValue(undefined),
     finalizeStalledWake: async (runId) => {
       h.finalized.push(runId);
       return true;

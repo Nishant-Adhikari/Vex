@@ -101,7 +101,7 @@ describe("mission.listResults", () => {
     const result = await call(CH.mission.listResults, { walletAddress: "0xAbC" });
 
     expect(result.ok).toBe(true);
-    expect(mockListResultsForWallet).toHaveBeenCalledWith("0xAbC", 50);
+    expect(mockListResultsForWallet).toHaveBeenCalledWith("0xAbC", 500);
     const data = result.data as Array<Record<string, unknown>>;
     expect(data).toHaveLength(1);
     expect(data[0]).toMatchObject({

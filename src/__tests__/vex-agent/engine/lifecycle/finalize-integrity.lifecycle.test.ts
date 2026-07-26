@@ -90,6 +90,7 @@ describe("mission_results ledger coherence (captureMissionFinal)", () => {
 
 // ── Block 2: finalizeMissionRunStatus status/outcome mapping ──
 const setStatus = vi.fn().mockResolvedValue(undefined);
+const setStatusIfNotTerminal = vi.fn().mockResolvedValue(undefined);
 const updateStatus = vi.fn().mockResolvedValue(undefined);
 const markStoppedIfRunning = vi.fn().mockResolvedValue(true);
 const getRun = vi.fn().mockResolvedValue({ id: "run-1", status: "stopped", stopReason: "runner_lost" });
@@ -98,6 +99,7 @@ const captureFinal = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   setStatus: (...a: unknown[]) => setStatus(...a),
+  setStatusIfNotTerminal: (...a: unknown[]) => setStatusIfNotTerminal(...a),
   clearApprovedAt: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -149,7 +151,7 @@ describe("finalizeMissionRunStatus — terminal status/outcome mapping", () => {
     const status = await finalizeMissionRunStatus("mission-1", "run-1", "sess-1", "runner_lost");
     expect(status).toBe("cancelled");
     expect(markStoppedIfRunning).toHaveBeenCalledWith("run-1", "runner_lost", undefined);
-    expect(setStatus).toHaveBeenCalledWith("mission-1", "cancelled");
+    expect(setStatusIfNotTerminal).toHaveBeenCalledWith("mission-1", "cancelled");
     expect(captureFinal).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "stopped", stopReason: "runner_lost" }),
     );
