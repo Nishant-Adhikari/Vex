@@ -3,8 +3,9 @@
  * missions don't get suspended when the Mac would otherwise sleep.
  *
  * Two inputs decide the desired state, OR-combined:
- *   - `manual`  — an explicit user toggle ("Stay awake"), persisted only for the
- *                 process lifetime; the operator flips it before leaving.
+ *   - `manual`  — an explicit user toggle ("Stay awake"), persisted to
+ *                 userData/keep-awake-state.json and restored on startup so a
+ *                 crash/restart does not silently drop it.
  *   - `mission` — whether any mission run is actively executing a turn loop
  *                 (`activeMissionRunCount()`), polled so a mission that starts
  *                 keeps the machine up on its own. This leg is itself GATED by
@@ -27,7 +28,9 @@
  * together and consistently.
  */
 
-import { powerSaveBlocker } from "electron";
+import { app, powerSaveBlocker } from "electron";
+import fs from "node:fs";
+import path from "node:path";
 import { activeMissionRunCount } from "@vex-agent/engine/core/runner/abort.js";
 import { preferencesStore } from "../preferences/store.js";
 import { log } from "../logger/index.js";
@@ -50,6 +53,59 @@ let manualOn = false;
  * prior always-on-during-a-mission behavior until prefs are hydrated / changed.
  */
 let missionGateEnabled = true;
+
+// ---------------------------------------------------------------------------
+// Persistence helpers — survive crashes / restarts (KEEPAWAKE-001)
+// ---------------------------------------------------------------------------
+
+/** Resolved lazily; null when userData path is unavailable (e.g. in tests). */
+let _stateFilePath: string | null | undefined;
+
+function stateFilePath(): string | null {
+  if (_stateFilePath === undefined) {
+    try {
+      _stateFilePath = path.join(
+        app.getPath("userData"),
+        "keep-awake-state.json",
+      );
+    } catch {
+      _stateFilePath = null;
+    }
+  }
+  return _stateFilePath;
+}
+
+function readPersistedManualOn(): boolean {
+  const filePath = stateFilePath();
+  if (!filePath) return false;
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "manualOn" in parsed
+    ) {
+      return Boolean((parsed as { manualOn: unknown }).manualOn);
+    }
+  } catch {
+    log.warn("[keep-awake] could not read persisted state, defaulting manualOn=false");
+  }
+  return false;
+}
+
+function writePersistedManualOn(on: boolean): void {
+  const filePath = stateFilePath();
+  if (!filePath) return;
+  try {
+    fs.writeFileSync(filePath, JSON.stringify({ manualOn: on }, null, 2), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  } catch (error) {
+    log.warn("[keep-awake] could not persist manualOn state", error);
+  }
+}
 
 function isActive(): boolean {
   return blockerId !== null && powerSaveBlocker.isStarted(blockerId);
@@ -116,8 +172,9 @@ function reconcile(): void {
   reconcileClamshellLeg();
 }
 
-/** User toggle. */
+/** User toggle. Persisted to disk so the value survives app restarts/crashes. */
 export function setKeepAwakeManual(on: boolean): void {
+  writePersistedManualOn(on);
   manualOn = on;
   reconcile();
 }
@@ -159,6 +216,9 @@ export function getKeepAwakeState(): {
  * launch never prompts — see `bootSafetyResetClamshell`).
  */
 export function setupKeepAwakeWorker(): () => Promise<void> {
+  // Restore manual toggle from disk — survives crashes and restarts.
+  manualOn = readPersistedManualOn();
+
   // Boot-time safety reset — before the loop, while no mission can be active.
   void bootSafetyResetClamshell().catch((error) =>
     log.error("[keep-awake] boot safety reset threw", error),
