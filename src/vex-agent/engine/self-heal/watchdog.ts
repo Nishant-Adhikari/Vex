@@ -107,6 +107,12 @@ export interface SelfHealDeps {
     summary: string,
     evidence: Record<string, unknown>,
   ): Promise<boolean>;
+  /**
+   * OV3-NO-LIQUIDATION fix: flatten open positions for a stalled paused_wake
+   * run BEFORE finalizing so tokens bought by the mission are sold back to ETH
+   * rather than stranded. Fully fail-soft — must never throw.
+   */
+  flattenStalledWakePositions(args: { missionId: string; runId: string; sessionId: string }): Promise<void>;
 }
 
 export interface SelfHealTickResult {
@@ -316,6 +322,13 @@ export function createSelfHealWatchdog(deps: SelfHealDeps): SelfHealWatchdog {
         if (state.attempts >= MAX_WAKE_STALL_ATTEMPTS) {
           const summary =
             `Mission wake stalled: ${state.attempts} resume attempts made no progress; finalized by self-heal.`;
+          // OV3-NO-LIQUIDATION fix: flatten open positions BEFORE finalizing so
+          // tokens the mission bought are sold back to ETH, not stranded.
+          await deps.flattenStalledWakePositions({
+            missionId: run.missionId,
+            runId: run.id,
+            sessionId: run.sessionId,
+          });
           const did = await deps.finalizeStalledWake(run.id, summary, {
             selfHealWakeStall: {
               attempts: state.attempts,

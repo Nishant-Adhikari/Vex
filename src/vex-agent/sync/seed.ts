@@ -23,6 +23,10 @@ const SYNC_JOBS = [
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "kyberswap", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
+  // Uniswap swaps enqueue a post-mutation refresh so proj_balances reflects
+  // buys made in the mission's last turn before the liquidator reads holdings.
+  // (KyberSwap/Khalani already had this; Uniswap was missing — LIQUIDATE-STALE-PROJECTION)
+  { namespace: "uniswap", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "polymarket", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   // Pendle trades can land on chains Khalani cannot scan; the post-mutation run
   // derives the traded chain from _tradeCapture.chain and selectively refreshes
