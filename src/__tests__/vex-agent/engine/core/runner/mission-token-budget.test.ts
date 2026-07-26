@@ -25,26 +25,26 @@ import { resolveMissionTokenBudget } from "../../../../../lib/agent-config.js";
 // ── 1. Env parse ────────────────────────────────────────────────
 
 describe("resolveMissionTokenBudget — AGENT_MISSION_TOKEN_BUDGET", () => {
-  it("defaults to 500000 when unset", () => {
-    expect(resolveMissionTokenBudget({})).toBe(500_000);
+  it("defaults to dynamic budget (60 min × 150k tok/min = 9_000_000) when unset", () => {
+    expect(resolveMissionTokenBudget({})).toBe(9_000_000);
   });
 
-  it("defaults to 500000 when blank/whitespace", () => {
-    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "" })).toBe(500_000);
-    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "   " })).toBe(500_000);
+  it("defaults to dynamic budget when blank/whitespace", () => {
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "" })).toBe(9_000_000);
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "   " })).toBe(9_000_000);
   });
 
   it("parses a valid whole-number budget", () => {
     expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "1200000" })).toBe(1_200_000);
   });
 
-  it("falls back to 500000 on a non-numeric value", () => {
-    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "lots" })).toBe(500_000);
-    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "1.5e6" })).toBe(500_000);
+  it("falls back to dynamic budget on a non-numeric value", () => {
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "lots" })).toBe(9_000_000);
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "1.5e6" })).toBe(9_000_000);
   });
 
-  it("falls back to 500000 on a negative / out-of-range value", () => {
-    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "-1" })).toBe(500_000);
+  it("falls back to dynamic budget on a negative / out-of-range value", () => {
+    expect(resolveMissionTokenBudget({ AGENT_MISSION_TOKEN_BUDGET: "-1" })).toBe(9_000_000);
   });
 
   // ── Disable sentinels (fix D) ─────────────────────────────────
