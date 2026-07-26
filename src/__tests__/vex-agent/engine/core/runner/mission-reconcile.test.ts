@@ -134,18 +134,24 @@ describe("reconcileOrphanedRuns", () => {
 
   it("isolates a per-run failure — the sweep continues and counts it", async () => {
     const runs = [orphan(), orphan({ id: "run-2", sessionId: "sess-2" })];
+    // RECONCILE-001: closeLedger errors are isolated in their own inner
+    // try-catch and trigger a retry. A single throw now resolves on retry so
+    // both runs land as "reconciled", not "failed". A GENUINE pre-claim
+    // failure (e.g. claim() or flatten() throwing) is still counted as
+    // "failed" — that invariant is pinned in reconcile-ledger.regression.test.ts.
     const closeLedger = vi
       .fn()
       .mockRejectedValueOnce(new Error("close boom"))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValue(undefined);
     const d = deps({ findOrphans: vi.fn(async () => runs), closeLedger });
 
     const summary = await reconcileOrphanedRuns(d);
 
     expect(summary.scanned).toBe(2);
-    expect(summary.failed).toBe(1);
-    expect(summary.reconciled).toBe(1);
-    // Second run still processed despite the first throwing.
+    // Both reconciled: run-1 recovered via the closeLedger retry, run-2 nominal.
+    expect(summary.reconciled).toBe(2);
+    expect(summary.failed).toBe(0);
+    // Second run still processed despite the first closeLedger throw.
     expect(d.dropStaleLease).toHaveBeenCalledWith("sess-2");
   });
 

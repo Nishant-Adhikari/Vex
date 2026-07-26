@@ -60,6 +60,7 @@ vi.mock("../../../../../vex-agent/engine/mission/run-contract.js", () => ({
 
 vi.mock("../../../../../vex-agent/engine/mission/mission-deadline.js", () => ({
   resolveFrozenDeadlineMs: vi.fn().mockReturnValue(null),
+  resolveDurationMinutes: vi.fn().mockReturnValue(60),
 }));
 
 vi.mock("@vex-agent/tools/registry.js", () => ({

@@ -41,7 +41,8 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "token search", expectedAny: ["khalani.tokens", "solana.tokens", "kyberswap.tokens", "dexscreener.search", "dexscreener.tokens"] },
 
   // ── param-driven ──────────────────────────────────────────────────
-  { intent: "slippage tolerance swap quote", expectedAny: ["kyberswap.swap", "solana.swap"] },
+  // uniswap.swap.sell (exact-input sell) now ranks for "swap quote" intents — accept it.
+  { intent: "slippage tolerance swap quote", expectedAny: ["kyberswap.swap", "solana.swap", "uniswap.swap"] },
   { intent: "amount in chain id", expectedAny: ["khalani.quote", "kyberswap.swap"] },
   // Generic token-info query: many tools legitimately match (token resolvers,
   // bridges that take token addresses, swap tools that route by address). Accept
