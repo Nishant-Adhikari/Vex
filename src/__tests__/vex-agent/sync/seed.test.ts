@@ -44,7 +44,7 @@ describe("seedSyncJobs", () => {
     const postMutationCalls = mockExecute.mock.calls.filter(
       (call: unknown[]) => (call[1] as unknown[])[3] === "post_mutation",
     );
-    expect(postMutationCalls).toHaveLength(6); // khalani, solana, kyberswap, polymarket, pendle, hyperliquid
+    expect(postMutationCalls).toHaveLength(7); // khalani, solana, kyberswap, uniswap, polymarket, pendle, hyperliquid
     for (const call of postMutationCalls) {
       expect((call[1] as unknown[])[4]).toBeNull(); // no interval
     }
