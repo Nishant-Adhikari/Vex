@@ -234,7 +234,7 @@ describe("V3 calldata builders", () => {
 // ── Prequote safety extractor (uniswap branch) ──────────────────────────────
 
 function uniQuoteData(safety: unknown) {
-  return { chainId: 4663, tokenIn: { address: TOKEN_A }, tokenOut: { address: TOKEN_B }, safety };
+  return { chainId: 4663, tokenIn: { address: TOKEN_A }, tokenOut: { address: TOKEN_B }, priceImpact: 0, safety };
 }
 
 describe("extractQuote — uniswap safety verdict", () => {
