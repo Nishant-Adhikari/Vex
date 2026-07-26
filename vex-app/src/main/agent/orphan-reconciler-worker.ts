@@ -76,7 +76,11 @@ export function setupOrphanReconcilerWorker(
   let stopped = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlightTick: Promise<void> | null = null;
-  let warnedWaiting = false;
+  // Counts consecutive ticks where the DB url was unavailable. Reset to 0 on
+  // a successful ensureDbUrl so a log burst after a long outage is suppressed.
+  // Logged on the 1st failure and every 10th thereafter — never permanently
+  // silent (replacing the old one-shot `warnedWaiting` flag).
+  let dbFailCount = 0;
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -90,12 +94,15 @@ export function setupOrphanReconcilerWorker(
 
     const dbUrl = await ensureDbUrl(`orphan-reconciler-${randomUUID()}`);
     if (stopped || !dbUrl.ok) {
-      if (!dbUrl.ok && !warnedWaiting) {
-        warnedWaiting = true;
-        log.info("[orphan-reconciler] waiting to sweep: database url unavailable");
+      if (!dbUrl.ok) {
+        dbFailCount++;
+        if (dbFailCount === 1 || dbFailCount % 10 === 0) {
+          log.warn("[orphan-reconciler] db unavailable", { consecutiveFailures: dbFailCount });
+        }
       }
       return;
     }
+    dbFailCount = 0; // reset on success
 
     const summary = await reconcile();
     if (
@@ -117,7 +124,7 @@ export function setupOrphanReconcilerWorker(
     if (stopped || inFlightTick !== null) return;
     inFlightTick = tick()
       .catch((err) => {
-        log.warn("[orphan-reconciler] sweep tick failed", err);
+        log.error("[orphan-reconciler] sweep tick failed", err);
       })
       .finally(() => {
         inFlightTick = null;

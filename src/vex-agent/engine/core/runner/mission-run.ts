@@ -198,12 +198,12 @@ export async function runPreparedMissionStart(
         process.env,
         frozenCostCapUsd(prepared.contractSnapshot),
       ),
-      // Run-scope the budget to the tokens THIS run spends (fix B): count only
-      // usage logged at/after the run's IMMUTABLE started_at, excluding the
-      // setup/recovery tokens already on this root session. Same value on resume
-      // (started_at never changes), so pre-pause run spend still counts and the
-      // baseline is never reset.
-      missionTokenSince: hydrated.context.missionRunStartedAt ?? null,
+      // Session-wide baseline (COST-CAP-DOUBLE-SPEND fix): use null so the run
+      // counts spend from the very beginning of the session — the same baseline
+      // setup-turn uses. Setup spend therefore counts against this cap, meaning
+      // the total session spend (setup + run combined) is compared against one
+      // cap rather than each phase independently getting the full cap.
+      missionTokenSince: null,
     };
 
     const result = await runTurnLoop(
@@ -370,11 +370,11 @@ export async function resumePreparedMissionRun(
         process.env,
         frozenCostCapUsd(prepared.run.contractSnapshotJson),
       ),
-      // Run-scope to the tokens THIS run spent (fix B). The cutoff is the run's
-      // IMMUTABLE started_at, identical to the initial start, so tokens spent
-      // before the pause still count toward the ceiling — resume does NOT reset
-      // the baseline.
-      missionTokenSince: hydrated.context.missionRunStartedAt ?? null,
+      // Session-wide baseline (COST-CAP-DOUBLE-SPEND fix): null so resume counts
+      // from the beginning of the session, matching the setup-turn baseline.
+      // Pre-pause spend still counts (the session accumulator is cumulative) and
+      // the cap covers setup + all run spend as one total — no per-phase doubling.
+      missionTokenSince: null,
     };
 
     const result = await runTurnLoop(

@@ -177,12 +177,18 @@ export async function runTurnLoop(
     // the COST fraction (spent/$cap); falls back to the token fraction only when
     // there is no cost cap or its read failed. Null when neither box exists.
     let missionBudgetFraction: number | null = null;
+    // Tracks whether at least one cap read succeeded this iteration. If both
+    // the cost-cap AND the token-budget reads fail (e.g. a DB pool outage),
+    // `anyCapEnforced` stays false and we degrade to a 90 % warning floor so
+    // the UI shows budget pressure instead of running completely uncapped.
+    let anyCapEnforced = false;
     if (loopConfig.missionCostCap != null) {
       try {
         const costUsed = await usageRepo.getSessionTotalCost(
           context.sessionId,
           { since: loopConfig.missionTokenSince ?? null },
         );
+        anyCapEnforced = true;
         missionBudgetFraction = costUsed / loopConfig.missionCostCap;
         if (costUsed >= loopConfig.missionCostCap) {
           logger.info("engine.mission.cost_cap_enforced", {
@@ -209,6 +215,7 @@ export async function runTurnLoop(
           context.sessionId,
           { since: loopConfig.missionTokenSince ?? null },
         );
+        anyCapEnforced = true;
         // Only surface the token fraction when the cost fraction is unavailable
         // (no cost cap, or its read failed) — the cost cap is the primary meter.
         if (missionBudgetFraction == null) {
@@ -232,6 +239,19 @@ export async function runTurnLoop(
         });
         // Continue — do not pause or abort on a transient read failure.
       }
+    }
+    // DUAL-DB-FAIL-UNCAPPED safety net: if at least one cap was configured but
+    // BOTH reads threw (simultaneous DB outage), the mission would run with zero
+    // enforcement. Instead, degrade gracefully — log an alertable warning and
+    // raise missionBudgetFraction to 0.9 so the next turn's UI shows warning
+    // state. The loop is NOT broken here; we prefer degraded enforcement over
+    // an unexpected stop mid-mission.
+    if (!anyCapEnforced && (loopConfig.missionCostCap != null || loopConfig.missionTokenBudget != null)) {
+      logger.warn("engine.mission.cap_enforcement_failed", {
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+      });
+      missionBudgetFraction = 0.9;
     }
 
     // Iteration entry: abort → observe-control → runtime-stop, in that order.
