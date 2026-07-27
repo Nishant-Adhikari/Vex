@@ -245,6 +245,14 @@ export interface ToolDefinition {
 export interface InferenceProvider {
   readonly id: string;
   readonly displayName: string;
+  /**
+   * The provider's configured model id, when it targets a single fixed model
+   * (e.g. OpenRouter's `AGENT_MODEL`). Used by the failover wrapper to retarget
+   * `config.model` to the ACTIVE provider's own model on a failover — otherwise
+   * a fallback with a different model would be invoked with the primary's model
+   * id. Absent for providers that don't bind a model at construction.
+   */
+  readonly model?: string;
 
   /**
    * Load inference configuration (model, pricing, context limit).

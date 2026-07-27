@@ -35,6 +35,7 @@ vi.mock("../../../lib/api/system.js", () => ({
 }));
 
 import { BootstrapPanel } from "../BootstrapPanel.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
 function statusResult(opts: {
   enginePresent: boolean;
@@ -154,6 +155,9 @@ function clickLogs(getByRole: ReturnType<typeof render>["getByRole"]): void {
 
 describe("BootstrapPanel branch matrix", () => {
   beforeEach(() => {
+    // Default to first-run (no express lane) so the branch-matrix assertions
+    // see the manual Continue button; the express-lane test opts in explicitly.
+    useUiStore.setState({ returningUser: false, currentView: "dockerBootstrap" });
     mockHooks.useDockerInstall.mockReturnValue(noopMutation);
     mockHooks.useDockerStart.mockReturnValue(noopMutation);
     openLogsFolder.mockReset().mockResolvedValue({
@@ -192,6 +196,27 @@ describe("BootstrapPanel branch matrix", () => {
       expect(getByRole("button", { name: /continue/i })).toBeDefined();
     },
   );
+
+  it("express lane: a returning user auto-advances from the ready branch (A)", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: true }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("darwin"));
+    useUiStore.setState({ returningUser: true });
+    render(<BootstrapPanel />);
+    expect(useUiStore.getState().currentView).toBe("composeBootstrap");
+  });
+
+  it("express lane: a returning user does NOT auto-advance from a non-ready branch", () => {
+    // engine present but daemon stopped → branch B (Start Docker), not ready.
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("darwin"));
+    useUiStore.setState({ returningUser: true });
+    render(<BootstrapPanel />);
+    expect(useUiStore.getState().currentView).toBe("dockerBootstrap");
+  });
 
   it("branch A: data wins when health probe is still pending", () => {
     mockHooks.useDockerStatus.mockReturnValue(

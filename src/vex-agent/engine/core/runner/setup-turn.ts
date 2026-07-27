@@ -26,6 +26,10 @@ import { parseModelMissionOutput } from "../../mission/patch-parser.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import { computeBand } from "../context-band.js";
+import {
+  resolveMissionTokenBudget,
+  resolveMissionCostCap,
+} from "../../../../lib/agent-config.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendEngineMessage, appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
@@ -109,6 +113,7 @@ export async function processMissionSetupTurn(
   };
 
   const baseVisibility: ToolVisibilityBase = {
+    sessionId,
     permission: setupContext.sessionPermission,
     role: "parent",
     sessionKind: "mission",
@@ -134,6 +139,24 @@ export async function processMissionSetupTurn(
     maxIterations: 25,
     contextLimit: config.contextLimit,
     baseVisibility,
+    // Hard token budget covers SETUP too (fix A): the motivating 9M-token
+    // `mission_draft_update` runaway happened while DRAFTING, where the only
+    // bound was per-turn maxIterations:25 — no cumulative cap across setup
+    // turns. Apply the same ceiling here with NO `missionTokenSince` cutoff:
+    // setup is the session's first phase, so the whole-session total IS the
+    // cumulative setup spend across every setup turn (the baseline is the
+    // session's own start). On breach the turn loop halts with
+    // `token_budget_exhausted`; there's no position to liquidate in setup, so
+    // we just surface it below (no force-liquidate). Fail-open to the default;
+    // null when explicitly disabled (0/off/…).
+    missionTokenBudget: resolveMissionTokenBudget(process.env),
+    // Hard COST CAP also covers SETUP (same rationale as the token budget above:
+    // the motivating runaway happened while DRAFTING). No per-mission override —
+    // setup predates the frozen contract — so it uses the env/$1.00 default.
+    // missionTokenSince stays null, so the cap counts the whole session's setup
+    // spend (setup is the session's first phase).
+    missionCostCap: resolveMissionCostCap(process.env),
+    missionTokenSince: null,
   };
 
   const promptOptions: PromptStackOptions = {
@@ -170,12 +193,21 @@ export async function processMissionSetupTurn(
   // not-ready notice below. The turn-loop persists real model text itself;
   // nothing was saved on this path, so we persist the synthesised reply here.
   const capHit = result.stopReason === "iteration_limit" && !result.text;
+  // Hard spend-box breach during setup (fix A) — the cost cap (primary) or the
+  // token budget (secondary). The turn loop already stopped the runaway; setup
+  // has no position, so we DON'T force-liquidate — we just halt cleanly and
+  // surface it. A budget-truncated draft could be partial, so (like
+  // user_stopped) we suppress patch-apply and the not-ready notice below.
+  const budgetHalted =
+    result.stopReason === "cost_cap_reached" ||
+    result.stopReason === "token_budget_exhausted";
   logger.info("engine.mission.setup_turn.timing", {
     sessionId,
     elapsedMs: Date.now() - startedAt,
     toolCallsMade: result.toolCallsMade,
     stopReason: result.stopReason,
     capHit,
+    budgetHalted,
   });
   if (capHit) {
     await appendMessage(
@@ -184,11 +216,44 @@ export async function processMissionSetupTurn(
       { source: "assistant", messageType: "mission_setup", visibility: "user" },
     );
   }
+  if (budgetHalted) {
+    const costCapped = result.stopReason === "cost_cap_reached";
+    logger.warn("engine.mission.setup_turn.budget_halt", {
+      sessionId,
+      missionId,
+      stopReason: result.stopReason,
+      toolCallsMade: result.toolCallsMade,
+    });
+    const notice = costCapped
+      ? "Mission setup was paused: this drafting session reached its cost cap " +
+        "(AGENT_MISSION_COST_CAP_USD, default $1.00) — a safety backstop against a " +
+        "runaway drafting loop. Your draft so far is saved. Raise or disable the cap, " +
+        "or start a fresh draft, to keep going."
+      : "Mission setup was paused: this drafting session reached its token budget " +
+        "(AGENT_MISSION_TOKEN_BUDGET) — a safety backstop against a runaway drafting " +
+        "loop. Your draft so far is saved. Raise or disable the budget, or start a " +
+        "fresh draft, to keep going.";
+    await appendEngineMessage(sessionId, notice, {
+      source: "engine",
+      messageType: "mission_setup",
+      visibility: "user",
+      payload: {
+        missionId,
+        correction: costCapped ? "setup_cost_cap_halt" : "setup_token_budget_halt",
+      },
+    });
+  }
 
   // Apply mission patch from model response to draft (never from synthesised
-  // text, never from text truncated by a user Stop — a partial patch could
-  // corrupt the draft).
-  if (!capHit && result.stopReason !== "user_stopped" && result.text && missionId) {
+  // text, never from text truncated by a user Stop or a token-budget halt — a
+  // partial patch could corrupt the draft).
+  if (
+    !capHit
+    && !budgetHalted
+    && result.stopReason !== "user_stopped"
+    && result.text
+    && missionId
+  ) {
     const parsed = parseModelMissionOutput(result.text);
     if (parsed) {
       await applyMissionPatch(missionId, parsed);
@@ -203,6 +268,7 @@ export async function processMissionSetupTurn(
   let text = capHit ? ITERATION_LIMIT_REPLY : result.text;
   if (
     !capHit
+    && !budgetHalted
     && result.stopReason !== "user_stopped"
     && latestSetupState
     && latestSetupState.status !== "ready"

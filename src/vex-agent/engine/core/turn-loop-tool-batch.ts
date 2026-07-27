@@ -35,8 +35,10 @@
  * Structural split: the outcome contract lives in
  * `./turn-loop-tool-batch/outcome.ts`, the per-call tool-context builder in
  * `./turn-loop-tool-batch/execute.ts`, the approval-enqueue helpers in
- * `./turn-loop-tool-batch/approval-stop.ts`, and the deferred-save +
- * outcome-mapping helpers in `./turn-loop-tool-batch/results.ts`.
+ * `./turn-loop-tool-batch/approval-stop.ts`, the deferred-save +
+ * outcome-mapping helpers in `./turn-loop-tool-batch/results.ts`, and the
+ * trusted prepare→execute handoff in
+ * `./turn-loop-tool-batch/prepared-follow-up.ts`.
  * `processTurnToolBatch` stays here as the orchestrator: it keeps the
  * per-batch mutable state and the dispatch/approval/persistence ordering
  * bit-for-bit.
@@ -47,6 +49,7 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import { computeBand } from "./context-band.js";
+import { deriveExplorerRefs, type ExplorerRef } from "./explorer-refs.js";
 import type { BatchTurnResult, StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 import { buildToolContext } from "./turn-loop-tool-batch/execute.js";
 import {
@@ -58,6 +61,10 @@ import {
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
+import {
+  dispatchPreparedActionFollowUp,
+  resolvePreparedActionFollowUp,
+} from "./turn-loop-tool-batch/prepared-follow-up.js";
 
 export type { StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 
@@ -77,6 +84,7 @@ export async function processTurnToolBatch(args: {
     toolName: string;
     output: string;
     success: boolean;
+    explorerRefs: readonly ExplorerRef[];
   }> = [];
 
   let toolCallsExecuted = 0;
@@ -90,6 +98,11 @@ export async function processTurnToolBatch(args: {
 
   for (let i = 0; i < turnResult.toolCalls.length; i++) {
     const toolCall = turnResult.toolCalls[i];
+    // `i < turnResult.toolCalls.length` guarantees this index is populated;
+    // the guard exists only to satisfy `noUncheckedIndexedAccess` (vex-app's
+    // stricter tsconfig type-checks this file too) and narrows `toolCall` for
+    // every use below.
+    if (toolCall === undefined) continue;
     toolCallsExecuted++;
 
     const toolContext = buildToolContext(context, dispatchBand);
@@ -99,9 +112,20 @@ export async function processTurnToolBatch(args: {
       toolContext,
     );
 
+    // Trusted prepare→execute handoff (wallet_send_prepare → confirm ONLY,
+    // see the registry allow-list): validates the handler-authored contract
+    // and fails closed (never dispatches) on any unknown mapping or
+    // malformed shape. `resultForTranscript` is what actually gets
+    // persisted/returned below — identical to `result` unless the follow-up
+    // was rejected, in which case it carries the rejection message instead.
+    const { resultForTranscript, followUp } = resolvePreparedActionFollowUp(
+      toolCall.name,
+      result,
+    );
+
     // ── Approval break: call was dispatched but has no result in messages ──
     // "awaiting approval" state lives in approval_queue, not in transcript.
-    if (result.pendingApproval) {
+    if (resultForTranscript.pendingApproval) {
       // Puzzle 5 phase 2: approval_intents.action_kind is NOT NULL with a
       // CHECK constraint over the 8 canonical ActionKind variants. The
       // dispatcher's `withActionKindFallback` MUST have stamped a kind
@@ -109,14 +133,14 @@ export async function processTurnToolBatch(args: {
       // registration or in the dispatcher fallback. Fail fast (Codex
       // 2/1B ruling) instead of silently inserting a pseudo-kind or
       // downgrading to a default — neither preserves the policy invariant.
-      const intentActionKind = assertApprovalActionKind(result, toolCall);
+      const intentActionKind = assertApprovalActionKind(resultForTranscript, toolCall);
 
       executedCalls.push(toolCall);
 
       approvalId = await enqueueApprovalIntent({
         context,
         toolCall,
-        result,
+        result: resultForTranscript,
         toolContext,
         intentActionKind,
       });
@@ -129,22 +153,45 @@ export async function processTurnToolBatch(args: {
     executedResults.push({
       toolCallId: toolCall.id,
       toolName: toolCall.name,
-      output: result.output,
-      success: result.success,
+      output: resultForTranscript.output,
+      success: resultForTranscript.success,
+      // Derive explorer refs from `result.data` HERE — the transcript drops
+      // `data`, so this is the last place the structured capture is available.
+      explorerRefs: deriveExplorerRefs(resultForTranscript.data),
     });
 
+    // A validated prepared-action follow-up short-circuits the rest of this
+    // batch: persist the prepare call above, then synthesize + dispatch the
+    // trusted confirm call and return its own outcome directly (restricted
+    // sessions enqueue the normal approval flow; full-permission sessions
+    // execute confirm immediately). Remaining calls in THIS batch are never
+    // reached — the model only ever emitted one call when it called prepare.
+    if (followUp !== null) {
+      return dispatchPreparedActionFollowUp({
+        context,
+        toolContext,
+        content: turnResult.content,
+        executedCalls,
+        executedResults,
+        liveMessages,
+        followUp,
+        toolCallsExecuted,
+        lastText: turnResult.content ?? args.lastTextSoFar,
+      });
+    }
+
     // ── Engine signals: result tracked, then stop ──
-    if (result.engineSignal) {
-      const sig = result.engineSignal;
+    if (resultForTranscript.engineSignal) {
+      const sig = resultForTranscript.engineSignal;
       if (sig.type === "stop_mission" || sig.type === "complete_subagent") {
         batchStopReason = sig.reason as StopReason;
-        batchStopOutput = result.output;
+        batchStopOutput = resultForTranscript.output;
         batchStopPayload = { summary: sig.summary, evidence: sig.evidence };
         break;
       }
       if (sig.type === "wait_for_parent") {
         batchStopReason = "waiting_for_parent";
-        batchStopOutput = result.output;
+        batchStopOutput = resultForTranscript.output;
         break;
       }
       if (sig.type === "plan_pause") {
@@ -155,7 +202,7 @@ export async function processTurnToolBatch(args: {
         // (don't wait for an execution attempt — mission text does not break the
         // loop).
         batchStopReason = "plan_acceptance_required";
-        batchStopOutput = result.output;
+        batchStopOutput = resultForTranscript.output;
         batchStopPayload = { summary: sig.summary, evidence: { reason: sig.reason } };
         break;
       }
@@ -165,7 +212,7 @@ export async function processTurnToolBatch(args: {
         // Evidence carries dueAt + reason so PR-7 executor / PR-10 ingress
         // have the hints they need without re-reading the wake row.
         batchStopReason = "waiting_for_wake";
-        batchStopOutput = result.output;
+        batchStopOutput = resultForTranscript.output;
         batchStopPayload = {
           summary: sig.summary,
           evidence: {
@@ -184,12 +231,14 @@ export async function processTurnToolBatch(args: {
         compactCommittedThisBatch = true;
         for (let j = i + 1; j < turnResult.toolCalls.length; j++) {
           const skipped = turnResult.toolCalls[j];
+          if (skipped === undefined) continue;
           executedCalls.push(skipped);
           executedResults.push({
             toolCallId: skipped.id,
             toolName: skipped.name,
             output: BATCH_ABORTED_BY_COMPACT_OUTPUT,
             success: false,
+            explorerRefs: [],
           });
         }
         break;

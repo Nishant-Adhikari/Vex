@@ -35,6 +35,11 @@ describe("patch-parser", () => {
       expect(patch!.goal).toBe("Accumulate SOL");
     });
 
+    it("extracts a numeric durationMinutes field", () => {
+      const patch = extractMissionPatch({ durationMinutes: 5 });
+      expect(patch!.durationMinutes).toBe(5);
+    });
+
     it("extracts valid array fields", () => {
       const patch = extractMissionPatch({ allowedChains: ["solana"], successCriteria: ["10 SOL"] });
       expect(patch!.allowedChains).toEqual(["solana"]);
@@ -85,6 +90,39 @@ describe("patch-parser", () => {
       expect(result.title).toBeUndefined();
       expect(result.goal).toBeUndefined();
       expect(result.riskProfile).toBeUndefined();
+    });
+
+    // ── durationMinutes (numeric, NOT string) ──────────────────
+
+    it("keeps a numeric durationMinutes — regression: it must not be dropped as a string field", () => {
+      const result = sanitizePatch({ durationMinutes: 5 });
+      expect(result.durationMinutes).toBe(5);
+    });
+
+    it("truncates a fractional durationMinutes to a whole minute", () => {
+      const result = sanitizePatch({ durationMinutes: 5.9 });
+      expect(result.durationMinutes).toBe(5);
+    });
+
+    it("clamps durationMinutes to the 24h ceiling", () => {
+      const result = sanitizePatch({ durationMinutes: 99999 });
+      expect(result.durationMinutes).toBe(1440);
+    });
+
+    it("rejects a non-positive durationMinutes", () => {
+      expect(sanitizePatch({ durationMinutes: 0 }).durationMinutes).toBeUndefined();
+      expect(sanitizePatch({ durationMinutes: -5 }).durationMinutes).toBeUndefined();
+      expect(sanitizePatch({ durationMinutes: 0.5 }).durationMinutes).toBeUndefined();
+    });
+
+    it("passes null through for durationMinutes", () => {
+      const result = sanitizePatch({ durationMinutes: null });
+      expect(result.durationMinutes).toBeNull();
+    });
+
+    it("rejects a numeric-string durationMinutes (model must send a JSON number)", () => {
+      const result = sanitizePatch({ durationMinutes: "60" });
+      expect(result.durationMinutes).toBeUndefined();
     });
 
     it("sanitizes string arrays", () => {
@@ -147,6 +185,7 @@ describe("patch-parser", () => {
         successCriteria: ["Accumulated 10 SOL"],
         stopConditions: ["capital_depleted", "deadline_reached"],
         deadline: "2026-04-04",
+        durationMinutes: 60,
       });
 
       expect(result.title).toBe("SOL DCA Strategy");
@@ -160,6 +199,7 @@ describe("patch-parser", () => {
       expect(result.successCriteria).toEqual(["Accumulated 10 SOL"]);
       expect(result.stopConditions).toEqual(["capital_depleted", "deadline_reached"]);
       expect(result.deadline).toBe("2026-04-04");
+      expect(result.durationMinutes).toBe(60);
     });
 
     it("drops stopConditionsAccepted from model output", () => {
@@ -195,10 +235,12 @@ describe("patch-parser", () => {
       expect(result.durationMinutes).toBe(360);
     });
 
-    it("coerces a numeric string to a number", () => {
-      const result = sanitizePatch({ durationMinutes: "360" } as never);
-      expect(result.durationMinutes).toBe(360);
-    });
+    // A numeric string ("360") is intentionally REJECTED, not coerced — the
+    // model must send a JSON number across the untrusted model→DB boundary.
+    // See "rejects a numeric-string durationMinutes (model must send a JSON
+    // number)" above for the canonical assertion. (An earlier fork-era test
+    // here expected coercion; it contradicted that security-boundary rule and
+    // the shipped sanitizer, so it was removed as a merge artifact.)
 
     it("floors a fractional duration to a whole minute", () => {
       const result = sanitizePatch({ durationMinutes: 360.9 });

@@ -458,6 +458,113 @@ describe("dexscreener.search filters", () => {
   });
 });
 
+// ── Chain filter: boosts / boosts.top / profiles / attention ───────
+//
+// These cross-chain feeds must chain-scope client-side (mirroring
+// dexscreener.search) so a mission on one chain never evaluates same-name
+// tokens promoted on other chains.
+
+describe("dexscreener chain filters (boosts/profiles/attention)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function boost(overrides: Partial<DexBoost>): DexBoost {
+    return {
+      url: "https://dexscreener.com/x",
+      chainId: "solana",
+      tokenAddress: "TOKEN",
+      amount: 1,
+      totalAmount: 1,
+      icon: null,
+      header: null,
+      description: null,
+      links: null,
+      ...overrides,
+    };
+  }
+  function profile(overrides: Partial<DexTokenProfile>): DexTokenProfile {
+    return {
+      url: "https://dexscreener.com/x",
+      chainId: "solana",
+      tokenAddress: "TOKEN",
+      icon: "",
+      header: null,
+      description: null,
+      links: null,
+      ...overrides,
+    };
+  }
+
+  it("dexscreener.boosts keeps only the requested chain (case-insensitive)", async () => {
+    const client = getDexScreenerClient();
+    vi.spyOn(client, "getBoosts").mockResolvedValue([
+      boost({ chainId: "robinhood", tokenAddress: "RH1" }),
+      boost({ chainId: "ethereum", tokenAddress: "ETH1" }),
+      boost({ chainId: "robinhood", tokenAddress: "RH2" }),
+    ]);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts"]!({ chainId: "ROBINHOOD" }, PERM);
+    const data = JSON.parse(result.output);
+    expect(data.chainId).toBe("ROBINHOOD");
+    expect(data.count).toBe(2);
+    expect(data.boosts.every((b: { chainId: string }) => b.chainId === "robinhood")).toBe(true);
+  });
+
+  it("dexscreener.boosts is unscoped (all chains) when chainId is omitted", async () => {
+    const client = getDexScreenerClient();
+    vi.spyOn(client, "getBoosts").mockResolvedValue([
+      boost({ chainId: "robinhood" }),
+      boost({ chainId: "ethereum" }),
+    ]);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts"]!({}, PERM);
+    const data = JSON.parse(result.output);
+    expect(data.chainId).toBeNull();
+    expect(data.count).toBe(2);
+  });
+
+  it("dexscreener.boosts.top keeps only the requested chain", async () => {
+    const client = getDexScreenerClient();
+    vi.spyOn(client, "getTopBoosts").mockResolvedValue([
+      boost({ chainId: "robinhood", tokenAddress: "RH1" }),
+      boost({ chainId: "base", tokenAddress: "BASE1" }),
+    ]);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts.top"]!({ chainId: "robinhood" }, PERM);
+    const data = JSON.parse(result.output);
+    expect(data.count).toBe(1);
+    expect(data.boosts[0].chainId).toBe("robinhood");
+  });
+
+  it("dexscreener.profiles keeps only the requested chain", async () => {
+    const client = getDexScreenerClient();
+    vi.spyOn(client, "getProfiles").mockResolvedValue([
+      profile({ chainId: "robinhood", tokenAddress: "RH1" }),
+      profile({ chainId: "ethereum", tokenAddress: "ETH1" }),
+    ]);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.profiles"]!({ chainId: "robinhood" }, PERM);
+    const data = JSON.parse(result.output);
+    expect(data.count).toBe(1);
+    expect(data.profiles[0].chainId).toBe("robinhood");
+  });
+
+  it("dexscreener.attention scopes BOTH profiles and boosts before the merge", async () => {
+    const client = getDexScreenerClient();
+    vi.spyOn(client, "getBoosts").mockResolvedValue([
+      boost({ chainId: "robinhood", tokenAddress: "RH1", totalAmount: 100 }),
+      boost({ chainId: "ethereum", tokenAddress: "ETH1", totalAmount: 999 }),
+    ]);
+    vi.spyOn(client, "getProfiles").mockResolvedValue([
+      profile({ chainId: "robinhood", tokenAddress: "RH2" }),
+      profile({ chainId: "ethereum", tokenAddress: "ETH2" }),
+    ]);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]!({ chainId: "robinhood" }, PERM);
+    const data = JSON.parse(result.output);
+    expect(data.chainId).toBe("robinhood");
+    expect(data.items.every((it: { chainId: string }) => it.chainId === "robinhood")).toBe(true);
+    // The high-spend ethereum boost must NOT leak in despite ranking highest.
+    expect(data.items.some((it: { tokenAddress: string }) => it.tokenAddress === "ETH1")).toBe(false);
+  });
+});
+
 // ── Metas / recent-updates handlers (mocked client) ────────────────
 
 describe("dexscreener metas + recent handlers", () => {

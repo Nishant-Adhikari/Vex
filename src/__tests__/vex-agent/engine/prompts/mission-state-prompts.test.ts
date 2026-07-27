@@ -8,6 +8,7 @@ import {
   buildResearchPrompt,
   buildToolModelPrompt,
 } from "../../../../vex-agent/engine/prompts/index.js";
+import { buildContextPressureBanner } from "../../../../vex-agent/engine/prompts/context-pressure.js";
 
 function makeMissionContext(overrides: Partial<EngineContext> = {}): EngineContext {
   return {
@@ -49,7 +50,11 @@ describe("mission state prompts", () => {
     expect(prompt).toContain("**Execution lock (standing rule):**");
     expect(prompt).toContain("blocked by the runtime gate");
     expect(prompt).toContain("do not invent workarounds");
-    expect(prompt).toContain("tell the user to press Accept contract");
+    expect(prompt).toContain("follow the activation sequence below");
+    expect(prompt).toContain("Activation sequence:");
+    expect(prompt).toContain("click Accept contract. Only after that acceptance does the host show Start mission");
+    expect(prompt.match(/Activation sequence:/g)).toHaveLength(1);
+    expect(prompt).not.toContain("The user can now start the mission.");
 
     // Negative: old vocabulary and the dropped `social` namespace are gone.
     expect(prompt).not.toContain("research and planning phase");
@@ -71,15 +76,14 @@ describe("mission state prompts", () => {
     // Accept step accepts BOTH the contract and the plan together.
     expect(prompt).toContain("Action Plan (plan mode is ON)");
     expect(prompt).toContain("`plan_write`");
-    expect(prompt).toContain("accepted together");
-    // Capability Orientation vocabulary carries into plan authoring (no live
-    // market scans now — defer Operational Research until after acceptance).
-    expect(prompt).toContain("Capability Orientation");
+    expect(prompt).toContain("single Accept contract step accepts both");
+    // Plan-mode has only the short delta: record the intended capabilities,
+    // then defer operational research until after acceptance.
+    expect(prompt).toContain("Record which tools and venues you will use");
     expect(prompt).toContain("Operational Research");
-    // The unified acceptance is via the single host Accept step (no separate
-    // plan acceptance) — pin the contract+plan-together framing.
+    // The single host accept step is still named where the contract fields
+    // define it; the activation sequence above owns the full ordering.
     expect(prompt).toContain("mission.acceptContract");
-    expect(prompt).toContain("there is no separate plan acceptance");
 
     // The OFF-only invariants (Capability Orientation framing, discover_tools,
     // wallet/chain grounding) still hold with plan-mode on — the subsection is
@@ -137,6 +141,14 @@ describe("mission state prompts", () => {
     }
   });
 
+  it("describes barrier dispatch from the current Tool Map rather than an obsolete safety subset", () => {
+    const prompt = buildContextPressureBanner("barrier", 0.9);
+
+    expect(prompt).toContain("Mutations are blocked until compaction completes");
+    expect(prompt).toContain("trust the current Tool Map for what remains callable");
+    expect(prompt).not.toContain("only read_only and compact_only tools dispatch");
+  });
+
   it("makes active mission runs ignore stale setup start instructions", () => {
     const prompt = buildMissionRunPrompt(
       makeMissionContext({ missionRunId: "run-1" }),
@@ -157,6 +169,36 @@ describe("mission state prompts", () => {
     // false, contradictory guidance.
     expect(prompt).not.toContain("Execution lock (standing rule)");
     expect(prompt).not.toContain("blocked by the runtime gate");
+  });
+
+  it("FIND guidance steers discovery to CHAIN-SCOPED sources and forbids a bare name search", () => {
+    const prompt = buildMissionRunPrompt(
+      makeMissionContext({ missionRunId: "run-1", missionChain: "robinhood" }),
+      { missionPromptContext: "# Mission: PONS Scalper", iterationCount: 0 },
+    );
+
+    // A dedicated chain-scoped discovery section that names the mission chain.
+    expect(prompt).toContain("Finding candidates (chain-scoped discovery)");
+    expect(prompt).toContain("`robinhood` chain");
+    // PRIMARY sources = chain-scoped Signal Radar + chain-filtered boosts.top / attention.
+    expect(prompt).toContain("SIGNAL RADAR");
+    expect(prompt).toContain("`dexscreener.boosts.top chainId=robinhood`");
+    expect(prompt).toContain("`dexscreener.attention chainId=robinhood`");
+    // search only WITH the chain filter; a bare cross-chain name search is banned.
+    expect(prompt).toContain("`dexscreener.search` is allowed ONLY WITH `chainId=robinhood`");
+    expect(prompt).toContain("NEVER run a bare cross-chain ticker/name search");
+    // Verify the real CA/pool/liquidity before the sellability gate.
+    expect(prompt).toContain("dexscreener.tokenPairs chainId=robinhood");
+  });
+
+  it("FIND guidance degrades to generic chain wording when no mission chain is resolved", () => {
+    const prompt = buildMissionRunPrompt(
+      makeMissionContext({ missionRunId: "run-1" }), // no missionChain
+      { missionPromptContext: "# Mission: X", iterationCount: 0 },
+    );
+    expect(prompt).toContain("Finding candidates (chain-scoped discovery)");
+    expect(prompt).toContain("chainId=<your mission chain>");
+    expect(prompt).toContain("NEVER run a bare cross-chain ticker/name search");
   });
 
 });

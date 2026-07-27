@@ -42,7 +42,7 @@ export function registerProviderHandler(): () => void {
     inputSchema: providerPersistInputSchema,
     outputSchema: providerPersistResultSchema,
     handle: async (input, ctx): Promise<Result<ProviderPersistResult>> => {
-      // Step 1: verify connection BEFORE any disk write.
+      // Step 1: verify the PRIMARY connection BEFORE any disk write.
       const verifyResult = await verifyOpenRouterConnection(
         { apiKey: input.apiKey, model: input.model },
         { correlationId: ctx.requestId },
@@ -53,6 +53,23 @@ export function registerProviderHandler(): () => void {
             `errCode=${verifyResult.error.code} correlationId=${ctx.requestId}`,
         );
         return verifyResult;
+      }
+
+      // Step 1b: when a fallback is supplied, verify it too — a fallback that
+      // can't connect is worse than none (it would silently fail at failover
+      // time). Same atomic contract: a verify failure blocks the whole persist.
+      if (input.fallback !== undefined) {
+        const fallbackVerify = await verifyOpenRouterConnection(
+          { apiKey: input.fallback.apiKey, model: input.fallback.model },
+          { correlationId: ctx.requestId },
+        );
+        if (!fallbackVerify.ok) {
+          log.info(
+            `[ipc:vex:onboarding:providerPersist] ` +
+              `fallbackErrCode=${fallbackVerify.error.code} correlationId=${ctx.requestId}`,
+          );
+          return fallbackVerify;
+        }
       }
 
       const latencyMs = verifyResult.data.latencyMs;
@@ -84,7 +101,8 @@ export function registerProviderHandler(): () => void {
 
       log.info(
         `[ipc:vex:onboarding:providerPersist] ` +
-          `provider=openrouter modelSet=true latencyMs=${latencyMs} ` +
+          `provider=openrouter modelSet=true ` +
+          `fallbackSet=${input.fallback !== undefined} latencyMs=${latencyMs} ` +
           `correlationId=${ctx.requestId}`,
       );
 

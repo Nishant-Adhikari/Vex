@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import type { EngineContext, Permission, SessionKind, WalletPolicy } from "../types.js";
+import type { EngineContext, MissionMode, Permission, SessionKind, WalletPolicy } from "../types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
@@ -16,6 +16,8 @@ import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as sessionLinksRepo from "@vex-agent/db/repos/session-links.js";
 import * as sessionPlansRepo from "@vex-agent/db/repos/session-plans.js";
 import { loadPersona } from "../../../lib/persona.js";
+import { resolveActiveMissionMode } from "../../../lib/mission-mode.js";
+import { getLocalChain, resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import { PERSONA_FILE } from "@config/paths.js";
 
 export interface HydratedSession {
@@ -55,6 +57,89 @@ const FrozenAllowedWalletsSchema = z
       .optional(),
   })
   .passthrough();
+
+// Same nesting as wallets: `freezeDraft` puts the accepted contract's allowed
+// chains at `frozenMission.draft.allowedChains`. Tolerant/passthrough so a
+// missing/other-shaped snapshot degrades to null rather than throwing.
+const FrozenAllowedChainsSchema = z
+  .object({
+    draft: z
+      .object({ allowedChains: z.array(z.string()).nullable().optional() })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+// Canonical DexScreener chain slugs for the common NON-local chains, keyed by
+// the alias / name / numeric-id forms a mission contract might carry. The
+// local-chain registry (robinhood / 4663) is consulted first; this table covers
+// the major chains DexScreener indexes so an accepted alias (`eth`), name
+// (`Ethereum`), or numeric id (`1`, `8453`) resolves to the slug DexScreener
+// actually uses (`ethereum`, `base`, …) instead of an invalid filter value.
+// Discovery-hint only: a chain we cannot confidently resolve yields null
+// (unscoped) rather than a guessed slug that would return empty results while
+// the mission prompt forbids an unscoped retry.
+const DEXSCREENER_SLUG_BY_KEY: Readonly<Record<string, string>> = {
+  ethereum: "ethereum", eth: "ethereum", "1": "ethereum",
+  base: "base", "8453": "base",
+  solana: "solana", sol: "solana",
+  bsc: "bsc", bnb: "bsc", "56": "bsc",
+  arbitrum: "arbitrum", arb: "arbitrum", "42161": "arbitrum",
+  polygon: "polygon", poly: "polygon", matic: "polygon", "137": "polygon",
+  avalanche: "avalanche", avax: "avalanche", "43114": "avalanche",
+  optimism: "optimism", op: "optimism", "10": "optimism",
+};
+
+/** Map one chain key (alias/name/numeric id) to a canonical DexScreener slug, or null. */
+function chainKeyToDexscreenerSlug(chainKey: string): string | null {
+  const normalized = chainKey.trim().toLowerCase();
+  if (normalized.length === 0) return null;
+  // Local chains (robinhood / robinhoodchain / 4663) → registry slug.
+  const localId = resolveLocalChainId(normalized);
+  if (localId !== undefined) {
+    const cfg = getLocalChain(localId);
+    if (cfg) return cfg.dexscreenerSlug;
+  }
+  // Common non-local chains by alias / name / numeric id. Unknown → null.
+  return DEXSCREENER_SLUG_BY_KEY[normalized] ?? null;
+}
+
+/**
+ * Resolve the mission's operating chain to a canonical DexScreener slug for
+ * DISCOVERY scoping (Signal Radar + boosts/profiles/attention chain filters).
+ * NOT a permission gate — the allowed-chains ENFORCEMENT stays elsewhere; this
+ * only picks which chain discovery reads focus on.
+ *
+ * Source of truth is the ACTIVE run's frozen contract snapshot
+ * (`draft.allowedChains`), falling back to the live mission row. The chain key
+ * (alias / name / numeric id) is normalized to a DexScreener slug via
+ * {@link chainKeyToDexscreenerSlug} (`robinhood`/`4663` → `"robinhood"`,
+ * `eth`/`1` → `"ethereum"`, …); a chain we cannot confidently resolve → null.
+ *
+ * Scopes ONLY when the contract authorizes EXACTLY ONE chain. A multi-chain
+ * contract (`allowedChains` is set-semantic) returns null so discovery spans
+ * every allowed chain instead of silently excluding all but the first — the
+ * contract's chain ENFORCEMENT is unchanged. Null → discovery stays cross-chain.
+ */
+export function resolveMissionChain(
+  mission: missionsRepo.Mission | null,
+  activeRun: missionRunsRepo.MissionRun | null,
+): string | null {
+  let chains: readonly string[] | undefined;
+  if (activeRun) {
+    const frozen = (activeRun.contractSnapshotJson as { frozenMission?: unknown } | null)
+      ?.frozenMission;
+    const parsed = FrozenAllowedChainsSchema.safeParse(frozen ?? null);
+    const frozenChains = parsed.success ? parsed.data.draft?.allowedChains : undefined;
+    if (frozenChains && frozenChains.length > 0) chains = frozenChains;
+  }
+  // Fall back to the live mission row when the snapshot has no chains (or no run).
+  if (!chains) chains = mission?.allowedChains;
+  // Only single-chain contracts get a discovery scope; multi-chain → unscoped.
+  if (!chains || chains.length !== 1) return null;
+  return chainKeyToDexscreenerSlug(chains[0]!);
+}
 
 /**
  * Resolve the mission wallet policy from the ACTIVE run's frozen contract
@@ -122,6 +207,11 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
   // synchronously (see Commit C mission creation pipeline).
   const sessionKind: SessionKind = mission ? "mission" : session.mode;
   const sessionPermission: Permission = session.permission;
+  // Mission execution mode — IMMUTABLE per run. The ACTIVE run's frozen
+  // `mission_runs.mode` is authoritative; fall back to the session-level intent
+  // only when no run exists yet (setup). Never derived from mutable state
+  // mid-run: once a run is live, its stored mode wins for the whole run.
+  const missionMode: MissionMode = resolveActiveMissionMode(activeRun?.mode, session.missionMode);
 
   // Local-first user persona (name + optional tone block). Best-effort read —
   // a missing/malformed persona.md degrades to the default ("Vex", no block).
@@ -138,12 +228,14 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
       sessionId,
       sessionKind,
       sessionPermission,
+      missionMode,
       missionId: mission?.id ?? null,
       missionRunId,
       sessionStartedAt: session.startedAt,
       missionRunStartedAt: activeRun?.startedAt ?? null,
       missionDeadline: extractMissionDeadline(mission?.constraintsJson ?? null),
       missionDurationMinutes: extractMissionDurationMinutes(mission?.constraintsJson ?? null),
+      missionChain: resolveMissionChain(mission, activeRun),
       isSubagent,
       selectedEvmWallet: session.selectedEvmWallet,
       selectedSolanaWallet: session.selectedSolanaWallet,

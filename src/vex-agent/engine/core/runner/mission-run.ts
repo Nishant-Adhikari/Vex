@@ -37,9 +37,16 @@ import {
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
 import {
-  computeHardDeadlineMs,
+  resolveFrozenDeadlineMs,
   resolveDurationMinutes,
+  frozenDurationMinutes,
+  frozenCostCapUsd,
 } from "../../mission/mission-deadline.js";
+import {
+  resolveMissionTokenBudget,
+  resolveMissionCostCap,
+  resolveMissionExcludedTools,
+} from "../../../../lib/agent-config.js";
 import { captureMissionStart } from "../../mission/mission-results-capture.js";
 import { forceLiquidateOnDeadline } from "./mission-liquidate-hook.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
@@ -71,6 +78,11 @@ type Provider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>;
 type ProviderConfig = NonNullable<
   Awaited<ReturnType<Provider["loadConfig"]>>
 >;
+
+/** Epoch ms -> ISO string for the agent-facing Runtime Clock, or null. */
+function deadlineMsToIso(deadlineMs: number | null | undefined): string | null {
+  return deadlineMs != null ? new Date(deadlineMs).toISOString() : null;
+}
 
 // ── runPreparedMissionStart ─────────────────────────────────────
 
@@ -134,11 +146,15 @@ export async function runPreparedMissionStart(
     };
 
     const baseVisibility: ToolVisibilityBase = {
+      sessionId: prepared.sessionId,
       permission: prepared.permission,
       role: "parent",
       sessionKind: "mission",
       missionRunActive: true,
       planMode: hydrated.context.planMode ?? false,
+      // Trim the mission's tool surface (env AGENT_MISSION_EXCLUDED_TOOLS) so a
+      // focused run doesn't pay to re-send irrelevant tool schemas every turn.
+      missionExcludedTools: resolveMissionExcludedTools(process.env),
     };
     // Seed tools — overridden per turn by buildTurnPromptStack with the live
     // band + `hasSessionMemory`.
@@ -154,20 +170,40 @@ export async function runPreparedMissionStart(
     // the run's IMMUTABLE started_at so it holds across wakes/resumes. Enforced
     // at the turn-loop boundary. Fail-open: an unparseable timestamp yields null
     // (no box) rather than a false early stop.
-    const missionDeadlineMs = computeHardDeadlineMs(
-      (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
-      resolveDurationMinutes(hydrated.context.missionDurationMinutes),
-    );
-    // Show the agent the SAME hard deadline the loop enforces (via the Runtime
-    // Clock), so it can flatten positions before the cutoff instead of being
-    // stopped mid-trade with open bags.
-    const missionDeadlineIso =
-      missionDeadlineMs != null ? new Date(missionDeadlineMs).toISOString() : null;
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
-      missionDeadlineMs,
+      // Deadline from FROZEN inputs (run started_at + snapshot durationMinutes),
+      // never the live mission row — see mission-deadline.ts.
+      missionDeadlineMs: resolveFrozenDeadlineMs(
+        hydrated.context.missionRunStartedAt,
+        prepared.contractSnapshot,
+      ),
+      // Hard token budget: DERIVED from the mission's own time-box
+      // (durationMinutes × AGENT_MISSION_TOKENS_PER_MINUTE) so a longer run gets
+      // proportionally more runway with no per-mission tuning. An explicit
+      // AGENT_MISSION_TOKEN_BUDGET still overrides; 0/off/… disables. Reads the
+      // SAME frozen durationMinutes the deadline above uses, so box and budget agree.
+      missionTokenBudget: resolveMissionTokenBudget(
+        process.env,
+        resolveDurationMinutes(frozenDurationMinutes(prepared.contractSnapshot)),
+      ),
+      // Hard COST CAP (PRIMARY spend-box): $1.00 default via
+      // AGENT_MISSION_COST_CAP_USD, overridable per mission by a frozen
+      // `costCapUsd` on the contract (mirrors how durationMinutes overrides the
+      // deadline). Enforced on real, cache-discounted cost so savings extend
+      // runway; the token budget above is the secondary safety ceiling.
+      missionCostCap: resolveMissionCostCap(
+        process.env,
+        frozenCostCapUsd(prepared.contractSnapshot),
+      ),
+      // Run-scope the budget to the tokens THIS run spends (fix B): count only
+      // usage logged at/after the run's IMMUTABLE started_at, excluding the
+      // setup/recovery tokens already on this root session. Same value on resume
+      // (started_at never changes), so pre-pause run spend still counts and the
+      // baseline is never reset.
+      missionTokenSince: hydrated.context.missionRunStartedAt ?? null,
     };
 
     const result = await runTurnLoop(
@@ -175,7 +211,7 @@ export async function runPreparedMissionStart(
         ...hydrated.context,
         missionRunId: prepared.runId,
         sessionKind: "mission",
-        missionDeadline: missionDeadlineIso ?? hydrated.context.missionDeadline ?? null,
+        missionDeadline: deadlineMsToIso(loopConfig.missionDeadlineMs) ?? hydrated.context.missionDeadline ?? null,
       },
       hydrated.messages,
       hydrated.summary,
@@ -282,11 +318,15 @@ export async function resumePreparedMissionRun(
     };
 
     const baseVisibility: ToolVisibilityBase = {
+      sessionId: prepared.run.sessionId,
       permission,
       role: "parent",
       sessionKind: "mission",
       missionRunActive: true,
       planMode: hydrated.context.planMode ?? false,
+      // Trim the mission's tool surface (env AGENT_MISSION_EXCLUDED_TOOLS) so a
+      // focused run doesn't pay to re-send irrelevant tool schemas every turn.
+      missionExcludedTools: resolveMissionExcludedTools(process.env),
     };
     // Seed tools — overridden per turn by buildTurnPromptStack with the live
     // band + `hasSessionMemory`.
@@ -302,20 +342,39 @@ export async function resumePreparedMissionRun(
     // the run's IMMUTABLE started_at so it holds across wakes/resumes. Enforced
     // at the turn-loop boundary. Fail-open: an unparseable timestamp yields null
     // (no box) rather than a false early stop.
-    const missionDeadlineMs = computeHardDeadlineMs(
-      (await missionRunsRepo.getRun(prepared.runId))?.startedAt ?? "",
-      resolveDurationMinutes(hydrated.context.missionDurationMinutes),
-    );
-    // Show the agent the SAME hard deadline the loop enforces (via the Runtime
-    // Clock), so it can flatten positions before the cutoff instead of being
-    // stopped mid-trade with open bags.
-    const missionDeadlineIso =
-      missionDeadlineMs != null ? new Date(missionDeadlineMs).toISOString() : null;
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
-      missionDeadlineMs,
+      // Deadline from FROZEN inputs (run started_at + the SAME snapshot the run
+      // was committed with), so a wake/resume re-derives the identical box —
+      // never the live mission row. See mission-deadline.ts.
+      missionDeadlineMs: resolveFrozenDeadlineMs(
+        hydrated.context.missionRunStartedAt,
+        prepared.run.contractSnapshotJson,
+      ),
+      // Hard token budget: DERIVED from the frozen durationMinutes (× per-minute
+      // rate), re-resolved on resume so a re-kicked run carries the identical
+      // guard; explicit AGENT_MISSION_TOKEN_BUDGET overrides, 0/off/… disables.
+      missionTokenBudget: resolveMissionTokenBudget(
+        process.env,
+        resolveDurationMinutes(
+          frozenDurationMinutes(prepared.run.contractSnapshotJson),
+        ),
+      ),
+      // Hard COST CAP (PRIMARY spend-box): re-resolved on resume from the SAME
+      // frozen `costCapUsd` so a re-kicked run carries the identical cap; env
+      // AGENT_MISSION_COST_CAP_USD default $1.00, 0/off/… disables. Run-scoped by
+      // missionTokenSince below, so pre-pause cost still counts toward the cap.
+      missionCostCap: resolveMissionCostCap(
+        process.env,
+        frozenCostCapUsd(prepared.run.contractSnapshotJson),
+      ),
+      // Run-scope to the tokens THIS run spent (fix B). The cutoff is the run's
+      // IMMUTABLE started_at, identical to the initial start, so tokens spent
+      // before the pause still count toward the ceiling — resume does NOT reset
+      // the baseline.
+      missionTokenSince: hydrated.context.missionRunStartedAt ?? null,
     };
 
     const result = await runTurnLoop(
@@ -323,7 +382,7 @@ export async function resumePreparedMissionRun(
         ...hydrated.context,
         missionRunId: prepared.runId,
         sessionKind: "mission",
-        missionDeadline: missionDeadlineIso ?? hydrated.context.missionDeadline ?? null,
+        missionDeadline: deadlineMsToIso(loopConfig.missionDeadlineMs) ?? hydrated.context.missionDeadline ?? null,
       },
       hydrated.messages,
       hydrated.summary,

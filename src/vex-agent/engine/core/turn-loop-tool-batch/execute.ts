@@ -20,6 +20,7 @@ export function buildToolContext(
     sessionId: context.sessionId,
     loadedDocuments: context.loadedDocuments,
     sessionPermission: context.sessionPermission,
+    missionMode: context.missionMode ?? "live",
     approved: false,
     role: context.isSubagent ? "subagent" : "parent",
     missionRunId: context.missionRunId,

@@ -5,7 +5,6 @@
 
 import {
   getAddress,
-  maxUint256,
   type Address,
   type Chain,
   type Hex,
@@ -14,6 +13,8 @@ import {
   type Transport,
 } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
+import { assertBroadcastAllowed } from "../../../lib/mission-mode.js";
+import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import { KYBER_KNOWN_SPENDERS } from "../constants.js";
 import logger from "../../../utils/logger.js";
 import type { KyberChainSlug } from "../types.js";
@@ -118,12 +119,28 @@ export interface ApproveResult {
  * Ensure ERC-20 allowance is sufficient. Approve if needed.
  * Handles USDT-style tokens that require reset to 0 before new approval.
  *
+ * Approves the EXACT `requiredAmount` when short (never an unlimited
+ * `maxUint256`) — the exact-amount doctrine mirrors Uniswap's
+ * `ensureUniswapAllowanceExact` (`src/tools/uniswap/erc20.ts`): a smaller
+ * standing-allowance surface, so a compromised router can pull only what this
+ * one operation needs. The former `approveExact` opt-in (default unlimited) was
+ * REMOVED, not merely defaulted to exact: the Stage-9 prequote identity binds
+ * `approveExact` into the swap match-hash and the recorder pins it `false`, so
+ * an execute passing `approveExact: true` produced a divergent digest and was
+ * already BLOCKED (no_quote) by the gate — the opt-in was dead on arrival. The
+ * `approveExact` param is likewise gone from the kyberswap swap/zap manifests,
+ * so the dispatcher rejects it as an unknown param before a handler runs.
+ *
+ * Callers that genuinely need an unlimited standing allowance (zap-out /
+ * zap-migrate ERC-20 LP-share exits, where the router-pulled amount is not
+ * determinable pre-build) pass `maxUint256` AS `requiredAmount` explicitly and
+ * document why at the call site.
+ *
  * @param publicClient - viem PublicClient for the target chain
  * @param walletClient - viem WalletClient for signing
  * @param token - ERC-20 token address
  * @param spender - Spender to approve (validated against KYBER_KNOWN_SPENDERS)
- * @param requiredAmount - Minimum allowance needed
- * @param approveExact - If true, approve exact amount; otherwise maxUint256
+ * @param requiredAmount - Exact allowance to grant when the current one is short
  */
 export async function ensureKyberAllowance(
   publicClient: PublicClient<Transport, Chain>,
@@ -131,7 +148,6 @@ export async function ensureKyberAllowance(
   token: Address,
   spender: Address,
   requiredAmount: bigint,
-  approveExact = false,
 ): Promise<ApproveResult | null> {
   validateKyberSpender(spender);
 
@@ -162,21 +178,18 @@ export async function ensureKyberAllowance(
         functionName: "approve",
         args: [spender, 0n],
       });
-      const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetTxHash });
-      if (resetReceipt.status !== "success") {
-        throw new VexError(
-          ErrorCodes.APPROVAL_FAILED,
-          `Allowance-reset transaction ${resetTxHash} reverted on-chain (status: ${resetReceipt.status}).`,
-          "The existing allowance was not cleared, so the follow-up approve would be blocked. Retry or check gas.",
-        );
-      }
+      await waitForSuccessfulReceipt(publicClient, resetTxHash, {
+        code: ErrorCodes.APPROVAL_FAILED,
+        what: "Allowance-reset transaction",
+        hint: "The existing allowance was not cleared, so the follow-up approve would be blocked. Check the transaction hash before retrying.",
+      });
     } catch (err) {
       if (err instanceof VexError) throw err;
       throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to reset allowance: ${err instanceof Error ? err.message : err}`);
     }
   }
 
-  const approveAmount = approveExact ? requiredAmount : maxUint256;
+  const approveAmount = requiredAmount;
 
   try {
     logger.debug({ event: "kyberswap.allowance.approve", token, spender, amount: approveAmount.toString() });
@@ -187,18 +200,11 @@ export async function ensureKyberAllowance(
       functionName: "approve",
       args: [spender, approveAmount],
     });
-    // viem's waitForTransactionReceipt RESOLVES on a reverted tx (status
-    // "reverted") — it does not throw. A reverted approve grants NO allowance, so
-    // treating it as success sends the swap into a transferFrom revert that masks
-    // the real cause. Fail loud on the approve.
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-    if (receipt.status !== "success") {
-      throw new VexError(
-        ErrorCodes.APPROVAL_FAILED,
-        `Approval transaction ${txHash} reverted on-chain (status: ${receipt.status}).`,
-        "The router was not granted an allowance; the swap would fail at transferFrom. Retry or check gas.",
-      );
-    }
+    await waitForSuccessfulReceipt(publicClient, txHash, {
+      code: ErrorCodes.APPROVAL_FAILED,
+      what: "Approval transaction",
+      hint: "The router was not granted an allowance. Check the transaction hash before retrying.",
+    });
     return { txHash, resetTxHash };
   } catch (err) {
     if (err instanceof VexError) throw err;
@@ -219,6 +225,9 @@ export async function sendKyberTransaction(
   params: { to: Address; data: Hex; value?: bigint },
 ): Promise<Hex> {
   try {
+    // Layer B (belt-and-suspenders): fail-closed no-broadcast under a
+    // simulator mission run — throws before sendTransaction.
+    assertBroadcastAllowed("KyberSwap transaction broadcast");
     const txHash = await walletClient.sendTransaction({
       account: walletClient.account!,
       to: params.to,
@@ -226,16 +235,11 @@ export async function sendKyberTransaction(
       value: params.value ?? 0n,
       chain: walletClient.chain,
     });
-    // waitForTransactionReceipt RESOLVES on a reverted tx — assert success so a
-    // reverted swap is never reported as executed.
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-    if (receipt.status !== "success") {
-      throw new VexError(
-        ErrorCodes.SWAP_FAILED,
-        `Transaction ${txHash} reverted on-chain (status: ${receipt.status}).`,
-        "No tokens were swapped. Common causes: slippage/min-out, insufficient allowance, or a fee-on-transfer token.",
-      );
-    }
+    await waitForSuccessfulReceipt(publicClient, txHash, {
+      code: ErrorCodes.SWAP_FAILED,
+      what: "Transaction",
+      hint: "No swap was confirmed. Check the transaction hash before retrying.",
+    });
     return txHash;
   } catch (err) {
     if (err instanceof VexError) throw err;
@@ -253,6 +257,9 @@ export async function sendKyberTransactionWithReceipt(
   params: { to: Address; data: Hex; value?: bigint },
 ): Promise<{ hash: Hex; receipt: { logs: Array<{ address: string; topics: string[]; data: string }> } }> {
   try {
+    // Layer B (belt-and-suspenders): fail-closed no-broadcast under a
+    // simulator mission run — throws before sendTransaction.
+    assertBroadcastAllowed("KyberSwap transaction broadcast");
     const hash = await walletClient.sendTransaction({
       account: walletClient.account!,
       to: params.to,
@@ -260,14 +267,11 @@ export async function sendKyberTransactionWithReceipt(
       value: params.value ?? 0n,
       chain: walletClient.chain,
     });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") {
-      throw new VexError(
-        ErrorCodes.SWAP_FAILED,
-        `Transaction ${hash} reverted on-chain (status: ${receipt.status}).`,
-        "The zap did not execute. Common causes: slippage/min-out, insufficient allowance, or a fee-on-transfer token.",
-      );
-    }
+    const receipt = await waitForSuccessfulReceipt(publicClient, hash, {
+      code: ErrorCodes.SWAP_FAILED,
+      what: "Transaction",
+      hint: "No swap was confirmed. Check the transaction hash before retrying.",
+    });
     return {
       hash,
       receipt: {

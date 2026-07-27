@@ -25,8 +25,9 @@
  * all live in `.vex-console` (globals.css) — token-only, so both themes
  * recolor from `--vex-accent`. The context strip is gone, so the two
  * transient states it carried survive as a tiny tag FLOATING above the pill:
- * amber "AWAITING SIGNATURE" while a run is parked for approval, muted
- * "Stopping…" while a stop settles (they cannot co-occur).
+ * amber "AWAITING SIGNATURE" while a run is parked for approval or muted
+ * "Stopping…" while a stop settles. Active work is shown on the agent avatar
+ * in the transcript instead of adding another label above the input.
  *
  * Pure helpers: gating reasons + placeholders in `composer-helpers.ts`.
  * Mission controls (start/continue/recover/stop/edit/renew) are buttons in
@@ -64,12 +65,14 @@ import {
   gatedReason,
   placeholderFor,
   readRunStatus,
+  submitFailureNotice,
   submitSuccessText,
 } from "./composer-helpers.js";
 import { ComposerQuickActions } from "./ComposerQuickActions.js";
 import { usePlaceholderRotator } from "./composer-placeholders.js";
 import { PlanSwitch } from "./PlanSwitch.js";
 import { nextReasoningEffort, ReasoningSwitch } from "./ReasoningSwitch.js";
+import { HypervexingSummon } from "./workspace/HypervexingSummon.js";
 
 /**
  * Shared geometry for the round send control's three states (send / stop /
@@ -106,12 +109,24 @@ export interface SessionComposerProps {
    * and gating are identical in both variants.
    */
   readonly stage?: boolean;
+  /**
+   * Focus handoff BACK from Hypervexing: true for the render immediately
+   * after the shell's exit drain completes and this composer is the return
+   * target. The parent owns the "why" (an exit just happened); this
+   * component only reacts to the transition and reports it consumed via
+   * `onFocusRequestHandled` so the parent can reset it — otherwise a later,
+   * unrelated mount of this composer would inherit a stale "focus me" flag.
+   */
+  readonly focusRequest?: boolean;
+  readonly onFocusRequestHandled?: () => void;
 }
 
 export function SessionComposer({
   activeSession,
   activeSessionId,
   stage = false,
+  focusRequest = false,
+  onFocusRequestHandled,
 }: SessionComposerProps): JSX.Element {
   // Submit/enable gate on the canonical selected id (uiStore), NOT the
   // detail-query object: the engine ingress loads its own session context,
@@ -129,6 +144,7 @@ export function SessionComposer({
     mutateAsync: submitTurn,
     stop: stopTurn,
   } = useSubmitChat();
+  const workspaceMode = useUiStore((s) => s.workspaceMode);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const pendingFirstMessage = useUiStore((s) => s.pendingFirstMessage);
   const clearPendingFirstMessage = useUiStore((s) => s.clearPendingFirstMessage);
@@ -193,6 +209,15 @@ export function SessionComposer({
     setNotice(null);
   }, [sessionId]);
 
+  // Focus handoff back from Hypervexing (see the prop doc): react to the
+  // transition rather than mount, since this same instance can receive the
+  // request without remounting.
+  useEffect(() => {
+    if (!focusRequest) return;
+    textareaRef.current?.focus();
+    onFocusRequestHandled?.();
+  }, [focusRequest, onFocusRequestHandled]);
+
   // Reset the stop acknowledgment when the turn settles (success, error, or
   // the retry path re-arming) so the next turn starts from a clean Stop key.
   useEffect(() => {
@@ -239,6 +264,21 @@ export function SessionComposer({
           }
           return;
         }
+        const failure = submitFailureNotice(outcome.data);
+        if (failure !== null) {
+          const armRetry =
+            failure.retryable &&
+            activeSession?.id === targetSessionId &&
+            activeSession.mode === "agent";
+          setNotice({
+            tone: "error",
+            text: failure.text,
+            ...(armRetry && {
+              retry: { sessionId: targetSessionId, message },
+            }),
+          });
+          return;
+        }
         const successText = submitSuccessText(outcome.data);
         if (successText !== null) setNotice({ tone: "info", text: successText });
       } finally {
@@ -278,6 +318,11 @@ export function SessionComposer({
 
   const runStatus = readRunStatus(runtimeQuery.data);
   const freeTextGate = runStatus !== null && FREE_TEXT_DISALLOWED.has(runStatus);
+
+  // The summoning word in the draft, outside the mode — drives the ripple
+  // veil, the gradient text paint, and the spellcheck suppression together.
+  const summonActive =
+    workspaceMode !== "hypervexing" && /hypervexing/i.test(draft);
 
   // Plan mode — same engine-owned, session-scoped state SessionPlanCard
   // displays (same query key, no extra fetch). The PLAN switch is the single
@@ -391,12 +436,10 @@ export function SessionComposer({
   return (
     <>
       <div className="relative mt-6">
-        {/* TRANSIENT SIGNAL TAG — floats above the pill's right side, carrying
-         * the two states the retired context strip held (they cannot co-occur:
-         * an approval pause freezes free-text submit, so nothing is in flight).
-         * amber "AWAITING SIGNATURE" while parked for a signature; muted
-         * "Stopping…" while a stop settles. Sibling of the form so the pill's
-         * rounded surface never owns this floating status layer. */}
+        {/* TRANSIENT SIGNAL TAG — floats above the pill's right side. An
+         * approval pause wins over a requested stop. The active-work signal
+         * lives on the agent avatar in the transcript, so the composer stays
+         * visually quiet while a turn is running. */}
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"
@@ -436,6 +479,10 @@ export function SessionComposer({
             "vex-console relative flex items-center gap-1.5 overflow-visible rounded-[24px] bg-[var(--vex-glass)] p-1.5 backdrop-blur-xl",
           )}
         >
+          {/* The summoning ritual: typing "hypervexing" ripples the pill in
+           * the protocol's mint before the message is even sent. Only outside
+           * the mode — inside, the room itself is the acknowledgment. */}
+          <HypervexingSummon active={summonActive} />
           <textarea
               ref={textareaRef}
               value={draft}
@@ -459,6 +506,9 @@ export function SessionComposer({
               rows={1}
               placeholder={placeholder}
               aria-label="Session draft"
+              // The summoning word is real vocabulary here, not a typo — the
+              // spellchecker's red squiggle would deface the ritual.
+              spellCheck={!summonActive}
               className={cn(
                 "block w-full flex-1 resize-none overflow-y-auto bg-transparent leading-[1.6] text-foreground caret-[var(--vex-accent)] outline-none",
                 "max-h-[200px] py-1.5 pr-1 placeholder:text-[var(--vex-text-3)]",
@@ -467,6 +517,9 @@ export function SessionComposer({
                 "pl-5",
                 // Stage: taller idle presence + larger type (the instrument).
                 stage ? "min-h-[44px] text-[16px]" : "min-h-[36px] text-[15px]",
+                // The invocation glows: draft text paints as a drifting
+                // mint→teal gradient while the summoning word is present.
+                summonActive && "hv-summon-input",
               )}
             />
 
@@ -474,13 +527,18 @@ export function SessionComposer({
            * round send control, all sharing one height (h-9) and vertically
            * centered against the field so the control bank reads level at rest. */}
           <div className="flex shrink-0 items-center gap-1.5">
-              <PlanSwitch
-                sessionId={sessionId}
-                planOn={planOn}
-                busy={setPlanMode.isPending}
-                missionBlocked={planMissionBlocked}
-                onToggle={togglePlanMode}
-              />
+              {/* In the Hypervexing room the copilot is plain chat by decree —
+               * the Chat/Plan selector hides; plan/mission control stays a
+               * normal-desk affordance. */}
+              {workspaceMode !== "hypervexing" ? (
+                <PlanSwitch
+                  sessionId={sessionId}
+                  planOn={planOn}
+                  busy={setPlanMode.isPending}
+                  missionBlocked={planMissionBlocked}
+                  onToggle={togglePlanMode}
+                />
+              ) : null}
 
               {/* REASON control (S6) — only when the active model supports
                * reasoning; welcome (no session) hides it (capability unknown). */}

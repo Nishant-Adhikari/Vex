@@ -9,6 +9,7 @@
  */
 
 import { getVisibleToolDefs, type ToolVisibilityContext } from "./visibility.js";
+import { HYPERVEXING_ALIAS_NAMES } from "../hypervexing-aliases.js";
 
 /**
  * Ordered, visibility-coherent categorization of the agent-surface tools
@@ -49,7 +50,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     toolNames: ["swap_quote", "token_check", "bridge_quote", "bridge_status"],
   },
   { label: "Swap & bridge execution (on-chain — quote first)", toolNames: ["swap", "bridge"] },
-  { label: "Research", toolNames: ["web_research", "twitter_account"] },
+  { label: "Research", toolNames: ["web_research", "twitter_account", "website_context"] },
   { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },
   {
     label: "Session memory — this conversation/mission only",
@@ -70,6 +71,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Mission run scheduling", toolNames: ["loop_defer"] },
   { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["plan_write"] },
   { label: "Setup/onboarding", toolNames: ["polymarket_setup"] },
+  { label: "Hyperliquid workspace", toolNames: ["hyperliquid_enter"] },
 ];
 
 /**
@@ -93,6 +95,10 @@ export function getVisibleToolsByCategory(
     if (surviving.length > 0) {
       result.push({ label: category.label, toolNames: surviving });
     }
+  }
+  const hotAliases = HYPERVEXING_ALIAS_NAMES.filter(name => visibleNames.has(name));
+  if (hotAliases.length > 0) {
+    result.push({ label: "Hypervexing Hyperliquid hot set", toolNames: hotAliases });
   }
   return result;
 }

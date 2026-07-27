@@ -136,7 +136,9 @@ function evmResult(
     chainId: 8453,
     tokenIn: { address: EVM_TOKEN_IN, symbol: "AAA", decimals: 18 },
     tokenOut: { address: EVM_TOKEN_OUT, symbol: "BBB", decimals: 18 },
-    routeSummary: { foo: "bar" },
+    // Realistic low-impact route summary (0.2%) so the pre-buy price-impact leg
+    // resolves to `pass` and the recorded verdict stays clean.
+    routeSummary: { priceImpact: 0.002, amountInUsd: "100", amountOutUsd: "99.8", foo: "bar" },
     routerAddress: "0xROUTER",
     safety: { tokenIn: tokenInLeg, tokenOut: tokenOutLeg },
     ...overrides,

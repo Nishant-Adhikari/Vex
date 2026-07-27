@@ -15,12 +15,13 @@
  * rule), with the session count as a mono microtype counter on the right.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AlertCircleIcon,
   ArrowLeft01Icon,
+  Search01Icon,
 } from "@hugeicons/core-free-icons";
 import type {
   SessionDeleteOutcome,
@@ -36,14 +37,19 @@ import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { SessionGroups } from "./SessionRows.js";
 import {
   filterSessionsByMode,
+  filterSessionsByTitle,
   groupSessions,
+  SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
+
+const EMPTY_SESSIONS: readonly SessionListItem[] = [];
 
 export function SessionsLibrary(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
   const setAppShellView = useUiStore((s) => s.setAppShellView);
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
+  const setSessionModeFilter = useUiStore((s) => s.setSessionModeFilter);
   const query = useSessionsList();
   const pinMutation = useSetSessionPinned();
   const deleteMutation = useDeleteSession();
@@ -54,18 +60,43 @@ export function SessionsLibrary(): JSX.Element {
   const [removeTarget, setRemoveTarget] = useState<SessionListItem | null>(null);
   const [removeBlocked, setRemoveBlocked] =
     useState<SessionDeleteOutcome | null>(null);
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    searchRef.current?.focus();
+  }, []);
+
+  const allRows = query.data?.ok === true ? query.data.data : EMPTY_SESSIONS;
+  const totalRows = allRows.length;
+  const filteredRows = useMemo(
+    () =>
+      filterSessionsByTitle(
+        filterSessionsByMode(allRows, sessionModeFilter),
+        search,
+      ),
+    [allRows, search, sessionModeFilter],
+  );
 
   const groups = useMemo(() => {
-    if (!query.data?.ok) return [];
-    return groupSessions(
-      filterSessionsByMode(query.data.data, sessionModeFilter),
-    );
-  }, [query.data, sessionModeFilter]);
+    return groupSessions(filteredRows);
+  }, [filteredRows]);
 
-  const totalRows = useMemo(
-    () => groups.reduce((sum, g) => sum + g.rows.length, 0),
-    [groups],
-  );
+  const visibleRows = filteredRows.length;
+  const searchActive = search.trim().length > 0;
+  const filtersActive = searchActive || sessionModeFilter !== "all";
+  const countLabel =
+    totalRows === 0
+      ? "No sessions yet"
+      : filtersActive
+        ? `${visibleRows} of ${totalRows} sessions`
+        : `${totalRows} session${totalRows === 1 ? "" : "s"} stored locally`;
+
+  const clearFilters = useCallback((): void => {
+    setSearch("");
+    setSessionModeFilter("all");
+    searchRef.current?.focus();
+  }, [setSessionModeFilter]);
 
   const handleBack = useCallback((): void => {
     setAppShellView("session");
@@ -135,10 +166,12 @@ export function SessionsLibrary(): JSX.Element {
         <h1 className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-foreground">
           All sessions
         </h1>
-        <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-2)]">
-          {totalRows === 0
-            ? "No sessions yet"
-            : `${totalRows} session${totalRows === 1 ? "" : "s"} stored locally`}
+        <span
+          aria-live="polite"
+          aria-atomic="true"
+          className="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-2)]"
+        >
+          {countLabel}
         </span>
       </header>
 
@@ -146,7 +179,67 @@ export function SessionsLibrary(): JSX.Element {
         aria-label="Sessions library"
         className="vex-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6"
       >
-        <div className="mx-auto w-full max-w-[760px]">
+        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-5">
+          <div
+            data-vex-sessions-library-toolbar
+            className="flex flex-wrap items-center gap-3 border-b border-[var(--vex-line)] pb-4"
+          >
+            <div
+              role="group"
+              aria-label="Filter sessions by mode"
+              className="flex items-center gap-1"
+            >
+              {SESSION_MODE_FILTERS.map((filter) => {
+                const active = sessionModeFilter === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setSessionModeFilter(filter.value)}
+                    className={`rounded-[3px] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] ${
+                      active
+                        ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
+                        : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative ml-auto min-w-[220px] flex-1 sm:max-w-[320px]">
+              <HugeiconsIcon
+                icon={Search01Icon}
+                size={14}
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--vex-text-3)]"
+              />
+              <input
+                ref={searchRef}
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search session titles"
+                aria-label="Search session titles"
+                className="h-8 w-full rounded-[6px] border border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)] py-1 pl-8 pr-14 text-xs text-foreground placeholder:text-[var(--vex-text-3)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)]"
+              />
+              {searchActive ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    searchRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--vex-text-2)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+          </div>
+
           {query.isLoading ? (
             <p className="text-sm text-[var(--vex-text-2)]">
               Loading sessions…
@@ -160,6 +253,19 @@ export function SessionsLibrary(): JSX.Element {
             <p className="text-sm text-[var(--vex-text-3)]">
               Create a session from the sidebar to get started.
             </p>
+          ) : visibleRows === 0 ? (
+            <div className="flex flex-col items-start gap-2 py-3">
+              <p className="text-sm text-[var(--vex-text-2)]">
+                No sessions match your current search and filters.
+              </p>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+              >
+                Reset filters
+              </button>
+            </div>
           ) : (
             <SessionGroups
               groups={groups}

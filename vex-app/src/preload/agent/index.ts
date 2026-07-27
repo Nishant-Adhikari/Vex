@@ -19,6 +19,7 @@ import { approvals } from "./approvals.js";
 import { chat } from "./chat.js";
 import { compaction } from "./compaction.js";
 import { engine } from "./engine.js";
+import { hyperliquid } from "./hyperliquid.js";
 import { longMemory } from "./long-memory.js";
 import { memory } from "./memory.js";
 import { memoryInspector } from "./memory-inspector.js";
@@ -28,6 +29,7 @@ import { models } from "./models.js";
 import { portfolio } from "./portfolio.js";
 import { runtime } from "./runtime.js";
 import { sessions } from "./sessions.js";
+import { signals } from "./signals.js";
 import { usage } from "./usage.js";
 import { wallets } from "./wallets.js";
 
@@ -47,4 +49,6 @@ export const agentBridge = {
   memoryInspector,
   portfolio,
   engine,
+  hyperliquid,
+  signals,
 } satisfies VexAgentBridge;

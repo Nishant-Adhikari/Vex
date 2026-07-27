@@ -23,6 +23,7 @@ import { getActionKind } from "./registry.js";
 import { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 import { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 import { routeToolCall } from "./dispatcher/protocol-route.js";
+import { runWithMissionMode } from "../../lib/mission-mode.js";
 import logger from "@utils/logger.js";
 
 // Compatibility façade re-exports — preserve the dispatcher's public surface.
@@ -86,7 +87,16 @@ export async function dispatchTool(
   }
 
   try {
-    const result = await routeToolCall(call, context);
+    // Bind the run's frozen mission mode onto the async broadcast guard for the
+    // whole dispatch subtree. This is the SECOND, independent no-broadcast
+    // channel: even if a swap handler's own paper-fill branch (layer A) were
+    // bypassed, `sendUniswapTransaction` / `sendKyberTransaction` read this ALS
+    // and fail-closed. Every real mission swap flows through here, so a
+    // simulator run's mode is always bound before any broadcast primitive runs.
+    const result = await runWithMissionMode(
+      context.missionMode ?? "live",
+      () => routeToolCall(call, context),
+    );
     const durationMs = Date.now() - startTime;
 
     logger.debug("tools.dispatch.completed", {

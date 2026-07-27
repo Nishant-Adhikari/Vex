@@ -52,14 +52,74 @@ describe("writeProvider", () => {
         "AGENT_PROVIDER",
       ]);
     }
+    // The fallback secret is always addressed — cleared (null) when no fallback
+    // is supplied — so a removed fallback never lingers in the vault.
     expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
       OPENROUTER_API_KEY: "sk-or-test-123",
+      OPENROUTER_API_KEY_FALLBACK: null,
     });
     expect(readDotenvFileValue("OPENROUTER_API_KEY", envFile)).toBeNull();
     expect(readDotenvFileValue("AGENT_MODEL", envFile)).toBe(
       "anthropic/claude-sonnet-4.5",
     );
     expect(readDotenvFileValue("AGENT_PROVIDER", envFile)).toBe("openrouter");
+    // No fallback supplied → the fallback model line is omitted from .env.
+    expect(readDotenvFileValue("AGENT_MODEL_FALLBACK", envFile)).toBeNull();
+  });
+
+  it("persists a supplied fallback: key to the vault, model to .env, both in fieldsWritten", async () => {
+    const result = await writeProvider(
+      {
+        provider: "openrouter",
+        apiKey: "sk-or-primary",
+        model: "openai/gpt-4o",
+        fallback: { apiKey: "sk-or-fallback", model: "qwen/qwen-2.5-72b-instruct" },
+      },
+      { envFile },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.fieldsWritten).toEqual([
+        "OPENROUTER_API_KEY",
+        "AGENT_MODEL",
+        "AGENT_PROVIDER",
+        "OPENROUTER_API_KEY_FALLBACK",
+        "AGENT_MODEL_FALLBACK",
+      ]);
+    }
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      OPENROUTER_API_KEY: "sk-or-primary",
+      OPENROUTER_API_KEY_FALLBACK: "sk-or-fallback",
+    });
+    // Fallback key is a managed secret → never in .env; model id is non-secret.
+    expect(readDotenvFileValue("OPENROUTER_API_KEY_FALLBACK", envFile)).toBeNull();
+    expect(readDotenvFileValue("AGENT_MODEL_FALLBACK", envFile)).toBe(
+      "qwen/qwen-2.5-72b-instruct",
+    );
+  });
+
+  it("clears a previously-configured fallback when reconfigured without one", async () => {
+    writeFileSync(
+      envFile,
+      ['AGENT_MODEL_FALLBACK="stale/fallback-model"'].join("\n") + "\n",
+    );
+
+    const result = await writeProvider(
+      { provider: "openrouter", apiKey: "sk-or-primary", model: "openai/gpt-4o" },
+      { envFile },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.fieldsWritten).not.toContain("AGENT_MODEL_FALLBACK");
+    }
+    // Vault fallback secret is cleared and the stale .env model line is gone.
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      OPENROUTER_API_KEY: "sk-or-primary",
+      OPENROUTER_API_KEY_FALLBACK: null,
+    });
+    expect(readDotenvFileValue("AGENT_MODEL_FALLBACK", envFile)).toBeNull();
   });
 
   it("strips stale plaintext OpenRouter keys while preserving unrelated non-secret values", async () => {

@@ -29,13 +29,52 @@ export const MAX_RENDER_LOGS = 500;
 export type VexTheme = "vex" | "robinhood";
 
 /**
- * Amount-unit the MOVES ledger renders in. `usd` is the default (the figure a
- * trader reasons about); `eth` keeps the raw on-chain base-leg amount. Persisted
- * via the partialize whitelist below so the choice survives relaunch — the
- * renderer must never touch `localStorage` directly (build-artifact gate), so
- * this preference lives here rather than in a bespoke key.
+ * Hypervexing workspace mode. This is a SEPARATE flag layered over `theme`,
+ * NOT a third `VexTheme` value:
+ *  - it is agent-driven and transient (entered via an agent tool push, exited
+ *    via the in-mode EXIT control), so it must NOT persist — a relaunch always
+ *    starts in `normal` mode (excluded from the persist whitelist below);
+ *  - `data-vex-theme` is DERIVED from it in AppShell
+ *    (`workspaceMode === "hypervexing" ? "hypervexing" : theme`), so EXIT
+ *    restores the user's persisted theme (navy vs lime) exactly.
+ * `theme` stays the user's own choice; the mode never overwrites it.
  */
-export type MovesDisplayMode = "usd" | "eth";
+export type WorkspaceMode = "normal" | "hypervexing";
+
+/**
+ * Denomination for the mission PnL readouts (the Missions ledger's cumulative
+ * figure + each per-run row). `usd` (the DEFAULT) values each run at the
+ * ETH→USD spot price captured at THAT run's close (`ethPriceUsdEnd`, already on
+ * the ledger row) — historically faithful, never a single live spot applied to
+ * old runs; `eth` shows the raw native PnL. Persisted (partialize whitelist
+ * below): a trader's denomination preference is a deliberate choice that must
+ * survive relaunch. Fail-soft in the view: a run with no captured close price
+ * falls back to ETH even under `usd`, so the figure is never blank or `$NaN`.
+ */
+export type PnlCurrency = "eth" | "usd";
+
+/**
+ * Which mission/plan review dialog (if any) the DESK RULE header cluster
+ * (`MissionRail`) should show. Lifted out of `MissionRail`'s local state so a
+ * DIFFERENT component in a different tree branch — `MissionControls`' "Review
+ * & accept contract" bar, mounted in the session body, not the header — can
+ * open the same dialog `MissionRail` owns. UI-ephemeral, NOT persisted: a
+ * relaunch always starts with no dialog open. The single enum value keeps
+ * mission/plan mutual exclusion for free (setting one closes the other).
+ */
+export type ReviewModal = "none" | "mission" | "plan";
+
+/**
+ * The reorderable MISSION CONTROL instrument sections on the right BOOK rail,
+ * in their default top-to-bottom order. POSITION now lives on the LEFT sidebar
+ * (its own always-present accordion), so it is not part of this reorderable set
+ * — the right rail is the run's instruments only. Kept as a plain literal here
+ * (rather than imported from the feature) so the UI-only store never depends on
+ * a feature module. `bookSectionModel.resolveBookSectionOrder` reconciles any
+ * persisted order against this canonical set (drops unknown ids, appends any
+ * missing) so a hand-edited or stale payload can never desync the render.
+ */
+const DEFAULT_BOOK_SECTION_ORDER: readonly string[] = ["moves", "runtime", "session"];
 
 export type View =
   | "splash"
@@ -49,7 +88,10 @@ export type View =
 
 export type WizardEntryMode = "setup" | "reconfigure";
 export type UnlockReturnView = "wizard" | "appShell";
-export type SessionModeFilter = "all" | "agent" | "mission";
+// "presets" is a sidebar TAB, not a session mode: when active the rail swaps
+// the session list for the one-click mission-preset cards. It never matches a
+// session's `mode`, so `filterSessionsByMode` yields no rows for it.
+export type SessionModeFilter = "all" | "agent" | "mission" | "presets";
 /**
  * Sub-view of the app shell panel area. `session` is the default chat/
  * welcome panel; `sessionsLibrary` is the dedicated "browse all sessions"
@@ -62,8 +104,10 @@ export type AppShellView =
   | "sessionsLibrary"
   // Read-only long-term + session-memory panel (stage 7-2a, S9 rewire).
   | "memory"
-  // Read-only per-wallet ledger of finalized mission runs (mission-results-ledger).
-  | "missionHistory";
+  // Read-only mission results ledger (WP-J).
+  | "missionHistory"
+  // Read-only Signals section — today's TrendRadar signals + LLM-judge grade.
+  | "signals";
 
 export interface UiLogEntry {
   readonly id: string;
@@ -88,6 +132,13 @@ interface UiState {
    * Defaults to `vex` (the cobalt Signal Desk).
    */
   readonly theme: VexTheme;
+  /**
+   * Hypervexing workspace mode. Defaults to `normal` and is NOT persisted
+   * (see partialize) — a relaunch always starts in `normal`, never inside the
+   * mode. Drives the DERIVED `data-vex-theme` in AppShell without touching the
+   * user's own `theme`.
+   */
+  readonly workspaceMode: WorkspaceMode;
   readonly sidebarOpen: boolean;
   /**
    * The on-demand right-side BOOK panel (per-session instrument: MOVES /
@@ -95,12 +146,16 @@ interface UiState {
    * persisted so the user's choice survives relaunch.
    */
   readonly bookOpen: boolean;
-  /**
-   * MOVES ledger amount-unit (USD vs raw ETH). Defaults to `usd` and is
-   * persisted (partialize whitelist) so the trader's choice survives relaunch.
-   */
-  readonly movesDisplayMode: MovesDisplayMode;
   readonly currentView: View;
+  /**
+   * True once startup detects onboarding is already complete on this machine
+   * (a RETURNING user). Drives the express lane: the healthy setup screens
+   * auto-advance instead of waiting for Begin/Continue clicks, so a returning
+   * user flows straight to the unlock gate. Defaults false (first-run sees the
+   * full flow) and is NOT persisted — it is recomputed from capabilities on
+   * every launch (see partialize).
+   */
+  readonly returningUser: boolean;
   readonly wizardEntryMode: WizardEntryMode;
   readonly unlockReturnView: UnlockReturnView;
   readonly logBuffer: ReadonlyArray<UiLogEntry>;
@@ -134,15 +189,42 @@ interface UiState {
    * every session back at the default; the engine owns the real default.
    */
   readonly reasoningEffortBySession: Readonly<Record<string, ReasoningEffort>>;
+  /**
+   * Hypervexing market-picker favorites (starred coins). Persisted — a
+   * trader's watch set is a deliberate choice that must survive relaunch.
+   * Pure UI preference: rows come from the markets query, this only stars.
+   */
+  readonly hlFavorites: readonly string[];
+  /** See `ReviewModal`. NOT persisted — see partialize. */
+  readonly reviewModal: ReviewModal;
+  /**
+   * Mission PnL denomination (see `PnlCurrency`). Defaults to `usd` and IS
+   * persisted (partialize) so the choice survives relaunch.
+   */
+  readonly pnlCurrency: PnlCurrency;
+  /**
+   * Per-section collapse state for the BOOK rail accordions, keyed by the
+   * stable section id (`moves` / `runtime` / `session` on the right,
+   * `position` on the left). `true` = collapsed. Absent key = the section's
+   * own `defaultOpen`. Persisted so the operator's drilled-in layout survives
+   * relaunch.
+   */
+  readonly bookSectionCollapsed: Readonly<Record<string, boolean>>;
+  /**
+   * User-chosen top-to-bottom order of the right rail's reorderable MISSION
+   * CONTROL sections. Persisted; reconciled against the canonical set at
+   * render (`resolveBookSectionOrder`) so a stale/edited payload is fail-soft.
+   */
+  readonly bookSectionOrder: readonly string[];
   readonly setTheme: (value: VexTheme) => void;
   readonly toggleTheme: () => void;
+  readonly setWorkspaceMode: (value: WorkspaceMode) => void;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
-  readonly setMovesDisplayMode: (value: MovesDisplayMode) => void;
-  readonly toggleMovesDisplayMode: () => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
+  readonly setReturningUser: (value: boolean) => void;
   readonly openWizard: (mode: WizardEntryMode) => void;
   readonly openUnlock: (returnView: UnlockReturnView) => void;
   readonly setActiveSessionId: (value: string | null) => void;
@@ -158,6 +240,13 @@ interface UiState {
     effort: ReasoningEffort,
   ) => void;
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
+  readonly toggleHlFavorite: (coin: string) => void;
+  readonly setReviewModal: (value: ReviewModal) => void;
+  readonly setPnlCurrency: (value: PnlCurrency) => void;
+  /** Toggle one BOOK section's persisted collapse state. */
+  readonly toggleBookSection: (id: string) => void;
+  /** Move one right-rail section up or down in the persisted order. */
+  readonly moveBookSection: (id: string, direction: "up" | "down") => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -166,10 +255,11 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       theme: "vex",
+      workspaceMode: "normal",
       sidebarOpen: true,
       bookOpen: true,
-      movesDisplayMode: "usd",
       currentView: "splash",
+      returningUser: false,
       wizardEntryMode: "setup",
       unlockReturnView: "appShell",
       logBuffer: [],
@@ -181,19 +271,21 @@ export const useUiStore = create<UiState>()(
       pendingFirstMessage: null,
       signingState: "idle",
       reasoningEffortBySession: {},
+      hlFavorites: [],
+      reviewModal: "none",
+      pnlCurrency: "usd",
+      bookSectionCollapsed: {},
+      bookSectionOrder: DEFAULT_BOOK_SECTION_ORDER,
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === "vex" ? "robinhood" : "vex" })),
+      setWorkspaceMode: (workspaceMode) => set({ workspaceMode }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
-      setMovesDisplayMode: (movesDisplayMode) => set({ movesDisplayMode }),
-      toggleMovesDisplayMode: () =>
-        set((state) => ({
-          movesDisplayMode: state.movesDisplayMode === "usd" ? "eth" : "usd",
-        })),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
+      setReturningUser: (returningUser) => set({ returningUser }),
       openWizard: (wizardEntryMode) =>
         set({ currentView: "wizard", wizardEntryMode }),
       openUnlock: (unlockReturnView) =>
@@ -221,6 +313,35 @@ export const useUiStore = create<UiState>()(
           },
         })),
       setSigningState: (signingState) => set({ signingState }),
+      toggleHlFavorite: (coin) =>
+        set((state) => ({
+          hlFavorites: state.hlFavorites.includes(coin)
+            ? state.hlFavorites.filter((c) => c !== coin)
+            : [...state.hlFavorites, coin],
+        })),
+      setReviewModal: (reviewModal) => set({ reviewModal }),
+      setPnlCurrency: (pnlCurrency) => set({ pnlCurrency }),
+      toggleBookSection: (id) =>
+        set((state) => ({
+          bookSectionCollapsed: {
+            ...state.bookSectionCollapsed,
+            [id]: !state.bookSectionCollapsed[id],
+          },
+        })),
+      moveBookSection: (id, direction) =>
+        set((state) => {
+          const order = [...state.bookSectionOrder];
+          const i = order.indexOf(id);
+          if (i === -1) return {};
+          const j = direction === "up" ? i - 1 : i + 1;
+          if (j < 0 || j >= order.length) return {};
+          const moved = order[i];
+          const swapped = order[j];
+          if (moved === undefined || swapped === undefined) return {};
+          order[i] = swapped;
+          order[j] = moved;
+          return { bookSectionOrder: order };
+        }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -229,13 +350,16 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 4,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
-        movesDisplayMode: state.movesDisplayMode,
+        hlFavorites: state.hlFavorites,
+        pnlCurrency: state.pnlCurrency,
+        bookSectionCollapsed: state.bookSectionCollapsed,
+        bookSectionOrder: state.bookSectionOrder,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -243,8 +367,13 @@ export const useUiStore = create<UiState>()(
       //       persist normally).
       //   v3: `theme` added — seed the cobalt default so a pre-theme install
       //       hydrates into `vex`, not `undefined`.
-      //   v4: `movesDisplayMode` added — seed the `usd` default so a pre-toggle
-      //       install hydrates into USD, not `undefined`.
+      //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
+      //   v5: `pnlCurrency` added (mission PnL denomination) — seed the `usd`
+      //       default so a pre-toggle install hydrates into USD, not undefined.
+      //   v6: BOOK accordion layout added (`bookSectionCollapsed` +
+      //       `bookSectionOrder`) — seed the empty-collapse map + the default
+      //       section order so a pre-layout install hydrates into a valid,
+      //       fully-expanded default rather than undefined.
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -252,17 +381,27 @@ export const useUiStore = create<UiState>()(
         let next = persisted as Record<string, unknown>;
         if (version < 2) next = { ...next, bookOpen: true };
         if (version < 3 && !("theme" in next)) next = { ...next, theme: "vex" };
-        if (version < 4 && !("movesDisplayMode" in next)) {
-          next = { ...next, movesDisplayMode: "usd" };
+        if (version < 4 && !("hlFavorites" in next)) {
+          next = { ...next, hlFavorites: [] };
+        }
+        if (version < 5 && !("pnlCurrency" in next)) {
+          next = { ...next, pnlCurrency: "usd" };
+        }
+        if (version < 6) {
+          if (!("bookSectionCollapsed" in next)) {
+            next = { ...next, bookSectionCollapsed: {} };
+          }
+          if (!("bookSectionOrder" in next)) {
+            next = { ...next, bookSectionOrder: DEFAULT_BOOK_SECTION_ORDER };
+          }
         }
         return next;
       },
       // localStorage is user-writable (untrusted input), and `migrate` only
       // runs on version hops — a hand-edited current-version payload skips it.
-      // Coerce on EVERY rehydrate: an off-union `theme`/`movesDisplayMode`
-      // degrades to its default instead of reaching `data-vex-theme` /
-      // `SKY_ACCENTS[theme]` (SignalSky indexes accents by theme and would crash
-      // on `undefined`) or the MOVES ledger's unit switch.
+      // Coerce on EVERY rehydrate: an off-union `theme` degrades to the cobalt
+      // default instead of reaching `data-vex-theme` / `SKY_ACCENTS[theme]`
+      // (SignalSky indexes accents by theme and would crash on `undefined`).
       merge: (persisted, current) => {
         const incoming =
           persisted !== null && typeof persisted === "object"
@@ -270,9 +409,58 @@ export const useUiStore = create<UiState>()(
             : undefined;
         const theme: VexTheme =
           incoming?.theme === "robinhood" ? "robinhood" : "vex";
-        const movesDisplayMode: MovesDisplayMode =
-          incoming?.movesDisplayMode === "eth" ? "eth" : "usd";
-        return { ...current, ...incoming, theme, movesDisplayMode };
+        // Same hand-edited-payload coercion for the favorites list: anything
+        // that is not a string array degrades to no stars, never a crash.
+        const hlFavorites: readonly string[] = Array.isArray(
+          incoming?.hlFavorites,
+        )
+          ? incoming.hlFavorites.filter(
+              (coin): coin is string => typeof coin === "string",
+            )
+          : [];
+        // Same hand-edited-payload coercion for the PnL denomination: only an
+        // explicit "eth" opts out of the USD default; anything else (undefined,
+        // a typo, a non-string) degrades to `usd`, never an off-union value.
+        const pnlCurrency: PnlCurrency =
+          incoming?.pnlCurrency === "eth" ? "eth" : "usd";
+        // BOOK accordion order: only a clean string[] survives; anything else
+        // degrades to the default. `resolveBookSectionOrder` still reconciles
+        // this against the canonical set at render, so even a valid-but-stale
+        // list (unknown/missing ids) is corrected there — this guard only
+        // stops a non-array from reaching the store.
+        const bookSectionOrder: readonly string[] = Array.isArray(
+          incoming?.bookSectionOrder,
+        )
+          ? incoming.bookSectionOrder.filter(
+              (id): id is string => typeof id === "string",
+            )
+          : DEFAULT_BOOK_SECTION_ORDER;
+        // Collapse map: only a plain object of booleans survives; anything else
+        // (array, null, primitive) degrades to no collapse. Non-boolean values
+        // are dropped so an edited payload can't inject junk keys with truthy
+        // strings that would read as "collapsed".
+        const bookSectionCollapsed: Readonly<Record<string, boolean>> =
+          incoming?.bookSectionCollapsed !== null &&
+          typeof incoming?.bookSectionCollapsed === "object" &&
+          !Array.isArray(incoming.bookSectionCollapsed)
+            ? Object.fromEntries(
+                Object.entries(
+                  incoming.bookSectionCollapsed as Record<string, unknown>,
+                ).filter(
+                  (entry): entry is [string, boolean] =>
+                    typeof entry[1] === "boolean",
+                ),
+              )
+            : {};
+        return {
+          ...current,
+          ...incoming,
+          theme,
+          hlFavorites,
+          pnlCurrency,
+          bookSectionOrder,
+          bookSectionCollapsed,
+        };
       },
     }
   )

@@ -8,14 +8,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockExecute = vi.fn();
+const mockQueryOne = vi.fn();
 
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: (...a: unknown[]) => mockExecute(...a),
   query: vi.fn().mockResolvedValue([]),
-  queryOne: vi.fn().mockResolvedValue(null),
+  queryOne: (...a: unknown[]) => mockQueryOne(...a),
 }));
 
-const { logUsage } = await import("@vex-agent/db/repos/usage.js");
+const { logUsage, getSessionTotalTokens, getSessionTotalCost } = await import("@vex-agent/db/repos/usage.js");
 
 describe("usage repo — logUsage", () => {
   beforeEach(() => {
@@ -59,5 +60,103 @@ describe("usage repo — logUsage", () => {
     const [, params] = mockExecute.mock.calls[0] as [string, unknown[]];
     expect(params[10]).toBe(0); // cached_savings
     expect(params[11]).toBe(0); // cache_write_tokens
+  });
+});
+
+describe("usage repo — getSessionTotalTokens (subtree + since scoping)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockQueryOne.mockResolvedValue({ tokens: "0" });
+  });
+
+  it("sums the session AND its linked child sessions (subagent spend, fix C) via a recursive session_links walk", async () => {
+    mockQueryOne.mockResolvedValue({ tokens: "1234" });
+
+    const total = await getSessionTotalTokens("root-1");
+
+    expect(total).toBe(1234);
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    // Recursive CTE over session_links so a subagent's child-session usage is
+    // included in the run's cumulative spend, not silently excluded.
+    expect(sql).toMatch(/RECURSIVE/i);
+    expect(sql).toContain("session_links");
+    expect(sql).toContain("usage_log");
+    expect(sql).toContain("SUM(");
+    expect(params[0]).toBe("root-1");
+    // No `since` → no created_at cutoff (all-time, for the setup phase).
+    expect(sql).not.toContain("created_at");
+    expect(params).toHaveLength(1);
+  });
+
+  it("applies a created_at >= since cutoff when a baseline timestamp is given (run-scoping, fix B)", async () => {
+    mockQueryOne.mockResolvedValue({ tokens: "500" });
+
+    const total = await getSessionTotalTokens("root-1", { since: "2026-07-22T00:00:00.000Z" });
+
+    expect(total).toBe(500);
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("created_at");
+    expect(sql).toMatch(/>=/);
+    expect(params).toEqual(["root-1", "2026-07-22T00:00:00.000Z"]);
+  });
+
+  it("treats a null/undefined since as all-time (no cutoff)", async () => {
+    await getSessionTotalTokens("root-1", { since: null });
+    const [sqlNull, paramsNull] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sqlNull).not.toContain("created_at");
+    expect(paramsNull).toHaveLength(1);
+  });
+
+  it("returns 0 when the session has no usage rows", async () => {
+    mockQueryOne.mockResolvedValue(null);
+    expect(await getSessionTotalTokens("root-1")).toBe(0);
+  });
+});
+
+describe("usage repo — getSessionTotalCost (subtree + since scoping)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockQueryOne.mockResolvedValue({ cost: "0" });
+  });
+
+  it("sums usage_log.cost over the session AND its linked child sessions (same subtree as tokens)", async () => {
+    mockQueryOne.mockResolvedValue({ cost: "0.4231" });
+
+    const total = await getSessionTotalCost("root-1");
+
+    expect(total).toBeCloseTo(0.4231, 6);
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/RECURSIVE/i);
+    expect(sql).toContain("session_links");
+    expect(sql).toContain("usage_log");
+    expect(sql).toContain("SUM(u.cost)");
+    expect(params[0]).toBe("root-1");
+    // No `since` → no created_at cutoff (all-time, for the setup phase).
+    expect(sql).not.toContain("created_at");
+    expect(params).toHaveLength(1);
+  });
+
+  it("applies a created_at >= since cutoff when a run baseline is given (run-scoped cost cap, matches the token boundary)", async () => {
+    mockQueryOne.mockResolvedValue({ cost: "0.2051" });
+
+    const total = await getSessionTotalCost("root-1", { since: "2026-07-22T00:00:00.000Z" });
+
+    expect(total).toBeCloseTo(0.2051, 6);
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("created_at");
+    expect(sql).toMatch(/>=/);
+    expect(params).toEqual(["root-1", "2026-07-22T00:00:00.000Z"]);
+  });
+
+  it("treats a null since as all-time (no cutoff)", async () => {
+    await getSessionTotalCost("root-1", { since: null });
+    const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+    expect(sql).not.toContain("created_at");
+    expect(params).toHaveLength(1);
+  });
+
+  it("returns 0 when the subtree has no matching usage rows", async () => {
+    mockQueryOne.mockResolvedValue(null);
+    expect(await getSessionTotalCost("root-1")).toBe(0);
   });
 });

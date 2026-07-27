@@ -13,6 +13,7 @@
  * the security regression guard.
  */
 
+import { hyperliquidMissionRiskSchema } from "../../../lib/hyperliquid-policy.js";
 import type { MissionDraft, MissionPatch } from "../types.js";
 
 // ── Allowed keys ────────────────────────────────────────────────
@@ -28,6 +29,9 @@ const ALLOWED_STRING_KEYS = new Set<keyof MissionDraft>([
 // and fell back to the default box. It gets its own numeric sanitizer.
 const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>([
   "durationMinutes",
+  // Per-mission LLM inference cost cap (USD) — a float, unlike the whole-minute
+  // durationMinutes, so it routes to its own sanitizer below.
+  "costCapUsd",
 ]);
 
 const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([
@@ -39,6 +43,7 @@ const ALL_ALLOWED_KEYS = new Set<string>([
   ...ALLOWED_STRING_KEYS,
   ...ALLOWED_NUMBER_KEYS,
   ...ALLOWED_ARRAY_KEYS,
+  "hyperliquidRisk",
 ]);
 
 /** Max string field length (prevents unbounded model output). */
@@ -47,8 +52,10 @@ const MAX_STRING_LENGTH = 2000;
 const MAX_ARRAY_ITEMS = 50;
 /** Max string length per array item. */
 const MAX_ARRAY_ITEM_LENGTH = 500;
-/** Max time-box duration (minutes) — 24h ceiling, mirrors mission-deadline. */
+/** Ceiling for `durationMinutes` — mirrors the 24h hard-deadline clamp. */
 const MAX_DURATION_MINUTES = 1440;
+/** Ceiling for the per-mission `costCapUsd` — mirrors AGENT_MISSION_COST_CAP_USD.max. */
+const MAX_COST_CAP_USD = 1_000_000;
 
 // ── Extract ─────────────────────────────────────────────────────
 
@@ -92,7 +99,10 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
         (result as Record<string, unknown>)[key] = sanitized;
       }
     } else if (ALLOWED_NUMBER_KEYS.has(key as keyof MissionDraft)) {
-      const sanitized = sanitizeNumber(value);
+      const sanitized =
+        key === "costCapUsd"
+          ? sanitizeCostCapUsd(value)
+          : sanitizeDurationMinutes(value);
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
@@ -101,6 +111,11 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
+    } else if (key === "hyperliquidRisk") {
+      const parsed = value === null
+        ? { success: true as const, data: null }
+        : hyperliquidMissionRiskSchema.safeParse(value);
+      if (parsed.success) result.hyperliquidRisk = parsed.data;
     }
   }
 
@@ -118,23 +133,34 @@ function sanitizeString(value: unknown): string | null | undefined {
 }
 
 /**
- * Sanitize a numeric field (e.g. durationMinutes).
- * - `null` → null (explicit clear);
- * - a finite positive number, or a numeric string, → floored to a whole
- *   number and clamped to MAX_DURATION_MINUTES;
- * - anything else (0, negative, NaN, boolean, non-numeric string) → undefined
- *   (dropped), matching the reject-wrong-type contract of sanitizeString.
- * Booleans are rejected explicitly (Number(true) === 1 would otherwise slip
- * through).
+ * Sanitize the mission's `durationMinutes` time-box: a positive whole-number
+ * minute count, clamped to `MAX_DURATION_MINUTES`. Rejects the wrong type
+ * (including numeric strings — the model must send a JSON number) and
+ * non-positive/non-finite values so a bad value falls through to the
+ * env/60-minute default instead of persisting garbage.
  */
-function sanitizeNumber(value: unknown): number | null | undefined {
+function sanitizeDurationMinutes(value: unknown): number | null | undefined {
   if (value === null) return null;
-  let n: number;
-  if (typeof value === "number") n = value;
-  else if (typeof value === "string" && value.trim().length > 0) n = Number(value);
-  else return undefined; // reject wrong type (boolean, object, empty string, …)
-  if (!Number.isFinite(n) || n <= 0) return undefined;
-  return Math.min(Math.floor(n), MAX_DURATION_MINUTES);
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value <= 0) return undefined;
+  const wholeMinutes = Math.trunc(value);
+  if (wholeMinutes < 1) return undefined;
+  return Math.min(wholeMinutes, MAX_DURATION_MINUTES);
+}
+
+/**
+ * Sanitize the per-mission `costCapUsd` LLM-inference cost cap: a positive
+ * finite dollar amount (a FLOAT — cents matter, so unlike durationMinutes it is
+ * NOT truncated), clamped to `MAX_COST_CAP_USD`. Rejects the wrong type
+ * (including numeric strings — the model must send a JSON number) and
+ * non-positive/non-finite values so a bad value falls through to the env/$1.00
+ * default instead of persisting garbage. Separate from any trading capital cap.
+ */
+function sanitizeCostCapUsd(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value <= 0) return undefined;
+  return Math.min(value, MAX_COST_CAP_USD);
 }
 
 // ── Model output parser ─────────────────────────────────────────

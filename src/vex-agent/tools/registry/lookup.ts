@@ -29,6 +29,9 @@ import { COMPACT_TOOLS } from "./compact.js";
 import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
+import { HYPERLIQUID_INTERNAL_TOOLS } from "./hyperliquid.js";
+import { getHypervexingAliasToolDef } from "../hypervexing-aliases.js";
+import { buildNormalizedNameIndex, normalizeToolName } from "../name-normalize.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -50,22 +53,42 @@ export const TOOLS: readonly ToolDef[] = [
   ...SESSION_MEMORY_TOOLS,
   ...LONG_MEMORY_TOOLS,
   ...PLAN_TOOLS,
+  ...HYPERLIQUID_INTERNAL_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
 
 const byName = new Map<string, ToolDef>(TOOLS.map(t => [t.name, t]));
 
+// Separator-insensitive fallback index (normalize(name) -> canonical name).
+// Collision-safe: ambiguous keys are dropped (see buildNormalizedNameIndex),
+// so exact match is always the authority.
+const NORMALIZED_NAME_INDEX = buildNormalizedNameIndex(byName.keys());
+
+/**
+ * Resolve a caller-supplied name to a canonical registered internal-tool name.
+ * Exact match wins; otherwise a separator-insensitive match (so a `dot`/`_`
+ * variant of an internal tool still routes). Returns `undefined` when neither
+ * matches. Hypervexing aliases are resolved separately (mode-gated) and are not
+ * part of this index.
+ */
+export function resolveToolName(name: string): string | undefined {
+  if (byName.has(name)) return name; // exact — unchanged behavior
+  return NORMALIZED_NAME_INDEX.get(normalizeToolName(name));
+}
+
 export function getToolDef(name: string): ToolDef | undefined {
-  return byName.get(name);
+  const canonical = resolveToolName(name);
+  if (canonical !== undefined) return byName.get(canonical);
+  return getHypervexingAliasToolDef(name);
 }
 
 export function isInternalTool(name: string): boolean {
-  return byName.has(name);
+  return getToolDef(name) !== undefined;
 }
 
 export function isMutatingTool(name: string): boolean {
-  return byName.get(name)?.mutating === true;
+  return getToolDef(name)?.mutating === true;
 }
 
 /**
@@ -76,7 +99,7 @@ export function isMutatingTool(name: string): boolean {
  * produce a descriptive "unknown tool" error rather than a pressure error.
  */
 export function getPressureSafety(name: string): ToolDef["pressureSafety"] | undefined {
-  return byName.get(name)?.pressureSafety;
+  return getToolDef(name)?.pressureSafety;
 }
 
 /**
@@ -86,7 +109,7 @@ export function getPressureSafety(name: string): ToolDef["pressureSafety"] | und
  * `executeProtocolTool` overrides with the derived target classification.
  */
 export function getActionKind(name: string): ActionKind | undefined {
-  return byName.get(name)?.actionKind;
+  return getToolDef(name)?.actionKind;
 }
 
 export function getAllTools(): readonly ToolDef[] {

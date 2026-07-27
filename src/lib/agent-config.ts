@@ -70,6 +70,106 @@ export const AGENT_TEMPERATURE: FieldWithDefault = {
   default: null,
 };
 
+/**
+ * Hard per-mission TOKEN BUDGET (whole tokens). A cumulative ceiling on a single
+ * mission run's prompt+completion spend: once crossed, the run loop stops with
+ * `token_budget_exhausted` before issuing another LLM call. The backstop a broken
+ * model that loops a tool (one such loop burned ~9M tokens / ~$3) needs.
+ *
+ * Read like the other AGENT_* fields, but FAIL-OPEN (see
+ * `resolveMissionTokenBudget`): a missing/blank/invalid value resolves to the
+ * 500000 default rather than throwing, because a mis-set budget must never block
+ * a run from starting — the same fail-open stance as the hard-deadline env.
+ */
+export const AGENT_MISSION_TOKEN_BUDGET: FieldWithDefault = {
+  key: "AGENT_MISSION_TOKEN_BUDGET",
+  kind: "int",
+  min: 1,
+  // Upper bound raised to MAX_SAFE_INTEGER so a large, INTENTIONAL budget is
+  // honored rather than silently downgraded to the 500000 default. The former
+  // `1_000_000_000` cap shrank e.g. 2e9 → out-of-range → 500000 (a surprise
+  // early abort). There is no meaningful too-high ceiling for a spend backstop.
+  max: Number.MAX_SAFE_INTEGER,
+  default: 500_000,
+};
+
+/**
+ * Explicit values that DISABLE the hard token-budget guard entirely (resolve to
+ * `null` = "no box"). Case-insensitive, trimmed. This is the ONLY way to turn
+ * the backstop off: a blank/unset var keeps the safe 500000 default so the guard
+ * can never be silently removed by an empty env. `0` is treated as an intentional
+ * "unlimited" sentinel here (not an out-of-range number).
+ */
+const MISSION_TOKEN_BUDGET_DISABLE_SENTINELS: ReadonlySet<string> = new Set([
+  "0",
+  "off",
+  "none",
+  "unlimited",
+  "disable",
+  "disabled",
+]);
+
+/**
+ * Per-minute token burn used to DERIVE a mission's token budget from its
+ * duration (`AGENT_MISSION_TOKEN_BUDGET` unset → dynamic). Empirical: a trimmed
+ * mission turn-loop burned ~2M tokens in ~15 min (~135k/min); default rounds up
+ * with headroom so a run reaches its time-box instead of token-capping early.
+ */
+export const AGENT_MISSION_TOKENS_PER_MINUTE: FieldWithDefault = {
+  key: "AGENT_MISSION_TOKENS_PER_MINUTE",
+  kind: "int",
+  min: 1,
+  max: Number.MAX_SAFE_INTEGER,
+  default: 150_000,
+};
+
+/** Duration fallback when a mission carries no valid `durationMinutes` — mirrors
+ * the deadline resolver's 60-minute default so budget and time-box agree. */
+const DEFAULT_MISSION_DURATION_MINUTES = 60;
+
+/**
+ * Hard per-mission COST CAP (US dollars). The PRIMARY spend-box: a cumulative
+ * ceiling on a single run's real LLM inference COST (summed `usage_log.cost`,
+ * which reflects prompt-cache discounts), enforced alongside the token budget in
+ * the turn loop. Once crossed the run stops with `cost_cap_reached` and the
+ * system force-liquidates, exactly like the token/deadline backstops.
+ *
+ * Why dollars, not tokens: the token budget sums GROSS `total_tokens` (cached
+ * included), so cache savings never extend runway and the count is a poor proxy
+ * for real spend. Real data: a full 5h08m mission cost ~$0.42; typical missions
+ * $0.20–0.42. A flat per-mission dollar cap is the right unit.
+ *
+ * FAIL-SOFT (see `resolveMissionCostCap`): missing/blank/invalid resolves to the
+ * $1.00 default rather than throwing — a mis-set cap must never block a run from
+ * starting, mirroring the token-budget + hard-deadline fail-open stance.
+ */
+export const AGENT_MISSION_COST_CAP_USD: FieldWithDefault = {
+  key: "AGENT_MISSION_COST_CAP_USD",
+  kind: "float",
+  // A floor of a fraction of a cent keeps a fat-fingered "0.00001" from being a
+  // silent always-on kill; genuine "disable" goes through the sentinels below.
+  min: 0.0001,
+  // No meaningful too-high ceiling for a spend backstop; keep it generous.
+  max: 1_000_000,
+  default: 1.0,
+};
+
+/**
+ * Explicit values that DISABLE the hard cost cap entirely (resolve to `null` =
+ * "no box"). Case-insensitive, trimmed. Mirrors the token-budget disable
+ * sentinels: a blank/unset var keeps the safe $1.00 default so the cap can never
+ * be silently removed by an empty env. `0` is an intentional "unlimited"
+ * sentinel here (not an out-of-range number).
+ */
+const MISSION_COST_CAP_DISABLE_SENTINELS: ReadonlySet<string> = new Set([
+  "0",
+  "off",
+  "none",
+  "unlimited",
+  "disable",
+  "disabled",
+]);
+
 export const SUBAGENT_MAX_CONCURRENT: FieldWithDefault = {
   key: "SUBAGENT_MAX_CONCURRENT",
   kind: "int",
@@ -175,6 +275,131 @@ export function parseAgentEnv(env: EnvLike): ParseResult<AgentEffective> {
     },
     errors,
   };
+}
+
+/**
+ * Resolve the effective hard per-mission token budget from env.
+ *
+ * Returns `null` when the guard is explicitly DISABLED (an
+ * `AGENT_MISSION_TOKEN_BUDGET` of `0`/`off`/`none`/`unlimited`/`disabled`,
+ * case-insensitive) — `null` flows to the turn loop as "no box".
+ *
+ * Otherwise fail-open to the 500000 default: unset, blank, non-numeric, or
+ * negative/out-of-range all resolve to the default (the collected parse error
+ * is intentionally discarded — a bad budget must not block a run, mirroring the
+ * hard-deadline env's fallback stance). A large, in-range value is honored
+ * verbatim (see the raised field `max`), never silently downgraded. Reads
+ * through the same field-descriptor parser the other AGENT_* whole-number
+ * fields use, so validation stays consistent.
+ */
+export function resolveMissionTokenBudget(
+  env: EnvLike,
+  durationMinutes?: number | null,
+): number | null {
+  const raw = env[AGENT_MISSION_TOKEN_BUDGET.key];
+  if (raw != null) {
+    const norm = raw.trim().toLowerCase();
+    // Disable sentinels (0/off/none/…) → no box.
+    if (MISSION_TOKEN_BUDGET_DISABLE_SENTINELS.has(norm)) return null;
+    // An explicit, well-formed absolute value is an override / escape hatch
+    // (pin a fixed cap, e.g. for tests) — it wins over the duration-derived
+    // default. A malformed value falls through to the dynamic default.
+    if (norm !== "") {
+      const overrideErrors: ParseError[] = [];
+      const explicit = parseFieldOrDefault(
+        AGENT_MISSION_TOKEN_BUDGET,
+        raw,
+        overrideErrors,
+      );
+      if (explicit != null && overrideErrors.length === 0) return explicit;
+    }
+  }
+  // DEFAULT: derive the budget from the mission's own time-box so a longer run
+  // gets proportionally more runway with zero per-mission tuning —
+  // `durationMinutes × AGENT_MISSION_TOKENS_PER_MINUTE`. Duration falls back to
+  // 60 (matching the deadline resolver) when absent/non-positive.
+  const perMinuteErrors: ParseError[] = [];
+  const perMinute =
+    parseFieldOrDefault(
+      AGENT_MISSION_TOKENS_PER_MINUTE,
+      env[AGENT_MISSION_TOKENS_PER_MINUTE.key],
+      perMinuteErrors,
+    ) ?? AGENT_MISSION_TOKENS_PER_MINUTE.default!;
+  const minutes =
+    typeof durationMinutes === "number" && durationMinutes > 0
+      ? durationMinutes
+      : DEFAULT_MISSION_DURATION_MINUTES;
+  return Math.ceil(minutes * perMinute);
+}
+
+/**
+ * Resolve the effective hard per-mission COST CAP (US dollars) from env + an
+ * optional per-mission override.
+ *
+ * Resolution order (mirrors how `durationMinutes` overrides the env deadline):
+ *   1. Global kill switch — an explicit `AGENT_MISSION_COST_CAP_USD` disable
+ *      sentinel (`0`/`off`/`none`/`unlimited`/`disabled`, case-insensitive)
+ *      turns the cap OFF (`null` = "no box"), regardless of any per-mission cap.
+ *   2. Per-mission override — a valid positive `costCapUsd` frozen on the run
+ *      contract wins over the env default (the analog of a per-mission
+ *      `durationMinutes` winning over the env deadline).
+ *   3. Explicit env value — a well-formed `AGENT_MISSION_COST_CAP_USD`.
+ *   4. Fail-soft to the $1.00 default: unset, blank, non-numeric, or
+ *      out-of-range all resolve to the default (the parse error is intentionally
+ *      discarded — a bad cap must not block a run, mirroring the token-budget +
+ *      hard-deadline stance).
+ */
+export function resolveMissionCostCap(
+  env: EnvLike,
+  costCapUsd?: number | null,
+): number | null {
+  const raw = env[AGENT_MISSION_COST_CAP_USD.key];
+  // 1. Global disable sentinel → no box (wins over any per-mission value).
+  if (raw != null) {
+    const norm = raw.trim().toLowerCase();
+    if (MISSION_COST_CAP_DISABLE_SENTINELS.has(norm)) return null;
+  }
+  // 2. Per-mission override (frozen contract cost cap) beats the env default.
+  if (
+    typeof costCapUsd === "number" &&
+    Number.isFinite(costCapUsd) &&
+    costCapUsd > 0
+  ) {
+    return costCapUsd;
+  }
+  // 3 + 4. Explicit env value, else fail-soft to the $1.00 default.
+  const errors: ParseError[] = [];
+  return (
+    parseFieldOrDefault(AGENT_MISSION_COST_CAP_USD, raw, errors) ??
+    AGENT_MISSION_COST_CAP_USD.default!
+  );
+}
+
+/**
+ * Mission tool-exclusion list — tool names hidden from the LLM surface during
+ * an ACTIVE mission run (consumed via `ToolVisibilityContext.missionExcludedTools`).
+ *
+ * Read from `AGENT_MISSION_EXCLUDED_TOOLS` as a comma-separated list of tool
+ * names, e.g. "hyperliquid_enter,polymarket_setup,bridge". Purpose: let a
+ * focused mission (a single-chain spot scalp) run on a trimmed toolset so the
+ * re-sent-every-turn prompt prefix — which counts in full against the hard
+ * token budget every turn — is smaller, and a weak model has fewer irrelevant
+ * tools to flail on.
+ *
+ * FAIL-OPEN: unset or blank resolves to `[]` (no exclusion — the full surface),
+ * mirroring the other AGENT_* envs' stance, so a mis-set value can never strip
+ * a tool a mission genuinely needs. Each name is trimmed; empty entries drop.
+ * Validation against the real catalog is intentionally omitted — an unknown
+ * name is a harmless no-op in the visibility filter, keeping this a pure,
+ * dependency-free env read.
+ */
+export function resolveMissionExcludedTools(env: EnvLike): readonly string[] {
+  const raw = env["AGENT_MISSION_EXCLUDED_TOOLS"];
+  if (raw == null) return [];
+  return raw
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
 }
 
 export function parseSubagentEnv(env: EnvLike, agentEff: AgentEffective): ParseResult<SubagentEffective> {

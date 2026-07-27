@@ -26,7 +26,7 @@
  * the attribution + safety logic with no RPC and no real swaps.
  */
 
-import { getResultForRun } from "../../db/repos/mission-results.js";
+import { getResultByRunId } from "../../db/repos/mission-results.js";
 import { readEthBankroll, type OpenPosition } from "./bankroll.js";
 import { buildSessionWalletResolution } from "../core/hydrate.js";
 import { NATIVE_TOKEN_ADDRESS } from "../../../tools/kyberswap/constants.js";
@@ -49,6 +49,17 @@ export const LIQUIDATE_SLIPPAGE_BPS = 1000;
  * behind — so the exit always lands.
  */
 export const LIQUIDATE_BALANCE_MARGIN = 0.999999;
+
+/**
+ * System-authored Decision-Journal rationale for a forced exit. These sells are
+ * triggered by an engine backstop (hard deadline / token budget) or by the
+ * reconciler flattening a wedged run — NOT an agent decision — so we tag them
+ * distinctly from an agent-authored "why I sold". The swap-tool `rationale`
+ * param is REQUIRED for the agent's own `execute_tool` calls; this path calls
+ * the handler directly and supplies a system reason so the trade is still
+ * auditable.
+ */
+export const LIQUIDATE_RATIONALE = "system exit: mission force-liquidation (engine backstop / run flatten)";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -108,7 +119,7 @@ async function productionDeps(): Promise<LiquidateDeps> {
     );
   }
   return {
-    getResult: getResultForRun,
+    getResult: getResultByRunId,
     readHoldings: async (wallet, chainId) => {
       const bankroll = await readEthBankroll(wallet, chainId);
       return bankroll?.openPositions ?? [];
@@ -160,6 +171,11 @@ function isBankrollToken(
 function buildLiquidationExecContext(context: EngineContext): ProtocolExecutionContext {
   return {
     sessionPermission: context.sessionPermission,
+    // A simulator run holds only PAPER positions (no real proj_open_positions),
+    // so this force-exit is a no-op there; carry the mode regardless so any sell
+    // it did attempt would paper-fill (layer A), never broadcast.
+    missionMode: context.missionMode ?? "live",
+    missionRunId: context.missionRunId,
     approved: true,
     walletResolution: buildSessionWalletResolution(context),
     walletPolicy: context.walletPolicy,
@@ -233,6 +249,13 @@ export async function liquidateMissionPositions(
             tokenOut: "native",
             amountIn: formatAmount(holding.amount * LIQUIDATE_BALANCE_MARGIN),
             slippageBps: LIQUIDATE_SLIPPAGE_BPS,
+            // System-authored rationale for the Decision Journal. This is a
+            // SYSTEM-triggered forced exit, not the agent's tool call: it invokes
+            // the sell HANDLER directly (not the runtime `execute_tool` boundary),
+            // so the manifest's `required: true` on `rationale` never runs here and
+            // could not block this exit. We still supply one so the journal reads
+            // "system exit: …" instead of "No recorded rationale".
+            rationale: LIQUIDATE_RATIONALE,
             dryRun: false,
           },
           execContext,

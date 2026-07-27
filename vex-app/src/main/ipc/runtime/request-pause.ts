@@ -8,6 +8,14 @@
  * #1). The runner observes pending pause requests at its
  * iteration-boundary checkpoint in `turn-loop.ts` and applies the
  * transition there.
+ *
+ * `status === 'running'` alone does NOT imply a live runner — the lease
+ * can be expired/released (parked between autonomous mission slices). In
+ * that case a `pause_after_step` request would be enqueued but never
+ * observed (same bug class as issue #12's stop dead-end), so it is
+ * refused up front with `already_parked` instead — the run is already
+ * effectively idle; the caller should use Resume/Retry to reclaim it or
+ * Stop to end it.
  */
 
 import { CH } from "@shared/ipc/channels.js";
@@ -23,6 +31,7 @@ import { registerHandler } from "../register-handler.js";
 import { controlFailedError } from "./_errors.js";
 import { ensureEngineDbUrl } from "./_ensure-engine-db-url.js";
 import { emitControlStateAfterChange } from "./_emit-control-state.js";
+import { classifyRunLeaseState } from "../_shared/lease-state.js";
 
 export function registerRuntimeRequestPauseHandler(): () => void {
   return registerHandler({
@@ -59,7 +68,13 @@ export function registerRuntimeRequestPauseHandler(): () => void {
           // resumes next) will be the one to honor a fresh request.
           return ok({ outcome: "already_paused", status });
         }
-        // Running — enqueue the request and return.
+        if (classifyRunLeaseState(status, state.data.leaseActive) === "dead") {
+          // Dead lease: no runner would ever observe an enqueued pause
+          // request. Refuse rather than enqueue an unobservable request
+          // that sits pending forever.
+          return ok({ outcome: "already_parked" });
+        }
+        // Running with a live lease — enqueue the request and return.
         const { enqueueRequest, getPendingForSession } = await import(
           "@vex-agent/db/repos/runtime-control-requests.js"
         );

@@ -34,6 +34,26 @@ export type SessionKind = "agent" | "mission";
  */
 export type Permission = "restricted" | "full";
 
+/**
+ * Execution mode of a mission run. IMMUTABLE per run — frozen at run start
+ * (mirrors `Permission` / `durationMinutes`) and NEVER derived from mutable
+ * state mid-run.
+ *
+ *  - `"live"`      — the default. Swaps resolve a signer and BROADCAST a real
+ *                    on-chain transaction.
+ *  - `"simulator"` — dry-run / paper-trading. The FULL agent loop runs
+ *                    identically, but every swap is PAPER-FILLED from the live
+ *                    quote: no signer is resolved, no transaction is ever
+ *                    broadcast, and a shadow portfolio tracks paper PnL.
+ *
+ * SAFETY: a `simulator` run must NEVER touch the wallet or broadcast. The
+ * no-broadcast invariant is enforced at TWO independent layers — the swap
+ * execute path (paper-fill in the handler) AND the low-level broadcast
+ * primitive (`assertBroadcastAllowedForActiveMode`), which fail-closes to
+ * `simulator` when the mode cannot be determined.
+ */
+export type MissionMode = "live" | "simulator";
+
 // ── Mission lifecycle ───────────────────────────────────────────
 
 export type MissionStatus =
@@ -102,6 +122,35 @@ export const ACTIVE_OR_PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new 
 ]);
 
 /**
+ * Read a validated own-property off an unvalidated thrown value — the same
+ * "own-properties only, never `.cause`" idiom as
+ * `core/runner/mission-error-signal.ts` / `inference/openrouter/errors.ts`,
+ * duplicated locally (not imported) so this foundational, DB/inference-free
+ * types file never depends on the runner layer.
+ */
+function ownProperty(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return undefined;
+  return (value as Record<string, unknown>)[key];
+}
+
+/** Errno-shaped code guard — mirrors `lib/error-cause.ts` (not exported there; duplicated). */
+const ERRNO_SHAPE = /^[A-Z][A-Z0-9_]{2,59}$/;
+
+function validatedStatusCode(cause: unknown): number | null {
+  for (const key of ["status", "statusCode"]) {
+    const v = ownProperty(cause, key);
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+  }
+  return null;
+}
+
+function validatedCauseCode(cause: unknown): string | null {
+  const v = ownProperty(cause, "causeCode");
+  return typeof v === "string" && ERRNO_SHAPE.test(v) ? v : null;
+}
+
+/**
  * Recoverable failure surfaced by `startMission` / `resumeMissionRun` when a
  * provider call (or the surrounding hydrate / status update / prompt prep)
  * throws. The run is persisted in `paused_error` first, then this error is
@@ -114,6 +163,16 @@ export class MissionRunPausedError extends Error {
   readonly runId: string;
   readonly missionId: string;
   readonly sessionId: string;
+  /**
+   * Lean, validated signals copied from `cause` (never the cause object
+   * itself) so a shell action wrapper that only sees THIS error — not the
+   * original normalized provider error — can still branch on transport/HTTP
+   * shape (e.g. the chat IPC error mapper mapping 401/429/5xx to a specific
+   * user-facing code). `null` when `cause` carries no matching validated
+   * own-property. Never exposes anything else from `cause`.
+   */
+  readonly statusCode: number | null;
+  readonly causeCode: string | null;
   constructor(args: {
     runId: string;
     missionId: string;
@@ -127,6 +186,8 @@ export class MissionRunPausedError extends Error {
     this.runId = args.runId;
     this.missionId = args.missionId;
     this.sessionId = args.sessionId;
+    this.statusCode = validatedStatusCode(args.cause);
+    this.causeCode = validatedCauseCode(args.cause);
   }
 }
 
@@ -139,7 +200,35 @@ export type BusinessStopReason =
   | "max_loss_hit"
   | "no_viable_opportunity"
   | "emergency_stop"
-  | "user_stopped";
+  | "user_stopped"
+  /**
+   * Hard token-budget backstop: cumulative prompt+completion spend for the run
+   * crossed `AGENT_MISSION_TOKEN_BUDGET`. Engine-enforced only (never model- or
+   * user-configurable) — the auto-abort for a runaway that would otherwise burn
+   * tokens unbounded. Force-closes open positions before finalize, like the
+   * hard deadline.
+   */
+  | "token_budget_exhausted"
+  /**
+   * Hard COST-CAP backstop (PRIMARY spend-box): the run's cumulative real
+   * inference cost (`SUM(usage_log.cost)`, cache-discounted) crossed
+   * `AGENT_MISSION_COST_CAP_USD` (default $1.00) or its per-mission override.
+   * Engine-enforced only (never model-driven) — the auto-abort for a run that
+   * would otherwise burn dollars unbounded. Force-closes open positions before
+   * finalize, like the token budget + hard deadline.
+   */
+  | "cost_cap_reached"
+  /**
+   * Orphaned / interrupted run: the app restarted (or the runner process died)
+   * mid-run, so the `mission_runs` row is stuck at `running` while its
+   * `runner_leases` row expired and no worker re-acquired it. The boot-time
+   * (and periodic) reconciler force-finalizes such runs to a DISTINCT terminal
+   * state — run status `stopped`, `stop_reason='runner_lost'` — so a wedged run
+   * is never silently auto-resumed. Force-closes any open positions before
+   * finalize (like the hard deadline) so it ends flat instead of stranding a
+   * bag. Engine-enforced only — never model- or user-driven.
+   */
+  | "runner_lost";
 
 export type RuntimeStopReason =
   | "approval_required"
@@ -183,7 +272,16 @@ export type MessageType =
   | "checkpoint"
   | "wake_due"
   | "subagent_relay"
-  | "tool_result";
+  | "tool_result"
+  /**
+   * A trusted prepare→execute handoff the engine synthesized itself (never
+   * model output — see `dispatchPreparedActionFollowUp`). Paired with
+   * `source: "engine"` on the same assistant-role row so an auditor reading
+   * `messages` directly can never mistake it for a real model-authored
+   * tool_call, even though the row keeps `role: "assistant"` for the
+   * provider transcript format.
+   */
+  | "prepared_action_follow_up";
 
 export type MessageVisibility = "user" | "internal";
 
@@ -203,9 +301,23 @@ export interface MissionDraft {
   stopConditions: string[] | null;
   /** Optional — mission may have no deadline. */
   deadline: string | null;
-  /** Optional hard time-box in minutes; the enforcer stops the run at
-   * started_at + this. Absent → env override → 60-minute default. */
+  /**
+   * Optional hard time-box in whole minutes. The turn-loop deadline
+   * enforcer stops the run at `started_at + this` (see
+   * `engine/mission/mission-deadline.ts`). Absent -> env override -> 60min
+   * default. Distinct from `deadline` (free-text, informational only).
+   */
   durationMinutes: number | null;
+  /**
+   * Optional per-mission hard COST CAP in US dollars. The turn-loop cost-cap
+   * enforcer stops the run once its cumulative real inference cost crosses this
+   * (see `resolveMissionCostCap`). A positive value OVERRIDES the env
+   * `AGENT_MISSION_COST_CAP_USD` default; absent → env → $1.00. This is the LLM
+   * INFERENCE spend cap, entirely separate from any trading capital cap.
+   */
+  costCapUsd?: number | null;
+  /** Optional, host-accepted Hyperliquid envelope for an autonomous mission. */
+  hyperliquidRisk?: import("../../lib/hyperliquid-policy.js").HyperliquidMissionRisk | null;
 }
 
 /**
@@ -260,6 +372,14 @@ export interface EngineContext {
    * the DB or threading a stale `loopMode` through.
    */
   sessionPermission: Permission;
+  /**
+   * Mission execution mode, hydrated once from the ACTIVE run's frozen
+   * `mission_runs.mode` (falling back to `sessions.mission_mode`). Immutable
+   * for the duration of the run — every no-broadcast decision reads this single
+   * value rather than re-querying mutable state mid-run. Defaults to `"live"`
+   * for non-hydrated/test contexts and for agent sessions with no mission.
+   */
+  missionMode?: MissionMode;
   missionId: string | null;
   missionRunId: string | null;
   /** Session creation time from DB; used only for runtime clock prompt context. */
@@ -271,6 +391,17 @@ export interface EngineContext {
   /** Optional hard time-box (minutes) from the mission constraints; the
    * deadline enforcer resolves this → env → 60. */
   missionDurationMinutes?: number | null;
+  /**
+   * The mission's operating chain as a canonical DexScreener slug (e.g.
+   * `"robinhood"`, `"base"`, `"solana"`), resolved once at hydration from the
+   * frozen contract's `allowedChains[0]` (falling back to the live mission).
+   * Used to CHAIN-SCOPE discovery — the Signal Radar banner and the DexScreener
+   * boosts/profiles/attention chain filters — so a PONS/Robinhood mission never
+   * evaluates same-name clones on other chains. Null when there is no mission,
+   * no allowed chain, or the chain cannot be resolved → discovery stays
+   * cross-chain (prior behavior). Never widens permissions; discovery scope only.
+   */
+  missionChain?: string | null;
   isSubagent: boolean;
   /** Per-session selected wallets (id + address), hydrated from the session row. */
   selectedEvmWallet: { id: string; address: string } | null;

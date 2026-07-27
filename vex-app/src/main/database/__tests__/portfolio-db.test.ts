@@ -221,6 +221,57 @@ describe("portfolio-db getPortfolio — global scope", () => {
   });
 });
 
+describe("portfolio-db getPortfolio — global scope narrowed to one wallet (WP-L2)", () => {
+  beforeEach(() => {
+    mocks.listWallets.mockImplementation((family: string) =>
+      family === "evm"
+        ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }]
+        : [{ id: "2", address: SOL_ADDR, label: "", createdAt: "" }],
+    );
+  });
+
+  it("narrows every SELECT to exactly the requested inventory wallet", async () => {
+    scriptPortfolioQueries({
+      live: "500",
+      tokens: [{ chain_id: "1", token_symbol: "ETH", usd: "500" }],
+      snapshot: null,
+    });
+    const result = await getPortfolio({ scope: "global", walletAddress: WALLET_A });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.walletCount).toBe(1);
+
+    const bound = allBoundParams();
+    expect(bound).toContain(WALLET_A);
+    // The decisive isolation assertion: the OTHER inventory wallet is never bound.
+    expect(bound).not.toContain(SOL_ADDR);
+    for (const call of mocks.query.mock.calls) {
+      const arr = Array.isArray(call[1]) ? call[1][0] : undefined;
+      expect(arr).toEqual([WALLET_A]);
+    }
+  });
+
+  it("fails closed with wallets.invalid_selection for an address outside the inventory, no SQL issued", async () => {
+    const result = await getPortfolio({
+      scope: "global",
+      walletAddress: "0xNotConfigured0000000000000000000000000",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("wallets.invalid_selection");
+    expect(result.error.domain).toBe("portfolio");
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it("never logs the requested walletAddress", async () => {
+    scriptPortfolioQueries({ live: "1", tokens: [], snapshot: null });
+    await getPortfolio({ scope: "global", walletAddress: WALLET_A });
+    const logged = mocks.log.info.mock.calls.flat().join(" ");
+    expect(logged).not.toContain(WALLET_A);
+  });
+});
+
 describe("portfolio-db getPortfolio — session scope", () => {
   it("returns the empty DTO and issues NO SQL when the session scope is empty", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(null, null));
@@ -666,5 +717,180 @@ describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)"
     expect(result.data.chains).toEqual([
       { chainId: 1, family: "evm", totalUsd: 10, tokens: [] },
     ]);
+  });
+});
+
+describe("portfolio-db getPortfolio — address-correct aggregation (position branding)", () => {
+  beforeEach(() => {
+    mocks.listWallets.mockImplementation((family: string) =>
+      family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],
+    );
+  });
+
+  const LEGIT_WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+  const SPOOF_WETH = "0x000000000000000000000000000000000000ff";
+
+  it("groups the flat token list by (chain_id, normalized token_address) — semantic identity, never symbol", async () => {
+    scriptPortfolioQueries({ live: "0", tokens: [], snapshot: null });
+    await getPortfolio({ scope: "global" });
+    const tokenSql = String(mocks.query.mock.calls[1]?.[0] ?? "");
+    expect(tokenSql).toContain("token_address");
+    expect(tokenSql).toContain("GROUP BY chain_id, CASE WHEN token_address ~* '^0x' THEN lower(token_address) ELSE token_address END");
+  });
+
+  it("groups the per-chain breakdown by (chain_id, normalized token_address) — semantic identity, never symbol", async () => {
+    scriptPortfolioQueries({ live: "0", tokens: [], snapshot: null });
+    await getPortfolio({ scope: "global" });
+    const breakdownSql = String(mocks.query.mock.calls[2]?.[0] ?? "");
+    expect(breakdownSql).toContain("GROUP BY chain_id, CASE WHEN token_address ~* '^0x' THEN lower(token_address) ELSE token_address END");
+  });
+
+  it("keeps a same-symbol/different-address pair as SEPARATE flat lines with correct totals and ranking (anti-spoof-collision)", async () => {
+    scriptPortfolioQueries({
+      live: "1500",
+      tokens: [
+        // A spoof token declaring the SAME "WETH" symbol as the legit
+        // contract, at a DIFFERENT address — must never merge into one line.
+        { chain_id: "1", token_address: LEGIT_WETH, token_symbol: "WETH", usd: "1000" },
+        { chain_id: "1", token_address: SPOOF_WETH, token_symbol: "WETH", usd: "500" },
+      ],
+      snapshot: null,
+    });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Neither line absorbed the other's balance — both survive at their own
+    // USD figure, ranked biggest-first, each carrying its OWN address.
+    expect(result.data.tokens).toEqual([
+      { chainId: 1, symbol: "WETH", tokenAddress: LEGIT_WETH, balanceUsd: 1000, amount: null },
+      { chainId: 1, symbol: "WETH", tokenAddress: SPOOF_WETH, balanceUsd: 500, amount: null },
+    ]);
+  });
+
+  it("keeps a same-symbol/different-address pair as SEPARATE top-3 lines within one chain's breakdown", async () => {
+    scriptPortfolioQueries({
+      live: "1500",
+      tokens: [],
+      snapshot: null,
+      breakdown: [
+        {
+          chain_id: "1",
+          chain_total: "1500",
+          token_address: LEGIT_WETH,
+          token_symbol: "WETH",
+          token_usd: "1000",
+        },
+        {
+          chain_id: "1",
+          chain_total: "1500",
+          token_address: SPOOF_WETH,
+          token_symbol: "WETH",
+          token_usd: "500",
+        },
+      ],
+    });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.chains).toEqual([
+      {
+        chainId: 1,
+        family: "evm",
+        totalUsd: 1500,
+        tokens: [
+          { symbol: "WETH", tokenAddress: LEGIT_WETH, balanceUsd: 1000, amount: null },
+          { symbol: "WETH", tokenAddress: SPOOF_WETH, balanceUsd: 500, amount: null },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps ONE line for one address whose symbol was updated in place (metadata drift, no double count)", async () => {
+    // Per ONE wallet, `proj_balances` upserts ON CONFLICT (wallet_address,
+    // chain_id, token_address), so a symbol update overwrites the same row.
+    // ACROSS wallets the same address can still carry different/stale symbols
+    // (one row per wallet) — that case is collapsed by the query itself:
+    // GROUP BY normalized address only, with the freshest-synced symbol
+    // selected deterministically (see the SQL-shape assertions below).
+    scriptPortfolioQueries({
+      live: "1000",
+      tokens: [
+        { chain_id: "1", token_address: LEGIT_WETH, token_symbol: "WETH-RENAMED", usd: "1000" },
+      ],
+      snapshot: null,
+    });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.tokens).toEqual([
+      {
+        chainId: 1,
+        symbol: "WETH-RENAMED",
+        tokenAddress: LEGIT_WETH,
+        balanceUsd: 1000,
+        amount: null,
+      },
+    ]);
+  });
+
+  it("threads tokenAddress through the flat mapping (null when the row carries none)", async () => {
+    scriptPortfolioQueries({
+      live: "1",
+      tokens: [{ chain_id: "1", token_address: null, token_symbol: "ETH", usd: "1" }],
+      snapshot: null,
+    });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.tokens[0]?.tokenAddress).toBeNull();
+  });
+});
+
+describe("semantic token identity in aggregation SQL (shape)", () => {
+  // The mocked client cannot execute SQL, so these assert the decisive query
+  // text: one contract aggregates into ONE line even when wallets' rows
+  // differ in EVM address casing or carry stale symbols — grouping must use
+  // the normalized address ONLY (never the raw symbol), and the displayed
+  // symbol must be the deterministic freshest one.
+
+  const NORMALIZED = "CASE WHEN token_address ~* '^0x' THEN lower(token_address) ELSE token_address END";
+  const LATEST_SYMBOL = "(array_agg(token_symbol ORDER BY synced_at DESC NULLS LAST, token_symbol ASC NULLS LAST))[1]";
+
+  it("flat token query groups by normalized address only and selects the latest symbol", async () => {
+    scriptPortfolioQueries({ live: "0", tokens: [], snapshot: null });
+    await getPortfolio({ scope: "global" });
+    const tokenSql = String(mocks.query.mock.calls[1]?.[0] ?? "");
+    expect(tokenSql).toContain(`GROUP BY chain_id, ${NORMALIZED}`);
+    expect(tokenSql).toContain(LATEST_SYMBOL);
+    expect(tokenSql).not.toContain("GROUP BY chain_id, token_address, token_symbol");
+  });
+
+  it("per-chain breakdown CTE groups by normalized address only and selects the latest symbol", async () => {
+    scriptPortfolioQueries({ live: "0", tokens: [], snapshot: null });
+    await getPortfolio({ scope: "global" });
+    const cteSql = String(mocks.query.mock.calls[2]?.[0] ?? "");
+    expect(cteSql).toContain("WITH lines AS");
+    expect(cteSql).toContain(`GROUP BY chain_id, ${NORMALIZED}`);
+    expect(cteSql).toContain(LATEST_SYMBOL);
+    expect(cteSql).not.toContain("GROUP BY chain_id, token_address, token_symbol");
+  });
+
+  it("two wallets sharing one address with different stale symbols arrive as ONE aggregated row (fixture at the query boundary)", async () => {
+    // The DB collapses the two wallet rows via the normalized GROUP BY; the
+    // fixture models exactly what the fixed query returns — one line, the
+    // freshest symbol, summed USD — and the mapping must pass it through
+    // without re-splitting or double counting.
+    scriptPortfolioQueries({
+      live: "1500",
+      tokens: [
+        { chain_id: "1", token_address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", token_symbol: "WETH", usd: "1500" },
+      ],
+      snapshot: null,
+    });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.tokens).toHaveLength(1);
+    expect(result.data.tokens[0]).toMatchObject({ symbol: "WETH", tokenAddress: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", balanceUsd: 1500 });
   });
 });

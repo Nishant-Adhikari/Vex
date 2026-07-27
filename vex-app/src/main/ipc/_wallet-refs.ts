@@ -5,7 +5,7 @@
  * keys) so a renderer-supplied address is never trusted.
  */
 
-import { getWalletById } from "@vex-lib/wallet.js";
+import { getPrimaryEvmEntry, getWalletById } from "@vex-lib/wallet.js";
 import type { VexError } from "@shared/ipc/result.js";
 
 export type WalletRef = { id: string; address: string };
@@ -23,6 +23,26 @@ export function resolveWalletRef(
   if (!walletId) return null;
   const entry = getWalletById(family, walletId);
   return entry ? { id: entry.id, address: entry.address } : "invalid";
+}
+
+/**
+ * Default EVM wallet for a MISSION session when the operator made NO explicit
+ * selection. Missions must always land on the PRIMARY trading wallet
+ * (inventory `wallet.evm[0]`, the legacy "Primary" entry) so the host never has
+ * to pick a wallet — the Mission Presets tab and the normal new-mission flow
+ * both send `selectedEvmWalletId: null` expecting this default.
+ *
+ * Guards (fail safe, never crash):
+ *   - no primary entry → null (session stays wallet-less, same as today);
+ *   - primary is a vault (hold-only) wallet → null. A vault must NEVER be a
+ *     session wallet; if evm[0] is somehow a vault we leave it null rather than
+ *     bind a hold-only wallet. Callers still run the vault defense-in-depth.
+ */
+export function defaultMissionEvmWalletRef(): WalletRef | null {
+  const entry = getPrimaryEvmEntry();
+  if (!entry) return null;
+  if (entry.vault === true) return null;
+  return { id: entry.id, address: entry.address };
 }
 
 export function invalidWalletSelectionError(correlationId: string): VexError {

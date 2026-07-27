@@ -1,9 +1,17 @@
 import { z } from "zod";
 import { CH } from "../../shared/ipc/channels.js";
+import {
+  hyperliquidSettingsUpdateInputSchema,
+  type HyperliquidSettingsUpdateInput,
+} from "../../shared/schemas/hyperliquid.js";
 import type { SettingsBridge } from "../../shared/types/bridge/shell/settings.js";
 import { invokeWithSchema } from "../_dispatch.js";
 
 const setTelemetryConsentInputSchema = z
+  .object({ enabled: z.boolean() })
+  .strict();
+
+const setKeepAwakeDuringMissionInputSchema = z
   .object({ enabled: z.boolean() })
   .strict();
 
@@ -17,5 +25,22 @@ export const settings = {
       input,
       setTelemetryConsentInputSchema
     );
+  },
+  setHyperliquidPolicy(input: HyperliquidSettingsUpdateInput) {
+    return invokeWithSchema(
+      CH.settings.setHyperliquidPolicy,
+      input,
+      hyperliquidSettingsUpdateInputSchema,
+    );
+  },
+  setKeepAwakeDuringMission(input: { enabled: boolean }) {
+    return invokeWithSchema(
+      CH.settings.setKeepAwakeDuringMission,
+      input,
+      setKeepAwakeDuringMissionInputSchema,
+    );
+  },
+  getKeepAwakeState() {
+    return invokeWithSchema(CH.settings.getKeepAwakeState, {});
   },
 } satisfies SettingsBridge;

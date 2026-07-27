@@ -87,6 +87,7 @@ describe("registry façade — public surface", () => {
         "isInternalTool",
         "isMutatingTool",
         "isToolBlockedForRole",
+        "resolveToolName",
       ].sort(),
     );
   });

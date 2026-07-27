@@ -39,7 +39,9 @@ vi.mock("../db-config.js", () => ({
 
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
-const { getActiveRunForSession } = await import("../mission-runs-db.js");
+const { getActiveRunForSession, getLatestRunForSession } = await import(
+  "../mission-runs-db.js"
+);
 
 const SESSION = "00000000-0000-4000-8000-00000000eeee";
 
@@ -84,6 +86,13 @@ describe("mission-runs-db mapper", () => {
       stopReason: null,
       lastCheckpointAt: null,
       startedAt: null,
+      // Run-scoped observability facts are all null with no active run.
+      deadlineAt: null,
+      durationMinutes: null,
+      tokenBudget: null,
+      costCapUsd: null,
+      runTokensUsed: null,
+      runCostUsd: null,
       iterationCount: null,
       leaseActive: false,
       leaseExpiresAt: null,
@@ -146,6 +155,95 @@ describe("mission-runs-db mapper", () => {
     expect(result.data.stopReason).toBe("user_paused");
   });
 
+  it("derives deadline/duration/budget from the frozen snapshot and sums run-scoped usage", async () => {
+    // `vi.mocked` re-types the hoisted `QueryFn`-cast mock so the vitest Mock
+    // API is visible (same pattern the getLatestRunForSession suite uses).
+    const q = vi.mocked(mocks.query);
+    const started = "2026-05-21T09:00:00.000Z";
+    // Active run row carrying a frozen 30-minute contract snapshot.
+    q.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "run-9",
+          session_id: SESSION,
+          status: "running",
+          started_at: started,
+          last_checkpoint_at: null,
+          stop_reason: null,
+          iteration_count: 3,
+          contract_snapshot_json: {
+            frozenMission: { draft: { durationMinutes: 30 } },
+          },
+          lease_active: true,
+          lease_expires_at: null,
+          pending_control_kind: null,
+        },
+      ],
+    });
+    // The run-scoped usage sum (SUM(total_tokens), SUM(cost) since started_at).
+    q.mockResolvedValueOnce({
+      rows: [{ tokens: "100000", cost: "0.5" }],
+    });
+
+    const result = await getActiveRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Duration is the frozen 30 minutes; deadline = started_at + 30 min.
+    expect(result.data.durationMinutes).toBe(30);
+    expect(result.data.deadlineAt).toBe("2026-05-21T09:30:00.000Z");
+    // Budget is the enforced denominator (durationMinutes × per-minute burn) —
+    // a positive integer derived from the SAME frozen duration.
+    expect(result.data.tokenBudget).not.toBeNull();
+    expect(result.data.tokenBudget).toBeGreaterThan(0);
+    // The PRIMARY cost cap: env AGENT_MISSION_COST_CAP_USD default $1.00 (no
+    // per-mission override in this snapshot) — the meter's budget denominator.
+    expect(result.data.costCapUsd).toBe(1.0);
+    // Run-scoped usage flows through from the since-query.
+    expect(result.data.runTokensUsed).toBe(100000);
+    expect(result.data.runCostUsd).toBe(0.5);
+
+    // The usage sum is BOUNDED to the run's started_at (so a prior run's rows
+    // in the same session are excluded) — the run-scoping mechanism.
+    const usageCall = q.mock.calls[1];
+    expect(String(usageCall?.[0])).toMatch(/created_at >= \$2/);
+    expect(usageCall?.[1]).toEqual([SESSION, started]);
+  });
+
+  it("fails soft to null run-usage (keeps deadline/budget) when the usage sum errors", async () => {
+    const q = vi.mocked(mocks.query);
+    q.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "run-10",
+          session_id: SESSION,
+          status: "running",
+          started_at: "2026-05-21T09:00:00.000Z",
+          last_checkpoint_at: null,
+          stop_reason: null,
+          iteration_count: 0,
+          contract_snapshot_json: null,
+          lease_active: true,
+          lease_expires_at: null,
+          pending_control_kind: null,
+        },
+      ],
+    });
+    q.mockRejectedValueOnce(new Error("usage read boom"));
+
+    const result = await getActiveRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // A failed usage read never blocks the DTO — tokens/cost degrade to null…
+    expect(result.data.runTokensUsed).toBeNull();
+    expect(result.data.runCostUsd).toBeNull();
+    // …while the deadline + duration (env/default-fallback when the snapshot
+    // has no duration) still resolve, never blocking the DTO.
+    expect(result.data.durationMinutes).not.toBeNull();
+    expect(result.data.durationMinutes).toBeGreaterThan(0);
+    expect(result.data.deadlineAt).not.toBeNull();
+    expect(result.data.hasActiveRun).toBe(true);
+  });
+
   it("dbUnavailable maps to internal.unexpected with domain=runtime", async () => {
     mocks.buildPoolConfig.mockReset();
     mocks.buildPoolConfig.mockResolvedValueOnce(null);
@@ -154,5 +252,52 @@ describe("mission-runs-db mapper", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("internal.unexpected");
     expect(result.error.domain).toBe("runtime");
+  });
+});
+
+describe("getLatestRunForSession — lease-active mapping (WP-C)", () => {
+  // `vi.mocked` re-types the hoisted `QueryFn`-cast mock so the vitest Mock
+  // API (`mockResolvedValueOnce`) is visible without re-triggering the
+  // file's pre-existing `QueryFn`-cast type-baseline pattern.
+  const q = vi.mocked(mocks.query);
+
+  it("returns null when the session never had a run", async () => {
+    q.mockResolvedValueOnce({ rows: [] });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toBeNull();
+  });
+
+  it("maps lease_active=true through for a running row with a live lease", async () => {
+    q.mockResolvedValueOnce({
+      rows: [{ id: "run-1", status: "running", lease_active: true }],
+    });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toEqual({
+      missionRunId: "run-1",
+      status: "running",
+      leaseActive: true,
+    });
+  });
+
+  it("maps a NULL lease join (no runner_leases row) to leaseActive=false", async () => {
+    q.mockResolvedValueOnce({
+      rows: [{ id: "run-1", status: "running", lease_active: null }],
+    });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data?.leaseActive).toBe(false);
+  });
+
+  it("rejects an unrecognized status defensively", async () => {
+    q.mockResolvedValueOnce({
+      rows: [{ id: "run-1", status: "not_a_real_status", lease_active: false }],
+    });
+    const result = await getLatestRunForSession(SESSION);
+    expect(result.ok).toBe(false);
   });
 });

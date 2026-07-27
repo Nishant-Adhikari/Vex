@@ -23,12 +23,49 @@ import { AppShell } from "./features/appShell/AppShell.js";
 import { UnlockScreen } from "./features/secrets/UnlockScreen.js";
 import { UpdateLayer } from "./features/updates/UpdateLayer.js";
 import { useUiStore, type View } from "./stores/uiStore.js";
+import { resolveStartupRoute } from "./lib/express-lane.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
 
 export function App(): JSX.Element {
   const currentView = useUiStore((s) => s.currentView);
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const setReturningUser = useUiStore((s) => s.setReturningUser);
+
+  // Startup gate: before painting any onboarding screen, ask the main process
+  // whether onboarding is already complete on this machine. A RETURNING user
+  // skips the decorative splash ritual and drops into the (auto-advancing)
+  // setup chain toward the unlock gate — collapsing the old "~4 clicks to reach
+  // the password field" into a brief loading state. A first-run user falls
+  // through to the normal `splash` default. The check is a fast local file
+  // probe; if it fails we degrade to the first-run flow (splash) rather than
+  // trapping the user on a spinner.
+  const [booting, setBooting] = useState(true);
+  useEffect(() => {
+    // Standard cancelled-flag pattern. We deliberately DO NOT guard this
+    // with a persistent ref: React 18 StrictMode (dev) mounts → unmounts →
+    // remounts, and a ref that survives the remount would block the second
+    // mount's probe. With the first probe already suppressed by its own
+    // `cancelled` flag, `booting` would then never flip false and the app
+    // hangs forever on the BootGate spinner. Re-firing per mount is cheap
+    // (a local file probe) and `cancelled` discards the stale first response.
+    let cancelled = false;
+    void window.vex.capabilities
+      .get()
+      .then((result) => {
+        if (cancelled) return;
+        const onboardingComplete = result.ok && result.data.onboardingComplete;
+        const route = resolveStartupRoute(onboardingComplete);
+        setReturningUser(route.returningUser);
+        if (route.view !== null) setCurrentView(route.view);
+      })
+      .finally(() => {
+        if (!cancelled) setBooting(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setCurrentView, setReturningUser]);
 
   const handleSplashComplete = useCallback(() => {
     setCurrentView("systemCheck");
@@ -51,12 +88,36 @@ export function App(): JSX.Element {
 
   return (
     <>
-      {views[currentView]()}
+      {booting ? <BootGate /> : views[currentView]()}
       {/* Global, view-independent: a user-triggered update prompt can appear
           over any screen. No-ops when the updater bridge is absent. */}
       <UpdateLayer />
       {import.meta.env.DEV ? <DevDiagnostics /> : null}
     </>
+  );
+}
+
+/**
+ * Neutral startup spinner shown while the capabilities probe decides whether
+ * this is a first-run or a returning user. Deliberately quiet and brief — it
+ * replaces the flash of the splash ritual for returning users and is gone in a
+ * few frames once the local probe resolves. Wears the shared onboarding ink so
+ * there is no jarring surface change into the next screen.
+ */
+function BootGate(): JSX.Element {
+  return (
+    <main
+      data-vex-onboarding="true"
+      data-vex-screen="boot"
+      aria-busy="true"
+      className="flex h-screen w-screen items-center justify-center bg-[var(--vex-onboarding-bg)]"
+    >
+      <span
+        aria-hidden
+        className="h-6 w-6 animate-spin rounded-full border-2 border-white/15 border-t-white/70"
+      />
+      <span className="sr-only">Starting Vex…</span>
+    </main>
   );
 }
 

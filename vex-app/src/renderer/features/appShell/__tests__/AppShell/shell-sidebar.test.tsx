@@ -24,6 +24,9 @@ vi.mock("@hugeicons/react", () => ({
 
 vi.mock("@hugeicons/core-free-icons", () => ({
   Add01Icon: "Add01Icon",
+  AnalyticsUpIcon: "AnalyticsUpIcon",
+  Radar01Icon: "Radar01Icon",
+  Download01Icon: "Download01Icon",
   AiChat01Icon: "AiChat01Icon",
   // S5 act ledger — ToolLedger/toolGlyph.ts imports these four.
   AiWebBrowsingIcon: "AiWebBrowsingIcon",
@@ -45,11 +48,10 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   Clock03Icon: "Clock03Icon",
   DatabaseLightningIcon: "DatabaseLightningIcon",
   Delete02Icon: "Delete02Icon",
-  Exchange01Icon: "Exchange01Icon",
-  Fuel01Icon: "Fuel01Icon",
+  FireIcon: "FireIcon",
+  ChartLineData01Icon: "ChartLineData01Icon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   Brain01Icon: "Brain01Icon",
-  AnalyticsUpIcon: "AnalyticsUpIcon",
   MapPinIcon: "MapPinIcon",
   PanelLeftCloseIcon: "PanelLeftCloseIcon",
   PanelLeftOpenIcon: "PanelLeftOpenIcon",
@@ -62,7 +64,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   SparklesIcon: "SparklesIcon",
   StarIcon: "StarIcon",
   Target02Icon: "Target02Icon",
-  Wallet01Icon: "Wallet01Icon",
+  PercentSquareIcon: "PercentSquareIcon",
   ZapIcon: "ZapIcon",
 }));
 
@@ -376,24 +378,28 @@ describe("AppShell", () => {
     expect(mark?.textContent).toBe("");
   });
 
-  it("mounts the compact $VEX widget in the sidebar rail, not on the welcome stage", async () => {
+  it("mounts the wallet POSITION summary in the sidebar rail, not on the welcome stage", async () => {
     const view = renderShell();
     const sidebar = view.container.querySelector(
       "[data-vex-area='sessions-sidebar']",
     );
-    // The market bridge mock returns null → the widget shows its loading
-    // skeleton, proving it lives in the rail.
+    // The $VEX price ticker was replaced by the operator's own position summary
+    // (owner request). It rides the same rail slot — proving it lives here.
     await waitFor(() => {
       expect(
-        sidebar?.querySelector("[data-vex-area='vex-token-compact']"),
+        sidebar?.querySelector("[data-vex-area='sidebar-position']"),
       ).not.toBeNull();
     });
-    // The welcome panel no longer carries any market card — the stage is clean.
+    // The former market ticker is gone from the sidebar entirely.
+    expect(
+      sidebar?.querySelector("[data-vex-area='vex-token-compact']"),
+    ).toBeNull();
+    // The welcome panel carries no market/position card — the stage is clean.
     const panel = view.container.querySelector(
       "[data-vex-area='session-panel']",
     );
     expect(
-      panel?.querySelector("[data-vex-area='vex-token-compact']"),
+      panel?.querySelector("[data-vex-area='sidebar-position']"),
     ).toBeNull();
   });
 

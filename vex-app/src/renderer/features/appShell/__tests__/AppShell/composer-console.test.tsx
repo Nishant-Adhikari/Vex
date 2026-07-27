@@ -32,18 +32,20 @@ vi.mock("@hugeicons/react", () => ({
 
 vi.mock("@hugeicons/core-free-icons", () => ({
   Add01Icon: "Add01Icon",
+  CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
+  Download01Icon: "Download01Icon",
   ArrowDown01Icon: "ArrowDown01Icon",
   ArrowUp01Icon: "ArrowUp01Icon",
   MapPinIcon: "MapPinIcon",
   AiBrain05Icon: "AiBrain05Icon",
   StopCircleIcon: "StopCircleIcon",
-  Exchange01Icon: "Exchange01Icon",
-  Fuel01Icon: "Fuel01Icon",
-  Wallet01Icon: "Wallet01Icon",
+  FireIcon: "FireIcon",
+  ChartLineData01Icon: "ChartLineData01Icon",
+  PercentSquareIcon: "PercentSquareIcon",
 }));
 
 const mockSubmitChat = {
-  isPending: false,
+  isPending: false as boolean,
   mutateAsync: vi.fn(),
   stop: vi.fn(),
 };
@@ -92,6 +94,7 @@ function agentRow(over: Partial<SessionListItem> = {}): SessionListItem {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSubmitChat.isPending = false;
   runStatus = null;
   useUiStore.setState({
     pendingFirstMessage: null,
@@ -183,6 +186,21 @@ describe("SessionComposer — Signal Console chrome", () => {
     expect(form?.contains(status)).toBe(false);
   });
 
+  it("does not add a WORKING label above the composer while a turn is pending", () => {
+    mockSubmitChat.isPending = true;
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+
+    expect(
+      container.querySelector('[data-vex-console-status="working"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain("Working…");
+    expect(
+      container.querySelector('[data-vex-console-status="stopping"]'),
+    ).toBeNull();
+  });
+
   it("has no PROPOSE → ENFORCE → PROVE flow strip on the welcome stage", () => {
     const { container } = render(
       <SessionComposer activeSession={null} activeSessionId={null} stage />,
@@ -201,7 +219,7 @@ describe("SessionComposer — Signal Console chrome", () => {
     ).toBeNull();
     // Starter chips greet an empty welcome by default (the previous shown state).
     expect(
-      screen.queryByRole("button", { name: /wallet balances/i }),
+      screen.queryByRole("button", { name: /hunt trending memecoins/i }),
     ).not.toBeNull();
   });
 

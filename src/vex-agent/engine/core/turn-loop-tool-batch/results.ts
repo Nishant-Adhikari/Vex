@@ -11,6 +11,7 @@
 import type { StopReason } from "../../types.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
+import type { ExplorerRef } from "../explorer-refs.js";
 import { saveAssistantMessage } from "../turn.js";
 import { persistToolResultWithOverflow } from "../tool-output-overflow.js";
 import type { StopPayload, ToolBatchOutcome } from "./outcome.js";
@@ -25,6 +26,8 @@ interface ExecutedResult {
   toolName: string;
   output: string;
   success: boolean;
+  /** Coherent explorer refs derived from the tool's `result.data` at dispatch. */
+  explorerRefs: readonly ExplorerRef[];
 }
 
 /**
@@ -39,11 +42,20 @@ export async function persistBatchTranscript(args: {
   readonly executedResults: ExecutedResult[];
   /** MUTATED: pushed with assistant message + tool result messages. */
   readonly liveMessages: Message[];
+  /**
+   * True ONLY for the synthetic prepared-action follow-up call the engine
+   * dispatches itself (never model output — see
+   * `dispatchPreparedActionFollowUp`). Stamps transcript provenance so the
+   * assistant-role row is never mistaken for real model output.
+   */
+  readonly systemOriginated?: boolean;
 }): Promise<void> {
   const { sessionId, content, executedCalls, executedResults, liveMessages } = args;
 
   // ── DEFERRED SAVE: assistant message with canonical calls only ──
-  await saveAssistantMessage(sessionId, content, executedCalls);
+  await saveAssistantMessage(sessionId, content, executedCalls, {
+    systemOriginated: args.systemOriginated,
+  });
 
   liveMessages.push({
     role: "assistant",
@@ -60,13 +72,14 @@ export async function persistBatchTranscript(args: {
   // Oversized outputs are externalised into tool_output_blobs (PR-11) —
   // transcript gets a short stub with `metadata.payload.blob_key` so
   // archive-aware checkpoint and resume paths can keep the pointer alive.
-  for (const { toolCallId, toolName, output, success } of executedResults) {
+  for (const { toolCallId, toolName, output, success, explorerRefs } of executedResults) {
     const persisted = await persistToolResultWithOverflow(
       sessionId,
       toolCallId,
       toolName,
       output,
       success,
+      explorerRefs,
     );
 
     liveMessages.push({

@@ -1,0 +1,282 @@
+/**
+ * signals-db tests — the read query builder + row→DTO mapping.
+ *
+ * `pg.Client` + `buildPoolConfig` are mocked, so `listTodaySignals` exercises
+ * the real SQL/param builder and the real `mapSignalRow` against a fake result
+ * set. The pure `extractRawFields` / `mapSignalRow` are also asserted directly:
+ * the three `raw.*` fields are lifted here and the arbitrary provider jsonb
+ * never crosses into the DTO. Fail-soft: a DB error → an `internal.unexpected`
+ * error Result (never a throw).
+ */
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const connectMock = vi.fn();
+const queryMock = vi.fn();
+const endMock = vi.fn();
+
+vi.mock("pg", () => ({
+  Client: class {
+    connect = connectMock;
+    query = queryMock;
+    end = endMock;
+  },
+}));
+
+vi.mock("../db-config.js", () => ({
+  buildPoolConfig: vi.fn(async () => ({
+    host: "localhost",
+    port: 5432,
+    database: "vex",
+    user: "vex",
+    password: "pw",
+  })),
+}));
+
+vi.mock("../../logger/index.js", () => ({
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+const {
+  listTodaySignals,
+  listUngradedSignals,
+  persistSignalGrade,
+  mapSignalRow,
+  extractRawFields,
+} = await import("../signals-db.js");
+
+const DB_ROW = {
+  id: "12",
+  source: "trendradar",
+  chain: "solana",
+  contract: "So1111",
+  symbol: "WIF",
+  action: "watch",
+  score: "87",
+  today_mentions: "140",
+  yesterday_mentions: "40",
+  velocity_pct: "250",
+  liquidity_usd: 1_200_000,
+  volume_24h_usd: 8_000_000,
+  price_usd: 2.31,
+  narratives: ["dogs"],
+  risk_flags: ["low_liquidity"],
+  raw: {
+    price_change_24h_pct: 18.4,
+    market_cap: 2_000_000_000,
+    dexscreener_url: "https://dexscreener.com/solana/abc",
+    secret_internal: "must-not-leak",
+  },
+  feed_generated_at: new Date("2026-07-23T10:00:00.000Z"),
+  ingested_at: new Date("2026-07-23T10:05:00.000Z"),
+  grade: 72,
+  grade_verdict: "runner",
+  grade_rationale: "Strong velocity with healthy liquidity",
+  graded_at: new Date("2026-07-23T10:06:00.000Z"),
+};
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("extractRawFields", () => {
+  it("lifts the three known fields and drops everything else", () => {
+    expect(extractRawFields(DB_ROW.raw)).toEqual({
+      priceChange24hPct: 18.4,
+      marketCapUsd: 2_000_000_000,
+      dexscreenerUrl: "https://dexscreener.com/solana/abc",
+    });
+  });
+
+  it("falls back to fdv for market cap", () => {
+    expect(extractRawFields({ fdv: 500 }).marketCapUsd).toBe(500);
+  });
+
+  it("returns all-nulls for non-object raw (defensive)", () => {
+    expect(extractRawFields(null)).toEqual({
+      priceChange24hPct: null,
+      marketCapUsd: null,
+      dexscreenerUrl: null,
+    });
+    expect(extractRawFields([1, 2, 3]).dexscreenerUrl).toBeNull();
+    expect(extractRawFields("nope").marketCapUsd).toBeNull();
+  });
+});
+
+describe("mapSignalRow", () => {
+  it("coerces numeric-string columns and ISO-formats timestamps", () => {
+    const dto = mapSignalRow(DB_ROW);
+    expect(dto.id).toBe(12);
+    expect(dto.score).toBe(87);
+    expect(dto.todayMentions).toBe(140);
+    expect(dto.liquidityUsd).toBe(1_200_000);
+    expect(dto.priceChange24hPct).toBe(18.4);
+    expect(dto.marketCapUsd).toBe(2_000_000_000);
+    expect(dto.dexscreenerUrl).toBe("https://dexscreener.com/solana/abc");
+    expect(dto.ingestedAt).toBe("2026-07-23T10:05:00.000Z");
+    expect(dto.feedGeneratedAt).toBe("2026-07-23T10:00:00.000Z");
+  });
+
+  it("never surfaces raw internal keys on the DTO", () => {
+    const dto = mapSignalRow(DB_ROW) as Record<string, unknown>;
+    expect(dto["raw"]).toBeUndefined();
+    expect(dto["secret_internal"]).toBeUndefined();
+    expect(JSON.stringify(dto)).not.toContain("must-not-leak");
+  });
+
+  // Display-gap fix: the persisted auto-grade must flow through the read DTO so
+  // a freshly-ingested graded signal shows its badge on load.
+  it("surfaces the persisted grade through the read DTO", () => {
+    const dto = mapSignalRow(DB_ROW);
+    expect(dto.grade).toBe(72);
+    expect(dto.gradeVerdict).toBe("runner");
+    expect(dto.gradeRationale).toBe("Strong velocity with healthy liquidity");
+    expect(dto.gradedAt).toBe("2026-07-23T10:06:00.000Z");
+  });
+
+  it("nulls the grade fields for an ungraded row", () => {
+    const dto = mapSignalRow({
+      ...DB_ROW,
+      grade: null,
+      grade_verdict: null,
+      grade_rationale: null,
+      graded_at: null,
+    });
+    expect(dto.grade).toBeNull();
+    expect(dto.gradeVerdict).toBeNull();
+    expect(dto.gradeRationale).toBeNull();
+    expect(dto.gradedAt).toBeNull();
+  });
+
+  it("clamps grade and rejects an unknown verdict", () => {
+    const dto = mapSignalRow({
+      ...DB_ROW,
+      grade: 250,
+      grade_verdict: "bogus",
+    });
+    expect(dto.grade).toBe(100);
+    expect(dto.gradeVerdict).toBeNull();
+  });
+});
+
+describe("listTodaySignals", () => {
+  it("builds a windowed, newest-first, bounded query and maps rows", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rows: [DB_ROW] });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listTodaySignals({ withinHours: 24, limit: 50 }, "corr-1");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0]?.symbol).toBe("WIF");
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/FROM signals/);
+    expect(sql).toMatch(/ingested_at > NOW\(\) - make_interval/);
+    expect(sql).toMatch(/ORDER BY ingested_at DESC, score DESC NULLS LAST/);
+    expect(sql).toMatch(/LIMIT \$2/);
+    expect(params).toEqual([24, 50]);
+  });
+
+  it("fails soft to an error Result when the query throws", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockRejectedValue(new Error("boom"));
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listTodaySignals({ withinHours: 24, limit: 50 }, "corr-1");
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected err");
+    expect(res.error.code).toBe("internal.unexpected");
+    expect(res.error.domain).toBe("signals");
+  });
+
+  it("fails soft when the DB config is absent", async () => {
+    const { buildPoolConfig } = await import("../db-config.js");
+    vi.mocked(buildPoolConfig).mockResolvedValueOnce(
+      null as unknown as Awaited<ReturnType<typeof buildPoolConfig>>,
+    );
+    const res = await listTodaySignals({ withinHours: 24, limit: 50 }, "corr-1");
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("listUngradedSignals", () => {
+  it("selects only ungraded rows (grade IS NULL), newest first, bounded", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rows: [DB_ROW] });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listUngradedSignals(25, "corr-ug");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0]?.symbol).toBe("WIF");
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/FROM signals/);
+    expect(sql).toMatch(/WHERE grade IS NULL/);
+    expect(sql).toMatch(/ORDER BY ingested_at DESC/);
+    expect(sql).toMatch(/LIMIT \$1/);
+    expect(params).toEqual([25]);
+  });
+
+  it("fails soft to an error Result when the query throws", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockRejectedValue(new Error("boom"));
+    endMock.mockResolvedValue(undefined);
+
+    const res = await listUngradedSignals(25, "corr-ug");
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("persistSignalGrade", () => {
+  const GRADE = {
+    id: 12,
+    grade: 73,
+    verdict: "runner" as const,
+    rationale: "deep liquidity, real momentum",
+  };
+
+  it("writes the four grade columns guarded by grade IS NULL (idempotent)", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rowCount: 1 });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toBe(true); // a row was written
+
+    const [sql, params] = queryMock.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/UPDATE signals/);
+    expect(sql).toMatch(/SET grade = \$2/);
+    expect(sql).toMatch(/grade_verdict = \$3/);
+    expect(sql).toMatch(/grade_rationale = \$4/);
+    expect(sql).toMatch(/graded_at = NOW\(\)/);
+    // The idempotency guard: never clobber an existing grade.
+    expect(sql).toMatch(/WHERE id = \$1\s+AND grade IS NULL/);
+    expect(params).toEqual([12, 73, "runner", "deep liquidity, real momentum"]);
+  });
+
+  it("returns ok(false) when the guard matched no row (already graded)", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockResolvedValue({ rowCount: 0 });
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data).toBe(false);
+  });
+
+  it("fails soft to an error Result when the update throws", async () => {
+    connectMock.mockResolvedValue(undefined);
+    queryMock.mockRejectedValue(new Error("boom"));
+    endMock.mockResolvedValue(undefined);
+
+    const res = await persistSignalGrade(GRADE, "corr-pg");
+    expect(res.ok).toBe(false);
+  });
+});

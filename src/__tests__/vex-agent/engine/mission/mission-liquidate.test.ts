@@ -17,6 +17,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   liquidateMissionPositions,
   LIQUIDATE_SLIPPAGE_BPS,
+  LIQUIDATE_RATIONALE,
   type LiquidateDeps,
 } from "@vex-agent/engine/mission/mission-liquidate.js";
 import type { OpenPosition } from "@vex-agent/engine/mission/bankroll.js";
@@ -175,6 +176,10 @@ describe("liquidateMissionPositions", () => {
       tokenIn: MISSION_TOKEN_A,
       tokenOut: "native",
       slippageBps: LIQUIDATE_SLIPPAGE_BPS,
+      // System-authored rationale so the forced exit is still auditable in the
+      // Decision Journal (this path calls the handler directly, bypassing the
+      // manifest's required-rationale gate — requiredness never blocks it).
+      rationale: LIQUIDATE_RATIONALE,
       dryRun: false,
     });
     // Sells just UNDER the full balance (safety margin so the float amount never

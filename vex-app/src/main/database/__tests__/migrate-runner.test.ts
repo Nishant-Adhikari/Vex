@@ -14,6 +14,10 @@ const mockPoolEnd = vi.fn(async () => {});
 const mockPoolOn = vi.fn();
 const mockBuildPoolConfig = vi.fn();
 const mockRunMigrationsWithProgress = vi.fn();
+const mockHealSchemaVersionDrift = vi.fn();
+const mockLogWarn = vi.fn();
+const mockLogInfo = vi.fn();
+const mockLogError = vi.fn();
 const mockProgressBusReset = vi.fn();
 const mockProgressBusEmit = vi.fn();
 const PoolCtor = vi.fn();
@@ -53,14 +57,16 @@ vi.mock("@vex-lib/db/migrate-runner.js", async () => {
     ...actual,
     runMigrationsWithProgress: (opts: unknown) =>
       mockRunMigrationsWithProgress(opts),
+    healSchemaVersionDrift: (opts: unknown) =>
+      mockHealSchemaVersionDrift(opts),
   };
 });
 
 vi.mock("../../logger/index.js", () => ({
   log: {
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
+    info: (m: string) => mockLogInfo(m),
+    error: (m: string) => mockLogError(m),
+    warn: (m: string) => mockLogWarn(m),
     debug: vi.fn(),
   },
 }));
@@ -79,6 +85,8 @@ const VALID_CONFIG = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockPoolEnd.mockResolvedValue(undefined);
+  // Default: post-migration self-heal finds no drift.
+  mockHealSchemaVersionDrift.mockResolvedValue({ healed: [], failures: [] });
 });
 
 afterEach(() => {
@@ -217,5 +225,78 @@ describe("runMigrationsForIpc", () => {
         max: 1,
       })
     );
+  });
+});
+
+describe("runMigrationsForIpc — schema drift self-heal", () => {
+  it("runs the self-heal after a successful migration pass, on the same pool + dir", async () => {
+    mockBuildPoolConfig.mockResolvedValue(VALID_CONFIG);
+    mockRunMigrationsWithProgress.mockResolvedValue({ applied: 0, files: [] });
+
+    await runMigrationsForIpc();
+
+    expect(mockHealSchemaVersionDrift).toHaveBeenCalledTimes(1);
+    const opts = mockHealSchemaVersionDrift.mock.calls[0]?.[0] as {
+      pool: unknown;
+      migrationsDir: unknown;
+      logger?: unknown;
+    };
+    // Same migrations dir the normal pass used.
+    const runnerOpts = mockRunMigrationsWithProgress.mock.calls[0]?.[0] as {
+      migrationsDir: unknown;
+    };
+    expect(opts.migrationsDir).toBe(runnerOpts.migrationsDir);
+    expect(opts.logger).toBeDefined();
+    // Pool is still ended after the heal step.
+    expect(mockPoolEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs a warning naming each healed migration", async () => {
+    mockBuildPoolConfig.mockResolvedValue(VALID_CONFIG);
+    mockRunMigrationsWithProgress.mockResolvedValue({ applied: 0, files: [] });
+    mockHealSchemaVersionDrift.mockResolvedValue({
+      healed: [
+        {
+          version: 40,
+          file: "040_hyperliquid_candles.sql",
+          missingTables: ["hyperliquid_candles", "hyperliquid_candle_watches"],
+        },
+      ],
+      failures: [],
+    });
+
+    await runMigrationsForIpc();
+
+    const warned = mockLogWarn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warned).toMatch(/040_hyperliquid_candles\.sql/);
+    expect(warned).toMatch(/self-heal|drift/i);
+  });
+
+  it("does not run the self-heal when the migration pass itself failed", async () => {
+    mockBuildPoolConfig.mockResolvedValue(VALID_CONFIG);
+    mockRunMigrationsWithProgress.mockRejectedValue(new Error("boom"));
+
+    const result = await runMigrationsForIpc();
+
+    expect(result.kind).toBe("failed");
+    expect(mockHealSchemaVersionDrift).not.toHaveBeenCalled();
+    expect(mockPoolEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("still returns the pass result and ends the pool when self-heal throws", async () => {
+    mockBuildPoolConfig.mockResolvedValue(VALID_CONFIG);
+    mockRunMigrationsWithProgress.mockResolvedValue({
+      applied: 1,
+      files: ["001_a.sql"],
+    });
+    mockHealSchemaVersionDrift.mockRejectedValue(new Error("heal exploded"));
+
+    const result = await runMigrationsForIpc();
+
+    // A self-heal failure must never take down boot — the normal pass
+    // result is preserved and the pool is still cleaned up.
+    expect(result.kind).toBe("applied");
+    expect(mockLogError).toHaveBeenCalled();
+    expect(mockPoolEnd).toHaveBeenCalledTimes(1);
   });
 });

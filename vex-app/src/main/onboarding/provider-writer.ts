@@ -51,23 +51,40 @@ export async function writeProvider(
 ): Promise<Result<ProviderWriteResult>> {
   const targetFile = options.envFile ?? ENV_FILE;
 
-  const updates: Record<CanonicalKey, string> = {
-    OPENROUTER_API_KEY: input.apiKey,
-    AGENT_MODEL: input.model,
-    AGENT_PROVIDER: PROVIDER_AGENT_VALUE,
-  };
+  const hasFallback = input.fallback !== undefined;
+
+  // `fieldsWritten` is DYNAMIC: the primary trio is always written; the two
+  // fallback keys are reported only when a fallback was supplied. Removing a
+  // previously-set fallback (reconfigure with none) still clears it from the
+  // vault + `.env` below, but is not reported as "written".
+  const fieldsWritten: CanonicalKey[] = [
+    "OPENROUTER_API_KEY",
+    "AGENT_MODEL",
+    "AGENT_PROVIDER",
+  ];
+  if (hasFallback) {
+    fieldsWritten.push("OPENROUTER_API_KEY_FALLBACK", "AGENT_MODEL_FALLBACK");
+  }
 
   try {
+    // Vault: always (re)write the primary key; write the fallback key when
+    // present, or CLEAR it (null) when absent so a removed fallback does not
+    // linger in the encrypted vault.
     const secretWrite = writeUnlockedSecrets({
       OPENROUTER_API_KEY: input.apiKey,
+      OPENROUTER_API_KEY_FALLBACK: input.fallback?.apiKey ?? null,
     });
     if (!secretWrite.ok) return secretWrite;
     stripManagedSecretsFromDotenvFile(targetFile);
     appendMultipleToDotenvFile(
       {
         OPENROUTER_API_KEY: null,
-        AGENT_MODEL: updates.AGENT_MODEL,
-        AGENT_PROVIDER: updates.AGENT_PROVIDER,
+        AGENT_MODEL: input.model,
+        AGENT_PROVIDER: PROVIDER_AGENT_VALUE,
+        OPENROUTER_API_KEY_FALLBACK: null,
+        // Non-secret fallback model id: write it when present; omit the line
+        // entirely (null) when absent so the single-provider config is clean.
+        AGENT_MODEL_FALLBACK: input.fallback?.model ?? null,
       },
       targetFile,
     );
@@ -88,8 +105,11 @@ export async function writeProvider(
     });
   }
 
-  log.info(`[provider-writer] persisted provider keys to ${targetFile}`);
+  log.info(
+    `[provider-writer] persisted provider keys to ${targetFile}` +
+      (hasFallback ? " (with fallback)" : ""),
+  );
   return ok({
-    fieldsWritten: [...PROVIDER_PERSIST_CANONICAL_ORDER] as ReadonlyArray<CanonicalKey>,
+    fieldsWritten: fieldsWritten as ReadonlyArray<CanonicalKey>,
   });
 }

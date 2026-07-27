@@ -72,7 +72,10 @@ function ctx(overrides: Partial<DispatchCtx> = {}): DispatchCtx {
 // bare symbol early — symmetric with the strict execute handler). tokenIn is
 // native ETH; tokenOut is a USDC contract address.
 const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-const EVM_SWAP_ARGS = { chain: "base", tokenIn: "ETH", tokenOut: USDC_ADDR, amount: "0.5", slippageBps: 50 };
+// `rationale` is REQUIRED on the EVM swap targets, so the shared happy-path
+// fixture carries one — the alias forwards it to executeProtocolTool.
+const RATIONALE = "momentum breakout on rising volume; entering now";
+const EVM_SWAP_ARGS = { chain: "base", tokenIn: "ETH", tokenOut: USDC_ADDR, amount: "0.5", slippageBps: 50, rationale: RATIONALE };
 
 beforeEach(() => {
   getProtocolManifest.mockReturnValue({ mutating: true, actionKind: "user_wallet_broadcast" });
@@ -91,6 +94,7 @@ describe("swap alias — side routing", () => {
       tokenIn: "ETH",
       tokenOut: USDC_ADDR,
       amountIn: "0.5", // amount → amountIn translation
+      rationale: RATIONALE, // forwarded to the required target param
       slippageBps: 50,
     });
   });
@@ -114,6 +118,42 @@ describe("swap alias — side routing", () => {
     );
     const [req] = executeProtocolTool.mock.calls[0] as [{ params: Record<string, unknown> }];
     expect(req.params.recipient).toBe("0x" + "ab".repeat(20));
+  });
+
+  it("rationale is forwarded to the EVM target (the required Decision-Journal param)", async () => {
+    await dispatchTool({ name: "swap", args: EVM_SWAP_ARGS, toolCallId: "c3c" }, ctx());
+    const [req] = executeProtocolTool.mock.calls[0] as [{ params: Record<string, unknown> }];
+    expect(req.params.rationale).toBe(RATIONALE);
+  });
+
+  it("EVM swap with NO rationale → clear reject, NO dispatch (never trades silently)", async () => {
+    const { rationale: _omit, ...noRationale } = EVM_SWAP_ARGS;
+    void _omit;
+    const result = await dispatchTool({ name: "swap", args: noRationale, toolCallId: "c3d" }, ctx());
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/^swap:/);
+    expect(result.output).toContain("rationale");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("EVM swap with a whitespace-only rationale → clear reject, NO dispatch", async () => {
+    const result = await dispatchTool(
+      { name: "swap", args: { ...EVM_SWAP_ARGS, rationale: "   " }, toolCallId: "c3e" },
+      ctx(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("rationale");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("Solana + rationale → clear reject (EVM-only), NO dispatch", async () => {
+    const result = await dispatchTool(
+      { name: "swap", args: { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amount: "1", rationale: RATIONALE }, toolCallId: "c4b" },
+      ctx(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/rationale.*Solana|rationale.*not recorded/i);
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
   it("Solana (no side) → solana.swap.execute with translated params", async () => {
@@ -169,21 +209,20 @@ describe("swap alias — side routing", () => {
   });
 });
 
-describe("swap alias — Robinhood Chain 4663 routes to Uniswap, never KyberSwap (LOCKED #3)", () => {
-  // Uniswap tokens are ADDRESS-ONLY (VIRTUAL → VEX on Robinhood Chain).
+describe("swap alias — Robinhood Chain 4663 routes to KyberSwap primary, Uniswap fallback", () => {
+  // Swap-venue tokens are ADDRESS-ONLY (VIRTUAL → VEX on Robinhood Chain).
   const VIRTUAL = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
   const VEX = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
-  const RH_ARGS = { chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amount: "1.5", slippageBps: 50 };
+  const RH_ARGS = { chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amount: "1.5", slippageBps: 50, rationale: RATIONALE };
 
-  it("chain 'robinhood' (default side) → uniswap.swap.sell (NOT kyberswap)", async () => {
+  it("chain 'robinhood' (default side) → kyberswap.swap.sell (KyberSwap aggregates 4663; Uniswap is the fallback)", async () => {
     await dispatchTool({ name: "swap", args: RH_ARGS, toolCallId: "rh1" }, ctx());
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
-    expect(req.toolId).toBe("uniswap.swap.sell");
-    expect(req.toolId).not.toContain("kyberswap");
-    expect(req.params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 });
+    expect(req.toolId).toBe("kyberswap.swap.sell");
+    expect(req.params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", rationale: RATIONALE, slippageBps: 50 });
   });
 
-  it("chain '4663' with side:'buy' → uniswap.swap.buy", async () => {
+  it("NUMERIC chain '4663' with side:'buy' → uniswap.swap.buy (known slug-only venue-router asymmetry: numeric ids skip KyberSwap)", async () => {
     await dispatchTool({ name: "swap", args: { ...RH_ARGS, chain: "4663", side: "buy" }, toolCallId: "rh2" }, ctx());
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string }];
     expect(req.toolId).toBe("uniswap.swap.buy");
@@ -235,7 +274,7 @@ describe("swap alias — path-identity with direct execute_tool", () => {
     await dispatchTool(
       {
         name: "execute_tool",
-        args: { toolId: "kyberswap.swap.sell", params: { chain: "base", tokenIn: "ETH", tokenOut: USDC_ADDR, amountIn: "0.5", slippageBps: 50 } },
+        args: { toolId: "kyberswap.swap.sell", params: { chain: "base", tokenIn: "ETH", tokenOut: USDC_ADDR, amountIn: "0.5", rationale: RATIONALE, slippageBps: 50 } },
         toolCallId: "c10b",
       },
       ctx(),

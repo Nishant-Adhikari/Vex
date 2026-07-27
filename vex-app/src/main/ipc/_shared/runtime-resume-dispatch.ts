@@ -10,6 +10,13 @@
  * The dispatcher returns a discriminated union compatible with both
  * `runtimeRequestResumeResultSchema` and `missionContinueResultSchema`
  * (the two are deliberately identical).
+ *
+ * A `running` status alone does NOT mean a runner is observing the
+ * session — the lease can be expired/released (parked between autonomous
+ * mission slices). Reporting `already_running` in that case is a lie that
+ * strands the operator with no way to reclaim the run; instead a dead
+ * lease falls through to the same claim/resume path as `paused_user` /
+ * `paused_wake` (issue #12's bug class, ported here per WP-C).
  */
 
 import { randomUUID } from "node:crypto";
@@ -19,6 +26,7 @@ import { log } from "../../logger/index.js";
 import { controlFailedError } from "../runtime/_errors.js";
 import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
 import { emitControlStateAfterChange } from "../runtime/_emit-control-state.js";
+import { classifyRunLeaseState } from "./lease-state.js";
 
 export interface ResumeFlowInput {
   readonly sessionId: string;
@@ -62,7 +70,18 @@ export async function runResumeDispatch(
     const status = state.data.status;
     const runId = state.data.missionRunId;
     if (status === "running") {
-      return ok({ outcome: "already_running", runId });
+      if (classifyRunLeaseState(status, state.data.leaseActive) === "live") {
+        return ok({ outcome: "already_running", runId });
+      }
+      // Dead lease: `status === 'running'` alone does NOT mean a runner is
+      // observing this session (parked between autonomous slices, or the
+      // process that held the lease exited without finalizing). Reporting
+      // `already_running` here would be a lie — nothing is actually
+      // running. Fall through to the SAME claim/resume path used for
+      // paused_user/paused_wake below: `claimRunLeaseAndFlipToRunning`
+      // re-validates the lease is expired/absent under a row lock before
+      // reclaiming it, so this is race-safe against a runner that reacquires
+      // the lease between this read and the claim.
     }
     if (status === "paused_approval") {
       return ok({
@@ -99,8 +118,12 @@ export async function runResumeDispatch(
         return ok({ outcome: "blocked_error", reason: "plan_acceptance_required" });
       }
     }
-    // paused_user, paused_wake, or an ACCEPTED paused_plan_acceptance —
-    // claim + flip + dispatch.
+    // paused_user, paused_wake, an ACCEPTED paused_plan_acceptance, or a
+    // `running` status with a DEAD lease (no runner actually observing) —
+    // claim + flip + dispatch. `fromStatuses: [status]` covers the
+    // running-with-dead-lease case too: `claimRunLeaseAndFlipToRunning`
+    // flips running -> running (a no-op status transition) while
+    // atomically reclaiming a fresh lease under a row lock.
     const { enqueueRequest, markObserved, markCleared, markFailed } =
       await import("@vex-agent/db/repos/runtime-control-requests.js");
     const auditRequest = await enqueueRequest({

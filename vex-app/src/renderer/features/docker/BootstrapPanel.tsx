@@ -50,6 +50,7 @@ import type {
   Branch,
   ManualFetchState,
 } from "./bootstrap/types.js";
+import { shouldExpressAdvanceDocker } from "../../lib/express-lane.js";
 import { NotaryPage } from "../../components/onboarding/NotaryPage.js";
 import { KeyButton } from "../../components/onboarding/KeyButton.js";
 import { RecheckButton } from "../../components/onboarding/FooterButtons.js";
@@ -62,6 +63,7 @@ import { FailureBody } from "./bootstrap/branches/FailureBody.js";
 
 export function BootstrapPanel(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const returningUser = useUiStore((s) => s.returningUser);
   const dockerStatus = useDockerStatus();
   const systemHealth = useSystemHealth();
   const installMutation = useDockerInstall();
@@ -137,6 +139,13 @@ export function BootstrapPanel(): JSX.Element {
   const handleContinue = useCallback(() => {
     setCurrentView("composeBootstrap");
   }, [setCurrentView]);
+
+  // Express lane: a returning user whose Docker engine + daemon are already
+  // running (branch "A") auto-advances instead of clicking Continue. Any other
+  // branch (install/start needed, failure) keeps the screen so the user acts.
+  useEffect(() => {
+    if (shouldExpressAdvanceDocker(returningUser, branch)) handleContinue();
+  }, [returningUser, branch, handleContinue]);
 
   const handleStart = useCallback(() => {
     startMutation.mutate(undefined, {

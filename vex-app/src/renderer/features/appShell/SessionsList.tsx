@@ -19,12 +19,14 @@ import {
 } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
+import { SessionPresets } from "./SessionPresets.js";
 import { MemoryButton } from "./MemoryButton.js";
 import { MissionsButton } from "./MissionsButton.js";
+import { SignalsButton } from "./SignalsButton.js";
 import { RuntimeLedger } from "./RuntimeLedger.js";
 import { SettingsButton } from "./SettingsButton.js";
 import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
-import { VexTokenCardCompact } from "./market/VexTokenCardCompact.js";
+import { PositionBlock } from "./book/PositionBlock.js";
 import {
   SessionGroups,
   SessionsEmptyPlaceholder,
@@ -35,6 +37,7 @@ import {
 import {
   filterSessionsByMode,
   groupSessions,
+  hideEndedMissions,
   SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
 import { computeVisibleGroups } from "./sessionListLayout.js";
@@ -88,8 +91,13 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
 
   const visibleRows = useMemo(() => {
     if (!query.data?.ok) return [];
-    return filterSessionsByMode(query.data.data, sessionModeFilter);
-  }, [query.data, sessionModeFilter]);
+    const byMode = filterSessionsByMode(query.data.data, sessionModeFilter);
+    // The MISSION tab IS the mission history view — show every run there
+    // (including ended). Every other tab hides ended mission runs from the
+    // rail; the user reads that history in the Missions view instead.
+    if (sessionModeFilter === "mission") return byMode;
+    return hideEndedMissions(byMode, activeSessionId);
+  }, [query.data, sessionModeFilter, activeSessionId]);
 
   const groups = useMemo(() => groupSessions(visibleRows), [visibleRows]);
 
@@ -153,6 +161,11 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
   const toggleSidebar = useCallback((): void => {
     setSidebarOpen(!sidebarOpen);
   }, [setSidebarOpen, sidebarOpen]);
+
+  // The PRESETS tab swaps the session list for the one-click mission-preset
+  // cards. It is a rail view, not a session-mode filter, so it bypasses the
+  // sessions query entirely (and the Browse-all footer, since totalRows is 0).
+  const showPresets = sessionModeFilter === "presets";
 
   const totalRows = visibleRows.length;
 
@@ -300,9 +313,14 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
 
       <div
         ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-hidden px-2 py-3"
+        className={cn(
+          "min-h-0 flex-1 px-2 py-3",
+          showPresets ? "overflow-y-auto" : "overflow-hidden",
+        )}
       >
-        {query.isLoading ? (
+        {showPresets ? (
+          <SessionPresets />
+        ) : query.isLoading ? (
           <SessionsLoadingPlaceholder sidebarOpen={sidebarOpen} />
         ) : query.data && query.data.ok === false ? (
           <SessionsErrorPlaceholder
@@ -358,13 +376,24 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         </div>
       ) : null}
 
-      {/* LIVE $VEX — the compact market widget rides the rail between BROWSE
-       * ALL and the footer registry (moved off the welcome stage to keep it
-       * clean). Hidden when the rail is collapsed: the icon-only rail has no
-       * room for the price + stats grid. */}
+      {/* POSITION — the full wallet portfolio card (total · wallet + copy
+       * addresses · per-chain / ETH holdings) now lives on the LEFT rail
+       * (owner request: moved off the right MISSION CONTROL panel). It rides
+       * between BROWSE ALL and the footer registry as a persisted-collapse
+       * accordion, scoped to the active session (session Position) or the
+       * global inventory (Portfolio) when none is open — the same dual-scope
+       * `usePortfolioScoped` read the right rail used, no forked data path.
+       * Hidden when the rail is collapsed: the icon-only rail has no room. */}
       {sidebarOpen ? (
-        <div className="border-t border-[var(--vex-line)] px-3 py-3">
-          <VexTokenCardCompact />
+        <div
+          data-vex-area="sidebar-position"
+          className="border-t border-[var(--vex-line)] px-3"
+        >
+          <PositionBlock
+            activeSessionId={activeSessionId}
+            collapsible
+            sectionId="position"
+          />
         </div>
       ) : null}
 
@@ -380,6 +409,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
       >
         <MissionsButton compact={!sidebarOpen} />
         <MemoryButton compact={!sidebarOpen} />
+        <SignalsButton compact={!sidebarOpen} />
         <SettingsButton compact={!sidebarOpen} />
         {/* Report issue intentionally hidden for now; ReportIssueButton/Dialog retained for re-enable. */}
         <RuntimeLedger sidebarOpen={sidebarOpen} />

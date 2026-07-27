@@ -7,6 +7,19 @@
  */
 
 import { z } from "zod";
+import { hyperliquidPolicyTransportSchema } from "./hyperliquid.js";
+
+const hyperliquidPreferencesSchema = z
+  .object({
+    /**
+     * Global, user-owned policy values. The canonical root schema owns every
+     * numeric bound and default; renderer input is revalidated again in main.
+     */
+    policy: hyperliquidPolicyTransportSchema,
+    /** One-time main-owned acknowledgement of HL ToS applicability and risk. */
+    riskAcknowledgedAt: z.string().datetime({ offset: true }).nullable(),
+  })
+  .strict();
 
 export const preferencesSchema = z
   .object({
@@ -47,17 +60,70 @@ export const preferencesSchema = z
     ui: z
       .object({
         reducedMotion: z.enum(["auto", "always", "never"]),
+        /**
+         * Gate for the (fork-only) mission-scoped keep-awake: when true (the
+         * default, preserving the prior always-on behavior) the main process
+         * holds the Mac awake via `powerSaveBlocker` for the duration of an
+         * active mission run. `.default(true)` keeps pre-existing preference
+         * files valid — an absent key reads as on, not corrupt.
+         */
+        keepAwakeDuringMission: z.boolean().default(true),
+      })
+      .strict(),
+
+    /**
+     * Hyperliquid is disabled until the user acknowledges its risk disclosure.
+     * A default keeps pre-037 preference files backward compatible without
+     * treating an absent acknowledgement as consent.
+     */
+    hyperliquid: hyperliquidPreferencesSchema.default({
+      policy: hyperliquidPolicyTransportSchema.parse({}),
+      riskAcknowledgedAt: null,
+    }),
+  })
+  .strict();
+
+export type Preferences = z.infer<typeof preferencesSchema>;
+
+/**
+ * Live keep-awake worker state (fork-only), read by the renderer to indicate
+ * whether the macOS clamshell (lid-close) override is actually holding the Mac
+ * awake vs. running idle-only. Not persisted — reflects the main-process worker.
+ */
+export const keepAwakeStateSchema = z
+  .object({
+    /** The manual "Stay awake" menu toggle is on. */
+    manual: z.boolean(),
+    /** The persisted mission keep-awake toggle (`ui.keepAwakeDuringMission`). */
+    missionGate: z.boolean(),
+    /** The idle `powerSaveBlocker` is currently engaged. */
+    active: z.boolean(),
+    /** A mission run is actively executing. */
+    missionRunning: z.boolean(),
+    /** macOS clamshell (lid-close) override status. */
+    clamshell: z
+      .object({
+        /** We hold `pmset disablesleep 1` — lid-close is being prevented. */
+        active: z.boolean(),
+        /** The user cancelled the admin prompt → idle-only fallback. */
+        adminDeclined: z.boolean(),
+        /** false off macOS (clamshell override is a no-op). */
+        supported: z.boolean(),
       })
       .strict(),
   })
   .strict();
 
-export type Preferences = z.infer<typeof preferencesSchema>;
+export type KeepAwakeState = z.infer<typeof keepAwakeStateSchema>;
 
 export const defaultPreferences: Preferences = {
   version: 1,
   telemetry: { enabled: false, consentedAt: null },
   window: { width: 1280, height: 800, x: null, y: null, maximized: false },
   updater: { lastCheckedAt: null },
-  ui: { reducedMotion: "auto" },
+  ui: { reducedMotion: "auto", keepAwakeDuringMission: true },
+  hyperliquid: {
+    policy: hyperliquidPolicyTransportSchema.parse({}),
+    riskAcknowledgedAt: null,
+  },
 };

@@ -18,7 +18,10 @@ import type {
   MessageMetadata,
 } from "../../../vex-agent/engine/types.js";
 
-import { MISSION_DRAFT_REQUIRED_FIELDS } from "../../../vex-agent/engine/types.js";
+import {
+  MISSION_DRAFT_REQUIRED_FIELDS,
+  MissionRunPausedError,
+} from "../../../vex-agent/engine/types.js";
 
 describe("engine types", () => {
   // ── Session axes ────────────────────────────────────────────────
@@ -126,10 +129,12 @@ describe("engine types", () => {
         successCriteria: null,
         stopConditions: null,
         deadline: null,
+        durationMinutes: null,
       };
       // Puzzle 04 removed `stopConditionsAccepted` from MissionDraft —
       // acceptance is host-only via `missions.accepted_contract_hash`.
-      expect(Object.keys(draft)).toHaveLength(11);
+      // WP-I1 added `durationMinutes` (hard time-box, minutes).
+      expect(Object.keys(draft)).toHaveLength(12);
     });
 
     it("accepts populated values", () => {
@@ -145,6 +150,7 @@ describe("engine types", () => {
         successCriteria: ["Accumulated 10 SOL"],
         stopConditions: ["capital_depleted", "deadline_reached"],
         deadline: "2026-04-04",
+        durationMinutes: 60,
       };
       expect(draft.title).toBe("SOL DCA Strategy");
       expect(draft.allowedChains).toEqual(["solana"]);
@@ -158,6 +164,10 @@ describe("engine types", () => {
 
     it("does not include deadline (optional)", () => {
       expect(MISSION_DRAFT_REQUIRED_FIELDS).not.toContain("deadline");
+    });
+
+    it("does not include durationMinutes (optional — env/default fallback)", () => {
+      expect(MISSION_DRAFT_REQUIRED_FIELDS).not.toContain("durationMinutes");
     });
 
     it("includes all business-critical fields", () => {
@@ -254,6 +264,53 @@ describe("engine types", () => {
       };
       expect(result.stopReason).toBe("goal_reached");
       expect(result.missionStatus).toBe("completed");
+    });
+  });
+
+  // ── MissionRunPausedError — wrapper propagation (WP1 step 6) ───
+
+  describe("MissionRunPausedError", () => {
+    it("copies statusCode/causeCode from a normalized 503/ECONNRESET-shaped cause", () => {
+      const cause = Object.assign(
+        new Error("OpenRouter chat completion failed: status=503 | unavailable"),
+        { statusCode: 503, causeCode: "ECONNRESET" },
+      );
+      const wrapper = new MissionRunPausedError({
+        runId: "run-1", missionId: "mission-1", sessionId: "session-1", cause,
+      });
+      expect(wrapper.statusCode).toBe(503);
+      expect(wrapper.causeCode).toBe("ECONNRESET");
+      expect(wrapper.cause).toBe(cause);
+    });
+
+    it("is null for a cause with no matching validated own-property", () => {
+      const wrapper = new MissionRunPausedError({
+        runId: "run-1", missionId: "mission-1", sessionId: "session-1",
+        cause: new Error("plain failure"),
+      });
+      expect(wrapper.statusCode).toBeNull();
+      expect(wrapper.causeCode).toBeNull();
+    });
+
+    it("rejects a non-finite statusCode and a non-errno-shaped causeCode", () => {
+      const cause = Object.assign(new Error("weird"), {
+        statusCode: NaN,
+        causeCode: "not an errno shape!",
+      });
+      const wrapper = new MissionRunPausedError({
+        runId: "run-1", missionId: "mission-1", sessionId: "session-1", cause,
+      });
+      expect(wrapper.statusCode).toBeNull();
+      expect(wrapper.causeCode).toBeNull();
+    });
+
+    it("handles a non-Error cause without throwing", () => {
+      const wrapper = new MissionRunPausedError({
+        runId: "run-1", missionId: "mission-1", sessionId: "session-1", cause: "boom",
+      });
+      expect(wrapper.statusCode).toBeNull();
+      expect(wrapper.causeCode).toBeNull();
+      expect(wrapper.message).toBe("boom");
     });
   });
 

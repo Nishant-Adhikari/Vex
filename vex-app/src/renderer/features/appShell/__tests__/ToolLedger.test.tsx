@@ -116,6 +116,113 @@ describe("ToolActRow", () => {
   it("renders no stamp at rest (the persisted ledger row is quiet)", () => {
     render(createElement(ToolActRow, { act: act() }));
     expect(screen.queryByText(/awaiting signature/i)).toBeNull();
+    expect(screen.queryByRole("status", { name: /transaction confirmed/i })).toBeNull();
+  });
+
+  it("marks a confirmed wallet transfer with a visible check state", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "wallet_send_confirm",
+          output: JSON.stringify({
+            txHash: "solana-signature",
+            chain: "solana",
+            status: "confirmed",
+          }),
+        }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("status", { name: "Transaction confirmed" }),
+    ).not.toBeNull();
+    expect(screen.getByText("Confirmed")).not.toBeNull();
+    expect(
+      container.querySelector('[data-vex-transaction-status="confirmed"]'),
+    ).not.toBeNull();
+  });
+
+  it("does not infer confirmation from malformed, failed, or unrelated output", () => {
+    const cases = [
+      act({ toolName: "wallet_send_confirm", output: "not json" }),
+      act({
+        toolName: "wallet_send_confirm",
+        output: JSON.stringify({ txHash: "hash", status: "failed" }),
+      }),
+      act({
+        toolName: "wallet_send_confirm",
+        output: JSON.stringify({ status: "confirmed" }),
+      }),
+      act({
+        toolName: "wallet_balances",
+        output: JSON.stringify({ txHash: "hash", status: "confirmed" }),
+      }),
+    ];
+
+    for (const candidate of cases) {
+      const view = render(createElement(ToolActRow, { act: candidate }));
+      expect(
+        screen.queryByRole("status", { name: /transaction confirmed/i }),
+      ).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("shows the Confirmed stamp alongside the Hyperliquid frame and explorer links without hiding either", () => {
+    // WP-G port fix: current main already renders a Hyperliquid protocol
+    // frame + ExplorerRefLinks in this exact row region (Hyperliquid wave,
+    // merged after the reference PR was authored) — the Confirmed stamp
+    // must integrate with both, not clobber them.
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "wallet_send_confirm",
+          output: JSON.stringify({
+            txHash: "0xabc",
+            chain: "base",
+            status: "confirmed",
+          }),
+          explorerRefs: [{ chain: "base", txRef: "0xabc" }],
+          toolDisplayBlock: {
+            namespace: "hyperliquid",
+            kind: "order_receipt",
+            coin: "BTC",
+            side: "long",
+            status: "accepted",
+            protectionState: "PROTECTED",
+          },
+        }),
+      }),
+    );
+
+    expect(container.querySelector('[data-hyperliquid-card="true"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-vex-transaction-status="confirmed"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("a[href]")).not.toBeNull();
+  });
+
+  it("renders the Hyperliquid frame only from a typed display block", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "hyperliquid.perp.open",
+          toolDisplayBlock: {
+            namespace: "hyperliquid",
+            kind: "order_receipt",
+            coin: "BTC",
+            side: "long",
+            status: "accepted",
+            protectionState: "PROTECTED",
+          },
+        }),
+      }),
+    );
+    expect(container.querySelector('[data-hyperliquid-card="true"]')).not.toBeNull();
+    // The frame draws the serif "Hyperliquid" wordmark once, then the mono
+    // receipt detail beside it (design spec §4.5 protocol frame).
+    expect(screen.getByText("Hyperliquid")).not.toBeNull();
+    expect(screen.getByText(/BTC · accepted/)).not.toBeNull();
   });
 
   it("Awaiting-signature stamp links to the approval card and focuses it", () => {
@@ -132,6 +239,94 @@ describe("ToolActRow", () => {
     fireEvent.click(link);
     expect(document.activeElement).toBe(
       document.querySelector('[data-approval-id="appr-1"]'),
+    );
+  });
+
+  // ── Stage 2: explorer links ──
+  it("renders NO explorer link when the act has no refs", () => {
+    render(createElement(ToolActRow, { act: act() }));
+    expect(
+      screen.queryByRole("link", { name: /open transaction \d+ on .+ explorer/i }),
+    ).toBeNull();
+  });
+
+  it("renders a single `tx ↗` link resolving through explorerTxUrl", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({ explorerRefs: [{ chain: "hyperliquid", txRef: "0xabc" }] }),
+      }),
+    );
+    const link = screen.getByRole("link", {
+      name: /open transaction \d+ on .+ explorer/i,
+    });
+    expect(link.getAttribute("href")).toBe(
+      "https://app.hyperliquid.xyz/explorer/tx/0xabc",
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.textContent).toContain("tx");
+  });
+
+  it("numbers multiple resolvable refs (tx 1, tx 2)", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({
+          explorerRefs: [
+            { chain: "hyperliquid", txRef: "0xabc" },
+            { chain: "solana", txRef: "5sig" },
+          ],
+        }),
+      }),
+    );
+    const links = screen.getAllByRole("link", {
+      name: /open transaction \d+ on .+ explorer/i,
+    });
+    expect(links).toHaveLength(2);
+    expect(links[0]!.textContent).toContain("tx 1");
+    expect(links[1]!.textContent).toContain("tx 2");
+    expect(links[1]!.getAttribute("href")).toBe(
+      "https://explorer.solana.com/tx/5sig",
+    );
+    // A11y: each link carries a DISTINCT accessible name (index + chain), not
+    // one repeated generic label.
+    expect(links[0]!.getAttribute("aria-label")).toBe(
+      "Open transaction 1 on hyperliquid explorer",
+    );
+    expect(links[1]!.getAttribute("aria-label")).toBe(
+      "Open transaction 2 on solana explorer",
+    );
+  });
+
+  it("renders nothing for an unknown chain (inert)", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({ explorerRefs: [{ chain: "dogechain", txRef: "0xabc" }] }),
+      }),
+    );
+    expect(
+      screen.queryByRole("link", { name: /open transaction \d+ on .+ explorer/i }),
+    ).toBeNull();
+  });
+
+  it("drops only the unresolvable ref, keeping resolvable ones", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({
+          explorerRefs: [
+            { chain: "dogechain", txRef: "0xbad" },
+            { chain: "hyperliquid", txRef: "0xgood" },
+          ],
+        }),
+      }),
+    );
+    const links = screen.getAllByRole("link", {
+      name: /open transaction \d+ on .+ explorer/i,
+    });
+    expect(links).toHaveLength(1);
+    // Single resolvable ref → unnumbered `tx` label.
+    expect(links[0]!.textContent).toContain("tx");
+    expect(links[0]!.getAttribute("href")).toBe(
+      "https://app.hyperliquid.xyz/explorer/tx/0xgood",
     );
   });
 });

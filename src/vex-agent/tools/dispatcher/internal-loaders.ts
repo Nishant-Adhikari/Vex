@@ -25,6 +25,9 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Web research (search + optional fetch in one tool)
   web_research: async () => (await import("../internal/web.js")).handleWebResearch,
 
+  // Project website context + quality signals (free raw fetch, no API key)
+  website_context: async () => (await import("../internal/website-context.js")).handleWebsiteContext,
+
   // Twitter/X account research
   twitter_account: async () => (await import("../internal/twitter-account.js")).handleTwitterAccount,
 
@@ -77,6 +80,10 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
 
   // Plan mode — author/refine the session's action plan (gated by requiresPlanMode)
   plan_write: async () => (await import("../internal/plan/write.js")).handlePlanWrite,
+
+  // Always-visible Hyperliquid workspace entry; protocol compatibility keeps
+  // `hyperliquid.workspace.enter` available through execute_tool.
+  hyperliquid_enter: async () => (await import("../internal/hyperliquid-enter.js")).handleHyperliquidEnter,
 
   // Subagents — DISABLED (TODO subagent-disabled). Re-enable z registry/subagents.ts.
   // subagent_spawn: async () => (await import("../internal/subagent.js")).handleSubagentSpawn,

@@ -1,15 +1,16 @@
 /**
  * Per-mission trade metrics for the results ledger.
  *
- * proj_activity holds one row per successful fill; it links to a session via
- * protocol_executions.execution_id → protocol_executions.session_id. A mission
- * run maps 1:1 to a session, so bounding by (session_id, created_at within the
- * run window) attributes fills to the run. Fail-soft: a read error yields 0 so
- * mission finalization is never blocked by metrics.
+ * `proj_activity` holds one row per successful fill; it links to a session
+ * via `protocol_executions.id`. A mission run maps 1:1 to a session, so
+ * bounding by (session_id, created_at within the run window) attributes
+ * fills to the run. Fail-soft: a read error yields 0 so mission
+ * finalization is never blocked by metrics.
  *
- * v1 computes the trade COUNT. Per-trade win/loss/rotation attribution is future
- * work (the ledger columns exist); mission-level win-rate is derived in the UI
- * from PNL sign, which needs no per-trade pairing.
+ * v1 computes the trade COUNT only. Per-trade win/loss/rotation
+ * attribution is a documented follow-up (see mission-results-capture.ts);
+ * mission-level win-rate is derived in the UI from PnL sign, which needs no
+ * per-trade pairing.
  */
 
 import { queryOne } from "../../db/client.js";
@@ -31,8 +32,7 @@ export async function countMissionTrades(
     );
     return row?.trades ?? 0;
   } catch (err) {
-    logger.warn("mission.metrics.count_trades_failed", {
-      sessionId,
+    logger.warn("mission.results.count_trades_failed", {
       error: err instanceof Error ? err.message : String(err),
     });
     return 0;

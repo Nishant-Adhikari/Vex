@@ -1,4 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Passthrough mock of node:crypto with a ONE-SHOT forced scryptSync failure —
+// simulates an allocation/crypto-runtime error during key derivation so the
+// classifier's "setup failure with a CORRECT password is `unavailable`
+// (retryable), never invalid_password and never corrupt" contract is
+// testable. Every other call passes through.
+const forcedScryptFailure = { armed: false };
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+  return {
+    ...actual,
+    scryptSync: (...args: Parameters<typeof actual.scryptSync>) => {
+      if (forcedScryptFailure.armed) {
+        forcedScryptFailure.armed = false;
+        throw new Error("forced scrypt allocation failure (test)");
+      }
+      return actual.scryptSync(...args);
+    },
+  };
+});
 import {
   createCipheriv,
   randomBytes,
@@ -346,6 +366,249 @@ describe("local secret vault", () => {
 
       expect(readFileSync(vaultFile, "utf8")).toBe(beforeRaw);
       expect(statSync(vaultFile).mtimeMs).toBe(beforeMtime);
+    });
+  });
+
+  // ── Vault unlock error classification ──────────────────────────────────
+  //
+  // `decryptContents` used to wrap envelope decode + KDF derivation + AES-GCM
+  // + JSON/schema parsing in ONE try/catch, so ANY failure after a correct
+  // password — an unknown secret key, a too-new contents version, a
+  // corrupted envelope field — was reported as `invalid_password`. That
+  // advances the unlock throttle and can steer a user with a CORRECT
+  // password toward wiping their keystores. These tests pin the fixed,
+  // phase-split behavior: ONLY the GCM auth-tag failure at decipher.final()
+  // may ever be `invalid_password` — scrypt/setup runtime failures are
+  // `unavailable` (retryable), structural problems are `corrupt`.
+  describe("vault unlock error classification", () => {
+    const PASSWORD = "correct-horse-battery-staple";
+
+    /**
+     * Forges a vault file with an ARBITRARY (possibly type-illegal for
+     * production) JSON contents payload, encrypted with CURRENT_KDF_PARAMS.
+     * Mirrors `encryptContents` in production code — kept duplicated here on
+     * purpose (see `writeLegacyVault` above): the production
+     * `LocalSecretVaultContents` type pins `version` to the single literal
+     * `VAULT_VERSION`, so testing a too-new version or an unknown secret key
+     * needs a payload the production type cannot express.
+     */
+    function writeForgedContentsVault(contents: unknown, password = PASSWORD): void {
+      const salt = randomBytes(16);
+      const iv = randomBytes(12);
+      const key = scryptSync(password, salt, CURRENT_KDF_PARAMS.dkLen, {
+        N: CURRENT_KDF_PARAMS.N,
+        r: CURRENT_KDF_PARAMS.r,
+        p: CURRENT_KDF_PARAMS.p,
+        maxmem: 256 * 1024 * 1024,
+      });
+      const cipher = createCipheriv("aes-256-gcm", key, iv);
+      const ciphertext = Buffer.concat([
+        cipher.update(Buffer.from(JSON.stringify(contents), "utf8")),
+        cipher.final(),
+      ]);
+      const file = {
+        version: 1,
+        kdf: CURRENT_KDF_PARAMS,
+        salt: salt.toString("base64"),
+        iv: iv.toString("base64"),
+        tag: cipher.getAuthTag().toString("base64"),
+        ciphertext: ciphertext.toString("base64"),
+      };
+      writeFileSync(vaultFile, `${JSON.stringify(file, null, 2)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
+
+    /** Reads back a real, valid vault file and overwrites specific fields. */
+    function writeVaultWithFieldOverrides(
+      overrides: Record<string, unknown>,
+    ): void {
+      createSecretVault(PASSWORD, { filePath: vaultFile });
+      const file = JSON.parse(readFileSync(vaultFile, "utf8")) as Record<string, unknown>;
+      const kdfOverrides = overrides.kdf as Record<string, unknown> | undefined;
+      const merged = {
+        ...file,
+        ...overrides,
+        ...(kdfOverrides
+          ? { kdf: { ...(file.kdf as Record<string, unknown>), ...kdfOverrides } }
+          : {}),
+      };
+      writeFileSync(vaultFile, `${JSON.stringify(merged, null, 2)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
+
+    function expectCode(fn: () => void, code: string): void {
+      let caught: unknown = null;
+      try {
+        fn();
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(LocalSecretVaultError);
+      if (caught instanceof LocalSecretVaultError) expect(caught.code).toBe(code);
+    }
+
+    describe("envelope validation (corrupt, never invalid_password)", () => {
+      it("rejects a non-canonical base64 iv", () => {
+        writeVaultWithFieldOverrides({ iv: "not-valid-base64-!!!" });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects an iv that decodes to the wrong byte length", () => {
+        writeVaultWithFieldOverrides({ iv: Buffer.alloc(8).toString("base64") });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects a tag that decodes to the wrong byte length", () => {
+        writeVaultWithFieldOverrides({ tag: Buffer.alloc(4).toString("base64") });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects a salt shorter than the minimum bound", () => {
+        writeVaultWithFieldOverrides({ salt: Buffer.alloc(4).toString("base64") });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects a ciphertext larger than the maximum bound", () => {
+        // 10 MiB + 1 byte — a real vault (small API secrets) never gets close.
+        writeVaultWithFieldOverrides({
+          ciphertext: randomBytes(10 * 1024 * 1024 + 1).toString("base64"),
+        });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+    });
+
+    describe("KDF bounds validation (corrupt, before scrypt runs)", () => {
+      it("rejects N below the supported minimum", () => {
+        writeVaultWithFieldOverrides({ kdf: { N: 2 ** 10 } });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects N above the supported maximum", () => {
+        writeVaultWithFieldOverrides({ kdf: { N: 2 ** 20 } });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects a non-power-of-two N inside the numeric range", () => {
+        writeVaultWithFieldOverrides({ kdf: { N: 100000 } });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects r != 8", () => {
+        writeVaultWithFieldOverrides({ kdf: { r: 16 } });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects p != 1", () => {
+        writeVaultWithFieldOverrides({ kdf: { p: 2 } });
+        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      });
+
+      it("rejects an out-of-bounds N BEFORE the synchronous scrypt derivation runs (never invalid_password, even with the WRONG password)", () => {
+        // If the bounds check ran after (or inside) the crypto try/catch, a
+        // wrong password against this file would surface as
+        // `invalid_password` once scrypt/AES-GCM failed. Getting `corrupt`
+        // here — with a password that was never even tried — proves the
+        // rejection happens strictly before any scrypt call.
+        writeVaultWithFieldOverrides({ kdf: { N: 2 ** 22 } });
+        expectCode(
+          () => unlockSecretVault("definitely-the-wrong-password", { filePath: vaultFile }),
+          "corrupt",
+        );
+      });
+    });
+
+    describe("contents version + unknown secret keys", () => {
+      it("a scrypt derivation failure with a CORRECT password throws 'unavailable' (retryable) — never invalid_password, never corrupt", () => {
+        // 'corrupt' would tell the user to restore from a backup; a transient
+        // crypto-runtime failure needs a RETRY, so it gets its own code.
+        writeForgedContentsVault({ version: 1, secrets: { OPENROUTER_API_KEY: "sk-known" } });
+        forcedScryptFailure.armed = true; // arm AFTER the write (writing derives a key too)
+        try {
+          expectCode(
+            () => unlockSecretVault(PASSWORD, { filePath: vaultFile }),
+            "unavailable",
+          );
+        } finally {
+          forcedScryptFailure.armed = false; // leak-proof: assertion failures must not poison later tests
+        }
+      });
+
+      it("throws 'incompatible' (never invalid_password) when contents.version is newer than this build supports", () => {
+        writeForgedContentsVault({
+          version: 2,
+          secrets: { OPENROUTER_API_KEY: "sk-known" },
+        });
+        expectCode(
+          () => unlockSecretVault(PASSWORD, { filePath: vaultFile }),
+          "incompatible",
+        );
+      });
+
+      it("throws 'incompatible' (never corrupt) for a future OUTER envelope version, even with an unrecognized shape", () => {
+        // A future build may change the envelope itself (fields, KDF family) —
+        // the outer-version gate must classify BEFORE the strict shape parse,
+        // or every outer-2 vault would misreport as corrupt.
+        writeFileSync(
+          vaultFile,
+          JSON.stringify({ version: 2, kdf: { name: "argon2id" }, blob: "AAAA" }),
+          "utf8",
+        );
+        expectCode(
+          () => unlockSecretVault(PASSWORD, { filePath: vaultFile }),
+          "incompatible",
+        );
+      });
+
+      it("unlocks with a correct password despite an unknown secret key, preserving it as extraSecrets", () => {
+        writeForgedContentsVault({
+          version: 1,
+          secrets: {
+            OPENROUTER_API_KEY: "sk-known",
+            FUTURE_SECRET_KEY_FROM_NEWER_BUILD: "future-value",
+          },
+        });
+
+        const unlocked = unlockSecretVault(PASSWORD, { filePath: vaultFile });
+        expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-known");
+        expect(unlocked.extraSecrets?.FUTURE_SECRET_KEY_FROM_NEWER_BUILD).toBe(
+          "future-value",
+        );
+      });
+
+      it("still throws 'invalid_password' for a genuinely wrong password on an otherwise valid vault", () => {
+        createSecretVault(PASSWORD, { filePath: vaultFile });
+        expectCode(
+          () => unlockSecretVault("wrong-password", { filePath: vaultFile }),
+          "invalid_password",
+        );
+      });
+
+      it("round-trips an unknown secret key through unlock + write + unlock again", () => {
+        writeForgedContentsVault({
+          version: 1,
+          secrets: {
+            OPENROUTER_API_KEY: "sk-known",
+            FUTURE_SECRET_KEY_FROM_NEWER_BUILD: "future-value",
+          },
+        });
+
+        writeSecretVaultSecrets(
+          PASSWORD,
+          { JUPITER_API_KEY: "jup-added" },
+          { filePath: vaultFile },
+        );
+
+        const unlocked = unlockSecretVault(PASSWORD, { filePath: vaultFile });
+        expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-known");
+        expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-added");
+        expect(unlocked.extraSecrets?.FUTURE_SECRET_KEY_FROM_NEWER_BUILD).toBe(
+          "future-value",
+        );
+      });
     });
   });
 });

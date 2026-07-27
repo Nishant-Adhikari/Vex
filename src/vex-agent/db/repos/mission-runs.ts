@@ -6,6 +6,7 @@
  */
 
 import {
+  type MissionMode,
   type MissionRunStatus,
   ACTIVE_RUN_STATUSES,
   PAUSED_RUN_STATUSES,
@@ -14,7 +15,7 @@ import {
 } from "../../engine/types.js";
 import type { PoolClient } from "pg";
 
-import { queryOne, queryOneWith, execute, getPool } from "../client.js";
+import { query, queryOne, queryOneWith, execute, getPool } from "../client.js";
 import { nullableJsonb } from "../params.js";
 import logger from "@utils/logger.js";
 
@@ -30,6 +31,13 @@ export interface MissionRun {
   missionId: string;
   sessionId: string;
   status: MissionRunStatus;
+  /**
+   * IMMUTABLE per-run execution mode, frozen at createRun. `"simulator"` runs
+   * paper-fill every swap and never broadcast; `"live"` (default) broadcast
+   * real transactions. The authoritative source for the run's no-broadcast
+   * behaviour (hydration prefers this over the mutable `sessions.mission_mode`).
+   */
+  mode: MissionMode;
   startedAt: string;
   endedAt: string | null;
   lastCheckpointAt: string | null;
@@ -71,6 +79,7 @@ function mapRow(r: Record<string, unknown>): MissionRun {
     missionId: r.mission_id as string,
     sessionId: r.session_id as string,
     status: coerceStatus(r.status, id),
+    mode: r.mode === "simulator" ? "simulator" : "live",
     startedAt: (r.started_at instanceof Date ? r.started_at.toISOString() : r.started_at as string),
     endedAt: r.ended_at ? (r.ended_at instanceof Date ? r.ended_at.toISOString() : r.ended_at as string) : null,
     lastCheckpointAt: r.last_checkpoint_at ? (r.last_checkpoint_at instanceof Date ? r.last_checkpoint_at.toISOString() : r.last_checkpoint_at as string) : null,
@@ -94,18 +103,25 @@ export async function createRun(
   options: {
     contractSnapshotJson?: Record<string, unknown> | null;
     recoveredFromRunId?: string | null;
+    /**
+     * Frozen execution mode for this run. Defaults to `"live"`. The simulator
+     * scheduler / a sim-mode start passes `"simulator"`; recovery inherits the
+     * prior run's mode so a resumed sim run can never turn live.
+     */
+    mode?: MissionMode;
   } = {},
   client?: PoolClient,
 ): Promise<void> {
   const sql = `INSERT INTO mission_runs (
-       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id
-     ) VALUES ($1, $2, $3, $4::jsonb, $5)`;
+       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id, mode
+     ) VALUES ($1, $2, $3, $4::jsonb, $5, $6)`;
   const params = [
     id,
     missionId,
     sessionId,
     nullableJsonb(options.contractSnapshotJson ?? null),
     options.recoveredFromRunId ?? null,
+    options.mode ?? "live",
   ];
   if (client) {
     await client.query(sql, params);
@@ -302,6 +318,185 @@ export async function casFlipToRunning(
   }
 }
 
+/**
+ * Orphaned-run selection for the boot / periodic reconciler.
+ *
+ * Returns every `running` run (`ended_at IS NULL`) whose session has NO LIVE
+ * runner lease — i.e. the lease row is missing OR expired (`expires_at <=
+ * NOW()`). These are the wedged runs: the app restarted (or the runner process
+ * died) mid-run, the `mission_runs` row is stuck `running`, and no worker
+ * re-acquired the lease. A run WITH a live lease (a genuinely-executing run) is
+ * excluded, as are all paused_* / terminal runs. Ordered oldest-first so the
+ * longest-stranded run is reconciled first.
+ */
+export async function findOrphanedRunningRuns(
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql = `SELECT m.*
+                 FROM mission_runs m
+                 LEFT JOIN runner_leases l
+                   ON l.session_id = m.session_id
+                  AND l.expires_at > NOW()
+                WHERE m.status = 'running'
+                  AND m.ended_at IS NULL
+                  AND l.session_id IS NULL
+                ORDER BY m.started_at ASC`;
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql)).rows
+    : await query<Record<string, unknown>>(sql);
+  return rows.map(mapRow);
+}
+
+/**
+ * Selection for the boot / periodic paused_error REAPER (companion to
+ * `findOrphanedRunningRuns`).
+ *
+ * Returns a `paused_error` run (`ended_at IS NULL`) ONLY when it carries a
+ * GENUINE abandonment signal — never merely because it is lease-free, which is
+ * the NORMAL waiting state for a recoverable error or a scheduled auto-retry.
+ * All of these must hold:
+ *
+ *   - NO LIVE runner lease (missing or expired) — no worker is driving it, AND
+ *   - NO PENDING wake in `loop_wake_requests` for the run — a scheduled
+ *     auto-retry or runtime continuation is NOT in flight (those pauses are
+ *     self-recovering and must never be reaped), AND
+ *   - it has been sitting in the pause for at least `graceMinutes` (measured
+ *     from `last_checkpoint_at`, falling back to `started_at`) — so a run that
+ *     just paused, and any run inside its 2–32 s auto-retry window, is skipped.
+ *
+ * This is still only the FIRST gate — the reaper ADDITIONALLY requires a
+ * CONFIRMED 0 open positions before finalizing, so a run holding a bag (or one
+ * whose position state can't be read) is preserved for Recover. Oldest-first.
+ */
+export async function findAbandonedPausedErrorRuns(
+  graceMinutes: number,
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql = `SELECT m.*
+                 FROM mission_runs m
+                 LEFT JOIN runner_leases l
+                   ON l.session_id = m.session_id
+                  AND l.expires_at > NOW()
+                 LEFT JOIN loop_wake_requests w
+                   ON w.mission_run_id = m.id
+                  AND w.status = 'pending'
+                WHERE m.status = 'paused_error'
+                  AND m.ended_at IS NULL
+                  AND l.session_id IS NULL
+                  AND w.id IS NULL
+                  AND COALESCE(m.last_checkpoint_at, m.started_at)
+                        < NOW() - ($1::int * interval '1 minute')
+                ORDER BY m.started_at ASC`;
+  const params = [graceMinutes];
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql, params)).rows
+    : await query<Record<string, unknown>>(sql, params);
+  return rows.map(mapRow);
+}
+
+/**
+ * Idempotent, race-safe terminal flip for the ABANDONED paused_error reaper.
+ * Atomically moves a run to `failed` ONLY while it is still `paused_error` AND
+ * its session has NO LIVE runner lease — stamping `stop_reason` (e.g.
+ * `reaped_stale_error`) + `ended_at = NOW()`. Returns `true` when THIS call
+ * performed the transition, `false` otherwise (already recovered/terminal, or a
+ * live lease re-appeared).
+ *
+ * The `status='paused_error'` + `NOT EXISTS (live lease)` guards make it safe
+ * against a concurrent operator `/retry`: the retry CAS (`casFlipToRunning`)
+ * moves the row to `running` (and a resume acquires a fresh lease), so whoever
+ * commits first wins and the other becomes a no-op.
+ */
+export async function markStaleErrorReaped(
+  id: string,
+  stopReason: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs m
+                  SET status = 'failed',
+                      stop_reason = $2,
+                      stop_summary = COALESCE($3, stop_summary),
+                      stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+                      ended_at = NOW()
+                WHERE m.id = $1
+                  AND m.status = 'paused_error'
+                  AND NOT EXISTS (
+                        SELECT 1 FROM runner_leases l
+                         WHERE l.session_id = m.session_id
+                           AND l.expires_at > NOW()
+                      )`;
+  const params = [
+    id,
+    stopReason,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
+}
+
+/**
+ * Idempotent, race-safe terminal flip used by the orphaned-run reconciler.
+ * Atomically moves a run to `stopped` ONLY while it is still `running` AND its
+ * session has NO LIVE runner lease — stamping the distinct `stop_reason` (e.g.
+ * `runner_lost`) + `ended_at = NOW()`. Returns `true` when THIS call performed
+ * the transition, `false` otherwise.
+ *
+ * The `NOT EXISTS (live lease)` guard is what makes reclaiming an orphan safe
+ * against a concurrent operator Resume/Continue: the resume dispatcher
+ * (`runtime-resume-dispatch.ts`) reclaims a dead-lease `running` run by
+ * acquiring a FRESH lease while keeping the status `running`. Without the lease
+ * guard this UPDATE would happily finalize that just-resumed, now-LIVE run as
+ * `runner_lost`. With it, the two writers are mutually exclusive: whoever
+ * commits first wins (a live lease blocks the reconciler; a completed flip
+ * blocks the resume CAS). Re-running the reconciler is likewise a no-op.
+ */
+export async function markStoppedIfRunning(
+  id: string,
+  stopReason: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs m
+                  SET status = 'stopped',
+                      stop_reason = $2,
+                      stop_summary = COALESCE($3, stop_summary),
+                      stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+                      ended_at = NOW()
+                WHERE m.id = $1
+                  AND m.status = 'running'
+                  AND NOT EXISTS (
+                        SELECT 1 FROM runner_leases l
+                         WHERE l.session_id = m.session_id
+                           AND l.expires_at > NOW()
+                      )`;
+  const params = [
+    id,
+    stopReason,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
+}
+
+/**
+ * Count active (running or paused) runs of a given mode. The simulator
+ * scheduler uses `mode='simulator'` to cap how many paper missions run at once
+ * so it never stacks unbounded concurrent sims.
+ */
+export async function countActiveRunsByMode(mode: MissionMode): Promise<number> {
+  const sql = `SELECT COUNT(*)::text AS n FROM mission_runs
+                WHERE mode = $1 AND status IN (${ACTIVE_OR_PAUSED_SQL_IN})`;
+  const row = await queryOne<{ n: string }>(sql, [mode]);
+  return Number(row?.n ?? "0");
+}
+
 export async function getRun(
   id: string,
   client?: PoolClient,
@@ -331,4 +526,53 @@ export async function getLatestFailedRunBySession(sessionId: string): Promise<Mi
     [sessionId],
   );
   return row ? mapRow(row) : null;
+}
+
+/**
+ * Idempotent, race-safe terminal flip for the OV3 wake-stall watchdog: move a
+ * run to `failed` ONLY while it is still `paused_wake`, stamping
+ * `wake_stall_unrecoverable`. Returns `true` when THIS call performed the flip,
+ * `false` if the run already left `paused_wake` (a concurrent wake resume /
+ * user action won). Keeps the watchdog from finalizing a run that just resumed.
+ */
+export async function markPausedWakeFailed(
+  id: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs
+                  SET status = 'failed',
+                      stop_reason = 'wake_stall_unrecoverable',
+                      stop_summary = COALESCE($2, stop_summary),
+                      stop_evidence_json = COALESCE($3::jsonb, stop_evidence_json),
+                      ended_at = NOW()
+                WHERE id = $1
+                  AND status = 'paused_wake'`;
+  const params = [
+    id,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
+}
+
+/**
+ * Every run currently in `status`, oldest-first. Used by the overnight
+ * self-heal watchdog to sweep `paused_error` (OV2) and `paused_wake` (OV3)
+ * runs each tick. Read-only; the watchdog re-verifies each row's full safety
+ * state under a row lock before it acts.
+ */
+export async function listRunsByStatus(
+  status: MissionRunStatus,
+  client?: PoolClient,
+): Promise<MissionRun[]> {
+  const sql =
+    "SELECT * FROM mission_runs WHERE status = $1 ORDER BY started_at ASC";
+  const rows = client
+    ? (await client.query<Record<string, unknown>>(sql, [status])).rows
+    : await query<Record<string, unknown>>(sql, [status]);
+  return rows.map(mapRow);
 }

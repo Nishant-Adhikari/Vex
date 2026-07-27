@@ -63,11 +63,18 @@ export function createSecretVault(
  *
  * Throws `LocalSecretVaultError` with code:
  *   - "missing"          — vault file does not exist
- *   - "corrupt"          — file present but JSON/schema-invalid
- *   - "invalid_password" — bit-flipped ciphertext / auth-tag mismatch is
- *                          indistinguishable from a wrong password; this
- *                          covers both cases. Reserved "corrupt" for
- *                          structurally-invalid file shape only (parseVaultFile).
+ *   - "corrupt"          — envelope/KDF-params invalid, or plaintext
+ *                          unreadable after authentication passed
+ *   - "unavailable"      — crypto-runtime (scrypt/setup or post-auth
+ *                          decode) failure — retryable; the file may be fine
+ *   - "incompatible"     — the vault (outer envelope OR inner contents)
+ *                          was written by a newer build. The OUTER check
+ *                          fires BEFORE decryption, so `incompatible` does
+ *                          NOT always imply the password was verified.
+ *   - "invalid_password" — GCM auth-tag failure at decipher.final() ONLY
+ *                          (wrong password
+ *                          or tampered ciphertext; indistinguishable). Never
+ *                          used for post-decrypt shape/version issues.
  *
  * Returns `undefined` on success — by design no secrets are returned.
  * No disk write on success or failure (no opportunistic KDF upgrade).
@@ -88,10 +95,13 @@ export function verifySecretVaultPassword(
     throw new LocalSecretVaultError("Could not read secret vault.", "io", cause);
   }
 
-  // parseVaultFile raises `corrupt` on JSON/schema failure — surface as-is.
+  // parseVaultFile raises `corrupt` on JSON/schema failure and
+  // `incompatible` for a too-new outer envelope — surface as-is.
   const parsedFile = parseVaultFile(raw);
 
-  // decryptContents wraps any AES-GCM/scrypt failure as `invalid_password`.
+  // decryptContents classifies per the split taxonomy: only a GCM auth-tag
+  // failure at decipher.final() is `invalid_password`; scrypt/setup runtime
+  // failures are `unavailable` (retryable); structural issues are `corrupt`.
   // Discard the decrypted payload — verification only needs to confirm the
   // password unwraps the vault; callers MUST NOT use this to harvest secrets.
   decryptContents(parsedFile, password);
@@ -161,6 +171,11 @@ export function writeSecretVaultSecrets(
   const next: LocalSecretVaultContents = {
     version: VAULT_VERSION,
     secrets: nextSecrets,
+    // Preserve any keys from a newer vault this build does not recognize so
+    // a write here cannot strip them (forward-compat round-trip).
+    ...(current.extraSecrets && Object.keys(current.extraSecrets).length > 0
+      ? { extraSecrets: current.extraSecrets }
+      : {}),
   };
   atomicWriteJson(resolveVaultPath(options), encryptContents(next, password));
   return next;

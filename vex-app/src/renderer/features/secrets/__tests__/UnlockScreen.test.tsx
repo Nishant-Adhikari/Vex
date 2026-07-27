@@ -34,6 +34,12 @@ const mockResetToFreshVault =
   vi.fn<(input: { confirm: true }) => Promise<Result<ResetToFreshVaultResult>>>();
 const mockSetCurrentView = vi.fn();
 const mockOpenLogsFolder = vi.fn();
+const mockTouchIdStatus =
+  vi.fn<() => Promise<Result<{ supported: boolean; enabled: boolean }>>>();
+const mockTouchIdUnlock =
+  vi.fn<() => Promise<Result<{ unlocked: boolean; reason?: string }>>>();
+const mockTouchIdEnable =
+  vi.fn<() => Promise<Result<{ enabled: boolean; reason?: string }>>>();
 let mockUnlockReturnView: UnlockReturnView = "appShell";
 
 vi.mock("../../../stores/uiStore.js", () => ({
@@ -87,16 +93,30 @@ beforeEach(() => {
     data: { opened: true },
   });
   mockUnlockReturnView = "appShell";
+  // Touch ID unavailable by default → no auto-prompt, no button, no enrolment
+  // offer (keeps the existing password-flow assertions intact). Touch ID tests
+  // override these per case.
+  mockTouchIdStatus.mockReset().mockResolvedValue({
+    ok: true,
+    data: { supported: false, enabled: false },
+  });
+  mockTouchIdUnlock.mockReset().mockResolvedValue({
+    ok: true,
+    data: { unlocked: false },
+  });
+  mockTouchIdEnable.mockReset().mockResolvedValue({
+    ok: true,
+    data: { enabled: true },
+  });
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
       secrets: {
         unlock: mockUnlock,
         resetToFreshVault: mockResetToFreshVault,
-        // Touch ID unavailable by default → no auto-prompt, no button (keeps the
-        // existing password-flow assertions intact).
-        touchIdStatus: vi.fn(async () => ({ ok: true, data: { supported: false, enabled: false } })),
-        touchIdUnlock: vi.fn(async () => ({ ok: true, data: { unlocked: false } })),
+        touchIdStatus: mockTouchIdStatus,
+        touchIdUnlock: mockTouchIdUnlock,
+        touchIdEnable: mockTouchIdEnable,
       },
       support: { openLogsFolder: mockOpenLogsFolder },
     },
@@ -339,5 +359,138 @@ describe("UnlockScreen", () => {
     );
     const button = view.getByRole("button", { name: /Unlock/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+  });
+
+  describe("Touch ID", () => {
+    it("auto-prompts on mount when enrolled and navigates on a successful touch", async () => {
+      mockTouchIdStatus.mockResolvedValue({
+        ok: true,
+        data: { supported: true, enabled: true },
+      });
+      mockTouchIdUnlock.mockResolvedValue({ ok: true, data: { unlocked: true } });
+      renderUnlockScreen();
+
+      // The user only touches the sensor — no typing, no extra click.
+      await waitFor(() => {
+        expect(mockTouchIdUnlock).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(mockSetCurrentView).toHaveBeenCalledWith("appShell");
+      });
+      expect(mockUnlock).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the password field when the auto-prompt is cancelled", async () => {
+      mockTouchIdStatus.mockResolvedValue({
+        ok: true,
+        data: { supported: true, enabled: true },
+      });
+      // A cancelled fingerprint is not an error — it must not navigate.
+      mockTouchIdUnlock.mockResolvedValue({
+        ok: true,
+        data: { unlocked: false, reason: "biometric_failed" },
+      });
+      const view = renderUnlockScreen();
+
+      await waitFor(() => {
+        expect(mockTouchIdUnlock).toHaveBeenCalledTimes(1);
+      });
+      // Password field still there, manual Touch ID retry offered, no navigation.
+      expect(view.getByLabelText(/Master password/i)).toBeTruthy();
+      expect(
+        view.getByRole("button", { name: /Unlock with Touch ID/i }),
+      ).toBeTruthy();
+      expect(mockSetCurrentView).not.toHaveBeenCalled();
+    });
+
+    it("does not auto-prompt when Touch ID is enrolled but unsupported hardware", async () => {
+      mockTouchIdStatus.mockResolvedValue({
+        ok: true,
+        data: { supported: false, enabled: true },
+      });
+      renderUnlockScreen();
+      // Give the mount effect a chance to (not) fire.
+      await waitFor(() => expect(mockTouchIdStatus).toHaveBeenCalled());
+      expect(mockTouchIdUnlock).not.toHaveBeenCalled();
+    });
+
+    it("offers Touch ID enrolment after a password unlock when supported but not enabled", async () => {
+      mockTouchIdStatus.mockResolvedValue({
+        ok: true,
+        data: { supported: true, enabled: false },
+      });
+      mockUnlock.mockResolvedValue({ ok: true, data: { unlocked: true } });
+      const view = renderUnlockScreen();
+      await waitFor(() => expect(mockTouchIdStatus).toHaveBeenCalled());
+
+      const input = view.getByLabelText(/Master password/i) as HTMLInputElement;
+      fireEvent.input(input, { target: { value: "valid-password-12" } });
+      fireEvent.click(view.getByRole("button", { name: "Unlock" }));
+
+      // Password unlock succeeded, but we pause on the enrolment offer instead
+      // of navigating straight through. findByRole waits for the dialog's
+      // showModal effect to flush before querying its buttons.
+      const enableButton = await view.findByRole("button", {
+        name: /Enable Touch ID/i,
+      });
+      expect(mockSetCurrentView).not.toHaveBeenCalled();
+
+      fireEvent.click(enableButton);
+      await waitFor(() => expect(mockTouchIdEnable).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(mockSetCurrentView).toHaveBeenCalledWith("appShell"),
+      );
+    });
+
+    it("'Not now' on the enrolment offer navigates without enrolling", async () => {
+      mockTouchIdStatus.mockResolvedValue({
+        ok: true,
+        data: { supported: true, enabled: false },
+      });
+      mockUnlock.mockResolvedValue({ ok: true, data: { unlocked: true } });
+      const view = renderUnlockScreen();
+      await waitFor(() => expect(mockTouchIdStatus).toHaveBeenCalled());
+
+      const input = view.getByLabelText(/Master password/i) as HTMLInputElement;
+      fireEvent.input(input, { target: { value: "valid-password-12" } });
+      fireEvent.click(view.getByRole("button", { name: "Unlock" }));
+
+      const notNow = await view.findByRole("button", { name: /Not now/i });
+      fireEvent.click(notNow);
+      await waitFor(() =>
+        expect(mockSetCurrentView).toHaveBeenCalledWith("appShell"),
+      );
+      expect(mockTouchIdEnable).not.toHaveBeenCalled();
+    });
+
+    it("does not offer enrolment when Touch ID is already enabled (auto-prompt path owns it)", async () => {
+      // supported + enabled → auto-prompt fires; if it somehow fell through to a
+      // password unlock, we must NOT re-offer an already-on setting.
+      mockTouchIdStatus.mockResolvedValue({
+        ok: true,
+        data: { supported: true, enabled: true },
+      });
+      mockTouchIdUnlock.mockResolvedValue({
+        ok: true,
+        data: { unlocked: false, reason: "biometric_failed" },
+      });
+      mockUnlock.mockResolvedValue({ ok: true, data: { unlocked: true } });
+      const view = renderUnlockScreen();
+      await waitFor(() => expect(mockTouchIdUnlock).toHaveBeenCalled());
+
+      const input = view.getByLabelText(/Master password/i) as HTMLInputElement;
+      fireEvent.input(input, { target: { value: "valid-password-12" } });
+      fireEvent.click(view.getByRole("button", { name: "Unlock" }));
+
+      await waitFor(() =>
+        expect(mockSetCurrentView).toHaveBeenCalledWith("appShell"),
+      );
+      // The offer dialog is never opened (the enrolment Enable button is a
+      // closed-dialog descendant, so it stays out of the a11y tree). A role
+      // query — unlike a text query — respects the dialog's open state.
+      expect(
+        view.queryByRole("button", { name: /Enable Touch ID/i }),
+      ).toBeNull();
+    });
   });
 });

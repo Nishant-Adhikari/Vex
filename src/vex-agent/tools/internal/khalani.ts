@@ -14,6 +14,8 @@ function makeKhalaniAliasHandler(name: KhalaniInternalToolName): InternalHandler
     { toolId: KHALANI_INTERNAL_TO_PROTOCOL[name], params },
     {
       sessionPermission: context.sessionPermission,
+      missionMode: context.missionMode,
+      missionRunId: context.missionRunId,
       approved: context.approved,
       sessionId: context.sessionId,
       walletResolution: context.walletResolution,

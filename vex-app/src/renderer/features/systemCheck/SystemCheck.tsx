@@ -42,6 +42,7 @@ import { useEnvState } from "../../lib/api/onboarding.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { NotaryPage } from "../../components/onboarding/NotaryPage.js";
+import { shouldExpressAdvanceSystemCheck } from "../../lib/express-lane.js";
 import { WIZARD_STEP_IDS } from "@shared/schemas/wizard.js";
 import { type StepStatus } from "./StepRow.js";
 import { platformOf, type Platform } from "./SystemCheck/OperatingSystemIcon.js";
@@ -66,6 +67,7 @@ const TOTAL_PROBES = 4;
 
 export function SystemCheck(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
+  const returningUser = useUiStore((s) => s.returningUser);
   const reducedMotion = useReducedMotion();
   const health = useSystemHealth();
   const docker = useDockerStatus();
@@ -134,6 +136,30 @@ export function SystemCheck(): JSX.Element {
   const resolvedCount = [osStatus, networkStatus, dockerStatus, envStatus]
     .filter((s) => s !== "loading")
     .length;
+
+  // Express lane: a returning user on a healthy machine auto-advances instead
+  // of clicking Continue (see lib/express-lane.ts). First-run and any unhealthy
+  // probe keep the screen visible so the user can read the ledger and act.
+  useEffect(() => {
+    if (
+      shouldExpressAdvanceSystemCheck({
+        returningUser,
+        anyLoading,
+        osStatus,
+        dockerStatus,
+        envStatus,
+      })
+    ) {
+      setCurrentView("dockerBootstrap");
+    }
+  }, [
+    returningUser,
+    anyLoading,
+    osStatus,
+    dockerStatus,
+    envStatus,
+    setCurrentView,
+  ]);
 
   return (
     <NotaryPage

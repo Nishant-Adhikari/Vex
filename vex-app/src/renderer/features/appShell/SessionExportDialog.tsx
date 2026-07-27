@@ -1,0 +1,73 @@
+/**
+ * Pre-save confirmation for "Export session as Markdown".
+ *
+ * Export privacy contract: the user must see, before any file is written,
+ * that the export contains the session's conversation content and that
+ * secrets are only redacted on a best-effort basis (the export can include
+ * archived historical content, which is exactly where old accidental
+ * secret exposure lives — see `../../../main/sessions/export-redaction.js`).
+ * Confirming here only opens the native save dialog; nothing is written
+ * until the user also picks a destination there.
+ */
+
+import type { JSX } from "react";
+import type { SessionListItem } from "@shared/schemas/sessions.js";
+import { Button } from "../../components/ui/button.js";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog.js";
+import { getSessionTitle } from "./sessionListModel.js";
+
+interface SessionExportDialogProps {
+  readonly session: SessionListItem | null;
+  readonly pending: boolean;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}
+
+export function SessionExportDialog({
+  session,
+  pending,
+  onCancel,
+  onConfirm,
+}: SessionExportDialogProps): JSX.Element {
+  const open = session !== null;
+  const title = session === null ? "" : getSessionTitle(session);
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader className="border-[var(--vex-line)]">
+          <DialogTitle>Export session as Markdown?</DialogTitle>
+          <DialogDescription className="text-[var(--vex-text-2)]">
+            {`Save a readable transcript of "${title}" to a file you choose. Secrets are redacted automatically on a best-effort basis — review the file before sharing it.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogBody className="gap-3" />
+
+        <DialogFooter className="border-[var(--vex-line)]">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onCancel}
+            disabled={pending}
+            autoFocus
+            className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+          >
+            Cancel
+          </Button>
+          <Button type="button" onClick={onConfirm} disabled={pending}>
+            {pending ? "Exporting…" : "Export"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -1,27 +1,35 @@
 /**
- * Mission results ledger repo — open/close lifecycle + history reads.
+ * Mission results ledger repo — open/close lifecycle + per-wallet history
+ * reads.
  *
- * A row is OPENED when a mission run starts (with a per-wallet seq_no and the
- * start bankroll snapshot) and CLOSED when the run finalizes (end bankroll, PNL,
- * trade counts, outcome). Open/close key on `mission_run_id`, so the start and
- * finalize hooks — which run in different turns — address the same row without
- * holding state in memory.
+ * A row is OPENED when a mission run starts (with a per-wallet `seq_no` and
+ * the start bankroll snapshot) and CLOSED when the run finalizes (end
+ * bankroll, PnL, trade count, outcome, raw stop_reason). Open/close key on
+ * `mission_run_id`, so the start and finalize hooks — which run in
+ * different turns — address the same row without holding state in memory.
  *
- * PNL is in ETH (bankroll = native ETH + WETH). See migration 038 for the model.
+ * `seq_no` is minted under a transaction-scoped Postgres advisory lock keyed
+ * on the wallet address, so two concurrent opens for the SAME wallet can
+ * never mint the same number (a bare `SELECT COUNT(*)+1` here would race).
+ *
+ * PnL is in ETH (bankroll = native ETH + WETH). See migration 041.
  */
 
-import { query, queryOne, execute } from "../client.js";
+import type pg from "pg";
+import { query, queryOne, queryOneWith, execute, executeWith, withTransaction } from "../client.js";
 import { nullableJsonb } from "../params.js";
 
-export type MissionOutcome =
+// `timed_out` is a hard-deadline (time-box) end — a clean, non-error terminal
+// outcome distinct from `failed`. The engine run/mission STATUS stays terminal
+// (`failed`); only this operator-facing LEDGER outcome relabels it so the
+// results UI reads "TIMED OUT" instead of the alarming "FAILED".
+export type MissionResultOutcome =
   | "running"
   | "completed"
   | "cancelled"
   | "failed"
-  // Time-box end: the hard-deadline enforcer stopped the run (not an error).
-  // Distinct from "failed" so the results UI reads it as a clean deadline exit.
-  | "timed_out"
-  | "stopped";
+  | "stopped"
+  | "timed_out";
 
 export interface MissionResultRow {
   id: string;
@@ -42,11 +50,22 @@ export interface MissionResultRow {
   ethPriceUsdStart: number | null;
   ethPriceUsdEnd: number | null;
   trades: number;
+  // Per-trade attribution counters (fork extras, migration 042).
   wins: number;
   losses: number;
   rotations: number;
   vetoes: number;
-  outcome: MissionOutcome;
+  outcome: MissionResultOutcome;
+  stopReason: string | null;
+  /** True for a simulator (paper-trading) run. Powers the SIM badge. */
+  simulated: boolean;
+  /**
+   * The run's persisted `stop_summary` (from `mission_runs`, joined in by the
+   * renderer-facing reads only) — the operator-facing "why it ended" prose the
+   * finalize path records alongside the raw stop reason. Null when no summary
+   * was stored, or when the read did not join it (e.g. `getResultByRunId`).
+   */
+  summary: string | null;
   openPositions: unknown;
   /**
    * Bags held at run START (pre-existing dust captured at open). Used by the
@@ -68,11 +87,14 @@ export interface OpenMissionResultInput {
   bankrollStartEth: number | null;
   ethPriceUsdStart: number | null;
   startPositions: unknown;
+  /** True for a simulator (paper-trading) run — badges the ledger row. */
+  simulated?: boolean;
 }
 
 export interface CloseMissionResultInput {
   missionRunId: string;
-  outcome: Exclude<MissionOutcome, "running">;
+  outcome: Exclude<MissionResultOutcome, "running">;
+  stopReason: string | null;
   bankrollEndEth: number | null;
   ethPriceUsdEnd: number | null;
   pnlEth: number | null;
@@ -90,8 +112,18 @@ const SELECT_COLUMNS = `
   goal_snippet, started_at, ended_at, duration_s,
   bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
   eth_price_usd_start, eth_price_usd_end,
-  trades, wins, losses, rotations, vetoes, outcome, open_positions_json,
-  start_positions_json`;
+  trades, wins, losses, rotations, vetoes,
+  outcome, stop_reason, simulated, open_positions_json, start_positions_json`;
+
+// The "why it ended" summary lives on `mission_runs.stop_summary` (written by
+// the finalize path), NOT on the ledger row — there is no summary column on
+// `mission_results`. A correlated subselect joins it in for the renderer-facing
+// reads WITHOUT a table JOIN, so the unqualified `SELECT_COLUMNS` above stay
+// unambiguous and no migration is needed. Aliased to `stop_summary` so `toRow`
+// reads it the same way regardless of query.
+const STOP_SUMMARY_SUBSELECT = `
+  (SELECT r.stop_summary FROM mission_runs r
+    WHERE r.id = mission_results.mission_run_id) AS stop_summary`;
 
 interface Raw {
   id: string;
@@ -116,18 +148,21 @@ interface Raw {
   losses: number;
   rotations: number;
   vetoes: number;
-  outcome: MissionOutcome;
+  outcome: MissionResultOutcome;
+  stop_reason: string | null;
+  simulated: boolean;
+  // Joined from `mission_runs.stop_summary` by the renderer-facing reads only;
+  // absent (undefined) on reads that do not select it.
+  stop_summary?: string | null;
   open_positions_json: unknown;
   start_positions_json: unknown;
 }
 
-// pg returns NUMERIC as string to preserve precision; ETH/PNL fit safely in a
-// JS number for display.
-const num = (v: string | number | null): number | null =>
-  v === null ? null : Number(v);
+// pg returns NUMERIC as string to preserve precision; ETH/PnL fit safely in
+// a JS number for display.
+const num = (v: string | number | null): number | null => (v === null ? null : Number(v));
 
-const iso = (v: Date | string): string =>
-  v instanceof Date ? v.toISOString() : String(v);
+const iso = (v: Date | string): string => (v instanceof Date ? v.toISOString() : String(v));
 
 function toRow(r: Raw): MissionResultRow {
   return {
@@ -154,68 +189,94 @@ function toRow(r: Raw): MissionResultRow {
     rotations: r.rotations,
     vetoes: r.vetoes,
     outcome: r.outcome,
+    stopReason: r.stop_reason,
+    simulated: r.simulated ?? false,
+    summary: r.stop_summary ?? null,
     openPositions: r.open_positions_json,
     startPositions: r.start_positions_json,
   };
 }
 
 /**
- * Open the ledger row for a run. `seq_no` is minted as the per-wallet row count
- * + 1. Idempotent: a duplicate open for the same run is a no-op (the run-id
- * unique index + ON CONFLICT), so a retried start never double-numbers.
+ * Open the ledger row for a run. `seq_no` is minted as `MAX(seq_no)+1` for
+ * the wallet, under a transaction-scoped advisory lock keyed on the
+ * (lowercased) wallet address — a concurrent open for a DIFFERENT wallet
+ * proceeds independently; a concurrent open for the SAME wallet blocks at
+ * the lock until the first transaction commits, so the two can never mint
+ * the same number. The lock releases automatically at COMMIT/ROLLBACK.
+ *
+ * Idempotent: a duplicate open for the same run is a no-op (the run-id
+ * unique index + `ON CONFLICT`), so a retried start never double-numbers.
  */
-export async function openMissionResult(
-  input: OpenMissionResultInput,
-): Promise<void> {
-  const sql = `
-    INSERT INTO mission_results (
-      id, mission_id, mission_run_id, session_id, wallet_address, chain_id,
-      seq_no, goal_snippet, bankroll_start_eth, eth_price_usd_start,
-      start_positions_json, outcome
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6,
-      (SELECT COUNT(*)+1 FROM mission_results WHERE LOWER(wallet_address) = LOWER($5)),
-      $7, $8, $9, $10, 'running'
-    )
-    ON CONFLICT (mission_run_id) DO NOTHING`;
-  await execute(sql, [
-    input.id,
-    input.missionId,
-    input.missionRunId,
-    input.sessionId,
-    input.walletAddress,
-    input.chainId,
-    input.goalSnippet,
-    input.bankrollStartEth,
-    input.ethPriceUsdStart,
-    nullableJsonb(input.startPositions),
-  ]);
+export async function openMissionResult(input: OpenMissionResultInput): Promise<void> {
+  await withTransaction(async (client: pg.PoolClient) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      missionResultsSeqLockKey(input.walletAddress),
+    ]);
+    const next = await queryOneWith<{ next_seq: string }>(
+      client,
+      `SELECT (COALESCE(MAX(seq_no), 0) + 1)::text AS next_seq
+         FROM mission_results
+        WHERE LOWER(wallet_address) = LOWER($1)`,
+      [input.walletAddress],
+    );
+    const seqNo = Number(next?.next_seq ?? "1");
+    const sql = `
+      INSERT INTO mission_results (
+        id, mission_id, mission_run_id, session_id, wallet_address, chain_id,
+        seq_no, goal_snippet, bankroll_start_eth, eth_price_usd_start,
+        start_positions_json, simulated, outcome
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'running')
+      ON CONFLICT (mission_run_id) DO NOTHING`;
+    await executeWith(client, sql, [
+      input.id,
+      input.missionId,
+      input.missionRunId,
+      input.sessionId,
+      input.walletAddress,
+      input.chainId,
+      seqNo,
+      input.goalSnippet,
+      input.bankrollStartEth,
+      input.ethPriceUsdStart,
+      // `startPositions` is an optional snapshot ("null when no start snapshot
+      // was recorded"): normalise a JS `undefined` (omitted field) to null so
+      // the strict jsonb serializer records a null column instead of throwing.
+      nullableJsonb(input.startPositions ?? null),
+      input.simulated ?? false,
+    ]);
+  });
+}
+
+/** Stable advisory-lock key for per-wallet seq_no minting (see openMissionResult). */
+function missionResultsSeqLockKey(walletAddress: string): string {
+  return `mission_results_seq:${walletAddress.toLowerCase()}`;
 }
 
 /** Close the ledger row at finalize. No-op if the row was never opened. */
-export async function closeMissionResult(
-  input: CloseMissionResultInput,
-): Promise<void> {
+export async function closeMissionResult(input: CloseMissionResultInput): Promise<void> {
   const sql = `
     UPDATE mission_results SET
       outcome = $2,
+      stop_reason = $3,
       ended_at = NOW(),
       duration_s = EXTRACT(EPOCH FROM (NOW() - started_at))::int,
-      bankroll_end_eth = $3,
-      eth_price_usd_end = $4,
-      pnl_eth = $5,
-      pnl_pct = $6,
-      trades = $7,
-      wins = $8,
-      losses = $9,
-      rotations = $10,
-      vetoes = $11,
-      open_positions_json = $12,
+      bankroll_end_eth = $4,
+      eth_price_usd_end = $5,
+      pnl_eth = $6,
+      pnl_pct = $7,
+      trades = $8,
+      wins = $9,
+      losses = $10,
+      rotations = $11,
+      vetoes = $12,
+      open_positions_json = $13,
       updated_at = NOW()
     WHERE mission_run_id = $1`;
   await execute(sql, [
     input.missionRunId,
     input.outcome,
+    input.stopReason,
     input.bankrollEndEth,
     input.ethPriceUsdEnd,
     input.pnlEth,
@@ -225,7 +286,10 @@ export async function closeMissionResult(
     input.losses,
     input.rotations,
     input.vetoes,
-    nullableJsonb(input.openPositions),
+    // Same optional-snapshot semantics as startPositions: an omitted
+    // `openPositions` (undefined) records a null column rather than throwing at
+    // finalize — mission finalization must never fail on bankroll accounting.
+    nullableJsonb(input.openPositions ?? null),
   ]);
 }
 
@@ -235,7 +299,7 @@ export async function listResultsForWallet(
   limit = 50,
 ): Promise<MissionResultRow[]> {
   const rows = await query<Raw>(
-    `SELECT ${SELECT_COLUMNS}
+    `SELECT ${SELECT_COLUMNS}, ${STOP_SUMMARY_SUBSELECT}
        FROM mission_results
       WHERE LOWER(wallet_address) = LOWER($1)
       ORDER BY seq_no DESC
@@ -245,13 +309,58 @@ export async function listResultsForWallet(
   return rows.map(toRow);
 }
 
-/** The ledger row for a single run (null if never opened). */
+/** The ledger row for a single run and wallet (null if never opened or not owned by that wallet). */
 export async function getResultForRun(
+  missionRunId: string,
+  walletAddress: string,
+): Promise<MissionResultRow | null> {
+  const row = await queryOne<Raw>(
+    `SELECT ${SELECT_COLUMNS}, ${STOP_SUMMARY_SUBSELECT}
+       FROM mission_results
+      WHERE mission_run_id = $1
+        AND LOWER(wallet_address) = LOWER($2)`,
+    [missionRunId, walletAddress],
+  );
+  return row ? toRow(row) : null;
+}
+
+/**
+ * The ledger row for a single run, keyed on the run id ALONE (null if the run
+ * never opened a result). `mission_run_id` is UNIQUE (see `openMissionResult`'s
+ * `ON CONFLICT (mission_run_id)`), so this returns at most one row. Used by the
+ * deadline force-liquidator, which must READ the row to DISCOVER the mission's
+ * wallet/chain (safety contract #3) — it has the run id but not yet the wallet,
+ * so the wallet-scoped `getResultForRun` cannot serve it.
+ */
+export async function getResultByRunId(
   missionRunId: string,
 ): Promise<MissionResultRow | null> {
   const row = await queryOne<Raw>(
-    `SELECT ${SELECT_COLUMNS} FROM mission_results WHERE mission_run_id = $1`,
+    `SELECT ${SELECT_COLUMNS}
+       FROM mission_results
+      WHERE mission_run_id = $1`,
     [missionRunId],
+  );
+  return row ? toRow(row) : null;
+}
+
+/**
+ * The newest ledger row for a session (null if the session never opened a
+ * mission result). A session maps 1:1 to a mission run, but the renderer's
+ * post-mission summary card only has the session id in hand — this is the
+ * session-keyed sibling of `getResultForRun`. Ordered by seq_no DESC so the
+ * latest run for the session wins if more than one row ever shares it.
+ */
+export async function getSessionResult(
+  sessionId: string,
+): Promise<MissionResultRow | null> {
+  const row = await queryOne<Raw>(
+    `SELECT ${SELECT_COLUMNS}, ${STOP_SUMMARY_SUBSELECT}
+       FROM mission_results
+      WHERE session_id = $1
+      ORDER BY seq_no DESC
+      LIMIT 1`,
+    [sessionId],
   );
   return row ? toRow(row) : null;
 }

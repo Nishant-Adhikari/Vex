@@ -64,6 +64,74 @@ export function submitSuccessText(data: ChatSubmitResult): string | null {
   return null;
 }
 
+/**
+ * A chat submit can resolve successfully at the IPC boundary while the agent
+ * itself stopped before finishing. These runtime guards are not transport
+ * errors, so they arrive in `ChatSubmitResult.stopReason` rather than the
+ * `Result` error channel. Translate only the terminal, operator-actionable
+ * failure reasons here; approval and mission pause states already have their
+ * own dedicated UI.
+ */
+export interface SubmitFailureNotice {
+  readonly text: string;
+  readonly retryable: boolean;
+}
+
+/**
+ * Retry stays gated on the RAW count, never a read-only/mutating split:
+ * `ChatSubmitResult` carries no per-tool identity, and the authoritative
+ * "is this tool mutating" classification lives in the privileged
+ * `src/vex-agent/tools/registry/*` `mutating` flags — untrusted renderer
+ * code must not duplicate or guess at that classification (a wrong guess
+ * would blindly replay a turn that already took a real action). Any
+ * executed tool call, regardless of apparent kind, withholds one-click
+ * Retry (see composer-helpers.test.ts for the pinned read-only-vs-mutating
+ * case).
+ */
+function incompleteTurnNotice(
+  data: ChatSubmitResult,
+  reason: string,
+): SubmitFailureNotice {
+  if (data.toolCallsMade === 0) {
+    return { text: reason, retryable: true };
+  }
+  return {
+    text:
+      `${reason} Review the transcript before trying again; ` +
+      "earlier steps may have completed.",
+    retryable: false,
+  };
+}
+
+export function submitFailureNotice(
+  data: ChatSubmitResult,
+): SubmitFailureNotice | null {
+  switch (data.stopReason) {
+    case "iteration_limit":
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped before completing the task after reaching this turn's action limit.",
+      );
+    case "timeout":
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped before completing the task because this turn timed out.",
+      );
+    case "system_error":
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped before completing the task because of an internal error.",
+      );
+    case "compact_unable_at_critical":
+      return {
+        text: "Vex stopped because this conversation ran out of usable context. Start a new session or try a narrower request.",
+        retryable: false,
+      };
+    default:
+      return null;
+  }
+}
+
 export function placeholderFor(session: SessionListItem | null): string {
   if (session?.mode !== "mission") return "What do you want Vex to do?";
   const goal = session.initialGoal?.trim();

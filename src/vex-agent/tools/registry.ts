@@ -24,6 +24,7 @@ export {
   getPressureSafety,
   getActionKind,
   getAllTools,
+  resolveToolName,
 } from "./registry/lookup.js";
 
 export {

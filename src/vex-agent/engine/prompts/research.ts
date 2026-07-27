@@ -24,6 +24,8 @@ export function buildResearchPrompt(): string {
 
 Pass \`searchDepth: "advanced"\` only when \`basic\` recall is insufficient (costs more Tavily credits).
 
+\`website_context({ url })\` (free, no key) fetches a SHORTLISTED token's own project website to see what it is and gauge quality. A missing / parked / social-only / near-empty site is a caution flag; a clear site with real docs/roadmap/tokenomics is a mild positive. Advisory only — price/liquidity rules still govern the trade.
+
 Research workflow varies by mode. Mission SETUP: this is Capability Orientation — identify which tools/venues fit the mission and ground the draft (read \`wallet_balances\`, \`portfolio\`), not market operation; do NOT call \`execute_tool\` on market data or pull quotes while planning (see the rule below). Mission RUN: research must end in an actionable decision (execute / shortlist / defer / stop). Chat: answer the current request, then stop.
 
 ## Capability Orientation vs Operational Research

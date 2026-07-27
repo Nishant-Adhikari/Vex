@@ -127,13 +127,48 @@ describe("mission.retry", () => {
     expect(mockClaim).not.toHaveBeenCalled();
   });
 
-  it("returns already_running for a running run", async () => {
+  it("returns already_running for a running run with a LIVE lease", async () => {
     mockGetLatestRunForSession.mockResolvedValueOnce({
       ok: true,
-      data: { missionRunId: "run-1", status: "running" },
+      data: { missionRunId: "run-1", status: "running", leaseActive: true },
     });
     const r = await call({ sessionId: SESSION });
     expect(r.data).toEqual({ outcome: "already_running", runId: "run-1" });
+    expect(mockClaim).not.toHaveBeenCalled();
+  });
+
+  it("attempts to RECLAIM (fromStatuses=['running']) instead of already_running when the lease is DEAD", async () => {
+    // Regression: status='running' alone does not mean a runner is
+    // observing the session (issue #12's bug class, ported to retry too).
+    mockGetLatestRunForSession.mockResolvedValueOnce({
+      ok: true,
+      data: { missionRunId: "run-dead", status: "running", leaseActive: false },
+    });
+    mockEnqueueRequest.mockResolvedValueOnce({ id: "audit-dead" });
+    mockClaim.mockResolvedValueOnce({
+      outcome: "claimed",
+      lease: { ownerId: "owner-y" },
+      previousStatus: "running",
+      wakeCancelledCount: 0,
+    });
+    mockCreateLeaseHandle.mockReturnValueOnce({});
+    mockResumeMissionRun.mockResolvedValueOnce({ text: "ok" });
+    mockRelease.mockResolvedValue(undefined);
+
+    const r = await call({ sessionId: SESSION });
+    expect(r.data).toEqual({ outcome: "resumed", runId: "run-dead" });
+    expect(mockClaim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fromStatuses: ["running"],
+        missionRunId: "run-dead",
+      }),
+    );
+    // A running row never has an error_retry wake pending — the
+    // paused_error-only wake cancellation must not fire here.
+    expect(mockCancelForSession).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead"),
+    );
   });
 
   it("returns blocked_approval for a paused_approval run", async () => {

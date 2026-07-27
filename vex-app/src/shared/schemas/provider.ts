@@ -27,11 +27,29 @@ export type ProviderName = z.infer<typeof providerNameSchema>;
 
 const trimmedSecret = z.string().trim().min(1).max(200);
 
+/**
+ * Optional SECONDARY / fallback provider (issue #25). Coexists with the
+ * primary: the engine tries the primary first and, on a transient failure that
+ * survives backoff, fails over to this one for that call. Both live in config;
+ * omit `fallback` (or leave it undefined) for the original single-provider
+ * behavior. When present, BOTH fields are required (a key with no model, or a
+ * model with no key, can't form a usable provider).
+ */
+const fallbackProviderSchema = z
+  .object({
+    apiKey: trimmedSecret,
+    model: trimmedSecret,
+  })
+  .strict();
+
+export type FallbackProviderInput = z.infer<typeof fallbackProviderSchema>;
+
 export const providerPersistInputSchema = z
   .object({
     provider: z.literal("openrouter"),
     apiKey: trimmedSecret,
     model: trimmedSecret,
+    fallback: fallbackProviderSchema.optional(),
   })
   .strict();
 
@@ -51,6 +69,11 @@ export const PROVIDER_PERSIST_CANONICAL_ORDER = [
   "OPENROUTER_API_KEY",
   "AGENT_MODEL",
   "AGENT_PROVIDER",
+  // Secondary/fallback provider (issue #25) — reported in `fieldsWritten` ONLY
+  // when a fallback was supplied. The fallback key rides the same encrypted
+  // vault as the primary; the model id is a non-secret `.env` value.
+  "OPENROUTER_API_KEY_FALLBACK",
+  "AGENT_MODEL_FALLBACK",
 ] as const;
 
 export const providerPersistFieldNameSchema = z.enum(
@@ -65,3 +88,36 @@ export const providerPersistResultSchema = z
   .strict();
 
 export type ProviderPersistResult = z.infer<typeof providerPersistResultSchema>;
+
+export const PROVIDER_MODEL_CATALOG_MAX = 1_000;
+
+export const providerModelOptionSchema = z
+  .object({
+    modelId: z.string().trim().min(1).max(200),
+    displayName: z.string().trim().min(1).max(200),
+    providerId: z.string().trim().min(1).max(64),
+    contextLength: z.number().int().positive().nullable(),
+    pricingInputPerMillion: z.number().finite().nonnegative().nullable(),
+    pricingOutputPerMillion: z.number().finite().nonnegative().nullable(),
+  })
+  .strict();
+
+export type ProviderModelOption = z.infer<typeof providerModelOptionSchema>;
+
+export const providerListModelsInputSchema = z.object({}).strict();
+export type ProviderListModelsInput = z.infer<
+  typeof providerListModelsInputSchema
+>;
+
+export const providerListModelsResultSchema = z
+  .object({
+    models: z
+      .array(providerModelOptionSchema)
+      .max(PROVIDER_MODEL_CATALOG_MAX)
+      .readonly(),
+  })
+  .strict();
+
+export type ProviderListModelsResult = z.infer<
+  typeof providerListModelsResultSchema
+>;

@@ -8,6 +8,7 @@ const SWAP_EXECUTION_PARAMS = [
   { key: "amountIn", type: "string" as const, required: true, description: "Amount in human-readable units." },
   { key: "slippageBps", type: "number" as const, description: "Slippage tolerance in basis points (default: 50 = 0.5%)." },
   { key: "recipient", type: "string" as const, description: "Recipient address for the output (default: sender)." },
+  { key: "rationale", type: "string" as const, required: true, description: "REQUIRED. Your one-sentence reason for THIS trade (the signal/thesis and why now). Recorded verbatim in the mission Decision Journal so the trade is auditable. A buy WITHOUT a rationale is REJECTED — you must supply one; never trade silently." },
   { key: "dryRun", type: "boolean" as const, description: "Preview without executing." },
 ];
 
@@ -22,6 +23,7 @@ const SWAP_SELL_PARAMS = [
   { key: "sellFraction", type: "number" as const, description: "Optional fraction 0-1 of the live token balance to exit (0.5 = half). Overrides amountIn. Non-native tokenIn." },
   { key: "slippageBps", type: "number" as const, description: "Slippage tolerance in basis points (default: 50 = 0.5%)." },
   { key: "recipient", type: "string" as const, description: "Recipient address for the output (default: sender)." },
+  { key: "rationale", type: "string" as const, required: true, description: "REQUIRED. Your one-sentence reason for THIS exit (what changed / why sell now). Recorded verbatim in the mission Decision Journal so the trade is auditable. A sell WITHOUT a rationale is REJECTED — you must supply one; never exit silently." },
   { key: "dryRun", type: "boolean" as const, description: "Preview without executing." },
 ];
 
@@ -30,7 +32,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "uniswap.swap.quote",
     namespace: "uniswap",
     lifecycle: "active",
-    description: "Get the best Uniswap route across V2 + V3 — output amount, route, price impact, gas, and token-safety signals (factory allowlist, liquidity, fee-on-transfer). The only venue on Robinhood Chain; an all-EVM fallback for KyberSwap. Read-only, no execution.",
+    description: "Get the best Uniswap route across V2 + V3 — output amount, route, price impact, gas, and token-safety signals (factory allowlist, liquidity, fee-on-transfer). An all-EVM fallback for KyberSwap (which is primary where supported, incl. Robinhood Chain). Read-only, no execution.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -47,7 +49,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "uniswap.swap.sell",
     namespace: "uniswap",
     lifecycle: "active",
-    description: "Sell tokens via Uniswap — exact-input swap (best V2/V3 route). The only venue on Robinhood Chain; an all-EVM fallback for KyberSwap. Pass token ADDRESSES (no symbol search). REQUIRES a fresh matching uniswap.swap.quote first. Execution handles the ERC-20 allowance automatically (exact-amount approve to the allowlisted router; native input needs none) — there is NO separate approve tool and none is needed.",
+    description: "Sell tokens via Uniswap — exact-input swap (best V2/V3 route). An all-EVM fallback for KyberSwap (primary where supported, incl. Robinhood Chain). Pass token ADDRESSES (no symbol search). REQUIRES a fresh matching uniswap.swap.quote first. Execution handles the ERC-20 allowance automatically (exact-amount approve to the allowlisted router; native input needs none) — there is NO separate approve tool and none is needed.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: SWAP_SELL_PARAMS,
@@ -58,7 +60,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "uniswap.swap.buy",
     namespace: "uniswap",
     lifecycle: "active",
-    description: "Buy tokens via Uniswap — exact-input swap (best V2/V3 route), marked as a buy for portfolio tracking (lot opens on tokenOut). The only venue on Robinhood Chain; an all-EVM fallback for KyberSwap. Pass token ADDRESSES. REQUIRES a fresh matching uniswap.swap.quote first. Execution handles the ERC-20 allowance automatically (exact-amount approve to the allowlisted router; native input needs none) — there is NO separate approve tool and none is needed.",
+    description: "Buy tokens via Uniswap — exact-input swap (best V2/V3 route), marked as a buy for portfolio tracking (lot opens on tokenOut). An all-EVM fallback for KyberSwap (primary where supported, incl. Robinhood Chain). Pass token ADDRESSES. REQUIRES a fresh matching uniswap.swap.quote first. Execution handles the ERC-20 allowance automatically (exact-amount approve to the allowlisted router; native input needs none) — there is NO separate approve tool and none is needed.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: SWAP_EXECUTION_PARAMS,

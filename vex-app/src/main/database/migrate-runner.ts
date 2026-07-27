@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import {
   MigrationError,
+  healSchemaVersionDrift,
   runMigrationsWithProgress,
   type MigrationProgressEvent,
 } from "@vex-lib/db/migrate-runner.js";
@@ -50,6 +51,49 @@ function resolveMigrationsDir(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, "migrations")
     : path.resolve(__dirname, "../../resources/migrations");
+}
+
+/**
+ * Post-migration integrity guard. Runs right after the normal pass and
+ * repairs `schema_version` drift — migrations recorded as applied whose
+ * CREATEd tables have vanished (the partial DB-state-loss failure that
+ * disabled session mutations and stalled the agent). Deliberately never
+ * throws: a self-heal problem must not take down boot, so failures are
+ * logged and swallowed while the normal migration result stands.
+ */
+async function runSchemaDriftSelfHeal(pool: pg.Pool): Promise<void> {
+  try {
+    const heal = await healSchemaVersionDrift({
+      pool,
+      migrationsDir: resolveMigrationsDir(),
+      logger: {
+        warn: (m) => log.warn(m),
+        info: (m) => log.info(m),
+        error: (m) => log.error(m),
+      },
+    });
+    if (heal.healed.length > 0) {
+      const summary = heal.healed
+        .map((h) => `${h.file} (v${h.version})`)
+        .join(", ");
+      log.warn(
+        `[ipc:vex:database:migrate] self-heal repaired schema drift in ${heal.healed.length} migration(s): ${summary}`
+      );
+    }
+    if (heal.failures.length > 0) {
+      const summary = heal.failures
+        .map((f) => `${f.file} (v${f.version}): ${f.error}`)
+        .join("; ");
+      log.error(
+        `[ipc:vex:database:migrate] self-heal could not repair ${heal.failures.length} migration(s): ${summary}`
+      );
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(
+      `[ipc:vex:database:migrate] self-heal step failed unexpectedly (continuing): ${message}`
+    );
+  }
 }
 
 export async function runMigrationsForIpc(): Promise<MigrateRunResult> {
@@ -95,6 +139,11 @@ export async function runMigrationsForIpc(): Promise<MigrateRunResult> {
     log.info(
       `[ipc:vex:database:migrate] completed applied=${result.applied} elapsed=${Date.now() - startedAt}ms`
     );
+
+    // Integrity self-heal: even when the pass is a no-op (counter says
+    // everything is applied), the tables those migrations create may have
+    // vanished. Repair that drift before returning.
+    await runSchemaDriftSelfHeal(pool);
 
     if (result.applied === 0) {
       return {

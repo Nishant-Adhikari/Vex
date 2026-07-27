@@ -1,7 +1,8 @@
 /**
- * Per-mission trade count — successful fills recorded in proj_activity, bounded
- * to the run by its session and time window. (A mission run maps 1:1 to a
- * session; proj_activity links to a session via protocol_executions.)
+ * Per-mission trade count — successful fills recorded in proj_activity,
+ * bounded to the run by its session and time window. (A mission run maps
+ * 1:1 to a session; proj_activity links to a session via
+ * protocol_executions.)
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
@@ -15,6 +16,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryWith: vi.fn(),
   queryOneWith: vi.fn(),
   executeWith: vi.fn(),
+  withTransaction: vi.fn(),
 }));
 
 const { countMissionTrades } = await import(
@@ -45,6 +47,11 @@ describe("countMissionTrades", () => {
     mockQueryOne = vi.fn(async () => {
       throw new Error("db down");
     });
+    await expect(countMissionTrades("s", "a", "b")).resolves.toBe(0);
+  });
+
+  it("returns 0 when the query yields no row", async () => {
+    mockQueryOne = vi.fn(async () => null);
     await expect(countMissionTrades("s", "a", "b")).resolves.toBe(0);
   });
 });

@@ -28,10 +28,12 @@ import type {
 import { pressureFraction, type ContextUsageBand } from "./context-band.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
+import { buildMissionBudgetBanner } from "../prompts/budget-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
 import { buildSignalRadarBanner } from "../prompts/signal-radar-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
+import { buildHypervexingTurnStatePrompt } from "../prompts/protocols.js";
 import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
 import { buildMemorySection } from "../prompts/memory-section.js";
 import { getTurnContext } from "@vex-agent/memory/turn-context.js";
@@ -64,10 +66,19 @@ export async function buildTurnPromptStack(args: {
    * the axes are derived from `context` so the single-ctx projection still holds.
    */
   readonly baseVisibility?: ToolVisibilityBase;
+  /**
+   * Live mission token-budget usage fraction (`tokensUsed / budget`) for the
+   * budget-pressure banner. Null/undefined (no budget box or non-mission turn)
+   * omits the banner.
+   */
+  readonly missionBudgetFraction?: number | null;
 }): Promise<TurnPromptStackResult> {
   const turnFraction = pressureFraction(args.currentTokenCount, args.contextLimit);
   const promptOptions: PromptStackOptions = { ...args.basePromptOptions };
   promptOptions.contextPressureBanner = buildContextPressureBanner(args.turnBand, turnFraction);
+  promptOptions.missionBudgetBanner = buildMissionBudgetBanner(
+    args.missionBudgetFraction ?? null,
+  );
 
   // $VEX live-metrics banner (turn-state). Fully fail-soft inside the builder:
   // any fetch error yields "" so the banner is omitted and the turn is never
@@ -75,10 +86,16 @@ export async function buildTurnPromptStack(args: {
   promptOptions.ownTokenBanner = await buildOwnTokenBanner();
 
   // SIGNAL RADAR — ranked TrendRadar lead-list. Only for ACTIVE MISSION runs
-  // (irrelevant + noisy on ordinary chat turns). Fully fail-soft inside the
-  // builder: any DB error or empty window yields "" so the turn is never blocked.
+  // (irrelevant + noisy on ordinary chat turns). CHAIN-SCOPED to the mission's
+  // chain (`missionChain`, a DexScreener slug resolved at hydration) so a
+  // PONS/Robinhood mission surfaces its own `robinhood` picks first instead of
+  // an unscoped cross-chain feed. Fail-soft: no chain → unscoped (prior
+  // behavior); any DB error or empty window yields "" so the turn is never
+  // blocked.
   if (args.baseVisibility?.missionRunActive === true) {
-    promptOptions.signalRadarBanner = await buildSignalRadarBanner();
+    promptOptions.signalRadarBanner = await buildSignalRadarBanner({
+      chain: args.context.missionChain ?? undefined,
+    });
   }
 
   let nextPostCompactBridgeRemaining = args.postCompactBridgeRemaining;
@@ -152,6 +169,7 @@ export async function buildTurnPromptStack(args: {
   // band + memory signal. Constructing it once is the single-source-of-truth
   // guarantee: catalog and tools array cannot drift.
   const base: ToolVisibilityBase = args.baseVisibility ?? {
+    sessionId: args.context.sessionId,
     permission: args.context.sessionPermission,
     role: args.context.isSubagent ? "subagent" : "parent",
     sessionKind: args.context.sessionKind,
@@ -168,6 +186,16 @@ export async function buildTurnPromptStack(args: {
   // unconditional, so the two cannot drift (no stale defaultTools path).
   const tools = toToolDefinitions(getOpenAITools(visibilityCtx));
   promptOptions.toolCatalogPrompt = buildToolCatalogPrompt(visibilityCtx);
+  promptOptions.hypervexingTurnStatePrompt = buildHypervexingTurnStatePrompt(
+    visibilityCtx,
+    {
+      sessionId: args.context.sessionId,
+      missionId: args.context.missionId,
+      ...(args.context.selectedEvmWallet === null
+        ? {}
+        : { walletAddress: args.context.selectedEvmWallet.address }),
+    },
+  );
 
   return {
     promptOptions,

@@ -17,6 +17,7 @@ const STORAGE_KEY = "vex-ui";
 function resetStoreToDefaults(): void {
   useUiStore.setState({
     theme: "vex",
+    workspaceMode: "normal",
     sidebarOpen: true,
     bookOpen: true,
     currentView: "splash",
@@ -29,6 +30,8 @@ function resetStoreToDefaults(): void {
     createSessionOpen: false,
     createSessionInitialMessage: null,
     pendingFirstMessage: null,
+    reviewModal: "none",
+    pnlCurrency: "usd",
   });
 }
 
@@ -46,6 +49,7 @@ describe("uiStore", () => {
   it("starts with the expected defaults", () => {
     const state = useUiStore.getState();
     expect(state.theme).toBe("vex");
+    expect(state.workspaceMode).toBe("normal");
     expect(state.sidebarOpen).toBe(true);
     expect(state.currentView).toBe("splash");
     expect(state.wizardEntryMode).toBe("setup");
@@ -57,6 +61,61 @@ describe("uiStore", () => {
     expect(state.createSessionOpen).toBe(false);
     expect(state.createSessionInitialMessage).toBeNull();
     expect(state.pendingFirstMessage).toBeNull();
+    expect(state.reviewModal).toBe("none");
+    // Mission PnL denomination defaults to USD (issue #17).
+    expect(state.pnlCurrency).toBe("usd");
+  });
+
+  it("setPnlCurrency flips the persisted denomination preference", () => {
+    expect(useUiStore.getState().pnlCurrency).toBe("usd");
+    useUiStore.getState().setPnlCurrency("eth");
+    expect(useUiStore.getState().pnlCurrency).toBe("eth");
+    // In the persist whitelist so the choice survives relaunch.
+    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
+    expect(parsed.state.pnlCurrency).toBe("eth");
+  });
+
+  it("migrate v4→v5 seeds the USD default without disturbing v4 fields", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { theme: "robinhood", sidebarOpen: false, bookOpen: true, hlFavorites: ["BTC"] },
+        version: 4,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().pnlCurrency).toBe("usd");
+    // v4 fields are preserved across the hop.
+    expect(useUiStore.getState().theme).toBe("robinhood");
+    expect(useUiStore.getState().hlFavorites).toEqual(["BTC"]);
+  });
+
+  it("coerces an off-union persisted pnlCurrency to 'usd' on rehydrate (tampered localStorage)", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { theme: "vex", sidebarOpen: true, bookOpen: true, pnlCurrency: "gbp" },
+        version: 5,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().pnlCurrency).toBe("usd");
+  });
+
+  it("setReviewModal mutates and reflects new value, without persisting it", () => {
+    useUiStore.getState().setReviewModal("mission");
+    expect(useUiStore.getState().reviewModal).toBe("mission");
+    useUiStore.getState().setReviewModal("plan");
+    expect(useUiStore.getState().reviewModal).toBe("plan");
+    useUiStore.getState().setReviewModal("none");
+    expect(useUiStore.getState().reviewModal).toBe("none");
+    // UI-ephemeral — never in the persist whitelist (a relaunch always starts
+    // with no dialog open).
+    useUiStore.getState().setReviewModal("mission");
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.state.reviewModal).toBeUndefined();
   });
 
   it("setTheme + toggleTheme flip the persisted Robinhood-mode theme", () => {
@@ -70,6 +129,22 @@ describe("uiStore", () => {
     // Theme is in the persist whitelist so the choice survives relaunch.
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
     expect(parsed.state.theme).toBe("robinhood");
+  });
+
+  it("setWorkspaceMode flips the transient Hypervexing flag without persisting it", () => {
+    expect(useUiStore.getState().workspaceMode).toBe("normal");
+    useUiStore.getState().setWorkspaceMode("hypervexing");
+    expect(useUiStore.getState().workspaceMode).toBe("hypervexing");
+    useUiStore.getState().setWorkspaceMode("normal");
+    expect(useUiStore.getState().workspaceMode).toBe("normal");
+    // A relaunch must always start in `normal` mode — the flag is agent-driven
+    // and transient, so it is excluded from the persist whitelist.
+    useUiStore.getState().setWorkspaceMode("hypervexing");
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.state.workspaceMode).toBeUndefined();
+    expect(raw).not.toContain("hypervexing");
   });
 
   it("migrate v2→v3 seeds the cobalt theme without disturbing v2 fields", async () => {
@@ -156,7 +231,10 @@ describe("uiStore", () => {
       theme: "vex",
       sidebarOpen: true,
       bookOpen: true,
-      movesDisplayMode: "usd",
+      hlFavorites: [],
+      pnlCurrency: "usd",
+      bookSectionCollapsed: {},
+      bookSectionOrder: ["moves", "runtime", "session"],
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialMessage).toBeUndefined();
@@ -219,7 +297,7 @@ describe("uiStore", () => {
     expect(useUiStore.getState().logBuffer).toEqual([]);
   });
 
-  it("persists ONLY the UI prefs (theme + sidebarOpen + bookOpen + movesDisplayMode) to localStorage (never logBuffer / transient navigation state)", () => {
+  it("persists ONLY the UI prefs (sidebarOpen + bookOpen) to localStorage (never logBuffer / transient navigation state)", () => {
     useUiStore.getState().setSidebarOpen(false);
     useUiStore.getState().setCurrentView("systemCheck");
     useUiStore.getState().setSessionModeFilter("mission");
@@ -242,7 +320,10 @@ describe("uiStore", () => {
       theme: "vex",
       sidebarOpen: false,
       bookOpen: true,
-      movesDisplayMode: "usd",
+      hlFavorites: [],
+      pnlCurrency: "usd",
+      bookSectionCollapsed: {},
+      bookSectionOrder: ["moves", "runtime", "session"],
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

@@ -163,6 +163,9 @@ export async function prepareMissionRecover(
         {
           contractSnapshotJson: failed.contractSnapshotJson,
           recoveredFromRunId: failed.id,
+          // Inherit the failed run's frozen mode so a recovered simulator run
+          // can never turn live (and vice-versa).
+          mode: failed.mode,
         },
         client,
       );

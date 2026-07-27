@@ -11,14 +11,22 @@
  * SOURCING / MAPPING (and its limits):
  *   - Trades come from the same `portfolio.listMoves` feed the MOVES block reads
  *     (`MoveItem`), scoped to this mission's run window `[startedAt, endedAt]`.
- *   - Reasoning comes from the session `messages` feed (assistant text turns).
- *   - A trade is mapped to the LAST assistant turn whose `createdAt` is at or
+ *   - RATIONALE, preferred: each move now carries the agent's OWN stated reason,
+ *     captured as a typed `rationale` swap-tool param and persisted with the
+ *     trade (`trade_capture.rationale`). When present it is authoritative — it
+ *     is the reason the agent gave for THAT exact trade, with no timestamp
+ *     guesswork — so it drives both the one-liner and the expanded text.
+ *   - RATIONALE, fallback: for trades with no persisted rationale (historical
+ *     fills recorded before the param existed, or a trade the agent left
+ *     unexplained), reasoning is recovered from the session `messages` feed:
+ *     the trade is mapped to the LAST assistant turn whose `createdAt` is at or
  *     before the trade's `createdAt` (the decision that led to the fill). This
  *     is a timestamp heuristic — it can mis-attribute when a single reasoning
  *     turn triggers a batch of fills (they all share that one rationale) or when
  *     the engine records a fill before persisting its reasoning turn (then the
  *     trade shows the prior turn, or none). It never fabricates: a trade with no
- *     preceding reasoning carries `rationaleFull: null`.
+ *     persisted rationale AND no preceding reasoning carries `rationaleFull:
+ *     null` (the card shows "No recorded rationale").
  *
  * BAGS-HELD (mission-scoped): `countMissionBagsHeld` counts tokens BOUGHT within
  * the run window that were not subsequently SOLD within it — so a mission that
@@ -62,6 +70,13 @@ export interface JournalMove {
   readonly tradeSide: string | null;
   readonly inputToken: string | null;
   readonly outputToken: string | null;
+  /**
+   * The agent's persisted, self-declared reason for THIS trade (typed swap-tool
+   * `rationale` param → `trade_capture.rationale`). Authoritative when present;
+   * `null` for historical/unexplained fills, which fall back to the reasoning-
+   * turn timestamp heuristic. Optional so callers passing a bare move still typecheck.
+   */
+  readonly rationale?: string | null;
   readonly createdAt: string;
 }
 
@@ -226,6 +241,25 @@ export function buildJournal(
   return scoped.map((move) => {
     const { side, label } = sideOf(move);
     const token = tokenLabel(tradedToken(move));
+    // Prefer the agent's OWN persisted rationale — it is the reason given for
+    // THIS exact trade, with no timestamp guesswork. Only when a move carries
+    // none do we fall back to the preceding-assistant-turn heuristic.
+    const persisted =
+      typeof move.rationale === "string" && move.rationale.trim().length > 0
+        ? move.rationale.trim()
+        : null;
+    if (persisted !== null) {
+      return {
+        key: move.id,
+        side,
+        sideLabel: label,
+        token: token.text,
+        tokenFull: token.full,
+        createdAt: move.createdAt,
+        rationaleFull: persisted,
+        rationaleLine: distillRationale(persisted),
+      };
+    }
     const turn = reasoningBefore(turns, toMs(move.createdAt));
     return {
       key: move.id,

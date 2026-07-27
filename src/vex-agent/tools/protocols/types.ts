@@ -12,8 +12,9 @@
 
 import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
-import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
+import type { MissionMode, Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
+import type { HlPolicyResolution } from "../../../lib/hyperliquid-policy.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -26,7 +27,8 @@ export type ProtocolNamespace =
   | "polymarket"
   | "dexscreener"
   | "virtuals"
-  | "pendle";
+  | "pendle"
+  | "hyperliquid";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -68,7 +70,7 @@ export interface ToolDiscoveryMetadata {
 
 export interface ProtocolParamDef {
   key: string;
-  type: "string" | "number" | "boolean";
+  type: "string" | "number" | "boolean" | "object";
   required?: boolean;
   description: string;
 }
@@ -123,6 +125,20 @@ export interface ProtocolExecutionContext {
   sessionPermission: Permission;
   approved: boolean;
   /**
+   * Mission execution mode (frozen per run). LAYER A of the no-broadcast
+   * invariant: when `"simulator"` a swap handler PAPER-FILLS from the live
+   * quote and returns a synthetic fill instead of resolving a signer or
+   * broadcasting. Optional so legacy/test callers default to `"live"`.
+   */
+  missionMode?: MissionMode;
+  /**
+   * Active mission run id — the shadow-ledger key a simulator paper-fill
+   * attributes its trade/position to. Present during a mission run; `null`
+   * outside one. A simulator swap with no run id fails closed (never silently
+   * falls through to a live path).
+   */
+  missionRunId?: string | null;
+  /**
    * Per-session wallet resolution + policy (puzzle 5 phase 5B). Threaded from
    * the dispatcher so the runtime can hard-deny un-migrated wallet-signing
    * protocol tools under a session scope, and migrated address-only reads
@@ -130,6 +146,8 @@ export interface ProtocolExecutionContext {
    */
   walletResolution: WalletResolution;
   walletPolicy: WalletPolicy;
+  /** Fresh, main-owned Hyperliquid policy resolution for this execution. */
+  hyperliquidPolicy?: HlPolicyResolution;
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;
   /**

@@ -17,6 +17,7 @@ import type { ApprovalsBridge } from "./approvals.js";
 import type { ChatBridge } from "./chat.js";
 import type { CompactionBridge } from "./compaction.js";
 import type { EngineEventsBridge } from "./engine.js";
+import type { HyperliquidBridge } from "./hyperliquid.js";
 import type { LongMemoryBridge } from "./long-memory.js";
 import type { MemoryBridge } from "./memory.js";
 import type { MemoryInspectorBridge } from "./memory-inspector.js";
@@ -26,6 +27,7 @@ import type { ModelsBridge } from "./models.js";
 import type { PortfolioBridge } from "./portfolio.js";
 import type { RuntimeBridge } from "./runtime.js";
 import type { SessionsBridge } from "./sessions.js";
+import type { SignalsBridge } from "./signals.js";
 import type { UsageBridge } from "./usage.js";
 import type { WalletsBridge } from "./wallets.js";
 
@@ -33,6 +35,7 @@ export type { ApprovalsBridge } from "./approvals.js";
 export type { ChatBridge } from "./chat.js";
 export type { CompactionBridge } from "./compaction.js";
 export type { EngineEventsBridge } from "./engine.js";
+export type { HyperliquidBridge } from "./hyperliquid.js";
 export type { LongMemoryBridge } from "./long-memory.js";
 export type { MemoryBridge } from "./memory.js";
 export type { MemoryInspectorBridge } from "./memory-inspector.js";
@@ -42,6 +45,7 @@ export type { ModelsBridge } from "./models.js";
 export type { PortfolioBridge } from "./portfolio.js";
 export type { RuntimeBridge } from "./runtime.js";
 export type { SessionsBridge } from "./sessions.js";
+export type { SignalsBridge } from "./signals.js";
 export type { UsageBridge } from "./usage.js";
 export type { WalletsBridge } from "./wallets.js";
 
@@ -64,6 +68,13 @@ export interface VexAgentBridge {
   readonly memoryInspector: MemoryInspectorBridge;
   /** Read-only dual-scope POSITION portfolio: global inventory / session scope (stage 3). */
   readonly portfolio: PortfolioBridge;
+  /** Main-owned Hyperliquid positions and user-confirmed risk setup. */
+  readonly hyperliquid: HyperliquidBridge;
+  /**
+   * Read-only Signals section — today's ingested TrendRadar signals plus the
+   * LLM-as-judge grade. Observability only; never places a trade.
+   */
+  readonly signals: SignalsBridge;
   /**
    * Engine -> renderer push events (transcript spine, future runtime
    * deltas, etc.). The namespace mirrors `EV.engine.<topic>` so the

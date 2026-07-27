@@ -14,6 +14,7 @@ import { z } from "zod";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import { evaluatePriceImpactGuard } from "./price-impact.js";
 
 // ── Verdict computation ───────────────────────────────────────────────────
 
@@ -156,13 +157,37 @@ export interface ExtractedQuote {
   readonly safetyDetail: Record<string, unknown>;
 }
 
-// EVM quote result (kyberswap.swap.quote) — token addresses + chainId + safety.
+// KyberSwap projects its route into `routeSummary` (see kyberswap/helpers.ts
+// `FormattedRouteSummary`): a guarded fractional `priceImpact`
+// (`(amountInUsd - amountOutUsd) / amountInUsd`, `null` when the USD legs are
+// missing) plus USD leg values. We re-validate only the two fields the pre-buy
+// impact guard consumes; the block is optional so a malformed/absent
+// routeSummary degrades the impact leg to `unknown` (fail-closed) rather than
+// failing the whole extraction. `.passthrough()` tolerates the other projected
+// fields (amountOut/gasUsd/routeHops/...).
+const EvmRouteSummarySchema = z
+  .object({
+    priceImpact: z.number().nullish(),
+    amountInUsd: z.string().nullish(),
+  })
+  .passthrough();
+
+// EVM quote result (kyberswap.swap.quote) — token addresses + chainId + safety
+// + the route summary carrying the price-impact/size signals.
 const EvmQuoteResultSchema = z.object({
   chainId: z.number(),
   tokenIn: z.object({ address: z.string() }),
   tokenOut: z.object({ address: z.string() }),
+  routeSummary: EvmRouteSummarySchema.optional(),
   safety: EvmSafetySchema,
 });
+
+/** Parse a provider USD string ("123.45") into a finite number, else null. */
+function parseUsdString(value: string | null | undefined): number | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 function extractEvm(
   params: Record<string, unknown>,
@@ -176,14 +201,26 @@ function extractEvm(
 
   const inLeg = evmLegVerdict(parsed.data.safety.tokenIn);
   const outLeg = evmLegVerdict(parsed.data.safety.tokenOut);
+
+  // Pre-buy price-impact guard. KyberSwap surfaces a derived fractional
+  // `priceImpact` + `amountInUsd` in the route summary, but NO pool
+  // liquidity_usd — so the liquidity-fraction leg stays inert here (fail-open)
+  // and the price-impact leg does the work: |impact| ≥ 15% → fail (the #22
+  // disaster), ≥ 5% → unknown (disclosed), else pass; missing → unknown.
+  const impactGuard = evaluatePriceImpactGuard({
+    priceImpact: parsed.data.routeSummary?.priceImpact ?? null,
+    amountInUsd: parseUsdString(parsed.data.routeSummary?.amountInUsd),
+    liquidityUsd: null, // KyberSwap quote does not expose pool liquidity_usd
+  });
+
   return {
     tokenIn: parsed.data.tokenIn.address,
     tokenOut: parsed.data.tokenOut.address,
     chainId: parsed.data.chainId,
     amount: amountRaw,
     slippageBps: slippage,
-    verdict: aggregateVerdict([inLeg.verdict, outLeg.verdict]),
-    safetyDetail: { tokenIn: inLeg.detail, tokenOut: outLeg.detail },
+    verdict: aggregateVerdict([inLeg.verdict, outLeg.verdict, impactGuard.verdict]),
+    safetyDetail: { tokenIn: inLeg.detail, tokenOut: outLeg.detail, ...impactGuard.detail },
   };
 }
 
@@ -252,6 +289,9 @@ const UniswapQuoteResultSchema = z.object({
   chainId: z.number(),
   tokenIn: z.object({ address: z.string(), isNative: z.boolean().optional() }),
   tokenOut: z.object({ address: z.string(), isNative: z.boolean().optional() }),
+  // Best-effort fractional price impact (V2-direct only; already clamped ≥0 by
+  // the handler). `null` for V3 / multi-hop / read failure → impact leg unknown.
+  priceImpact: z.number().nullish(),
   safety: UniswapSafetySchema,
 });
 
@@ -278,15 +318,27 @@ function extractUniswap(
   const slippage = typeof params.slippageBps === "number" ? params.slippageBps : null;
 
   const { factory, liquidity, fot } = parsed.data.safety;
-  let verdict: SafetyVerdict;
+  let baseVerdict: SafetyVerdict;
   if ("checkFailed" in factory) {
-    verdict = "unknown";
+    baseVerdict = "unknown";
   } else if (!factory.allowlisted) {
-    verdict = "fail";
+    baseVerdict = "fail";
   } else {
     const liquidityOk = "checked" in liquidity && liquidity.aboveThreshold;
-    verdict = liquidityOk && !fot.suspected ? "pass" : "unknown";
+    baseVerdict = liquidityOk && !fot.suspected ? "pass" : "unknown";
   }
+
+  // Pre-buy price-impact guard. Uniswap surfaces a fractional `priceImpact` (V2
+  // direct only — `null` for V3/multi-hop → unknown) and the OUTPUT pool
+  // `liquidity.usd`, but NO USD trade size — so the liquidity-fraction leg stays
+  // inert (fail-open) and the price-impact leg governs: |impact| ≥ 15% → fail,
+  // ≥ 5% → unknown, else pass. Aggregated worst-wins with the factory/liquidity
+  // verdict so a spoofed-factory `fail` is never weakened.
+  const impactGuard = evaluatePriceImpactGuard({
+    priceImpact: parsed.data.priceImpact ?? null,
+    amountInUsd: null, // Uniswap quote does not expose a USD trade size
+    liquidityUsd: "checked" in liquidity ? liquidity.usd : null,
+  });
 
   return {
     tokenIn: uniswapLegIdentity(parsed.data.tokenIn),
@@ -294,8 +346,8 @@ function extractUniswap(
     chainId: parsed.data.chainId,
     amount: amountRaw,
     slippageBps: slippage,
-    verdict,
-    safetyDetail: { factory, liquidity, fot },
+    verdict: aggregateVerdict([baseVerdict, impactGuard.verdict]),
+    safetyDetail: { factory, liquidity, fot, ...impactGuard.detail },
   };
 }
 

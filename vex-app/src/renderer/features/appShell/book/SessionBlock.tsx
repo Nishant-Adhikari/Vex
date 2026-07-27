@@ -1,33 +1,61 @@
 /**
- * SESSION — the session's metadata at a glance: mode, access, mission status,
- * created. Built on existing IPC (`sessions.get`) + the pure sessionListModel
- * helpers. Wallet holdings live in the POSITION block, not here.
+ * SESSION — the session's metadata, read as part of MISSION CONTROL rather than
+ * a tall block of its own. Deliberately DENSE + DEDUPED against the
+ * `MissionControlHeader` directly above it: the header already owns STATUS (its
+ * pill) and the run's timing (RUNNING TIME / TIME LEFT), so those are NOT
+ * repeated here. What remains is the genuinely session-level trio — MODE,
+ * ACCESS, MISSION PNL — plus the run's END time (the one timestamp the header
+ * does not surface once a run has finished). They lay out in a compact TWO-
+ * COLUMN grid (short label/value pairs, two per row) so the section is roughly
+ * half its former height. Built on existing IPC (`sessions.get` +
+ * `mission.getSessionResult`); wallet holdings live in the POSITION block.
  */
 
 import type { JSX, ReactNode } from "react";
 import { useSession } from "../../../lib/api/sessions.js";
 import { useMissionSessionResult } from "../../../lib/api/mission.js";
-import { cn } from "../../../lib/utils.js";
 import { formatUsd } from "../../../lib/format.js";
 import { pnlUsd } from "../missionHistoryModel.js";
-import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
-import { BookBlock } from "./BookBlock.js";
+import { formatSessionTime } from "../sessionListModel.js";
+import { BookBlock, type BookBlockReorder } from "./BookBlock.js";
 
-/** Landing .ws-stat row: key muted / value white, hairline-separated. */
-function Row({ label, children }: { readonly label: string; readonly children: ReactNode }): JSX.Element {
+/**
+ * One compact grid cell: muted micro-label stacked over its value. `wide`
+ * spans both columns (for the PnL, whose "+$x (+y%)" reads poorly truncated
+ * into a half-width cell).
+ */
+function Cell({
+  label,
+  wide = false,
+  children,
+}: {
+  readonly label: string;
+  readonly wide?: boolean;
+  readonly children: ReactNode;
+}): JSX.Element {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+    <div className={wide ? "col-span-2 flex min-w-0 flex-col gap-0.5" : "flex min-w-0 flex-col gap-0.5"}>
+      <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
         {label}
       </span>
-      <span className="min-w-0 truncate text-right font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
+      <span className="min-w-0 truncate font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
         {children}
       </span>
     </div>
   );
 }
 
-export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
+export function SessionBlock({
+  sessionId,
+  collapsible = false,
+  sectionId,
+  reorder,
+}: {
+  readonly sessionId: string;
+  readonly collapsible?: boolean;
+  readonly sectionId?: string;
+  readonly reorder?: BookBlockReorder;
+}): JSX.Element {
   const query = useSession(sessionId);
   const session = query.data?.ok ? query.data.data : null;
   // The mission RUN's start/end (from the results ledger) — distinct from the
@@ -38,7 +66,12 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
 
   if (session === null) {
     return (
-      <BookBlock title="Session">
+      <BookBlock
+        title="Session"
+        collapsible={collapsible}
+        sectionId={sectionId}
+        reorder={reorder}
+      >
         <p className="text-[11px] text-[var(--vex-text-3)]">
           {query.isLoading ? "Loading…" : "Unavailable."}
         </p>
@@ -46,54 +79,49 @@ export function SessionBlock({ sessionId }: { readonly sessionId: string }): JSX
     );
   }
 
-  const activity = getMissionActivity(session);
+  // STATUS + the run's START/elapsed timing are already the
+  // MissionControlHeader's job (its pill + RUNNING TIME / TIME LEFT), so they
+  // are intentionally NOT repeated here. SESSION keeps only what the header
+  // doesn't show: MODE, ACCESS, the run END time (once finished), and PnL.
+  const endedAt =
+    missionResult !== null && missionResult.endedAt !== null
+      ? formatSessionTime(missionResult.endedAt)
+      : null;
   return (
-    <BookBlock title="Session">
-      <div className="flex flex-col">
-        <Row label="Mode">{session.mode === "mission" ? "Mission" : "Agent"}</Row>
-        <Row label="Access">{session.permission === "full" ? "Full" : "Restricted"}</Row>
-        {activity !== null ? (
-          <Row label="Status">
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", activity.dotClass)} />
-              {activity.label}
+    <BookBlock
+      title="Session"
+      collapsible={collapsible}
+      sectionId={sectionId}
+      reorder={reorder}
+    >
+      {/* Compact two-column grid — short label/value pairs, two per row. */}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+        <Cell label="Mode">{session.mode === "mission" ? "Mission" : "Agent"}</Cell>
+        <Cell label="Access">
+          {session.permission === "full" ? "Full" : "Restricted"}
+        </Cell>
+        {endedAt !== null ? <Cell label="Ended">{endedAt}</Cell> : null}
+        {missionResult !== null && missionResult.pnlEth !== null ? (
+          <Cell label="Mission PnL" wide>
+            <span
+              title={`${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`}
+              className={
+                missionResult.pnlEth >= 0
+                  ? "text-[var(--color-success)]"
+                  : "text-[var(--color-destructive)]"
+              }
+            >
+              {(() => {
+                const usd = pnlUsd(missionResult.pnlEth, missionResult.ethPriceUsdEnd);
+                return usd !== null
+                  ? `${usd >= 0 ? "+" : "-"}${formatUsd(Math.abs(usd))}`
+                  : `${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`;
+              })()}
+              {missionResult.pnlPct !== null
+                ? ` (${missionResult.pnlPct >= 0 ? "+" : ""}${missionResult.pnlPct.toFixed(2)}%)`
+                : ""}
             </span>
-          </Row>
-        ) : null}
-        <Row label="Started">{formatSessionTime(session.startedAt)}</Row>
-        {missionResult !== null ? (
-          <>
-            <Row label="Mission start">{formatSessionTime(missionResult.startedAt)}</Row>
-            <Row label="Mission end">
-              {missionResult.endedAt !== null
-                ? formatSessionTime(missionResult.endedAt)
-                : "—"}
-            </Row>
-            <Row label="Mission PnL">
-              {missionResult.pnlEth !== null ? (
-                <span
-                  title={`${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`}
-                  className={
-                    missionResult.pnlEth >= 0
-                      ? "text-[var(--color-success)]"
-                      : "text-[var(--color-destructive)]"
-                  }
-                >
-                  {(() => {
-                    const usd = pnlUsd(missionResult.pnlEth, missionResult.ethPriceUsdEnd);
-                    return usd !== null
-                      ? `${usd >= 0 ? "+" : "-"}${formatUsd(Math.abs(usd))}`
-                      : `${missionResult.pnlEth >= 0 ? "+" : ""}${missionResult.pnlEth.toFixed(4)} ETH`;
-                  })()}
-                  {missionResult.pnlPct !== null
-                    ? ` (${missionResult.pnlPct >= 0 ? "+" : ""}${missionResult.pnlPct.toFixed(2)}%)`
-                    : ""}
-                </span>
-              ) : (
-                "—"
-              )}
-            </Row>
-          </>
+          </Cell>
         ) : null}
       </div>
     </BookBlock>

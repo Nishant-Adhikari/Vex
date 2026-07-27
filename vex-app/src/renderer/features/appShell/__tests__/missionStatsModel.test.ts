@@ -22,10 +22,9 @@ import {
 function result(p: Partial<MissionResultDto>): MissionResultDto {
   return {
     missionRunId: "run",
+    sessionId: "session",
     seqNo: 1,
     goalSnippet: null,
-    walletAddress: "0xabc",
-    chainId: 1,
     startedAt: "2026-07-11T10:00:00.000Z",
     endedAt: "2026-07-11T10:12:03.000Z",
     durationS: 723,
@@ -33,12 +32,13 @@ function result(p: Partial<MissionResultDto>): MissionResultDto {
     bankrollEndEth: 1,
     pnlEth: 0,
     pnlPct: 0,
-    ethPriceUsdStart: null,
     ethPriceUsdEnd: null,
     trades: 0,
     outcome: "completed",
+    stopReason: null,
+    summary: null,
     openPositionsCount: 0,
-    stopSummary: null,
+    simulated: false,
     ...p,
   };
 }
@@ -76,7 +76,7 @@ const MISSIONS: readonly MissionResultDto[] = [
     bankrollEndEth: 0.01368,
     pnlEth: 0,
     trades: 2,
-    ethPriceUsdStart: 1801,
+    ethPriceUsdEnd: 1801,
   }),
 ];
 

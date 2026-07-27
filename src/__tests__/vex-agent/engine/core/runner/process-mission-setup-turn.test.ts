@@ -412,6 +412,69 @@ describe("runner", () => {
       expect(passedContext.planMode).toBe(true);
     });
 
+    // ── Hard token budget covers SETUP too (fix A) ────────────
+    // The motivating 9M-token `mission_draft_update` runaway happened during
+    // SETUP, not a run. Setup must carry a cumulative token backstop across its
+    // turns — a per-turn maxIterations:25 alone can't stop it.
+    it("applies a cumulative setup token budget (session-wide baseline) to the turn loop", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission
+        .mockResolvedValueOnce(makeMission({ title: "SOL" }))
+        .mockResolvedValueOnce(makeMission({ title: "SOL" }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "ok", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await processMissionSetupTurn("session-1", "hi");
+
+      // loopConfig is positional arg index 7 of runTurnLoop.
+      const loopConfig = mockRunTurnLoop.mock.calls[0][7] as {
+        missionTokenBudget?: number | null;
+        missionTokenSince?: string | null;
+      };
+      expect(loopConfig.missionTokenBudget).toBe(500_000); // default, env unset
+      // Setup is the first phase — no baseline cutoff, so the guard sums the
+      // whole session (= cumulative setup spend across ALL setup turns), not
+      // just the current turn.
+      expect(loopConfig.missionTokenSince ?? null).toBeNull();
+    });
+
+    it("halts setup cleanly on a token-budget breach — surfaces a notice, applies NO partial patch, and does not force-liquidate", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }))
+        .mockResolvedValueOnce(makeMission({ title: "SOL Flip" }));
+      // A parseable partial patch in the breach text must NOT be applied (like
+      // the user_stopped guard) — a budget-truncated draft could be corrupt.
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "partial...\n```json\n{\"title\":\"SOL Flip\"}\n```",
+        toolCallsMade: 25,
+        pendingApprovals: [],
+        stopReason: "token_budget_exhausted",
+      });
+
+      const result = await processMissionSetupTurn("session-1", "keep going");
+
+      expect(result.stopReason).toBe("token_budget_exhausted");
+      // No partial patch applied from the truncated breach text.
+      expect(mockUpdateDraft).not.toHaveBeenCalled();
+      // A clear halt notice is surfaced to the operator.
+      expect(mockAddEngineMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.stringContaining("token budget"),
+        expect.objectContaining({
+          messageType: "mission_setup",
+          payload: expect.objectContaining({ correction: "setup_token_budget_halt" }),
+        }),
+      );
+    });
+
     it("carries plan-mode OFF (default) into the dispatch context — backward-compat", async () => {
       // Plan-mode off (the default) → setup behaves exactly as before: the
       // dispatch context carries planMode:false and the plan gate fast-returns.

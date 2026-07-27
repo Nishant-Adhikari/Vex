@@ -55,6 +55,7 @@ import {
   type PreparedContinuation,
 } from "../types.js";
 
+import { deriveExplorerRefs } from "../../explorer-refs.js";
 import { flipRunToPausedError, RESUME_CLAIM_ERROR_KIND } from "./recovery.js";
 import {
   appendApprovedToolResult,
@@ -99,6 +100,9 @@ export async function applyApproveSideEffects(
       sessionId,
       loadedDocuments: new Map(),
       sessionPermission: row.queue_permission_at_enqueue,
+      // Carry the run's frozen mode so an approved swap on a simulator mission
+      // still paper-fills / is blocked (never broadcasts) on resume.
+      missionMode: walletHydrated?.context.missionMode ?? "live",
       approved: true,
       role: "parent",
       missionRunId,
@@ -115,7 +119,10 @@ export async function applyApproveSideEffects(
       walletPolicy,
     };
 
-    let dispatchResult: { success: boolean; output: string };
+    // `data` is threaded through so the approved tool-result carries coherent
+    // explorer refs (metadata-only); `markApprovedExecutionStatus` still keys
+    // only off `success`/`output`.
+    let dispatchResult: { success: boolean; output: string; data?: Record<string, unknown> };
     try {
       dispatchResult = await dispatchTool(
         {
@@ -143,6 +150,7 @@ export async function applyApproveSideEffects(
       sessionId,
       toolCall.toolCallId,
       dispatchResult,
+      deriveExplorerRefs(dispatchResult.data),
     );
 
     let continuation: PreparedContinuation | null = null;

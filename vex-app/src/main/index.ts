@@ -38,7 +38,9 @@ import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
+import { setupOrphanReconcilerWorker } from "./agent/orphan-reconciler-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
+import { setupSimulatorSchedulerWorker } from "./agent/simulator-scheduler-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
 import { setupSignalsIngestWorker } from "./agent/signals-worker.js";
 import { setupKeepAwakeWorker } from "./agent/keep-awake-worker.js";
@@ -46,7 +48,13 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupExitWatchWorker } from "./agent/exit-watch-wiring.js";
+import { setupSelfHealWorker } from "./agent/self-heal-wiring.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
+import { setupHyperliquidPositionsService } from "./market/hyperliquid-positions-service.js";
+import { setupHyperliquidLiveFeedService } from "./market/hyperliquid-live-feed-service.js";
+import { initializeHyperliquidPolicyProvider } from "./hyperliquid/policy-provider.js";
+import { initializeHyperliquidWorkspaceModeProvider } from "./hyperliquid/workspace-mode.js";
+import { loadHyperliquidReleaseConfig } from "./hyperliquid/release-config.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
@@ -146,7 +154,14 @@ async function initializeMainRuntime(): Promise<void> {
     : path.resolve(__dirname, "../../dist/renderer");
   installAppProtocolHandler(rendererRoot);
 
-  // 6. IPC surface
+  // 6. Hyperliquid policy must be registered before ANY IPC bridge or agent
+  // worker can dispatch a protocol tool. A missing acknowledgement / failed
+  // overlay hydration resolves unavailable and therefore fails closed.
+  loadHyperliquidReleaseConfig();
+  await initializeHyperliquidPolicyProvider();
+  initializeHyperliquidWorkspaceModeProvider();
+
+  // 7. IPC surface
   registerAllIpcHandlers();
 
   // 6-updater. User-triggered updater (M13): own the electron-updater event
@@ -170,6 +185,16 @@ async function initializeMainRuntime(): Promise<void> {
   // provider gate) and the compact_jobs schema is ready (supervisor probe).
   // Started AFTER registerAllIpcHandlers so the agent bridges already exist.
   const stopCompactWorker = setupCompactWorker();
+
+  // 6a-reconcile. Reclaim WEDGED (orphaned) mission runs BEFORE the wake worker
+  // (the auto-resume path) can act. A run whose runner lease expired with no
+  // worker re-acquiring it (app restart / runner death mid-run) is stuck
+  // `status='running'` forever — the UI shows it RUNNING, STOP has no loop to
+  // signal, and boot would AUTO-RESUME it. This sweep force-finalizes each such
+  // orphan (flatten open positions + terminal `runner_lost`) so it is never
+  // auto-resumed, then keeps sweeping periodically for mid-uptime runner deaths.
+  // Started before setupWakeWorker so the boot sweep runs ahead of any resume.
+  const stopOrphanReconcilerWorker = setupOrphanReconcilerWorker();
 
   // 6a-wake. Own the engine wake executor so loop_defer-scheduled paused_wake
   // mission runs actually resume (otherwise deferred autonomous missions sleep
@@ -242,6 +267,28 @@ async function initializeMainRuntime(): Promise<void> {
   // reads already-synced projections.
   const stopExitWatchWorker = setupExitWatchWorker();
 
+  // 6a-self-heal. Own the overnight self-heal watchdog so an unattended
+  // multi-hour mission recovers from provider outages (OV2) and paused_wake
+  // stalls (OV3) with NO human. It only SCHEDULES/RE-ARMS durable wake rows —
+  // the wake executor stays the single serialized resume authority — so every
+  // recovery re-verifies the full safety state (transient-only, no half-done
+  // irreversible action, deadline + cost bounded, full-mode, kill switch) under
+  // a row lock before resuming. DEFAULT-ON, disabled by AGENT_SELF_HEAL_ENABLED.
+  // Composes as a LADDER with the abandoned-run reaper (recovers first; the
+  // reaper finalizes only what self-heal gave up on). Restart-durable: the boot
+  // tick re-arms any in-deadline paused_error run. Stays idle until the engine
+  // DB url resolves (supervisor gate). Changes NO trade target/sizing/scoring.
+  const stopSelfHealWorker = setupSelfHealWorker();
+
+  // 6a-sim-scheduler. Own the hands-free simulator scheduler: when
+  // VEX_SIM_SCHEDULER_ENABLED is set it auto-launches a NEW paper-trading
+  // (mission_mode='simulator') mission every interval, capped at
+  // maxConcurrent, so the shadow ledger accumulates lots of pick→trade→outcome
+  // samples. DISABLED BY DEFAULT and fully isolated from real missions — a
+  // simulator run never touches a wallet or broadcasts (paper-fill + the two
+  // no-broadcast layers). Stays idle until the engine DB url resolves.
+  const stopSimulatorSchedulerWorker = setupSimulatorSchedulerWorker();
+
   // 6a-market. Own the VEX market poller (T1) so the welcome-screen price
   // widget has a live snapshot to read + subscribe to. Broadcast-only (no DB,
   // no provider gate, no vault): it polls public DexScreener / GeckoTerminal /
@@ -250,6 +297,22 @@ async function initializeMainRuntime(): Promise<void> {
   const stopMarketService = setupVexMarketService();
   globalCleanup.add(async () => {
     await stopMarketService();
+  });
+
+  // Hyperliquid position display push: public allMids plus reconciler-backed
+  // projection reads only. It idles without HL positions or resting orders.
+  const stopHyperliquidPositionsService = setupHyperliquidPositionsService();
+  globalCleanup.add(async () => {
+    await stopHyperliquidPositionsService();
+  });
+
+  // Hyperliquid live WebSocket feed: one shared SDK transport for the whole app.
+  // Session-gated watchLive/unwatchLive IPC refcount candle subscriptions and a
+  // filtered allMids stream; it idles (no transport) until the first watch. Read
+  // -only public market data — no DB, no signing, no engine coupling.
+  const hyperliquidLiveFeed = setupHyperliquidLiveFeedService();
+  globalCleanup.add(async () => {
+    await hyperliquidLiveFeed.stop();
   });
 
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight
@@ -262,6 +325,7 @@ async function initializeMainRuntime(): Promise<void> {
     makeOrderedQuitCleanup(async () => {
       const results = await Promise.allSettled([
         stopCompactWorker(),
+        stopOrphanReconcilerWorker(),
         stopWakeWorker(),
         stopSyncWorker(),
         stopSignalsIngestWorker(),
@@ -270,6 +334,8 @@ async function initializeMainRuntime(): Promise<void> {
         stopRegimeWorker(),
         stopToolEmbeddingReconcileWorker(),
         stopExitWatchWorker(),
+        stopSelfHealWorker(),
+        stopSimulatorSchedulerWorker(),
       ]);
       for (const r of results) {
         if (r.status === "rejected") {

@@ -227,6 +227,51 @@ describe("buildJournal", () => {
     expect(journal[0]?.rationaleLine).toBeNull();
   });
 
+  it("prefers a move's persisted rationale over the preceding reasoning turn", () => {
+    // A misleading earlier assistant turn exists, but the trade carries its own
+    // typed rationale — the persisted reason must win (no timestamp guesswork).
+    const messages: JournalMessage[] = [
+      msg({ id: 1, content: "Some unrelated chatter.", createdAt: "2026-07-13T10:04:00.000Z" }),
+    ];
+    const moves: JournalMove[] = [
+      move({
+        id: "m1",
+        tradeSide: "buy",
+        outputToken: "AAA",
+        createdAt: "2026-07-13T10:05:00.000Z",
+        rationale: "Buying AAA: liquidity deep and sell-back confirmed. Entering now.",
+      }),
+    ];
+    const journal = buildJournal(moves, messages, start, end);
+    expect(journal[0]?.rationaleFull).toBe(
+      "Buying AAA: liquidity deep and sell-back confirmed. Entering now.",
+    );
+    // The one-liner is the distilled first sentence of the persisted rationale.
+    expect(journal[0]?.rationaleLine).toBe(
+      "Buying AAA: liquidity deep and sell-back confirmed.",
+    );
+  });
+
+  it("falls back to the reasoning turn when a move has no persisted rationale", () => {
+    const messages: JournalMessage[] = [
+      msg({ id: 1, content: "Buying AAA on strong momentum.", createdAt: "2026-07-13T10:04:00.000Z" }),
+    ];
+    const moves: JournalMove[] = [
+      move({ id: "m1", tradeSide: "buy", outputToken: "AAA", createdAt: "2026-07-13T10:05:00.000Z", rationale: null }),
+    ];
+    const journal = buildJournal(moves, messages, start, end);
+    expect(journal[0]?.rationaleLine).toBe("Buying AAA on strong momentum.");
+  });
+
+  it("treats a blank persisted rationale as absent (falls back)", () => {
+    const moves: JournalMove[] = [
+      move({ id: "m1", tradeSide: "buy", outputToken: "AAA", createdAt: "2026-07-13T10:05:00.000Z", rationale: "   " }),
+    ];
+    const journal = buildJournal(moves, [], start, end);
+    expect(journal[0]?.rationaleFull).toBeNull();
+    expect(journal[0]?.rationaleLine).toBeNull();
+  });
+
   it("excludes trades outside the run window (prior-mission moves)", () => {
     const moves: JournalMove[] = [
       move({ id: "old", tradeSide: "buy", outputToken: "OLD", createdAt: "2026-07-13T09:00:00.000Z" }),

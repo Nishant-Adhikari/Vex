@@ -14,7 +14,10 @@
  *   - totals stay untouched — they reflect the full portfolio.
  *
  * `usePortfolio` is mocked — this suite owns the block's display rules,
- * not the query wiring.
+ * not the query wiring. `useAvailableWallets` (consumed by the GLOBAL-scope
+ * `GlobalWalletAddresses`, WP-L) is mocked to an empty inventory so this
+ * suite's assertions stay about the token/total display rules; the panel's
+ * own behavior is pinned separately in `GlobalWalletAddresses.test.tsx`.
  */
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +41,10 @@ vi.mock("../../../lib/api/portfolio.js", () => ({
 
 vi.mock("../../../lib/api/session-wallets.js", () => ({
   useSessionWallets: mockUseSessionWallets,
+  useAvailableWallets: mockUseAvailableWallets,
+}));
+
+vi.mock("../../../lib/api/wallet-inventory.js", () => ({
   useAvailableWallets: mockUseAvailableWallets,
 }));
 
@@ -121,11 +128,10 @@ beforeEach(() => {
     isError: false,
     data: undefined,
   });
-  // GLOBAL Portfolio reads this for its per-wallet filter; an empty inventory
-  // keeps the filter inert so existing assertions are unaffected.
+  // GLOBAL scope renders GlobalWalletAddresses (WP-L); default to an empty
+  // inventory so this suite's assertions stay about the token/total rules —
+  // GlobalWalletAddresses' own rendering is pinned in its dedicated suite.
   mockUseAvailableWallets.mockReturnValue({
-    isLoading: false,
-    isError: false,
     data: { ok: true, data: { evm: [], solana: [] } },
   });
 });

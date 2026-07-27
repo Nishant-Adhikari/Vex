@@ -10,8 +10,12 @@ import type {
   MissionGetDraftResult,
   MissionGetRenewableSourceInput,
   MissionGetRenewableSourceResult,
+  MissionGetResultForRunInput,
+  MissionGetRetrospectiveInput,
+  MissionGetRetrospectiveResult,
   MissionGetSessionResultInput,
   MissionGetSessionResultResult,
+  MissionGetResultForRunResult,
   MissionListResultsInput,
   MissionListResultsResult,
   MissionRecoverInput,
@@ -75,13 +79,27 @@ export interface MissionBridge {
   readonly getRenewableSource: (
     input: MissionGetRenewableSourceInput,
   ) => Promise<Result<MissionGetRenewableSourceResult>>;
-  readonly listResults: (
-    input: MissionListResultsInput,
-  ) => Promise<Result<MissionListResultsResult>>;
+  /** Fork-only: latest finalized ledger row for a SESSION (summary card). */
   readonly getSessionResult: (
     input: MissionGetSessionResultInput,
   ) => Promise<Result<MissionGetSessionResultResult>>;
   readonly setAutoRetry: (
     input: MissionSetAutoRetryInput,
   ) => Promise<Result<MissionSetAutoRetryResult>>;
+  /** Per-wallet mission results ledger history, newest first (WP-J). */
+  readonly listResults: (
+    input: MissionListResultsInput,
+  ) => Promise<Result<MissionListResultsResult>>;
+  /** Single-run ledger read, e.g. the post-mission summary card (WP-J). */
+  readonly getResultForRun: (
+    input: MissionGetResultForRunInput,
+  ) => Promise<Result<MissionGetResultForRunResult>>;
+  /**
+   * Read-or-lazily-generate the "lessons learned" retrospective for a session's
+   * latest finalized mission run (the completed-mission card). Fail-soft: null
+   * when there is nothing to show (no finalized run, inference unavailable).
+   */
+  readonly getRetrospective: (
+    input: MissionGetRetrospectiveInput,
+  ) => Promise<Result<MissionGetRetrospectiveResult>>;
 }

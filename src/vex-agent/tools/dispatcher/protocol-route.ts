@@ -11,19 +11,26 @@ import type {
   ProtocolDiscoveryResult,
   ProtocolDiscoveryModelResult,
 } from "../protocols/types.js";
-import { isInternalTool, isMutatingTool, isToolBlockedForRole } from "../registry.js";
+import { isInternalTool, isMutatingTool, isToolBlockedForRole, resolveToolName } from "../registry.js";
 import { discoverProtocolCapabilities } from "../protocols/runtime.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
+import { resolveProtocolToolId } from "../protocols/catalog.js";
 import {
   MUTATING_PROTOCOL_ALIAS_ROUTERS,
   MutatingAliasRouteError,
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
+import {
+  isHypervexingProtocolAlias,
+  resolveHypervexingAlias,
+} from "../hypervexing-aliases.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery.telemetry.js";
 import { toResultData } from "../protocols/handler-helpers.js";
 import logger from "@utils/logger.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
 import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
+import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
+import { isHlWorkspaceModeActive } from "../../../lib/hyperliquid-workspace-mode.js";
 
 /**
  * Project a discovery result into its model-facing shape: strip the
@@ -54,7 +61,9 @@ export async function routeToolCall(
   // the mutating handler never executes. Read-only tools and non-mission
   // dispatches (missionRunId === null) skip this. Dynamic import mirrors the
   // protocol runtime's DB-access pattern and avoids a static tool→DB cycle.
-  if (context.missionRunId !== null && dispatchTargetIsMutating(call)) {
+  const inactiveHypervexingAlias = isHypervexingProtocolAlias(call.name)
+    && !isHlWorkspaceModeActive(context.sessionId);
+  if (context.missionRunId !== null && !inactiveHypervexingAlias && dispatchTargetIsMutating(call)) {
     const { markAutoRetryUnsafe } = await import(
       "@vex-agent/db/repos/mission-runs.js"
     );
@@ -98,23 +107,60 @@ export async function routeToolCall(
       { toolId, params },
       {
         sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Hydrated only for hyperliquid.* targets — other namespaces must not
+        // depend on (or fail through) the HL policy provider.
+        ...(toolId.startsWith("hyperliquid.")
+          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
+          : {}),
       },
     );
   }
 
   // Hard role enforcement — blocked tools rejected even if model emits them.
-  // Runs BEFORE the mutating-alias branch so `excludeRoles` still gates the
-  // alias name (defense-in-depth for any future subagent-blocked alias).
-  if (isToolBlockedForRole(call.name, context.role)) {
+  // Hypervexing aliases are handled immediately below: resolving their
+  // ToolDef first would force a catalog lookup before the mode hard-deny and
+  // make unrelated dispatcher tests depend on a complete mocked catalog.
+  if (!isHypervexingProtocolAlias(call.name) && isToolBlockedForRole(call.name, context.role)) {
     return {
       success: false,
       output: `Tool "${call.name}" is not available for this session role (${context.role}).`,
     };
+  }
+
+  // Hypervexing hot-set aliases are valid ONLY while main's per-session
+  // workspace controller reports the focused mode. They are direct, lossless
+  // aliases to protocol manifests — do not insert an internal approval path or
+  // any alias-specific gate here. `executeProtocolTool` remains the one
+  // authority for policy, protection, approval, signing, and capture.
+  if (isHypervexingProtocolAlias(call.name)) {
+    if (!isHlWorkspaceModeActive(context.sessionId)) {
+      return {
+        success: false,
+        output: `Tool "${call.name}" is available only in the Hypervexing workspace for this session.`,
+      };
+    }
+    const target = resolveHypervexingAlias(call.name, call.args);
+    return executeProtocolTool(
+      { toolId: target.toolId, params: target.params },
+      {
+        sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)),
+      },
+    );
   }
 
   // Mutating protocol-alias branch (Stage 8b — e.g. `swap`). DEDICATED path:
@@ -145,39 +191,95 @@ export async function routeToolCall(
       { toolId: target.toolId, params: target.params },
       {
         sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Hydrated only for hyperliquid.* targets (see execute_tool branch).
+        ...(target.toolId.startsWith("hyperliquid.")
+          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
+          : {}),
       },
     );
   }
 
-  // Internal tools — route by name
-  if (!isInternalTool(call.name)) {
-    return { success: false, output: `Unknown tool: ${call.name}` };
+  // Internal tools — route by name. `isInternalTool` (via getToolDef) tolerates
+  // separator variants; routeInternalTool re-derives the canonical name for the
+  // loader lookup, so a `dot`/`_` variant of an internal tool still dispatches.
+  if (isInternalTool(call.name)) {
+    return routeInternalTool(call, context);
   }
 
-  return routeInternalTool(call, context);
+  // Tolerant protocol-tool routing. The model sometimes emits a protocol
+  // toolId DIRECTLY as the tool name — and frequently swaps the canonical dot
+  // for an underscore (`dexscreener_search` for `dexscreener.search`), which
+  // used to dead-end here at "Unknown tool" and stop the mission with zero
+  // trades. Resolve against the protocol catalog (exact, then
+  // separator-insensitive) and route through the SAME executeProtocolTool path
+  // as `execute_tool`, so every gate (param validation, prequote, approval,
+  // pressure) still applies identically.
+  const resolvedProtocolToolId = resolveProtocolToolId(call.name);
+  if (resolvedProtocolToolId !== undefined) {
+    return executeProtocolTool(
+      { toolId: resolvedProtocolToolId, params: call.args },
+      {
+        sessionPermission: context.sessionPermission,
+        missionMode: context.missionMode,
+        missionRunId: context.missionRunId,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        // Hydrated only for hyperliquid.* targets (see the execute_tool branch).
+        ...(resolvedProtocolToolId.startsWith("hyperliquid.")
+          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
+          : {}),
+      },
+    );
+  }
+
+  return { success: false, output: `Unknown tool: ${call.name}` };
+}
+
+function hyperliquidPolicyScope(context: InternalToolContext): {
+  readonly sessionId: string;
+  readonly missionId: string | null;
+  readonly walletAddress?: string;
+} {
+  const walletAddress = context.walletResolution.source === "session"
+    ? context.walletResolution.evm?.address
+    : undefined;
+  return {
+    sessionId: context.sessionId,
+    missionId: context.missionId,
+    ...(walletAddress === undefined ? {} : { walletAddress }),
+  };
 }
 
 async function routeInternalTool(
   call: ToolCallRequest,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  const loader = INTERNAL_TOOL_LOADERS[call.name];
+  // The loader map is keyed by CANONICAL name; resolve any separator variant
+  // (dot/underscore) back to it. `resolveToolName` returns the exact name
+  // unchanged, so canonical calls are byte-identical to before.
+  const canonicalName = resolveToolName(call.name) ?? call.name;
+  const loader = INTERNAL_TOOL_LOADERS[canonicalName];
   if (!loader) {
     return { success: false, output: `Unknown internal tool: ${call.name}` };
   }
-  if (isMutatingTool(call.name) && context.sessionPermission === "restricted" && !context.approved) {
+  if (isMutatingTool(canonicalName) && context.sessionPermission === "restricted" && !context.approved) {
     logger.info("tools.dispatch.approval_required", {
-      tool: call.name,
+      tool: canonicalName,
       permission: context.sessionPermission,
     });
     return {
       success: false,
-      output: `${call.name} requires approval — mutating tool in restricted permission mode.`,
+      output: `${canonicalName} requires approval — mutating tool in restricted permission mode.`,
       pendingApproval: true,
     };
   }

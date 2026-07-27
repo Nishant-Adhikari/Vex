@@ -31,7 +31,7 @@
  */
 
 import { useMemo } from "react";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
   flattenTranscriptPages,
@@ -52,8 +52,32 @@ import { SessionContext } from "./SessionContext.js";
 import { SessionTranscript } from "./SessionTranscript.js";
 import { SessionWelcomeHero } from "./SessionWelcomeHero.js";
 
-export function SessionPanel(): JSX.Element {
+export interface SessionPanelProps {
+  /**
+   * Optional content-agnostic slot forwarded to the active-session header's
+   * trailing edge (see `SessionContext.trailing`). The normal shell mounts
+   * `<SessionPanel />` with no slot, so its header is unchanged; the Hypervexing
+   * dock passes the mission badge cluster here so the panel stays mode-unaware.
+   */
+  readonly headerTrailing?: ReactNode;
+  /**
+   * Forwarded to the composer unchanged — see `SessionComposer`'s
+   * `focusRequest` doc. This panel stays agnostic to WHY a focus handoff is
+   * requested (e.g. returning from Hypervexing); it only threads the signal.
+   */
+  readonly focusRequest?: boolean;
+  readonly onFocusRequestHandled?: () => void;
+}
+
+export function SessionPanel({
+  headerTrailing,
+  focusRequest,
+  onFocusRequestHandled,
+}: SessionPanelProps = {}): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
+  // In the Hypervexing dock the composer is ALWAYS bottom-pinned (user
+  // decree): the welcome/idle stage's vertical centering never applies there.
+  const inHypervexing = useUiStore((s) => s.workspaceMode) === "hypervexing";
   // Puzzle 02/06: keep the active session's transcript + usage queries fresh
   // (transcript-append event + 30s fallback poll). Puzzle 09: drive the
   // ephemeral streaming preview from the engine stream spine. F5: push
@@ -95,7 +119,10 @@ export function SessionPanel(): JSX.Element {
     !transcriptQuery.isLoading &&
     preview === null &&
     transcriptPages !== undefined &&
-    flattenTranscriptPages(transcriptPages).length === 0;
+    flattenTranscriptPages(transcriptPages).length === 0 &&
+    // The dock never plays the centered idle stage — tape layout from the
+    // first frame, composer pinned to the bottom like an active session.
+    !inHypervexing;
 
   // No active session → the welcome stage. The panel is the stage frame:
   // relative (the hero's absolute vignette + bottom row resolve against it)
@@ -117,12 +144,19 @@ export function SessionPanel(): JSX.Element {
             live $VEX widget used to sit below the composer here; it moved to
             the sessions rail (SessionsList) to keep the welcome stage clean. */}
         <div className="vex-rise vex-rise-d2 relative z-10 mx-auto w-[min(680px,92%)] shrink-0">
-          <SessionComposer activeSession={null} activeSessionId={null} stage />
+          <SessionComposer
+            activeSession={null}
+            activeSessionId={null}
+            stage
+            focusRequest={focusRequest}
+            onFocusRequestHandled={onFocusRequestHandled}
+          />
         </div>
         {/* Trailing spacer — balances the hero zone above (vertical
             centering) and reserves the band the hero's absolute bottom row
-            occupies, so chips and the row never collide. */}
-        <div aria-hidden className="min-h-16 flex-1" />
+            occupies, so chips and the row never collide. Skipped in the
+            Hypervexing dock, where the composer docks to the very bottom. */}
+        {inHypervexing ? null : <div aria-hidden className="min-h-16 flex-1" />}
       </div>
     );
   }
@@ -167,6 +201,7 @@ export function SessionPanel(): JSX.Element {
                 activeSessionId={activeSessionId}
                 loading={detailQuery.isLoading}
                 error={detailError}
+                trailing={headerTrailing}
               />
               {/* The mission contract + action plan no longer render inline:
                   the two tall cards used to push MissionControls + the Accept
@@ -201,6 +236,8 @@ export function SessionPanel(): JSX.Element {
             activeSession={activeSession}
             activeSessionId={activeSessionId}
             stage={isIdleSession}
+            focusRequest={focusRequest}
+            onFocusRequestHandled={onFocusRequestHandled}
           />
         </div>
         {/* Idle-stage trailing spacer — appears AFTER the composer wrapper so

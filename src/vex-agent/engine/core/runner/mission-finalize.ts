@@ -16,11 +16,13 @@
  */
 
 import type { MissionStatus, StopReason } from "../../types.js";
+import type { MissionResultOutcome } from "@vex-agent/db/repos/mission-results.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
 import { consumeMissionRunAbortIntent } from "./abort.js";
 import { captureMissionFinal } from "../../mission/mission-results-capture.js";
+import { reconcileDraftReadiness } from "../../mission/draft-readiness.js";
 import {
   isContinuableRuntimeStop,
   scheduleRuntimeContinuation,
@@ -29,6 +31,7 @@ import {
   enqueueAutoRetryWake,
   persistErrorPauseWithMaybeAutoRetry,
 } from "./mission-auto-retry.js";
+import { readMissionErrorSignal } from "./mission-error-signal.js";
 
 const ERROR_MESSAGE_LIMIT = 4096;
 
@@ -72,6 +75,60 @@ async function emitFinalizeControlState(
   }
 }
 
+/**
+ * The `runner_lost` finalize TAIL — the side effects that follow a successful
+ * `markStoppedIfRunning` claim: flip the parent mission to `cancelled` (the run
+ * itself is already `stopped`), broadcast the terminal control state, and close
+ * the `mission_results` ledger with `outcome='stopped'`.
+ *
+ * Exported so the orphaned-run reconciler can run its own claim → FLATTEN →
+ * tail sequence (flatten must sit between the claim that closes the resume race
+ * and the ledger close) while reusing the SAME finalize side effects instead of
+ * duplicating them. Idempotent: `setStatus` / `captureMissionFinal` re-run
+ * harmlessly.
+ */
+export async function closeRunnerLostFinalize(
+  missionId: string,
+  runId: string,
+  sessionId: string,
+): Promise<void> {
+  await missionsRepo.setStatus(missionId, "cancelled");
+  await emitFinalizeControlState(sessionId, runId);
+  await captureMissionFinal({
+    missionId,
+    runId,
+    sessionId,
+    outcome: "stopped",
+    stopReason: "runner_lost",
+  });
+}
+
+/**
+ * The ABANDONED-paused_error reaper finalize TAIL — the side effects that follow
+ * a successful `markStaleErrorReaped` claim (paused_error → `failed`): flip the
+ * parent mission to `failed`, broadcast the terminal control state, and close
+ * the `mission_results` ledger with `outcome='failed'` + the reaper stop reason.
+ *
+ * Exported so the boot reconciler can run its own claim → tail sequence while
+ * reusing the SAME finalize side effects instead of duplicating them.
+ * Idempotent: `setStatus` / `captureMissionFinal` re-run harmlessly.
+ */
+export async function closeReapedErrorFinalize(
+  missionId: string,
+  runId: string,
+  sessionId: string,
+): Promise<void> {
+  await missionsRepo.setStatus(missionId, "failed");
+  await emitFinalizeControlState(sessionId, runId);
+  await captureMissionFinal({
+    missionId,
+    runId,
+    sessionId,
+    outcome: "failed",
+    stopReason: "reaped_stale_error",
+  });
+}
+
 export async function finalizeMissionRunStatus(
   missionId: string,
   runId: string,
@@ -81,6 +138,25 @@ export async function finalizeMissionRunStatus(
 ): Promise<MissionStatus> {
   if (!stopReason) return "running";
 
+  // Orphaned/interrupted run reclaimed by the reconciler (or a leaseless
+  // force-stop). Distinct terminal surface — run status `stopped` +
+  // `stop_reason='runner_lost'` — so a wedged run is auditable and never
+  // auto-resumed. The flip is race-safe (`markStoppedIfRunning`: only while
+  // still `running` AND no live lease) so a concurrent operator Resume can
+  // never be finalized out from under the user, and re-running the reconciler
+  // is a no-op. The parent mission goes to `cancelled` (MissionStatus has no
+  // `stopped`).
+  if (stopReason === "runner_lost") {
+    const claimed = await missionRunsRepo.markStoppedIfRunning(
+      runId,
+      stopReason,
+      stopPayload,
+    );
+    if (!claimed) return "cancelled";
+    await closeRunnerLostFinalize(missionId, runId, sessionId);
+    return "cancelled";
+  }
+
   const { shouldTerminateRun } = await import("../stop-conditions.js");
 
   if (shouldTerminateRun(stopReason)) {
@@ -88,9 +164,14 @@ export async function finalizeMissionRunStatus(
       await missionRunsRepo.updateStatus(runId, "stopped", stopReason, stopPayload);
       await missionsRepo.clearApprovedAt(missionId);
       await missionsRepo.setStatus(missionId, "draft");
+      // The async finalizer runs AFTER `stopMissionRunForEdit` already
+      // reconciled once (abort.ts) — this demote-then-finalize sequence is
+      // exactly the timing window issue #41 needs closed at every write
+      // site, not just the first one.
+      const reconciled = await reconcileDraftReadiness(missionId);
       await emitFinalizeControlState(sessionId, runId);
-      await captureMissionFinal({ missionId, runId, sessionId, outcome: "stopped" });
-      return "draft";
+      await captureMissionFinal({ missionId, runId, sessionId, outcome: "stopped", stopReason });
+      return reconciled.promoted ? "ready" : "draft";
     }
 
     const status: MissionStatus = stopReason === "goal_reached"
@@ -102,11 +183,12 @@ export async function finalizeMissionRunStatus(
     // that is a clean time-box end, not an error, so the results UI reads
     // "timed_out" instead of the alarming "failed". The run/mission status
     // stays terminal (`failed`) — this only relabels the operator-facing record.
-    const outcome = stopReason === "deadline_reached" ? "timed_out" : status;
+    const outcome: Exclude<MissionResultOutcome, "running"> =
+      stopReason === "deadline_reached" ? "timed_out" : status;
     await missionsRepo.setStatus(missionId, status);
     await missionRunsRepo.updateStatus(runId, status, stopReason, stopPayload);
     await emitFinalizeControlState(sessionId, runId);
-    await captureMissionFinal({ missionId, runId, sessionId, outcome });
+    await captureMissionFinal({ missionId, runId, sessionId, outcome, stopReason });
     return status;
   }
 
@@ -131,7 +213,7 @@ export async function finalizeMissionRunStatus(
     await missionsRepo.setStatus(missionId, "failed");
     await missionRunsRepo.updateStatus(runId, "failed", stopReason);
     await emitFinalizeControlState(sessionId, runId);
-    await captureMissionFinal({ missionId, runId, sessionId, outcome: "failed" });
+    await captureMissionFinal({ missionId, runId, sessionId, outcome: "failed", stopReason });
     // Phase 2 BUG-REPORTING emit (puzzle 03): terminal `system_error`
     // is a hard failure surface — record the mission state. Fail-
     // closed so a sink outage cannot mask the terminal flip.
@@ -199,6 +281,9 @@ export async function finalizeMissionRunError(
 ): Promise<void> {
   const errorMessage = formatErrorMessage(err);
   const errorClass = err instanceof Error ? err.constructor.name : typeof err;
+  // Errno-shaped transport signal (own-property, never message text) — fed
+  // into both the persisted evidence below AND the bug-report `context`.
+  const causeCode = readMissionErrorSignal(err).causeCode;
   // Log first — even if the DB write below fails, the failure stays visible.
   logger.error("engine.mission.runtime_throw", {
     runId,
@@ -219,6 +304,7 @@ export async function finalizeMissionRunError(
         evidenceBase: {
           errorMessage,
           errorClass,
+          causeCode,
           occurredAt: new Date().toISOString(),
           missionId,
           runId,
@@ -268,6 +354,13 @@ export async function finalizeMissionRunError(
           missionId,
           missionRunId: runId,
         },
+        // `context` itself is `z.record(z.string(), z.unknown())` (unbounded;
+        // `bug-report-schema.ts`) — redaction happens later in the bug-report
+        // service. The VALUE stored under `causeCode` here is shape-validated
+        // (errno-shaped, own-property-read — see `mission-error-signal.ts`),
+        // never raw message text beyond what already flows through
+        // `description`.
+        context: { causeCode },
         agentContext: {
           stopReason: "provider_error",
           runtimeStatus: "paused_error",

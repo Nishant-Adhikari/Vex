@@ -248,6 +248,48 @@ export async function getMissionForUpdate(
 }
 
 /**
+ * Session-scoped transactional advisory lock — serializes ALL concurrent
+ * `renewMission` calls for the same session so the pending-draft check in
+ * `getPendingDraftForSession` and the clone insert commit as one atomic
+ * decision (closes the duplicate-draft storm race; a schema unique index
+ * is not viable because production data already contains duplicate drafts
+ * from before this fix). `hashtext` folds the session id into the 32-bit
+ * key `pg_advisory_xact_lock` needs. Xact-scoped: Postgres releases it
+ * automatically at COMMIT/ROLLBACK, so there is no matching unlock call.
+ */
+export async function lockSessionForRenew(
+  client: PoolClient,
+  sessionId: string,
+): Promise<void> {
+  await executeWith(
+    client,
+    "SELECT pg_advisory_xact_lock(hashtext($1))",
+    [sessionId],
+  );
+}
+
+/**
+ * Does the session already hold an un-started (`draft`/`ready`) mission?
+ * Called INSIDE the same locked transaction as `lockSessionForRenew` above
+ * so a second concurrent renew (racing before the first commits) cannot
+ * both pass this check — the root cause of the duplicate-draft storm.
+ */
+export async function getPendingDraftForSession(
+  client: PoolClient,
+  rootSessionId: string,
+): Promise<Mission | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    `SELECT * FROM missions
+      WHERE root_session_id = $1
+        AND status IN ('draft', 'ready')
+      LIMIT 1`,
+    [rootSessionId],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
  * Stamp acceptance metadata on a mission. The caller MUST hold a row
  * lock (via `getMissionForUpdate`) so concurrent `clearAcceptance`
  * / `startMission` see the freshly-committed state.

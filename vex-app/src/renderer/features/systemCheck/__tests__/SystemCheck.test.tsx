@@ -106,6 +106,7 @@ describe("SystemCheck", () => {
     useUiStore.setState({
       sidebarOpen: true,
       currentView: "systemCheck",
+      returningUser: false,
       logBuffer: [],
     });
     mockHooks.useSystemHealth.mockReturnValue(happyHealth());
@@ -152,6 +153,53 @@ describe("SystemCheck", () => {
     expect(useUiStore.getState().currentView).toBe("dockerBootstrap");
     fireEvent.click(getByRole("button", { name: "Open logs folder" }));
     expect(openLogsFolder).toHaveBeenCalledTimes(1);
+  });
+
+  it("express lane: a returning user on a healthy machine auto-advances without clicking Continue", () => {
+    // os ok + docker ok + env ok (setup complete) → the express lane skips the
+    // manual Continue for a returning user (see lib/express-lane.ts).
+    mockHooks.useEnvState.mockReturnValue({
+      isPending: false,
+      data: {
+        ok: true,
+        data: {
+          hasKeystorePassword: true,
+          hasJupiterApiKey: false,
+          embeddings: { configured: true, reachable: true, baseUrlRedacted: null },
+          walletStatus: { evm: "present" as const, solana: "present" as const },
+          setupCompleteFlag: true,
+        },
+      },
+    });
+    useUiStore.setState({ returningUser: true });
+    act(() => {
+      render(<SystemCheck />);
+    });
+    expect(useUiStore.getState().currentView).toBe("dockerBootstrap");
+  });
+
+  it("express lane never auto-advances a returning user when Docker is down", () => {
+    mockHooks.useDockerStatus.mockReturnValue({
+      isPending: false,
+      data: {
+        ok: true,
+        data: {
+          endpoint: { accepted: true, currentContext: "default", dockerHostSet: false, reason: null, message: null },
+          engine: { present: true, version: "27.5.1", runtimeOK: true, failure: null },
+          compose: { present: true, version: "v2.32.4" },
+          modelRunner: { present: false, status: "inactive", tcpReachable: false },
+          daemon: { running: false, startable: true },
+          ports: { vexPgFree: true },
+          disk: { availableGB: 42 },
+        },
+      },
+    });
+    useUiStore.setState({ returningUser: true });
+    act(() => {
+      render(<SystemCheck />);
+    });
+    // Daemon not running → dockerStatus "warn" → stays on the screen to be fixed.
+    expect(useUiStore.getState().currentView).toBe("systemCheck");
   });
 
   it("renders an adjacent translocation warning without adding a probe or blocking Continue", () => {

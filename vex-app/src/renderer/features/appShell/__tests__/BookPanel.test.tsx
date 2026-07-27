@@ -19,6 +19,12 @@ import { fireEvent, render, screen } from "@testing-library/react";
 vi.mock("@hugeicons/react", () => ({
   HugeiconsIcon: () => null,
 }));
+vi.mock("../book/MissionControlHeader.js", () => ({
+  MissionControlHeader: () => <div data-testid="mission-control-header" />,
+}));
+// PositionBlock is intentionally NOT imported by BookPanel anymore (POSITION
+// moved to the LEFT sidebar). It is mocked here only so an accidental
+// re-introduction would surface as a rendered test id the assertions reject.
 vi.mock("../book/PositionBlock.js", () => ({
   PositionBlock: () => <div data-testid="position-block" />,
 }));
@@ -28,8 +34,26 @@ vi.mock("../book/MovesBlock.js", () => ({
 vi.mock("../book/SessionBlock.js", () => ({
   SessionBlock: () => <div data-testid="session-block" />,
 }));
+vi.mock("../book/HyperliquidPositionsBlock.js", () => ({
+  HyperliquidPositionsBlock: () => <div data-testid="hyperliquid-positions-block" />,
+}));
+// The zero-token re-entry door runs a react-query read — mocked out like
+// the other instrument blocks (its own gating has dedicated coverage).
+vi.mock("../workspace/HypervexingEnterButton.js", () => ({
+  HypervexingEnterButton: () => <div data-testid="hypervexing-enter-button" />,
+}));
+
+vi.mock("../book/HyperliquidRiskBlock.js", () => ({
+  HyperliquidRiskBlock: () => <div data-testid="hyperliquid-risk-block" />,
+}));
 vi.mock("../SessionRuntimeBar.js", () => ({
   SessionRuntimeBar: () => <div data-testid="runtime-bar" />,
+}));
+// RUNTIME & COST section (its own data wiring + live timer are covered by
+// MissionRunTimer.test.tsx / missionRunTiming.test.ts) — mocked here so the
+// panel-chrome suite stays free of query hooks, like the sibling blocks.
+vi.mock("../book/MissionRuntimeCostBlock.js", () => ({
+  MissionRuntimeCostBlock: () => <div data-testid="runtime-cost-block" />,
 }));
 
 const { BookPanel } = await import("../BookPanel.js");
@@ -47,11 +71,23 @@ describe("BookPanel chrome", () => {
     );
     expect(screen.getByText(/^v/)).not.toBeNull();
     expect(
-      screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
+      screen.getByRole("button", { name: /Collapse the Mission Control panel/i }),
     ).not.toBeNull();
-    // Instrument blocks render when expanded.
-    expect(screen.queryByTestId("position-block")).not.toBeNull();
+    // Instrument blocks render when expanded. The risk block MOUNT exists on
+    // an active session — the real component self-gates to pending proposals
+    // (see HyperliquidRiskBlock.test.tsx); the mock here always renders.
     expect(screen.queryByTestId("moves-block")).not.toBeNull();
+    expect(screen.queryByTestId("runtime-cost-block")).not.toBeNull();
+    expect(screen.queryByTestId("session-block")).not.toBeNull();
+    expect(screen.queryByTestId("hyperliquid-positions-block")).not.toBeNull();
+    expect(screen.queryByTestId("hyperliquid-risk-block")).not.toBeNull();
+  });
+
+  it("is MISSION CONTROL only — never renders a POSITION block (it lives on the left)", () => {
+    render(
+      <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
+    );
+    expect(screen.queryByTestId("position-block")).toBeNull();
   });
 
   it("hides the version + blocks when collapsed, keeping the Expand chevron", () => {
@@ -60,10 +96,12 @@ describe("BookPanel chrome", () => {
     );
     expect(screen.queryByText(/^v/)).toBeNull();
     expect(
-      screen.getByRole("button", { name: /Expand the BOOK panel/i }),
+      screen.getByRole("button", { name: /Expand the Mission Control panel/i }),
     ).not.toBeNull();
-    expect(screen.queryByTestId("position-block")).toBeNull();
     expect(screen.queryByTestId("moves-block")).toBeNull();
+    expect(screen.queryByTestId("session-block")).toBeNull();
+    expect(screen.queryByTestId("hyperliquid-positions-block")).toBeNull();
+    expect(screen.queryByTestId("hyperliquid-risk-block")).toBeNull();
   });
 
   it("invokes onToggle from the chevron", () => {
@@ -72,16 +110,21 @@ describe("BookPanel chrome", () => {
       <BookPanel activeSessionId={SESSION} bookOpen onToggle={onToggle} />,
     );
     fireEvent.click(
-      screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
+      screen.getByRole("button", { name: /Collapse the Mission Control panel/i }),
     );
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
-  it("shows the global portfolio (no active session) when expanded", () => {
+  it("rests with a hint (no POSITION, no session blocks) when no session is active", () => {
     render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
-    expect(screen.queryByTestId("position-block")).not.toBeNull();
+    // POSITION moved to the left rail — the right rail no longer shows the
+    // global portfolio; it rests with a hint instead.
+    expect(screen.queryByTestId("position-block")).toBeNull();
+    expect(screen.getByText(/Open a mission to see its controls/i)).not.toBeNull();
     // No session-scoped blocks for the global view.
     expect(screen.queryByTestId("moves-block")).toBeNull();
     expect(screen.queryByTestId("session-block")).toBeNull();
+    expect(screen.queryByTestId("hyperliquid-positions-block")).toBeNull();
+    expect(screen.queryByTestId("hyperliquid-risk-block")).toBeNull();
   });
 });

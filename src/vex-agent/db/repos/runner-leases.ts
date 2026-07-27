@@ -140,6 +140,46 @@ export async function releaseLease(
   );
 }
 
+/**
+ * Drop the STALE (expired) lease for a session, if any. Owner-agnostic and
+ * guarded on `expires_at < NOW()` so it can only ever remove a dead lease —
+ * never one a live runner still holds. Used by the orphaned-run reconciler to
+ * clear the leftover lease of a wedged run. Idempotent; returns rowsAffected.
+ */
+export async function releaseExpiredLease(
+  sessionId: string,
+  exec?: Executor,
+): Promise<number> {
+  return executeWith(
+    exec ?? (await import("../client.js")).getPool(),
+    `DELETE FROM runner_leases WHERE session_id = $1 AND expires_at < NOW()`,
+    [sessionId],
+  );
+}
+
+/**
+ * Sweep EVERY stale (expired) lease across all sessions, owner-agnostic and
+ * guarded on `expires_at < NOW()`. Reclaims the standalone dead lease the
+ * per-session `releaseExpiredLease` never touches: a `runner_leases` row with a
+ * BLANK `mission_run_id` (a dead `agent-turn-…` chat lease) or one whose run is
+ * `paused_error`/terminal is NOT tied to an orphaned RUNNING run, so the
+ * orphaned-run reconciler never passes its session to `releaseExpiredLease` — it
+ * survives every restart and wedges ALL new mission starts with `lease_busy`
+ * (confirmed prod incident). This global boot sweep clears them all in one shot.
+ *
+ * Only ever removes DEAD leases (never one a live runner still holds).
+ * Idempotent; returns rowsAffected.
+ */
+export async function releaseAllExpiredLeases(
+  exec?: Executor,
+): Promise<number> {
+  return executeWith(
+    exec ?? (await import("../client.js")).getPool(),
+    `DELETE FROM runner_leases WHERE expires_at < NOW()`,
+    [],
+  );
+}
+
 /** Read-only — current lease for a session (or null). */
 export async function getLease(
   sessionId: string,

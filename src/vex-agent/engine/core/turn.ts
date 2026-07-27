@@ -253,7 +253,7 @@ export async function saveAssistantMessage(
   sessionId: string,
   content: string | null,
   toolCalls: ParsedToolCall[] | null,
-  opts?: { readonly stopped?: boolean },
+  opts?: { readonly stopped?: boolean; readonly systemOriginated?: boolean },
 ): Promise<void> {
   const hasContent = content !== null && content !== undefined;
   const hasToolCalls = toolCalls !== null && toolCalls !== undefined && toolCalls.length > 0;
@@ -261,11 +261,24 @@ export async function saveAssistantMessage(
   if (!hasContent && !hasToolCalls) return;
 
   const metadata: MessageMetadata = {
-    source: "assistant",
+    // `role` stays "assistant" even for a system-synthesized call (below) —
+    // the provider transcript format requires an assistant-role turn to
+    // carry `tool_calls`. Provenance instead lives here: a genuinely
+    // model-authored turn always stamps `source: "assistant"`; a call the
+    // engine synthesized itself (never model output — see
+    // `dispatchPreparedActionFollowUp`) stamps `source: "engine"` with a
+    // distinct `messageType` so an auditor reading `messages` directly can
+    // never mistake one for the other, regardless of the shared `role`.
+    source: opts?.systemOriginated === true ? "engine" : "assistant",
     // 9-5a: a chat turn stopped mid-stream persists its partial text as
     // `chat_stopped`, so the ephemeral streamed preview is replaced by a
     // durable row. Renderer mapping/badge for this type lands in 9-5b.
-    messageType: opts?.stopped === true ? "chat_stopped" : "chat",
+    messageType:
+      opts?.stopped === true
+        ? "chat_stopped"
+        : opts?.systemOriginated === true
+          ? "prepared_action_follow_up"
+          : "chat",
     visibility: "user",
   };
 

@@ -14,12 +14,20 @@ import { str, enumField, fail } from "./types.js";
 import type { BusinessStopReason } from "@vex-agent/engine/types.js";
 import { applyMissionPatch } from "@vex-agent/engine/mission/setup.js";
 import {
+  computePnl,
+} from "@vex-agent/engine/mission/mission-results-capture.js";
+import {
   authorizeMissionStopReason,
   isModelMissionStopReason,
   MODEL_MISSION_STOP_REASONS,
 } from "@vex-agent/engine/mission/stop-contract.js";
+import { resolveLocalChainId } from "../../../tools/evm-chains/registry.js";
+import { readEthBankroll, readEthBankrollOnChain } from "@vex-agent/engine/mission/bankroll.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
+import * as missionResultsRepo from "@vex-agent/db/repos/mission-results.js";
+import * as simLedgerRepo from "@vex-agent/db/repos/sim-ledger.js";
+import { hyperliquidMissionRiskSchema } from "../../../lib/hyperliquid-policy.js";
 
 const MAX_STRING_LENGTH = 2_000;
 const MAX_ARRAY_ITEMS = 50;
@@ -42,6 +50,11 @@ const MissionDraftUpdateArgs = z
     stopConditions: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     deadline: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     durationMinutes: z.number().int().positive().max(1440).nullable().optional(),
+    // Per-mission LLM inference cost cap in USD (overrides the env default).
+    // Separate from any trading capital cap. Bounded to keep a fat-fingered
+    // value from disabling the backstop; a bad value falls back to env/$1.00.
+    costCapUsd: z.number().positive().max(1_000_000).nullable().optional(),
+    hyperliquidRisk: hyperliquidMissionRiskSchema.nullable().optional(),
   })
   .strict()
   .refine(
@@ -127,6 +140,30 @@ export async function handleMissionStop(
 
   if (!isModelMissionStopReason(reason)) {
     return fail(`Invalid stop reason "${reason}". Must be one of: ${MODEL_MISSION_STOP_REASONS.join(", ")}`);
+  }
+
+  if (reason === "goal_reached" && context.missionId) {
+    const mission = await missionsRepo.getMission(context.missionId);
+    const wallet = mission?.allowedWallets?.[0];
+    const chainKey = mission?.allowedChains?.[0];
+    const chainId = chainKey ? resolveLocalChainId(chainKey) : undefined;
+    if (wallet && chainId !== undefined) {
+      const existing = await missionResultsRepo.getResultForRun(context.missionRunId, wallet);
+      if (existing?.bankrollStartEth !== null && existing?.bankrollStartEth !== undefined) {
+        const run = await missionRunsRepo.getRun(context.missionRunId);
+        const endEth = run?.mode === "simulator"
+          ? existing.bankrollStartEth + await simLedgerRepo.sumRealizedPnlForRun(context.missionRunId)
+          : await (async (): Promise<number | null> => {
+            const onChain = await readEthBankrollOnChain(wallet, chainId);
+            const projection = await readEthBankroll(wallet, chainId);
+            return (onChain ?? projection)?.bankrollEth ?? null;
+          })();
+        const { pnlEth: resolvedPnlEth } = computePnl(existing.bankrollStartEth, endEth);
+        if (resolvedPnlEth !== null && resolvedPnlEth < 0) {
+          return fail("mission_stop rejected: goal_reached cannot be used while the mission bankroll is at a loss");
+        }
+      }
+    }
   }
 
   if (reason !== "goal_reached" && reason !== "emergency_stop") {
