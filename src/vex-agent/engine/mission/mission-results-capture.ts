@@ -20,8 +20,12 @@
 import { randomUUID } from "node:crypto";
 import { getMission, type Mission } from "../../db/repos/missions.js";
 import { getRun as getMissionRun } from "../../db/repos/mission-runs.js";
+import {
+  listSimPositionsForRun,
+  sumRealizedPnlForRun,
+} from "../../db/repos/sim-ledger.js";
 import { resolveLocalChainId } from "../../../tools/evm-chains/registry.js";
-import { readEthBankroll, readEthBankrollOnChain } from "./bankroll.js";
+import { readEthBankroll, readEthBankrollOnChain, type OpenPosition } from "./bankroll.js";
 import { countMissionTrades } from "./mission-metrics.js";
 import {
   openMissionResult,
@@ -45,6 +49,8 @@ export interface CaptureDeps {
   countTrades: typeof countMissionTrades;
   /** Reads the run's frozen mode so the ledger row can be badged simulator. */
   getRun: typeof getMissionRun;
+  listSimPositionsForRun: typeof listSimPositionsForRun;
+  sumRealizedPnlForRun: typeof sumRealizedPnlForRun;
 }
 
 // Built lazily (inside each function's try) rather than at module load: some
@@ -61,6 +67,8 @@ function productionDeps(): CaptureDeps {
     getResult: getResultForRun,
     countTrades: countMissionTrades,
     getRun: getMissionRun,
+    listSimPositionsForRun,
+    sumRealizedPnlForRun,
   };
 }
 
@@ -75,6 +83,45 @@ export function computePnl(
   return { pnlEth, pnlPct };
 }
 
+function asOpenPositions(value: unknown): OpenPosition[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((row): row is OpenPosition => (
+    typeof row === "object"
+      && row !== null
+      && typeof (row as Record<string, unknown>).address === "string"
+      && typeof (row as Record<string, unknown>).amount === "number"
+  ));
+}
+
+export function computeMissionOpenPositions(
+  startPositions: unknown,
+  currentPositions: readonly OpenPosition[] | null | undefined,
+): OpenPosition[] {
+  if (!Array.isArray(currentPositions) || currentPositions.length === 0) return [];
+  const startByAddress = new Map<string, OpenPosition>();
+  for (const position of asOpenPositions(startPositions)) {
+    startByAddress.set(position.address.toLowerCase(), position);
+  }
+
+  const attributed: OpenPosition[] = [];
+  for (const position of currentPositions) {
+    const start = startByAddress.get(position.address.toLowerCase());
+    const startAmount = start?.amount ?? 0;
+    const deltaAmount = position.amount - startAmount;
+    if (!(deltaAmount > 0)) continue;
+    const deltaValueUsd =
+      position.valueUsd === null || position.amount <= 0
+        ? position.valueUsd
+        : position.valueUsd * (deltaAmount / position.amount);
+    attributed.push({
+      ...position,
+      amount: deltaAmount,
+      valueUsd: deltaValueUsd,
+    });
+  }
+  return attributed;
+}
+
 /** The mission's primary wallet + resolved local chain id, or null if either is absent/unresolvable. */
 function resolveWalletChain(
   mission: Pick<Mission, "allowedWallets" | "allowedChains">,
@@ -85,6 +132,42 @@ function resolveWalletChain(
   const chainId = resolveLocalChainId(chainKey);
   if (chainId === undefined) return null;
   return { wallet, chainId };
+}
+
+function parseUsdStartingCapital(
+  mission: Pick<Mission, "capitalSourceJson">,
+): number | null {
+  const raw = (mission.capitalSourceJson as Record<string, unknown>)?.amount;
+  if (typeof raw !== "string") return null;
+  const match = raw.match(/([0-9]+(?:\.[0-9]+)?)/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function computeSimulatorStartBankrollEth(
+  mission: Pick<Mission, "capitalSourceJson">,
+  ethPriceUsd: number | null | undefined,
+): number | null {
+  if (ethPriceUsd === null || ethPriceUsd === undefined || !(ethPriceUsd > 0)) {
+    return null;
+  }
+  const usdAmount = parseUsdStartingCapital(mission);
+  if (usdAmount === null) return null;
+  return usdAmount / ethPriceUsd;
+}
+
+function simulatorOpenPositionsToLedgerRows(
+  positions: Awaited<ReturnType<typeof listSimPositionsForRun>>,
+): OpenPosition[] {
+  return positions
+    .filter((row) => row.status === "open" && row.qty > 0)
+    .map((row) => ({
+      symbol: row.tokenSymbol,
+      address: row.tokenAddress,
+      amount: row.qty,
+      valueUsd: null,
+    }));
 }
 
 /** Open the ledger row at run start (fail-soft). */
@@ -105,9 +188,16 @@ export async function captureMissionStart(
     // reports openPositions: []).
     const onChain = await deps.readBankrollOnChain(wc.wallet, wc.chainId);
     const projection = await deps.readBankroll(wc.wallet, wc.chainId);
-    const bankroll = onChain ?? projection;
-    // Badge the ledger row for a simulator run (fail-soft — default live).
     const run = await deps.getRun(args.runId);
+    const bankroll =
+      run?.mode === "simulator"
+        ? {
+            bankrollEth: computeSimulatorStartBankrollEth(
+              mission,
+              projection?.ethPriceUsd ?? onChain?.ethPriceUsd ?? null,
+            ),
+          }
+        : (onChain ?? projection);
     await deps.openResult({
       simulated: run?.mode === "simulator",
       id: `mres-${randomUUID()}`,
@@ -148,6 +238,7 @@ export async function captureMissionFinal(
     if (!wc) return;
     const existing = await deps.getResult(args.runId, wc.wallet);
     if (!existing) return; // never opened or not owned by this mission wallet -> nothing to close
+    const run = await deps.getRun(args.runId);
     // END bankroll from a LIVE on-chain read (the projection lags the trades
     // the mission just made and can report a false-zero PnL); fall back to
     // the projection if the RPC read fails. The projection is read regardless
@@ -155,8 +246,27 @@ export async function captureMissionFinal(
     // not carry.
     const onChain = await deps.readBankrollOnChain(wc.wallet, wc.chainId);
     const projection = await deps.readBankroll(wc.wallet, wc.chainId);
-    const endEth = (onChain ?? projection)?.bankrollEth ?? null;
+    const simulatorPositions =
+      run?.mode === "simulator" ? await deps.listSimPositionsForRun(args.runId) : [];
+    const simulatorRealizedPnl =
+      run?.mode === "simulator" ? await deps.sumRealizedPnlForRun(args.runId) : null;
+    const endEth =
+      run?.mode === "simulator"
+        ? (
+            existing.bankrollStartEth !== null
+            && simulatorRealizedPnl !== null
+          )
+            ? existing.bankrollStartEth + simulatorRealizedPnl
+            : null
+        : ((onChain ?? projection)?.bankrollEth ?? null);
     const { pnlEth, pnlPct } = computePnl(existing.bankrollStartEth, endEth);
+    const missionOpenPositions =
+      run?.mode === "simulator"
+        ? simulatorOpenPositionsToLedgerRows(simulatorPositions)
+        : computeMissionOpenPositions(
+            existing.startPositions,
+            projection?.openPositions ?? null,
+          );
     const trades = await deps.countTrades(
       args.sessionId,
       existing.startedAt,
@@ -175,7 +285,7 @@ export async function captureMissionFinal(
       losses: 0,
       rotations: 0,
       vetoes: 0,
-      openPositions: projection?.openPositions ?? null,
+      openPositions: missionOpenPositions,
     });
   } catch (err) {
     logger.warn("mission.results.capture_final_failed", {

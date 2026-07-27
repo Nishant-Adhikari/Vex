@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   computePnl,
+  computeMissionOpenPositions,
   captureMissionStart,
   captureMissionFinal,
   type CaptureDeps,
@@ -19,6 +20,7 @@ const MISSION = {
   goal: "grow ETH +8% in 60 min",
   allowedChains: ["robinhood"],
   allowedWallets: ["0x9ed25bdedceB28Adf9E3C7fCa34511e78e47C77f"],
+  capitalSourceJson: { amount: "$20 (paper)" },
 };
 
 function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
@@ -33,6 +35,8 @@ function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
     countTrades: vi.fn(async () => 3),
     // Default: a live run (mode 'live') → the ledger row is not badged simulator.
     getRun: vi.fn(async () => ({ mode: "live" }) as never),
+    listSimPositionsForRun: vi.fn(async () => []),
+    sumRealizedPnlForRun: vi.fn(async () => 0),
     ...over,
   };
 }
@@ -49,6 +53,15 @@ describe("computePnl", () => {
   });
   it("guards divide-by-zero when start is zero", () => {
     expect(computePnl(0, 0.01).pnlPct).toBeNull();
+  });
+});
+
+describe("computeMissionOpenPositions", () => {
+  it("excludes pre-existing wallet dust from the final open-position bag", () => {
+    expect(computeMissionOpenPositions(
+      [{ symbol: "WALLET", address: "0xaaa", amount: 10, valueUsd: 50 }],
+      [{ symbol: "WALLET", address: "0xaaa", amount: 10, valueUsd: 50 }],
+    )).toEqual([]);
   });
 });
 
@@ -69,11 +82,14 @@ describe("captureMissionStart", () => {
   });
 
   it("badges the ledger row simulated:true for a simulator run", async () => {
-    const d = deps({ getRun: vi.fn(async () => ({ mode: "simulator" }) as never) });
+    const d = deps({
+      getRun: vi.fn(async () => ({ mode: "simulator" }) as never),
+      readBankroll: vi.fn(async () => ({ bankrollEth: 999, ethPriceUsd: 2500, openPositions: [] })),
+    });
     await captureMissionStart({ missionId: "mission-1", runId: "run-1", sessionId: "s-1" }, d);
     expect(d.openResult).toHaveBeenCalledTimes(1);
     const arg = (d.openResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(arg).toMatchObject({ simulated: true });
+    expect(arg).toMatchObject({ simulated: true, bankrollStartEth: 20 / 2500 });
   });
 
   it("no-ops when the mission is missing (nothing to open)", async () => {
@@ -109,11 +125,18 @@ describe("captureMissionStart", () => {
 describe("captureMissionFinal", () => {
   it("closes with PnL vs the opened start bankroll, the trade count, and the raw stop_reason", async () => {
     const d = deps({
-      getResult: vi.fn(async () => ({ startedAt: "2026-07-12T18:00:00Z", bankrollStartEth: 0.01 } as never)),
+      getResult: vi.fn(async () => ({
+        startedAt: "2026-07-12T18:00:00Z",
+        bankrollStartEth: 0.01,
+        startPositions: [{ symbol: "WALLET", address: "0xdust", amount: 10, valueUsd: 5 }],
+      } as never)),
       readBankroll: vi.fn(async () => ({
         bankrollEth: 0.011,
         ethPriceUsd: 3100,
-        openPositions: [{ symbol: "NOXA", address: "0x", amount: 1, valueUsd: 5 }],
+        openPositions: [
+          { symbol: "WALLET", address: "0xdust", amount: 10, valueUsd: 5 },
+          { symbol: "NOXA", address: "0x", amount: 1, valueUsd: 5 },
+        ],
       })),
     });
     await captureMissionFinal(
@@ -130,6 +153,7 @@ describe("captureMissionFinal", () => {
     });
     expect(arg.pnlEth).toBeCloseTo(0.001, 9);
     expect(arg.openPositions).toHaveLength(1);
+    expect(arg.openPositions).toEqual([{ symbol: "NOXA", address: "0x", amount: 1, valueUsd: 5 }]);
   });
 
   it("closes a deadline_reached run with its raw stop_reason (presentation stays out of this module)", async () => {
@@ -143,6 +167,44 @@ describe("captureMissionFinal", () => {
     const arg = (d.closeResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(arg.outcome).toBe("failed");
     expect(arg.stopReason).toBe("deadline_reached");
+  });
+
+  it("computes simulator PnL from the shadow ledger instead of the live wallet", async () => {
+    const d = deps({
+      getRun: vi.fn(async () => ({ mode: "simulator" }) as never),
+      getResult: vi.fn(async () => ({
+        startedAt: "2026-07-12T18:00:00Z",
+        bankrollStartEth: 0.01,
+        startPositions: [],
+      } as never)),
+      listSimPositionsForRun: vi.fn(async () => ([
+        {
+          id: "pos-1",
+          missionRunId: "run-1",
+          sessionId: "s-1",
+          chain: "robinhood",
+          tokenAddress: "0xabc",
+          tokenSymbol: "ROAR",
+          qty: 1234,
+          costNative: 0.004,
+          realizedPnlNative: 0.002,
+          status: "open",
+        },
+      ])),
+      sumRealizedPnlForRun: vi.fn(async () => 0.002),
+      readBankrollOnChain: vi.fn(async () => ({ bankrollEth: 999, ethPriceUsd: 3100, openPositions: [] })),
+      readBankroll: vi.fn(async () => ({ bankrollEth: 999, ethPriceUsd: 3100, openPositions: [] })),
+    });
+    await captureMissionFinal(
+      { missionId: "mission-1", runId: "run-1", sessionId: "s-1", outcome: "completed", stopReason: "goal_reached" },
+      d,
+    );
+    const arg = (d.closeResult as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(arg.bankrollEndEth).toBeCloseTo(0.012, 9);
+    expect(arg.pnlEth).toBeCloseTo(0.002, 9);
+    expect(arg.openPositions).toEqual([
+      { symbol: "ROAR", address: "0xabc", amount: 1234, valueUsd: null },
+    ]);
   });
 
   it("no-ops when no ledger row was opened for the run", async () => {
