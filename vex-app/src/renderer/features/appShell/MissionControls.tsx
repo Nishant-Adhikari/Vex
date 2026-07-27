@@ -10,9 +10,27 @@
  *    (accent-hairline, S3) → mission.start.
  *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) → a
  *    "Renew mission" button → mission.renew (clones it into a fresh draft).
+ *  - NO ACTIVE RUN + a ready, unaccepted draft (the "MISSION READY" state) →
+ *    a full-width accent-OUTLINED "Review & accept contract" bar (vs the
+ *    solid Start key above) in the same slot, opening the mission dialog via
+ *    `uiStore.reviewModal` (owned/rendered by `MissionRail`, a sibling
+ *    component in the header cluster). Previously this state surfaced only
+ *    the passive notice below with no visible control — the shimmering
+ *    MISSION READY badge was the only path to the accept dialog. Reveal is
+ *    gated on `useIsChatSubmitting` settling so the bar can't flash open
+ *    mid-turn during a tool-call gap (the draft can flip to `ready` before
+ *    the turn's final text response); a cancelled/failed turn also settles
+ *    `chatSubmitting` back to false, so the bar can never wedge shut. Only
+ *    one next-step surface shows at a time: while reviewable-and-settled,
+ *    this bar REPLACES the standing notice below, never stacks with it.
  *  - NO ACTIVE RUN + a contract pending acceptance (any non-accepted-clean
- *    draft) → a standing muted-warn notice: on-chain actions are blocked by
- *    the runtime gate until the user accepts the contract and starts the run.
+ *    draft, still in setup or mid-turn) → a standing muted-warn notice:
+ *    on-chain actions are blocked by the runtime gate until the user accepts
+ *    the contract and starts the run.
+ *
+ * `useMissionLiveSync` is mounted here (event-driven + 30s-fallback refresh
+ * of the draft/diff queries) so a dropped `transcriptAppend` event can never
+ * strand the review bar invisible for a session the user never blurs.
  *
  * The render gate keys off `runtime` ALONE — never the draft. A started
  * mission flips its row past `ready` (commit-start → `running`; terminal on
@@ -38,12 +56,15 @@ import type {
   MissionRenewResult,
   MissionResultDto,
 } from "@shared/schemas/mission.js";
+import type { KeepAwakeState } from "@shared/schemas/preferences.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
+import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import {
   useEditMission,
   useMissionContinue,
   useMissionDiff,
   useMissionDraft,
+  useMissionLiveSync,
   useMissionRenew,
   useMissionRetry,
   useMissionSessionResult,
@@ -52,8 +73,16 @@ import {
   useRenewableMissionSource,
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
+import {
+  useKeepAwakeState,
+  usePreferences,
+  useSetKeepAwakeDuringMission,
+} from "../../lib/api/settings.js";
 import { cn } from "../../lib/utils.js";
+import { useUiStore } from "../../stores/uiStore.js";
+import { useSessionPlan } from "../../lib/api/sessions.js";
 import { MissionSummaryCard } from "./MissionSummaryCard.js";
+import { planMissing } from "./MissionRail.js";
 
 /**
  * Primary mission action (Start/Renew) — the landing's solid cobalt CTA:
@@ -62,6 +91,18 @@ import { MissionSummaryCard } from "./MissionSummaryCard.js";
  */
 const PRIMARY_KEY =
   "flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-contrast)] transition-colors hover:bg-[var(--vex-accent-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+
+/**
+ * Review-&-accept bar — the pre-accept counterpart of `PRIMARY_KEY`: an
+ * accent-OUTLINED full-width pill (vs. the solid commitment key above),
+ * reusing the same `--vex-accent-border-strong`/`--vex-accent-fill-8`/
+ * `--vex-accent-text` tokens the rest of the shell already uses for an
+ * "outlined, accent-toned" affordance (`PlanSwitch`, `ReasoningSwitch`), so
+ * it re-tints correctly across themes (incl. hypervexing) alongside the
+ * solid key.
+ */
+const REVIEW_KEY =
+  "flex h-10 w-full items-center justify-center gap-2 rounded-full border border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-12)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
 
 export interface MissionControlsProps {
   readonly sessionId: string;
@@ -143,6 +184,8 @@ function renewNoticeFor(r: Result<MissionRenewResult>): string | null {
       return `The source mission isn't finished yet (status ${r.data.runStatus}). Wait for it to finish first.`;
     case "session_has_active_run":
       return `A mission run is already active (status ${r.data.runStatus}). Stop it before renewing.`;
+    case "session_has_pending_draft":
+      return "A draft mission already exists for this session — accept or discard it before renewing again.";
     default:
       return assertNever(r.data);
   }
@@ -190,6 +233,13 @@ export function MissionControls({
   const draftQuery = useMissionDraft(sessionId);
   const draft = readDraft(draftQuery.data);
   const diffQuery = useMissionDiff(sessionId, draft?.missionId ?? null);
+  const planQuery = useSessionPlan(sessionId);
+  // Readiness requires a SUCCESSFUL plan read: while the query is pending or
+  // failed the plan state is UNKNOWN, and unknown must read as not-ready —
+  // collapsing it to null would make planMissing(null) vacuously false and
+  // let the review bar flash during loading or survive a plan.get failure.
+  const planKnown = planQuery.data?.ok === true;
+  const plan = planQuery.data?.ok === true ? planQuery.data.data : null;
   const renewableQuery = useRenewableMissionSource(sessionId);
   const sessionResultQuery = useMissionSessionResult(sessionId);
 
@@ -199,6 +249,13 @@ export function MissionControls({
   const edit = useEditMission();
   const stop = useMissionStop();
   const renew = useMissionRenew();
+
+  // Keep the draft/diff queries fresh (event-driven + 30s fallback poll) so
+  // the review bar below can never be stranded by a dropped transcript event.
+  useMissionLiveSync(sessionId);
+  // Turn-gate for the review bar's reveal — see the file header comment.
+  const chatSubmitting = useIsChatSubmitting(sessionId);
+  const setReviewModal = useUiStore((s) => s.setReviewModal);
 
   const [notice, setNotice] = useState<ControlNotice>(null);
 
@@ -234,6 +291,8 @@ export function MissionControls({
     stop.isPending ||
     renew.isPending;
   // Disable while a control is in flight OR one is already pending server-side.
+  // Used by the NO-ACTIVE-RUN keys (Start / Renew) only; the active-run
+  // toolbar below uses the lease-aware `controlsBusy` + a STOP-specific gate.
   const disabled = anyPending || runtime.pendingControlKind !== null;
 
   // ACTIVE RUN → status-gated toolbar (keys off runtime.status alone).
@@ -242,36 +301,67 @@ export function MissionControls({
     const canContinue = status === "paused_wake" || status === "paused_user";
     const canRecover = status === "paused_error";
     const canEdit = status !== "paused_approval";
+    // A pending control request only LOCKS the resume-class controls
+    // (Continue/Recover/Edit) while a live runner lease is actually observing
+    // it. A STALE pending control — `pendingControlKind` set but the lease has
+    // expired (`leaseActive=false`, the orphaned-run case) — must NOT lock
+    // Recover/Continue: those are exactly how the operator reclaims a run whose
+    // runner died mid-control. Gating them on a dead control would wedge the
+    // session with no way forward.
+    const pendingControlLock =
+      runtime.pendingControlKind !== null && runtime.leaseActive;
+    const controlsBusy = anyPending || pendingControlLock;
+    // STOP is the escape hatch — ALWAYS live except while its own request is in
+    // flight. It never gates on `pendingControlKind` (a stuck/orphaned control
+    // must never lock the user out of stopping) nor on other controls' pending
+    // state (so Stop stays clickable even mid-Recover/Continue).
+    const stopDisabled = stop.isPending;
     return (
-      <div
-        data-vex-area="mission-controls"
-        role="group"
-        aria-label="Mission controls"
-        className="mt-3 flex flex-wrap items-center gap-2"
-      >
-        <ControlButton
-          label="Continue"
-          disabled={disabled || !canContinue}
-          onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
-        />
-        <ControlButton
-          label="Recover"
-          disabled={disabled || !canRecover}
-          onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
-        />
-        <ControlButton
-          label="Edit"
-          disabled={disabled || !canEdit}
-          onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
-        />
-        <ControlButton
-          label="Stop"
-          tone="danger"
-          disabled={disabled}
-          onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
-        />
-        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
-      </div>
+      <>
+        {canRecover ? (
+          <MissionErrorAlert
+            stopReason={runtime.stopReason}
+            stopSummary={runtime.stopSummary}
+          />
+        ) : null}
+        {status === "running" ? <MissionRunningHeader /> : null}
+        <div
+          data-vex-area="mission-controls"
+          role="group"
+          aria-label="Mission controls"
+          className="mt-3 flex flex-wrap items-center gap-2"
+        >
+          <ControlButton
+            label="Continue"
+            hint="Resume a normally-paused run (wake timer or manual pause)."
+            disabled={controlsBusy || !canContinue}
+            onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
+          />
+          <ControlButton
+            label={recover.isPending ? "Recovering…" : "Recover"}
+            ariaLabel="Recover mission"
+            hint="Resume a run that paused after an error."
+            ariaBusy={recover.isPending}
+            disabled={controlsBusy || !canRecover}
+            onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
+          />
+          <ControlButton
+            label="Edit"
+            hint="Change the mission contract or goal."
+            disabled={controlsBusy || !canEdit}
+            onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
+          />
+          <ControlButton
+            label="Stop"
+            tone="danger"
+            hint="Halt the run, finalize it, and flatten open positions."
+            disabled={stopDisabled}
+            onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
+          />
+          {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+        </div>
+        <KeepAwakeToggle />
+      </>
     );
   }
 
@@ -310,10 +400,38 @@ export function MissionControls({
     );
   }
 
+  // Reviewable: a ready draft awaiting acceptance — the "MISSION READY" state.
+  // Gated on the turn settling (never on the draft/diff data alone) so the
+  // bar can't flash open mid-turn during a tool-call gap; a cancelled/failed
+  // turn also settles `chatSubmitting` back to false, so a stuck turn can
+  // never wedge the bar shut. When not yet settled (or not reviewable), fall
+  // through to the pre-existing affordances below unchanged — the standing
+  // notice already covers this state, so nothing regresses mid-turn.
+  // `planMissing` is MissionRail's exported readiness gate: with plan-mode on
+  // and no plan body, the rail says Preparing — the bar must agree, not lead.
+  const reviewable =
+    draft !== null && draft.status === "ready" && diff !== null && !diff.isAccepted &&
+    planKnown && !planMissing(plan);
+  if (reviewable && !chatSubmitting) {
+    return (
+      <div data-vex-area="mission-controls" className="mt-3">
+        <button
+          type="button"
+          onClick={() => setReviewModal("mission")}
+          aria-label="Review & accept contract"
+          className={REVIEW_KEY}
+        >
+          Review &amp; accept contract
+        </button>
+      </div>
+    );
+  }
+
   // No startable draft, but a terminal accepted mission exists → Renew clones it
   // into a fresh draft (the new contract must still be accepted before it runs,
   // so this is non-destructive and needs no confirm step).
   const renewSource = readRenewable(renewableQuery.data);
+  const summary = readFinalizedResult(sessionResultQuery.data);
   // `draft === null` guard mirrors MissionRail's load-bearing guard:
   // `getRenewableSourceForSession` keeps returning the OLD terminal accepted
   // mission even after `mission.renew` (or `edit`) inserts a fresh draft. Without
@@ -323,10 +441,6 @@ export function MissionControls({
   // acceptance-pending UI below (accept it, then Start).
   if (renewSource !== null && draft === null) {
     const previousMissionId = renewSource.missionId;
-    // A terminal accepted mission has a finalized ledger row — surface its
-    // structured summary (sourced from the ledger, not the agent's prose)
-    // above the Renew key.
-    const summary = readFinalizedResult(sessionResultQuery.data);
     return (
       <div data-vex-area="mission-controls" className="mt-3">
         {summary !== null ? (
@@ -347,6 +461,18 @@ export function MissionControls({
         >
           Renew mission
         </button>
+        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+      </div>
+    );
+  }
+
+  // Finalized mission with no renewable source (e.g. paper/simulator runs):
+  // still surface the full structured summary card. Renewability is a separate
+  // affordance, not the gate for seeing the mission's outcome.
+  if (summary !== null && draft === null) {
+    return (
+      <div data-vex-area="mission-controls" className="mt-3">
+        <MissionSummaryCard result={summary} sessionId={sessionId} />
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
       </div>
     );
@@ -384,23 +510,213 @@ function AcceptancePendingNotice(): JSX.Element {
   );
 }
 
+/**
+ * Standing paused_error alert (issue #42): while the recover-eligible pause
+ * persists, the mission is silently NOT monitoring the market or positions —
+ * that has to be visible, not inferred from an agent reply. Persistent,
+ * state-driven UI: no timers, no dismissal. If a recovery settles and the
+ * refetched runtime is still paused_error, this simply stays/reappears — the
+ * visible-failure signal the operator needs.
+ */
+function MissionErrorAlert({
+  stopReason,
+  stopSummary,
+}: {
+  readonly stopReason: string | null;
+  readonly stopSummary: string | null;
+}): JSX.Element {
+  const providerBlocked =
+    stopReason === "provider_error" &&
+    stopSummary !== null &&
+    /(?:status|code)=40[13]\b|unauthorized|forbidden|budget limit exceeded/i.test(
+      stopSummary,
+    );
+  // `provider_error` names the stop reason, not the cause — it covers both
+  // inference and runtime errors, so only the persisted summary can upgrade
+  // this into a more specific provider-blocked message.
+  const eyebrow = providerBlocked ? "Provider blocked" : "Mission paused — error";
+  const body = providerBlocked
+    ? "The mission could not continue because the model provider rejected the request."
+    : stopReason === "provider_error"
+      ? "The mission paused after an inference or runtime error."
+      : "The mission paused after an unexpected error.";
+  return (
+    <div
+      role="alert"
+      data-vex-area="mission-error-alert"
+      data-vex-state={providerBlocked ? "provider-blocked" : "paused-error"}
+      className="mb-2 w-full rounded-lg border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-3 py-2"
+    >
+      <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-destructive">
+        {eyebrow}
+      </p>
+      <p className="mt-1 text-xs text-destructive">{body}</p>
+      {stopSummary ? (
+        <p className="mt-1 break-words text-xs text-destructive/90">
+          {stopSummary}
+        </p>
+      ) : null}
+      <p className="mt-1 text-xs text-destructive">
+        The mission is not monitoring the market or your positions until you
+        recover it.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Live "RUNNING" marker for the mission-detail control header — a pulsing
+ * success dot + label so the operator can tell at a glance the run is in-flight
+ * (mirrors the SessionsList row pulse + the ActiveMissionsBar dot). Purely
+ * decorative status; the controls below carry the actions.
+ */
+function MissionRunningHeader(): JSX.Element {
+  return (
+    <div
+      data-vex-area="mission-running-header"
+      role="status"
+      className="mt-3 flex items-center gap-2"
+    >
+      <span
+        aria-hidden
+        className="vex-pulse-dot h-2 w-2 shrink-0 rounded-full bg-[var(--color-success)]"
+      />
+      <span className="font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--color-success)]">
+        Running
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Fork-only "keep running with the lid closed" toggle, surfaced with the
+ * active-run controls (so it only shows while a mission is running). Default ON
+ * (mirrors the persisted `ui.keepAwakeDuringMission` pref).
+ *
+ * Two stacked layers in main:
+ *   - `powerSaveBlocker` stops IDLE sleep; and
+ *   - a macOS clamshell override (`pmset disablesleep 1`, admin-authorized once)
+ *     that additionally keeps the mission running with the LID CLOSED.
+ *
+ * The live indicator below reflects the real worker state (`useKeepAwakeState`):
+ * "Lid-close is prevented" once the clamshell override is engaged, or a plain
+ * idle-only note if the user declined the admin prompt (we fall back to
+ * powerSaveBlocker-only rather than fail the mission) or off macOS.
+ */
+function KeepAwakeToggle(): JSX.Element | null {
+  const prefsQuery = usePreferences();
+  const setKeepAwake = useSetKeepAwakeDuringMission();
+  const prefs = prefsQuery.data?.ok === true ? prefsQuery.data.data : null;
+  // Until prefs load, mirror the persisted default (on) so the control never
+  // flashes an incorrect "off" state.
+  const enabled = prefs?.ui.keepAwakeDuringMission ?? true;
+  const controlId = "keep-awake-during-mission";
+
+  // Poll the live worker state only while the toggle is on (this component only
+  // renders during an active run, so on ⇒ clamshell is being attempted).
+  const stateQuery = useKeepAwakeState(enabled);
+  const state = stateQuery.data?.ok === true ? stateQuery.data.data : null;
+  const clamshell = state?.clamshell ?? null;
+
+  return (
+    <div
+      className="mt-3 flex items-start gap-2.5"
+      data-vex-area="keep-awake-toggle"
+    >
+      <input
+        id={controlId}
+        type="checkbox"
+        checked={enabled}
+        disabled={prefsQuery.data === undefined || setKeepAwake.isPending}
+        onChange={(e) => setKeepAwake.mutate(e.target.checked)}
+        aria-describedby={`${controlId}-caveat`}
+        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+      />
+      <label htmlFor={controlId} className="cursor-pointer select-none">
+        <span className="block text-xs font-medium text-[var(--vex-text-2)]">
+          Keep running with the lid closed
+        </span>
+        <span
+          id={`${controlId}-caveat`}
+          data-vex-state={keepAwakeCaveatState(enabled, clamshell)}
+          className="mt-0.5 block text-[11px] text-[var(--vex-text-3)]"
+        >
+          {keepAwakeCaveat(enabled, clamshell)}
+        </span>
+      </label>
+    </div>
+  );
+}
+
+type ClamshellState = KeepAwakeState["clamshell"];
+
+/** Stable data-attr for tests / debugging the indicator branch. */
+function keepAwakeCaveatState(
+  enabled: boolean,
+  clamshell: ClamshellState | null,
+): string {
+  if (!enabled) return "off";
+  if (clamshell === null) return "pending";
+  if (!clamshell.supported) return "idle-only-unsupported";
+  if (clamshell.adminDeclined) return "idle-only-declined";
+  if (clamshell.active) return "lid-close-active";
+  return "engaging";
+}
+
+/** Human-readable caveat mirroring the live clamshell override state. */
+function keepAwakeCaveat(
+  enabled: boolean,
+  clamshell: ClamshellState | null,
+): string {
+  if (!enabled) return "The Mac may sleep during the mission.";
+  if (clamshell === null || (!clamshell.active && !clamshell.adminDeclined)) {
+    return "Keeping the mission running — lid-close override starting…";
+  }
+  if (!clamshell.supported) {
+    return "Idle sleep is prevented. Lid-close override is macOS-only.";
+  }
+  if (clamshell.adminDeclined) {
+    return "Idle sleep is prevented, but you declined the admin prompt — closing the lid will still sleep the Mac.";
+  }
+  if (clamshell.active) {
+    return "Lid-close is prevented — the mission keeps running with the lid shut.";
+  }
+  return "Keeping the mission running — lid-close override starting…";
+}
+
 function ControlButton({
   label,
   onClick,
   disabled,
   tone,
+  ariaLabel,
+  ariaBusy,
+  hint,
 }: {
   readonly label: string;
   readonly onClick: () => void;
   readonly disabled: boolean;
   readonly tone?: "danger";
+  /** Overrides the derived `${label} mission` accessible name — used where
+   * the visible label changes (e.g. "Recovering…") but the accessible name
+   * must stay stable for assistive tech and tests. */
+  readonly ariaLabel?: string;
+  readonly ariaBusy?: boolean;
+  /** One-line what-this-does hint, surfaced as the native `title` tooltip and
+   * appended to the accessible description so it is not pointer-only. */
+  readonly hint?: string;
 }): JSX.Element {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      aria-label={`${label} mission`}
+      aria-label={ariaLabel ?? `${label} mission`}
+      aria-busy={ariaBusy}
+      // `title` carries the one-line hint as a native hover tooltip; it is also
+      // announced by common screen readers, so the hint is not pointer-only
+      // while the accessible NAME stays the stable `${label} mission`.
+      title={hint}
       className={cn(
         // Toolbar keys: quiet mono-uppercase hairline pills; Stop keeps the
         // destructive tone with the one sanctioned danger fill (/10).
