@@ -1,22 +1,20 @@
 /**
- * Dashboard — the operator's performance surface over the mission-results
- * ledger. Robinhood-shaped: a big cumulative-PnL headline (Σ each mission's own
- * ETH result) with a capital-weighted return and range-scoped stats, a stat
- * register (stake / win rate / best / worst), then the newest-first table.
+ * Mission History — a read-only AppShell sub-view (mission-results-ledger,
+ * WP-J). Per-wallet ledger of finalized mission runs: a summary register
+ * (total missions, win rate, cumulative ETH PnL) then one row per mission,
+ * newest first. Mirrors the MemoryPanel shell grammar (h-12 register header
+ * + back key, hairline-separated ledger, `--vex-*` ink) so it reads as one
+ * surface with the rest of the desk.
  *
- * It mirrors the MemoryPanel shell grammar (`vex-eyebrow` section labels,
- * mono filter pills, hairline-separated blocks, `--vex-*` ink) so it reads as
- * one surface with the rest of the desk. Arithmetic lives in the pure models:
- * `missionStatsModel.ts` (capital-weighted return, current stake) and
- * `missionHistoryModel.ts` (cumulative, win-rate, best/worst, formatting); this
- * file is presentation over already-derived values. ETH is the source of truth;
- * USD is a display-only aside, derived per-mission at each mission's own price
- * (a single price is never divided across missions). The view is deliberately
- * additive — new blocks (seed funding, open bags, fees) slot in as more
- * sections without reshaping this shell.
+ * The ledger is EVM/ETH-specific (bankroll = native ETH + WETH), so this
+ * reads the PRIMARY EVM wallet from the inventory — never every wallet.
+ *
+ * All arithmetic + formatting lives in `missionHistoryModel.ts`; this file
+ * is presentation over derived values. Naming: "mission result (ETH)" —
+ * never "performance".
  */
 
-import { useState, type JSX } from "react";
+import { useMemo, useState, type JSX } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
@@ -24,60 +22,159 @@ import type { Result } from "@shared/ipc/result.js";
 import type {
   MissionListResultsResult,
   MissionResultDto,
+  SimulatorBatchEntryDto,
+  SimulatorBatchReadResult,
 } from "@shared/schemas/mission.js";
-import type { PortfolioRange } from "@shared/schemas/portfolio.js";
-import { useUiStore } from "../../stores/uiStore.js";
-import { useMissionResults } from "../../lib/api/mission.js";
+import { useUiStore, type PnlCurrency } from "../../stores/uiStore.js";
 import {
-  usePortfolioScoped,
-  usePortfolioSeries,
-} from "../../lib/api/portfolio.js";
-import { useAvailableWallets } from "../../lib/api/session-wallets.js";
-import { formatPercentDelta, formatUsd } from "../../lib/format.js";
+  usePaperMissionResults,
+  useMissionResults,
+  useSimulatorLatestBatch,
+} from "../../lib/api/mission.js";
+import { useSessionsList } from "../../lib/api/sessions.js";
+import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
+import { formatPercentDelta } from "../../lib/format.js";
+import {
+  formatModelLabel,
+  formatModelStackLabel,
+} from "../../lib/model-label.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
-import { PortfolioChart } from "./PortfolioChart.js";
+import { OutcomeBadge } from "./OutcomeBadge.js";
+import { Button } from "../../components/ui/button.js";
 import {
   EM_DASH,
-  bestWorst,
   computeWinRate,
-  filterByRange,
+  deriveMissionHistoryTitle,
+  filterMissionResults,
+  formatCumulativePnl,
   formatDurationS,
-  formatEth,
-  pnlUsd,
+  formatPnl,
+  isUsdFallback,
+  extractStrategyTag,
+  summarizeByStrategy,
+  type MissionHistoryFilter,
+  missionDisplayOutcome,
   sumPnlEth,
-  type DashboardRange,
 } from "./missionHistoryModel.js";
-import {
-  capitalWeightedReturn,
-  currentStakeEth,
-} from "./missionStatsModel.js";
 
-const RANGES: readonly DashboardRange[] = ["1W", "1M", "3M", "ALL"];
-const RANGE_LABEL: Record<DashboardRange, string> = {
-  "1W": "past week",
-  "1M": "past month",
-  "3M": "past 3 months",
-  ALL: "all time",
-};
+function isProviderBlockedStopSummary(summary: string | null): boolean {
+  return (
+    summary !== null &&
+    /(?:status|code)=40[13]\b|unauthorized|forbidden|budget limit exceeded/i.test(
+      summary,
+    )
+  );
+}
 
-const PF_RANGES: readonly PortfolioRange[] = ["1D", "1W", "1M", "ALL"];
-const PF_RANGE_LABEL: Record<PortfolioRange, string> = {
-  "1D": "today",
-  "1W": "past week",
-  "1M": "past month",
-  ALL: "all time",
-};
+function describeBatchEntryStatus(entry: SimulatorBatchReadResult["entries"][number]): string {
+  if (isProviderBlockedStopSummary(entry.stopSummary)) return "provider blocked";
+  return entry.status;
+}
+
+function formatInferenceStamp(input: {
+  readonly inferenceModel: string | null;
+  readonly inferenceFallbackModel: string | null;
+}): { readonly inline: string; readonly title: string } | null {
+  if (input.inferenceModel === null) return null;
+  const inline = formatModelStackLabel({
+    primaryModelId: input.inferenceModel,
+    fallbackModelId: input.inferenceFallbackModel,
+  });
+  return {
+    inline: `model · ${inline ?? formatModelLabel(input.inferenceModel)}`,
+    title: `Primary model: ${input.inferenceModel}${
+      input.inferenceFallbackModel ? `\nFallback model: ${input.inferenceFallbackModel}` : ""
+    }`,
+  };
+}
 
 export function MissionHistory(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
-  const query = useMissionResults();
+  const pnlCurrency = useUiStore((s) => s.pnlCurrency);
+  const setPnlCurrency = useUiStore((s) => s.setPnlCurrency);
+  const [filter, setFilter] = useState<MissionHistoryFilter>("all");
+  const walletsQuery = useAvailableWallets();
+  const sessionsQuery = useSessionsList();
+  const primaryWallet =
+    walletsQuery.data && walletsQuery.data.ok ? (walletsQuery.data.data.evm[0] ?? null) : null;
+  const resultsQuery = useMissionResults(primaryWallet?.address ?? null);
+  const paperResultsQuery = usePaperMissionResults();
+  const simulatorBatchQuery = useSimulatorLatestBatch();
+  const headerInferenceBadge = useMemo(() => {
+    const liveResults = resultsQuery.data?.ok ? resultsQuery.data.data : [];
+    const liveSample =
+      liveResults.find((row) => row.inferenceModel !== null) ?? null;
+    if (liveSample !== null) {
+      const inline = formatModelStackLabel({
+        primaryModelId: liveSample.inferenceModel,
+        fallbackModelId: liveSample.inferenceFallbackModel,
+      });
+      return {
+        inline: inline ?? formatModelLabel(liveSample.inferenceModel),
+        title: `Primary model: ${liveSample.inferenceModel}${
+          liveSample.inferenceFallbackModel
+            ? `\nFallback model: ${liveSample.inferenceFallbackModel}`
+            : ""
+        }`,
+      };
+    }
+    const paperResults =
+      paperResultsQuery.data?.ok ? paperResultsQuery.data.data : [];
+    const paperSample =
+      paperResults.find((row) => row.inferenceModel !== null) ?? null;
+    if (paperSample !== null) {
+      const inline = formatModelStackLabel({
+        primaryModelId: paperSample.inferenceModel,
+        fallbackModelId: paperSample.inferenceFallbackModel,
+      });
+      return {
+        inline: inline ?? formatModelLabel(paperSample.inferenceModel),
+        title: `Primary model: ${paperSample.inferenceModel}${
+          paperSample.inferenceFallbackModel
+            ? `\nFallback model: ${paperSample.inferenceFallbackModel}`
+            : ""
+        }`,
+      };
+    }
+    const simulatorPayload =
+      simulatorBatchQuery.data?.ok ? simulatorBatchQuery.data.data : null;
+    const simulatorSample =
+      simulatorPayload?.entries.find((entry) => entry.inferenceModel !== null) ??
+      null;
+    if (simulatorSample === null || simulatorSample.inferenceModel === null) {
+      return null;
+    }
+    const inline = formatModelStackLabel({
+      primaryModelId: simulatorSample.inferenceModel,
+      fallbackModelId: simulatorSample.inferenceFallbackModel,
+    });
+    return {
+      inline: inline ?? formatModelLabel(simulatorSample.inferenceModel),
+      title: `Primary model: ${simulatorSample.inferenceModel}${
+        simulatorSample.inferenceFallbackModel
+          ? `\nFallback model: ${simulatorSample.inferenceFallbackModel}`
+          : ""
+      }`,
+    };
+  }, [resultsQuery.data, paperResultsQuery.data, simulatorBatchQuery.data]);
+  const titleBySession = useMemo(() => {
+    const map = new Map<string, string | null>();
+    if (sessionsQuery.data?.ok) {
+      for (const session of sessionsQuery.data.data) {
+        map.set(session.id, session.title);
+      }
+    }
+    return map;
+  }, [sessionsQuery.data]);
 
   return (
     <div
-      data-vex-screen="dashboard"
+      data-vex-screen="missionHistory"
       className="flex h-full min-h-0 flex-col text-foreground"
     >
+      {/* Register header — same h-12 datum + quiet back key as the Memory
+       * panel; the affordance is an icon, never a chrome pill. */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--vex-line)] px-6">
         <button
           type="button"
@@ -88,402 +185,501 @@ export function MissionHistory(): JSX.Element {
           <HugeiconsIcon icon={ArrowLeft01Icon} size={17} aria-hidden />
         </button>
         <h1 className="font-mono text-[13px] font-medium uppercase tracking-[0.3em] text-foreground">
-          Dashboard
+          Missions
         </h1>
+        {headerInferenceBadge ? (
+          <div
+            data-vex-area="missions-model-badge"
+            className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--vex-line-strong)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-2)]"
+            title={headerInferenceBadge.title}
+          >
+            <span className="text-[var(--vex-text-3)]">Model</span>
+            <span className="normal-case tracking-normal text-foreground">
+              {headerInferenceBadge.inline}
+            </span>
+          </div>
+        ) : null}
+        <MissionTypeFilter value={filter} onChange={setFilter} />
+        {/* Denomination toggle — a persisted display preference (uiStore),
+         * surfaced right where the PnL figures live rather than buried in the
+         * reconfigure wizard. Defaults to USD. */}
+        <PnlCurrencyToggle value={pnlCurrency} onChange={setPnlCurrency} />
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto flex w-full max-w-[820px] flex-col gap-8">
-          <Body query={query} />
+        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
+          {primaryWallet === null ? (
+            <Empty label="No wallet available — add a wallet to see mission history." />
+          ) : (
+            <Body
+              liveQuery={resultsQuery}
+              paperQuery={paperResultsQuery}
+              simulatorBatchQuery={simulatorBatchQuery}
+              currency={pnlCurrency}
+              filter={filter}
+              titleBySession={titleBySession}
+            />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
+/**
+ * Query-state fork: pending -> loading, thrown/transport error OR an
+ * `ok:false` Result envelope -> error, empty array -> friendly empty state,
+ * else the ledger.
+ */
 function Body({
-  query,
+  liveQuery,
+  paperQuery,
+  simulatorBatchQuery,
+  currency,
+  filter,
+  titleBySession,
 }: {
-  readonly query: UseQueryResult<Result<MissionListResultsResult>>;
+  readonly liveQuery: UseQueryResult<Result<MissionListResultsResult>>;
+  readonly paperQuery: UseQueryResult<Result<MissionListResultsResult>>;
+  readonly simulatorBatchQuery: UseQueryResult<Result<SimulatorBatchReadResult>>;
+  readonly currency: PnlCurrency;
+  readonly filter: MissionHistoryFilter;
+  readonly titleBySession: ReadonlyMap<string, string | null>;
 }): JSX.Element {
-  if (query.isPending) return <Loading label="Loading dashboard…" />;
-  if (query.isError) return <ErrorState message={query.error.message} />;
-  const res = query.data;
-  if (!res.ok) return <ErrorState message={res.error.message} />;
-  if (res.data.length === 0) {
-    return <Empty label="No missions yet — finish a mission to see it here." />;
+  if (liveQuery.isPending || paperQuery.isPending) {
+    return <Loading label="Loading missions…" />;
   }
-  return <Dashboard results={res.data} />;
-}
-
-function Dashboard({
-  results,
-}: {
-  readonly results: readonly MissionResultDto[];
-}): JSX.Element {
-  const [range, setRange] = useState<DashboardRange>("ALL");
-
-  // The current stake (deployed capital) is ALL-TIME — the LATEST mission's
-  // starting bankroll, not the sum of every mission's seed (which double-counts
-  // capital reused across missions). The headline PnL, capital-weighted return
-  // and stats below are scoped to the selected range.
-  const stakeEth = currentStakeEth(results);
-  // Best-known current ETH price, used ONLY to derive display-side USD for a
-  // mission that lacks its own snapshot price. ETH stays the source of truth;
-  // a single price is never divided across missions' ETH totals.
-  const fallbackPrice = latestEthPrice(results);
-  const stakeUsd =
-    stakeEth !== null && fallbackPrice !== null ? stakeEth * fallbackPrice : null;
-
-  const ranged = filterByRange(results, range, Date.now());
-  const rangedPnl = sumPnlEth(ranged);
-  const rangedPct = capitalWeightedReturn(ranged);
-  const rangedUsd = sumUsd(ranged, fallbackPrice);
-
-  const extremes = bestWorst(ranged);
-  const winRate = computeWinRate(ranged);
-  const totalTrades = ranged.reduce((n, r) => n + r.trades, 0);
-
+  if (liveQuery.isError) return <ErrorState message={liveQuery.error.message} />;
+  if (paperQuery.isError) return <ErrorState message={paperQuery.error.message} />;
+  const liveRes = liveQuery.data;
+  const paperRes = paperQuery.data;
+  if (!liveRes.ok) return <ErrorState message={liveRes.error.message} />;
+  if (!paperRes.ok) return <ErrorState message={paperRes.error.message} />;
+  const filtered =
+    filter === "paper"
+      ? paperRes.data
+      : filter === "live"
+        ? filterMissionResults(liveRes.data, "live")
+        : [...paperRes.data, ...filterMissionResults(liveRes.data, "live")];
+  const activePaperEntries = deriveVisiblePaperEntries({
+    results: paperRes.data,
+    simulatorBatchQuery,
+    filter,
+  });
+  const showPaperBatch = filter !== "live";
+  if (filtered.length === 0 && activePaperEntries.length === 0) {
+    return (
+      <>
+        {showPaperBatch ? (
+          <PaperBatchStatus query={simulatorBatchQuery} />
+        ) : null}
+        <Empty label="No missions yet — finish a mission to see it here." />
+      </>
+    );
+  }
   return (
     <>
-      {/* ── Portfolio equity curve (total value across all wallets) ── */}
-      <PortfolioSection />
-
-      {/* ── Mission performance ──────────────────────────────────── */}
-      <section className="flex flex-col gap-5 border-t border-[var(--vex-line)] pt-7">
-        <div>
-          <h2 className="vex-eyebrow">Mission performance</h2>
-          <p className="mt-1 text-xs text-[var(--vex-text-2)]">
-            Realized PnL the missions produced — each mission&apos;s own ETH
-            result, summed. The return is capital-weighted over the seeds put to
-            work. Scoped to the selected range.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          {/* ETH is the source of truth → it leads; USD is a derived aside. */}
-          <div className="flex items-baseline gap-3">
-            <span
-              className={cn(
-                "font-mono text-[34px] font-medium leading-none tabular-nums",
-                pnlTone(rangedPnl),
-              )}
-            >
-              {formatEth(rangedPnl, { signed: true })} ETH
-            </span>
-            {rangedUsd !== null ? (
-              <span className="font-mono text-sm tabular-nums text-[var(--vex-text-3)]">
-                {usdText(rangedUsd, { signed: true })}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
-            {rangedPct !== null ? (
-              <span className={pnlTone(rangedPnl)}>
-                {formatPercentDelta(rangedPct)}
-              </span>
-            ) : null}
-            <span className="text-[var(--vex-text-3)]">· {RANGE_LABEL[range]}</span>
-          </div>
-        </div>
-
-        {/* Range pills scope the delta + stats + table below. */}
-        <div className="flex flex-wrap items-center gap-2">
-          {RANGES.map((r) => (
-            <Pill key={r} active={range === r} onClick={() => setRange(r)}>
-              {r}
-            </Pill>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Stats ────────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-4 border-t border-[var(--vex-line)] pt-6">
-        <h2 className="vex-eyebrow">Mission stats</h2>
-        <div className="grid grid-cols-2 gap-x-10 gap-y-4 sm:grid-cols-3">
-          <Stat
-            label="Stake"
-            value={stakeEth === null ? EM_DASH : `${formatEth(stakeEth)} ETH`}
-            hint={stakeUsd === null ? undefined : `≈ ${formatUsd(stakeUsd)}`}
-          />
-          <Stat label="Missions" value={String(ranged.length)} />
-          <Stat
-            label="Win rate"
-            value={winRate === null ? EM_DASH : `${winRate.toFixed(0)}%`}
-          />
-          <Stat
-            label="Best"
-            value={
-              extremes === null
-                ? EM_DASH
-                : `${formatEth(extremes.best, { signed: true })} ETH`
-            }
-            tone={extremes === null ? undefined : pnlTone(extremes.best)}
-          />
-          <Stat
-            label="Worst"
-            value={
-              extremes === null
-                ? EM_DASH
-                : `${formatEth(extremes.worst, { signed: true })} ETH`
-            }
-            tone={extremes === null ? undefined : pnlTone(extremes.worst)}
-          />
-          <Stat label="Trades" value={String(totalTrades)} />
-        </div>
-      </section>
-
-      {/* ── Missions ledger ──────────────────────────────────────── */}
-      <section className="flex flex-col gap-4 border-t border-[var(--vex-line)] pt-6">
-        <h2 className="vex-eyebrow">Missions</h2>
-        {ranged.length === 0 ? (
-          <p className="text-xs text-[var(--vex-text-3)]">
-            No missions in the {RANGE_LABEL[range]}.
-          </p>
-        ) : (
-          <ResultsTable results={ranged} />
-        )}
-      </section>
+      {showPaperBatch ? (
+        <PaperBatchStatus query={simulatorBatchQuery} />
+      ) : null}
+      {activePaperEntries.length > 0 ? (
+        <ActivePaperMissionTable
+          entries={activePaperEntries}
+          titleBySession={titleBySession}
+        />
+      ) : null}
+      {filtered.length > 0 ? (
+        <Ledger results={filtered} currency={currency} titleBySession={titleBySession} />
+      ) : null}
     </>
   );
 }
 
-/**
- * Portfolio equity curve — total USD value over time, the Robinhood-shaped
- * headline. Defaults to the PRIMARY wallet (mirrors the BOOK Portfolio panel's
- * per-wallet filter): `null` override = Primary (first configured wallet),
- * `"__all__"` = every wallet, else a specific address. Both the live total and
- * the equity curve are scoped to the selection. Independent of the mission
- * range below — this is the money, not the missions.
- */
-function PortfolioSection(): JSX.Element {
-  const [range, setRange] = useState<PortfolioRange>("1D");
-
-  // Per-wallet filter: build the option list from the configured inventory and
-  // default to Primary (the first wallet). `selected` resolves the override.
-  const availableWallets = useAvailableWallets();
-  const walletOptions: readonly { readonly label: string; readonly address: string }[] =
-    availableWallets.data?.ok
-      ? [...availableWallets.data.data.evm, ...availableWallets.data.data.solana]
-      : [];
-  const primaryAddress = walletOptions[0]?.address ?? null;
-  const [override, setOverride] = useState<string | null>(null);
-  const selected = override ?? primaryAddress;
-  const isAll = override === "__all__";
-
-  // Live total: global when "All" (or no wallets configured), else wallet-scoped.
-  const portfolio = usePortfolioScoped(
-    isAll || selected === null
-      ? { scope: "global" }
-      : { scope: "wallet", walletAddress: selected },
+function deriveVisiblePaperEntries({
+  results,
+  simulatorBatchQuery,
+  filter,
+}: {
+  readonly results: readonly MissionResultDto[];
+  readonly simulatorBatchQuery: UseQueryResult<Result<SimulatorBatchReadResult>>;
+  readonly filter: MissionHistoryFilter;
+}): readonly SimulatorBatchEntryDto[] {
+  if (filter === "live") return [];
+  if (simulatorBatchQuery.isPending || simulatorBatchQuery.isError || !simulatorBatchQuery.data?.ok) {
+    return [];
+  }
+  const finalizedRunIds = new Set(results.map((result) => result.missionRunId));
+  return simulatorBatchQuery.data.data.entries.filter(
+    (entry) => entry.simulated && !finalizedRunIds.has(entry.missionRunId),
   );
-  // Curve: null wallet → global; else scoped to the selected wallet.
-  const series = usePortfolioSeries(range, isAll ? null : selected);
+}
 
-  const live = portfolio.data?.ok ? portfolio.data.data : null;
-  const seriesData = series.data?.ok ? series.data.data : null;
-  const points = seriesData?.points ?? [];
+function PaperBatchStatus({
+  query,
+}: {
+  readonly query: UseQueryResult<Result<SimulatorBatchReadResult>>;
+}): JSX.Element | null {
+  const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const setAppShellView = useUiStore((s) => s.setAppShellView);
 
-  const totalUsd = live?.liveTotalUsd ?? null;
-  const walletCount = live?.walletCount ?? null;
-
-  const first = points.length > 0 ? points[0]!.totalUsd : null;
-  const last = points.length > 0 ? points[points.length - 1]!.totalUsd : null;
-  const rawChange = first !== null && last !== null ? last - first : null;
-  const rawChangePct =
-    rawChange !== null && first !== null && first !== 0
-      ? (rawChange / first) * 100
+  if (query.isPending || query.isError || !query.data?.ok) return null;
+  const payload = query.data.data;
+  if (payload.batch === null || payload.entries.length === 0) return null;
+  const providerBlockedEntries = payload.entries.filter((entry) =>
+    isProviderBlockedStopSummary(entry.stopSummary),
+  );
+  const batchWideProviderBlock =
+    providerBlockedEntries.length > 0 &&
+    providerBlockedEntries.length === payload.entries.length;
+  const providerBlockSummary =
+    batchWideProviderBlock
+      ? providerBlockedEntries[0]?.stopSummary ?? null
       : null;
-  // Prefer the FLOW-ADJUSTED (TWR) figures from the series DTO: they neutralise
-  // deposits/withdrawals so pulling cash out isn't shown as a loss (the EVM-3
-  // bug). Fall back to the raw curve delta when they're absent (< 2 points or
-  // an older payload).
-  const change = seriesData?.flowAdjustedChangeUsd ?? rawChange;
-  const changePct = seriesData?.changePctTwr ?? rawChangePct;
 
-  const seriesFailed =
-    series.isError || (series.data !== undefined && !series.data.ok);
+  const openSession = (sessionId: string): void => {
+    setActiveSessionId(sessionId);
+    setAppShellView("session");
+  };
 
   return (
-    <section className="flex flex-col gap-5">
-      <div>
-        <h2 className="vex-eyebrow">Portfolio</h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
-          {isAll
-            ? "Total value across all your wallets, live from on-chain balances."
-            : "Live from on-chain balances for the selected wallet."}
-        </p>
-      </div>
-
-      {walletOptions.length > 1 ? (
-        <WalletFilter
-          options={walletOptions}
-          active={override}
-          onSelect={setOverride}
-        />
-      ) : null}
-
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono text-[34px] font-medium leading-none tabular-nums text-foreground">
-            {totalUsd === null ? EM_DASH : formatUsd(totalUsd)}
-          </span>
-          {walletCount !== null ? (
-            <span className="font-mono text-sm text-[var(--vex-text-3)]">
-              {walletCount} wallet{walletCount === 1 ? "" : "s"}
-            </span>
+    <section className="rounded-[12px] border border-[var(--vex-line)] bg-white/[0.02] p-4">
+      {batchWideProviderBlock ? (
+        <div className="mb-3 rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-red-200">
+            Provider blocked
+          </div>
+          <div className="mt-1 text-sm text-red-100">
+            {providerBlockedEntries.length}/{payload.entries.length} paper runs halted before strategy evaluation.
+          </div>
+          <div className="mt-1 text-[11px] text-red-200/90">
+            This batch should not be treated as strategy signal.
+          </div>
+          {providerBlockSummary ? (
+            <div className="mt-1 break-words text-[11px] text-red-200/80">
+              {providerBlockSummary}
+            </div>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
-          {change === null ? (
-            <span className="text-[var(--vex-text-3)]">No change yet</span>
-          ) : (
-            // Portfolio never shows red: green on a gain, neutral on a dip (so a
-            // loss still isn't dressed up as green).
-            <>
-              <span className={pfDeltaTone(change)}>
-                {change >= 0 ? "+" : "-"}
-                {formatUsd(Math.abs(change))}
-              </span>
-              {changePct !== null ? (
-                <span className={pfDeltaTone(change)}>
-                  ({formatPercentDelta(changePct)})
-                </span>
-              ) : null}
-            </>
-          )}
-          <span className="text-[var(--vex-text-3)]">
-            · {PF_RANGE_LABEL[range]}
-          </span>
+      ) : null}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+            Latest paper batch
+          </div>
+          <div className="mt-1 text-sm text-foreground">
+            {payload.batch.completedCount}/{payload.batch.launchedCount} complete
+          </div>
+        </div>
+        <div className="text-right text-[11px] text-[var(--vex-text-2)]">
+          <div>{payload.batch.id}</div>
+          <div>
+            Leader:{" "}
+            {payload.leaderStrategyId
+              ? (payload.strategies.find((strategy) => strategy.id === payload.leaderStrategyId)
+                  ?.name ?? "Unknown")
+              : "Current baseline"}
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {PF_RANGES.map((r) => (
-          <Pill key={r} active={range === r} onClick={() => setRange(r)}>
-            {r}
-          </Pill>
+      <div className="space-y-2">
+        {payload.entries.map((entry) => (
+          (() => {
+            const stamp = formatInferenceStamp(entry);
+            return (
+          <div
+            key={entry.missionRunId}
+            className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--vex-line)] px-3 py-2"
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-foreground">{entry.strategyName}</span>
+                <span
+                  className={cn(
+                    "font-mono text-[10px] uppercase tracking-[0.12em]",
+                    isProviderBlockedStopSummary(entry.stopSummary)
+                      ? "text-red-200"
+                      : "text-[var(--vex-text-3)]",
+                  )}
+                >
+                  {describeBatchEntryStatus(entry)}
+                </span>
+              </div>
+              <div className="text-[11px] text-[var(--vex-text-2)]">{entry.shortRule}</div>
+              {stamp ? (
+                <div
+                  className="truncate font-mono text-[10px] text-[var(--vex-text-3)]"
+                  title={stamp.title}
+                >
+                  {stamp.inline}
+                </div>
+              ) : null}
+              {entry.stopSummary ? (
+                <div className="mt-1 break-words text-[11px] text-[var(--vex-text-3)]">
+                  {entry.stopSummary}
+                </div>
+              ) : null}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openSession(entry.sessionId)}
+              className="h-8 shrink-0 rounded-[6px] border border-[var(--vex-line-strong)] px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-2)] hover:text-foreground"
+            >
+              Open
+            </Button>
+          </div>
+            );
+          })()
         ))}
       </div>
+    </section>
+  );
+}
 
-      {seriesFailed ? (
-        <div className="flex h-[200px] items-center justify-center rounded-[6px] border border-dashed border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
-          Couldn&apos;t load the value history.
+function Ledger({
+  results,
+  currency,
+  titleBySession,
+}: {
+  readonly results: readonly MissionResultDto[];
+  readonly currency: PnlCurrency;
+  readonly titleBySession: ReadonlyMap<string, string | null>;
+}): JSX.Element {
+  const winRate = computeWinRate(results);
+
+  return (
+    <>
+      <SummaryHeader total={results.length} winRate={winRate} results={results} currency={currency} />
+      <StrategySummary results={results} />
+      <ResultsTable results={results} currency={currency} titleBySession={titleBySession} />
+    </>
+  );
+}
+
+function ActivePaperMissionTable({
+  entries,
+  titleBySession,
+}: {
+  readonly entries: readonly SimulatorBatchEntryDto[];
+  readonly titleBySession: ReadonlyMap<string, string | null>;
+}): JSX.Element {
+  return (
+    <section className="border-b border-[var(--vex-line)] pb-6">
+      <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+        Active paper missions
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-[var(--vex-line)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
+              <Th>#</Th>
+              <Th>Mission</Th>
+              <Th>Strategy</Th>
+              <Th>Outcome</Th>
+              <Th align="right">Duration</Th>
+              <Th align="right">Trades</Th>
+              <Th align="right">PnL (USD)</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <ActivePaperRow
+                key={entry.missionRunId}
+                entry={entry}
+                sessionTitle={titleBySession.get(entry.sessionId) ?? null}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ActivePaperRow({
+  entry,
+  sessionTitle,
+}: {
+  readonly entry: SimulatorBatchEntryDto;
+  readonly sessionTitle: string | null;
+}): JSX.Element {
+  const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const setAppShellView = useUiStore((s) => s.setAppShellView);
+  const open = (): void => {
+    setActiveSessionId(entry.sessionId);
+    setAppShellView("session");
+  };
+  const missionTitle = sessionTitle?.trim() || "Paper Mission";
+  const inferenceStamp = formatInferenceStamp(entry);
+
+  return (
+    <tr
+      role="button"
+      tabIndex={0}
+      aria-label={`Open paper mission — ${missionTitle}`}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
+      className="cursor-pointer border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-inset"
+    >
+      <td className="py-2.5 pr-3 font-mono tabular-nums text-[var(--vex-text-3)]">{EM_DASH}</td>
+      <td className="max-w-[220px] truncate py-2.5 pr-3 text-foreground">
+        <span
+          className="mr-1.5 rounded-[3px] border border-[var(--vex-accent)]/40 px-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--vex-accent)]"
+          title="Simulator run — paper-traded, no real transactions"
+        >
+          SIM
+        </span>
+        <div className="min-w-0">
+          <div className="truncate font-medium" title={missionTitle}>
+            {missionTitle}
+          </div>
+          <div className="truncate text-[11px] text-[var(--vex-text-3)]" title={entry.shortRule}>
+            {entry.shortRule}
+          </div>
+          {inferenceStamp ? (
+            <div
+              className="truncate font-mono text-[10px] text-[var(--vex-text-3)]"
+              title={inferenceStamp.title}
+            >
+              {inferenceStamp.inline}
+            </div>
+          ) : null}
         </div>
-      ) : (
-        <PortfolioChart points={points} />
-      )}
+      </td>
+      <td className="py-2.5 pr-3">
+        <span className="rounded-[4px] border border-[var(--vex-line-strong)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--vex-text-2)]">
+          {entry.strategyName}
+        </span>
+      </td>
+      <td className="py-2.5 pr-3">
+        <OutcomeBadge outcome="running" />
+      </td>
+      <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-3)]">
+        {EM_DASH}
+      </td>
+      <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
+        {entry.trades ?? 0}
+      </td>
+      <td className="py-2.5 text-right font-mono tabular-nums text-[var(--vex-text-3)]">
+        {EM_DASH}
+      </td>
+    </tr>
+  );
+}
+
+function MissionTypeFilter({
+  value,
+  onChange,
+}: {
+  readonly value: MissionHistoryFilter;
+  readonly onChange: (next: MissionHistoryFilter) => void;
+}): JSX.Element {
+  const options: readonly { value: MissionHistoryFilter; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "live", label: "Live" },
+    { value: "paper", label: "Paper" },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Mission type"
+      className="ml-auto flex items-center gap-0.5 rounded-[6px] border border-[var(--vex-line)] p-0.5"
+    >
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "rounded-[4px] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+              active
+                ? "bg-[var(--vex-accent-fill-12)] text-foreground"
+                : "text-[var(--vex-text-3)] hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SummaryHeader({
+  total,
+  winRate,
+  results,
+  currency,
+}: {
+  readonly total: number;
+  readonly winRate: number | null;
+  readonly results: readonly MissionResultDto[];
+  readonly currency: PnlCurrency;
+}): JSX.Element {
+  // Sign (and therefore colour) is denomination-independent — a positive ETH
+  // PnL is a positive USD PnL — so tone tracks the ETH total either way.
+  const cumulativeEth = sumPnlEth(results);
+  return (
+    <section className="flex flex-wrap items-end gap-x-10 gap-y-4 border-b border-[var(--vex-line)] pb-6">
+      <Stat label="Missions" value={String(total)} />
+      <Stat label="Win rate" value={winRate === null ? EM_DASH : `${winRate.toFixed(0)}%`} />
+      <Stat
+        label="Cumulative PnL"
+        value={formatCumulativePnl(results, currency)}
+        tone={pnlTone(cumulativeEth)}
+      />
     </section>
   );
 }
 
 /**
- * Per-wallet pill row for the Portfolio section: "All" + one pill per configured
- * wallet. `active` is the raw override state — `null` means the default (Primary,
- * i.e. the first wallet), so the Primary pill carries `value: null` and matches.
- * Mirrors the BOOK Portfolio panel's `WalletFilter`.
+ * ETH | USD segmented control — a two-button `radiogroup`. Persisted preference
+ * (uiStore); flipping it re-denominates the cumulative + per-row PnL in place.
  */
-function WalletFilter({
-  options,
-  active,
-  onSelect,
+function PnlCurrencyToggle({
+  value,
+  onChange,
 }: {
-  readonly options: readonly { readonly label: string; readonly address: string }[];
-  readonly active: string | null;
-  readonly onSelect: (value: string | null) => void;
-}): JSX.Element {
-  const items: {
-    readonly key: string;
-    readonly label: string;
-    readonly value: string | null;
-  }[] = [
-    { key: "__all__", label: "All", value: "__all__" },
-    ...options.map((wallet, index) => ({
-      key: wallet.address,
-      label: wallet.label,
-      value: index === 0 ? null : wallet.address,
-    })),
-  ];
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {items.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          onClick={() => onSelect(item.value)}
-          className={cn(
-            "rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)]",
-            item.value === active
-              ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-              : "text-[var(--vex-text-3)] hover:bg-white/[0.04] hover:text-foreground",
-          )}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Latest closing ETH price (newest-first input → first finite `ethPriceUsdEnd`). */
-function latestEthPrice(results: readonly MissionResultDto[]): number | null {
-  for (const r of results) {
-    if (r.ethPriceUsdEnd !== null && Number.isFinite(r.ethPriceUsdEnd)) {
-      return r.ethPriceUsdEnd;
-    }
-    if (r.ethPriceUsdStart !== null && Number.isFinite(r.ethPriceUsdStart)) {
-      return r.ethPriceUsdStart;
-    }
-  }
-  return null;
-}
-
-/**
- * Sum of per-mission USD PnL, each valued at its OWN close price when present,
- * else the `fallbackPrice` (best-known current ETH price). A single price is
- * never divided across missions' ETH — this is display-only derivation over
- * the native per-mission ETH pnl. `null` when nothing is computable.
- */
-function sumUsd(
-  results: readonly MissionResultDto[],
-  fallbackPrice: number | null,
-): number | null {
-  let sum = 0;
-  let seen = false;
-  for (const r of results) {
-    const price = r.ethPriceUsdEnd ?? r.ethPriceUsdStart ?? fallbackPrice;
-    const usd = pnlUsd(r.pnlEth, price);
-    if (usd !== null) {
-      sum += usd;
-      seen = true;
-    }
-  }
-  return seen ? sum : null;
-}
-
-function Pill({
-  active,
-  onClick,
-  children,
-}: {
-  readonly active: boolean;
-  readonly onClick: () => void;
-  readonly children: string;
+  readonly value: PnlCurrency;
+  readonly onChange: (next: PnlCurrency) => void;
 }): JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      data-active={active}
-      className={cn(
-        "rounded-[3px] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-        active
-          ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-          : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground",
-      )}
+    <div
+      role="radiogroup"
+      aria-label="PnL denomination"
+      className="ml-auto flex items-center gap-0.5 rounded-[6px] border border-[var(--vex-line)] p-0.5"
     >
-      {children}
-    </button>
+      {(["usd", "eth"] as const).map((option) => {
+        const active = value === option;
+        return (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(option)}
+            className={cn(
+              "rounded-[4px] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+              active
+                ? "bg-[var(--vex-accent-fill-12)] text-foreground"
+                : "text-[var(--vex-text-3)] hover:text-foreground",
+            )}
+          >
+            {option === "usd" ? "USD" : "ETH"}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -491,13 +687,10 @@ function Stat({
   label,
   value,
   tone,
-  hint,
 }: {
   readonly label: string;
   readonly value: string;
   readonly tone?: string;
-  /** Optional derived USD aside, shown muted under the ETH-first value. */
-  readonly hint?: string;
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
@@ -507,19 +700,18 @@ function Stat({
       <span className={cn("font-mono text-lg tabular-nums", tone ?? "text-foreground")}>
         {value}
       </span>
-      {hint !== undefined ? (
-        <span className="font-mono text-[11px] tabular-nums text-[var(--vex-text-3)]">
-          {hint}
-        </span>
-      ) : null}
     </div>
   );
 }
 
 function ResultsTable({
   results,
+  currency,
+  titleBySession,
 }: {
   readonly results: readonly MissionResultDto[];
+  readonly currency: PnlCurrency;
+  readonly titleBySession: ReadonlyMap<string, string | null>;
 }): JSX.Element {
   return (
     <div className="overflow-x-auto">
@@ -527,16 +719,22 @@ function ResultsTable({
         <thead>
           <tr className="border-b border-[var(--vex-line)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
             <Th>#</Th>
-            <Th>Goal</Th>
+            <Th>Mission</Th>
+            <Th>Strategy</Th>
             <Th>Outcome</Th>
             <Th align="right">Duration</Th>
             <Th align="right">Trades</Th>
-            <Th align="right">PnL</Th>
+            <Th align="right">{currency === "usd" ? "PnL (USD)" : "PnL (ETH)"}</Th>
           </tr>
         </thead>
         <tbody>
           {results.map((r) => (
-            <ResultRow key={r.missionRunId} result={r} />
+            <ResultRow
+              key={r.missionRunId}
+              result={r}
+              currency={currency}
+              sessionTitle={titleBySession.get(r.sessionId) ?? null}
+            />
           ))}
         </tbody>
       </table>
@@ -546,28 +744,102 @@ function ResultsTable({
 
 function ResultRow({
   result,
+  currency,
+  sessionTitle,
 }: {
   readonly result: MissionResultDto;
+  readonly currency: PnlCurrency;
+  readonly sessionTitle: string | null;
 }): JSX.Element {
-  const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  // USD leads; the ETH figure moves to the hover title.
-  const pnlTitle =
-    result.pnlEth === null
+  // FAIL-SOFT: USD selected but this run has no captured close price -> the
+  // cell shows ETH; a title explains why so the mixed unit isn't a surprise.
+  const fellBack = isUsdFallback(currency, result.pnlEth, result.ethPriceUsdEnd);
+  const pnlTitle = fellBack ? "No close price recorded — showing ETH" : undefined;
+
+  // The row is a link into its mission's session: opening the session mounts
+  // MissionControls, whose finalized-result branch renders MissionSummaryCard
+  // (the retrospective/lessons + trade rationale generate lazily on mount).
+  // Mirrors the sidebar (SessionsList.handleSelect) and the Active Missions bar:
+  // set the active session, then force the panel back to the session view.
+  const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const setAppShellView = useUiStore((s) => s.setAppShellView);
+  const open = (): void => {
+    setActiveSessionId(result.sessionId);
+    setAppShellView("session");
+  };
+  const missionTitle = deriveMissionHistoryTitle(result, sessionTitle);
+  const strategyTag = extractStrategyTag(result.goalSnippet);
+  const inferenceTitle =
+    result.inferenceModel === null
       ? undefined
-      : `${formatEth(result.pnlEth, { signed: true })} ETH at close`;
+      : `Primary model: ${result.inferenceModel}${
+          result.inferenceFallbackModel
+            ? `\nFallback model: ${result.inferenceFallbackModel}`
+            : ""
+        }`;
 
   return (
-    <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
+    <tr
+      role="button"
+      tabIndex={0}
+      aria-label={`Open mission #${result.seqNo}${
+        result.goalSnippet ? ` — ${result.goalSnippet}` : ""
+      }`}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
+      className="cursor-pointer border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-inset"
+    >
       <td className="py-2.5 pr-3 font-mono tabular-nums text-[var(--vex-text-2)]">
         #{result.seqNo}
       </td>
       <td className="max-w-[220px] truncate py-2.5 pr-3 text-foreground">
-        <span title={result.goalSnippet ?? undefined}>
-          {result.goalSnippet ?? EM_DASH}
-        </span>
+        {result.simulated ? (
+          <span
+            className="mr-1.5 rounded-[3px] border border-[var(--vex-accent)]/40 px-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--vex-accent)]"
+            title="Simulator run — paper-traded, no real transactions"
+          >
+            SIM
+          </span>
+        ) : null}
+        <div className="min-w-0">
+          <div className="truncate font-medium" title={missionTitle}>
+            {missionTitle}
+          </div>
+          <div
+            className="truncate text-[11px] text-[var(--vex-text-3)]"
+            title={result.goalSnippet ?? undefined}
+          >
+            {result.goalSnippet ?? EM_DASH}
+          </div>
+          {result.inferenceModel ? (
+            <div
+              className="truncate font-mono text-[10px] text-[var(--vex-text-3)]"
+              title={inferenceTitle}
+            >
+              {formatInferenceStamp({
+                inferenceModel: result.inferenceModel,
+                inferenceFallbackModel: result.inferenceFallbackModel,
+              })?.inline ?? `model · ${formatModelLabel(result.inferenceModel)}`}
+            </div>
+          ) : null}
+        </div>
       </td>
       <td className="py-2.5 pr-3">
-        <OutcomeBadge outcome={result.outcome} />
+        {strategyTag ? (
+          <span className="rounded-[4px] border border-[var(--vex-line-strong)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--vex-text-2)]">
+            {strategyTag}
+          </span>
+        ) : (
+          <span className="text-[var(--vex-text-3)]">{EM_DASH}</span>
+        )}
+      </td>
+      <td className="py-2.5 pr-3">
+        <OutcomeBadge outcome={missionDisplayOutcome(result)} />
       </td>
       <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
         {formatDurationS(result.durationS)}
@@ -576,13 +848,8 @@ function ResultRow({
         {result.trades}
       </td>
       <td className="py-2.5 text-right">
-        <span
-          title={pnlTitle}
-          className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}
-        >
-          {usd === null
-            ? `${formatEth(result.pnlEth, { signed: true })} ETH`
-            : usdText(usd, { signed: true })}
+        <span title={pnlTitle} className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}>
+          {formatPnl(result.pnlEth, currency, result.ethPriceUsdEnd)}
         </span>
         {result.pnlPct !== null ? (
           <span className="ml-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
@@ -594,31 +861,6 @@ function ResultRow({
   );
 }
 
-/** Outcome → small colour-toned stamp. `completed` = success, `failed` =
- * destructive, `timed_out` = warning, `running` = accent, the rest muted. */
-function OutcomeBadge({ outcome }: { readonly outcome: string }): JSX.Element {
-  const tone =
-    outcome === "completed"
-      ? "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-[var(--color-success)]"
-      : outcome === "failed"
-        ? "border-destructive/40 text-destructive"
-        : outcome === "timed_out"
-          ? "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-[var(--color-warning)]"
-          : outcome === "running"
-            ? "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)]"
-            : "border-[var(--vex-line)] text-[var(--vex-text-2)]";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em]",
-        tone,
-      )}
-    >
-      {outcome.replace(/_/g, " ")}
-    </span>
-  );
-}
-
 function Th({
   children,
   align,
@@ -627,18 +869,13 @@ function Th({
   readonly align?: "right";
 }): JSX.Element {
   return (
-    <th
-      className={cn(
-        "py-2 pr-3 font-normal",
-        align === "right" ? "text-right" : "text-left",
-      )}
-    >
+    <th className={cn("py-2 pr-3 font-normal", align === "right" ? "text-right" : "text-left")}>
       {children}
     </th>
   );
 }
 
-/** Sign → PnL colour class: positive success, negative destructive, flat muted. */
+/** Sign -> PnL colour class: positive success, negative destructive, flat/unknown muted. */
 function pnlTone(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "text-[var(--vex-text-3)]";
   if (value > 0) return "text-[var(--color-success)]";
@@ -646,20 +883,61 @@ function pnlTone(value: number | null): string {
   return "text-[var(--vex-text-2)]";
 }
 
-/**
- * Portfolio delta colour — never red. Green on a gain (or flat); a dip stays
- * neutral-muted rather than green, so a loss isn't mislabelled as a gain.
- */
-function pfDeltaTone(change: number): string {
-  return change >= 0 ? "text-[var(--color-success)]" : "text-[var(--vex-text-2)]";
-}
-
-/** USD display — the primary unit everywhere. `signed` prefixes +/- for deltas. */
-function usdText(
-  usd: number | null | undefined,
-  opts: { readonly signed?: boolean } = {},
-): string {
-  if (usd === null || usd === undefined || !Number.isFinite(usd)) return EM_DASH;
-  if (!opts.signed) return formatUsd(usd);
-  return `${usd >= 0 ? "+" : "-"}${formatUsd(Math.abs(usd))}`;
+function StrategySummary({
+  results,
+}: {
+  readonly results: readonly MissionResultDto[];
+}): JSX.Element | null {
+  const stats = summarizeByStrategy(results);
+  if (stats.length === 0) return null;
+  return (
+    <section className="border-b border-[var(--vex-line)] pb-6">
+      <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+        By strategy
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-[var(--vex-line)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
+              <Th>Strategy</Th>
+              <Th align="right">Runs</Th>
+              <Th align="right">Win rate</Th>
+              <Th align="right">Avg PnL (ETH)</Th>
+              <Th align="right">Flat close</Th>
+              <Th align="right">Deadline flatten</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((stat) => (
+              <tr key={stat.tag} className="border-b border-[var(--vex-line)] last:border-b-0">
+                <td className="py-2.5 pr-3 font-mono text-[11px] uppercase tracking-[0.08em] text-foreground">
+                  {stat.tag}
+                </td>
+                <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
+                  {stat.runs}
+                </td>
+                <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
+                  {stat.winRate === null ? EM_DASH : `${stat.winRate.toFixed(0)}%`}
+                </td>
+                <td className={cn("py-2.5 text-right font-mono tabular-nums", pnlTone(stat.avgPnlEth))}>
+                  {stat.avgPnlEth === null ? EM_DASH : `${stat.avgPnlEth > 0 ? "+" : ""}${stat.avgPnlEth.toFixed(4)} ETH`}
+                </td>
+                <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
+                  {stat.flatCloseRate === null ? EM_DASH : `${stat.flatCloseRate.toFixed(0)}%`}
+                </td>
+                <td className="py-2.5 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
+                  {stat.deadlineFlattenRate === null
+                    ? EM_DASH
+                    : `${stat.deadlineFlattenRate.toFixed(0)}%`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] text-[var(--vex-text-3)]">
+        Clean-exit rate and initials-at-2x are not shown yet because the mission ledger does not persist those events explicitly. Flat close and deadline flatten are factual end-state metrics from stored mission data.
+      </p>
+    </section>
+  );
 }

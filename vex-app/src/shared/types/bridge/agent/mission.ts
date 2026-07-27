@@ -10,10 +10,22 @@ import type {
   MissionGetDraftResult,
   MissionGetRenewableSourceInput,
   MissionGetRenewableSourceResult,
+  MissionGetResultForRunInput,
+  MissionGetRetrospectiveInput,
+  MissionGetRetrospectiveResult,
+  MissionListPaperResultsInput,
+  MissionListPaperResultsResult,
   MissionGetSessionResultInput,
   MissionGetSessionResultResult,
+  MissionGetResultForRunResult,
   MissionListResultsInput,
   MissionListResultsResult,
+  SimulatorLaunchPresetInput,
+  SimulatorLaunchPresetResult,
+  SimulatorGetLatestBatchInput,
+  SimulatorBatchReadResult,
+  SimulatorListBatchesInput,
+  SimulatorListBatchesResult,
   MissionRecoverInput,
   MissionRecoverResult,
   MissionRenewInput,
@@ -22,6 +34,8 @@ import type {
   MissionEditResult,
   MissionRetryInput,
   MissionRetryResult,
+  SimulatorStartBatchInput,
+  SimulatorStartBatchResult,
   MissionSetAutoRetryInput,
   MissionSetAutoRetryResult,
   MissionStartInput,
@@ -75,13 +89,43 @@ export interface MissionBridge {
   readonly getRenewableSource: (
     input: MissionGetRenewableSourceInput,
   ) => Promise<Result<MissionGetRenewableSourceResult>>;
-  readonly listResults: (
-    input: MissionListResultsInput,
-  ) => Promise<Result<MissionListResultsResult>>;
+  /** Fork-only: latest finalized ledger row for a SESSION (summary card). */
   readonly getSessionResult: (
     input: MissionGetSessionResultInput,
   ) => Promise<Result<MissionGetSessionResultResult>>;
   readonly setAutoRetry: (
     input: MissionSetAutoRetryInput,
   ) => Promise<Result<MissionSetAutoRetryResult>>;
+  /** Per-wallet mission results ledger history, newest first (WP-J). */
+  readonly listResults: (
+    input: MissionListResultsInput,
+  ) => Promise<Result<MissionListResultsResult>>;
+  /** Paper-only mission results ledger history, newest first. */
+  readonly listPaperResults: (
+    input: MissionListPaperResultsInput,
+  ) => Promise<Result<MissionListPaperResultsResult>>;
+  /** Single-run ledger read, e.g. the post-mission summary card (WP-J). */
+  readonly getResultForRun: (
+    input: MissionGetResultForRunInput,
+  ) => Promise<Result<MissionGetResultForRunResult>>;
+  /**
+   * Read-or-lazily-generate the "lessons learned" retrospective for a session's
+   * latest finalized mission run (the completed-mission card). Fail-soft: null
+   * when there is nothing to show (no finalized run, inference unavailable).
+   */
+  readonly getRetrospective: (
+    input: MissionGetRetrospectiveInput,
+  ) => Promise<Result<MissionGetRetrospectiveResult>>;
+  readonly simulatorLaunchPreset: (
+    input: SimulatorLaunchPresetInput,
+  ) => Promise<Result<SimulatorLaunchPresetResult>>;
+  readonly simulatorStartBatch: (
+    input: SimulatorStartBatchInput,
+  ) => Promise<Result<SimulatorStartBatchResult>>;
+  readonly simulatorGetLatestBatch: (
+    input: SimulatorGetLatestBatchInput,
+  ) => Promise<Result<SimulatorBatchReadResult>>;
+  readonly simulatorListBatches: (
+    input: SimulatorListBatchesInput,
+  ) => Promise<Result<SimulatorListBatchesResult>>;
 }

@@ -21,6 +21,7 @@ export const onboardingKeys = {
   all: ["onboarding"] as const,
   envState: () => ["onboarding", "envState"] as const,
   wizardState: () => ["onboarding", "wizardState"] as const,
+  providerModels: () => ["onboarding", "providerModels"] as const,
   // Puzzle 5 B-UI — lowercased EVM addresses with Polymarket creds configured.
   polymarketConfiguredAddresses: () =>
     ["onboarding", "polymarketConfiguredAddresses"] as const,
@@ -127,6 +128,17 @@ export const runtimeKeys = {
   state: (sessionId: string) => ["runtime", "state", sessionId] as const,
 };
 
+/**
+ * Signals section — today's ingested TrendRadar signals (list, keyed by the
+ * rolling window) and the per-signal LLM-as-judge grade (keyed by signal id).
+ * Grades are ephemeral in this cache — no persistence.
+ */
+export const signalsKeys = {
+  all: ["signals"] as const,
+  today: (withinHours: number) => ["signals", "today", withinHours] as const,
+  grade: (id: number) => ["signals", "grade", id] as const,
+};
+
 export const missionKeys = {
   all: ["mission"] as const,
   draft: (sessionId: string) => ["mission", "draft", sessionId] as const,
@@ -138,6 +150,14 @@ export const missionKeys = {
   diff: (sessionId: string, missionId: string) =>
     ["mission", "diff", sessionId, missionId] as const,
   /**
+   * Session-wide diff-invalidation prefix — matches every `diff(sessionId,
+   * missionId)` entry for a session regardless of which mission id is
+   * current (TanStack's default fuzzy `invalidateQueries` matching), so
+   * `useMissionLiveSync` can refresh the diff without knowing the active
+   * mission id. Mirrors `messagesKeys.forSession`.
+   */
+  diffsForSession: (sessionId: string) => ["mission", "diff", sessionId] as const,
+  /**
    * Puzzle 04 phase 7 — latest terminal accepted mission for
    * `/mission-renew`. Returns `{ missionId }` or null. Invalidated on
    * any mutation that may flip a mission to terminal (start, stop,
@@ -145,11 +165,26 @@ export const missionKeys = {
    */
   renewableSource: (sessionId: string) =>
     ["mission", "renewableSource", sessionId] as const,
-  /** Mission results ledger (history) — per-wallet PNL records. */
-  results: () => ["mission", "results"] as const,
-  /** Latest finalized result for a session (post-mission summary card). */
+  /** WP-J — per-wallet mission results ledger history, newest first. */
+  results: (walletAddress: string) =>
+    ["mission", "results", walletAddress] as const,
+  /** WP-J — single-run ledger read (e.g. the post-mission summary card). */
+  resultForRun: (missionRunId: string, walletAddress: string) =>
+    ["mission", "resultForRun", missionRunId, walletAddress] as const,
+  /**
+   * Fork-only — latest finalized result for a SESSION (the post-mission
+   * summary card keyed on the session the renderer has in hand). Distinct
+   * from `resultForRun`, which is keyed on (missionRunId, walletAddress).
+   */
   sessionResult: (sessionId: string) =>
     ["mission", "sessionResult", sessionId] as const,
+  /**
+   * Fork-only — the "lessons learned" retrospective for a session's latest
+   * finalized run (read-or-lazily-generate; the completed-mission card).
+   */
+  retrospective: (sessionId: string) =>
+    ["mission", "retrospective", sessionId] as const,
+  simulatorLatestBatch: () => ["mission", "simulatorLatestBatch"] as const,
 };
 
 export const approvalsKeys = {
@@ -206,6 +241,14 @@ export const portfolioKeys = {
   series: (scope: string, range: string) =>
     ["portfolio", "series", scope, range] as const,
   /**
+   * WP-L2 — the welcome-screen per-wallet switcher: the GLOBAL scope
+   * narrowed to one inventory wallet. Keyed separately from `read` (distinct
+   * segment, not reusing the `scope`/`activeSessionId` shape) so a wallet
+   * drill-down never collides with the aggregate global cache entry.
+   */
+  readWallet: (walletAddress: string) =>
+    ["portfolio", "wallet", walletAddress] as const,
+  /**
    * MOVES (move 0.3) — the session's executed-trade activity. Keyed by
    * `sessionId` so each session's feed is a distinct cache entry. A
    * `null`/global view has no MOVES (it is session-scoped).
@@ -230,4 +273,29 @@ export const updaterKeys = {
 export const marketKeys = {
   all: ["market"] as const,
   snapshot: () => ["market", "vex", "snapshot"] as const,
+};
+
+/** Hyperliquid main-pushed positions and durable user-risk proposal cards. */
+export const hyperliquidKeys = {
+  all: ["hyperliquid"] as const,
+  positions: (sessionId: string) => ["hyperliquid", "positions", sessionId] as const,
+  candles: (sessionId: string, coin: string, interval: string) => ["hyperliquid", "candles", sessionId, coin, interval] as const,
+  markets: (sessionId: string) => ["hyperliquid", "markets", sessionId] as const,
+  book: (sessionId: string, coin: string) => ["hyperliquid", "book", sessionId, coin] as const,
+  workspaceMode: (sessionId: string) => ["hyperliquid", "workspaceMode", sessionId] as const,
+  openOrders: (sessionId: string) => ["hyperliquid", "openOrders", sessionId] as const,
+  twapHistory: (sessionId: string) => ["hyperliquid", "twapHistory", sessionId] as const,
+  tradeHistory: (sessionId: string) => ["hyperliquid", "tradeHistory", sessionId] as const,
+  fundingHistory: (sessionId: string) => ["hyperliquid", "fundingHistory", sessionId] as const,
+  orderHistory: (sessionId: string) => ["hyperliquid", "orderHistory", sessionId] as const,
+  riskProposals: (sessionId: string) => ["hyperliquid", "riskProposals", sessionId] as const,
+  sessionRiskPolicy: (sessionId: string) => ["hyperliquid", "sessionRiskPolicy", sessionId] as const,
+  preferences: () => ["hyperliquid", "preferences"] as const,
+};
+
+/** App-level user preferences (settings bridge). */
+export const settingsKeys = {
+  all: ["settings"] as const,
+  preferences: () => ["settings", "preferences"] as const,
+  keepAwakeState: () => ["settings", "keepAwakeState"] as const,
 };
