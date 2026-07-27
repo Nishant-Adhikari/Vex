@@ -33,12 +33,16 @@ const getStateMock = vi.fn();
 const getDraftMock = vi.fn();
 const getDiffMock = vi.fn();
 const getRenewableMock = vi.fn();
+const getSessionResultMock = vi.fn();
+const getRetrospectiveMock = vi.fn();
 const startMock = vi.fn();
 const continueMock = vi.fn();
 const retryMock = vi.fn();
 const editMock = vi.fn();
 const stopMock = vi.fn();
 const renewMock = vi.fn();
+const listMovesMock = vi.fn();
+const listMessagesMock = vi.fn();
 const chatSubmitMock = vi.fn();
 const getPlanMock = vi.fn();
 const onTranscriptAppendMock = vi.fn(() => vi.fn());
@@ -54,6 +58,8 @@ function setVex(): void {
         getDraft: getDraftMock,
         getDiff: getDiffMock,
         getRenewableSource: getRenewableMock,
+        getSessionResult: getSessionResultMock,
+        getRetrospective: getRetrospectiveMock,
         start: startMock,
         continue: continueMock,
         retry: retryMock,
@@ -61,6 +67,8 @@ function setVex(): void {
         stop: stopMock,
         renew: renewMock,
       },
+      portfolio: { listMoves: listMovesMock },
+      messages: { list: listMessagesMock },
       chat: { submit: chatSubmitMock },
       engine: { onTranscriptAppend: onTranscriptAppendMock },
     },
@@ -94,6 +102,33 @@ function diffAccepted(isAccepted: boolean, isDirty = false) {
     isAccepted,
     isDirty,
     currentHash: "h".repeat(64),
+  });
+}
+
+function finalizedResult(over: Record<string, unknown> = {}) {
+  return ok({
+    missionRunId: "run-1",
+    sessionId: SESSION,
+    seqNo: 9,
+    goalSnippet: "Paper mission summary",
+    startedAt: "2026-07-13T10:00:00+00:00",
+    endedAt: "2026-07-13T10:40:00+00:00",
+    durationS: 2400,
+    bankrollStartEth: 0.01,
+    bankrollEndEth: 0.011,
+    pnlEth: 0.001,
+    pnlPct: 10,
+    ethPriceUsdEnd: 3000,
+    trades: 1,
+    outcome: "completed",
+    stopReason: "goal_reached",
+    summary: "Recovered initials and closed green.",
+    inferenceProvider: null,
+    inferenceModel: null,
+    inferenceFallbackModel: null,
+    openPositionsCount: 0,
+    simulated: true,
+    ...over,
   });
 }
 
@@ -137,6 +172,12 @@ beforeEach(() => {
   // Default: no renewable source. The hook fires for every render (active or
   // not), so give it a safe value; renew-specific tests override it.
   getRenewableMock.mockResolvedValue(ok(null));
+  getSessionResultMock.mockResolvedValue(ok(null));
+  getRetrospectiveMock.mockResolvedValue(ok(null));
+  listMovesMock.mockResolvedValue(ok([]));
+  listMessagesMock.mockResolvedValue(
+    ok({ items: [], hasMore: false, nextCursor: null, limit: 50 }),
+  );
   getPlanMock.mockResolvedValue(ok({ enabled: false, accepted: false, planMd: "" }));
   useUiStore.setState({ reviewModal: "none" });
 });
@@ -601,6 +642,17 @@ describe("MissionControls", () => {
     const renewBtn = await screen.findByRole("button", { name: "Renew mission" });
     fireEvent.click(renewBtn);
     await screen.findByText(/draft mission already exists/i);
+  });
+
+  it("renders the finalized summary card even when no renew source exists", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok(null));
+    getRenewableMock.mockResolvedValue(ok(null));
+    getSessionResultMock.mockResolvedValue(finalizedResult());
+    renderControls();
+
+    await screen.findByText("Mission #9");
+    expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
   });
 
   it("no active run, no startable draft, no renew source → renders nothing", async () => {

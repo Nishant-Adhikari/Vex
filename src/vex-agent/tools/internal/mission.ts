@@ -13,13 +13,18 @@ import type { InternalToolContext } from "./types.js";
 import { str, enumField, fail } from "./types.js";
 import type { BusinessStopReason } from "@vex-agent/engine/types.js";
 import { applyMissionPatch } from "@vex-agent/engine/mission/setup.js";
+import { computePnl } from "@vex-agent/engine/mission/mission-results-capture.js";
 import {
   authorizeMissionStopReason,
   isModelMissionStopReason,
   MODEL_MISSION_STOP_REASONS,
 } from "@vex-agent/engine/mission/stop-contract.js";
+import { resolveLocalChainId } from "../../../tools/evm-chains/registry.js";
+import { readEthBankroll, readEthBankrollOnChain } from "@vex-agent/engine/mission/bankroll.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
+import * as missionResultsRepo from "@vex-agent/db/repos/mission-results.js";
+import * as simLedgerRepo from "@vex-agent/db/repos/sim-ledger.js";
 import { hyperliquidMissionRiskSchema } from "../../../lib/hyperliquid-policy.js";
 
 const MAX_STRING_LENGTH = 2_000;
@@ -133,6 +138,30 @@ export async function handleMissionStop(
 
   if (!isModelMissionStopReason(reason)) {
     return fail(`Invalid stop reason "${reason}". Must be one of: ${MODEL_MISSION_STOP_REASONS.join(", ")}`);
+  }
+
+  if (reason === "goal_reached" && context.missionId) {
+    const mission = await missionsRepo.getMission(context.missionId);
+    const wallet = mission?.allowedWallets?.[0];
+    const chainKey = mission?.allowedChains?.[0];
+    const chainId = chainKey ? resolveLocalChainId(chainKey) : undefined;
+    if (wallet && chainId !== undefined) {
+      const existing = await missionResultsRepo.getResultForRun(context.missionRunId, wallet);
+      if (existing?.bankrollStartEth !== null && existing?.bankrollStartEth !== undefined) {
+        const run = await missionRunsRepo.getRun(context.missionRunId);
+        const endEth = run?.mode === "simulator"
+          ? existing.bankrollStartEth + await simLedgerRepo.sumRealizedPnlForRun(context.missionRunId)
+          : await (async (): Promise<number | null> => {
+            const onChain = await readEthBankrollOnChain(wallet, chainId);
+            const projection = await readEthBankroll(wallet, chainId);
+            return (onChain ?? projection)?.bankrollEth ?? null;
+          })();
+        const { pnlEth } = computePnl(existing.bankrollStartEth, endEth);
+        if (pnlEth !== null && pnlEth < 0) {
+          return fail("mission_stop rejected: goal_reached cannot be used while the mission bankroll is at a loss");
+        }
+      }
+    }
   }
 
   if (reason !== "goal_reached" && reason !== "emergency_stop") {

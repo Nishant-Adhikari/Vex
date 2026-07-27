@@ -428,6 +428,7 @@ export function MissionControls({
   // into a fresh draft (the new contract must still be accepted before it runs,
   // so this is non-destructive and needs no confirm step).
   const renewSource = readRenewable(renewableQuery.data);
+  const summary = readFinalizedResult(sessionResultQuery.data);
   // `draft === null` guard mirrors MissionRail's load-bearing guard:
   // `getRenewableSourceForSession` keeps returning the OLD terminal accepted
   // mission even after `mission.renew` (or `edit`) inserts a fresh draft. Without
@@ -437,10 +438,6 @@ export function MissionControls({
   // acceptance-pending UI below (accept it, then Start).
   if (renewSource !== null && draft === null) {
     const previousMissionId = renewSource.missionId;
-    // A terminal accepted mission has a finalized ledger row — surface its
-    // structured summary (sourced from the ledger, not the agent's prose)
-    // above the Renew key.
-    const summary = readFinalizedResult(sessionResultQuery.data);
     return (
       <div data-vex-area="mission-controls" className="mt-3">
         {summary !== null ? (
@@ -461,6 +458,17 @@ export function MissionControls({
         >
           Renew mission
         </button>
+        {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
+      </div>
+    );
+  }
+
+  // Finalized mission with no renewable source (notably paper/simulator runs):
+  // still surface the summary card even when there is nothing to renew.
+  if (summary !== null && draft === null) {
+    return (
+      <div data-vex-area="mission-controls" className="mt-3">
+        <MissionSummaryCard result={summary} sessionId={sessionId} />
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
       </div>
     );
