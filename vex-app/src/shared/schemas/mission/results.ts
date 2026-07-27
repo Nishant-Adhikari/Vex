@@ -68,6 +68,9 @@ export const missionResultDtoSchema = z
      * the finalize path stored no summary; never fabricated in the read layer.
      */
     summary: z.string().nullable(),
+    inferenceProvider: z.string().nullable(),
+    inferenceModel: z.string().nullable(),
+    inferenceFallbackModel: z.string().nullable(),
     openPositionsCount: z.number().int().nonnegative(),
     /**
      * True for a SIMULATOR (paper-trading) run — the full agent loop ran but
@@ -76,6 +79,12 @@ export const missionResultDtoSchema = z
      * to `false` so pre-simulator ledger rows read as live.
      */
     simulated: z.boolean().default(false),
+    /**
+     * Simulator tournament batch that launched this paper mission. Omitted on
+     * live runs and on older paper rows recorded before batch linkage was
+     * surfaced into the renderer read model.
+     */
+    sourceBatchId: z.string().min(1).nullable().optional(),
   })
   .strict();
 export type MissionResultDto = z.infer<typeof missionResultDtoSchema>;
@@ -94,6 +103,22 @@ export const missionListResultsResultSchema = z.array(missionResultDtoSchema);
 export type MissionListResultsResult = z.infer<typeof missionListResultsResultSchema>;
 
 export const DEFAULT_MISSION_RESULTS_LIMIT = DEFAULT_RESULTS_LIMIT;
+
+// ── listPaperResults (paper-only history, newest first) ───────────────────
+
+export const missionListPaperResultsInputSchema = z
+  .object({
+    limit: z.number().int().min(1).max(MAX_RESULTS_LIMIT).optional(),
+  })
+  .strict();
+export type MissionListPaperResultsInput = z.infer<
+  typeof missionListPaperResultsInputSchema
+>;
+
+export const missionListPaperResultsResultSchema = z.array(missionResultDtoSchema);
+export type MissionListPaperResultsResult = z.infer<
+  typeof missionListPaperResultsResultSchema
+>;
 
 // ── getResultForRun (single run, e.g. the post-mission summary card) ────
 
