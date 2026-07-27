@@ -14,7 +14,12 @@ import {
 
 const mockListResultsForWallet = vi.fn();
 const mockGetResultForRun = vi.fn();
+const mockGetSessionResult = vi.fn();
 const mockEnsureEngineDbUrl = vi.fn();
+const mockGetMission = vi.fn();
+const mockCountSimTradesForRun = vi.fn();
+const mockListSimPositionsForRun = vi.fn();
+const mockSumRealizedPnlForRun = vi.fn();
 
 vi.mock("electron", () => {
   const handlers = new Map<string, (e: IpcMainInvokeEvent, p: unknown) => unknown>();
@@ -35,6 +40,17 @@ vi.mock("electron", () => {
 vi.mock("@vex-agent/db/repos/mission-results.js", () => ({
   listResultsForWallet: (...a: unknown[]) => mockListResultsForWallet(...a),
   getResultForRun: (...a: unknown[]) => mockGetResultForRun(...a),
+  getSessionResult: (...a: unknown[]) => mockGetSessionResult(...a),
+}));
+
+vi.mock("@vex-agent/db/repos/missions.js", () => ({
+  getMission: (...a: unknown[]) => mockGetMission(...a),
+}));
+
+vi.mock("@vex-agent/db/repos/sim-ledger.js", () => ({
+  countSimTradesForRun: (...a: unknown[]) => mockCountSimTradesForRun(...a),
+  listSimPositionsForRun: (...a: unknown[]) => mockListSimPositionsForRun(...a),
+  sumRealizedPnlForRun: (...a: unknown[]) => mockSumRealizedPnlForRun(...a),
 }));
 
 vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
@@ -88,9 +104,28 @@ const LEDGER_ROW = {
   openPositions: [{ symbol: "NOXA" }],
 };
 
+const SIM_LEDGER_ROW = {
+  ...LEDGER_ROW,
+  missionRunId: "sim-run-1",
+  missionId: "mission-sim-1",
+  sessionId: "session-sim-1",
+  simulated: true,
+  bankrollStartEth: null,
+  bankrollEndEth: null,
+  pnlEth: null,
+  pnlPct: null,
+  trades: 0,
+  ethPriceUsdStart: 2500,
+  summary: "Paper run ended.",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockEnsureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
+  mockGetMission.mockResolvedValue(null);
+  mockCountSimTradesForRun.mockResolvedValue(0);
+  mockListSimPositionsForRun.mockResolvedValue([]);
+  mockSumRealizedPnlForRun.mockResolvedValue(0);
   electronMock.__handlers.clear();
   registerMissionHandlers();
 });
@@ -155,5 +190,59 @@ describe("mission.getResultForRun", () => {
     const result = await call(CH.mission.getResultForRun, { missionRunId: "run-x", walletAddress: "0xAbC" });
     expect(result.ok).toBe(true);
     expect(result.data).toBeNull();
+  });
+
+  it("repairs simulator PnL for a known paper run", async () => {
+    mockGetResultForRun.mockResolvedValueOnce(SIM_LEDGER_ROW);
+    mockGetMission.mockResolvedValueOnce({
+      id: "mission-sim-1",
+      capitalSourceJson: { amount: "$20 (paper)" },
+    });
+    mockCountSimTradesForRun.mockResolvedValueOnce(2);
+    mockListSimPositionsForRun.mockResolvedValueOnce([]);
+    mockSumRealizedPnlForRun.mockResolvedValueOnce(0.002);
+
+    const result = await call(CH.mission.getResultForRun, {
+      missionRunId: "sim-run-1",
+      walletAddress: "0xAbC",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
+      missionRunId: "sim-run-1",
+      trades: 2,
+      bankrollStartEth: 0.008,
+      bankrollEndEth: 0.01,
+      pnlEth: 0.002,
+      pnlPct: 25,
+    });
+  });
+});
+
+describe("mission.getSessionResult", () => {
+  it("repairs simulator PnL for the latest paper result in a session", async () => {
+    mockGetSessionResult.mockResolvedValueOnce(SIM_LEDGER_ROW);
+    mockGetMission.mockResolvedValueOnce({
+      id: "mission-sim-1",
+      capitalSourceJson: { amount: "$20 (paper)" },
+    });
+    mockCountSimTradesForRun.mockResolvedValueOnce(1);
+    mockListSimPositionsForRun.mockResolvedValueOnce([]);
+    mockSumRealizedPnlForRun.mockResolvedValueOnce(-0.001);
+
+    const result = await call(CH.mission.getSessionResult, {
+      sessionId: "session-sim-1",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockGetSessionResult).toHaveBeenCalledWith("session-sim-1");
+    expect(result.data).toMatchObject({
+      missionRunId: "sim-run-1",
+      trades: 1,
+      bankrollStartEth: 0.008,
+      bankrollEndEth: 0.007,
+      pnlEth: -0.001,
+      pnlPct: -12.5,
+    });
   });
 });

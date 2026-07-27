@@ -19,6 +19,7 @@ import { registerHandler } from "../register-handler.js";
 import { controlFailedError } from "../runtime/_errors.js";
 import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
 import { toMissionResultDto } from "./_result-dto.js";
+import { repairSimulatedResultRow } from "./_simulator-result-repair.js";
 
 export function registerMissionGetResultForRunHandler(): () => void {
   return registerHandler({
@@ -34,10 +35,12 @@ export function registerMissionGetResultForRunHandler(): () => void {
           "@vex-agent/db/repos/mission-results.js"
         );
         const row = await getResultForRun(input.missionRunId, input.walletAddress);
+        const repairedRow =
+          row === null ? null : await repairSimulatedResultRow(row);
         log.info(
           `[ipc:vex:mission:getResultForRun] ok found=${row !== null} correlationId=${ctx.requestId}`,
         );
-        return ok(row === null ? null : toMissionResultDto(row));
+        return ok(repairedRow === null ? null : toMissionResultDto(repairedRow));
       } catch (cause) {
         log.warn(
           `[ipc:vex:mission:getResultForRun] failed correlationId=${ctx.requestId}`,
