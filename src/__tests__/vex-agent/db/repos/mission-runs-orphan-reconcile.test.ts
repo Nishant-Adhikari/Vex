@@ -168,3 +168,40 @@ describe("markStoppedIfRunning", () => {
     expect(await repo.markStoppedIfRunning("run-1", "runner_lost")).toBe(false);
   });
 });
+
+describe("markWakeRecoveryPendingIfRunning", () => {
+  beforeEach(() => {
+    mockQuery = vi.fn().mockResolvedValue([]);
+    mockExecute = vi.fn().mockResolvedValue(0);
+  });
+
+  it("returns true and parks the run into paused_wake when the row flips", async () => {
+    mockExecute.mockResolvedValue(1);
+
+    const claimed = await repo.markWakeRecoveryPendingIfRunning("run-1", {
+      summary: "lease lost; handoff pending",
+      evidence: { recovery: "wake_handoff" },
+    });
+
+    expect(claimed).toBe(true);
+    const [sql, params] = mockExecute.mock.calls[0]!;
+    expect(sql).toMatch(/status\s*=\s*'paused_wake'/);
+    expect(sql).toMatch(/stop_reason\s*=\s*'waiting_for_wake'/);
+    expect(sql).toMatch(/last_checkpoint_at\s*=\s*NOW\(\)/i);
+    expect(sql).toMatch(/ended_at\s*=\s*NULL/i);
+    expect(sql).toMatch(/m\.status\s*=\s*'running'/i);
+    expect(sql).toMatch(/NOT\s+EXISTS/i);
+    expect(sql).toMatch(/runner_leases/i);
+    expect(sql).toMatch(/expires_at\s*>\s*NOW\(\)/i);
+    expect(params).toEqual([
+      "run-1",
+      "lease lost; handoff pending",
+      JSON.stringify({ recovery: "wake_handoff" }),
+    ]);
+  });
+
+  it("returns false when no eligible row matched (terminal or live-leased)", async () => {
+    mockExecute.mockResolvedValue(0);
+    expect(await repo.markWakeRecoveryPendingIfRunning("run-1")).toBe(false);
+  });
+});

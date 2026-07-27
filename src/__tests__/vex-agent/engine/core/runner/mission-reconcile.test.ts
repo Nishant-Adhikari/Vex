@@ -4,12 +4,12 @@
  * re-acquiring it). These tests pin the sweep orchestration with all seams
  * injected (no DB):
  *
- *   - each orphan is CLAIMED race-safely, then FLATTENED (deadline liquidation
- *     core), then the finalize tail closes the ledger, then the stale lease is
- *     dropped,
- *   - claim runs BEFORE flatten/close (nothing is touched unless we won the run
- *     against a concurrent resume),
- *   - a LOST claim (resumed / already terminal) skips flatten + close entirely,
+ *   - each orphan is PARKED race-safely into `paused_wake`, gets a diagnostic
+ *     transcript event, and is handed off to the wake executor with an
+ *     immediate wake request,
+ *   - the recovery park runs BEFORE the wake handoff (nothing is touched unless
+ *     we won the run against a concurrent resume),
+ *   - a LOST park claim (resumed / already terminal) skips wake handoff,
  *   - one orphan's failure NEVER aborts the sweep,
  *   - an empty scan / a scan-query failure is a fail-soft no-op.
  */
@@ -50,6 +50,9 @@ function orphan(over: Partial<MissionRun> = {}): MissionRun {
 function deps(over: Partial<ReconcileDeps> = {}): ReconcileDeps {
   return {
     findOrphans: vi.fn(async () => [] as MissionRun[]),
+    parkForRecovery: vi.fn(async () => true),
+    appendDiagnostic: vi.fn(async () => {}),
+    enqueueRecoveryWake: vi.fn(async () => {}),
     claim: vi.fn(async () => true),
     flatten: vi.fn(async () => {}),
     closeLedger: vi.fn(async () => {}),
@@ -72,7 +75,7 @@ const ZERO_SELF_HEAL = { leasesSwept: 0, staleErrorsReaped: 0 };
 describe("reconcileOrphanedRuns", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("claims, flattens, closes the ledger, and drops the lease for each orphan", async () => {
+  it("parks, emits a diagnostic, and enqueues immediate wake recovery for each orphan", async () => {
     const runs = [
       orphan(),
       orphan({ id: "run-2", missionId: "mission-2", sessionId: "sess-2" }),
@@ -82,80 +85,82 @@ describe("reconcileOrphanedRuns", () => {
     const summary = await reconcileOrphanedRuns(d);
 
     expect(summary).toEqual({ scanned: 2, reconciled: 2, skipped: 0, failed: 0, ...ZERO_SELF_HEAL });
-    expect(d.claim).toHaveBeenCalledWith(
+    expect(d.parkForRecovery).toHaveBeenCalledWith(
       "run-1",
       expect.objectContaining({ summary: expect.any(String) }),
     );
-    expect(d.flatten).toHaveBeenCalledTimes(2);
-    expect(d.flatten).toHaveBeenCalledWith({
-      missionId: "mission-1",
-      runId: "run-1",
+    expect(d.appendDiagnostic).toHaveBeenCalledWith(
+      "sess-1",
+      "run-1",
+      expect.stringContaining("runner_lease_lost"),
+      expect.objectContaining({ detectedBy: "orphan_reconciler" }),
+    );
+    expect(d.enqueueRecoveryWake).toHaveBeenCalledWith({
       sessionId: "sess-1",
+      runId: "run-1",
     });
-    expect(d.closeLedger).toHaveBeenCalledWith("mission-1", "run-1", "sess-1");
-    expect(d.dropStaleLease).toHaveBeenCalledWith("sess-1");
-    expect(d.dropStaleLease).toHaveBeenCalledWith("sess-2");
+    expect(d.enqueueRecoveryWake).toHaveBeenCalledWith({
+      sessionId: "sess-2",
+      runId: "run-2",
+    });
   });
 
-  it("claims BEFORE flattening + closing (never touches a run it did not win)", async () => {
+  it("parks BEFORE enqueueing recovery (never touches a run it did not win)", async () => {
     const order: string[] = [];
     const d = deps({
       findOrphans: vi.fn(async () => [orphan()]),
-      claim: vi.fn(async () => {
-        order.push("claim");
+      parkForRecovery: vi.fn(async () => {
+        order.push("park");
         return true;
       }),
-      flatten: vi.fn(async () => {
-        order.push("flatten");
-      }),
-      closeLedger: vi.fn(async () => {
-        order.push("close");
+      enqueueRecoveryWake: vi.fn(async () => {
+        order.push("wake");
       }),
     });
 
     await reconcileOrphanedRuns(d);
 
-    expect(order).toEqual(["claim", "flatten", "close"]);
+    expect(order).toEqual(["park", "wake"]);
   });
 
-  it("skips flatten + close when the claim is lost (resumed / already terminal)", async () => {
+  it("skips wake handoff when the recovery park is lost (resumed / already terminal)", async () => {
     const d = deps({
       findOrphans: vi.fn(async () => [orphan()]),
-      claim: vi.fn(async () => false),
+      parkForRecovery: vi.fn(async () => false),
     });
 
     const summary = await reconcileOrphanedRuns(d);
 
     expect(summary).toEqual({ scanned: 1, reconciled: 0, skipped: 1, failed: 0, ...ZERO_SELF_HEAL });
-    expect(d.flatten).not.toHaveBeenCalled();
-    expect(d.closeLedger).not.toHaveBeenCalled();
-    expect(d.dropStaleLease).not.toHaveBeenCalled();
+    expect(d.enqueueRecoveryWake).not.toHaveBeenCalled();
   });
 
   it("isolates a per-run failure — the sweep continues and counts it", async () => {
     const runs = [orphan(), orphan({ id: "run-2", sessionId: "sess-2" })];
-    const closeLedger = vi
+    const enqueueRecoveryWake = vi
       .fn()
-      .mockRejectedValueOnce(new Error("close boom"))
+      .mockRejectedValueOnce(new Error("wake boom"))
       .mockResolvedValueOnce(undefined);
-    const d = deps({ findOrphans: vi.fn(async () => runs), closeLedger });
+    const d = deps({ findOrphans: vi.fn(async () => runs), enqueueRecoveryWake });
 
     const summary = await reconcileOrphanedRuns(d);
 
     expect(summary.scanned).toBe(2);
-    expect(summary.failed).toBe(1);
-    expect(summary.reconciled).toBe(1);
+    expect(summary.failed).toBe(0);
+    expect(summary.reconciled).toBe(2);
     // Second run still processed despite the first throwing.
-    expect(d.dropStaleLease).toHaveBeenCalledWith("sess-2");
+    expect(d.enqueueRecoveryWake).toHaveBeenCalledWith({
+      sessionId: "sess-2",
+      runId: "run-2",
+    });
   });
 
   it("is a fail-soft no-op when there are no orphans", async () => {
     const d = deps();
     const summary = await reconcileOrphanedRuns(d);
     expect(summary).toEqual({ scanned: 0, reconciled: 0, skipped: 0, failed: 0, ...ZERO_SELF_HEAL });
-    expect(d.claim).not.toHaveBeenCalled();
-    expect(d.flatten).not.toHaveBeenCalled();
-    expect(d.closeLedger).not.toHaveBeenCalled();
+    expect(d.parkForRecovery).not.toHaveBeenCalled();
+    expect(d.enqueueRecoveryWake).not.toHaveBeenCalled();
   });
 
   it("never throws when the selection query itself fails", async () => {

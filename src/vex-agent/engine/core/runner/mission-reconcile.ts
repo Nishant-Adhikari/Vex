@@ -30,9 +30,11 @@
 import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as runnerLeasesRepo from "@vex-agent/db/repos/runner-leases.js";
+import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import logger from "@utils/logger.js";
 import { closeRunnerLostFinalize, closeReapedErrorFinalize } from "./mission-finalize.js";
 import { flattenInterruptedRunPositions } from "./mission-liquidate-hook.js";
+import { appendEngineMessage } from "../../events/index.js";
 
 /** Distinct stop reason stamped on a reclaimed orphan (auditable in the ledger). */
 export const RUNNER_LOST_STOP_REASON = "runner_lost" as const;
@@ -43,6 +45,10 @@ export const REAPED_STALE_ERROR_STOP_REASON = "reaped_stale_error" as const;
 const RUNNER_LOST_SUMMARY =
   "Run interrupted — its runner lease expired with no worker re-acquiring it " +
   "(app restart or runner process death). Reclaimed by the orphaned-run reconciler.";
+
+const LEASE_LOSS_RECOVERY_SUMMARY =
+  "Worker died / app restarted / runner lease lost. Automatic recovery handoff " +
+  "started — parking the run for immediate wake-based resume instead of finalizing it.";
 
 const REAPED_STALE_ERROR_SUMMARY =
   "Run abandoned in `paused_error` — no live runner lease, no pending auto-retry " +
@@ -88,6 +94,35 @@ export interface ReconcileOrphanedRunsSummary {
  */
 export interface ReconcileDeps {
   findOrphans: () => Promise<MissionRun[]>;
+  /**
+   * Recovery-first claim: park `running` → `paused_wake` ONLY while the run is
+   * still `running` AND has no live lease. `true` = THIS pass won the run and
+   * should hand it off to wake-based recovery; `false` = a live worker already
+   * resumed it or another pass won the race.
+   */
+  parkForRecovery: (
+    runId: string,
+    stopPayload: { summary: string; evidence?: Record<string, unknown> },
+  ) => Promise<boolean>;
+  /**
+   * Persist a visible internal diagnostic marker into the mission transcript so
+   * the operator sees WHY the run was recovered or later force-stopped.
+   */
+  appendDiagnostic: (
+    sessionId: string,
+    runId: string,
+    content: string,
+    payload?: Record<string, unknown>,
+  ) => Promise<void>;
+  /**
+   * Queue an immediate wake-based recovery handoff. Returning `null` is allowed
+   * (a pending wake already exists); the parked `paused_wake` run remains
+   * recoverable and the watchdog may still re-arm it later.
+   */
+  enqueueRecoveryWake: (input: {
+    sessionId: string;
+    runId: string;
+  }) => Promise<void>;
   /**
    * Race-safe claim: flip `running`→`stopped(runner_lost)` ONLY while the run
    * is still `running` AND has no live lease. `true` = THIS pass won the run
@@ -141,6 +176,31 @@ export interface ReconcileDeps {
 function defaultDeps(): ReconcileDeps {
   return {
     findOrphans: () => missionRunsRepo.findOrphanedRunningRuns(),
+    parkForRecovery: (runId, stopPayload) =>
+      missionRunsRepo.markWakeRecoveryPendingIfRunning(runId, stopPayload),
+    appendDiagnostic: (sessionId, runId, content, payload) =>
+      appendEngineMessage(sessionId, content, {
+        source: "engine",
+        messageType: "runner_lease_lost",
+        visibility: "internal",
+        payload: {
+          missionRunId: runId,
+          ...payload,
+        },
+      }).then(() => undefined),
+    enqueueRecoveryWake: async ({ sessionId, runId }) => {
+      await loopWakeRepo.enqueue({
+        sessionId,
+        missionRunId: runId,
+        dueAt: new Date(),
+        reason: "runner lease lost; automatic recovery handoff",
+        payload: {
+          trigger: "runner_lease_lost",
+          handoff: "orphan_reconciler",
+          requestedAt: new Date().toISOString(),
+        },
+      });
+    },
     claim: (runId, stopPayload) =>
       missionRunsRepo.markStoppedIfRunning(runId, RUNNER_LOST_STOP_REASON, stopPayload),
     flatten: (a) => flattenInterruptedRunPositions(a),
@@ -219,16 +279,15 @@ async function countRunOpenPositions(run: MissionRun): Promise<number> {
 const inFlight = new Set<string>();
 
 /**
- * Reconcile a single orphaned run: CLAIM it race-safely, then flatten its
- * positions, close the ledger, and drop the stale lease.
+ * Reconcile a single orphaned run: try RECOVERY first (park to paused_wake +
+ * queue an immediate wake handoff). Only if the recovery park loses the race do
+ * we skip; only if a later force-stop path explicitly wins do we finalize.
  *
- * Order matters. The claim (`markStoppedIfRunning`: `running` + no live lease →
- * `stopped(runner_lost)`) runs FIRST so nothing is flattened or finalized
- * unless we atomically won the run against a concurrent operator Resume — that
- * closes the race Codex flagged (a resume acquires a fresh lease while keeping
- * status `running`; our lease-aware guard then refuses the flip). Only after
- * winning do we flatten (the run's frozen snapshot keeps the exit executable
- * post-claim) and close the ledger via the shared finalize tail.
+ * Order matters. The recovery park (`markWakeRecoveryPendingIfRunning`:
+ * `running` + no live lease → `paused_wake`) runs FIRST so a healthy wake
+ * worker gets the first chance to resume. That closes the race Codex flagged:
+ * a concurrent resume that already re-acquired a fresh lease blocks the park,
+ * and we never terminally stop a run that can still be recovered.
  */
 async function reconcileOne(
   run: MissionRun,
@@ -237,34 +296,57 @@ async function reconcileOne(
   if (inFlight.has(run.id)) return "skipped";
   inFlight.add(run.id);
   try {
-    const won = await deps.claim(run.id, { summary: RUNNER_LOST_SUMMARY });
+    await deps.appendDiagnostic(
+      run.sessionId,
+      run.id,
+      "[Engine: runner_lease_lost — worker died / app restarted / lease lost detected; attempting automatic recovery handoff instead of force-stopping the mission.]",
+      {
+        detectedBy: "orphan_reconciler",
+        sessionId: run.sessionId,
+      },
+    );
+
+    const won = await deps.parkForRecovery(run.id, {
+      summary: LEASE_LOSS_RECOVERY_SUMMARY,
+      evidence: {
+        detectedBy: "orphan_reconciler",
+        recovery: "wake_handoff",
+      },
+    });
     if (!won) {
-      // Resumed by the operator, already terminal, or won by another pass —
+      // Resumed by another worker/operator, already terminal, or won by another pass —
       // never touch a run we don't exclusively own.
-      logger.info("engine.mission.reconcile_skip_claim_lost", {
+      logger.info("engine.mission.reconcile_skip_recovery_claim_lost", {
         runId: run.id,
         sessionId: run.sessionId,
       });
       return "skipped";
     }
 
-    // We now exclusively own the run (it is `stopped`). Flatten its open
-    // positions back to ETH so it ends flat, then run the shared finalize tail
-    // (mission→cancelled, control-state emit, ledger close). Flatten is
-    // fail-soft; the run is already terminal so a flatten hiccup never re-opens
-    // it.
-    await deps.flatten({
-      missionId: run.missionId,
-      runId: run.id,
-      sessionId: run.sessionId,
-    });
-    await deps.closeLedger(run.missionId, run.id, run.sessionId);
+    try {
+      await deps.dropStaleLease(run.sessionId);
+    } catch (err) {
+      logger.warn("engine.mission.reconcile_stale_lease_drop_failed", {
+        runId: run.id,
+        sessionId: run.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-    // Drop the leftover expired lease so a later getState/resume sees a clean
-    // session (owner-agnostic, guarded on expiry — never touches a live lease).
-    await deps.dropStaleLease(run.sessionId);
+    try {
+      await deps.enqueueRecoveryWake({
+        sessionId: run.sessionId,
+        runId: run.id,
+      });
+    } catch (err) {
+      logger.warn("engine.mission.reconcile_recovery_wake_enqueue_failed", {
+        runId: run.id,
+        sessionId: run.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-    logger.info("engine.mission.reconcile_finalized", {
+    logger.info("engine.mission.reconcile_recovery_handoff", {
       runId: run.id,
       missionId: run.missionId,
       sessionId: run.sessionId,

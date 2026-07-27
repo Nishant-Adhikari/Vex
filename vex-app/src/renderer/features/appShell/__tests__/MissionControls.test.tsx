@@ -374,6 +374,24 @@ describe("MissionControls", () => {
     expect(header?.textContent).toMatch(/Running/i);
   });
 
+  it("can minimize and re-expand the mission card without losing the controls", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({ hasActiveRun: true, status: "running", missionRunId: "r1" }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    await screen.findByRole("button", { name: "Stop mission" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize mission card" }));
+    expect(screen.queryByRole("button", { name: "Stop mission" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Expand mission card" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand mission card" }));
+    expect(await screen.findByRole("button", { name: "Stop mission" })).toBeTruthy();
+  });
+
   it("paused (not running): no RUNNING pulse header", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({ hasActiveRun: true, status: "paused_wake", missionRunId: "r1" }),
@@ -650,6 +668,19 @@ describe("MissionControls", () => {
     getDraftMock.mockResolvedValue(ok(null));
     getRenewableMock.mockResolvedValue(ok(null));
     getSessionResultMock.mockResolvedValue(finalizedResult());
+    renderControls();
+
+    await screen.findByText("Mission #9");
+    expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
+  });
+
+  it("hides Renew for a finalized simulator summary even if a session-level renew source exists", async () => {
+    getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+    getDraftMock.mockResolvedValue(ok(null));
+    getRenewableMock.mockResolvedValue(ok({ missionId: "m-done" }));
+    getSessionResultMock.mockResolvedValue(
+      finalizedResult({ simulated: true }),
+    );
     renderControls();
 
     await screen.findByText("Mission #9");

@@ -258,6 +258,7 @@ export function MissionControls({
   const setReviewModal = useUiStore((s) => s.setReviewModal);
 
   const [notice, setNotice] = useState<ControlNotice>(null);
+  const [minimized, setMinimized] = useState(false);
 
   const run = useCallback(
     async <T extends { readonly outcome: string }>(
@@ -282,6 +283,8 @@ export function MissionControls({
   // every gate below read it; the draft / renew-source are read AFTER this so a
   // null draft (always true mid-run) never hides the controls.
   if (runtime === null) return null;
+
+  let body: JSX.Element | null = null;
 
   const anyPending =
     start.isPending ||
@@ -316,7 +319,7 @@ export function MissionControls({
     // must never lock the user out of stopping) nor on other controls' pending
     // state (so Stop stays clickable even mid-Recover/Continue).
     const stopDisabled = stop.isPending;
-    return (
+    body = (
       <>
         {canRecover ? (
           <MissionErrorAlert
@@ -363,6 +366,14 @@ export function MissionControls({
         <KeepAwakeToggle />
       </>
     );
+    return (
+      <MissionControlsCard
+        minimized={minimized}
+        onToggle={() => setMinimized((v) => !v)}
+      >
+        {body}
+      </MissionControlsCard>
+    );
   }
 
   // NO ACTIVE RUN → Start an accepted/ready draft; Start wins over Renew when
@@ -382,7 +393,7 @@ export function MissionControls({
   const pendingAcceptance = draft !== null && !canStart;
   if (canStart) {
     const missionId = draft.missionId;
-    return (
+    body = (
       <div data-vex-area="mission-controls" className="mt-3">
         <button
           type="button"
@@ -397,6 +408,14 @@ export function MissionControls({
         </button>
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
       </div>
+    );
+    return (
+      <MissionControlsCard
+        minimized={minimized}
+        onToggle={() => setMinimized((v) => !v)}
+      >
+        {body}
+      </MissionControlsCard>
     );
   }
 
@@ -413,7 +432,7 @@ export function MissionControls({
     draft !== null && draft.status === "ready" && diff !== null && !diff.isAccepted &&
     planKnown && !planMissing(plan);
   if (reviewable && !chatSubmitting) {
-    return (
+    body = (
       <div data-vex-area="mission-controls" className="mt-3">
         <button
           type="button"
@@ -424,6 +443,14 @@ export function MissionControls({
           Review &amp; accept contract
         </button>
       </div>
+    );
+    return (
+      <MissionControlsCard
+        minimized={minimized}
+        onToggle={() => setMinimized((v) => !v)}
+      >
+        {body}
+      </MissionControlsCard>
     );
   }
 
@@ -439,9 +466,9 @@ export function MissionControls({
   // looks like it "does nothing", and each extra click clones ANOTHER duplicate
   // draft. Gating on `draft === null` lets the fresh draft fall through to the
   // acceptance-pending UI below (accept it, then Start).
-  if (renewSource !== null && draft === null) {
+  if (renewSource !== null && draft === null && summary?.simulated !== true) {
     const previousMissionId = renewSource.missionId;
-    return (
+    body = (
       <div data-vex-area="mission-controls" className="mt-3">
         {summary !== null ? (
           <MissionSummaryCard result={summary} sessionId={sessionId} />
@@ -464,31 +491,91 @@ export function MissionControls({
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
       </div>
     );
+    return (
+      <MissionControlsCard
+        minimized={minimized}
+        onToggle={() => setMinimized((v) => !v)}
+      >
+        {body}
+      </MissionControlsCard>
+    );
   }
 
-  // Finalized mission with no renewable source (e.g. paper/simulator runs):
-  // still surface the full structured summary card. Renewability is a separate
-  // affordance, not the gate for seeing the mission's outcome.
+  // Finalized mission with no renewable source OR a simulator summary:
+  // still surface the full structured summary card. Paper/simulator runs are
+  // not a valid `/mission-renew` source for this card surface, even when the
+  // session also has some other renewable mission lineage hanging around.
   if (summary !== null && draft === null) {
-    return (
+    body = (
       <div data-vex-area="mission-controls" className="mt-3">
         <MissionSummaryCard result={summary} sessionId={sessionId} />
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
       </div>
+    );
+    return (
+      <MissionControlsCard
+        minimized={minimized}
+        onToggle={() => setMinimized((v) => !v)}
+      >
+        {body}
+      </MissionControlsCard>
     );
   }
 
   // Contract pending acceptance with nothing else to show → the standing
   // notice alone, so the block is visible for the whole setup phase.
   if (pendingAcceptance) {
-    return (
+    body = (
       <div data-vex-area="mission-controls" className="mt-3">
         <AcceptancePendingNotice />
       </div>
     );
+    return (
+      <MissionControlsCard
+        minimized={minimized}
+        onToggle={() => setMinimized((v) => !v)}
+      >
+        {body}
+      </MissionControlsCard>
+    );
   }
 
   return null;
+}
+
+function MissionControlsCard({
+  minimized,
+  onToggle,
+  children,
+}: {
+  readonly minimized: boolean;
+  readonly onToggle: () => void;
+  readonly children: JSX.Element;
+}): JSX.Element {
+  return (
+    <section
+      data-vex-area="mission-controls-card"
+      data-vex-state={minimized ? "minimized" : "expanded"}
+      className="mt-3 rounded-xl border border-[var(--vex-line)] bg-white/[0.02] px-3 py-2"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+          Mission card
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!minimized}
+          aria-label={minimized ? "Expand mission card" : "Minimize mission card"}
+          className="inline-flex h-7 items-center rounded-full border border-[var(--vex-line-strong)] px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.06] hover:text-foreground"
+        >
+          {minimized ? "Expand" : "Minimize"}
+        </button>
+      </div>
+
+      {!minimized ? children : null}
+    </section>
+  );
 }
 
 /**

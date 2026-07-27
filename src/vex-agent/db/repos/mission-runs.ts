@@ -51,6 +51,10 @@ export interface MissionRun {
   errorRetryCount: number;
   /** Phase 4d: STICKY fail-closed stamp — true once the run touched a mutating tool. */
   autoRetryUnsafe: boolean;
+  /** Frozen inference config at run launch for auditability. */
+  inferenceProvider: string | null;
+  inferenceModel: string | null;
+  inferenceFallbackModel: string | null;
 }
 
 /** SQL `IN (…)` literal compiled once from `ACTIVE_OR_PAUSED_RUN_STATUSES`. */
@@ -91,6 +95,9 @@ function mapRow(r: Record<string, unknown>): MissionRun {
     recoveredFromRunId: r.recovered_from_run_id as string | null,
     errorRetryCount: (r.error_retry_count as number) ?? 0,
     autoRetryUnsafe: (r.auto_retry_unsafe as boolean) ?? false,
+    inferenceProvider: r.inference_provider as string | null,
+    inferenceModel: r.inference_model as string | null,
+    inferenceFallbackModel: r.inference_fallback_model as string | null,
   };
 }
 
@@ -109,12 +116,16 @@ export async function createRun(
      * prior run's mode so a resumed sim run can never turn live.
      */
     mode?: MissionMode;
+    inferenceProvider?: string | null;
+    inferenceModel?: string | null;
+    inferenceFallbackModel?: string | null;
   } = {},
   client?: PoolClient,
 ): Promise<void> {
   const sql = `INSERT INTO mission_runs (
-       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id, mode
-     ) VALUES ($1, $2, $3, $4::jsonb, $5, $6)`;
+       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id, mode,
+       inference_provider, inference_model, inference_fallback_model
+     ) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)`;
   const params = [
     id,
     missionId,
@@ -122,6 +133,9 @@ export async function createRun(
     nullableJsonb(options.contractSnapshotJson ?? null),
     options.recoveredFromRunId ?? null,
     options.mode ?? "live",
+    options.inferenceProvider ?? null,
+    options.inferenceModel ?? null,
+    options.inferenceFallbackModel ?? null,
   ];
   if (client) {
     await client.query(sql, params);
@@ -476,6 +490,48 @@ export async function markStoppedIfRunning(
   const params = [
     id,
     stopReason,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected === 1;
+}
+
+/**
+ * Idempotent, race-safe recovery park for an orphaned `running` run.
+ *
+ * Atomically moves a run to `paused_wake` ONLY while it is still `running` AND
+ * its session has NO LIVE runner lease. Unlike `markStoppedIfRunning`, this
+ * keeps the run RECOVERABLE: `ended_at` stays NULL, `last_checkpoint_at` is
+ * refreshed to NOW(), and the stop surface is stamped for operator diagnostics.
+ *
+ * Used when the reconciler detects "worker died / app restarted / lease lost"
+ * but a healthy wake worker can still re-claim the run. Re-running is a no-op;
+ * a concurrent resume that already re-acquired a live lease blocks this flip.
+ */
+export async function markWakeRecoveryPendingIfRunning(
+  id: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs m
+                  SET status = 'paused_wake',
+                      stop_reason = 'waiting_for_wake',
+                      stop_summary = COALESCE($2, stop_summary),
+                      stop_evidence_json = COALESCE($3::jsonb, stop_evidence_json),
+                      last_checkpoint_at = NOW(),
+                      ended_at = NULL
+                WHERE m.id = $1
+                  AND m.status = 'running'
+                  AND NOT EXISTS (
+                        SELECT 1 FROM runner_leases l
+                         WHERE l.session_id = m.session_id
+                           AND l.expires_at > NOW()
+                      )`;
+  const params = [
+    id,
     stopPayload?.summary ?? null,
     nullableJsonb(stopPayload?.evidence ?? null),
   ];

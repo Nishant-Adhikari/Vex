@@ -117,6 +117,9 @@ const { reconcileOrphanedRuns } = await import(
 function reconcileDeps(over: Record<string, unknown> = {}) {
   return {
     findOrphans: vi.fn(async () => []),
+    parkForRecovery: vi.fn(async () => true),
+    appendDiagnostic: vi.fn(async () => {}),
+    enqueueRecoveryWake: vi.fn(async () => {}),
     claim: vi.fn(async () => true),
     flatten: vi.fn(async () => {}),
     closeLedger: vi.fn(async () => {}),
