@@ -15,11 +15,18 @@ import { registerMissionEditHandler } from "./edit.js";
 import { registerMissionGetDiffHandler } from "./get-diff.js";
 import { registerMissionGetDraftHandler } from "./get-draft.js";
 import { registerMissionGetRenewableSourceHandler } from "./get-renewable-source.js";
+import { registerMissionGetResultForRunHandler } from "./get-result-for-run.js";
+import { registerMissionGetRetrospectiveHandler } from "./get-retrospective.js";
 import { registerMissionGetSessionResultHandler } from "./get-session-result.js";
+import { registerMissionListPaperResultsHandler } from "./list-paper-results.js";
 import { registerMissionListResultsHandler } from "./list-results.js";
 import { registerMissionRecoverHandler } from "./recover.js";
 import { registerMissionRenewHandler } from "./renew.js";
 import { registerMissionRetryHandler } from "./retry.js";
+import { registerMissionSimulatorGetLatestBatchHandler } from "./simulator-get-latest-batch.js";
+import { registerMissionSimulatorLaunchPresetHandler } from "./simulator-launch-preset.js";
+import { registerMissionSimulatorListBatchesHandler } from "./simulator-list-batches.js";
+import { registerMissionSimulatorStartBatchHandler } from "./simulator-start-batch.js";
 import { registerMissionSetAutoRetryHandler } from "./set-auto-retry.js";
 import { registerMissionStartHandler } from "./start.js";
 import { registerMissionStopHandler } from "./stop.js";
@@ -40,7 +47,14 @@ export function registerMissionHandlers(): ReadonlyArray<() => void> {
     registerMissionStopHandler(),
     registerMissionGetRenewableSourceHandler(),
     registerMissionListResultsHandler(),
+    registerMissionListPaperResultsHandler(),
     registerMissionGetSessionResultHandler(),
     registerMissionSetAutoRetryHandler(),
+    registerMissionGetResultForRunHandler(),
+    registerMissionGetRetrospectiveHandler(),
+    registerMissionSimulatorLaunchPresetHandler(),
+    registerMissionSimulatorStartBatchHandler(),
+    registerMissionSimulatorGetLatestBatchHandler(),
+    registerMissionSimulatorListBatchesHandler(),
   ];
 }

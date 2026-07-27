@@ -16,12 +16,19 @@ import {
   missionGetDiffInputSchema,
   missionGetDraftInputSchema,
   missionGetRenewableSourceInputSchema,
+  missionGetResultForRunInputSchema,
+  missionGetRetrospectiveInputSchema,
   missionGetSessionResultInputSchema,
+  missionListPaperResultsInputSchema,
   missionListResultsInputSchema,
+  simulatorLaunchPresetInputSchema,
+  simulatorGetLatestBatchInputSchema,
+  simulatorListBatchesInputSchema,
   missionRecoverInputSchema,
   missionRenewInputSchema,
   missionEditInputSchema,
   missionRetryInputSchema,
+  simulatorStartBatchInputSchema,
   missionSetAutoRetryInputSchema,
   missionStartInputSchema,
   missionStopInputSchema,
@@ -33,12 +40,19 @@ import type {
   MissionGetDiffInput,
   MissionGetDraftInput,
   MissionGetRenewableSourceInput,
+  MissionGetResultForRunInput,
+  MissionGetRetrospectiveInput,
   MissionGetSessionResultInput,
+  MissionListPaperResultsInput,
   MissionListResultsInput,
+  SimulatorLaunchPresetInput,
+  SimulatorGetLatestBatchInput,
+  SimulatorListBatchesInput,
   MissionRecoverInput,
   MissionRenewInput,
   MissionEditInput,
   MissionRetryInput,
+  SimulatorStartBatchInput,
   MissionSetAutoRetryInput,
   MissionStartInput,
   MissionStopInput,
@@ -139,6 +153,13 @@ export const mission = {
       missionListResultsInputSchema,
     );
   },
+  listPaperResults(input: MissionListPaperResultsInput) {
+    return invokeWithSchema(
+      CH.mission.listPaperResults,
+      input,
+      missionListPaperResultsInputSchema,
+    );
+  },
   getSessionResult(input: MissionGetSessionResultInput) {
     return invokeWithSchema(
       CH.mission.getSessionResult,
@@ -151,6 +172,48 @@ export const mission = {
       CH.mission.setAutoRetry,
       input,
       missionSetAutoRetryInputSchema,
+    );
+  },
+  getResultForRun(input: MissionGetResultForRunInput) {
+    return invokeWithSchema(
+      CH.mission.getResultForRun,
+      input,
+      missionGetResultForRunInputSchema,
+    );
+  },
+  getRetrospective(input: MissionGetRetrospectiveInput) {
+    return invokeWithSchema(
+      CH.mission.getRetrospective,
+      input,
+      missionGetRetrospectiveInputSchema,
+    );
+  },
+  simulatorLaunchPreset(input: SimulatorLaunchPresetInput) {
+    return invokeWithSchema(
+      CH.mission.simulatorLaunchPreset,
+      input,
+      simulatorLaunchPresetInputSchema,
+    );
+  },
+  simulatorStartBatch(input: SimulatorStartBatchInput) {
+    return invokeWithSchema(
+      CH.mission.simulatorStartBatch,
+      input,
+      simulatorStartBatchInputSchema,
+    );
+  },
+  simulatorGetLatestBatch(input: SimulatorGetLatestBatchInput) {
+    return invokeWithSchema(
+      CH.mission.simulatorGetLatestBatch,
+      input,
+      simulatorGetLatestBatchInputSchema,
+    );
+  },
+  simulatorListBatches(input: SimulatorListBatchesInput) {
+    return invokeWithSchema(
+      CH.mission.simulatorListBatches,
+      input,
+      simulatorListBatchesInputSchema,
     );
   },
 } satisfies MissionBridge;

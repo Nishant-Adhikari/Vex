@@ -12,8 +12,14 @@
  *
  * `useMissionDiff` query reader follows the same staleTime as
  * `useMissionDraft`.
+ *
+ * `useMissionLiveSync` (mission review-&-accept bar) keeps the draft + diff
+ * queries fresh the same way `useTranscriptLiveSync`/`useUsageLiveSync` do:
+ * event-driven invalidation on `engine.transcriptAppend` plus a 30s fallback
+ * poll, so a dropped IPC event can never strand the review bar invisible.
  */
 
+import { useEffect } from "react";
 import {
   queryOptions,
   useMutation,
@@ -32,8 +38,15 @@ import type {
   MissionGetDiffResult,
   MissionGetDraftResult,
   MissionGetSessionResultResult,
-  MissionListResultsResult,
   MissionGetRenewableSourceResult,
+  MissionGetResultForRunResult,
+  MissionGetRetrospectiveResult,
+  MissionListPaperResultsResult,
+  MissionListResultsResult,
+  SimulatorListBatchesResult,
+  SimulatorBatchReadResult,
+  SimulatorLaunchPresetInput,
+  SimulatorLaunchPresetResult,
   MissionRecoverInput,
   MissionRecoverResult,
   MissionRenewInput,
@@ -42,14 +55,14 @@ import type {
   MissionEditResult,
   MissionRetryInput,
   MissionRetryResult,
+  SimulatorStartBatchInput,
+  SimulatorStartBatchResult,
   MissionSetAutoRetryInput,
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
   MissionStopInput,
   MissionStopResult,
-  MissionUpdateDraftInput,
-  MissionUpdateDraftResult,
 } from "@shared/schemas/mission.js";
 import {
   missionKeys,
@@ -75,18 +88,6 @@ export function useMissionDraft(
   return useQuery(draftOptions(sessionId ?? ""));
 }
 
-export function useMissionResults(
-  limit = 50,
-): UseQueryResult<Result<MissionListResultsResult>> {
-  return useQuery(
-    queryOptions({
-      queryKey: missionKeys.results(),
-      queryFn: () => window.vex.mission.listResults({ limit }),
-      staleTime: STALE_MS,
-    }),
-  );
-}
-
 /**
  * Latest finalized result for a session — the post-mission summary card
  * source. Returns the newest `mission_results` row for the session (or null
@@ -102,6 +103,35 @@ export function useMissionSessionResult(
       queryFn: () =>
         window.vex.mission.getSessionResult({ sessionId: sessionId ?? "" }),
       staleTime: STALE_MS,
+      enabled: !!sessionId,
+    }),
+  );
+}
+
+/**
+ * The "lessons learned" retrospective for a session's latest finalized mission
+ * run — read-or-lazily-generate (the completed-mission card's Retrospective
+ * section). Generation is a single one-shot LLM completion the FIRST time a
+ * finalized run's card is viewed; it is cached thereafter, so this uses a long
+ * stale window and never background-refetches. Fail-soft: resolves `null` when
+ * there is nothing to show (no finalized run, or inference unavailable).
+ *
+ * `enabled` is gated by the caller (pass a sessionId only once a finalized
+ * result exists) so a running mission never fires a generation attempt.
+ */
+export function useMissionRetrospective(
+  sessionId: string | null,
+): UseQueryResult<Result<MissionGetRetrospectiveResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: missionKeys.retrospective(sessionId ?? ""),
+      queryFn: () =>
+        window.vex.mission.getRetrospective({ sessionId: sessionId ?? "" }),
+      // Immutable once generated — cache aggressively, don't refetch on focus.
+      staleTime: Infinity,
+      gcTime: Infinity,
+      refetchOnWindowFocus: false,
+      retry: false,
       enabled: !!sessionId,
     }),
   );
@@ -150,6 +180,131 @@ export function useRenewableMissionSource(
   return useQuery(renewableSourceOptions(sessionId ?? ""));
 }
 
+/**
+ * WP-J — per-wallet mission results ledger, newest first. The Mission
+ * History panel resolves the wallet address itself (primary wallet by
+ * default); this hook is a thin per-wallet read, never "list every wallet".
+ */
+function missionResultsOptions(walletAddress: string) {
+  return queryOptions({
+    queryKey: missionKeys.results(walletAddress),
+    queryFn: () => window.vex.mission.listResults({ walletAddress }),
+    staleTime: STALE_MS,
+    enabled: walletAddress.length > 0,
+  });
+}
+
+export function useMissionResults(
+  walletAddress: string | null,
+): UseQueryResult<Result<MissionListResultsResult>> {
+  return useQuery(missionResultsOptions(walletAddress ?? ""));
+}
+
+function paperMissionResultsOptions() {
+  return queryOptions({
+    queryKey: missionKeys.results("paper"),
+    queryFn: () => window.vex.mission.listPaperResults({}),
+    staleTime: STALE_MS,
+  });
+}
+
+export function usePaperMissionResults(): UseQueryResult<
+  Result<MissionListPaperResultsResult>
+> {
+  return useQuery(paperMissionResultsOptions());
+}
+
+/**
+ * WP-J — the finalized ledger row for a single run (e.g. the post-mission
+ * summary card shown inline after a mission finishes). Returns null while
+ * the run hasn't finalized (or was never opened).
+ */
+function missionResultForRunOptions(missionRunId: string, walletAddress: string) {
+  return queryOptions({
+    queryKey: missionKeys.resultForRun(missionRunId, walletAddress),
+    queryFn: () => window.vex.mission.getResultForRun({ missionRunId, walletAddress }),
+    staleTime: STALE_MS,
+    enabled: missionRunId.length > 0 && walletAddress.length > 0,
+  });
+}
+
+export function useMissionResultForRun(
+  missionRunId: string | null,
+  walletAddress: string | null,
+): UseQueryResult<Result<MissionGetResultForRunResult>> {
+  return useQuery(missionResultForRunOptions(missionRunId ?? "", walletAddress ?? ""));
+}
+
+export function useSimulatorLatestBatch(): UseQueryResult<
+  Result<SimulatorBatchReadResult>
+> {
+  return useQuery(
+    queryOptions({
+      queryKey: missionKeys.simulatorLatestBatch(),
+      queryFn: () => window.vex.mission.simulatorGetLatestBatch({}),
+      staleTime: 2_000,
+      refetchInterval: 5_000,
+    }),
+  );
+}
+
+export function useSimulatorBatchHistory(): UseQueryResult<
+  Result<SimulatorListBatchesResult>
+> {
+  return useQuery(
+    queryOptions({
+      queryKey: missionKeys.simulatorLatestBatch().concat("history"),
+      queryFn: () => window.vex.mission.simulatorListBatches({ limit: 12 }),
+      staleTime: 2_000,
+      refetchInterval: 5_000,
+    }),
+  );
+}
+
+/**
+ * 30s fallback invalidation cadence for the mission draft/diff queries —
+ * mirrors `TRANSCRIPT_LIVE_FALLBACK_POLL_MS`/`USAGE_LIVE_FALLBACK_POLL_MS`.
+ * Exported for tests.
+ */
+export const MISSION_LIVE_FALLBACK_POLL_MS = 30_000;
+
+/**
+ * Keep a mission session's draft + diff queries fresh so the review-&-accept
+ * bar (and the MISSION badge) can never be stranded by a dropped
+ * `transcriptAppend` event: the agent's draft patches land via the same
+ * transcript writes the transcript/usage live-sync hooks already key off, so
+ * this mounts the identical two-layer refresh — event-driven invalidation +
+ * a 30s fallback poll. Pure side effect — mount once per active mission
+ * session (in `MissionControls`).
+ */
+export function useMissionLiveSync(sessionId: string | null): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (sessionId === null || sessionId.length === 0) return;
+
+    const invalidate = (): void => {
+      void queryClient.invalidateQueries({
+        queryKey: missionKeys.draft(sessionId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: missionKeys.diffsForSession(sessionId),
+      });
+    };
+
+    const off = window.vex.engine.onTranscriptAppend((event) => {
+      if (event.sessionId !== sessionId) return;
+      invalidate();
+    });
+
+    const intervalId = window.setInterval(invalidate, MISSION_LIVE_FALLBACK_POLL_MS);
+
+    return () => {
+      off();
+      window.clearInterval(intervalId);
+    };
+  }, [sessionId, queryClient]);
+}
+
 // ── Mutations ───────────────────────────────────────────────────
 
 export function useAcceptMissionContract(): UseMutationResult<
@@ -191,24 +346,6 @@ export function useSetAutoRetry(): UseMutationResult<
     mutationFn: (input) => window.vex.mission.setAutoRetry(input),
     retry: false,
     onSettled: (_result, _error, input) => {
-      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
-    },
-  });
-}
-
-export function useUpdateMissionDraft(): UseMutationResult<
-  Result<MissionUpdateDraftResult>,
-  Error,
-  MissionUpdateDraftInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) => window.vex.mission.updateDraft(input),
-    retry: false,
-    onSuccess: (_result, input) => {
-      // Phase 6 leaves updateDraft fail-closed but we still invalidate
-      // so when phase 7+ wires the structured form, hooks already
-      // refresh the draft + diff caches without further changes.
       qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
     },
   });
@@ -368,6 +505,37 @@ export function useMissionStop(): UseMutationResult<
       qc.invalidateQueries({
         queryKey: missionKeys.renewableSource(input.sessionId),
       });
+    },
+  });
+}
+
+export function useSimulatorStartBatch(): UseMutationResult<
+  Result<SimulatorStartBatchResult>,
+  Error,
+  SimulatorStartBatchInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.mission.simulatorStartBatch(input),
+    retry: false,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: missionKeys.simulatorLatestBatch() });
+    },
+  });
+}
+
+export function useSimulatorLaunchPreset(): UseMutationResult<
+  Result<SimulatorLaunchPresetResult>,
+  Error,
+  SimulatorLaunchPresetInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.mission.simulatorLaunchPreset(input),
+    retry: false,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: missionKeys.simulatorLatestBatch() });
+      void qc.invalidateQueries({ queryKey: ["sessions"] });
     },
   });
 }
